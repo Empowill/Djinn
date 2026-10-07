@@ -75,6 +75,41 @@ function harness({
       child[stream].setEncoding = () => {};
       child[stream].end = () => {};
     }
+    // Native Claude stream-json runs keep stdin open so the permission
+    // broker can answer control_request frames. Capture the initial user
+    // frame as the prompt used by assertions; Codex app-server keeps its
+    // existing JSON-RPC write path below.
+    child.stdin.writes = [];
+      child.stdin.write = (line) => {
+        child.stdin.writes.push(line);
+        try {
+          const frame = JSON.parse(String(line));
+          if (frame?.type === "user") {
+          const content = frame.message?.content;
+          child.prompt = Array.isArray(content)
+            ? content
+                .filter((item) => item?.type === "text")
+                .map((item) => item.text)
+                .join("\n")
+            : typeof content === "string"
+              ? content
+              : "";
+            if (
+              child.args.includes("--tools") &&
+              child.prompt.startsWith(
+                "You are Djinn, the mission lead supervising",
+              )
+            ) {
+              const index = processes.indexOf(child);
+              if (index >= 0) processes.splice(index, 1);
+              setImmediate(() => child.close());
+            }
+          }
+      } catch {
+        // The fixture only inspects valid stream-json frames.
+      }
+      return true;
+    };
     child.kill = () => {
       kills.push(child.pid);
     };
@@ -223,7 +258,7 @@ function harness({
         "const command = resolveProviderCommand(spec);",
         "const command = 'fixture-provider';",
       ) +
-    "\nmodule.exports.testDiscoverProject = discoverProject; module.exports.testCancelProjectDiscovery = cancelProjectDiscovery; module.exports.testSaveState = saveState; module.exports.testLoadState = loadState; module.exports.testRuntimeSnapshot = getRuntimeSnapshot; module.exports.testActiveRuns = () => activeRuns; module.exports.testCreateWindow = createMainWindow; module.exports.testVisualization = (source) => visualizationRegistry.create(source);";
+    "\nmodule.exports.testDiscoverProject = discoverProject; module.exports.testCancelProjectDiscovery = cancelProjectDiscovery; module.exports.testSaveState = saveState; module.exports.testLoadState = loadState; module.exports.testRuntimeSnapshot = getRuntimeSnapshot; module.exports.testActiveRuns = () => activeRuns; module.exports.testCreateWindow = createMainWindow; module.exports.testVisualization = (source) => visualizationRegistry.create(source); module.exports.testStepResultSatisfiesExitCriteria = stepResultSatisfiesExitCriteria;";
   const compiled = new Module(path.resolve(__dirname, "../electron/main.cjs"));
   compiled.testBindings = { testProcess: fakeProcess, testEvents: events };
   compiled.require = (name) =>
@@ -273,6 +308,17 @@ function harness({
   };
 }
 const tick = () => new Promise((resolve) => setImmediate(resolve));
+const childPrompt = (child) => child.prompt || child.args.at(-1) || "";
+const isSupervisorProcess = (child) =>
+  child?.args?.includes("--tools") &&
+  (child.prompt?.startsWith(
+    "You are Djinn, the mission lead supervising",
+  ) ||
+    child.args.some(
+      (arg) =>
+        typeof arg === "string" &&
+        arg.startsWith("You are Djinn, the mission lead supervising"),
+    ));
 async function until(predicate) {
   const deadline = Date.now() + 2000;
   while (Date.now() < deadline) {
@@ -286,7 +332,54 @@ const worker = {
   name: "Socle",
   role: "Runtime",
   prompt: "Only edit your assigned files.",
+  readOnly: false,
+  writeScope: ["*"],
 };
+
+test("auto-preview requires evidence for every configured stage criterion", async () => {
+  const h = harness({ codex: true });
+  try {
+    const base = {
+      stepId: "step-1",
+      validatedInput: {
+        step: { exitCriteria: ["Checks pass", "Preview responds"] },
+      },
+      stepResult: {
+        status: "ready",
+        criteria: [{ criterion: "Checks pass", met: true, evidence: "npm test" }],
+      },
+    };
+    assert.equal(h.api.testStepResultSatisfiesExitCriteria(base), false);
+    assert.equal(
+      h.api.testStepResultSatisfiesExitCriteria({
+        ...base,
+        stepResult: {
+          ...base.stepResult,
+          criteria: [
+            ...base.stepResult.criteria,
+            { criterion: "Preview responds", met: true, evidence: "HTTP 200" },
+          ],
+        },
+      }),
+      true,
+    );
+    assert.equal(
+      h.api.testStepResultSatisfiesExitCriteria({
+        ...base,
+        stepResult: {
+          ...base.stepResult,
+          criteria: [
+            ...base.stepResult.criteria,
+            { criterion: "Preview responds", met: true, evidence: "" },
+          ],
+        },
+      }),
+      false,
+    );
+  } finally {
+    await h.dispose();
+  }
+});
 
 test("lead proposals run independent scoped workers concurrently and pass results to dependents", async () => {
   const h = harness({ codex: true });
@@ -299,7 +392,7 @@ test("lead proposals run independent scoped workers concurrently and pass result
       { id: "check", name: "Check", role: "Review", prompt: "Check both reports.", readOnly: true, dependsOn: ["design", "logic"] },
     ];
     h.turns[0].complete("completed", definitions.map(data => "DJINN_EVENT:" + JSON.stringify({ type: "agent", data })).join("\n"));
-    await until(() => h.turns.length === 3);
+    await until(() => h.turns.length >= 3);
     assert.notEqual(h.turns[1].done, true);
     assert.notEqual(h.turns[2].done, true);
     h.turns[1].complete("completed", "Design proof delivered.");
@@ -486,7 +579,7 @@ test("targeted guidance interrupts then resumes the same worker after close with
     await assert.rejects(h.api.startRun(h.input), /active/);
     h.processes[0].close();
     await until(() => h.processes.length === 2);
-    const prompt = h.processes[1].args.at(-1);
+    const prompt = childPrompt(h.processes[1]);
     assert.match(prompt, /Add the targeted check/);
     assert.match(prompt, /Existing implementation kept/);
     assert.equal(h.processes[1].options.cwd, h.root);
@@ -536,10 +629,10 @@ test("guidance to a finished worker pauses lead integration and revisits only th
     h.processes[1].close();
     await until(() => h.processes.length === 3);
     assert.match(
-      h.processes[2].args.at(-1),
+      childPrompt(h.processes[2]),
       /delegated Djinn agent named Socle/,
     );
-    assert.match(h.processes[2].args.at(-1), /Worker specific correction/);
+    assert.match(childPrompt(h.processes[2]), /Worker specific correction/);
     h.processes[2].close();
     await until(() => h.processes.length === 4);
     h.processes[3].close();
@@ -644,6 +737,18 @@ test("durable Codex chief replies while the worker continues, using separate pro
   const h = harness({ codex: true });
   try {
     const run = await h.api.startRun({ ...h.input, agents: [worker] });
+    await until(() => h.turns.length === 1);
+    assert.equal(
+      h.turns.some((t) => t.params.sandboxPolicy.type === "readOnly"),
+      false,
+      "worker startup does not create an idle supervisor turn",
+    );
+    const initial = await h.api.steerRun({
+      runId: run.runId,
+      id: "status-start",
+      text: "Prépare une réponse sur l'état du worker.",
+    });
+    assert.equal(initial.status, "transmitted");
     await until(() => h.turns.length === 2);
     assert.equal(h.processes.length, 1);
     const chief = h.turns.find(
@@ -699,14 +804,17 @@ test("durable Codex chief replies while the worker continues, using separate pro
           e.data.status === "consumed",
       ),
     );
-    await until(() => h.turns.length === 4);
-    h.turns[3].complete("completed", "Indication transmise au worker ciblé.");
+    assert.equal(
+      h.turns.length,
+      3,
+      "targeted worker steering does not create another supervisor turn",
+    );
     working.complete("completed", "Code et preuves conservés.");
-    await until(() => h.turns.length === 5);
-    const integration = h.turns[4];
+    await until(() => h.turns.length === 4);
+    const integration = h.turns[3];
     assert.equal(integration.params.sandboxPolicy.type, "workspaceWrite");
     for (const t of h.turns) {
-      assert.equal(t.params.approvalPolicy, "never");
+      assert.equal(t.params.approvalPolicy, "on-request");
       assert.equal(t.params.sandboxPolicy.networkAccess, false);
       assert.equal(t.params.model, "configured-model");
     }
@@ -729,6 +837,12 @@ test("supervisor blocking question interrupts all active turns and releases the 
   const h = harness({ codex: true });
   try {
     const run = await h.api.startRun({ ...h.input, agents: [worker] });
+    await until(() => h.turns.length === 1);
+    await h.api.steerRun({
+      runId: run.runId,
+      id: "start-supervisor-block",
+      text: "Reste disponible pour le suivi.",
+    });
     await until(() => h.turns.length === 2);
     const chief = h.turns.find(
       (t) => t.params.sandboxPolicy.type === "readOnly",
@@ -776,17 +890,11 @@ test("Codex guidance to a finished worker interrupts integration and revisits th
   const h = harness({ codex: true });
   try {
     const run = await h.api.startRun({ ...h.input, agents: [worker] });
-    await until(() => h.turns.length === 2);
-    const chief = h.turns.find(
-      (t) => t.params.sandboxPolicy.type === "readOnly",
-    );
-    const working = h.turns.find(
-      (t) => t.params.sandboxPolicy.type === "workspaceWrite",
-    );
-    chief.complete();
+    await until(() => h.turns.length === 1);
+    const working = h.turns[0];
     working.complete("completed", "Existing worker output.");
-    await until(() => h.turns.length === 3);
-    const integration = h.turns[2];
+    await until(() => h.turns.length === 2);
+    const integration = h.turns[1];
     const receipt = await h.api.steerRun({
       runId: run.runId,
       id: "codex-revisit",
@@ -794,13 +902,13 @@ test("Codex guidance to a finished worker interrupts integration and revisits th
       agentId: "worker",
     });
     assert.equal(receipt.status, "transmitted");
-    await until(() => h.turns.length === 4);
+    await until(() => h.turns.length === 3);
     assert.equal(
       integration.done,
       true,
       "integration relinquishes write permission before the worker resumes",
     );
-    const correction = h.turns[3];
+    const correction = h.turns[2];
     assert.equal(correction.threadId, working.threadId);
     assert.match(correction.params.input[0].text, /Worker targeted correction/);
     assert.match(correction.params.input[0].text, /Existing worker output/);
@@ -809,8 +917,8 @@ test("Codex guidance to a finished worker interrupts integration and revisits th
       false,
     );
     correction.complete();
-    await until(() => h.turns.length === 5);
-    h.turns[4].complete();
+    await until(() => h.turns.length === 4);
+    h.turns[3].complete();
     await until(() =>
       h.events.some(
         (e) =>
@@ -847,7 +955,7 @@ test("prevented guidance is excluded from the next lead prompt and cannot be con
     h.processes[0].close();
     await until(() => h.processes.length === 2);
     assert.doesNotMatch(
-      h.processes[1].args.at(-1),
+      childPrompt(h.processes[1]),
       /Unknown recipient private instruction/,
     );
     assert.equal(
@@ -869,14 +977,8 @@ test("Codex rejected direct steering falls back to a controlled same-worker repr
   const h = harness({ codex: true, rejectSteer: true });
   try {
     const run = await h.api.startRun({ ...h.input, agents: [worker] });
-    await until(() => h.turns.length === 2);
-    const chief = h.turns.find(
-      (t) => t.params.sandboxPolicy.type === "readOnly",
-    );
-    const working = h.turns.find(
-      (t) => t.params.sandboxPolicy.type === "workspaceWrite",
-    );
-    chief.complete();
+    await until(() => h.turns.length === 1);
+    const working = h.turns[0];
     const receipt = await h.api.steerRun({
       runId: run.runId,
       id: "fallback",
@@ -885,7 +987,7 @@ test("Codex rejected direct steering falls back to a controlled same-worker repr
     });
     assert.equal(receipt.status, "transmitted");
     assert.equal(receipt.delivery, "controlled_restart");
-    await until(() => h.turns.length === 4);
+    await until(() => h.turns.length === 2);
     assert.equal(working.done, true);
     const correction = h.turns.find(
       (t) => t !== working && t.threadId === working.threadId,
@@ -908,8 +1010,8 @@ test("Codex rejected direct steering falls back to a controlled same-worker repr
       ),
     );
     for (const t of h.turns.filter((t) => !t.done)) t.complete();
-    await until(() => h.turns.length === 5);
-    h.turns[4].complete();
+    await until(() => h.turns.length === 3);
+    h.turns[2].complete();
     await until(() =>
       h.events.some(
         (e) => e.runId === run.runId && e.data.status === "completed",
@@ -924,10 +1026,8 @@ test("a rejected parent interruption blocks controlled reprise until explicit tr
   const h = harness({ codex: true, rejectSteer: true, rejectInterrupt: true });
   try {
     const run = await h.api.startRun({ ...h.input, agents: [worker] });
-    await until(() => h.turns.length === 2);
-    const chief = h.turns.find(turn => turn.params.sandboxPolicy.type === "readOnly");
-    const working = h.turns.find(turn => turn.params.sandboxPolicy.type === "workspaceWrite");
-    chief.complete();
+    await until(() => h.turns.length === 1);
+    const working = h.turns[0];
     const receipt = await h.api.steerRun({ runId: run.runId, id: "parent-reject-reprise", text: "Retry this worker.", agentId: "worker" });
     assert.equal(receipt.delivery, "controlled_restart");
     await until(() => h.api.testActiveRuns().get(run.runId)?.observedRestartBlocked);
@@ -951,14 +1051,8 @@ test("controlled Codex reprise blocks instead of overlapping an unconfirmed obse
     );
   try {
     const run = await h.api.startRun({ ...h.input, agents: [worker] });
-    await until(() => h.turns.length === 2);
-    const chief = h.turns.find(
-      (turn) => turn.params.sandboxPolicy.type === "readOnly",
-    );
-    const working = h.turns.find(
-      (turn) => turn.params.sandboxPolicy.type === "workspaceWrite",
-    );
-    chief.complete();
+    await until(() => h.turns.length === 1);
+    const working = h.turns[0];
     const leadThread = working.threadId;
     notify("item/completed", {
       threadId: leadThread,
@@ -1033,7 +1127,7 @@ test("Codex app-server stderr warning keeps its worker active and permits succes
   const h = harness({ codex: true });
   try {
     const run = await h.api.startRun({ ...h.input, agents: [worker] });
-    await until(() => h.turns.length === 2);
+    await until(() => h.turns.length === 1);
     h.processes[0].stderr.emit(
       "data",
       "WARN codex_skills: missing icon for skill\n",
@@ -1058,8 +1152,8 @@ test("Codex app-server stderr warning keeps its worker active and permits succes
         ),
     );
     for (const t of h.turns) t.complete("completed", "Output after warning.");
-    await until(() => h.turns.length === 3);
-    h.turns[2].complete();
+    await until(() => h.turns.length === 2);
+    h.turns[1].complete();
     await until(() =>
       h.events.some(
         (e) => e.runId === run.runId && e.data.status === "completed",
@@ -1116,10 +1210,8 @@ test("known provider startup diagnostics never become agent errors in either har
         await until(() => h.processes.length === 2);
         h.processes[1].close();
       } else {
-        await until(() => h.turns.length === 2);
-        const workerTurn = h.turns.find(
-          (turn) => turn.params.sandboxPolicy.type === "workspaceWrite",
-        );
+        await until(() => h.turns.length === 1);
+        const workerTurn = h.turns[0];
         h.processes[0].stdout.emit(
           "data",
           JSON.stringify({
@@ -1136,8 +1228,8 @@ test("known provider startup diagnostics never become agent errors in either har
           false,
         );
         for (const turn of h.turns) turn.complete();
-        await until(() => h.turns.length === 3);
-        h.turns[2].complete();
+        await until(() => h.turns.length === 2);
+        h.turns[1].complete();
       }
       await until(() =>
         h.events.some(
@@ -1165,9 +1257,13 @@ test("human steering reaches the live orchestrator directly in Claude and Codex 
         agents: [worker],
       });
       if (provider === "codex") {
-        await until(() => h.turns.length === 2);
-        const chief = h.turns.find(
-          (turn) => turn.params.sandboxPolicy.type === "readOnly",
+        await until(() => h.turns.length === 1);
+        assert.equal(
+          h.turns.some(
+            (turn) => turn.params.sandboxPolicy.type === "readOnly",
+          ),
+          false,
+          "Codex does not start a supervisor before steering",
         );
         const receipt = await h.api.steerRun({
           runId: run.runId,
@@ -1175,40 +1271,37 @@ test("human steering reaches the live orchestrator directly in Claude and Codex 
           text: "Réponds directement à cette indication.",
         });
         assert.ok(["transmitted", "consumed"].includes(receipt.status));
-        await until(
-          () =>
-            h.requests.filter(
-              (request) =>
-                request.method === "turn/steer" &&
-                request.params.threadId === chief.threadId,
-            ).length === 1,
+        await until(() => h.turns.length === 2);
+        const chief = h.turns.find(
+          (turn) => turn.params.sandboxPolicy.type === "readOnly",
         );
-        assert.match(
-          h.requests.find(
+        assert.ok(chief, "human steering starts the Codex supervisor on demand");
+        assert.match(chief.params.input[0].text, /Réponds directement/);
+        assert.equal(
+          h.requests.filter(
             (request) =>
               request.method === "turn/steer" &&
-              request.params.threadId === chief.threadId,
-          ).params.input[0].text,
-          /Réponds directement/,
+              request.params.clientUserMessageId === `chief-${provider}`,
+          ).length,
+          0,
+          "the first supervisor pass receives steering in its prompt",
         );
       } else {
-        const isSupervisor = (child) =>
-          child.args.includes("--tools") &&
-          child.args.some(
-            (arg) =>
-              typeof arg === "string" &&
-              arg.startsWith("You are Djinn, the mission lead supervising"),
-          );
-        await until(() => h.allProcesses.filter(isSupervisor).length === 1);
+        await until(() => h.processes.length === 1);
+        assert.equal(
+          h.allProcesses.filter(isSupervisorProcess).length,
+          0,
+          "Claude does not start a supervisor before steering",
+        );
         const receipt = await h.api.steerRun({
           runId: run.runId,
           id: `chief-${provider}`,
           text: "Réponds directement à cette indication.",
         });
-        assert.equal(receipt.status, "transmitted");
-        await until(() => h.allProcesses.filter(isSupervisor).length === 2);
+        assert.ok(["transmitted", "consumed"].includes(receipt.status));
+        await until(() => h.allProcesses.filter(isSupervisorProcess).length === 1);
         assert.match(
-          h.allProcesses.filter(isSupervisor).at(-1).args.at(-1),
+          childPrompt(h.allProcesses.filter(isSupervisorProcess).at(-1)),
           /Réponds directement à cette indication/,
         );
       }
@@ -1229,13 +1322,8 @@ test("targeted worker steering is also visible to the orchestrator in both harne
       });
       const text = "Le worker doit conserver cette contrainte.";
       if (provider === "codex") {
-        await until(() => h.turns.length === 2);
-        const chief = h.turns.find(
-          (turn) => turn.params.sandboxPolicy.type === "readOnly",
-        );
-        const workerTurn = h.turns.find(
-          (turn) => turn.params.sandboxPolicy.type === "workspaceWrite",
-        );
+        await until(() => h.turns.length === 1);
+        const workerTurn = h.turns[0];
         const receipt = await h.api.steerRun({
           runId: run.runId,
           id: `worker-${provider}`,
@@ -1249,7 +1337,7 @@ test("targeted worker steering is also visible to the orchestrator in both harne
               (request) =>
                 request.method === "turn/steer" &&
                 request.params.clientUserMessageId === `worker-${provider}`,
-            ).length === 2,
+            ).length === 1,
         );
         const deliveries = h.requests.filter(
           (request) =>
@@ -1258,18 +1346,18 @@ test("targeted worker steering is also visible to the orchestrator in both harne
         );
         assert.deepEqual(
           new Set(deliveries.map((request) => request.params.threadId)),
-          new Set([chief.threadId, workerTurn.threadId]),
+          new Set([workerTurn.threadId]),
+        );
+        assert.equal(
+          h.turns.some(
+            (turn) => turn.params.sandboxPolicy.type === "readOnly",
+          ),
+          false,
+          "targeted worker steering does not start an unrelated supervisor",
         );
       } else {
-        const isSupervisor = (child) =>
-          child.args.includes("--tools") &&
-          child.args.some(
-            (arg) =>
-              typeof arg === "string" &&
-              arg.startsWith("You are Djinn, the mission lead supervising"),
-          );
-        await until(() => h.allProcesses.filter(isSupervisor).length === 1);
         await until(() => h.processes.length === 1);
+        assert.equal(h.allProcesses.filter(isSupervisorProcess).length, 0);
         const receipt = await h.api.steerRun({
           runId: run.runId,
           id: `worker-${provider}`,
@@ -1277,14 +1365,16 @@ test("targeted worker steering is also visible to the orchestrator in both harne
           agentId: "worker",
         });
         assert.equal(receipt.status, "transmitted");
-        h.processes[0].close();
-        await until(() => h.processes.length === 2);
-        await until(() => h.allProcesses.filter(isSupervisor).length === 2);
-        assert.match(h.processes[1].args.at(-1), /Le worker doit conserver/);
+        const previousWorker = h.processes[0];
+        previousWorker.close();
+        await until(
+          () => h.processes.length === 2 && h.processes[1] !== previousWorker,
+        );
         assert.match(
-          h.allProcesses.filter(isSupervisor).at(-1).args.at(-1),
+          childPrompt(h.processes[1]),
           /Le worker doit conserver/,
         );
+        assert.equal(h.allProcesses.filter(isSupervisorProcess).length, 0);
       }
     } finally {
       await h.dispose();
@@ -1323,17 +1413,11 @@ test("long worker reports are bounded before the Claude or Codex chief validates
         );
         h.processes[1].close();
       } else {
-        await until(() => h.turns.length === 2);
-        const chief = h.turns.find(
-          (turn) => turn.params.sandboxPolicy.type === "readOnly",
-        );
-        const workerTurn = h.turns.find(
-          (turn) => turn.params.sandboxPolicy.type === "workspaceWrite",
-        );
+        await until(() => h.turns.length === 1);
+        const workerTurn = h.turns[0];
         workerTurn.complete("completed", report);
-        chief.complete("completed", "Le contrat est respecté.");
-        await until(() => h.turns.length === 3);
-        h.turns[2].complete("completed", "Intégration terminée.");
+        await until(() => h.turns.length === 2);
+        h.turns[1].complete("completed", "Intégration terminée.");
       }
       await until(() =>
         h.events.some(
@@ -1497,6 +1581,241 @@ test("a closed Codex server releases the mission and resumes its saved conversat
     await until(() =>
       h.events.some(
         (e) => e.runId === second.runId && e.data.status === "completed",
+      ),
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("an unversioned saved Codex session migrates once to a native-tools thread", async () => {
+  const h = harness({ codex: true });
+  try {
+    const run = await h.api.startRun({
+      ...h.input,
+      providerSessions: { "native:lead": "legacy-thread" },
+    });
+    await until(() => h.turns.length === 1);
+    const starts = h.requests.filter((request) => request.method === "thread/start");
+    const resumes = h.requests.filter((request) => request.method === "thread/resume");
+    assert.equal(starts.length, 1);
+    assert.equal(resumes.length, 0);
+    assert.deepEqual(
+      starts[0].params.dynamicTools.map((tool) => tool.name),
+      runtime.nativeToolDefinitions().map((tool) => tool.name),
+    );
+    const turnStart = h.requests.find((request) => request.method === "turn/start");
+    assert.match(
+      turnStart.params.input[0].text,
+      /Native interaction session migration/,
+    );
+    h.turns[0].complete();
+    await until(() =>
+      h.events.some(
+        (event) => event.runId === run.runId && event.data.status === "completed",
+      ),
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("an observed Codex child can use the legacy DJINN_EVENT fallback", async () => {
+  const h = harness({ codex: true });
+  try {
+    const run = await h.api.startRun(h.input);
+    await until(() => h.turns.length === 1);
+    const leadTurn = h.turns[0];
+    const emit = (message) =>
+      h.allProcesses[0].stdout.emit("data", JSON.stringify(message) + "\n");
+    emit({
+      method: "thread/started",
+      params: {
+        thread: {
+          id: "observed-child",
+          parentThreadId: leadTurn.threadId,
+          agentNickname: "Observed worker",
+          status: { type: "active" },
+        },
+      },
+    });
+    await until(() =>
+      h.events.some(
+        (event) => event.type === "agent" && event.data.id === "codex:observed-child",
+      ),
+    );
+    emit({
+      method: "item/completed",
+      params: {
+        threadId: "observed-child",
+        item: {
+          id: "observed-message",
+          type: "agentMessage",
+          text: 'DJINN_EVENT:{"type":"report","data":{"status":"ready","summary":"Child checked the fixture","completed":["fixture"],"remaining":[],"evidence":["native-orchestration"]}}',
+        },
+      },
+    });
+    await until(() =>
+      h.events.some(
+        (event) =>
+          event.type === "report" &&
+          event.data.agentId === "codex:observed-child" &&
+          event.data.parentRunId === run.runId,
+      ),
+    );
+    leadTurn.complete();
+    await until(() =>
+      h.events.some(
+        (event) => event.runId === run.runId && event.data.status === "completed",
+      ),
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("managed native tools acknowledge only after durable interaction and action storage", async () => {
+  const h = harness({ codex: true });
+  const emitToolCall = (turn, id, tool, argumentsValue) =>
+    h.allProcesses[0].stdout.emit(
+      "data",
+      JSON.stringify({
+        id,
+        method: "item/tool/call",
+        params: {
+          threadId: turn.threadId,
+          turnId: turn.id,
+          namespace: null,
+          tool,
+          arguments: argumentsValue,
+        },
+      }) + "\n",
+    );
+  try {
+    const run = await h.api.startRun(h.input);
+    await until(() => h.turns.length === 1);
+    const turn = h.turns[0];
+    emitToolCall(turn, "native-question", "publish_question", {
+      title: "Need a choice",
+      context: "The independent work can continue.",
+      blocking: false,
+      options: ["Keep going"],
+    });
+    await until(() =>
+      h.events.some(
+        (event) => event.type === "question" && event.data.title === "Need a choice",
+      ),
+    );
+    await until(() =>
+      h.requests.some((request) => request.id === "native-question"),
+    );
+    const questionResponse = h.requests
+      .filter((request) => request.id === "native-question")
+      .at(-1);
+    assert.equal(questionResponse.result.success, true);
+    let interactions = await h.api.getMissionInteractions("native");
+    assert.ok(
+      interactions.events.some(
+        (event) => event.type === "question" && event.data.title === "Need a choice",
+      ),
+    );
+
+    emitToolCall(turn, "native-action", "publish_test_action", {
+      id: "fixture-action",
+      kind: "manual",
+      title: "Run the fixture check",
+      workItemId: "work-1",
+      target: "worker-a",
+    });
+    await until(() =>
+      h.events.some(
+        (event) => event.type === "action" && event.data.id === "fixture-action",
+      ),
+    );
+    await until(() => h.requests.some((request) => request.id === "native-action"));
+    const actionResponse = h.requests
+      .filter((request) => request.id === "native-action")
+      .at(-1);
+    assert.equal(actionResponse.result.success, true);
+    interactions = await h.api.getMissionInteractions("native");
+    assert.ok(
+      interactions.events.some(
+        (event) => event.type === "action" && event.data.id === "fixture-action",
+      ),
+    );
+    turn.complete();
+    await until(() =>
+      h.events.some(
+        (event) => event.runId === run.runId && event.data.status === "completed",
+      ),
+    );
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("a native worker question blocks only its own passage", async () => {
+  const h = harness({ codex: true });
+  const agents = [
+    { ...worker, id: "worker-a", name: "Worker A", writeScope: ["a.txt"] },
+    { ...worker, id: "worker-b", name: "Worker B", writeScope: ["b.txt"] },
+  ];
+  const emitToolCall = (turn) =>
+    h.allProcesses[0].stdout.emit(
+      "data",
+      JSON.stringify({
+        id: "worker-question",
+        method: "item/tool/call",
+        params: {
+          threadId: turn.threadId,
+          turnId: turn.id,
+          namespace: null,
+          tool: "publish_question",
+          arguments: {
+            title: "Worker input",
+            context: "Only this worker is waiting.",
+            blocking: true,
+          },
+        },
+      }) + "\n",
+    );
+  try {
+    const run = await h.api.startRun({
+      ...h.input,
+      concurrency: 2,
+      agents,
+    });
+    await until(() => h.turns.length === 2);
+    const first = h.turns.find((turn) =>
+      turn.params.input[0].text.includes("Worker A"),
+    );
+    const second = h.turns.find((turn) => turn !== first);
+    assert.ok(first);
+    assert.ok(second);
+    emitToolCall(first);
+    await until(() =>
+      h.events.some(
+        (event) =>
+          event.type === "question" &&
+          event.data.title === "Worker input" &&
+          event.data.blockingScope === "agent",
+      ),
+    );
+    await until(() => h.requests.some((request) => request.id === "worker-question"));
+    assert.equal(h.requests.filter((request) => request.method === "turn/interrupt").length, 1);
+    assert.equal(second.done, undefined);
+    assert.equal(
+      h.events.some(
+        (event) => event.runId === run.runId && event.data.status === "error",
+      ),
+      false,
+    );
+    second.complete();
+    await until(() => h.turns.length === 3);
+    h.turns[2].complete();
+    await until(() =>
+      h.events.some(
+        (event) => event.runId === run.runId && event.data.status === "completed",
       ),
     );
   } finally {
@@ -2175,11 +2494,7 @@ test("native disjoint writers start together, conflicts wait locally and freed s
       { ...worker, id: "three", name: "Three", writeScope: ["three.txt"] },
     ];
     const run = await h.api.startRun({ ...h.input, concurrency: 2, agents });
-    await until(() => h.turns.length === 3);
-    const chief = h.turns.find(
-      (t) => t.params.sandboxPolicy.type === "readOnly",
-    );
-    chief.complete();
+    await until(() => h.turns.length === 2);
     const one = h.turns.find((t) =>
       t.params.sandboxPolicy.writableRoots?.includes(
         path.join(fs.realpathSync(h.root), "one.txt"),
@@ -2280,8 +2595,7 @@ test("native dependency waits for the contract while independent scope executes,
       },
     ];
     await h.api.startRun({ ...h.input, concurrency: 3, agents });
-    await until(() => h.turns.length === 3);
-    h.turns.find((t) => t.params.sandboxPolicy.type === "readOnly").complete();
+    await until(() => h.turns.length === 2);
     const writer = (scope) =>
       h.turns.find((t) =>
         t.params.sandboxPolicy.writableRoots?.includes(
@@ -2423,7 +2737,7 @@ test("finished-worker steering fills an available scoped slot while its independ
         { ...worker, id: "two", writeScope: ["two.ts"] },
       ],
     });
-    await until(() => h.turns.length === 3);
+    await until(() => h.turns.length === 2);
     const writers = h.turns.filter(
       (t) => t.params.sandboxPolicy.type === "workspaceWrite",
     );
@@ -2433,7 +2747,6 @@ test("finished-worker steering fills an available scoped slot while its independ
       ),
     );
     const two = writers.find((t) => t !== one);
-    h.turns.find((t) => t.params.sandboxPolicy.type === "readOnly").complete();
     one.complete();
     await until(() =>
       h.events.some(
@@ -2506,7 +2819,7 @@ test("read-only inspector in an execute stage retains native step scope and cann
         { ...worker, id: "inspector", readOnly: true, writeScope: ["*"] },
       ],
     });
-    await until(() => h.turns.length === 3);
+    await until(() => h.turns.length === 2);
     const inspecting = h.turns.find((t) =>
       t.params.input[0].text.includes("Ownership: Read-only inspection"),
     );
@@ -2521,8 +2834,8 @@ test("read-only inspector in an execute stage retains native step scope and cann
         .every((e) => e.stepId === steps[1].id),
     );
     for (const t of h.turns) t.complete();
-    await until(() => h.turns.length === 4);
-    h.turns[3].complete();
+    await until(() => h.turns.length === 3);
+    h.turns[2].complete();
   } finally {
     await h.dispose();
   }
@@ -2618,7 +2931,7 @@ test("automatic qualification remains read-only and restarts with the selected p
           await until(() => h.processes.length === 2);
           assert.ok(
             h.processes[1].args.includes(
-              mode === "execute" ? "acceptEdits" : "plan",
+              mode === "execute" ? "manual" : "plan",
             ),
           );
           h.processes[1].close();
@@ -2828,7 +3141,7 @@ test("plan and review readers start during the current lead turn and integrate t
     try {
       const run = await h.api.startRun({ ...h.input, mode, concurrency: 2, agents: [] });
       await until(() => h.turns.length === 1);
-      const proposals = ["reader-a", "reader-b"].map(id => ({ id, name: id, role: "Inspection", prompt: "Inspect only", readOnly: false, writeScope: ["src"] }));
+      const proposals = ["reader-a", "reader-b"].map(id => ({ id, name: id, role: "Inspection", prompt: "Inspect only", readOnly: true, writeScope: ["src"] }));
       h.turns[0].message(proposals.map(data => "DJINN_EVENT:" + JSON.stringify({ type: "agent", data })).join("\n"));
       await until(() => h.turns.length === 3);
       assert.equal(h.turns[0].done, undefined, "readers start before the lead completes");
@@ -2899,19 +3212,17 @@ test("collaboration directed to a planned worker enriches its existing card", as
   const h = harness({ codex: true });
   try {
     await h.api.startRun({ ...h.input, agents: [{ ...worker, readOnly: true }] });
-    await until(() => h.turns.length === 2);
-    const actualWorker = h.turns.find(t => t.params.input[0].text.includes("delegated Djinn agent"));
-    const chief = h.turns.find(t => t !== actualWorker);
+    await until(() => h.turns.length === 1);
+    const actualWorker = h.turns[0];
     assert.ok(actualWorker);
-    h.allProcesses[0].stdout.emit("data", JSON.stringify({ method: "item/completed", params: { threadId: chief.threadId, item: { type: "collabAgentToolCall", id: "managed-target", tool: "sendInput", status: "completed", senderThreadId: chief.threadId, receiverThreadIds: [actualWorker.threadId], agentsStates: { [actualWorker.threadId]: { status: "running", message: null } } } } }) + "\n");
+    h.allProcesses[0].stdout.emit("data", JSON.stringify({ method: "item/completed", params: { threadId: actualWorker.threadId, item: { type: "collabAgentToolCall", id: "managed-target", tool: "sendInput", status: "completed", senderThreadId: actualWorker.threadId, receiverThreadIds: [actualWorker.threadId], agentsStates: { [actualWorker.threadId]: { status: "running", message: null } } } } }) + "\n");
     const updates = h.events.filter(e => e.type === "agent" && e.data.providerThreadId === actualWorker.threadId);
     assert.ok(updates.length > 0);
     assert.ok(updates.every(e => e.data.id === "worker" && e.data.origin !== "codex"));
     assert.equal(h.api.testRuntimeSnapshot().runs[0].observedAgents.length, 0);
-    assert.equal(h.turns.length, 2);
+    assert.equal(h.turns.length, 1);
     actualWorker.complete();
-    chief.complete();
-    await until(() => h.turns.length === 3);
-    h.turns[2].complete();
+    await until(() => h.turns.length === 2);
+    h.turns[1].complete();
   } finally { await h.dispose(); }
 });

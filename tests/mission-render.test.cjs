@@ -215,7 +215,7 @@ test("mission renders the global header, mission header, workflow, tabs and agen
     markup.indexOf('class="hero'),
     markup.indexOf("step-timeline"),
     markup.indexOf('aria-label="Vues de la mission"'),
-    markup.indexOf('class="team-section"'),
+    markup.indexOf('aria-label="Agents de la mission"'),
   ];
   assert.ok(
     sections.every((index) => index >= 0),
@@ -230,7 +230,7 @@ test("mission renders the global header, mission header, workflow, tabs and agen
       markup.indexOf('aria-label="Vues de la mission"'),
   );
   assert.match(markup, /aria-label="Étapes de la mission"/);
-  assert.match(markup, /disabled=""[^>]*class="step-item[^\"]*pending/);
+  assert.doesNotMatch(markup, /disabled=""[^>]*class="step-item[^\"]*pending/);
 });
 test("historical stage navigation retains the active stage and never starts a process during rendering", () => {
   const task = {
@@ -321,4 +321,204 @@ test("preparation screen keeps intent visible and exposes recovery and blocking 
   ];
   assert.match(render(), /Quel périmètre/);
   assert.match(render(), /disabled=""[^>]*>.*Reprendre la préparation/s);
+});
+
+test("question sans options ouvre directement la réponse libre sans recommandation inventée", () => {
+  const { QuestionCard } = require(root + "/mission-panels.tsx");
+  const context = "Contexte complet à conserver, avec la contrainte finale.";
+  const markup = renderToStaticMarkup(
+    React.createElement(QuestionCard, {
+      question: {
+        id: "scope",
+        title: "Quel périmètre ?",
+        context,
+        recommendation: "",
+        options: [],
+        blocking: true,
+        unlocks: "La suite de la mission",
+      },
+      onAnswer() {},
+      onReopen() {},
+    }),
+  );
+  assert.match(markup, new RegExp(context));
+  assert.match(markup, /aria-label="Votre réponse personnalisée"/);
+  assert.match(markup, /Valider la réponse/);
+  assert.doesNotMatch(markup, /Recommandé|Recommandation/);
+});
+
+test("StageReport expose clairement le fait, le reste et les preuves repliables", () => {
+  const { StageReport } = require(root + "/mission-progress.tsx");
+  const markup = renderToStaticMarkup(
+    React.createElement(StageReport, {
+      step: {
+        id: "implementation",
+        type: "implementation",
+        title: "Implémentation",
+        objective: "Livrer le changement",
+        status: "awaiting_human",
+        exitCriteria: [],
+        expectedArtifacts: [],
+        skills: [],
+        report: {
+          status: "needs_input",
+          summary: "Le changement est prêt à vérifier.",
+          completed: ["Le composant est rendu"],
+          remaining: ["Vérifier le parcours"],
+          evidence: ["tests/ui.log"],
+          nextAction: "Testez le parcours principal.",
+        },
+      },
+    }),
+  );
+  assert.match(markup, /Le changement est prêt à vérifier/);
+  assert.match(markup, />Fait</);
+  assert.match(markup, />Reste</);
+  assert.match(markup, /Vérifier le parcours/);
+  assert.match(markup, /Éléments de preuve/);
+  assert.match(markup, /tests\/ui\.log/);
+});
+
+test("une étape courante en pause conserve son compte rendu hérité dans Mission", () => {
+  const hook = require(root + "/use-djinn.ts");
+  const original = hook.useDjinn;
+  const { taskFixture } = require("./workflow-fixture.cjs");
+  const step = { id: "legacy-review", type: "review", title: "Intégrer les corrections", objective: "Vérifier ensemble", status: "paused", validation: "human", summary: "La recette date reste à vérifier.", exitCriteria: [], expectedArtifacts: [], skills: [] };
+  const task = taskFixture({ status: "paused", steps: [step], activeStepId: step.id, selectedStepId: step.id });
+  hook.useDjinn = () => {
+    const d = original();
+    return { ...d, task, state: { ...d.state, tasks: [task], selectedId: task.id } };
+  };
+  try {
+    const markup = renderToStaticMarkup(React.createElement(App));
+    assert.match(markup, /Compte rendu de l’étape Intégrer les corrections/);
+    assert.match(markup, /La recette date reste à vérifier/);
+  } finally { hook.useDjinn = original; }
+});
+
+test("la section permissions disparaît quand il ne reste aucune demande en attente", () => {
+  const { PermissionPanel } = require(root + "/permission-panel.tsx");
+  const markup = renderToStaticMarkup(
+    React.createElement(PermissionPanel, {
+      requests: [
+        {
+          id: "permission-done",
+          taskId: "task-1",
+          runId: "run-1",
+          agentId: "build",
+          provider: "codex",
+          method: "workspace.write",
+          title: "Modifier le fichier",
+          status: "accepted",
+          createdAt: "2026-10-07T10:00:00Z",
+          updatedAt: "2026-10-07T10:01:00Z",
+          canAcceptForSession: false,
+        },
+      ],
+      onRespond: async () => true,
+    }),
+  );
+  assert.equal(markup, "");
+});
+
+test("la timeline affiche les work items et l’état d’autorisation sans réécrire l’état source", () => {
+  const { Timeline } = require(root + "/temporal-timeline.tsx");
+  const { taskFixture } = require("./workflow-fixture.cjs");
+  const markup = renderToStaticMarkup(
+    React.createElement(Timeline, {
+      task: taskFixture({
+        activeStepId: "step-1",
+        selectedStepId: "step-1",
+        agents: [
+          {
+            id: "build",
+            name: "Build",
+            role: "Worker",
+            model: "test",
+            status: "running",
+            summary: "Travail en cours",
+            progress: 40,
+          },
+          {
+            id: "review",
+            name: "Review",
+            role: "Reviewer",
+            model: "test",
+            status: "running",
+            summary: "Vérification",
+            progress: 20,
+          },
+        ],
+        workItems: [
+          {
+            id: "ticket-42",
+            title: "Préparer le test WEB-42",
+            status: "ready",
+            ticket: "WEB-42",
+            agentId: "build",
+            updatedAt: "2026-10-07T10:00:00Z",
+          },
+          {
+            id: "review-1",
+            title: "Relire le résultat",
+            status: "running",
+            agentId: "review",
+            updatedAt: "2026-10-07T10:00:00Z",
+          },
+        ],
+        permissions: [
+          {
+            id: "permission-1",
+            taskId: "task-1",
+            runId: "run-1",
+            agentId: "build",
+            provider: "codex",
+            method: "workspace.write",
+            title: "Écrire dans le projet",
+            status: "pending",
+            createdAt: "2026-10-07T10:00:00Z",
+            canAcceptForSession: false,
+          },
+        ],
+      }),
+      onAgent() {},
+    }),
+  );
+  assert.match(markup, /Tâches de l’étape/);
+  assert.match(markup, /Préparer le test WEB-42/);
+  assert.match(markup, /En attente d’autorisation/);
+  assert.match(markup, /Relire le résultat/);
+  assert.match(markup, /En cours/);
+});
+
+test("un ancien tour dont le test est prêt reste ouvert indépendamment du tour courant", () => {
+  const { ActionsPanel } = require(root + "/actions-panel.tsx");
+  const base = {
+    kind: "server",
+    title: "Aperçu WEB-42",
+    createdAt: "2026-10-07T10:00:00Z",
+    updatedAt: "2026-10-07T10:00:00Z",
+  };
+  const markup = renderToStaticMarkup(
+    React.createElement(ActionsPanel, {
+      actions: [
+        { ...base, id: "new", runId: "run-new", status: "pending" },
+        {
+          ...base,
+          id: "old",
+          runId: "run-old",
+          status: "ready",
+          url: "http://127.0.0.1:4317",
+        },
+      ],
+      runOrder: ["run-old", "run-new"],
+      onAction: async () => true,
+    }),
+  );
+  const oldStart = markup.indexOf('data-turn-key="turn:run-old"');
+  const oldTag = markup.slice(
+    markup.lastIndexOf("<details", oldStart),
+    markup.indexOf(">", oldStart) + 1,
+  );
+  assert.match(oldTag, /open=""/);
 });

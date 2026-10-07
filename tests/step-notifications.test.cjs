@@ -24,6 +24,25 @@ const task = (status, id = "mission") => ({
   steps: [{ id: "review", title: "Vérifier", type: "review", status }],
 });
 
+test("intermediate automatic transitions stay quiet while recipe and final results notify", () => {
+  const tracker = new StepCompletionTracker();
+  const mission = (status) => ({
+    ...task("pending"),
+    steps: [
+      {
+        id: "implementation",
+        title: "Build",
+        type: "implementation",
+        status,
+        validation: "automatic",
+      },
+      { id: "review", title: "Test", type: "review", status: "pending" },
+    ],
+  });
+  tracker.sync([mission("running")]);
+  assert.deepEqual(tracker.sync([mission("completed")]), []);
+});
+
 test("successful live steps notify once, including human gates and automatic progression", () => {
   const tracker = new StepCompletionTracker();
   assert.deepEqual(tracker.sync([task("running")]), []);

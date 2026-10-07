@@ -23,22 +23,33 @@ const {
   MAX_TOOL_EVENT_DETAIL_LENGTH,
 } = require("./state-history.cjs");
 const actionRuntime = require("./actions.cjs");
+const { writeMissionContext } = require("./mission-context.cjs");
 const projectDiscovery = require("./project-discovery.cjs");
 const { projectHistory } = require("./project-history.cjs");
 const projectScans = new Map();
 const { CodexAppServer } = require("./codex-app-server.cjs");
 const { CodexAgentObserver } = require("./codex-agent-observer.cjs");
+const permissionProtocol = require("./permission-protocol.cjs");
 const codexServers = new Map();
 const { discoverCodexModels, claudeModels } = require("./provider-models.cjs");
 const modelCatalogCache = new Map();
 const scheduler = require("./scheduler.cjs");
 const { MissionJournal } = require("./mission-journal.cjs");
+const { StructuredInteractionStore } = require("./structured-interaction-store.cjs");
+const { inspectTestEnvironment } = require("./test-environment.cjs");
 let missionJournal;
 const getMissionJournal = () =>
   (missionJournal ||= MissionJournal.forUserData(app.getPath("userData")));
+let structuredInteractionStore;
+const getStructuredInteractionStore = () =>
+  (structuredInteractionStore ||= new StructuredInteractionStore(
+    path.join(app.getPath("userData"), "mission-structured"),
+  ));
 const pendingNotificationClicks = new Map();
 const getMissionJournalPage = (taskId, cursor = 0, limit = 200) =>
   getMissionJournal().readPage(taskId, { cursor, limit });
+const getMissionInteractions = (taskId) =>
+  getStructuredInteractionStore().read(taskId);
 const {
   VisualizationRegistry,
   policy: visualizationPolicy,
@@ -103,6 +114,50 @@ let stateLoadPromise = null;
 const activeRuns = new Map();
 const activeTaskRuns = new Map();
 const activeCwdRuns = new Map();
+// Native provider requests are held here until the renderer makes an
+// explicit, request-scoped decision. The native request id and payload stay
+// in this process; the renderer sees only the bounded public card.
+const pendingPermissions = new Map();
+// A reconnect can happen after the bounded live journal has evicted an older
+// event. Keep the latest durable native interaction by logical identity so a
+// renderer snapshot can recover questions, work items, reports and step
+// results without replaying the full mission lifecycle.
+const structuredInteractionProjections = new Map();
+const STRUCTURED_PROJECTION_TYPES = Object.freeze([
+  "question",
+  "artifact",
+  "action",
+  "work_item",
+  "report",
+  "step_result",
+]);
+const MAX_STRUCTURED_PROJECTION_EVENTS = 256;
+const MAX_STRUCTURED_PROJECTION_BYTES = 12_000_000;
+const MAX_STRUCTURED_PROJECTION_STRING = 16_000;
+const NATIVE_INTERACTION = Symbol("djinn.nativeInteraction");
+// `thread/resume` cannot install dynamicTools. Version the durable session
+// key so a mission saved by an older build is resumed once in a fresh thread
+// that has the native tool contract, while the old providerSessions entry is
+// retained for history and diagnostics.
+const CODEX_NATIVE_SESSION_VERSION = "native-tools-v1";
+
+function compactStructuredValue(value, depth = 0) {
+  if (typeof value === "string")
+    return value.length > MAX_STRUCTURED_PROJECTION_STRING
+      ? `${value.slice(0, MAX_STRUCTURED_PROJECTION_STRING)}…`
+      : value;
+  if (Array.isArray(value))
+    return value
+      .slice(0, 100)
+      .map((entry) => compactStructuredValue(entry, depth + 1));
+  if (!value || typeof value !== "object" || depth > 6) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      compactStructuredValue(entry, depth + 1),
+    ]),
+  );
+}
 // Keep native notifications strongly reachable until Electron reports that
 // they have closed. Without this set, short-lived notification objects can be
 // collected before the platform displays them or delivers a click event.
@@ -242,6 +297,38 @@ function configureUserDataPath() {
   app.setPath("userData", target);
 }
 
+function focusMainWindow() {
+  if (!mainWindow) return;
+  if (
+    typeof mainWindow.isDestroyed === "function" &&
+    mainWindow.isDestroyed()
+  )
+    return;
+  if (
+    typeof mainWindow.isMinimized === "function" &&
+    mainWindow.isMinimized() &&
+    typeof mainWindow.restore === "function"
+  )
+    mainWindow.restore();
+  if (typeof mainWindow.show === "function") mainWindow.show();
+  if (typeof mainWindow.focus === "function") mainWindow.focus();
+}
+
+function acquireSingleInstanceLock() {
+  // Older test doubles (and older Electron shells used by local tooling) may
+  // not expose this API. A real Electron build always does, so preserving a
+  // successful fallback keeps the native bootstrap testable without weakening
+  // the production lock.
+  if (typeof app.requestSingleInstanceLock !== "function") return true;
+  const acquired = app.requestSingleInstanceLock();
+  if (!acquired) {
+    if (typeof app.quit === "function") app.quit();
+    return false;
+  }
+  app.on("second-instance", focusMainWindow);
+  return true;
+}
+
 function statePath() {
   return path.join(app.getPath("userData"), "state.json");
 }
@@ -379,6 +466,7 @@ async function saveState(value) {
         task.questions.some(
           (q) =>
             q.blocking &&
+            q.blockingScope !== "agent" &&
             !q.answer?.trim() &&
             (!q.stepId || q.stepId === run.stepId),
         );
@@ -487,6 +575,86 @@ function scopeAction(action, taskId, runId) {
   if (scope) actionScopes.set(key, scope);
   return { ...action, ...(scope || {}) };
 }
+
+function structuredProjectionKey(envelope) {
+  const data =
+    envelope?.data && typeof envelope.data === "object" ? envelope.data : {};
+  if (envelope.type === "step_result")
+    return String(
+      data.stepId || envelope.stepId || data.runId || envelope.runId || envelope.eventId,
+    );
+  if (
+    envelope.type === "question" ||
+    envelope.type === "artifact" ||
+    envelope.type === "work_item" ||
+    envelope.type === "report"
+  )
+    return String(
+      data.id || data.workItemId || data.runId || envelope.runId || envelope.eventId,
+    );
+  return String(envelope.eventId);
+}
+
+function recordStructuredProjection(envelope) {
+  if (
+    !envelope?.taskId ||
+    !STRUCTURED_PROJECTION_TYPES.includes(envelope.type)
+  )
+    return;
+  let projection = structuredInteractionProjections.get(envelope.taskId);
+  if (!projection) {
+    projection = new Map();
+    structuredInteractionProjections.set(envelope.taskId, projection);
+  }
+  const key = `${envelope.type}:${structuredProjectionKey(envelope)}`;
+  const compactData =
+    envelope.data && typeof envelope.data === "object"
+      ? compactStructuredValue(envelope.data)
+      : envelope.data;
+  if (
+    envelope.type === "artifact" &&
+    envelope.data &&
+    typeof envelope.data === "object" &&
+    typeof envelope.data.content === "string"
+  )
+    compactData.content = envelope.data.content;
+  const compact = {
+    ...envelope,
+    data: compactData,
+  };
+  projection.delete(key);
+  projection.set(key, compact);
+  const projectionBytes = () =>
+    [...projection.values()].reduce((sum, item) => sum + JSON.stringify(item).length, 0);
+  while (
+    projection.size > MAX_STRUCTURED_PROJECTION_EVENTS ||
+    projectionBytes() > MAX_STRUCTURED_PROJECTION_BYTES
+  )
+    projection.delete(projection.keys().next().value);
+}
+
+function persistStructuredProjection(envelope) {
+  if (
+    !envelope?.taskId ||
+    !STRUCTURED_PROJECTION_TYPES.includes(envelope.type)
+  )
+    return Promise.resolve();
+  return getStructuredInteractionStore().upsert(envelope.taskId, envelope);
+}
+
+function structuredProjectionForTask(taskId) {
+  if (typeof taskId !== "string") return [];
+  const projection = structuredInteractionProjections.get(taskId);
+  if (!projection) return [];
+  return [...projection.values()].map((envelope) => ({
+    ...envelope,
+    data:
+      envelope.data && typeof envelope.data === "object"
+        ? { ...envelope.data }
+        : envelope.data,
+  }));
+}
+
 const actionRegistry = new actionRuntime.ActionRegistry({
   openExternal: (url) => shell.openExternal(url),
   environment: childEnvironment(),
@@ -502,7 +670,7 @@ const actionRegistry = new actionRuntime.ActionRegistry({
   },
 });
 
-function publishEvent(run, type, data) {
+function publishEvent(run, type, data, { durable = false } = {}) {
   if (!runtime.PUBLIC_EVENT_TYPES.includes(type)) return;
   const eventData = data && typeof data === "object" ? { ...data } : data;
   if (eventData && typeof eventData === "object")
@@ -554,20 +722,35 @@ function publishEvent(run, type, data) {
     appendReconnectEvent(root, envelope, type, eventData);
   }
   sendEvent(envelope);
-  if (envelope.taskId)
-    void getMissionJournal()
-      .append(envelope.taskId, envelope)
-      .catch((error) => {
-        sendEvent({
-          ...envelope,
-          eventId: randomId("journal-error-"),
-          type: "note",
-          data: {
-            title: "Journal natif non enregistré",
-            detail: error.message,
-          },
-        });
-      });
+  let journalWrite;
+  try {
+    journalWrite = envelope.taskId
+      ? getMissionJournal().append(envelope.taskId, envelope)
+      : Promise.resolve();
+  } catch (error) {
+    journalWrite = Promise.reject(error);
+  }
+  const persisted = journalWrite.then(() => {
+    recordStructuredProjection(envelope);
+    return persistStructuredProjection(envelope).then(() => envelope);
+  });
+  Object.defineProperty(envelope, "_persisted", {
+    value: persisted,
+    enumerable: false,
+  });
+  if (durable) return persisted;
+  void persisted.catch((error) => {
+    sendEvent({
+      ...envelope,
+      eventId: randomId("journal-error-"),
+      type: "note",
+      data: {
+        title: "Journal natif non enregistré",
+        detail: error.message,
+      },
+    });
+  });
+  return envelope;
 }
 
 function appendReconnectEvent(root, envelope, type, eventData) {
@@ -593,6 +776,280 @@ function appendReconnectEvent(root, envelope, type, eventData) {
     root.journalSize -= JSON.stringify(removed).length;
   }
   if (root.journalSize < 0) root.journalSize = 0;
+}
+
+function permissionPublicEvent(run, type, request, extra = {}) {
+  const value = { request, ...request, ...extra };
+  // Keep a flat copy for older renderer snapshots while the request object is
+  // the canonical shape used by the current bridge.
+  publishEvent(run, type, value);
+}
+
+function permissionContext(run, agent = null) {
+  const root = run?.parent || run;
+  return {
+    taskId: root?.taskId || run?.taskId || "",
+    runId: run?.runId || root?.runId || "",
+    stepId: run?.stepId || root?.stepId,
+    agentId: agent?.id || run?.agentId || "lead",
+    agentName:
+      agent?.name || run?.agent?.name || (run?.supervisor ? "Chef" : undefined),
+    cwd: run?.cwd || root?.cwd,
+  };
+}
+
+function livePermissionRun(entry) {
+  const run = entry?.run;
+  const root = run?.parent || run;
+  if (
+    !run ||
+    run.finished ||
+    root?.finished ||
+    run.cancelRequested ||
+    root?.cancelRequested ||
+    run.questionStopRequested
+  )
+    return false;
+  if (root?.runId && activeRuns.get(root.runId) !== root) return false;
+  return true;
+}
+
+function forgetPermission(entry) {
+  if (!entry) return;
+  pendingPermissions.delete(entry.request.id);
+  entry.run?.pendingPermissions?.delete(entry.request.id);
+  maybeCloseClaudeInput(entry.run);
+}
+
+function maybeCloseClaudeInput(run) {
+  if (
+    !run?.providerCompleted ||
+    !run.stdinOpen ||
+    run.pendingPermissions?.size ||
+    !run.child?.stdin ||
+    run.child.stdin.destroyed
+  )
+    return false;
+  run.stdinOpen = false;
+  try {
+    run.child.stdin.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function writePermissionResponse(entry, decision, answers) {
+  const payload = permissionProtocol.buildNativeResponse(
+    entry,
+    decision,
+    answers,
+  );
+  if (!payload) return false;
+  if (entry.provider === "codex") {
+    return Boolean(entry.transport?.respond(entry.native.id, payload));
+  }
+  if (entry.provider === "claude") {
+    const child = entry.run?.child;
+    if (!child?.stdin || child.stdin.destroyed || entry.run.finished)
+      return false;
+    child.stdin.write(`${JSON.stringify(payload)}\n`);
+    return true;
+  }
+  return false;
+}
+
+function declineCodexRequest(transport, nativeId, method) {
+  if (permissionProtocol.isCodexRequestMethod(method))
+    return transport?.respond(
+      nativeId,
+      permissionProtocol.buildCodexDeclineResponse(method),
+    );
+  return transport?.respond(nativeId, null, {
+    error: {
+      code: -32601,
+      message: `Djinn does not support native request ${method}`,
+    },
+  });
+}
+
+function registerPermissionRequest(
+  run,
+  provider,
+  method,
+  nativeId,
+  params,
+  transport,
+  agent = null,
+) {
+  const root = run?.parent || run;
+  if (!run || !root || run.finished || root.finished || root.cancelRequested) {
+    if (provider === "codex") declineCodexRequest(transport, nativeId, method);
+    return null;
+  }
+  const duplicate = [...pendingPermissions.values()].find(
+    (entry) =>
+      entry.provider === provider &&
+      (provider === "claude"
+        ? entry.run === run
+        : entry.transport === transport) &&
+      String(entry.native.id) === String(nativeId),
+  );
+  // Providers may replay a control frame while the UI is reconnecting. Keep
+  // one card and one native waiter; a second card could race the same wire id.
+  if (duplicate) return duplicate.request;
+  const normalized = permissionProtocol.normalizeNativeRequest({
+    provider,
+    method,
+    nativeId,
+    params,
+    context: permissionContext(run, agent),
+  });
+  if (!normalized) {
+    if (provider === "codex") {
+      declineCodexRequest(transport, nativeId, method);
+    } else if (provider === "claude" && run.child?.stdin)
+      run.child.stdin.write(
+        `${JSON.stringify({
+          type: "control_response",
+          response: {
+            subtype: "success",
+            request_id: String(nativeId),
+            response: { behavior: "deny", message: "Unsupported request." },
+          },
+        })}\n`,
+      );
+    publishEvent(run, "note", {
+      title: "Unsupported native request declined",
+      detail: String(method).slice(0, 512),
+      severity: "warning",
+    });
+    return null;
+  }
+  const request = normalized.request;
+  const entry = {
+    request,
+    native: normalized.native,
+    provider,
+    method,
+    run,
+    transport,
+    agent,
+  };
+  pendingPermissions.set(request.id, entry);
+  run.pendingPermissions ||= new Set();
+  run.pendingPermissions.add(request.id);
+  permissionPublicEvent(run, "permission_requested", request);
+  return request;
+}
+
+function resolvePermissionEntry(entry, decision, answers, reason) {
+  if (!entry || !pendingPermissions.has(entry.request.id)) return false;
+  const request = entry.request;
+  if (decision === "acceptForSession" && !request.canAcceptForSession)
+    throw makeError(
+      "invalid_permission",
+      "This native request does not support session approval",
+    );
+  if (!livePermissionRun(entry)) {
+    cancelPermissionEntry(entry, reason || "run_closed");
+    return false;
+  }
+  let sent = false;
+  try {
+    sent = writePermissionResponse(entry, decision, answers);
+  } catch (error) {
+    publishEvent(entry.run, "note", {
+      title: "Native permission response failed",
+      detail: error.message,
+      severity: "error",
+    });
+  }
+  if (!sent) return false;
+  request.status = decision === "decline" ? "declined" : "accepted";
+  request.updatedAt = new Date().toISOString();
+  forgetPermission(entry);
+  permissionPublicEvent(entry.run, "permission_resolved", request, {
+    decision,
+    ...(reason ? { reason } : {}),
+  });
+  return true;
+}
+
+function cancelPermissionEntry(entry, reason = "cancelled") {
+  if (!entry || !pendingPermissions.has(entry.request.id)) return false;
+  try {
+    // Decline is the least privileged protocol response and lets a live
+    // provider finish its turn before the enclosing run is closed.
+    writePermissionResponse(entry, "decline");
+  } catch {
+    // Process close is authoritative when a provider has already gone away.
+  }
+  entry.request.status = "cancelled";
+  entry.request.updatedAt = new Date().toISOString();
+  forgetPermission(entry);
+  permissionPublicEvent(entry.run, "permission_resolved", entry.request, {
+    decision: "decline",
+    reason,
+  });
+  return true;
+}
+
+function cancelPermissionsForRun(run, reason = "run_closed") {
+  const root = run?.parent || run;
+  // Closing one delegated passage must not cancel a sibling's native card.
+  // Only the root owns the whole run tree; a child owns requests routed to
+  // that child (including a provider child explicitly bound to its passage).
+  for (const entry of [...pendingPermissions.values()]) {
+    const belongsToRun =
+      entry.run === run ||
+      (run === root && (entry.run === root || entry.run?.parent === root));
+    if (belongsToRun) cancelPermissionEntry(entry, reason);
+  }
+}
+
+function getPendingPermissions(taskId) {
+  return [...pendingPermissions.values()]
+    .filter(
+      (entry) =>
+        entry.request.status === "pending" &&
+        (taskId === undefined || entry.request.taskId === taskId) &&
+        livePermissionRun(entry),
+    )
+    .sort((a, b) => a.request.createdAt.localeCompare(b.request.createdAt))
+    .map((entry) => ({ ...entry.request }));
+}
+
+async function respondPermission(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw makeError(
+      "invalid_permission",
+      "Permission response must be an object",
+    );
+  const taskId = typeof input.taskId === "string" ? input.taskId : "";
+  const requestId = typeof input.requestId === "string" ? input.requestId : "";
+  const decision = input.decision;
+  if (
+    !taskId ||
+    !requestId ||
+    !["accept", "acceptForSession", "decline"].includes(decision)
+  )
+    throw makeError("invalid_permission", "Invalid native permission response");
+  if (
+    input.answers !== undefined &&
+    (!input.answers ||
+      typeof input.answers !== "object" ||
+      Array.isArray(input.answers))
+  )
+    throw makeError(
+      "invalid_permission",
+      "Permission answers must be an object",
+    );
+  const entry = pendingPermissions.get(requestId);
+  if (!entry || entry.request.taskId !== taskId) return { resolved: false };
+  return {
+    resolved: resolvePermissionEntry(entry, decision, input.answers),
+  };
 }
 
 function publishLoginEvent(run, status, data = {}) {
@@ -624,6 +1081,8 @@ function publishLoginEvent(run, status, data = {}) {
 
 function emitNormalizedProviderEvent(run, event) {
   if (!event || !runtime.PUBLIC_EVENT_TYPES.includes(event.type)) return;
+  const nativeQuestion =
+    event.type === "question" && event.data?.[NATIVE_INTERACTION] === true;
   event = runtime.scopeProviderEvent(run, event);
   if (!event) return;
   const data =
@@ -699,34 +1158,89 @@ function emitNormalizedProviderEvent(run, event) {
       .trim()
       .slice(-8_000);
   }
+  if (event.type === "step_result" && data && typeof data === "object") {
+    // Keep the native completion proof with the provider passage. The root
+    // lead copies it only after that passage closes successfully, so an
+    // interrupted/restarted pass cannot accidentally unlock auto-preview.
+    run.stepResult = {
+      ...data,
+      stepId: run.stepId,
+      runId: run.runId,
+    };
+  }
   if (
     run.agentId &&
     run.agentId !== "lead" &&
-    ["note", "artifact", "tool"].includes(event.type)
+    ["note", "artifact", "tool", "report", "work_item"].includes(event.type)
   ) {
     const report =
       event.type === "artifact"
         ? `Support: ${data?.title || data?.id || "support"} (${data?.type || "document"})`
+        : event.type === "report"
+          ? `${data?.summary || ""}\nDone: ${(data?.completed || []).join(", ")}\nRemaining: ${(data?.remaining || []).join(", ")}`
+          : event.type === "work_item"
+            ? `${data?.title || data?.id || "work item"} [${data?.status || "pending"}]\n${data?.detail || ""}`
         : `${data?.title || ""}\n${data?.detail || data?.message || ""}`;
     run.outputSummary = `${run.outputSummary}\n${report}`.trim().slice(-8_000);
   }
   if (event.type === "question" && data?.blocking !== false) {
     const root = run.parent || run;
-    root.hasBlockingQuestion = true;
-    root.blockingStopRequested = true;
-    if (run.parent && (run.supervisor || run.agentId !== "lead")) {
-      run.blocked = true;
-      if (!run.blockedEventSent) {
-        run.blockedEventSent = true;
-        emitAgentStatus(root, run.agent, "blocked", {
-          runId: run.runId,
-          lifecycle: "agent_blocked",
-          questionId: data.id,
-        });
+    const observedActor = run.kind === "observed-pass";
+    const questionScope = observedActor
+      ? "agent"
+      : nativeQuestion
+        ? data.blockingScope || (nativeToolIsLead(run) ? "mission" : "agent")
+        : "mission";
+    if (questionScope === "agent") {
+      // A worker question pauses only its own passage. Observed provider
+      // children have no managed Djinn run, so interrupt their exact observed
+      // turn through the bounded observer path instead of the parent turn.
+      if (observedActor) {
+        run.questionStopRequested = true;
+        const observed = root.observedAgents?.get(run.agentId);
+        if (observed) {
+          void interruptObservedCodexAgent(root, run.codexServer, observed);
+          if (!run.blockedEventSent) {
+            run.blockedEventSent = true;
+            emitAgentStatus(root, run.agent, "blocked", {
+              runId: run.runId,
+              lifecycle: "agent_blocked",
+              questionId: data.id,
+            });
+          }
+        }
+      } else {
+        run.blocked = true;
+        if (!run.blockedEventSent && run.parent) {
+          run.blockedEventSent = true;
+          emitAgentStatus(root, run.agent, "blocked", {
+            runId: run.runId,
+            lifecycle: "agent_blocked",
+            questionId: data.id,
+          });
+        }
+        stopRunForBlockingQuestion(run);
       }
-      stopWorkersForBlockingQuestion(root, data.id);
     } else {
-      stopRunForBlockingQuestion(run);
+      // Legacy text questions retain mission-wide blocking. Native lead
+      // questions default here as well; an explicit native agent scope takes
+      // the branch above.
+      root.hasBlockingQuestion = true;
+      root.blockingStopRequested = true;
+      if (run.parent && (run.supervisor || run.agentId !== "lead")) {
+        run.blocked = true;
+        if (!run.blockedEventSent) {
+          run.blockedEventSent = true;
+          emitAgentStatus(root, run.agent, "blocked", {
+            runId: run.runId,
+            lifecycle: "agent_blocked",
+            questionId: data.id,
+          });
+        }
+        stopWorkersForBlockingQuestion(root, data.id);
+      } else {
+        stopRunForBlockingQuestion(run);
+      }
     }
   }
   if (event.type === "status" && data && typeof data === "object") {
@@ -740,6 +1254,8 @@ function emitNormalizedProviderEvent(run, event) {
       return;
     }
     if (data.phase === "provider_completed") {
+      run.providerCompleted = true;
+      maybeCloseClaudeInput(run);
       publishEvent(run, "note", {
         title: "Provider session completed",
         providerRunId: run.providerRunId,
@@ -747,7 +1263,7 @@ function emitNormalizedProviderEvent(run, event) {
       return;
     }
   }
-  publishEvent(run, event.type, data);
+  return publishEvent(run, event.type, data);
 }
 
 function appendOutput(run, stream, chunk) {
@@ -778,6 +1294,28 @@ function flushOutput(run, stream) {
 
 function handleOutputLine(run, stream, line) {
   if (run.finished || !line) return;
+  if (stream === "stdout" && run.provider === "claude") {
+    const control = permissionProtocol.parseClaudeControlRequest(line);
+    if (control) {
+      registerPermissionRequest(
+        run,
+        "claude",
+        "control_request",
+        control.nativeId,
+        control.params,
+        null,
+      );
+      return;
+    }
+    // Host responses are not normally echoed by Claude. If a provider build
+    // mirrors them, keep the control frame out of user-facing model text.
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed?.type === "control_response") return;
+    } catch {
+      // Continue with ordinary provider parsing for non-JSON output.
+    }
+  }
   try {
     const events =
       stream === "stdout"
@@ -1018,6 +1556,8 @@ function createRun(input, kind = "lead", parentRunId = null, agent = null) {
     finished: false,
     cancelRequested: false,
     providerRunId: null,
+    providerCompleted: false,
+    stdinOpen: false,
     buffers: { stdout: "", stderr: "" },
     killTimer: null,
     completion,
@@ -1034,6 +1574,7 @@ function createRun(input, kind = "lead", parentRunId = null, agent = null) {
     providerError: false,
     restartRequested: false,
     pendingAgents: new Set(),
+    pendingPermissions: new Set(),
     // A lead can discover more work after the initial worker queue has
     // drained. Keep one serialized drain promise so a burst of provider
     // proposals cannot launch the same reader twice or race integration.
@@ -1161,10 +1702,436 @@ async function publishLoginCompletion(run, status, details) {
   publishLoginEvent(run, status, data);
 }
 
+function stepResultSatisfiesExitCriteria(run) {
+  if (!run?.stepId) return true;
+  const step = run.validatedInput?.step || run.step;
+  const expected = Array.isArray(step?.exitCriteria)
+    ? step.exitCriteria
+        .map((criterion) => String(criterion || "").trim())
+        .filter(Boolean)
+    : [];
+  const result = run.stepResult;
+  if (!result || result.status !== "ready") return false;
+  const criteria = Array.isArray(result.criteria) ? result.criteria : [];
+  // Every reported criterion needs affirmative proof. A ready status without
+  // evidence is insufficient to unlock a runnable preview.
+  if (
+    criteria.some(
+      (criterion) =>
+        criterion?.met !== true ||
+        typeof criterion?.evidence !== "string" ||
+        !criterion.evidence.trim(),
+    )
+  )
+    return false;
+  return expected.every((criterion) =>
+    criteria.some(
+      (reported) =>
+        typeof reported?.criterion === "string" &&
+        reported.criterion.trim() === criterion &&
+        reported.met === true &&
+        typeof reported.evidence === "string" &&
+        reported.evidence.trim(),
+    ),
+  );
+}
+
+function nativeToolResponse(success, value) {
+  let text;
+  try {
+    text = JSON.stringify(value);
+  } catch {
+    text = JSON.stringify({ error: { code: "serialization_error", message: "Tool result is not JSON serializable" } });
+  }
+  return {
+    success: Boolean(success),
+    contentItems: [
+      {
+        type: "inputText",
+        text: String(text || "{}").slice(0, 64_000),
+      },
+    ],
+  };
+}
+
+function nativeToolFailure(error, code = "invalid_tool_call") {
+  return nativeToolResponse(false, {
+    error: {
+      code: typeof error?.code === "string" ? error.code : code,
+      message: String(error?.message || error || "Native tool call rejected").slice(
+        0,
+        4_000,
+      ),
+    },
+  });
+}
+
+function nativeToolScope(root, run, data, field = "agentId") {
+  const result = { ...data };
+  const ownAgentId = run.agentId && run.agentId !== "lead" ? run.agentId : null;
+  if (ownAgentId) {
+    if (result[field] !== undefined && result[field] !== ownAgentId)
+      throw makeError(
+        "invalid_scope",
+        `Native tool scope belongs to agent ${ownAgentId}`,
+      );
+    result[field] = ownAgentId;
+    return result;
+  }
+  if (result[field] !== undefined) {
+    const known = new Set([
+      "lead",
+      ...(root.agentDefinitions || []).map((agent) => agent.id),
+      ...[...(root.observedAgents?.values() || [])].map((agent) => agent.id),
+    ]);
+    if (!known.has(result[field]))
+      throw makeError("invalid_scope", `Unknown native agent scope ${result[field]}`);
+  }
+  return result;
+}
+
+function observedNativePublicationRun(root, target, observed) {
+  const parent = target?.parent || root;
+  const sourceRunId = target?.runId || root.runId;
+  const observedId = String(observed.id).slice(0, 256);
+  return {
+    ...(target || root),
+    kind: "observed-pass",
+    runId: `${sourceRunId}:observed:${observedId}`.slice(0, 256),
+    // Renderer ownership is rooted at the mission run. Keep the managed
+    // passage only in the local sourceRun reference used for summary
+    // propagation; a child gate must never have to know that internal id.
+    parentRunId: root.runId,
+    parent,
+    taskId: root.taskId,
+    stepId: target?.stepId || parent.stepId || root.stepId,
+    agentId: observedId,
+    agent: {
+      id: observedId,
+      name: observed.name || observed.role || "Sous-agent Codex",
+      role: observed.role || "Sous-agent Codex",
+      readOnly: true,
+    },
+    provider: "codex",
+    supervisor: false,
+    finished: false,
+    cancelRequested: false,
+    blocked: false,
+    blockedEventSent: false,
+    outputSummary: "",
+    children: new Set(),
+  };
+}
+
+function propagateObservedNativeSummary(target, observed, eventType, data) {
+  if (!target || target.finished || !observed || !data) return;
+  const summary =
+    eventType === "report"
+      ? `${data.summary || ""}\nDone: ${(data.completed || []).join(", ")}\nRemaining: ${(data.remaining || []).join(", ")}`
+      : eventType === "artifact"
+        ? `Support: ${data.title || data.id || "support"} (${data.type || "document"})`
+        : eventType === "work_item"
+          ? `${data.title || data.id || "work item"} [${data.status || "pending"}]\n${data.detail || ""}`
+          : `${data.title || ""}\n${data.detail || data.message || ""}`;
+  const prefix = `[${observed.name || observed.id}]`;
+  target.outputSummary = `${target.outputSummary || ""}\n${prefix} ${summary}`
+    .trim()
+    .slice(-8_000);
+  if (eventType === "report") {
+    target.observedReports ||= [];
+    target.observedReports.push({
+      ...data,
+      agentId: observed.id,
+      providerThreadId: observed.providerThreadId,
+    });
+    if (target.observedReports.length > 32) target.observedReports.shift();
+  }
+}
+
+function nativeToolContext(root, server, params) {
+  if (!root || root.finished || root.cancelRequested)
+    throw makeError("invalid_scope", "The mission is no longer active");
+  if (!params || typeof params !== "object" || Array.isArray(params))
+    throw makeError("invalid_tool_call", "Native tool parameters are invalid");
+  const threadId = typeof params.threadId === "string" ? params.threadId : "";
+  const turnId = typeof params.turnId === "string" ? params.turnId : "";
+  if (!threadId || !turnId)
+    throw makeError("invalid_scope", "Native tool thread or turn is missing");
+  const current = activeRuns.get(activeTaskRuns.get(root.taskId)) || root;
+  const requestContext = codexPermissionContextForRequest(
+    root,
+    server,
+    current,
+    params,
+  );
+  if (!requestContext)
+    throw makeError("invalid_scope", "Native tool thread is outside this mission");
+  const { target, observed } = requestContext;
+  const binding = server.djinnAgentBindings?.get(threadId);
+  const managed = codexRunForThread(root, server, threadId);
+  if (observed && !managed && !binding) {
+    if (!observedAgentIsActive(observed))
+      throw makeError("invalid_scope", "Observed Codex agent is no longer active");
+    if (observed.turnId && String(observed.turnId) !== turnId)
+      throw makeError("invalid_scope", "Native tool turn is no longer active");
+    const liveTurnId = server.turns?.get(threadId)?.turnId || observed.turnId;
+    if (!liveTurnId || String(liveTurnId) !== turnId)
+      throw makeError("invalid_scope", "Native tool turn is no longer active");
+    const run = observedNativePublicationRun(root, target, observed);
+    return {
+      root,
+      run,
+      sourceRun: target,
+      observed,
+      binding: null,
+      threadId,
+      turnId,
+    };
+  }
+  if (!binding || binding.rootRunId !== root.runId || !binding.runId)
+    throw makeError("invalid_scope", "Native tool thread is outside this mission");
+  const run = activeRuns.get(binding.runId);
+  if (!run || run.finished || (run.parent || run) !== root)
+    throw makeError("invalid_scope", "Native tool passage is no longer active");
+  const turn = server.turns?.get(threadId);
+  if (!turn || !turn.turnId || String(turn.turnId) !== turnId)
+    throw makeError("invalid_scope", "Native tool turn is no longer active");
+  return { root, run, sourceRun: run, observed: null, binding, threadId, turnId };
+}
+
+function nativeToolArguments(value) {
+  let data = value;
+  if (typeof data === "string") {
+    if (data.length > runtime.MAX_NATIVE_TOOL_ARGUMENTS_LENGTH)
+      throw makeError("input_too_large", "Native tool arguments are too large");
+    try {
+      data = JSON.parse(data);
+    } catch {
+      throw makeError("invalid_tool_call", "Native tool arguments are not valid JSON");
+    }
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    throw makeError("invalid_tool_call", "Native tool arguments must be an object");
+  try {
+    if (JSON.stringify(data).length > runtime.MAX_NATIVE_TOOL_ARGUMENTS_LENGTH)
+      throw makeError("input_too_large", "Native tool arguments are too large");
+  } catch (error) {
+    if (error?.code === "input_too_large") throw error;
+    throw makeError("invalid_tool_call", "Native tool arguments are not serializable");
+  }
+  return data;
+}
+
+function nativeToolIsLead(run) {
+  return Boolean(
+    run?.kind === "lead-pass" &&
+      run.agentId === "lead" &&
+      !run.supervisor &&
+      run.parent?.kind === "lead",
+  );
+}
+
+async function handleNativeToolCall(root, server, nativeId, params) {
+  let context;
+  try {
+    context = nativeToolContext(root, server, params);
+    const tool = typeof params.tool === "string" ? params.tool : "";
+    if (!runtime.NATIVE_TOOL_NAMES.includes(tool))
+      throw makeError("unknown_tool", `Unknown native tool ${tool || "(empty)"}`);
+    const input = nativeToolArguments(params.arguments);
+    const { run, sourceRun, observed } = context;
+    const publishNative = async (eventType, eventData) => {
+      const envelope = emitNormalizedProviderEvent(run, {
+        type: eventType,
+        data: eventData,
+      });
+      if (!envelope)
+        throw makeError(
+          "invalid_scope",
+          `Native ${eventType} is not allowed in the current stage scope`,
+        );
+      if (observed && sourceRun && sourceRun !== run)
+        propagateObservedNativeSummary(sourceRun, observed, eventType, envelope.data);
+      await getMissionJournal().flush(root.taskId);
+      if (envelope?._persisted) await envelope._persisted;
+      return envelope;
+    };
+    let eventType;
+    let eventData;
+    let response;
+    if (tool === "publish_question") {
+      eventType = "question";
+      eventData = runtime.validateNativeQuestionData(input);
+      eventData.blocking ??= true;
+      eventData = nativeToolScope(root, run, eventData);
+      eventData.blockingScope =
+        run.kind === "observed-pass"
+          ? "agent"
+          : eventData.blockingScope ||
+            (nativeToolIsLead(run) ? "mission" : "agent");
+      Object.defineProperty(eventData, NATIVE_INTERACTION, {
+        value: true,
+        enumerable: false,
+      });
+      if (!eventData.id) {
+        run.nativeQuestionSequence = (run.nativeQuestionSequence || 0) + 1;
+        eventData.id = `${run.runId}:question:${run.nativeQuestionSequence}`.slice(
+          0,
+          256,
+        );
+      }
+      await publishNative(eventType, eventData);
+      response = {
+        ok: true,
+        event: eventType,
+        questionId: eventData.id,
+        blockingScope: eventData.blockingScope,
+      };
+    } else if (tool === "publish_step_report") {
+      if (!nativeToolIsLead(run))
+        throw makeError(
+          "invalid_scope",
+          "Only the native lead may publish a step report",
+        );
+      eventType = "step_result";
+      eventData = runtime.validateProtocolData(
+        "step_result",
+        runtime.validateNativeReportData(input, { step: true }),
+      );
+      await publishNative(eventType, eventData);
+      response = { ok: true, event: eventType, stepId: run.stepId };
+    } else if (tool === "publish_report") {
+      if (!run.agentId || run.agentId === "lead" || run.supervisor)
+        throw makeError(
+          "invalid_scope",
+          "Only a bounded worker may publish a worker report",
+        );
+      eventType = "report";
+      eventData = runtime.validateNativeReportData(input);
+      eventData = nativeToolScope(root, run, eventData);
+      if (!eventData.id) {
+        run.nativeReportSequence = (run.nativeReportSequence || 0) + 1;
+        eventData.id = `${run.runId}:report:${run.nativeReportSequence}`.slice(
+          0,
+          256,
+        );
+      }
+      await publishNative(eventType, eventData);
+      response = { ok: true, event: eventType, reportId: eventData.id };
+    } else if (tool === "update_task") {
+      eventType = "work_item";
+      eventData = runtime.validateProtocolData("work_item", input);
+      eventData = nativeToolScope(root, run, eventData);
+      // publishEvent stamps the authoring agent into agentId. Preserve the
+      // lead's explicit worker assignment separately so the work item keeps
+      // its target after that author stamp is applied.
+      if (eventData.agentId) eventData.assignedAgentId = eventData.agentId;
+      await publishNative(eventType, eventData);
+      response = { ok: true, event: eventType, workItemId: eventData.id };
+    } else if (tool === "publish_artifact") {
+      eventType = "artifact";
+      eventData = runtime.validateNativeArtifactData(input);
+      eventData = nativeToolScope(root, run, eventData);
+      if (!eventData.id) {
+        run.nativeArtifactSequence = (run.nativeArtifactSequence || 0) + 1;
+        eventData.id = `${run.runId}:artifact:${run.nativeArtifactSequence}`.slice(
+          0,
+          256,
+        );
+      }
+      await publishNative(eventType, eventData);
+      response = { ok: true, event: eventType, artifactId: eventData.id };
+    } else if (tool === "inspect_test_environment") {
+      // This diagnostic intentionally returns only a tool result on success;
+      // validation/inspection failures are durable error events. It cannot
+      // execute a provider-supplied command.
+      try {
+        const environment = await inspectTestEnvironment(run.cwd, input);
+        response = { ok: true, event: "test_environment", ...environment };
+      } catch (error) {
+        await publishNative("error", {
+          message: String(error?.message || error).slice(0, 4_000),
+          phase: "test_environment",
+        });
+        throw error;
+      }
+    } else if (tool === "publish_test_action") {
+      if (run.supervisor)
+        throw makeError(
+          "invalid_scope",
+          "A supervisor cannot publish executable test actions",
+        );
+      const nativeAction = runtime.validateNativeTestActionData(input);
+      let actionData = nativeToolScope(root, run, nativeAction);
+      // The action registry treats an explicit id as idempotent and returns
+      // the existing recipe. A new native proposal must therefore get a
+      // bounded version id rather than silently reusing stale test details.
+      if (
+        actionData.id &&
+        actionRegistry
+          .getActions(root.taskId)
+          .some((candidate) => candidate.id === actionData.id)
+      ) {
+        run.nativeActionSequence = (run.nativeActionSequence || 0) + 1;
+        actionData = {
+          ...actionData,
+          id: `${actionData.id}:${run.runId}:${run.nativeActionSequence}`.slice(
+            0,
+            256,
+          ),
+        };
+      }
+      const action = actionRegistry.register(root.taskId, actionData, {
+        projectRoot: run.cwd,
+        runId: run.runId,
+      });
+      // ActionRegistry emits the live UI update synchronously, but its
+      // in-memory recipe is not the mission journal. Persist the scoped action
+      // before acknowledging the native tool so a renderer/app reload can
+      // recover the recipe independently of the registry process lifetime.
+      await publishEvent(
+        run,
+        "action",
+        scopeAction(action, root.taskId, run.runId),
+        { durable: true },
+      );
+      if (action.workItemId || action.target) {
+        // Action registration emits the executable recipe synchronously. Keep
+        // a durable link note as well so a renderer reload can associate it
+        // with the corresponding work item without re-running the action.
+        await publishEvent(
+          run,
+          "note",
+          {
+            title: "Test action linked",
+            detail: `${action.workItemId ? `work item ${action.workItemId}` : ""}${action.workItemId && action.target ? " · " : ""}${action.target || ""}`.slice(
+              0,
+              4_000,
+            ),
+            workItemId: action.workItemId,
+            target: action.target,
+            actionId: action.id,
+          },
+          { durable: true },
+        );
+        await getMissionJournal().flush(root.taskId);
+      }
+      response = { ok: true, event: "action", actionId: action.id };
+    }
+    return nativeToolResponse(true, response);
+  } catch (error) {
+    return nativeToolFailure(error);
+  }
+}
+
 function finishRun(run, status, details = {}) {
   if (run.finished) return;
   if (run.observedCancellationClosing || run.observedCancellationShutdownFailed)
     return;
+  cancelPermissionsForRun(
+    run,
+    status === "cancelled" ? "run_cancelled" : "run_closed",
+  );
   const explicitStopRequested = Boolean(
     run.cancelRequested ||
     run.questionStopRequested ||
@@ -1359,6 +2326,7 @@ function finishRun(run, status, details = {}) {
   const workerStatuses = Array.isArray(run.workerSummaries)
     ? run.workerSummaries.map((worker) => worker.status)
     : [];
+  const stepResultReady = stepResultSatisfiesExitCriteria(run);
   const canAutoStartProjectServer =
     run.kind === "lead" &&
     run.mode === "execute" &&
@@ -1366,6 +2334,7 @@ function finishRun(run, status, details = {}) {
     !run.hasBlockingQuestion &&
     !run.cancelRequested &&
     !run.providerError &&
+    stepResultReady &&
     workerStatuses.every((workerStatus) =>
       ["completed", "done"].includes(workerStatus),
     );
@@ -1617,6 +2586,53 @@ function codexRunForThread(root, server, threadId) {
       return candidate;
   }
   return null;
+}
+
+function codexRunForObservedThread(root, server, threadId) {
+  const seen = new Set();
+  let currentThreadId = threadId;
+  while (currentThreadId && !seen.has(currentThreadId)) {
+    seen.add(currentThreadId);
+    const managed = codexRunForThread(root, server, currentThreadId);
+    if (managed) return managed;
+    const observed = server.codexAgentObserver?.get(currentThreadId);
+    currentThreadId =
+      observed?.parentProviderThreadId || observed?.parentThreadId || null;
+  }
+  return null;
+}
+
+function codexPermissionContextForRequest(root, server, current, params) {
+  const threadId =
+    typeof params?.threadId === "string" && params.threadId.length <= 256
+      ? params.threadId
+      : null;
+  if (!threadId) return null;
+  const binding = server.djinnAgentBindings?.get(threadId);
+  const boundRun = binding?.runId ? activeRuns.get(binding.runId) : null;
+  // A binding survives provider history reuse. If its Djinn passage has
+  // closed, a late request from that thread must never fall through to the
+  // current mission pass.
+  if (binding && (!boundRun || boundRun.finished || boundRun.cancelRequested))
+    return null;
+  const observed = server.codexAgentObserver?.get(threadId);
+  const managed = codexRunForThread(current, server, threadId);
+  const target =
+    boundRun || managed || codexRunForObservedThread(root, server, threadId);
+  if (!target) {
+    // Unknown provider threads are not request-scoped to this live mission.
+    // Declining keeps stale/foreign requests from becoming current-run cards.
+    return null;
+  }
+  if (observed && !managed && !observedAgentIsActive(observed)) return null;
+  const liveTurnId = server.turns?.get(threadId)?.turnId || observed?.turnId;
+  if (
+    params?.turnId !== undefined &&
+    liveTurnId &&
+    String(params.turnId) !== String(liveTurnId)
+  )
+    return null;
+  return { target, observed, binding };
 }
 
 function publishObservedCodexAgent(root, server, observed) {
@@ -1947,6 +2963,73 @@ function codexServerFor(run) {
           stream: "stderr",
         });
     });
+    server.on("request", (method, nativeId, params) => {
+      if (method === "item/tool/call") {
+        const current = activeRuns.get(activeTaskRuns.get(root.taskId));
+        if (!current) {
+          server.respond(
+            nativeId,
+            nativeToolFailure(
+              makeError("invalid_scope", "The mission is no longer active"),
+            ),
+          );
+          return;
+        }
+        void handleNativeToolCall(root, server, nativeId, params)
+          .then((response) => server.respond(nativeId, response))
+          .catch((error) =>
+            server.respond(nativeId, nativeToolFailure(error)),
+          );
+        return;
+      }
+      const current = activeRuns.get(activeTaskRuns.get(root.taskId));
+      if (!current) {
+        declineCodexRequest(server, nativeId, method);
+        return;
+      }
+      const context = codexPermissionContextForRequest(
+        root,
+        server,
+        current,
+        params,
+      );
+      if (!context) {
+        declineCodexRequest(server, nativeId, method);
+        return;
+      }
+      const { target, observed, binding } = context;
+      const agent = observed
+        ? {
+            id: observed.id,
+            name: observed.name || observed.role || "Sous-agent Codex",
+          }
+        : binding
+          ? { id: binding.agentId, name: binding.name }
+          : null;
+      registerPermissionRequest(
+        target,
+        "codex",
+        method,
+        nativeId,
+        params,
+        server,
+        agent,
+      );
+    });
+    server.on("requestCancelled", (nativeId) => {
+      for (const entry of [...pendingPermissions.values()])
+        if (
+          entry.provider === "codex" &&
+          entry.transport === server &&
+          String(entry.native.id) === String(nativeId)
+        )
+          cancelPermissionEntry(entry, "provider_closed");
+    });
+    server.on("closed", () => {
+      for (const entry of [...pendingPermissions.values()])
+        if (entry.provider === "codex" && entry.transport === server)
+          cancelPermissionEntry(entry, "provider_closed");
+    });
     // CodexAppServer intentionally emits every notification, including child
     // collaboration threads which are absent from `turns`. Observe that
     // broadcast here instead of changing the transport's turn routing.
@@ -1962,10 +3045,12 @@ function codexServerFor(run) {
       ) {
         const messageId = textProviderId(params.itemId || params.item?.id);
         const key = `${params.threadId}:${messageId}`;
-        const value =
+        let value =
           method === "item/agentMessage/delta"
             ? (server.observedMessages.get(key) || "") + (params.delta || "")
             : params.item.text || "";
+        if (method === "item/completed")
+          value = parseObservedCodexMessage(root, server, observed, value);
         server.observedMessages.set(key, value.slice(-60000));
         publishEvent(current, "text", {
           agentId: observed.id,
@@ -1997,13 +3082,49 @@ function textProviderId(value) {
   return typeof value === "string" ? value.slice(0, 256) : "message";
 }
 
+function parseObservedCodexMessage(root, server, observed, text) {
+  const sourceRun = codexRunForObservedThread(
+    root,
+    server,
+    observed.providerThreadId,
+  );
+  if (!sourceRun || sourceRun.finished) return text;
+  const publicationRun = observedNativePublicationRun(root, sourceRun, observed);
+  const parsed = runtime.parseProviderLine("codex", text || "");
+  for (const event of parsed.filter((candidate) => candidate.type !== "text"))
+    emitNormalizedProviderEvent(publicationRun, event);
+  return parsed
+    .filter((candidate) => candidate.type === "text")
+    .map((candidate) => candidate.data?.text || "")
+    .join("\n");
+}
+
 async function runCodexPass(run, input, imagePaths) {
   activeRuns.set(run.runId, run);
   const root = run.parent || run;
   let server;
   const messages = new Map();
-  const key =
-    (run.codexKey = `${run.stepId || "legacy"}${input.step?.type === "discussion" ? ":routing" : ""}:${run.supervisor ? "supervisor" : run.agentId || "lead"}`);
+  const lane = run.supervisor ? "supervisor" : run.agentId || "lead";
+  const legacyKey = `${run.stepId || "legacy"}${input.step?.type === "discussion" ? ":routing" : ""}:${lane}`;
+  // Keep one bounded provider conversation for a mission lane across workflow
+  // stages. The prompt still carries only the current stage and bounded
+  // summaries; native session approvals therefore retain their intended
+  // session scope without granting a project-wide blanket.
+  const missionKey = `${root.taskId || root.runId}:${lane}${input.step?.type === "discussion" ? ":routing" : ""}`;
+  const key = (run.codexKey = `${missionKey}:${CODEX_NATIVE_SESSION_VERSION}`);
+  const savedNativeThreadId = input.providerSessions?.[key];
+  const migratedThreadId =
+    savedNativeThreadId ||
+    input.providerSessions?.[missionKey] ||
+    input.providerSessions?.[legacyKey];
+  const needsNativeSessionMigration =
+    !savedNativeThreadId && Boolean(migratedThreadId);
+  const composedPrompt = runtime.composeRunPrompt(input);
+  const migrationNote =
+    "\n\nNative interaction session migration: continue from the mission context, user decisions, prior summaries, and current workflow supplied above. The previous provider session is retained as history but cannot provide native Djinn tools; use the tools registered on this fresh session.";
+  const prompt = needsNativeSessionMigration
+    ? `${composedPrompt.slice(0, Math.max(0, runtime.MAX_COMPOSED_PROMPT_LENGTH - migrationNote.length))}${migrationNote}`
+    : composedPrompt;
   publishEvent(run, "status", {
     status: "running",
     provider: "codex",
@@ -2018,7 +3139,7 @@ async function runCodexPass(run, input, imagePaths) {
     server = run.codexServer = codexServerFor(run);
     const turn = await server.run(
       key,
-      { ...input, prompt: runtime.composeRunPrompt(input) },
+      { ...input, prompt },
       (method, params) => {
         if (run.finished) return;
         if (params.threadId)
@@ -2084,10 +3205,18 @@ async function runCodexPass(run, input, imagePaths) {
             data: { message: params.error?.message || "Codex turn failed" },
           });
       },
-      { savedThreadId: input.providerSessions?.[key], imagePaths },
+      {
+        // Resuming an old key would silently drop dynamicTools because the
+        // app-server schema only accepts them on thread/start. The versioned
+        // key therefore resumes only an already equipped thread; an old key
+        // triggers one fresh start with the bounded context above.
+        savedThreadId: savedNativeThreadId,
+        imagePaths,
+        dynamicTools: runtime.nativeToolDefinitions(),
+      },
     );
     run.providerRunId = turn.threadId;
-    root.providerSessions ||= {};
+    root.providerSessions ||= { ...(input.providerSessions || {}) };
     root.providerSessions[key] = turn.threadId;
     publishEvent(run, "note", {
       title: "Session Codex conservée",
@@ -2230,7 +3359,9 @@ async function supervise(parent, input, humanEntry) {
   });
   if (parent.provider === "codex") await runCodexPass(pass, passInput, []);
   else {
-    const invocation = runtime.buildProviderInvocation(passInput);
+    const invocation = runtime.buildProviderInvocation(passInput, {
+      nativePermissions: true,
+    });
     const separator = invocation.args.indexOf("--");
     if (!invocation.args.includes("--tools"))
       invocation.args.splice(
@@ -2295,13 +3426,21 @@ function spawnProviderRun(run, invocation) {
       env: childEnvironment(),
     });
     if (invocation.stdinText && child.stdin) {
+      run.stdinOpen = Boolean(invocation.keepStdinOpen);
       child.stdin.once("error", (error) => {
         if (!run.finished)
           publishEvent(run, "error", {
             message: `Provider image input failed: ${error.message}`,
           });
       });
-      child.stdin.end(invocation.stdinText);
+      child.stdin.write(invocation.stdinText);
+      // Native Claude permission control requests arrive while the process
+      // is alive and require a response on this same stdin stream. Image-only
+      // discovery invocations retain the historical one-shot close.
+      if (!invocation.keepStdinOpen) {
+        child.stdin.end();
+        run.stdinOpen = false;
+      }
     }
   } catch (error) {
     finishRun(run, "error", { message: error.message });
@@ -2399,8 +3538,9 @@ function emitAgentStatus(parent, agent, status, extra = {}) {
 /**
  * A lead may discover an independent worker while integrating. The proposal
  * is still validated and scheduled by the native queue; provider output never
- * gets to spawn a process by itself. Readers discovered during plan/review are
- * admitted into the current passage and remain read-only for their lifetime.
+ * gets to spawn a process by itself. Plan discoveries remain readers; review
+ * and execute discoveries retain the explicit readOnly request so a narrowly
+ * scoped correction can use the native approval bridge.
  */
 function queueProposedAgent(run, data) {
   const root = run?.parent || run;
@@ -2419,9 +3559,10 @@ function queueProposedAgent(run, data) {
     const candidate = runtime.validateRunAgent(
       {
         ...data,
-        // Plan and review stages can discover readers, but they cannot turn
-        // an agent proposal into a writer by setting readOnly:false.
-        readOnly: mode === "execute" ? data.readOnly : true,
+        // Plan is read-only. Review may make an explicitly requested local
+        // correction, so preserve the proposal's readOnly setting there and
+        // let the native provider approval card gate the write.
+        readOnly: mode === "plan" ? true : data.readOnly,
         status: undefined,
       },
       root.agentDefinitions.length,
@@ -2440,7 +3581,7 @@ function queueProposedAgent(run, data) {
     emitAgentStatus(root, prepared, "queued", {
       lifecycle: "agent_queued",
       proposed: true,
-      readOnly: mode === "execute" ? prepared.readOnly : true,
+      readOnly: mode === "plan" ? true : prepared.readOnly,
       waitReason: "Proposition indépendante reçue; vérification des ressources",
       waitingForAgentIds: prepared.dependsOn || [],
     });
@@ -2583,6 +3724,7 @@ async function runAgentPass(parent, validatedInput, agent) {
     const imagePaths = await materializeRunImages(child, childInput);
     const invocation = runtime.buildProviderInvocation(childInput, {
       imagePaths,
+      nativePermissions: true,
     });
     if (parent.cancelRequested) child.cancelRequested = true;
     if (child.provider === "codex")
@@ -2824,13 +3966,8 @@ async function runAgentQueue(parent, validatedInput, priorResults = []) {
 async function runPipeline(parent, validatedInput) {
   try {
     parent.validatedInput = validatedInput;
-    if (validatedInput.agents.length)
-      void supervise(parent, validatedInput).catch((error) =>
-        publishEvent(parent, "note", {
-          title: "Supervision indisponible",
-          detail: error.message,
-        }),
-      );
+    // Keep the lead reachable through steerRun. A provider turn is needed
+    // only when the human addresses it or the workers need integration.
     const workerSummaries = await runAgentQueue(parent, validatedInput);
     if (parent.supervisorPass && !parent.supervisorPass.finished)
       await parent.supervisorPass.completion;
@@ -2890,6 +4027,7 @@ async function runPipeline(parent, validatedInput) {
       const imagePaths = await materializeRunImages(pass, leadInput);
       const invocation = runtime.buildProviderInvocation(leadInput, {
         imagePaths,
+        nativePermissions: true,
       });
       if (parent.cancelRequested) pass.cancelRequested = true;
       if (pass.provider === "codex")
@@ -2898,6 +4036,8 @@ async function runPipeline(parent, validatedInput) {
       if (pass.child && !pass.finished)
         consumeGuidance(parent, leadInput.guidance);
       result = await pass.completion;
+      parent.stepResult =
+        result.status === "completed" ? pass.stepResult : undefined;
       if (parent.observedRestartBlocked) return;
       parent.outputSummary = pass.outputSummary;
       parent.providerError ||= pass.providerError;
@@ -2992,6 +4132,24 @@ async function startRun(input) {
       "A run already owns this mission or directory",
     );
   validated.agents = scheduler.prepareAgents(cwdKey, validated.agents);
+  let contextWarning;
+  if (task) {
+    try {
+      const contextIndex = await writeMissionContext(
+        task,
+        app.getPath("userData"),
+      );
+      validated.prompt = `Full saved mission context is available on demand at ${contextIndex}. Read this index and the relevant full text supports when an excerpt is insufficient, especially before assessing exit criteria. Preserve current human instructions and acquired decisions.\n\n${validated.prompt}`;
+    } catch (error) {
+      contextWarning = error.message;
+    }
+    // Archiving adds an asynchronous boundary: preserve exclusive ownership.
+    if (activeTaskRuns.has(validated.taskId) || directoryOwned())
+      throw makeError(
+        "run_active",
+        "A run already owns this mission or directory",
+      );
+  }
   const run = createRun(validated, "lead");
   runScopes.set(run.runId, { stepId: run.stepId, runId: run.runId });
   run.cwd = cwdKey;
@@ -3009,6 +4167,11 @@ async function startRun(input) {
   activeRuns.set(run.runId, run);
   activeTaskRuns.set(validated.taskId, run.runId);
   activeCwdRuns.set(cwdKey, run.runId);
+  if (contextWarning)
+    publishEvent(run, "note", {
+      title: "Supports complets indisponibles",
+      detail: `${contextWarning}. Les extraits restent disponibles ; signalez tout critère qui nécessite un document complet.`,
+    });
   publishEvent(run, "status", {
     status: "running",
     provider: run.provider,
@@ -3028,6 +4191,7 @@ function getRuntimeSnapshot() {
   return {
     capturedAt: new Date().toISOString(),
     notificationClicks: [...pendingNotificationClicks.values()],
+    permissions: getPendingPermissions(),
     runs: [...activeTaskRuns.values()]
       .map((id) => activeRuns.get(id))
       .filter((run) => run && !run.finished)
@@ -3047,11 +4211,16 @@ function getRuntimeSnapshot() {
             name: pass.agent?.name || "Chef",
             task: pass.agent?.role || "Intégration",
             runId: pass.runId,
-            readOnly: Boolean(pass.supervisor || pass.mode !== "execute"),
+            readOnly: Boolean(
+              pass.supervisor ||
+              pass.agent?.readOnly === true ||
+              pass.mode === "plan",
+            ),
           })),
         observedAgents: [...(run.observedAgents?.values() || [])].map(
           ({ signature, parentProviderThreadId, turnId, ...agent }) => agent,
         ),
+        structuredEvents: structuredProjectionForTask(run.taskId),
         events: [...run.journal],
       })),
   };
@@ -3217,9 +4386,8 @@ async function steerRun(input) {
         }
       } else if (target && target !== "lead") scheduleAgentRevisit(run, target);
       else if (run.phase === "lead") run.revisitLead = true;
-      // Every human indication is also addressed to the read-only chief now.
-      // Targeted worker receipts remain attached to that worker, not the chief.
-      if (run.phase === "workers")
+      // A targeted worker message does not need another chief turn.
+      if (run.phase === "workers" && (!target || target === "lead"))
         void supervise(run, run.validatedInput, entry).catch((error) =>
           publishEvent(run, "note", {
             title: "Dialogue chef indisponible",
@@ -3237,7 +4405,11 @@ async function steerRun(input) {
   } else if (target && target !== "lead") {
     scheduleAgentRevisit(run, target);
   }
-  if (run.provider === "claude" && run.phase === "workers")
+  if (
+    run.provider === "claude" &&
+    run.phase === "workers" &&
+    (!target || target === "lead")
+  )
     void supervise(run, run.validatedInput, entry).catch((error) =>
       publishEvent(run, "note", {
         title: "Dialogue chef indisponible",
@@ -3255,7 +4427,9 @@ async function steerRun(input) {
   publishEvent(run, "note", {
     title:
       run.provider === "codex"
-        ? "Indication adressée au chef et au destinataire"
+        ? target && target !== "lead"
+          ? "Indication adressée à l’agent"
+          : "Indication adressée au chef"
         : recipients.length
           ? "Indication transmise — reprise contrôlée"
           : "Indication transmise — passage planifié",
@@ -3734,7 +4908,9 @@ function registerIpcHandlers() {
   registerHandler("djinn:get-environment", getEnvironment);
   registerHandler("djinn:get-provider-models", getProviderModels);
   registerHandler("djinn:get-runtime-snapshot", getRuntimeSnapshot);
+  registerHandler("djinn:get-pending-permissions", getPendingPermissions);
   registerHandler("djinn:get-mission-journal-page", getMissionJournalPage);
+  registerHandler("djinn:get-mission-interactions", getMissionInteractions);
   registerHandler("djinn:select-directory", selectDirectory);
   registerHandler("djinn:load-state", loadState);
   registerHandler("djinn:save-state", saveState);
@@ -3753,6 +4929,7 @@ function registerIpcHandlers() {
   registerHandler("djinn:open-external", openExternal);
   registerHandler("djinn:save-artifact", saveArtifact);
   registerHandler("djinn:notify-question", notifyQuestion);
+  registerHandler("djinn:respond-permission", respondPermission);
 }
 
 function createMainWindow() {
@@ -3830,6 +5007,7 @@ function createMainWindow() {
 
 async function bootstrap() {
   configureUserDataPath();
+  if (!acquireSingleInstanceLock()) return;
   await app.whenReady();
   registerIpcHandlers();
   protocol.handle("djinn-visualization", (request) => {
@@ -3862,8 +5040,10 @@ app.on("before-quit", (event) => {
   actionRegistry.killAllImmediately();
   if (missionJournal && !journalFlushedForQuit) {
     event.preventDefault();
-    void missionJournal
-      .flush()
+    void Promise.all([
+      missionJournal.flush(),
+      structuredInteractionStore?.flush(),
+    ])
       .catch((error) =>
         console.error("[djinn] journal flush failed:", error.message),
       )
@@ -3891,6 +5071,8 @@ module.exports = {
   startRun,
   cancelRun,
   steerRun,
+  getPendingPermissions,
+  respondPermission,
   notifyQuestion,
   guidanceForPrompt,
   consumeGuidance,
@@ -3899,10 +5081,15 @@ module.exports = {
   validateNotificationInput,
   parseAuthenticationStatus,
   sanitizeArtifactName,
+  acquireSingleInstanceLock,
+  focusMainWindow,
   actionRegistry,
   getActions,
   performAction,
   actionRuntime,
+  handleNativeToolCall,
+  structuredProjectionForTask,
+  getMissionInteractions,
   CodexAgentObserver,
   getMissionJournalPage,
   flushMissionJournal: () => missionJournal?.flush(),

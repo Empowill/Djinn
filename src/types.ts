@@ -37,6 +37,7 @@ export interface MissionStep {
   approvedAt?: string;
   approvedBy?: "human";
   summary?: string;
+  report?: StepResult;
   needsRevalidation?: boolean;
 }
 export type WorkflowProposalStep = {
@@ -133,6 +134,8 @@ export interface Question extends StepScope {
   recommendation: string;
   options: Option[];
   blocking: boolean;
+  blockingScope?: "agent" | "mission";
+  workItemId?: string;
   unlocks: string;
   agentId?: string;
   answer?: string;
@@ -230,10 +233,72 @@ export interface TaskAction extends StepScope {
   createdAt: string;
   updatedAt: string;
   agentId?: string;
+  workItemId?: string;
+  target?: string;
   url?: string;
   script?: string;
   directory?: string;
   error?: string;
+  testInstructions?: string[];
+  expectedResult?: string;
+  testStartedAt?: string;
+  testResult?: {
+    status: "passed" | "problem" | "deferred";
+    detail?: string;
+    recordedAt: string;
+  };
+}
+export type PermissionDecision = "accept" | "acceptForSession" | "decline";
+export interface PermissionRequest extends StepScope {
+  id: string;
+  taskId: string;
+  runId: string;
+  agentId: string;
+  agentName?: string;
+  provider: ProviderId;
+  method: string;
+  title: string;
+  reason?: string;
+  command?: string;
+  cwd?: string;
+  paths?: string[];
+  status: "pending" | "accepted" | "declined" | "cancelled";
+  createdAt: string;
+  updatedAt?: string;
+  canAcceptForSession: boolean;
+  questions?: {
+    id: string;
+    question: string;
+    optional?: boolean;
+    options?: { label: string; description: string }[];
+  }[];
+}
+export interface StepResult extends StepScope {
+  status: "ready" | "blocked" | "needs_input";
+  summary: string;
+  criteria?: { criterion: string; met: boolean; evidence?: string }[];
+  reason?: string;
+  nextAction?: string;
+  completed?: string[];
+  remaining?: string[];
+  evidence?: string[];
+  reportedAt?: string;
+}
+export interface MissionWorkItem extends StepScope {
+  id: string;
+  title: string;
+  status: "pending" | "running" | "blocked" | "ready" | "done";
+  detail?: string;
+  agentId?: string;
+  ticket?: string;
+  worktree?: string;
+  branch?: string;
+  updatedAt: string;
+}
+export interface MissionReport extends StepResult {
+  id: string;
+  agentId?: string;
+  updatedAt: string;
 }
 export interface NativeRuntimeRun {
   taskId: string;
@@ -259,6 +324,7 @@ export interface NativeRuntimeRun {
     status?: AgentStatus;
   }[];
   events: RuntimeEvent[];
+  structuredEvents?: RuntimeEvent[];
   observedAgents?: Agent[];
 }
 export interface Task {
@@ -268,6 +334,10 @@ export interface Task {
   project: string;
   agentHistory?: Record<string, Agent[]>;
   providerSessions?: Record<string, string>;
+  permissions?: PermissionRequest[];
+  stepResult?: StepResult;
+  workItems?: MissionWorkItem[];
+  reports?: MissionReport[];
   runtimeEventIds?: string[];
   activity?: {
     lead: "supervises" | "responds" | "integrates";
@@ -429,6 +499,13 @@ export interface RunInput {
   priorSummaries?: string[];
 }
 export interface DjinnBridge {
+  getPendingPermissions?(): Promise<PermissionRequest[]>;
+  respondPermission?(input: {
+    taskId: string;
+    requestId: string;
+    decision: PermissionDecision;
+    answers?: Record<string, string>;
+  }): Promise<{ resolved: boolean }>;
   discoverProject?(input: {
     directory: string;
     provider: ProviderId;
@@ -456,8 +533,14 @@ export interface DjinnBridge {
     capturedAt: string;
     runs: NativeRuntimeRun[];
     notificationClicks?: RuntimeEnvelope[];
+    permissions?: PermissionRequest[];
   }>;
-  getMissionJournalPage?(taskId: string, cursor?: number, limit?: number): Promise<{
+  getMissionInteractions?(taskId: string): Promise<{ taskId: string; events: RuntimeEvent[] }>;
+  getMissionJournalPage?(
+    taskId: string,
+    cursor?: number,
+    limit?: number,
+  ): Promise<{
     events: RuntimeEnvelope[];
     nextCursor: number | null;
     hasMore: boolean;

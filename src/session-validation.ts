@@ -1,6 +1,14 @@
-import type { AppState, ResourceProfile, Task, TaskAction } from "./types";
+import type {
+  AppState,
+  PermissionRequest,
+  ResourceProfile,
+  StepResult,
+  Task,
+  TaskAction,
+} from "./types";
 import {
   MAX_SUB_AGENTS,
+  validateStepReport,
   validateProject,
   validateTaskWorkflow,
 } from "./workflow";
@@ -129,11 +137,42 @@ export function validateAction(value: unknown, restored = false): TaskAction {
     createdAt: date(a.createdAt, "action.createdAt"),
     updatedAt: date(a.updatedAt, "action.updatedAt"),
     agentId: optionalString(a.agentId, "action.agentId"),
+    workItemId: optionalString(a.workItemId, "action.workItemId"),
+    target: optionalString(a.target, "action.target"),
     url: restored && kind === "server" ? undefined : url,
     script: optionalString(a.script, "action.script"),
     directory,
     error: optionalString(a.error, "action.error"),
+    testStartedAt: optionalDate(a.testStartedAt, "action.testStartedAt"),
   };
+  if (a.testInstructions !== undefined) {
+    if (!Array.isArray(a.testInstructions) || a.testInstructions.length > 24)
+      return invalid("action.testInstructions");
+    action.testInstructions = a.testInstructions.map((v) =>
+      boundedText(v, "action.testInstructions", 4000),
+    );
+  }
+  if (a.expectedResult !== undefined)
+    action.expectedResult = boundedText(
+      a.expectedResult,
+      "action.expectedResult",
+      4000,
+    );
+  if (a.testResult !== undefined) {
+    const result = record(a.testResult, "action.testResult");
+    action.testResult = {
+      status: choice(
+        result.status,
+        ["passed", "problem", "deferred"] as const,
+        "action.testResult.status",
+      ),
+      recordedAt: date(result.recordedAt, "action.testResult.recordedAt"),
+      detail:
+        result.detail === undefined
+          ? undefined
+          : boundedText(result.detail, "action.testResult.detail", 12000),
+    };
+  }
   if (
     action.id.length > 256 ||
     action.title.length > 1000 ||
@@ -144,6 +183,136 @@ export function validateAction(value: unknown, restored = false): TaskAction {
   )
     return invalid("action.length");
   return action;
+}
+
+function boundedText(value: unknown, field: string, limit = 4000): string {
+  const result = string(value, field);
+  if (result.length > limit || result.includes("\0")) return invalid(field);
+  return result;
+}
+
+export function validatePermission(
+  value: unknown,
+  restored = false,
+): PermissionRequest {
+  const p = record(value, "permission");
+  const status = choice(
+    p.status,
+    ["pending", "accepted", "declined", "cancelled"] as const,
+    "permission.status",
+  );
+  const result: PermissionRequest = {
+    id: id(p.id, "permission.id"),
+    taskId: id(p.taskId, "permission.taskId"),
+    runId: id(p.runId, "permission.runId"),
+    stepId: optionalString(p.stepId, "permission.stepId"),
+    agentId: id(p.agentId, "permission.agentId"),
+    agentName: optionalString(p.agentName, "permission.agentName"),
+    provider: choice(
+      p.provider,
+      ["codex", "claude"] as const,
+      "permission.provider",
+    ),
+    method: boundedText(p.method, "permission.method", 1000),
+    title: boundedText(p.title, "permission.title", 1000),
+    reason:
+      p.reason === undefined
+        ? undefined
+        : boundedText(p.reason, "permission.reason", 12000),
+    command:
+      p.command === undefined
+        ? undefined
+        : boundedText(p.command, "permission.command", 24000),
+    cwd:
+      p.cwd === undefined
+        ? undefined
+        : boundedText(p.cwd, "permission.cwd", 4096),
+    status: restored && status === "pending" ? "cancelled" : status,
+    createdAt: date(p.createdAt, "permission.createdAt"),
+    updatedAt: optionalDate(p.updatedAt, "permission.updatedAt"),
+    canAcceptForSession: boolean(
+      p.canAcceptForSession,
+      "permission.canAcceptForSession",
+      false,
+    ),
+  };
+  if (
+    [
+      result.id,
+      result.taskId,
+      result.runId,
+      result.agentId,
+      result.stepId || "",
+    ].some((v) => v.length > 256 || v.includes("\0"))
+  )
+    return invalid("permission.identity");
+  if (p.paths !== undefined) {
+    if (!Array.isArray(p.paths) || p.paths.length > 100)
+      return invalid("permission.paths");
+    result.paths = p.paths.map((v) => boundedText(v, "permission.paths", 4096));
+  }
+  if (p.questions !== undefined) {
+    if (!Array.isArray(p.questions) || p.questions.length > 24)
+      return invalid("permission.questions");
+    result.questions = p.questions.map((value) => {
+      const q = record(value, "permission.question");
+      const options = q.options;
+      if (
+        options !== undefined &&
+        (!Array.isArray(options) || options.length > 20)
+      )
+        return invalid("permission.options");
+      return {
+        id: boundedText(q.id, "permission.question.id", 256),
+        question: boundedText(q.question, "permission.question", 12000),
+        ...(q.optional === true ? { optional: true } : {}),
+        options:
+          options === undefined
+            ? undefined
+            : (options as unknown[]).map((value) => {
+                const o = record(value, "permission.option");
+                return {
+                  label: boundedText(o.label, "permission.option.label", 1000),
+                  description: boundedText(
+                    o.description,
+                    "permission.option.description",
+                    4000,
+                  ),
+                };
+              }),
+      };
+    });
+    if (
+      new Set(result.questions.map((q) => q.id)).size !==
+      result.questions.length
+    )
+      return invalid("permission.questions.ids");
+  }
+  return result;
+}
+
+export function validateStepResult(value: unknown): StepResult {
+  return validateStepReport(value);
+}
+
+export function validateWorkItem(value: unknown): NonNullable<Task["workItems"]>[number] {
+  const item = record(value, "workItem");
+  return {
+    id: boundedText(id(item.id, "workItem.id"), "workItem.id", 256),
+    title: boundedText(item.title, "workItem.title", 1000),
+    status: choice(item.status, ["pending", "running", "blocked", "ready", "done"] as const, "workItem.status"),
+    updatedAt: date(item.updatedAt, "workItem.updatedAt"),
+    ...Object.fromEntries(["agentId", "stepId", "runId", "ticket", "worktree", "branch", "detail"].filter((field) => item[field] !== undefined).map((field) => [field, boundedText(item[field], `workItem.${field}`, field === "detail" ? 4000 : 4096)])),
+  };
+}
+export function validateMissionReport(value: unknown): NonNullable<Task["reports"]>[number] {
+  const item = record(value, "report");
+  return {
+    ...validateStepResult(item),
+    id: boundedText(id(item.id, "report.id"), "report.id", 256),
+    agentId: optionalString(item.agentId, "report.agentId"),
+    updatedAt: date(item.updatedAt, "report.updatedAt"),
+  };
 }
 
 export function validateTask(value: unknown, restored = true): Task {
@@ -167,6 +336,8 @@ export function validateTask(value: unknown, restored = true): Task {
     context: string(q.context, `${p}.context`),
     recommendation: string(q.recommendation, `${p}.recommendation`),
     blocking: boolean(q.blocking, `${p}.blocking`),
+    blockingScope: q.blockingScope === undefined ? undefined : choice(q.blockingScope, ["agent", "mission"] as const, `${p}.blockingScope`),
+    workItemId: optionalString(q.workItemId, `${p}.workItemId`),
     unlocks: string(q.unlocks, `${p}.unlocks`),
     agentId: optionalString(q.agentId, `${p}.agentId`),
     answer: optionalString(q.answer, `${p}.answer`),
@@ -225,7 +396,10 @@ export function validateTask(value: unknown, restored = true): Task {
         return invalid(resourceField);
       return raw;
     };
-    const labels = (raw: unknown, resourceField: string): string[] | undefined => {
+    const labels = (
+      raw: unknown,
+      resourceField: string,
+    ): string[] | undefined => {
       if (raw === undefined) return undefined;
       if (!Array.isArray(raw) || raw.length > 64) return invalid(resourceField);
       const result = raw.map((entry) => {
@@ -240,10 +414,7 @@ export function validateTask(value: unknown, restored = true): Task {
       });
       return [...new Set(result)];
     };
-    const cpu = positive(
-      resources.cpu ?? resources.cpuCores,
-      `${field}.cpu`,
-    );
+    const cpu = positive(resources.cpu ?? resources.cpuCores, `${field}.cpu`);
     const memoryMb = positive(
       resources.memoryMb ?? resources.memory,
       `${field}.memoryMb`,
@@ -267,10 +438,19 @@ export function validateTask(value: unknown, restored = true): Task {
     runId: optionalString(a.runId, `${p}.runId`),
     id: id(a.id, `${p}.id`),
     name: string(a.name, `${p}.name`),
-    origin: a.origin === undefined ? undefined : choice(a.origin, ["codex"] as const, `${p}.origin`),
+    origin:
+      a.origin === undefined
+        ? undefined
+        : choice(a.origin, ["codex"] as const, `${p}.origin`),
     live: a.live === undefined ? undefined : boolean(a.live, `${p}.live`),
-    provider: a.provider === undefined ? undefined : choice(a.provider, ["codex", "claude"] as const, `${p}.provider`),
-    providerThreadId: optionalString(a.providerThreadId, `${p}.providerThreadId`),
+    provider:
+      a.provider === undefined
+        ? undefined
+        : choice(a.provider, ["codex", "claude"] as const, `${p}.provider`),
+    providerThreadId: optionalString(
+      a.providerThreadId,
+      `${p}.providerThreadId`,
+    ),
     parentAgentId: optionalString(a.parentAgentId, `${p}.parentAgentId`),
     activity: optionalString(a.activity, `${p}.activity`),
     writeScope: scopeList(a.writeScope, `${p}.writeScope`),
@@ -278,7 +458,11 @@ export function validateTask(value: unknown, restored = true): Task {
     isolation:
       a.isolation === undefined
         ? undefined
-        : choice(a.isolation, ["shared", "worktree"] as const, `${p}.isolation`),
+        : choice(
+            a.isolation,
+            ["shared", "worktree"] as const,
+            `${p}.isolation`,
+          ),
     resources: resourceProfile(a.resources, `${p}.resources`),
     readOnly:
       a.readOnly === undefined
@@ -301,7 +485,12 @@ export function validateTask(value: unknown, restored = true): Task {
   })).map((a) =>
     restored && a.status === "running"
       ? a.origin === "codex"
-        ? { ...a, status: "blocked" as const, live: false, waitReason: "État actif à confirmer par le runtime Codex" }
+        ? {
+            ...a,
+            status: "blocked" as const,
+            live: false,
+            waitReason: "État actif à confirmer par le runtime Codex",
+          }
         : { ...a, status: "queued" as const }
       : a,
   );
@@ -504,6 +693,26 @@ export function validateTask(value: unknown, restored = true): Task {
         restored,
       ).agents;
     }
+  }
+  if (t.permissions !== undefined) {
+    if (!Array.isArray(t.permissions) || t.permissions.length > 200)
+      return invalid("permissions");
+    normalized.permissions = t.permissions.map((p) =>
+      validatePermission(p, restored),
+    );
+    if (
+      normalized.permissions.some((p) => p.taskId !== normalized.id) ||
+      new Set(normalized.permissions.map((p) => p.id)).size !==
+        normalized.permissions.length
+    )
+      return invalid("permissions.identity");
+  }
+  if (t.stepResult !== undefined)
+    normalized.stepResult = validateStepResult(t.stepResult);
+  for (const field of ["workItems", "reports"] as const) {
+    if (t[field] === undefined) continue;
+    if (!Array.isArray(t[field]) || t[field].length > 200) return invalid(field);
+    Object.assign(normalized, { [field]: collection(t[field], field, (value) => field === "workItems" ? validateWorkItem(value) : validateMissionReport(value)) });
   }
   if (t.providerSessions !== undefined) {
     const sessions = record(t.providerSessions, "providerSessions");

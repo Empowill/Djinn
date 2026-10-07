@@ -38,16 +38,125 @@ const { initialState } = loadTypeScript("src/data.ts");
 const fixture = () => initialState();
 const taskFixture = () => fixture().tasks[0];
 
+test("a bounded native input question stays visible through renderer and persisted validation", () => {
+  const {
+    normalizeNativeRequest,
+  } = require("../electron/permission-protocol.cjs");
+  const task = taskFixture();
+  const entry = normalizeNativeRequest({
+    provider: "codex",
+    method: "item/tool/requestUserInput",
+    nativeId: 17,
+    params: { questions: [{ id: "context", question: "Q".repeat(15000) }] },
+    context: { taskId: task.id, runId: "run", agentId: "lead" },
+  });
+  const native = require("../electron/session-validation.cjs");
+  task.permissions = [entry.request];
+  assert.equal(entry.request.questions[0].question.length, 12000);
+  assert.equal(
+    validateTask(task, false).permissions[0].questions[0].question.length,
+    12000,
+  );
+  assert.equal(
+    native.validateTask(task, false).permissions[0].questions[0].question
+      .length,
+    12000,
+  );
+});
+
+test("permission and test outcomes survive both validators, while restored pending permissions are cancelled", () => {
+  const native = require("../electron/session-validation.cjs");
+  const task = taskFixture();
+  const time = "2026-10-07T08:00:00.000Z";
+  task.permissions = [
+    {
+      id: "permission",
+      taskId: task.id,
+      runId: "run",
+      agentId: "lead",
+      provider: "codex",
+      method: "item/commandExecution/requestApproval",
+      title: "Start the local test",
+      command: "npm run dev",
+      status: "pending",
+      createdAt: time,
+      canAcceptForSession: true,
+    },
+  ];
+  task.actions = [
+    {
+      id: "test",
+      title: "Test icons",
+      kind: "server",
+      status: "ready",
+      createdAt: time,
+      updatedAt: time,
+      url: "http://localhost:3000",
+      testInstructions: ["Open Users"],
+      expectedResult: "DS icons",
+      testResult: { status: "passed", detail: "Confirmed", recordedAt: time },
+    },
+  ];
+  task.stepResult = {
+    stepId: task.activeStepId,
+    runId: "run",
+    status: "blocked",
+    summary: "Contract absent",
+    nextAction: "Generate the official contract",
+    criteria: [{ criterion: "Generated", met: false }],
+  };
+  for (const validate of [validateTask, native.validateTask]) {
+    const live = validate(structuredClone(task), false);
+    assert.equal(live.permissions[0].status, "pending");
+    assert.equal(live.actions[0].testResult.status, "passed");
+    assert.deepEqual(live.actions[0].testInstructions, ["Open Users"]);
+    assert.equal(live.stepResult.criteria[0].met, false);
+    const restored = validate(structuredClone(task), true);
+    assert.equal(restored.permissions[0].status, "cancelled");
+    assert.equal(restored.actions[0].status, "stopped");
+    assert.equal(restored.actions[0].testResult.status, "passed");
+    assert.throws(
+      () =>
+        validate({
+          ...task,
+          permissions: [{ ...task.permissions[0], taskId: "another" }],
+        }),
+      /permissions.identity/,
+    );
+    assert.throws(
+      () =>
+        validate({
+          ...task,
+          stepResult: {
+            ...task.stepResult,
+            criteria: [{ criterion: "Generated", met: "yes" }],
+          },
+        }),
+      /stepResult.*met/,
+    );
+  }
+});
+
 test("observed Codex identity and multi-GB resources survive both session validators", () => {
   const native = require("../electron/session-validation.cjs");
   const task = taskFixture();
-  task.agents = [{
-    id: "codex-child", name: "Inspecteur", role: "Inspecter", model: "",
-    status: "running", progress: 0, summary: "Activité observée",
-    origin: "codex", provider: "codex", providerThreadId: "child-thread",
-    parentAgentId: "lead", activity: "Inspection en cours",
-    resources: { cpu: 1, memoryMb: 4096 },
-  }];
+  task.agents = [
+    {
+      id: "codex-child",
+      name: "Inspecteur",
+      role: "Inspecter",
+      model: "",
+      status: "running",
+      progress: 0,
+      summary: "Activité observée",
+      origin: "codex",
+      provider: "codex",
+      providerThreadId: "child-thread",
+      parentAgentId: "lead",
+      activity: "Inspection en cours",
+      resources: { cpu: 1, memoryMb: 4096 },
+    },
+  ];
   for (const validate of [validateTask, native.validateTask]) {
     const live = validate(JSON.parse(JSON.stringify(task)), false);
     assert.equal(live.agents[0].providerThreadId, "child-thread");
@@ -58,8 +167,22 @@ test("observed Codex identity and multi-GB resources survive both session valida
     const restored = validate(JSON.parse(JSON.stringify(task)), true);
     assert.equal(restored.agents[0].status, "blocked");
     assert.match(restored.agents[0].waitReason, /confirmer/);
-    assert.throws(() => validate({ ...task, agents: [{ ...task.agents[0], origin: "invented" }] }), /invalide/);
-    assert.throws(() => validate({ ...task, agents: [{ ...task.agents[0], resources: { cpu: 1025 } }] }), /invalide/);
+    assert.throws(
+      () =>
+        validate({
+          ...task,
+          agents: [{ ...task.agents[0], origin: "invented" }],
+        }),
+      /invalide/,
+    );
+    assert.throws(
+      () =>
+        validate({
+          ...task,
+          agents: [{ ...task.agents[0], resources: { cpu: 1025 } }],
+        }),
+      /invalide/,
+    );
   }
 });
 
@@ -207,11 +330,25 @@ test("portable sessions preserve automatic stage validation and its completion e
   assert.equal(imported.steps[0].completedAt, completedAt);
   assert.equal(imported.steps[0].approvedBy, undefined);
   assert.throws(
-    () => validateTask({ ...task, steps: [{ ...task.steps[0], validation: "robot" }, ...task.steps.slice(1)] }),
+    () =>
+      validateTask({
+        ...task,
+        steps: [
+          { ...task.steps[0], validation: "robot" },
+          ...task.steps.slice(1),
+        ],
+      }),
     /invalide/,
   );
   assert.throws(
-    () => validateTask({ ...task, steps: [{ ...task.steps[0], completedAt: undefined }, ...task.steps.slice(1)] }),
+    () =>
+      validateTask({
+        ...task,
+        steps: [
+          { ...task.steps[0], completedAt: undefined },
+          ...task.steps.slice(1),
+        ],
+      }),
     /invalide/,
   );
 });

@@ -11,7 +11,7 @@ const workflow = require("../electron/workflow.cjs");
 // Run the real orchestration hook with a small deterministic hook scheduler.
 // Only React scheduling and the Electron bridge are fixtures; routing, event
 // filtering, state validation, persistence and run construction remain real.
-async function renderer(provider) {
+async function renderer(provider, options = {}) {
   const slots = [],
     effects = [],
     starts = [];
@@ -95,11 +95,12 @@ async function renderer(provider) {
     provider,
     steps: workflow.createDefaultSteps("existing"),
     activeStepId: workflow.createDefaultSteps("existing")[0].id,
+    ...(options.task || {}),
   });
   let saved = {
     version: 2,
     projects: [project],
-    tasks: [task],
+    tasks: [task, ...(options.tasks || [])],
     selectedId: task.id,
     settings: { provider, model: "fixture", reduceMotion: true, sound: false },
   };
@@ -126,7 +127,7 @@ async function renderer(provider) {
           },
         ],
       }),
-      getActions: async () => [],
+      getActions: async () => options.actions || [],
       notifyQuestion: async () => ({ shown: false }),
       validateProject: async (value) => value,
       onEvent: (callback) => {
@@ -622,4 +623,96 @@ test("shareable harmonisation demo imports through the actual renderer without l
     assert.equal(h.output.task.artifacts.length, 8);
     assert.equal(h.starts.length, 0);
   } finally { h.dispose(); }
+});
+
+test("lead-pass reports bind to the root run and needs_input survives completion", async () => {
+  const h = await renderer("codex");
+  try {
+    await h.output.start();
+    await h.flush();
+    const input = h.starts[0];
+    const scope = { taskId: input.taskId, stepId: input.stepId };
+    h.emit({ ...scope, runId: "chief-pass", type: "step_result", data: {
+      agentId: "lead", parentRunId: "run-1", scope: "agent", status: "needs_input",
+      summary: "Le périmètre PDF reste à arbitrer.", completed: ["Entretien exploré"], remaining: ["Décision sur le PDF"], evidence: ["Lecture du modèle"], nextAction: "Répondre à la question PDF",
+    }});
+    h.emit({ ...scope, runId: "run-1", type: "status", data: { status: "completed" } });
+    await h.flush();
+    assert.equal(h.output.task.stepResult.runId, "run-1");
+    assert.equal(h.output.task.stepResult.status, "needs_input");
+    const step = h.output.task.steps.find((step) => step.id === input.stepId);
+    assert.equal(step.status, "blocked");
+    assert.deepEqual(step.report.completed, ["Entretien exploré"]);
+    assert.deepEqual(step.report.remaining, ["Décision sur le PDF"]);
+    assert.equal(h.starts.length, 1, "a business decision cannot be bypassed");
+  } finally { h.dispose(); }
+});
+
+test("structured contributions preserve questions, tasks and independent recipes during the root passage", async () => {
+  const h = await renderer("codex");
+  try {
+    await h.output.start();
+    await h.flush();
+    const input = h.starts[0], scope = { taskId: input.taskId, stepId: input.stepId };
+    const child = { agentId: "ticket-a", scope: "agent", parentRunId: "run-1" };
+    h.emit({ ...scope, runId: "worker-pass", type: "question", data: { ...child, id: "pdf", title: "Quel PDF ?", question: "Faut-il modifier le PDF exporté ou seulement la page ?", options: ["Les deux", "La page"], blocking: false } });
+    h.emit({ ...scope, runId: "worker-pass", type: "work_item", data: { ...child, id: "ticket-a", title: "Recette participant", ticket: "ET-3083", status: "ready", branch: "codex/ET-3083", worktree: ".worktrees/ticket-a" } });
+    h.emit({ ...scope, runId: "worker-pass", type: "report", data: { ...child, id: "report-a", status: "ready", summary: "Ticket prêt à tester", completed: ["Compteur corrigé"], remaining: ["Recette humaine"], evidence: ["Jest ciblé PASS"] } });
+    h.emit({ ...scope, runId: "worker-pass", type: "action", data: { id: "test-a", agentId: "ticket-a", workItemId: "ticket-a", target: "ET-3083", kind: "server", title: "Tester ET-3083", status: "ready", stepId: input.stepId, runId: "worker-pass", url: "http://localhost:3000", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), testInstructions: ["Cliquer l’alerte"], expectedResult: "Chaque participant n’est compté qu’une fois" } });
+    await h.flush();
+    assert.equal(h.output.task.runId, "run-1", "sibling work continues");
+    assert.equal(h.output.task.questions[0].context, "Faut-il modifier le PDF exporté ou seulement la page ?");
+    assert.equal(h.output.task.questions[0].options[0].label, "Les deux");
+    assert.equal(h.output.task.status, "running", "a nonblocking question preserves velocity");
+    assert.equal(h.output.task.workItems[0].status, "ready");
+    assert.equal(h.output.task.reports[0].evidence[0], "Jest ciblé PASS");
+    assert.equal(h.output.task.actions[0].workItemId, "ticket-a");
+    assert.equal(await h.output.recordTestResult(h.output.task.actions[0], "passed"), true);
+    await h.flush();
+    assert.equal(h.output.task.actions[0].testResult.status, "passed");
+    assert.equal(h.output.task.runId, "run-1", "recipe result does not complete the running mission");
+    h.emit({ ...scope, runId: "spoof", type: "step_result", data: { ...child, status: "ready", summary: "Worker result is not a lead result" } });
+    await h.flush();
+    assert.equal(h.output.task.stepResult, undefined);
+  } finally { h.dispose(); }
+});
+
+test('recipe progress and human outcomes survive reload when the native server confirms the same version',async()=>{
+ const time=new Date().toISOString();
+ const action={id:'test-version',kind:'server',title:'Tester',status:'ready',url:'http://localhost:3000',runId:'recipe-run',createdAt:time,updatedAt:time};
+ const h=await renderer('codex',{task:{actions:[{...action,testStartedAt:time,testResult:{status:'deferred',recordedAt:time}}]},actions:[action]});
+ try {
+  assert.equal(h.output.task.actions[0].status,'ready');
+  assert.equal(h.output.task.actions[0].testStartedAt,time);
+  assert.equal(h.output.task.actions[0].testResult.status,'deferred');
+ }finally{h.dispose();}
+});
+
+test('manual recipe starts and records feedback without completing the mission',async()=>{
+ const action={id:'manual-recipe',kind:'manual',title:'Contrôler le PDF',status:'pending',testInstructions:['Exporter le PDF'],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+ const h=await renderer('codex',{task:{actions:[action]},actions:[action]});
+ try {
+  await h.output.startTest(h.output.task.actions[0]);
+  await h.flush();
+  assert.ok(h.output.task.actions[0].testStartedAt);
+  assert.equal(await h.output.recordTestResult(h.output.task.actions[0],'passed'),true);
+  await h.flush();
+  assert.equal(h.output.task.actions[0].testStartedAt,undefined);
+  assert.equal(h.output.task.actions[0].testResult.status,'passed');
+  assert.equal(h.output.task.steps[0].approvedAt,undefined);
+ }finally{h.dispose();}
+});
+
+test('permission notification selection survives synchronous focus of the previous mission',async()=>{
+ const steps=workflow.createDefaultSteps('other');
+ steps[0]={...steps[0],validation:'human',status:'completed',approvedBy:'human',approvedAt:new Date().toISOString()};
+ const other=taskFixture({id:'other',project:'/tmp/djinn-renderer-fixture',steps,activeStepId:steps[1].id,selectedStepId:steps[0].id});
+ const h=await renderer('codex',{tasks:[other]});
+ try {
+  global.window.dispatchEvent=(event)=>{if(event.type==='djinn:permission-focus')h.output.selectStep(h.output.task.activeStepId);};
+  h.emit({taskId:'other',runId:'',type:'notification_clicked',data:{questionId:'permission:needed'}});
+  await h.flush();
+  assert.equal(h.output.state.selectedId,'other');
+  assert.equal(h.output.task.selectedStepId,steps[1].id);
+ }finally{h.dispose();}
 });

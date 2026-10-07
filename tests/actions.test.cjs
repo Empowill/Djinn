@@ -77,6 +77,28 @@ test('validates action vocabulary and never accepts raw commands', () => {
   }), /url/i);
 });
 
+test('preserves bounded human test guidance while rejecting provider-certified results', () => {
+  const proposal = actions.validateActionProposal({
+    kind: 'manual',
+    title: 'Check the result',
+    testInstructions: ['Open the preview', 'Verify the empty state'],
+    expectedResult: 'The empty state is visible.',
+  });
+  assert.deepEqual(proposal.testInstructions, [
+    'Open the preview',
+    'Verify the empty state',
+  ]);
+  assert.equal(proposal.expectedResult, 'The empty state is visible.');
+  const action = actions.createTaskAction(proposal, 'test-task');
+  assert.deepEqual(action.testInstructions, proposal.testInstructions);
+  assert.equal(action.expectedResult, proposal.expectedResult);
+  assert.throws(() => actions.validateActionProposal({
+    kind: 'manual',
+    title: 'Certify output',
+    testResult: { passed: true },
+  }), /testResult/);
+});
+
 test('scans only bounded project packages and exposes nested candidates', async () => {
   const project = await makeProject({ nested: true });
   try {
@@ -87,6 +109,66 @@ test('scans only bounded project packages and exposes nested candidates', async 
     assert.equal(candidates[0].command, process.platform === 'win32' ? 'npm.cmd' : 'npm');
   } finally {
     await removeProject(project.root);
+  }
+});
+
+test('resolves an explicitly selected hidden deep worktree package without discovery', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'djinn-actions-explicit-'));
+  const directory = path.join(root, '.worktrees', 'ET-2304', 'app', 'apps', 'console');
+  try {
+    await fsp.mkdir(directory, { recursive: true });
+    await fsp.writeFile(path.join(directory, 'package.json'), JSON.stringify({
+      name: 'console',
+      scripts: { dev: 'node server.cjs' },
+    }));
+    const candidate = await actions.resolveCandidate(root, {
+      directory: '.worktrees/ET-2304/app/apps/console',
+      script: 'dev',
+    });
+    assert.equal(candidate.cwd, await fsp.realpath(directory));
+    assert.equal(candidate.directory, '.worktrees/ET-2304/app/apps/console');
+    assert.equal(candidate.script, 'dev');
+  } finally {
+    await removeProject(root);
+  }
+});
+
+test('explicit action directories reject missing scripts, traversal, and symlink escapes', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'djinn-actions-paths-'));
+  const outside = await fsp.mkdtemp(path.join(os.tmpdir(), 'djinn-actions-outside-'));
+  const directory = path.join(root, '.worktrees', 'deep', 'app');
+  try {
+    await fsp.mkdir(directory, { recursive: true });
+    await fsp.writeFile(path.join(directory, 'package.json'), JSON.stringify({
+      scripts: { dev: 'node server.cjs' },
+    }));
+    await fsp.writeFile(path.join(outside, 'package.json'), JSON.stringify({
+      scripts: { dev: 'node server.cjs' },
+    }));
+    await fsp.symlink(outside, path.join(root, 'escape'), 'dir');
+
+    await assert.rejects(
+      actions.resolveCandidate(root, {
+        directory: '.worktrees/deep/app',
+        script: 'start',
+      }),
+      (error) => error.code === 'action_unavailable',
+    );
+    await assert.rejects(
+      actions.resolveCandidate(root, { directory: '../outside', script: 'dev' }),
+      (error) => error.code === 'invalid_path',
+    );
+    await assert.rejects(
+      actions.resolveCandidate(root, { directory: 'escape', script: 'dev' }),
+      (error) => error.code === 'invalid_path',
+    );
+    await assert.rejects(
+      actions.resolveCandidate(root, { directory: '.worktrees/deep/app', script: 'node server.cjs' }),
+      (error) => error.code === 'invalid_action',
+    );
+  } finally {
+    await removeProject(root);
+    await removeProject(outside);
   }
 });
 

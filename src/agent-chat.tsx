@@ -1,3 +1,4 @@
+import { agentDisplayState } from "./agent-state";
 import {
   memo,
   useEffect,
@@ -163,9 +164,9 @@ export function entriesFor(task: Task, agent: Agent): Entry[] {
           instruction.status === "prevented"
             ? `Empêchée : ${instruction.reason || "destinataire indisponible"}`
             : instruction.status === "consumed" || instruction.appliedAt
-              ? "Remise au destinataire"
+              ? "Remise au runtime · réponse non confirmée"
               : instruction.status === "transmitted"
-                ? "Transmise"
+                ? "Transmise au runtime"
                 : "En attente",
       });
   }
@@ -337,6 +338,15 @@ export function AgentChat({
     .find((e) => e.agentId === agent.id && (e.branch || e.worktree));
   const branch = agent.branch || latestBranch?.branch;
   const worktree = agent.worktree || latestBranch?.worktree;
+  const display = agentDisplayState(task, agent);
+  const capability = display.permission ? "Autorisation requise pour poursuivre" : display.question ? "Réponse attendue dans Mission" :
+    agent.readOnly === true
+      ? "Lecture seule"
+      : agent.id === "lead" && task.activity?.lead === "supervises"
+        ? "Supervise l’équipe"
+        : agent.origin === "codex"
+          ? "Suivi en lecture"
+          : "Peut recevoir des indications";
   const scrollToEnd = (smooth = true) => {
     const el = viewport.current;
     if (!el) return;
@@ -452,7 +462,7 @@ export function AgentChat({
     >
       <header className="ac-header">
         <Orb
-          status={agent.status}
+          status={display.status}
           size={42}
           color={color}
           animation={agentOrbState(agent.id, index)}
@@ -462,8 +472,9 @@ export function AgentChat({
           <p>
             <span>{agent.model || (agent.origin === "codex" ? "Modèle non communiqué" : task.model || task.provider)}</span>
             {agent.origin === "codex" && <span>Agent Codex observé</span>}
-            <span className={`ac-status is-${agent.status}`}>
-              {agent.origin === "codex" && agent.live === false ? `Dernier état : ${statusLabels[agent.status]}` : statusLabels[agent.status]}
+            <span className="ac-capability">{capability}</span>
+            <span className={`ac-status is-${display.status}`}>
+              {agent.origin === "codex" && agent.live === false && !display.permission ? `Dernier état : ${statusLabels[agent.status]}` : display.label}
             </span>
           </p>
         </div>
@@ -512,6 +523,11 @@ export function AgentChat({
           </div>
           {agent.id !== "lead" && (
             <>
+              <p className="ac-capability-note">
+                {agent.readOnly
+                  ? "Ce périmètre est disponible en lecture seule."
+                  : "Ce périmètre décrit les fichiers que l’agent peut toucher pendant son passage."}
+              </p>
               <label>
                 Périmètre
                 <textarea
@@ -543,6 +559,16 @@ export function AgentChat({
             </>
           )}
         </section>
+      )}
+      {display.permission && (
+        <button className="button secondary small" style={{ margin: "8px 18px" }} onClick={() => window.dispatchEvent(new CustomEvent("djinn:permission-focus", { detail: { taskId: task.id, requestId: display.permission!.id } }))}>
+          Autorisation attendue · {display.permission.title}
+        </button>
+      )}
+      {display.question && !display.permission && (
+        <button className="button secondary small" style={{ margin: "8px 18px" }} onClick={() => window.dispatchEvent(new CustomEvent("djinn:question-focus", { detail: { taskId: task.id, questionId: display.question!.id } }))}>
+          Répondre · {display.question.title}
+        </button>
       )}
       <div className="ac-message-region">
         <div

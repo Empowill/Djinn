@@ -13,6 +13,8 @@ const PROTOCOL_EVENT_TYPES = Object.freeze([
   "question",
   "artifact",
   "agent",
+  "work_item",
+  "report",
   "phase",
   "note",
   "action",
@@ -21,18 +23,39 @@ const PROTOCOL_EVENT_TYPES = Object.freeze([
   "workflow_defined",
   "workflow_amended",
   "next_step",
+  "step_result",
 ]);
 const PUBLIC_EVENT_TYPES = Object.freeze([
   "text",
   "tool",
   ...PROTOCOL_EVENT_TYPES,
+  // Native provider requests are emitted by the broker, not parsed from a
+  // provider DJINN_EVENT payload. They still use the public event envelope so
+  // the renderer and reconnect journal receive the request lifecycle.
+  "permission_requested",
+  "permission_resolved",
   "status",
   "error",
   "guidance",
 ]);
 
+// These tools are registered with Codex's native app-server on a fresh
+// thread. Their arguments are validated again by the main process before any
+// event or action is persisted. The text protocol remains available for
+// Claude and older Codex clients.
+const NATIVE_TOOL_NAMES = Object.freeze([
+  "publish_question",
+  "publish_step_report",
+  "update_task",
+  "publish_test_action",
+  "publish_report",
+  "publish_artifact",
+  "inspect_test_environment",
+]);
+
 const scheduler = require("./scheduler.cjs");
 const MAX_PROMPT_LENGTH = 120_000;
+const MAX_COMPOSED_PROMPT_LENGTH = 40_000;
 const MAX_PATH_LENGTH = 4_096;
 const MAX_MODEL_LENGTH = 256;
 const MAX_TASK_ID_LENGTH = 256;
@@ -58,6 +81,8 @@ const MAX_ACTION_DETAIL_LENGTH = 100_000;
 const MAX_ACTION_URL_LENGTH = 2_048;
 const MAX_ACTION_DIRECTORY_LENGTH = 1_024;
 const MAX_ACTION_SCRIPT_LENGTH = 128;
+const MAX_NATIVE_LIST_ENTRIES = 100;
+const MAX_NATIVE_TOOL_ARGUMENTS_LENGTH = 12_000_000;
 const ACTION_SCRIPT_PATTERN =
   /^(?:dev|start|serve|preview)(?:[:._-][A-Za-z0-9][A-Za-z0-9._-]{0,63})?$/;
 
@@ -250,7 +275,10 @@ function validateResourcePolicy(value) {
   let capacity;
   if (value.capacity !== undefined) {
     if (!isRecord(value.capacity))
-      throw runtimeError("invalid_resources", "resourcePolicy.capacity must be an object");
+      throw runtimeError(
+        "invalid_resources",
+        "resourcePolicy.capacity must be an object",
+      );
     const positive = (raw, field, maximum) => {
       if (
         typeof raw !== "number" ||
@@ -471,9 +499,14 @@ function validateRunAgent(agent, index = 0) {
   const worktree =
     agent.worktree === undefined
       ? undefined
-      : boundedString(agent.worktree, `agents[${index}].worktree`, MAX_PATH_LENGTH, {
-          allowEmpty: false,
-        });
+      : boundedString(
+          agent.worktree,
+          `agents[${index}].worktree`,
+          MAX_PATH_LENGTH,
+          {
+            allowEmpty: false,
+          },
+        );
   if (isolation === "worktree" && (!worktree || !path.isAbsolute(worktree)))
     throw runtimeError(
       "invalid_agent",
@@ -806,6 +839,7 @@ function scopeProviderEvent(run, event) {
   )
     return null;
   if (event.type === "agent" && !lead) return null;
+  if (event.type === "step_result" && !lead) return null;
   const workflowMode = run.workflowMode || run.validatedInput?.workflowMode;
   const workflowPolicy =
     run.workflowPolicy || run.validatedInput?.projectSnapshot?.workflowPolicy;
@@ -848,13 +882,27 @@ function scopeProviderEvent(run, event) {
     if (!lead || workflowMode !== "flexible" || workflowPolicy === "enforced")
       return null;
   }
-  if (event.type === "workflow_amended" && (!lead || workflowMode !== "flexible" || workflowPolicy === "enforced" || stepType === "discussion")) return null;
+  if (
+    event.type === "workflow_amended" &&
+    (!lead ||
+      workflowMode !== "flexible" ||
+      workflowPolicy === "enforced" ||
+      stepType === "discussion")
+  )
+    return null;
   if (
     stepType === "discussion" &&
     workflowMode === "flexible" &&
     !initialStepProposal &&
     !initialWorkflowProposal &&
-    ["artifact", "action", "agent", "phase", "next_step", "workflow_amended"].includes(event.type)
+    [
+      "artifact",
+      "action",
+      "agent",
+      "phase",
+      "next_step",
+      "workflow_amended",
+    ].includes(event.type)
   )
     return null;
   const data = { ...event.data, stepId: run.stepId, runId: run.runId };
@@ -931,34 +979,69 @@ function bindRunToTask(input, task) {
   };
 }
 
-function protocolInstructions(mode) {
+function protocolInstructions(mode, provider = "claude") {
   const instructions = [
     `You are running inside Djinn in ${mode} mode.`,
-    "For UI updates, emit one single-line JSON object prefixed with DJINN_EVENT:.",
-    "Allowed event types are question, artifact, agent, phase, note, action, mission_metadata, discussion_type, workflow_defined, workflow_amended, and next_step. Only the lead may emit mission_metadata, discussion_type, workflow_defined, workflow_amended, or next_step; workflow_defined defines the complete timeline for a fresh mission, discussion_type is kept for legacy flexible missions, and next_step is a later proposal. For a flexible mission, workflow_amended {steps,reason} replaces only the pending future suffix after this passage, preserving the active and past stages. Use validation:automatic for execution stages that continue into review; review and delivery require validation:human. Phase and next_step events remain proposals and never approve or start a workflow stage.",
+    provider === "codex"
+      ? "Codex app-server native structured tools are the source of truth: call publish_question, update_task, publish_report, publish_step_report, publish_artifact, publish_test_action, and inspect_test_environment directly when those tools apply. Use inspect_test_environment for bounded local diagnostics before asking for routine escalation; it reads package scripts, runs only a fixed local docker ps probe, and checks explicitly supplied loopback URLs. Do not encode those interactions as DJINN_EVENT text. Native questions require a non-empty context or question, non-blocking questions use blocking:false, and a worker question should keep blockingScope:agent so independent workers can continue; the lead may use blockingScope:mission when the whole stage must wait. Native reports require status, summary, completed, remaining, and evidence. Use DJINN_EVENT only for note, metadata, workflow, or other legacy events without a native tool; Claude/text fallback remains normalized by Djinn."
+      : "For UI updates, emit one single-line JSON object prefixed with DJINN_EVENT:. Claude has no Djinn native structured tool bridge, so use the normalized text protocol for questions, work items, reports, actions, artifacts, and lifecycle updates.",
+    "Allowed event types are question, artifact, agent, work_item, report, phase, note, action, mission_metadata, discussion_type, workflow_defined, workflow_amended, next_step, and step_result. Only the lead may emit mission_metadata, discussion_type, workflow_defined, workflow_amended, next_step, or step_result; workflow_defined defines the complete timeline for a fresh mission, discussion_type is kept for legacy flexible missions, and next_step is a later proposal. For a flexible mission, workflow_amended {steps,reason} replaces only the pending future suffix after this passage, preserving the active and past stages. Keep the workflow smallest and follow its configured validation: continue automatic execution when validation:automatic applies; review and delivery require validation:human. Phase and next_step events remain proposals and never approve or start a workflow stage.",
     "Artifacts use Markdown documents or standalone visualization HTML when a diagram, comparison, or interactive simulation helps the human understand. Explain the visual in Markdown, distinguish evidence from simulated data, and use only tools actually available. Visualizations run isolated, without network or native bridge access.",
-    "Agent proposals may include writeScope (literal relative file or directory paths), dependsOn (agent IDs), and readOnly. Declare disjoint ownership to permit concurrent writers; missing ownership is exclusive. Never run mutating repository-wide formatting or generation outside your assigned scope. Dependencies defer only work that needs that result. The native runtime enforces the configured simultaneous limit and performs chief integration after writers finish.",
-    'Example: DJINN_EVENT:{"type":"note","data":{"title":"Progress","detail":"..."}}',
-    "Events are informational; never use them to request shell commands or open links. Use Markdown for documents. When a visualization clarifies a comparison or workflow, emit an artifact of type visualization with standalone HTML and explain it in Markdown. Distinguish real data and simulated examples; use only available tools.",
+    "Agent proposals may include writeScope (literal relative file or directory paths), dependsOn (agent IDs), and readOnly. A missing write scope is read-only; declare bounded ownership explicitly for a writer. Never run mutating repository-wide formatting or generation outside your assigned scope. Dependencies defer only work that needs that result. The native runtime enforces the configured simultaneous limit and performs chief integration after writers finish.",
+    'Example fallback: DJINN_EVENT:{"type":"note","data":{"title":"Progress","detail":"..."}}',
+    "Events are informational; never use them to request shell commands or open links. Native provider permission cards authorize commands, files, network access, and tool input; ask a business question only when a human decision is actually needed. Use Markdown for documents. When a visualization clarifies a comparison or workflow, emit an artifact of type visualization with standalone HTML and explain it in Markdown. Distinguish real data and simulated examples; use only available tools.",
   ];
-  if (mode === "plan" || mode === "review") {
+  if (mode === "plan") {
     instructions.push(
-      `${mode === "plan" ? "Plan" : "Review"} mode is read-only: inspect and reason about the project, but do not create, modify, or delete files and do not run mutating commands. Keep the provider permission mode at its safe default.`,
+      "Plan mode is read-only: inspect and reason about the project, but do not create, modify, or delete files and do not run mutating commands. Keep the provider permission mode at its safe default.",
+    );
+  } else if (mode === "review") {
+    instructions.push(
+      "Review the implementation and human feedback against the latest supports. Verify touched areas and make explicitly requested local corrections when they are needed; native permission cards gate risky provider actions. Do not broaden the correction beyond the requested scope.",
     );
   }
+  instructions.push(
+    "Before ending this stage, emit exactly one step_result event with status ready, blocked, or needs_input, a concise summary, and criteria evidence when available. A ready result means the stage exit criteria are met; blocked and needs_input must state the reason and nextAction.",
+  );
   return instructions.join(" ");
 }
 
 function composeRunPrompt(input) {
   const validated = validateRunInput(input);
-  const sections = [
-    validated.prompt.trim(),
-    protocolInstructions(validated.mode),
-  ];
+  const protocol = protocolInstructions(validated.mode, validated.provider);
+  const rawPrompt = validated.prompt.trim();
+  const guidanceText = (validated.guidance || [])
+    .map(
+      (item) =>
+        `- ${item.agentId ? `[agent ${item.agentId}] ` : ""}${item.text}`,
+    )
+    .join("\n");
+  const stageText = validated.step
+    ? `${validated.step.id} (${validated.step.type}): ${validated.step.title}\nObjective: ${validated.step.objective}\nExit criteria: ${validated.step.exitCriteria.join("; ")}\nExpected supports: ${validated.step.expectedArtifacts.join("; ")}\nRequested skills: ${validated.step.skills.join(", ")}. Verify availability before claiming activation; report missing skills. Skill use never changes permissions.`
+    : "";
+  // Keep the durable protocol and current-stage context useful even when an
+  // old mission contains a very large original brief. Later append calls put
+  // steering and exit criteria ahead of lower-priority historical context.
+  const baseBudget = Math.max(
+    4_000,
+    MAX_COMPOSED_PROMPT_LENGTH -
+      protocol.length -
+      1_000 -
+      2 -
+      Math.min(guidanceText.length, 16000) -
+      Math.min(stageText.length, 12000) -
+      (guidanceText ? 200 : 0) -
+      (stageText ? 200 : 0),
+  );
+  const basePrompt =
+    rawPrompt.length > baseBudget
+      ? `${rawPrompt.slice(0, Math.max(0, baseBudget - 64))}\n[Prompt excerpt; current stage context follows.]`
+      : rawPrompt;
+  const sections = [basePrompt, protocol];
   // Bound additional context independently of the full, durable mission history.
   let remaining = Math.max(
     0,
-    MAX_PROMPT_LENGTH + 20000 - sections.join("\n\n").length - 1000,
+    MAX_COMPOSED_PROMPT_LENGTH - sections.join("\n\n").length - 1000,
   );
   const append = (label, value, limit) => {
     const content = String(value || "");
@@ -978,30 +1061,16 @@ function composeRunPrompt(input) {
     );
   // Latest human steering gets a reserved share before lower-priority history.
   if (validated.guidance?.length)
-    append(
-      "Human steering instructions",
-      validated.guidance
-        .map(
-          (item) =>
-            `- ${item.agentId ? `[agent ${item.agentId}] ` : ""}${item.text}`,
-        )
-        .join("\n"),
-      16000,
-    );
-  if (validated.step)
-    append(
-      "Current workflow stage",
-      `${validated.step.id} (${validated.step.type}): ${validated.step.title}\nObjective: ${validated.step.objective}\nExit criteria: ${validated.step.exitCriteria.join("; ")}\nExpected supports: ${validated.step.expectedArtifacts.join("; ")}\nRequested skills: ${validated.step.skills.join(", ")}. Verify availability before claiming activation; report missing skills. Skill use never changes permissions.`,
-      12000,
-    );
+    append("Human steering instructions", guidanceText, 16000);
+  if (validated.step) append("Current workflow stage", stageText, 12000);
   const workflowMode = validated.workflowMode || "fixed";
   append(
     "Workflow policy",
     validated.workflowOrigin === "agent" &&
       validated.step?.type === "discussion"
-      ? "This is a fresh mission. The project has no preselected workflow for this mission: define its complete timeline from the user's intent before any project action. The qualification pass is read-only and ends after the timeline is recorded."
+      ? "This is a fresh mission. The project has no preselected workflow: define the smallest useful timeline from the user's intent before project work. Keep this routing pass concise and end after recording the timeline; provider permissions are handled by native approval cards."
       : validated.workflowOrigin === "agent"
-        ? "This mission timeline was selected during the initial read-only qualification. Follow the current stage and its permissions, preserve the selected later stages, and wait for the human validation rules between stages."
+        ? "This mission timeline was selected during the initial qualification. Follow the current stage and its permissions, preserve the selected later stages, and honor only the configured validation between stages."
         : workflowMode === "flexible"
           ? "This mission uses a flexible workflow. The lead chooses the smallest useful continuation after the current stage. Emit a next_step event only when another stage is needed; it is a human proposal and never adds or starts a stage automatically. The mission may end after this stage without code or a prototype."
           : "This mission uses its saved fixed workflow. Follow the existing timeline and do not emit next_step proposals.",
@@ -1027,7 +1096,7 @@ function composeRunPrompt(input) {
     append(
       "Automatic discussion routing",
       validated.workflowOrigin === "agent"
-        ? "This is the unclassified first discussion of a fresh mission. Decide the complete, smallest useful timeline from the user's intent and current supports, then emit exactly one workflow_defined event with {steps:[{type,title,objective}],reason}. Use at most 8 stages; allowed types are exploration, reflection, specification, prototype, implementation, review and delivery. Do not emit normal artifacts, code, prototype work, actions, agents, next_step or phase events in this pass. The qualification pass is read-only; the orchestrator will apply the timeline and start only its first stage with the permissions implied by that stage. A specification may be the final stage and never implies code or a prototype. Ask a blocking question only if the timeline cannot be chosen from the intent."
+        ? "This is the unclassified first discussion of a fresh mission. Decide the complete, smallest useful timeline from the user's intent and current supports, then emit exactly one workflow_defined event with {steps:[{type,title,objective}],reason}. Use at most 8 stages; allowed types are exploration, reflection, specification, prototype, implementation, review and delivery. Keep this routing pass concise: do not emit normal artifacts, code, prototype work, actions, agents, next_step or phase events here. The orchestrator applies the timeline and starts its first stage with that stage's permissions. A specification may be the final stage and never implies code or a prototype. Ask a blocking question only if the timeline cannot be chosen from the intent."
         : "This is the unclassified first discussion of a flexible mission. Decide the smallest useful concrete stage from the human goal and current supports, then emit exactly one discussion_type event with {type,title,objective,reason}. Allowed types are exploration, reflection, specification, prototype, and implementation; do not choose review or delivery before a reviewed result exists. Stop after routing: do not emit normal artifacts, code, prototype work, actions, agents, next_step, or phase events in this pass. The orchestrator will apply the decision and start the selected stage separately.",
       5000,
     );
@@ -1103,6 +1172,7 @@ function buildProviderArgs(
   mode,
   imagePaths = [],
   useStdin = false,
+  nativePermissions = false,
 ) {
   validateProvider(provider);
   const safePrompt = boundedString(
@@ -1120,9 +1190,7 @@ function buildProviderArgs(
           "exec",
           "--json",
           "--sandbox",
-          mode === "plan" || mode === "review"
-            ? "read-only"
-            : "workspace-write",
+          mode === "plan" ? "read-only" : "workspace-write",
           "--skip-git-repo-check",
         ]
       : useStdin
@@ -1133,9 +1201,13 @@ function buildProviderArgs(
             "--output-format",
             "stream-json",
             "--verbose",
+            ...(nativePermissions ? ["--permission-prompts", "host"] : []),
           ]
         : ["-p", "--output-format", "stream-json", "--verbose"];
-  if (provider === "claude" && (mode === "plan" || mode === "review")) {
+  if (
+    provider === "claude" &&
+    (mode === "plan" || (!nativePermissions && mode === "review"))
+  ) {
     args.push(
       "--tools",
       "Read,Glob,Grep",
@@ -1143,7 +1215,9 @@ function buildProviderArgs(
       `${mode === "plan" ? "Plan" : "Review"} mode is read-only. Inspect and reason about the project, but do not create, modify, or delete files and do not run mutating commands.`,
     );
   }
-  if (provider === "claude" && mode !== undefined && !useStdin) {
+  if (provider === "claude" && nativePermissions) {
+    args.push("--permission-mode", mode === "plan" ? "plan" : "manual");
+  } else if (provider === "claude" && mode !== undefined && !useStdin) {
     args.push(
       "--permission-mode",
       mode === "plan" || mode === "review" ? "plan" : "acceptEdits",
@@ -1187,6 +1261,10 @@ function buildClaudeStreamInput(prompt, images) {
 function buildProviderInvocation(input, options = {}) {
   const validated = validateRunInput(input);
   const imagePaths = validateImagePaths(options.imagePaths);
+  const nativePermissions = options.nativePermissions === true;
+  const useStdin =
+    validated.provider === "claude" &&
+    (nativePermissions || (validated.images?.length || 0) > 0);
   const composedPrompt = composeRunPrompt(validated);
   return {
     command: validated.provider,
@@ -1196,15 +1274,17 @@ function buildProviderInvocation(input, options = {}) {
       validated.model,
       validated.mode,
       imagePaths,
-      validated.provider === "claude" && (validated.images?.length || 0) > 0,
+      useStdin,
+      nativePermissions,
     ),
     cwd: validated.cwd,
     mode: validated.mode,
     shell: false,
-    stdinText:
-      validated.provider === "claude" && (validated.images?.length || 0) > 0
-        ? buildClaudeStreamInput(composedPrompt, validated.images)
-        : undefined,
+    stdinText: useStdin
+      ? buildClaudeStreamInput(composedPrompt, validated.images)
+      : undefined,
+    keepStdinOpen: nativePermissions,
+    nativePermissions,
   };
 }
 
@@ -1218,7 +1298,9 @@ function buildExecutionPlan(input, options = {}) {
   const capacity =
     options.capacity ||
     resourcePolicy?.capacity ||
-    (resourcePolicy?.mode === "adaptive" ? scheduler.systemCapacity() : undefined);
+    (resourcePolicy?.mode === "adaptive"
+      ? scheduler.systemCapacity()
+      : undefined);
   const batches = scheduler.buildWaves(
     options.preparedAgents || validated.agents,
     configuredConcurrency,
@@ -1327,9 +1409,40 @@ function validateActionProposal(value) {
       MAX_ACTION_DETAIL_LENGTH,
     );
   }
+  if (value.testInstructions !== undefined) {
+    if (
+      !Array.isArray(value.testInstructions) ||
+      value.testInstructions.length > 24
+    )
+      throw runtimeError(
+        "invalid_event",
+        "action.testInstructions must contain at most 24 entries",
+      );
+    result.testInstructions = value.testInstructions.map((instruction, index) =>
+      boundedString(
+        instruction,
+        `action.testInstructions[${index}]`,
+        4_000,
+        { allowEmpty: false },
+      ),
+    );
+  }
+  if (value.expectedResult !== undefined)
+    result.expectedResult = boundedString(
+      value.expectedResult,
+      "action.expectedResult",
+      4_000,
+      { allowEmpty: false },
+    );
   if (value.agentId !== undefined && value.agentId !== null) {
     result.agentId = boundedIdentifier(value.agentId, "action.agentId", 256);
   }
+  if (value.workItemId !== undefined)
+    result.workItemId = boundedIdentifier(value.workItemId, "action.workItemId", 256);
+  if (value.target !== undefined)
+    result.target = boundedString(value.target, "action.target", MAX_ACTION_TITLE_LENGTH, {
+      allowEmpty: false,
+    });
   if (
     value.directory !== undefined &&
     value.directory !== null &&
@@ -1463,10 +1576,22 @@ function validateWorkflowDefinition(data, field = "workflow_defined") {
       MAX_EVENT_TEXT_LENGTH,
       { allowEmpty: false },
     );
-    if (value.validation !== undefined && !["human", "automatic"].includes(value.validation))
-      throw runtimeError("invalid_event", `${field}.steps[${index}].validation is invalid`);
-    if ((value.type === "review" || value.type === "delivery") && value.validation === "automatic")
-      throw runtimeError("invalid_event", "Review and delivery require human validation");
+    if (
+      value.validation !== undefined &&
+      !["human", "automatic"].includes(value.validation)
+    )
+      throw runtimeError(
+        "invalid_event",
+        `${field}.steps[${index}].validation is invalid`,
+      );
+    if (
+      (value.type === "review" || value.type === "delivery") &&
+      value.validation === "automatic"
+    )
+      throw runtimeError(
+        "invalid_event",
+        "Review and delivery require human validation",
+      );
     const list = (input, name) => {
       if (input === undefined) return [];
       if (!Array.isArray(input) || input.length > 100)
@@ -1482,7 +1607,9 @@ function validateWorkflowDefinition(data, field = "workflow_defined") {
       type: value.type,
       title,
       objective,
-      ...(value.validation === undefined ? {} : { validation: value.validation }),
+      ...(value.validation === undefined
+        ? {}
+        : { validation: value.validation }),
       exitCriteria: list(value.exitCriteria, `steps[${index}].exitCriteria`),
       expectedArtifacts: list(
         value.expectedArtifacts,
@@ -1504,11 +1631,472 @@ function validateWorkflowDefinition(data, field = "workflow_defined") {
   };
 }
 
+const NATIVE_TOOL_DEFINITIONS = Object.freeze([
+  {
+    type: "function",
+    name: "publish_question",
+    description:
+      "Publish one decision question in the current Djinn mission. Use blocking false when independent work may continue.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        title: { type: "string", minLength: 1 },
+        context: { type: "string", minLength: 1 },
+        question: {
+          type: "string",
+          minLength: 1,
+          description: "Legacy alias for context.",
+        },
+        recommendation: { type: "string" },
+        unlocks: { type: "string" },
+        blocking: { type: "boolean" },
+        blockingScope: { enum: ["agent", "mission"] },
+        workItemId: { type: "string" },
+        theme: { type: "string" },
+        agentId: { type: "string" },
+        options: {
+          type: "array",
+          maxItems: MAX_NATIVE_LIST_ENTRIES,
+          items: {
+            oneOf: [
+              { type: "string" },
+              {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  label: { type: "string" },
+                  description: { type: "string" },
+                },
+                required: ["label"],
+              },
+            ],
+          },
+        },
+      },
+      required: ["title"],
+      allOf: [
+        {
+          anyOf: [
+            { required: ["context"] },
+            { required: ["question"] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    type: "function",
+    name: "publish_step_report",
+    description:
+      "Publish the lead's structured result for the current workflow stage. Include completed, remaining and evidence for clear progress.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { enum: ["ready", "blocked", "needs_input"] },
+        summary: { type: "string" },
+        completed: { type: "array", items: { type: "string" }, maxItems: 100 },
+        done: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 100,
+          description: "Legacy alias for completed.",
+        },
+        remaining: { type: "array", items: { type: "string" }, maxItems: 100 },
+        evidence: { type: "array", items: { type: "string" }, maxItems: 100 },
+        criteria: { type: "array", maxItems: 100 },
+        reason: { type: "string" },
+        nextAction: { type: "string" },
+        blocked: { type: "boolean" },
+      },
+      required: ["status", "summary", "remaining", "evidence"],
+      allOf: [{ anyOf: [{ required: ["completed"] }, { required: ["done"] }] }],
+    },
+  },
+  {
+    type: "function",
+    name: "publish_report",
+    description:
+      "Publish a structured contribution from a worker. Include completed, remaining and evidence; the native scope supplies the worker identity.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        status: { enum: ["ready", "blocked", "needs_input"] },
+        summary: { type: "string" },
+        completed: { type: "array", items: { type: "string" }, maxItems: 100 },
+        done: { type: "array", items: { type: "string" }, maxItems: 100 },
+        remaining: { type: "array", items: { type: "string" }, maxItems: 100 },
+        evidence: { type: "array", items: { type: "string" }, maxItems: 100 },
+        reason: { type: "string" },
+        nextAction: { type: "string" },
+        blocked: { type: "boolean" },
+      },
+      required: ["status", "summary", "remaining", "evidence"],
+      allOf: [{ anyOf: [{ required: ["completed"] }, { required: ["done"] }] }],
+    },
+  },
+  {
+    type: "function",
+    name: "update_task",
+    description:
+      "Update one bounded mission work item. This records progress only; it cannot launch commands or change ownership.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        title: { type: "string" },
+        status: {
+          enum: ["pending", "running", "blocked", "ready", "done"],
+        },
+        detail: { type: "string" },
+        agentId: { type: "string" },
+        ticket: { type: "string" },
+        worktree: { type: "string" },
+        branch: { type: "string" },
+      },
+      required: ["id", "title", "status"],
+    },
+  },
+  {
+    type: "function",
+    name: "publish_test_action",
+    description:
+      "Register a bounded test or preview action in Djinn's native action registry. The registry resolves the command from package metadata.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        kind: { enum: ["server", "link", "manual"] },
+        title: { type: "string" },
+        detail: { type: "string" },
+        directory: { type: "string" },
+        script: { type: "string" },
+        url: { type: "string" },
+        testInstructions: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 24,
+        },
+        expectedResult: { type: "string" },
+        workItemId: { type: "string" },
+        target: { type: "string" },
+      },
+      required: ["kind", "title"],
+    },
+  },
+  {
+    type: "function",
+    name: "publish_artifact",
+    description:
+      "Publish one bounded artifact for the current mission. Use document for Markdown content; markdown is accepted as a legacy alias and is stored as document.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        title: { type: "string" },
+        type: {
+          enum: [
+            "diagram",
+            "wireframe",
+            "document",
+            "markdown",
+            "code",
+            "screenshot",
+            "visualization",
+          ],
+        },
+        content: { type: "string" },
+        agentId: { type: "string" },
+      },
+      required: ["title", "type", "content"],
+    },
+  },
+  {
+    type: "function",
+    name: "inspect_test_environment",
+    description:
+      "Inspect the bounded local test environment before requesting routine permission. Reads package scripts, checks local containers with a fixed docker ps probe, and probes only explicitly supplied loopback roots; it never runs model-provided commands.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        directory: {
+          type: "string",
+          maxLength: MAX_PATH_LENGTH,
+          description: "Optional project-relative directory to inspect.",
+        },
+        urls: {
+          type: "array",
+          maxItems: 8,
+          items: { type: "string", maxLength: MAX_ACTION_URL_LENGTH },
+          description: "Optional loopback server roots to probe.",
+        },
+      },
+    },
+  },
+]);
+
+function nativeToolDefinitions() {
+  return cloneJson(NATIVE_TOOL_DEFINITIONS);
+}
+
+function boundedNativeList(value, name, max = MAX_NATIVE_LIST_ENTRIES) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > max)
+    throw runtimeError(
+      "invalid_event",
+      `${name} must be an array with at most ${max} entries`,
+    );
+  return value.map((entry, index) =>
+    boundedString(entry, `${name}[${index}]`, MAX_EVENT_TEXT_LENGTH, {
+      allowEmpty: false,
+    }),
+  );
+}
+
+function optionIdentifier(label, index) {
+  const base = String(label || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 128);
+  return boundedIdentifier(base || `option-${index + 1}`, "question.option.id", 256);
+}
+
+function validateQuestionData(data) {
+  const result = {};
+  const titleValue = data.title ?? data.question;
+  result.title = boundedString(titleValue, "question.title", MAX_TASK_TITLE_LENGTH, {
+    allowEmpty: false,
+  });
+  if (data.id !== undefined)
+    result.id = boundedIdentifier(data.id, "question.id", 256);
+  const contextValue = data.context ?? data.question;
+  if (contextValue !== undefined)
+    result.context = boundedString(
+      contextValue,
+      "question.context",
+      MAX_EVENT_TEXT_LENGTH,
+    );
+  for (const field of ["recommendation", "unlocks", "agentId", "theme", "workItemId"]) {
+    if (data[field] !== undefined)
+      result[field] = boundedString(
+        data[field],
+        `question.${field}`,
+        field === "agentId" ? 256 : MAX_EVENT_TEXT_LENGTH,
+      );
+  }
+  if (data.blocking !== undefined) {
+    result.blocking = data.blocking;
+    if (typeof result.blocking !== "boolean")
+      throw runtimeError("invalid_event", "question.blocking must be a boolean");
+  }
+  if (data.blockingScope !== undefined) {
+    if (!["agent", "mission"].includes(data.blockingScope))
+      throw runtimeError(
+        "invalid_event",
+        "question.blockingScope must be agent or mission",
+      );
+    result.blockingScope = data.blockingScope;
+  }
+  if (data.options !== undefined) {
+    if (!Array.isArray(data.options) || data.options.length > MAX_NATIVE_LIST_ENTRIES)
+      throw runtimeError(
+        "invalid_event",
+        "question.options must be an array with at most 100 entries",
+      );
+    const ids = new Set();
+    result.options = data.options.map((option, index) => {
+      const value =
+        typeof option === "string"
+          ? { label: option }
+          : isRecord(option)
+            ? option
+            : null;
+      if (!value)
+        throw runtimeError(
+          "invalid_event",
+          `question.options[${index}] must be a string or object`,
+        );
+      const label = boundedString(
+        value.label,
+        `question.options[${index}].label`,
+        1_000,
+        { allowEmpty: false },
+      );
+      const id = boundedIdentifier(
+        value.id ?? optionIdentifier(label, index),
+        `question.options[${index}].id`,
+        256,
+      );
+      if (ids.has(id))
+        throw runtimeError("invalid_event", `question option id ${id} is duplicated`);
+      ids.add(id);
+      return {
+        id,
+        label,
+        description:
+          value.description === undefined
+            ? ""
+            : boundedString(
+                value.description,
+                `question.options[${index}].description`,
+                4_000,
+              ),
+      };
+    });
+  }
+  return result;
+}
+
+function validateNativeQuestionData(data) {
+  const context = data.context ?? data.question;
+  if (
+    typeof context !== "string" ||
+    context.trim().length === 0
+  )
+    throw runtimeError(
+      "invalid_event",
+      "publish_question requires a non-empty context or question",
+    );
+  return validateQuestionData(data);
+}
+
+function validateReportData(data, { step = false } = {}) {
+  const statuses = ["ready", "blocked", "needs_input"];
+  const blocked = data.blocked === true;
+  const status = data.status === undefined ? (blocked ? "blocked" : "ready") : data.status;
+  if (!statuses.includes(status))
+    throw runtimeError("invalid_event", `Unknown report status: ${String(status)}`);
+  const result = {
+    status,
+    summary: boundedString(data.summary, "report.summary", MAX_EVENT_TEXT_LENGTH, {
+      allowEmpty: false,
+    }),
+  };
+  if (data.id !== undefined) result.id = boundedIdentifier(data.id, "report.id", 256);
+  const completed = data.completed ?? data.done;
+  const completedList = boundedNativeList(completed, "report.completed");
+  const remaining = boundedNativeList(data.remaining, "report.remaining");
+  const evidence = boundedNativeList(data.evidence, "report.evidence");
+  if (completedList !== undefined) result.completed = completedList;
+  if (remaining !== undefined) result.remaining = remaining;
+  if (evidence !== undefined) result.evidence = evidence;
+  if (data.reason !== undefined)
+    result.reason = boundedString(data.reason, "report.reason", MAX_EVENT_TEXT_LENGTH);
+  if (data.nextAction !== undefined)
+    result.nextAction = boundedString(
+      data.nextAction,
+      "report.nextAction",
+      MAX_EVENT_TEXT_LENGTH,
+    );
+  if (step && data.criteria !== undefined) {
+    if (!Array.isArray(data.criteria) || data.criteria.length > MAX_NATIVE_LIST_ENTRIES)
+      throw runtimeError("invalid_event", "step_result.criteria must be an array with at most 100 entries");
+    result.criteria = data.criteria.map((criterion, index) => {
+      if (!isRecord(criterion))
+        throw runtimeError("invalid_event", `step_result.criteria[${index}] must be an object`);
+      if (typeof criterion.met !== "boolean")
+        throw runtimeError("invalid_event", `step_result.criteria[${index}].met must be a boolean`);
+      return {
+        criterion: boundedString(
+          criterion.criterion,
+          `step_result.criteria[${index}].criterion`,
+          4_000,
+          { allowEmpty: false },
+        ),
+        met: criterion.met,
+        ...(criterion.evidence === undefined
+          ? {}
+          : {
+              evidence: boundedString(
+                criterion.evidence,
+                `step_result.criteria[${index}].evidence`,
+                MAX_EVENT_TEXT_LENGTH,
+              ),
+            }),
+      };
+    });
+  }
+  return result;
+}
+
+function validateNativeReportData(data, { step = false } = {}) {
+  for (const field of ["status", "summary", "remaining", "evidence"])
+    if (data[field] === undefined)
+      throw runtimeError(
+        "invalid_event",
+        `publish_${step ? "step_" : ""}report requires ${field}`,
+      );
+  if (data.completed === undefined && data.done === undefined)
+    throw runtimeError(
+      "invalid_event",
+      `publish_${step ? "step_" : ""}report requires completed`,
+    );
+  return validateReportData(data, { step });
+}
+
+function validateWorkItemData(data) {
+  const statuses = ["pending", "running", "blocked", "ready", "done"];
+  if (!statuses.includes(data.status))
+    throw runtimeError("invalid_event", `Unknown work_item status: ${String(data.status)}`);
+  const result = {
+    id: boundedIdentifier(data.id, "work_item.id", 256),
+    title: boundedString(data.title, "work_item.title", MAX_TASK_TITLE_LENGTH, {
+      allowEmpty: false,
+    }),
+    status: data.status,
+  };
+  for (const field of ["detail", "agentId", "ticket", "worktree", "branch"]) {
+    if (data[field] !== undefined)
+      result[field] = boundedString(
+        data[field],
+        `work_item.${field}`,
+        field === "detail" ? MAX_EVENT_TEXT_LENGTH : MAX_PATH_LENGTH,
+      );
+  }
+  return result;
+}
+
+function validateNativeTestActionData(data) {
+  const result = validateActionProposal({
+    ...data,
+    ...(data.kind === undefined ? { kind: "manual" } : {}),
+  });
+  for (const field of ["workItemId", "target"]) {
+    if (data[field] !== undefined)
+      result[field] = boundedString(
+        data[field],
+        `publish_test_action.${field}`,
+        1_000,
+        { allowEmpty: false },
+      );
+  }
+  return result;
+}
+
+function validateNativeArtifactData(data) {
+  if (data.type === undefined)
+    throw runtimeError("invalid_event", "publish_artifact requires type");
+  if (data.content === undefined)
+    throw runtimeError("invalid_event", "publish_artifact requires content");
+  const result = validateProtocolData("artifact", data);
+  if (result.type === undefined)
+    throw runtimeError("invalid_event", "publish_artifact requires type");
+  if (result.content === undefined)
+    throw runtimeError("invalid_event", "publish_artifact requires content");
+  return result;
+}
+
 function validateProtocolData(type, data) {
   if (!isRecord(data)) {
     throw runtimeError("invalid_event", `${type} event data must be an object`);
   }
   if (type === "action") return validateActionProposal(data);
+  if (type === "question") return validateQuestionData(data);
+  if (type === "work_item") return validateWorkItemData(data);
+  if (type === "report") return validateReportData(data);
   if (type === "discussion_type") {
     const allowed = workflow.STEP_TYPES.filter(
       (stepType) =>
@@ -1546,7 +2134,15 @@ function validateProtocolData(type, data) {
   if (type === "workflow_amended") {
     // A future suffix can be empty when the mission needs no additional work.
     if (Array.isArray(data.steps) && data.steps.length === 0)
-      return { steps: [], reason: boundedString(data.reason, "workflow_amended.reason", MAX_EVENT_TEXT_LENGTH, { allowEmpty: false }) };
+      return {
+        steps: [],
+        reason: boundedString(
+          data.reason,
+          "workflow_amended.reason",
+          MAX_EVENT_TEXT_LENGTH,
+          { allowEmpty: false },
+        ),
+      };
     return validateWorkflowDefinition(data, "workflow_amended");
   }
   if (type === "next_step") {
@@ -1589,6 +2185,9 @@ function validateProtocolData(type, data) {
         { allowEmpty: false },
       ),
     };
+  if (type === "step_result") {
+    return validateReportData(data, { step: true });
+  }
   const result = cloneJson(data);
   if (result.id !== undefined)
     result.id = boundedIdentifier(result.id, `${type}.id`);
@@ -1685,6 +2284,9 @@ function validateProtocolData(type, data) {
     }
   }
   if (type === "artifact" && result.type !== undefined) {
+    // "markdown" was used by early native tool clients. Keep the durable
+    // artifact vocabulary small while accepting that safe alias.
+    if (result.type === "markdown") result.type = "document";
     const artifactTypes = [
       "diagram",
       "wireframe",
@@ -1728,22 +2330,61 @@ function normalizeProtocolEvent(value) {
 /** Parse one or more DJINN_EVENT objects from model output. */
 function parseDjinnEvents(text) {
   if (typeof text !== "string" || text.length === 0)
-    return { events: [], text: text || "" };
+    return { events: [], text: text || "", diagnostics: [] };
   const events = [];
+  const diagnostics = [];
+  let serializedProviderRecord = false;
+  try {
+    serializedProviderRecord = isRecord(JSON.parse(text));
+  } catch {
+    // Plain model text is the normal path; only a complete JSON record needs
+    // the escaped-marker guard below.
+  }
   let remainder = text;
   const marker = /DJINN_EVENT:\s*(\{[^\n]*\})/g;
   let match;
   while ((match = marker.exec(text)) !== null) {
+    // A provider JSON record can contain a serialized assistant message whose
+    // nested DJINN_EVENT marker is escaped. Leave that record intact; the
+    // provider-specific normalizer will parse the decoded text and validate it
+    // on the second pass.
+    if (serializedProviderRecord && match[0].includes('\\"')) continue;
     try {
-      const event = normalizeProtocolEvent(JSON.parse(match[1]));
-      if (!event) continue;
+      const raw = JSON.parse(match[1]);
+      const event = normalizeProtocolEvent(raw);
+      if (!event) {
+        diagnostics.push({
+          message: "Unsupported or invalid DJINN_EVENT marker",
+          marker: match[0].slice(0, 4_000),
+        });
+        continue;
+      }
       events.push(event);
       remainder = remainder.replace(match[0], "");
-    } catch {
+    } catch (error) {
+      diagnostics.push({
+        message: `Malformed DJINN_EVENT marker: ${String(error.message || error)}`,
+        marker: match[0].slice(0, 4_000),
+      });
       // Keep malformed markers as ordinary model text. No model output is executable.
     }
   }
-  return { events, text: remainder.trim() };
+  // The bounded marker expression intentionally does not match an incomplete
+  // JSON object. Still surface that condition as a warning while preserving
+  // the original provider text for the transcript.
+  const markerCount = serializedProviderRecord
+    ? 0
+    : [...text.matchAll(/DJINN_EVENT:/g)].length;
+  if (markerCount > events.length + diagnostics.length) {
+    diagnostics.push({
+      message: "Incomplete DJINN_EVENT marker",
+      marker: text.slice(
+        text.indexOf("DJINN_EVENT:"),
+        Math.min(text.length, text.indexOf("DJINN_EVENT:") + 4_000),
+      ),
+    });
+  }
+  return { events, text: remainder.trim(), diagnostics };
 }
 
 function textEvent(text, provider, extra = {}) {
@@ -1786,6 +2427,20 @@ function errorEvent(message, provider, extra = {}) {
       provider,
       message: truncateEventText(String(message ?? "Unknown provider error")),
       ...extra,
+    },
+  };
+}
+
+function protocolDiagnosticEvent(detail, provider) {
+  return {
+    type: "note",
+    data: {
+      title: "Invalid Djinn event marker",
+      detail: truncateEventText(String(detail || "Invalid DJINN_EVENT marker")),
+      provider,
+      stream: "stdout",
+      severity: "warning",
+      protocolDiagnostic: true,
     },
   };
 }
@@ -2009,6 +2664,8 @@ function parseProviderLine(provider, line) {
   if (typeof line !== "string" || line.trim().length === 0) return [];
   const parsedProtocol = parseDjinnEvents(line);
   const events = parsedProtocol.events.slice();
+  for (const diagnostic of parsedProtocol.diagnostics || [])
+    events.push(protocolDiagnosticEvent(diagnostic.message, provider));
   const remaining = parsedProtocol.text;
   if (!remaining) return events;
 
@@ -2034,8 +2691,10 @@ function expandEmbeddedProtocolEvents(event) {
   if (event?.type !== "text" || typeof event.data?.text !== "string")
     return [event];
   const parsed = parseDjinnEvents(event.data.text);
-  if (parsed.events.length === 0) return [event];
-  const result = parsed.events.slice();
+  if (parsed.events.length === 0 && !parsed.diagnostics?.length) return [event];
+  const result = (parsed.events || []).slice();
+  for (const diagnostic of parsed.diagnostics || [])
+    result.push(protocolDiagnosticEvent(diagnostic.message, event.data.provider));
   if (parsed.text)
     result.push({ ...event, data: { ...event.data, text: parsed.text } });
   return result;
@@ -2076,10 +2735,14 @@ module.exports = {
   RUN_MODES,
   PROTOCOL_EVENT_TYPES,
   PUBLIC_EVENT_TYPES,
+  NATIVE_TOOL_NAMES,
+  nativeToolDefinitions,
   MAX_PROMPT_LENGTH,
+  MAX_COMPOSED_PROMPT_LENGTH,
   MAX_PATH_LENGTH,
   MAX_TASK_ID_LENGTH,
   MAX_EVENT_TEXT_LENGTH,
+  MAX_NATIVE_TOOL_ARGUMENTS_LENGTH,
   MAX_AGENTS,
   MAX_CONCURRENCY,
   MAX_GUIDANCE,
@@ -2091,6 +2754,11 @@ module.exports = {
   MAX_ACTION_URL_LENGTH,
   MAX_ACTION_DIRECTORY_LENGTH,
   validateActionProposal,
+  validateNativeTestActionData,
+  validateNativeArtifactData,
+  validateNativeQuestionData,
+  validateNativeReportData,
+  validateReportData,
   MAX_IMAGES,
   MAX_IMAGE_BYTES,
   MAX_TOTAL_IMAGE_BYTES,

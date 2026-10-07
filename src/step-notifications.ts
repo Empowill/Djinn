@@ -28,6 +28,10 @@ export class StepCompletionTracker {
           !["completed", "awaiting_human"].includes(step.status)
         )
           continue;
+        // Automatic internal progress stays quiet; announce an actual human gate
+        // or the final usable result, not every orchestration passage.
+        if (step.status === "completed" && step !== task.steps?.at(-1))
+          continue;
         // The native notification channel accepts bounded target identifiers.
         const questionId = `step:${step.id}`;
         if (questionId.length > 256) continue;

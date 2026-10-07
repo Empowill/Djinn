@@ -642,3 +642,208 @@ button.temporal-agent-label:hover {
     margin-left: 0;
   }
 }
+.mission-work-list {
+  display: grid;
+  gap: 9px;
+  padding: 13px 14px 12px;
+  border: 1px solid #343434;
+  border-radius: 9px;
+  background: #1a1a1a;
+}
+
+.mission-work-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mission-work-heading h2 {
+  margin-top: 4px;
+  color: #cecece;
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.mission-work-count {
+  display: inline-grid;
+  min-width: 23px;
+  height: 23px;
+  place-items: center;
+  padding: 0 6px;
+  border: 1px solid #3d3d3d;
+  border-radius: 4px;
+  color: #a6a6a6;
+  font: var(--font-size-body, 12px) var(--mono);
+}
+
+.mission-work-list > ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mission-work-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid #2f2f2f;
+  border-radius: 6px;
+  background: #1d1d1d;
+}
+
+.mission-work-item.is-running {
+  border-color: #444444;
+}
+
+.mission-work-item.is-blocked {
+  border-color: #504839;
+}
+
+.mission-work-item.is-ready {
+  border-color: #3f4b43;
+}
+
+.mission-work-item.is-done {
+  opacity: 0.78;
+}
+
+.mission-work-status {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  border: 1px solid #767676;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.mission-work-status.running {
+  background: #c6c6c6;
+  border-color: #c6c6c6;
+  box-shadow: 0 0 8px #c6c6c633;
+}
+
+.mission-work-status.blocked {
+  background: #b7a777;
+  border-color: #b7a777;
+}
+
+.mission-work-status.ready {
+  background: #9aad9e;
+  border-color: #9aad9e;
+}
+
+.mission-work-status.done {
+  background: #777;
+  border-color: #777;
+}
+
+.mission-work-copy {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mission-work-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mission-work-title-row strong {
+  min-width: 0;
+  color: #cfcfcf;
+  font-size: var(--font-size-body, 12px);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.mission-work-ticket {
+  padding: 2px 4px;
+  border: 1px solid #393939;
+  border-radius: 3px;
+  color: #8d8d8d;
+  font: var(--font-size-body, 12px) var(--mono);
+}
+
+.mission-work-state {
+  color: #858585;
+  font-size: var(--font-size-body, 12px);
+}
+
+.mission-work-details {
+  color: #858585;
+  font-size: var(--font-size-body, 12px);
+}
+
+.mission-work-details summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mission-work-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.mission-work-details summary svg {
+  transition: transform 0.18s ease;
+}
+
+.mission-work-details[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.mission-work-details > div {
+  display: grid;
+  gap: 4px;
+  padding: 5px 0 1px;
+}
+
+.mission-work-details p {
+  color: #a0a0a0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.mission-work-details code {
+  margin-left: 4px;
+  color: #b3b3b3;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.mission-work-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: center;
+  flex-shrink: 0;
+  max-width: 145px;
+  padding: 2px 0;
+  color: #9c9c9c;
+  font-size: var(--font-size-body, 12px);
+}
+
+.mission-work-agent > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mission-work-agent > svg {
+  color: #696969;
+}
+
+.mission-work-agent:hover {
+  color: #dedede;
+}

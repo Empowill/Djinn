@@ -43,7 +43,7 @@ const MAX_SUMMARY = 12_000;
 const MAX_HISTORY = 12;
 const MAX_HISTORY_ITEM = 2_000;
 // Both transports receive the same bounded context, below native prompt limits.
-const MAX_ANALYSIS_PROMPT = 100_000;
+const MAX_ANALYSIS_PROMPT = Math.min(100_000, runtime.MAX_COMPOSED_PROMPT_LENGTH - 8_000);
 const MAX_SCAN_MS = 3_000;
 const MAX_PROVIDER_OUTPUT = 600_000;
 const MAX_PROVIDER_TIMEOUT_MS = 45_000;

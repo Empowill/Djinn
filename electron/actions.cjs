@@ -19,6 +19,8 @@ const MAX_ACTION_DETAIL_LENGTH = 100_000;
 const MAX_ACTION_ERROR_LENGTH = 2_000;
 const MAX_ACTION_URL_LENGTH = 2_048;
 const MAX_ACTION_DIRECTORY_LENGTH = 1_024;
+const MAX_ACTION_TEST_INSTRUCTIONS = 24;
+const MAX_ACTION_TEST_TEXT_LENGTH = 4_000;
 const MAX_LOG_LENGTH = 64_000;
 const DEFAULT_STARTUP_TIMEOUT_MS = 20_000;
 const MAX_STARTUP_TIMEOUT_MS = 60_000;
@@ -123,13 +125,31 @@ function validateScriptName(value, name = 'script') {
   return script;
 }
 
+function validateTestInstructions(value) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > MAX_ACTION_TEST_INSTRUCTIONS) {
+    throw actionError('invalid_action', `action.testInstructions must contain at most ${MAX_ACTION_TEST_INSTRUCTIONS} entries`);
+  }
+  return value.map((instruction) => boundedString(
+    instruction,
+    'action.testInstructions',
+    MAX_ACTION_TEST_TEXT_LENGTH,
+    { allowEmpty: false },
+  ));
+}
+
+function validateExpectedResult(value) {
+  if (value === undefined) return undefined;
+  return boundedString(value, 'action.expectedResult', MAX_ACTION_TEST_TEXT_LENGTH, { allowEmpty: false });
+}
+
 /**
  * Validate the data a model may propose. The model can name a package script,
  * but it can never supply a command, argv, shell string, environment, or cwd.
  */
 function validateActionProposal(value) {
   if (!isRecord(value)) throw actionError('invalid_action', 'Action data must be an object');
-  const forbidden = ['command', 'args', 'cwd', 'shell', 'env', 'operation', 'status', 'createdAt', 'updatedAt', 'error'];
+  const forbidden = ['command', 'args', 'cwd', 'shell', 'env', 'operation', 'status', 'createdAt', 'updatedAt', 'error', 'testResult'];
   for (const field of forbidden) {
     if (Object.prototype.hasOwnProperty.call(value, field)) {
       throw actionError('invalid_action', `Action field ${field} is not accepted`);
@@ -148,9 +168,15 @@ function validateActionProposal(value) {
   if (value.agentId !== undefined && value.agentId !== null) {
     result.agentId = boundedIdentifier(value.agentId, 'action.agentId');
   }
+  if (value.workItemId !== undefined) result.workItemId = boundedIdentifier(value.workItemId, 'action.workItemId');
+  if (value.target !== undefined) result.target = boundedString(value.target, 'action.target', MAX_ACTION_TITLE_LENGTH, { allowEmpty: false });
   if (value.directory !== undefined) result.directory = normalizeDirectory(value.directory);
   if (value.script !== undefined) result.script = validateScriptName(value.script, 'action.script');
   if (value.url !== undefined) result.url = validateHttpUrl(value.url, 'action.url');
+  const testInstructions = validateTestInstructions(value.testInstructions);
+  if (testInstructions !== undefined) result.testInstructions = testInstructions;
+  const expectedResult = validateExpectedResult(value.expectedResult);
+  if (expectedResult !== undefined) result.expectedResult = expectedResult;
   if (kind === 'link' && !result.url) throw actionError('invalid_action', 'Link actions require a URL');
   if (kind !== 'server' && result.script !== undefined) {
     throw actionError('invalid_action', 'Only server actions may name a script');
@@ -177,9 +203,13 @@ function createTaskAction(value, taskId, now = actionNow()) {
     createdAt: now,
     updatedAt: now,
     ...(proposal.agentId ? { agentId: proposal.agentId } : {}),
+    ...(proposal.workItemId ? { workItemId: proposal.workItemId } : {}),
+    ...(proposal.target ? { target: proposal.target } : {}),
     ...(proposal.directory ? { directory: proposal.directory } : {}),
     ...(proposal.url ? { url: proposal.url } : {}),
     ...(proposal.script ? { script: proposal.script } : {}),
+    ...(proposal.testInstructions ? { testInstructions: proposal.testInstructions } : {}),
+    ...(proposal.expectedResult ? { expectedResult: proposal.expectedResult } : {}),
   };
 }
 
@@ -427,7 +457,84 @@ function candidateMatchesAction(candidate, action) {
   return true;
 }
 
+function candidateFromPackage(projectRoot, directory, loaded, script) {
+  const scripts = loaded.pkg.scripts;
+  const framework = frameworkForPackage(loaded.pkg);
+  const port = scriptPort(scripts[script], defaultFrameworkPort(framework));
+  const manager = packageManagerFor(loaded.pkg, directory, projectRoot);
+  const invocation = packageInvocation(manager, script);
+  const directoryName = path.relative(projectRoot, directory).split(path.sep).filter(Boolean).join('/');
+  return {
+    cwd: directory,
+    directory: directoryName || undefined,
+    packagePath: loaded.packagePath,
+    packageName: typeof loaded.pkg.name === 'string'
+      ? loaded.pkg.name.slice(0, 256)
+      : path.basename(directory).slice(0, 256),
+    framework,
+    manager,
+    script,
+    scriptText: scripts[script],
+    port,
+    ...invocation,
+  };
+}
+
+async function resolveExplicitDirectory(projectRoot, action) {
+  const root = path.resolve(projectRoot);
+  const rootReal = await fsp.realpath(root).catch(() => {
+    throw actionError('action_unavailable', 'The project directory does not exist');
+  });
+  const requestedDirectory = normalizeDirectory(action.directory, 'action.directory');
+  if (!requestedDirectory) {
+    throw actionError('invalid_path', 'An explicit server directory is required');
+  }
+  const lexicalDirectory = resolveProjectPath(root, requestedDirectory);
+  let directory;
+  try {
+    directory = await fsp.realpath(lexicalDirectory);
+  } catch {
+    throw actionError('action_unavailable', 'The selected project directory does not exist');
+  }
+  if (directory !== rootReal && !directory.startsWith(`${rootReal}${path.sep}`)) {
+    throw actionError('invalid_path', 'Action directory escapes the project');
+  }
+  let stats;
+  try {
+    stats = await fsp.stat(directory);
+  } catch {
+    throw actionError('action_unavailable', 'The selected project directory does not exist');
+  }
+  if (!stats.isDirectory()) {
+    throw actionError('invalid_path', 'The selected action path is not a directory');
+  }
+  const loaded = await readPackage(directory);
+  if (!loaded) {
+    throw actionError('action_unavailable', 'The selected project directory has no valid package.json');
+  }
+  let packagePath;
+  try {
+    packagePath = await fsp.realpath(loaded.packagePath);
+  } catch {
+    throw actionError('action_unavailable', 'The selected project package.json is unavailable');
+  }
+  if (packagePath !== rootReal && !packagePath.startsWith(`${rootReal}${path.sep}`)) {
+    throw actionError('invalid_path', 'The selected package escapes the project');
+  }
+  const requestedScript = validateScriptName(action.script, 'action.script');
+  const script = requestedScript || recognizedScriptNames(loaded.pkg.scripts)[0];
+  if (!script || typeof loaded.pkg.scripts[script] !== 'string' || !loaded.pkg.scripts[script].trim()) {
+    throw actionError('action_unavailable', requestedScript
+      ? 'The selected development script is not present in the project'
+      : 'No recognized project development script was found in the selected directory');
+  }
+  return candidateFromPackage(rootReal, directory, { ...loaded, packagePath }, script);
+}
+
 async function resolveCandidate(projectRoot, action, options = {}) {
+  if (action?.directory !== undefined) {
+    return resolveExplicitDirectory(projectRoot, action);
+  }
   const candidates = await detectServerCandidates(projectRoot, options);
   const matches = candidates.filter((candidate) => candidateMatchesAction(candidate, action));
   if (matches.length === 1) return matches[0];
@@ -673,9 +780,13 @@ class ActionRegistry {
         title: restored.title,
         ...(restored.detail !== undefined ? { detail: restored.detail } : {}),
         ...(restored.agentId !== undefined ? { agentId: restored.agentId } : {}),
+        ...(restored.workItemId !== undefined ? { workItemId: restored.workItemId } : {}),
+        ...(restored.target !== undefined ? { target: restored.target } : {}),
         ...(restored.directory !== undefined ? { directory: restored.directory } : {}),
         ...(restored.url !== undefined ? { url: restored.url } : {}),
         ...(restored.script !== undefined ? { script: restored.script } : {}),
+        ...(restored.testInstructions !== undefined ? { testInstructions: restored.testInstructions } : {}),
+        ...(restored.expectedResult !== undefined ? { expectedResult: restored.expectedResult } : {}),
       };
       this.register(taskId, proposal, { projectRoot: input.cwd, runId: input.runId || null });
       record = this._lookup(taskId, input.action);

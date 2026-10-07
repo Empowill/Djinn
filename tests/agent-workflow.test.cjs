@@ -139,6 +139,56 @@ test("la timeline acceptée remplace le slot de qualification et conserve sa rai
   assert.equal(workflow.validateTaskWorkflow(applied).steps.length, 4);
 });
 
+test("une qualification automatique terminée peut être reclassée sans approbation humaine", () => {
+  const initial = workflow.createDiscussionStep("task-1", "discussion");
+  const completed = {
+    ...initial,
+    validation: "automatic",
+    status: "completed",
+    completedAt: "2026-10-06T08:00:00.000Z",
+  };
+  const task = taskFixture({
+    workflowMode: "flexible",
+    workflowOrigin: "agent",
+    status: "waiting",
+    steps: [completed],
+    activeStepId: initial.id,
+    selectedStepId: initial.id,
+  });
+  const discussionProposal = {
+    stepId: initial.id,
+    type: "specification",
+    title: "Spécifier",
+    objective: "Décrire le résultat",
+    reason: "Le besoin est cadré",
+  };
+  const classified = workflow.classifyDiscussion(task, discussionProposal);
+  assert.equal(classified.steps[0].status, "pending");
+  assert.equal(classified.steps[0].approvedAt, undefined);
+  assert.equal(classified.steps[0].validation, "human");
+
+  const applied = workflow.applyWorkflowProposal(task, {
+    ...definition,
+    stepId: initial.id,
+  });
+  assert.equal(applied.steps[0].status, "pending");
+  assert.equal(applied.steps[0].approvedBy, undefined);
+  assert.throws(
+    () => workflow.classifyDiscussion({
+      ...task,
+      steps: [{ ...completed, approvedBy: "human", approvedAt: "2026-10-06T08:01:00.000Z" }],
+    }, discussionProposal),
+    /discussion\.classify\.step/,
+  );
+  assert.throws(
+    () => workflow.applyWorkflowProposal({ ...task, activeStepId: "late-step" }, {
+      ...definition,
+      stepId: initial.id,
+    }),
+    /workflowProposal\.apply\.step/,
+  );
+});
+
 test("les deux harnesses reçoivent l’origine de workflow et le contexte de qualification", () => {
   const step = workflow.createDiscussionStep("task-1", "discussion");
   const input = runtime.validateRunInput({

@@ -1,0 +1,258 @@
+.permission-panel {
+  margin: 18px 0 0;
+  padding: 16px;
+  border: 1px solid #413d33;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #24231f, #1a1a19);
+}
+.permission-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid #3a382f;
+}
+.permission-panel-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #ddd6be;
+  font-size: 14px;
+  font-weight: 550;
+}
+.permission-panel-heading > svg {
+  color: #c5b68c;
+}
+.permission-panel-heading p {
+  max-width: 620px;
+  margin-top: 5px;
+  color: #9c9682;
+  line-height: 1.55;
+}
+.permission-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 11px;
+}
+.permission-card {
+  border: 1px solid #474338;
+  border-radius: 8px;
+  background: #1d1d1b;
+  overflow: hidden;
+}
+.permission-card.is-accepted {
+  border-color: #3e5144;
+}
+.permission-card.is-declined,
+.permission-card.is-cancelled {
+  border-color: #4a3d3d;
+}
+.permission-card-top {
+  display: flex;
+  gap: 10px;
+  padding: 13px 14px 11px;
+}
+.permission-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: #c7b981;
+  background: #343125;
+}
+.permission-card.is-accepted .permission-icon {
+  color: #abc2ae;
+  background: #26362a;
+}
+.permission-card.is-declined .permission-icon,
+.permission-card.is-cancelled .permission-icon {
+  color: #d0a4a4;
+  background: #382929;
+}
+.permission-card-heading {
+  min-width: 0;
+  flex: 1;
+}
+.permission-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: #96917f;
+  font-size: var(--font-size-body, 12px);
+}
+.permission-status {
+  margin-left: auto;
+  color: #c8ba86;
+}
+.permission-status.is-accepted {
+  color: #9ebba3;
+}
+.permission-status.is-declined,
+.permission-status.is-cancelled {
+  color: #c59c9c;
+}
+.permission-card h3 {
+  margin-top: 4px;
+  color: #e1ded3;
+  font-size: 13px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.permission-card-heading > p {
+  margin-top: 5px;
+  color: #aaa596;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.permission-request-preview {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+}
+.permission-request-preview code,
+.permission-request-preview span {
+  overflow-wrap: anywhere;
+}
+.permission-request-preview code {
+  color: #d5d0bf;
+  font: var(--font-size-body, 12px)/1.45 var(--mono);
+}
+.permission-request-preview span {
+  color: #898473;
+  font: var(--font-size-body, 12px) var(--mono);
+}
+.permission-details {
+  margin: 0 14px 11px 52px;
+  border-top: 1px solid #35332d;
+}
+.permission-details summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  cursor: pointer;
+  color: #aaa28e;
+  list-style: none;
+}
+.permission-details summary::-webkit-details-marker {
+  display: none;
+}
+.permission-details summary svg {
+  transition: transform 0.18s;
+}
+.permission-details[open] summary svg {
+  transform: rotate(180deg);
+}
+.permission-detail-body {
+  display: grid;
+  gap: 8px;
+  padding: 2px 0 7px;
+}
+.permission-detail-body > div {
+  display: grid;
+  gap: 3px;
+}
+.permission-detail-body span {
+  color: #827e70;
+}
+.permission-detail-body code {
+  display: block;
+  padding: 7px 8px;
+  border: 1px solid #36352f;
+  border-radius: 5px;
+  color: #d4d0c3;
+  background: #151514;
+  font: var(--font-size-body, 12px)/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.permission-questions {
+  display: grid;
+  gap: 11px;
+  margin: 0 14px 12px 52px;
+  padding-top: 2px;
+}
+.permission-question {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.permission-question legend {
+  margin-bottom: 7px;
+  color: #d0cbbd;
+  font-weight: 550;
+}
+.permission-question input:not([type="radio"]) {
+  width: 100%;
+  padding: 8px 9px;
+}
+.permission-options {
+  display: grid;
+  gap: 5px;
+}
+.permission-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid #3a382f;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.permission-option:has(input:checked) {
+  border-color: #7b704d;
+  background: #29271f;
+}
+.permission-option input {
+  margin-top: 2px;
+  accent-color: #c1b47c;
+}
+.permission-option span {
+  display: grid;
+  gap: 2px;
+}
+.permission-option strong {
+  color: #d6d1c0;
+  font-weight: 500;
+}
+.permission-option small {
+  color: #979282;
+}
+.permission-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 14px 10px 52px;
+  color: #d3a6a6;
+}
+.permission-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 14px 13px 52px;
+}
+.permission-actions .button.accent {
+  background: #d7cfaa;
+  border-color: #e1d9b5;
+  color: #24231f;
+}
+@media (max-width: 700px) {
+  .permission-card-meta .permission-status {
+    width: 100%;
+    margin-left: 0;
+  }
+  .permission-details,
+  .permission-questions,
+  .permission-error,
+  .permission-actions {
+    margin-left: 14px;
+  }
+  .permission-actions {
+    justify-content: flex-start;
+  }
+}

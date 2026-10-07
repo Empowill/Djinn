@@ -24,10 +24,19 @@ import {
   Pause,
   X,
 } from "lucide-react";
-import type { Task, Question, Agent, FlightEvent } from "./types";
+import type {
+  Task,
+  Question,
+  Agent,
+  FlightEvent,
+  PermissionDecision,
+  PermissionRequest,
+} from "./types";
 import { phaseLabels } from "./data";
 import { Orb, Machine, Wave, agentColor, agentOrbState } from "./visuals";
 import { getNextRunMode } from "./use-djinn";
+import { PermissionPanel } from "./permission-panel";
+import { agentStatusLabel } from "./mission-progress";
 
 type AgentScheduling = Agent & {
   writeScope?: string[];
@@ -135,9 +144,11 @@ export function QuestionCard({
   onReopen: () => void;
 }) {
   const [expanded, setExpanded] = useState(q.blocking && !q.answer);
-  const [choice, setChoice] = useState(q.options[0]?.label || "");
+  const options = q.options || [];
+  const [choice, setChoice] = useState(options[0]?.label || "");
   const [custom, setCustom] = useState("");
-  const [customMode, setCustomMode] = useState(false);
+  const [customMode, setCustomMode] = useState(options.length === 0);
+  const recommendation = q.recommendation?.trim();
   return (
     <motion.article
       layout
@@ -201,40 +212,39 @@ export function QuestionCard({
                 </div>
               ) : (
                 <>
-                  {q.recommendation && (
+                  {recommendation && (
                     <div className="recommendation">
                       <span className="mini-spark">✳</span>
                       <div>
                         <span>Recommandation</span>
-                        <p>{q.recommendation}</p>
+                        <p>{recommendation}</p>
                       </div>
                     </div>
                   )}
-                  <div className="question-options">
-                    {q.options.map((o, i) => (
-                      <button
-                        key={o.id}
-                        disabled={readOnly}
-                        className={`option ${choice === o.label && !customMode ? "selected" : ""}`}
-                        onClick={() => {
-                          setChoice(o.label);
-                          setCustomMode(false);
-                        }}
-                        aria-pressed={choice === o.label && !customMode}
-                      >
-                        <span className="option-radio">
-                          {choice === o.label && !customMode && <span />}
-                        </span>
-                        <div>
-                          <strong>
-                            {o.label}
-                            {i === 0 && <small>Recommandé</small>}
-                          </strong>
-                          <p>{o.description}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  {options.length > 0 && (
+                    <div className="question-options">
+                      {options.map((o) => (
+                        <button
+                          key={o.id}
+                          disabled={readOnly}
+                          className={`option ${choice === o.label && !customMode ? "selected" : ""}`}
+                          onClick={() => {
+                            setChoice(o.label);
+                            setCustomMode(false);
+                          }}
+                          aria-pressed={choice === o.label && !customMode}
+                        >
+                          <span className="option-radio">
+                            {choice === o.label && !customMode && <span />}
+                          </span>
+                          <div>
+                            <strong>{o.label}</strong>
+                            <p>{o.description}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {customMode ? (
                     <textarea
                       autoFocus
@@ -270,7 +280,9 @@ export function QuestionCard({
                         onAnswer(customMode ? custom.trim() : choice)
                       }
                     >
-                      Valider ce choix
+                      {options.length > 0 && !customMode
+                        ? "Valider ce choix"
+                        : "Valider la réponse"}
                       <ArrowRight size={14} />
                     </button>
                   </div>
@@ -291,6 +303,7 @@ export function MissionHeader({
   providerControl?: ReactNode;
 }) {
   const activeStep = task.steps?.find((step) => step.id === task.activeStepId);
+  const pendingPermission = task.permissions?.find((request) => request.status === "pending");
   return (
     <div className="hero mission-header">
       <div className="hero-copy">
@@ -312,6 +325,11 @@ export function MissionHeader({
           </p>
         )}
         <div className="hero-meta">
+          {pendingPermission && (
+            <button className="button secondary small" onClick={() => window.dispatchEvent(new CustomEvent("djinn:permission-focus", { detail: { taskId: task.id, requestId: pendingPermission.id } }))}>
+              <LockKeyhole size={13} /> Autorisation attendue · {pendingPermission.agentName || task.agents.find((agent) => agent.id === pendingPermission.agentId)?.name || "Agent"}
+            </button>
+          )}
           <span>
             <GitBranch size={13} />
             {task.project ? task.project.split("/").pop() : "Mission d’exemple"}
@@ -349,6 +367,12 @@ export function Overview({
   onDemo,
   readOnly = false,
   actions,
+  workSummary,
+  permissions = [],
+  onRespondPermission,
+  busyPermissionIds = [],
+  onSteer,
+  onResume,
 }: {
   task: Task;
   onAnswer: (id: string, value: string) => void;
@@ -358,198 +382,174 @@ export function Overview({
   onDemo: () => void;
   readOnly?: boolean;
   actions?: ReactNode;
+  workSummary?: ReactNode;
+  permissions?: PermissionRequest[];
+  onRespondPermission?: (
+    request: PermissionRequest,
+    decision: PermissionDecision,
+    answers?: Record<string, string>,
+  ) => Promise<boolean>;
+  busyPermissionIds?: string[];
+  onSteer?: (value: string) => Promise<boolean>;
+  onResume?: () => void;
 }) {
   const open = task.questions.filter((q) => !q.answer);
   const answered = task.questions.filter((q) => q.answer);
   const [history, setHistory] = useState(false);
   const active = task.agents.filter((a) => a.status === "running").length;
-  const waiting = task.agents.filter((a) =>
-    agentWaitSummary(a, task.agents, task.events, !!task.runId),
+  const selectedStepId = task.selectedStepId || task.activeStepId;
+  const permissionRequests = permissions.filter(
+    (request) => request.status === "pending" && (selectedStepId === task.activeStepId || !request.stepId || !selectedStepId || request.stepId === selectedStepId),
   );
-  const limit = Math.max(1, task.configuration.concurrency || 1);
+  const activeStep = task.steps?.find((step) => step.id === task.activeStepId);
+  const currentResult =
+    task.stepResult?.stepId === task.activeStepId ? task.stepResult : undefined;
+  const passageFailed =
+    task.status === "error" || activeStep?.status === "error";
+  const latestError = passageFailed
+    ? task.events
+        .slice()
+        .reverse()
+        .find(
+          (entry) =>
+            entry.type === "error" &&
+            (!entry.stepId || entry.stepId === task.activeStepId),
+        )
+    : undefined;
+  const stepResult = passageFailed
+    ? {
+        stepId: task.activeStepId,
+        status: "blocked" as const,
+        summary: "Le passage a été interrompu par une erreur.",
+        reason: (
+          latestError?.detail ||
+          latestError?.title ||
+          "Le fournisseur ou un sous-agent n’a pas terminé ce passage."
+        ).slice(0, 4000),
+        nextAction:
+          "Corrigez la cause indiquée, puis reprenez cette étape. Votre travail est conservé.",
+      }
+    : currentResult;
+  const resultNeedsAction =
+    !!stepResult &&
+    stepResult.stepId === task.activeStepId &&
+    stepResult.status !== "ready";
+  const hasRestitution =
+    !!actions &&
+    (task.artifacts.length > 0 ||
+      (task.actions || []).length > 0);
+  const hasActionCenter =
+    open.length > 0 ||
+    permissionRequests.length > 0 ||
+    hasRestitution ||
+    resultNeedsAction;
   return (
     <div className="overview-content">
-      <section className="team-section">
-        <div className="section-heading">
-          <div>
-            <h2>
-              Agents<span className="count">{task.agents.length}</span>
-            </h2>
-            <p className="team-caption">
-              Jusqu’à {limit} worker{limit > 1 ? "s" : ""} en parallèle si les
-              périmètres d’écriture sont disjoints. Un périmètre absent reste
-              réservé par prudence.
-            </p>
+      {hasActionCenter && (
+        <section
+          className="action-center"
+          id="action-center"
+          aria-label="À toi de jouer"
+        >
+          <div className="action-center-heading">
+            <div>
+              <span className="eyebrow">PROCHAINE ACTION</span>
+              <h2>À toi de jouer</h2>
+              <p>
+                Décidez ce qui peut avancer, autorisez les demandes utiles et
+                validez le résultat.
+              </p>
+            </div>
+            {open.length > 0 && (
+              <span
+                className={`status-text ${open.some((q) => q.blocking) ? "warm" : "green"}`}
+              >
+                <span className="status-dot" />
+                {open.some((q) => q.blocking)
+                  ? "Réponse requise"
+                  : "Peut avancer"}
+              </span>
+            )}
           </div>
-          <button className="text-button" onClick={() => onTab("timeline")}>
-            Voir la timeline
-            <ArrowUpRight size={14} />
-          </button>
-        </div>
-        <div className="agent-grid">
-          {task.agents.map((a) =>
-            (() => {
-              const wait = agentWaitSummary(
-                a,
-                task.agents,
-                task.events,
-                !!task.runId,
-              );
-              const scope = agentScope(a);
-              const isReadOnly =
-                a.id === "lead"
-                  ? task.activity?.lead !== "integrates"
-                  : agentIsReadOnly(a);
-              const leadSupervising =
-                a.id === "lead" &&
-                !readOnly &&
-                task.activity?.lead === "supervises" &&
-                task.activity.activeAgents.some((agent) => agent.id !== "lead");
-              const leadIntegrating =
-                a.id === "lead" && task.activity?.lead === "integrates";
-              return (
-                <button
-                  className={`agent-card ${a.status} ${wait ? "has-wait" : ""}`}
-                  key={a.id}
-                  onClick={() => onAgent(a)}
-                >
-                  <div className="agent-card-top">
-                    <Orb
-                      status={a.status}
-                      size={60}
-                      color={agentColor(a.id, task.agents.indexOf(a))}
-                      animation={agentOrbState(a.id, task.agents.indexOf(a))}
-                    />
-                    <ArrowUpRight size={14} />
-                  </div>
-                  <h3>
-                    {a.name}
-                    <span
-                      className="agent-code"
-                      style={{
-                        color: agentColor(a.id, task.agents.indexOf(a)),
-                      }}
-                    >
-                      {isReadOnly
-                        ? "lecture seule"
-                        : a.id === "lead"
-                          ? "00"
-                          : String(task.agents.indexOf(a)).padStart(2, "0")}
-                    </span>
-                  </h3>
-                  <p className="agent-role">{a.role}</p>
-                  {a.origin === "codex" && (
-                    <p className="agent-scope" title={a.providerThreadId}>
-                      Codex · {a.model || "modèle non communiqué"}
-                      {a.parentAgentId &&
-                        ` · parent : ${task.agents.find((parent) => parent.id === a.parentAgentId)?.name || a.parentAgentId}`}
-                    </p>
-                  )}
-                  {a.activity && <p className="agent-role">{a.activity}</p>}
-                  {scope.length ? (
-                    <p className="agent-scope" title={scope.join("\n")}>
-                      <span>Périmètre</span> {scope.join(" · ")}
-                    </p>
-                  ) : (
-                    <p className="agent-scope muted">
-                      {a.origin === "codex"
-                        ? "Périmètre non communiqué par Codex"
-                        : isReadOnly
-                          ? "Lecture seule · aucune écriture"
-                          : "Périmètre non déclaré · réservé par prudence"}
-                    </p>
-                  )}
-                  {wait && (
-                    <p className="agent-wait" title={wait.detail || wait.title}>
-                      <Clock3 size={11} />
-                      <span>
-                        {wait.title}
-                        {wait.detail && <small>{wait.detail}</small>}
-                      </span>
-                    </p>
-                  )}
-                  <div className="agent-progress">
-                    <span
-                      style={{
-                        width: `${a.progress}%`,
-                        background: agentColor(a.id, task.agents.indexOf(a)),
-                      }}
-                    />
-                  </div>
-                  <div className="agent-card-bottom">
-                    <span className={`status-dot ${a.status}`} />
-                    {a.origin === "codex" && a.live === false
-                      ? `Dernier état : ${statusLabels[a.status]}`
-                      : leadSupervising
-                        ? "Supervise · lecture seule · Attend les sous-agents"
-                        : leadIntegrating
-                          ? "Intègre après les workers"
-                          : isReadOnly
-                            ? "Lecture seule"
-                            : statusLabels[a.status]}
-                    <span>{a.progress}%</span>
-                  </div>
-                </button>
-              );
-            })(),
-          )}
-        </div>
-        {waiting.length > 0 && (
-          <p className="team-waiting-note">
-            {waiting.length} worker{waiting.length > 1 ? "s" : ""} en attente :
-            ouvrez sa carte pour voir le motif rapporté et les dépendances.
-          </p>
-        )}
-        {!task.agents.length && (
-          <div className="empty-team">
-            <Wave />
-            <p>Les agents apparaîtront après le cadrage.</p>
-          </div>
-        )}
-      </section>
-      <AnimatePresence>
-        {open.length > 0 && (
-          <motion.div
-            key="pending-decisions"
-            initial={{ opacity: 0, y: 12, height: 0 }}
-            animate={{ opacity: 1, y: 0, height: "auto" }}
-            exit={{ opacity: 0, y: -8, height: 0 }}
-            transition={{ duration: 0.25 }}
-          >
-            {" "}
-            <section className="decisions-section">
-              <div className="section-heading">
-                <div>
-                  <h2>
-                    Décisions<span className="count">{open.length}</span>
-                  </h2>
-                </div>
-                <span
-                  className={`status-text ${open.some((q) => q.blocking) ? "warm" : "green"}`}
-                >
-                  <span className="status-dot" />
-                  {open.some((q) => q.blocking)
-                    ? "La mission attend votre signal"
-                    : open.length
-                      ? "Vos agents peuvent avancer"
-                      : "Toutes les décisions sont prises"}
+          {resultNeedsAction && stepResult && (
+            <article className="step-result-action">
+              <div>
+                <span className="step-result-kicker">
+                  {stepResult.status === "blocked"
+                    ? "Action nécessaire"
+                    : "Réponse attendue"}
                 </span>
+                <h3>{stepResult.summary}</h3>
+                {stepResult.reason && <p>{stepResult.reason}</p>}
+                {stepResult.nextAction && (
+                  <p className="step-result-next">{stepResult.nextAction}</p>
+                )}
               </div>
-              <AnimatePresence mode="popLayout">
-                {open.map((q) => (
-                  <QuestionCard
-                    key={q.id}
-                    question={q}
-                    readOnly={readOnly}
-                    onAnswer={(v) => onAnswer(q.id, v)}
-                    onReopen={() => onReopen(q.id)}
-                  />
-                ))}
-              </AnimatePresence>
-            </section>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              {task.runId ? (
+                <button
+                  type="button"
+                  className="button secondary small"
+                  onClick={() =>
+                    void onSteer?.(
+                      `Action demandée pour l’étape : ${stepResult.nextAction || stepResult.summary}`,
+                    )
+                  }
+                >
+                  Indiquer au chef <ArrowRight size={13} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="button accent small"
+                  onClick={onResume}
+                >
+                  Reprendre cette étape <ArrowRight size={13} />
+                </button>
+              )}
+            </article>
+          )}
+          <AnimatePresence>
+            {open.length > 0 && (
+              <motion.div
+                key="pending-decisions"
+                initial={{ opacity: 0, y: 12, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: "auto" }}
+                exit={{ opacity: 0, y: -8, height: 0 }}
+                transition={{ duration: 0.25 }}
+              >
+                <section className="decisions-section">
+                  <div className="section-heading">
+                    <h3>
+                      Décisions<span className="count">{open.length}</span>
+                    </h3>
+                  </div>
+                  <AnimatePresence mode="popLayout">
+                    {open.map((q) => (
+                      <QuestionCard
+                        key={q.id}
+                        question={q}
+                        readOnly={readOnly}
+                        onAnswer={(v) => onAnswer(q.id, v)}
+                        onReopen={() => onReopen(q.id)}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </section>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {permissionRequests.length > 0 && onRespondPermission && (
+            <PermissionPanel
+              requests={permissionRequests}
+              onRespond={onRespondPermission}
+              busyIds={busyPermissionIds}
+            />
+          )}
+          {workSummary}
+          {actions}
+        </section>
+      )}
+      {!hasActionCenter && workSummary}
       {answered.length > 0 && (
         <div className="decision-history">
           <button className="text-button" onClick={() => setHistory(!history)}>
@@ -579,8 +579,6 @@ export function Overview({
           </AnimatePresence>
         </div>
       )}
-
-      {actions}
       <div className="mission-bottom">
         <span>
           <Activity size={13} />
@@ -749,7 +747,9 @@ export function ActivityRail({
             />
             <span>
               {a.name}
-              <small>{a.role}</small>
+              <small>
+                {a.role} · {agentStatusLabel(task, a)}
+              </small>
             </span>
             <span className={`status-dot ${a.status}`} />
           </button>
@@ -760,3 +760,4 @@ export function ActivityRail({
 }
 export { Timeline } from "./temporal-timeline";
 export { AgentChat as AgentDrawer } from "./agent-chat";
+export { StageReport } from "./mission-progress";

@@ -6,7 +6,7 @@ const test = require("node:test"),
   os = require("node:os");
 const scheduler = require("../electron/scheduler.cjs");
 const worker = (id, scope, dependsOn) => ({ id, writeScope: scope, dependsOn });
-test("disjoint writers share a wave while directory, unknown and shared ownership serialize", () => {
+test("disjoint writers share a wave while bounded and intentional root ownership serialize", () => {
   const agents = [
     worker("a", ["src/a.ts"]),
     worker("b", ["src/a.ts"]),
@@ -24,8 +24,12 @@ test("disjoint writers share a wave while directory, unknown and shared ownershi
     true,
   );
   assert.equal(
-    scheduler.conflicts(worker("unknown"), worker("file", ["src/a.ts"])),
-    true,
+    scheduler.conflicts({ id: "inspector" }, worker("file", ["src/a.ts"])),
+    false,
+  );
+  assert.throws(
+    () => scheduler.conflicts({ id: "writer", readOnly: false }, worker("file", ["src/a.ts"])),
+    /writeScope/,
   );
   assert.equal(
     scheduler.conflicts(
@@ -34,6 +38,36 @@ test("disjoint writers share a wave while directory, unknown and shared ownershi
     ),
     false,
   );
+});
+
+test("omitted ownership is a concurrent inspector and writers must declare a scope", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-scheduler-defaults-"));
+  try {
+    const [inspector] = scheduler.prepareAgents(root, [{ id: "inspector" }]);
+    assert.equal(inspector.readOnly, true);
+    assert.deepEqual(inspector.writePaths, []);
+    assert.throws(
+      () => scheduler.prepareAgents(root, [{ id: "writer", readOnly: false }]),
+      /writeScope/,
+    );
+    const [rootWriter] = scheduler.prepareAgents(root, [{
+      id: "root-writer",
+      readOnly: false,
+      writeScope: ["*"],
+    }]);
+    assert.equal(rootWriter.readOnly, false);
+    assert.deepEqual(rootWriter.writePaths, [fs.realpathSync(root)]);
+    assert.deepEqual(
+      scheduler.buildWaves([
+        { id: "left", writeScope: ["left.ts"] },
+        { id: "right", writeScope: ["right.ts"] },
+        { id: "inspect" },
+      ], 3, "execute").map((wave) => wave.map((agent) => agent.id)),
+      [["left", "right", "inspect"]],
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 test("resource conflicts tolerate omitted profiles while preserving declared exclusions", () => {
   assert.equal(

@@ -1173,6 +1173,129 @@ button {
 .team-section {
   padding-top: 32px;
 }
+.team-summary {
+  padding: 22px 0 18px;
+  border-bottom: 1px solid var(--line);
+}
+.team-summary .section-heading {
+  margin-bottom: 0;
+}
+.team-summary .section-heading h2 {
+  font-size: 17px;
+}
+.team-summary .team-caption {
+  max-width: 620px;
+}
+.action-center {
+  margin: 20px 0 5px;
+  padding: 19px 18px 8px;
+  border: 1px solid #423f35;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #23231f, #191919);
+  scroll-margin-top: 20px;
+}
+.action-center-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid #37352f;
+}
+.action-center-heading h2 {
+  margin-top: 5px;
+  color: #e4dfca;
+  font-size: 22px;
+  letter-spacing: -0.3px;
+}
+.action-center-heading p {
+  margin-top: 6px;
+  color: #aaa491;
+  line-height: 1.55;
+}
+.action-center-heading .status-text {
+  margin-top: 12px;
+  white-space: nowrap;
+}
+.action-center .decisions-section {
+  padding: 17px 0 1px;
+  border: 0;
+}
+.step-result-action {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 15px 0 0;
+  padding: 13px 14px;
+  border: 1px solid #5a4d38;
+  border-radius: 8px;
+  background: #28251d;
+}
+.step-result-action > div {
+  min-width: 0;
+}
+.step-result-kicker {
+  color: #cbbb87;
+  font: var(--font-size-body, 12px) var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.step-result-action h3 {
+  margin-top: 5px;
+  color: #e0d9c4;
+  font-size: 13px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.step-result-action p {
+  margin-top: 5px;
+  color: #aaa28d;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.step-result-action .step-result-next {
+  color: #d1c7a6;
+}
+.step-result-action .button {
+  flex-shrink: 0;
+}
+.action-center .decisions-section .section-heading {
+  margin-bottom: 10px;
+}
+.action-center .decisions-section .section-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #d2cdbc;
+  font-size: 13px;
+  font-weight: 550;
+}
+.action-center .actions-section {
+  margin-top: 17px;
+  padding: 16px 0 8px;
+  border-top: 1px solid #37352f;
+}
+.action-center .actions-section .section-heading h2 {
+  color: #d2cdbc;
+  font-size: 13px;
+}
+@media (max-width: 700px) {
+  .action-center {
+    padding-left: 13px;
+    padding-right: 13px;
+  }
+  .action-center-heading,
+  .step-result-action {
+    flex-direction: column;
+  }
+  .action-center-heading .status-text {
+    margin-top: 0;
+  }
+  .step-result-action .button {
+    align-self: flex-start;
+  }
+}
 .team-caption {
   max-width: 570px;
   margin-top: 8px;

@@ -201,7 +201,7 @@ test("Codex analysis uses app-server read-only sandbox and preserves the configu
   assert.equal(turnStart.params.model, "configured-codex");
   assert.equal(turnStart.params.sandboxPolicy.type, "readOnly");
   assert.equal(turnStart.params.sandboxPolicy.networkAccess, false);
-  assert.equal(threadStart.params.approvalPolicy, "never");
+  assert.equal(threadStart.params.approvalPolicy, "on-request");
 });
 
 test("invalid provider output remains an explicit fallback", async () => {

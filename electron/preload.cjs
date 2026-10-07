@@ -23,7 +23,9 @@ const api = {
   getProviderModels: (provider, refresh) =>
     invoke("djinn:get-provider-models", provider, refresh),
   getRuntimeSnapshot: () => invoke("djinn:get-runtime-snapshot"),
+  getPendingPermissions: () => invoke("djinn:get-pending-permissions"),
   getMissionJournalPage: (taskId, cursor, limit) => invoke("djinn:get-mission-journal-page", taskId, cursor, limit),
+  getMissionInteractions: (taskId) => invoke("djinn:get-mission-interactions", taskId),
   selectDirectory: () => invoke("djinn:select-directory"),
   loadState: () => invoke("djinn:load-state"),
   saveState: (state) => invoke("djinn:save-state", state),
@@ -38,6 +40,7 @@ const api = {
   openExternal: (url) => invoke("djinn:open-external", url),
   saveArtifact: (artifact) => invoke("djinn:save-artifact", artifact),
   notifyQuestion: (input) => invoke("djinn:notify-question", input),
+  respondPermission: (input) => invoke("djinn:respond-permission", input),
   onEvent: (callback) => {
     if (typeof callback !== "function") return () => undefined;
     const listener = (_event, value) => {

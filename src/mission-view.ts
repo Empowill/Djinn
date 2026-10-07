@@ -9,15 +9,17 @@ export function reconnectNativeRun(
   const agents = [...task.agents];
   for (const observed of run.observedAgents || []) {
     if (observed.origin !== "codex") continue;
-    const index = agents.findIndex(a => a.id === observed.id);
+    const index = agents.findIndex((a) => a.id === observed.id);
     const old = agents[index];
     const record = {
-      ...old, ...observed,
+      ...old,
+      ...observed,
       model: observed.model || old?.model || "",
       stepId: stage.id,
       runId: observed.runId || run.runId,
       progress: observed.status === "done" ? 100 : old?.progress || 0,
-      summary: observed.summary || old?.summary || "Activité observée par Codex",
+      summary:
+        observed.summary || old?.summary || "Activité observée par Codex",
     };
     if (index < 0) agents.push(record);
     else agents[index] = record;
@@ -30,8 +32,11 @@ export function reconnectNativeRun(
       id: active.id,
       name: active.name,
       role: active.task,
-      model: active.model ?? old?.model ?? (active.origin === "codex" ? "" : task.model || task.provider),
-      status: active.status || "running" as const,
+      model:
+        active.model ??
+        old?.model ??
+        (active.origin === "codex" ? "" : task.model || task.provider),
+      status: active.status || ("running" as const),
       summary: old?.summary || active.task,
       progress: old?.progress || 0,
       stepId: stage.id,
@@ -86,7 +91,7 @@ export function stepView(
   const belongs = (item: { stepId?: string }) => item.stepId === stepId;
   return {
     ...task,
-    questions: task.questions.filter(belongs),
+    questions: task.questions.filter((item) => belongs(item) || (stepId === task.activeStepId && !item.answer)),
     agents: (stepId === task.activeStepId
       ? task.agents
       : task.agentHistory?.[stepId] || []
@@ -94,7 +99,8 @@ export function stepView(
     events: task.events.filter(belongs),
     artifacts: task.artifacts.filter(belongs),
     feedback: task.feedback.filter(belongs),
-    actions: task.actions?.filter(belongs),
+    // An independent recipe stays usable while later stages and sibling agents run.
+    actions: task.actions?.filter((item) => belongs(item) || (stepId === task.activeStepId && item.status !== "done" && item.testResult?.status !== "passed")),
     instructions: task.instructions?.filter(belongs),
   };
 }
@@ -134,6 +140,8 @@ export function mergeStepView(previous: Task, edited: Task): Task {
   next.activity = previous.activity;
   next.providerSessions = previous.providerSessions;
   next.runtimeEventIds = previous.runtimeEventIds;
+  next.permissions = previous.permissions;
+  next.stepResult = previous.stepResult;
   if (previous.runId) {
     next.status = previous.status;
     next.steps = previous.steps?.map((s) => ({

@@ -71,6 +71,9 @@
 .ac-status.is-blocked::before {
   background: #c9a982;
 }
+.ac-capability {
+  color: #b2aa8f;
+}
 .ac-header-actions {
   display: flex;
   align-items: center;
@@ -141,6 +144,11 @@
   font: var(--font-size-body, 12px) var(--mono);
   color: #8c8c8c;
   margin-top: 13px;
+}
+.ac-capability-note {
+  margin-top: 10px;
+  color: #aaa28b;
+  line-height: 1.55;
 }
 .ac-context textarea {
   display: block;

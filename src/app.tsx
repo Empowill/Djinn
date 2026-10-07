@@ -64,6 +64,9 @@ import type {
   Project,
   MissionStep,
   StepType,
+  PermissionDecision,
+  PermissionRequest,
+  TaskAction,
 } from "./types";
 import {
   Overview,
@@ -82,6 +85,9 @@ import { ProjectSettings } from "./project-settings";
 import { ProjectSidebar } from "./project-sidebar";
 import { ProviderSwitch } from "./provider-switch";
 import { useReducedMotion } from "./reduced-motion";
+import { MissionTestBoard } from "./mission-test-board";
+import { StageReport } from "./mission-progress";
+import { AgentAvatars, AgentPickerDrawer } from "./agent-avatars";
 const tabs = [
   { id: "overview", label: "Mission", icon: LayoutDashboard },
   { id: "timeline", label: "Timeline", icon: Activity },
@@ -242,6 +248,21 @@ function ModalFrame({
 }
 export default function App() {
   const d = useDjinn();
+  type UiDjinn = typeof d & {
+    permissions?: PermissionRequest[];
+    busyPermissionIds?: string[];
+    respondPermission?: (
+      request: PermissionRequest,
+      decision: PermissionDecision,
+      answers?: Record<string, string>,
+    ) => Promise<boolean>;
+    recordTestResult?: (
+      action: TaskAction,
+      outcome: "passed" | "problem" | "deferred",
+      detail?: string,
+    ) => Promise<boolean>;
+  };
+  const ui = d as UiDjinn;
   const { state, task: mission } = d;
   const task = stepView(mission);
   const selectedStepId = mission.selectedStepId || mission.activeStepId;
@@ -282,6 +303,7 @@ export default function App() {
       );
   }, [selectedProjectId, state.projects, mission.projectId, mission.project]);
   const [agentId, setAgentId] = useState<string | null>(null);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [openedArtifactId, setOpenedArtifactId] = useState<string>();
   const [artifactRequestVersion, setArtifactRequestVersion] = useState(0);
   useEffect(() => setOpenedArtifactId(undefined), [selectedStepId]);
@@ -305,7 +327,36 @@ export default function App() {
         phase: previous.phase,
       };
     });
-  const agent = task.agents.find((a) => a.id === agentId);
+  const agent =
+    task.agents.find((a) => a.id === agentId) ||
+    mission.agents.find((a) => a.id === agentId);
+  const chatTask =
+    agent && !task.agents.some((candidate) => candidate.id === agent.id)
+      ? stepView(mission, mission.activeStepId)
+      : task;
+  const permissions = ui.permissions || mission.permissions || [];
+  const respondPermission = async (
+    request: PermissionRequest,
+    decision: PermissionDecision,
+    answers?: Record<string, string>,
+  ) => {
+    if (!ui.respondPermission) {
+      d.notify("Cette demande nécessite l’application locale Djinn.");
+      return false;
+    }
+    return ui.respondPermission(request, decision, answers);
+  };
+  const recordTestResult = async (
+    action: TaskAction,
+    outcome: "passed" | "problem" | "deferred",
+    detail?: string,
+  ) => {
+    if (!ui.recordTestResult) {
+      d.notify("Le résultat du test ne peut pas être enregistré ici.");
+      return false;
+    }
+    return ui.recordTestResult(action, outcome, detail);
+  };
   const openQuestions = task.questions.filter((q) => !q.answer);
   const blocking = openQuestions.some((q) => q.blocking);
   const questionCount = state.tasks.reduce(
@@ -321,6 +372,7 @@ export default function App() {
   );
   useEffect(() => {
     setAgentId(null);
+    setAgentPickerOpen(false);
     setOpenedArtifactId(undefined);
     setTab("overview");
     setDemoRunning(false);
@@ -376,6 +428,7 @@ export default function App() {
       if (e.key === "Escape") {
         setModal(null);
         setAgentId(null);
+        setAgentPickerOpen(false);
         setMenu(false);
       }
       if (
@@ -396,6 +449,7 @@ export default function App() {
       ).detail;
       setTab("overview");
       setAgentId(null);
+      if (target.taskId === mission.id && mission.activeStepId) d.selectStep(mission.activeStepId);
       setTimeout(
         () =>
           document
@@ -405,18 +459,36 @@ export default function App() {
       );
     };
     window.addEventListener("djinn:question-focus", focus);
-    const focusAction = () => {
+    const focusAction = (event: Event) => {
+      const target = (event as CustomEvent<{ taskId?: string; actionId?: string }>).detail;
+      if (target?.taskId === mission.id && mission.activeStepId) d.selectStep(mission.activeStepId);
       setTab("overview");
       setAgentId(null);
+      setTimeout(() => {
+        const card = document.getElementById(target?.actionId ? `action-${target.actionId}` : "actions-section");
+        const group = card?.closest("details");
+        if (group) group.open = true;
+        card?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 350);
+    };
+    window.addEventListener("djinn:action-focus", focusAction);
+    const focusPermission = (event: Event) => {
+      const target = (
+        event as CustomEvent<{ taskId: string; requestId: string }>
+      ).detail;
+      setTab("overview");
+      setAgentId(null);
+      setAgentPickerOpen(false);
+      if (target.taskId === mission.id && mission.activeStepId) d.selectStep(mission.activeStepId);
       setTimeout(
         () =>
           document
-            .getElementById("actions-section")
+            .getElementById(`permission-${target.requestId}`)
             ?.scrollIntoView({ behavior: "smooth", block: "center" }),
         350,
       );
     };
-    window.addEventListener("djinn:action-focus", focusAction);
+    window.addEventListener("djinn:permission-focus", focusPermission);
     const focusStep = (event: Event) => {
       const { type } = (event as CustomEvent<{ type: string }>).detail;
       setTab(
@@ -432,9 +504,10 @@ export default function App() {
     return () => {
       window.removeEventListener("djinn:question-focus", focus);
       window.removeEventListener("djinn:action-focus", focusAction);
+      window.removeEventListener("djinn:permission-focus", focusPermission);
       window.removeEventListener("djinn:step-focus", focusStep);
     };
-  }, []);
+  }, [mission.id, mission.activeStepId]);
   useEffect(() => () => clearInterval(demoTimer.current), []);
   const navigate = (next: string) => {
     setTab(availableTabs.some((t) => t.id === next) ? next : "artifacts");
@@ -781,6 +854,7 @@ export default function App() {
           ? mission.activity?.activeAgents.at(-1)?.runId || mission.runId
           : undefined
       }
+      onRecordTestResult={recordTestResult}
       onOpenArtifact={(id) => {
         setOpenedArtifactId(id);
         setArtifactRequestVersion((version) => version + 1);
@@ -1007,6 +1081,7 @@ export default function App() {
                 }}
                 onStart={(id) => void d.start(undefined, mission.id, id)}
                 onReopen={d.resumeStep}
+                onFocus={d.focusStep}
                 onConfigure={() => setModal("mission")}
                 onAdd={() => setModal("next-step")}
                 starting={d.starting}
@@ -1021,9 +1096,9 @@ export default function App() {
                     >
                       <t.icon size={15} />
                       {t.label}
-                      {t.id === "overview" && openQuestions.length > 0 && (
+                      {t.id === "overview" && openQuestions.length + permissions.filter((p) => p.status === "pending").length > 0 && (
                         <span className="tab-count">
-                          {openQuestions.length}
+                          {openQuestions.length + permissions.filter((p) => p.status === "pending").length}
                         </span>
                       )}
                       {t.id === "artifacts" &&
@@ -1050,6 +1125,18 @@ export default function App() {
                     </button>
                   ))}
                 </nav>
+                <AgentAvatars
+                  task={mission}
+                  agents={mission.agents}
+                  onAgent={(selected) => {
+                    setAgentPickerOpen(false);
+                    setAgentId(selected.id);
+                  }}
+                  onOverflow={() => {
+                    setAgentId(null);
+                    setAgentPickerOpen(true);
+                  }}
+                />
                 <div className="mission-controls">
                   {selectedStage?.type === "reflection" &&
                     selectedStage.id === mission.activeStepId && (
@@ -1062,7 +1149,7 @@ export default function App() {
                         }
                       >
                         <Sparkles size={13} />
-                        Approfondir avec grill-me
+                        Préciser le besoin
                       </button>
                     )}
                   {task.runId || demoRunning ? (
@@ -1155,12 +1242,7 @@ export default function App() {
                                     : "Résultat validé"
                                   : "Le passage est terminé"}
                             </h3>
-                            <MarkdownBody
-                              text={
-                                selectedStage.summary ||
-                                "Consultez les supports et les preuves de cette étape."
-                              }
-                            />
+                            <StageReport step={selectedStage} />
                             {selectedStage.status === "awaiting_human" && (
                               <button
                                 className="button accent small"
@@ -1223,6 +1305,11 @@ export default function App() {
                               )}
                           </section>
                         )}
+                      {tab === "overview" && selectedStage && (selectedStage.report || selectedStage.summary) && !["awaiting_human", "completed"].includes(selectedStage.status) && (
+                        <section className="step-result">
+                          <StageReport step={selectedStage} />
+                        </section>
+                      )}
                       {tab === "overview" && (
                         <Overview
                           task={task}
@@ -1231,9 +1318,21 @@ export default function App() {
                           onAgent={(a) => setAgentId(a.id)}
                           onTab={navigate}
                           onDemo={runDemo}
-                          readOnly={
-                            consulting || selectedStage?.status === "completed"
-                          }
+                          readOnly={consulting}
+                          permissions={permissions}
+                          onRespondPermission={respondPermission}
+                          busyPermissionIds={ui.busyPermissionIds}
+                          onSteer={d.indicate}
+                          onResume={() => void d.start(undefined)}
+                          workSummary={!consulting ? (
+                            <MissionTestBoard task={mission} actions={mission.actions || []} onAction={(action) => {
+                          void d.startTest(action);
+                        }} renderActions={(action) => action.testStartedAt || (action.kind === "server" && ["pending", "stopped", "error"].includes(action.status)) ? (
+                          <button className="button secondary small" onClick={() => d.openAction(mission.id, action.id)}>
+                            {action.testStartedAt ? "Donner un retour" : "Préparer le test"}
+                          </button>
+                        ) : null} />
+                          ) : undefined}
                           actions={restitution}
                         />
                       )}
@@ -1346,12 +1445,13 @@ export default function App() {
                 </div>
               </div>
             </div>
-            {tab !== "history" && !consulting && (
+            {tab !== "history" && (
               <MissionComposer
                 key={`${task.id}-${mission.activeStepId}`}
                 task={task}
                 onSend={d.indicate}
                 review={tab === "review"}
+                consulting={consulting}
               />
             )}
             <footer className="app-statusbar">
@@ -1377,6 +1477,19 @@ export default function App() {
         )}
       </main>
       <AnimatePresence>
+        {agentPickerOpen && (
+          <AgentPickerDrawer
+            task={mission}
+            agents={mission.agents}
+            onClose={() => setAgentPickerOpen(false)}
+            onAgent={(selected) => {
+              setAgentPickerOpen(false);
+              setAgentId(selected.id);
+            }}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
         {agent && (
           <>
             <motion.div
@@ -1387,9 +1500,9 @@ export default function App() {
               onClick={() => setAgentId(null)}
             />
             <AgentDrawer
-              key={`${selectedStepId}-${agent.id}`}
+              key={`${chatTask.activeStepId}-${agent.id}`}
               agent={agent}
-              task={task}
+              task={chatTask}
               onClose={() => setAgentId(null)}
               onUpdate={update}
               onFilter={() => navigate("timeline")}
@@ -3041,10 +3154,12 @@ function MissionComposer({
   task,
   onSend,
   review,
+  consulting = false,
 }: {
   task: Task;
   onSend: (value: string) => Promise<boolean>;
   review: boolean;
+  consulting?: boolean;
 }) {
   // useReducedMotion observes data-motion and prefers-reduced-motion: reduce.
   const reducedMotion = useReducedMotion();
@@ -3236,7 +3351,9 @@ function MissionComposer({
                     ? "Transmis immédiatement au chef"
                     : feedback
                       ? "Retour de review"
-                      : "Contexte de la mission"}
+                      : consulting
+                        ? "Indication pour l’étape active"
+                        : "Contexte de la mission"}
                 </span>
                 {!!task.instructions?.length && (
                   <button

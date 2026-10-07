@@ -20,6 +20,7 @@ class CodexAppServer extends EventEmitter {
     this.child = child;
     this.terminate = terminate;
     this.pending = new Map();
+    this.pendingRequests = new Map();
     this.turns = new Map();
     this.threads = new Map();
     this.nextId = 1;
@@ -113,20 +114,30 @@ class CodexAppServer extends EventEmitter {
       return;
     }
     if (message.id !== undefined && message.method) {
-      // Djinn never silently grants expanded permissions or runs client tools.
-      const approval = message.method.endsWith("/requestApproval");
-      this.send(
-        approval
-          ? { id: message.id, result: { decision: "decline" } }
-          : {
-              id: message.id,
-              error: {
-                code: -32601,
-                message: "This client does not support this request",
+      // Requests are held until the native permission bridge receives an
+      // explicit user decision. A bare transport (including older clients)
+      // still declines approval requests rather than granting access.
+      this.pendingRequests.set(String(message.id), message);
+      if (this.listenerCount("request") > 0) {
+        this.emit("request", message.method, message.id, message.params || {});
+      } else {
+        const approval = message.method.endsWith("/requestApproval");
+        this.respond(
+          message.id,
+          approval
+            ? { decision: "decline" }
+            : null,
+          approval
+            ? {}
+            : {
+                error: {
+                  code: -32601,
+                  message: "This client does not support this request",
+                },
               },
-            },
-      );
-      this.emit("diagnostic", `Native request prevented: ${message.method}`);
+        );
+        this.emit("diagnostic", `Native request prevented: ${message.method}`);
+      }
       return;
     }
     const params = message.params || {};
@@ -148,18 +159,37 @@ class CodexAppServer extends EventEmitter {
     }
     this.emit("notification", message.method, params);
   }
+  respond(id, result, { error } = {}) {
+    if (this.closed) return false;
+    const key = String(id);
+    const request = this.pendingRequests.get(key);
+    if (!request) return false;
+    this.pendingRequests.delete(key);
+    // JSON-RPC ids are opaque and may be numbers. The renderer-facing bridge
+    // intentionally normalizes ids to strings, but the provider must receive
+    // the exact wire id that it sent or it will leave the turn blocked.
+    const wireId = request.id;
+    this.send(
+      error === undefined
+        ? { id: wireId, result }
+        : { id: wireId, error },
+    );
+    this.emit("requestResolved", wireId, result, error);
+    return true;
+  }
   async run(
     key,
     input,
     onNotification,
-    { savedThreadId, imagePaths = [] } = {},
+    { savedThreadId, imagePaths = [], dynamicTools = [] } = {},
   ) {
     await this.ready;
     let threadId = this.threads.get(key);
+    const writable = input.readOnly !== true && input.mode !== "plan";
     const config = {
       cwd: input.cwd,
-      approvalPolicy: "never",
-      sandbox: input.mode === "execute" ? "workspace-write" : "read-only",
+      approvalPolicy: "on-request",
+      sandbox: writable ? "workspace-write" : "read-only",
       ...(input.model ? { model: input.model } : {}),
     };
     if (!threadId) {
@@ -171,7 +201,12 @@ class CodexAppServer extends EventEmitter {
             // overflow the bounded transport when a long mission is resumed.
             excludeTurns: true,
           })
-        : await this.request("thread/start", config);
+        : await this.request("thread/start", {
+            ...config,
+            ...(Array.isArray(dynamicTools) && dynamicTools.length > 0
+              ? { dynamicTools }
+              : {}),
+          });
       threadId = response.thread.id;
       this.threads.set(key, threadId);
     }
@@ -184,7 +219,7 @@ class CodexAppServer extends EventEmitter {
     const entry = { threadId, turnId: null, onNotification, resolve };
     this.turns.set(threadId, entry);
     const sandboxPolicy =
-      input.mode === "execute"
+      writable
         ? {
             type: "workspaceWrite",
             writableRoots: input.writableRoots?.length
@@ -203,7 +238,7 @@ class CodexAppServer extends EventEmitter {
           ...imagePaths.map((p) => ({ type: "localImage", path: p })),
         ],
         cwd: input.cwd,
-        approvalPolicy: "never",
+        approvalPolicy: "on-request",
         sandboxPolicy,
         ...(input.model ? { model: input.model } : {}),
       });
@@ -277,6 +312,9 @@ class CodexAppServer extends EventEmitter {
       pending.reject(error);
     }
     this.pending.clear();
+    for (const request of this.pendingRequests.values())
+      this.emit("requestCancelled", request.id, request.method, request.params || {});
+    this.pendingRequests.clear();
     for (const entry of this.turns.values())
       entry.resolve({ status: "failed", error: { message: error.message } });
     this.turns.clear();

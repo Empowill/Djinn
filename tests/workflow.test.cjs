@@ -63,6 +63,131 @@ test("automatic implementation completion advances without approval while review
   assert.equal(w.canStartStep(t, t.steps[1].id), true);
 });
 
+test("flexible focus starts a selected pending stage without rewriting prior outcomes", () => {
+  let t = task();
+  t.workflowMode = "flexible";
+  t.workflowOrigin = "agent";
+  t.steps[0] = { ...t.steps[0], status: "awaiting_human", summary: "Prior result" };
+  const focused = w.focusStep(t, t.steps[1].id);
+  assert.equal(focused.activeStepId, t.steps[1].id);
+  assert.equal(focused.steps[0].status, "awaiting_human");
+  assert.equal(focused.steps[0].summary, "Prior result");
+  assert.equal(w.canStartStep(focused, t.steps[1].id), true);
+  const running = w.startStep(focused, t.steps[1].id, time);
+  assert.equal(running.steps[1].status, "running");
+  running.stepResult = { stepId: t.steps[1].id, status: "ready", summary: "Built" };
+  const finished = w.finishStepRun(running, t.steps[1].id, "completed", "Built", undefined, time);
+  assert.equal(finished.steps[1].status, "completed");
+  assert.equal(finished.steps[0].status, "awaiting_human");
+});
+
+test("fixed workflows require an explicit human focus override", () => {
+  const t = task();
+  assert.throws(() => w.focusStep(t, t.steps[1].id), /step\.focus\.mode/);
+  const focused = w.focusStep(t, t.steps[1].id, { humanOverride: true });
+  assert.equal(w.canStartStep(focused, t.steps[1].id), true);
+});
+
+test("step results gate automatic completion on scoped exit-criteria evidence", () => {
+  let t = task();
+  t.workflowOrigin = "agent";
+  t.steps[0] = {
+    ...t.steps[0],
+    exitCriteria: ["Build passes", "Preview responds"],
+  };
+  t = w.startStep(t, t.steps[0].id, time);
+  t.runId = "run-1";
+  t.stepResult = {
+    stepId: t.steps[0].id,
+    runId: "run-1",
+    status: "ready",
+    summary: "Provider completed",
+    criteria: [{ criterion: "Build passes", met: true, evidence: "npm test passed" }],
+  };
+  let finished = w.finishStepRun(t, t.steps[0].id, "completed", "Completed", "run-1", time);
+  assert.equal(finished.steps[0].status, "blocked");
+  assert.match(finished.steps[0].summary, /critères de sortie/i);
+  assert.equal(finished.stepResult.status, "blocked");
+  assert.equal(finished.stepResult.runId, "run-1");
+
+  t = w.startStep({ ...t, steps: t.steps.map((step, index) => index === 0 ? { ...step, status: "awaiting_human", startedAt: undefined } : step), runId: undefined, status: "waiting" }, t.steps[0].id, time);
+  t.runId = "run-2";
+  t.stepResult = {
+    stepId: t.steps[0].id,
+    runId: "run-2",
+    status: "ready",
+    summary: "Ready",
+    criteria: [
+      { criterion: "Build passes", met: true, evidence: "npm test passed" },
+      { criterion: "Preview responds", met: true, evidence: "HTTP 200" },
+    ],
+  };
+  finished = w.finishStepRun(t, t.steps[0].id, "completed", "Completed", "run-2", time);
+  assert.equal(finished.steps[0].status, "completed");
+  assert.equal(finished.steps[0].completedAt, time);
+});
+
+test("configured automatic stages synthesize a current-run blocker when proof is absent or stale", () => {
+  let t = task();
+  t.workflowOrigin = "agent";
+  t.steps[0] = { ...t.steps[0], exitCriteria: ["Build passes"] };
+  t = w.startStep(t, t.steps[0].id, time);
+  t.runId = "run-current";
+  let finished = w.finishStepRun(t, t.steps[0].id, "completed", "Done", "run-current", time);
+  assert.equal(finished.steps[0].status, "blocked");
+  assert.equal(finished.stepResult.status, "blocked");
+  assert.equal(finished.stepResult.stepId, t.steps[0].id);
+  assert.equal(finished.stepResult.runId, "run-current");
+  assert.equal(finished.stepResult.criteria[0].met, false);
+  assert.match(finished.stepResult.reason, /preuve/i);
+  assert.match(finished.stepResult.nextAction, /preuves/i);
+
+  t = task();
+  t.workflowOrigin = "agent";
+  t.steps[0] = { ...t.steps[0], exitCriteria: ["Build passes"] };
+  t = w.startStep(t, t.steps[0].id, time);
+  t.runId = "run-current";
+  t.stepResult = {
+    stepId: t.steps[0].id,
+    runId: "run-old",
+    status: "ready",
+    summary: "Old proof",
+    criteria: [{ criterion: "Build passes", met: true, evidence: "old run" }],
+  };
+  finished = w.finishStepRun(t, t.steps[0].id, "completed", "Done", "run-current", time);
+  assert.equal(finished.steps[0].status, "blocked");
+  assert.equal(finished.stepResult.status, "blocked");
+  assert.equal(finished.stepResult.runId, "run-current");
+});
+
+test("step results from another run are ignored while explicit blocked outcomes persist", () => {
+  let t = task();
+  t.workflowOrigin = "agent";
+  t = w.startStep(t, t.steps[0].id, time);
+  t.runId = "current";
+  t.stepResult = {
+    stepId: t.steps[0].id,
+    runId: "old",
+    status: "blocked",
+    summary: "Old blocker",
+  };
+  let finished = w.finishStepRun(t, t.steps[0].id, "completed", "Current output", "current", time);
+  assert.equal(finished.steps[0].status, "blocked");
+  assert.notEqual(finished.stepResult.summary, "Old blocker");
+  assert.equal(finished.stepResult.runId, "current");
+  t = w.startStep({ ...finished, steps: finished.steps.map((step, index) => index === 0 ? { ...step, status: "awaiting_human", startedAt: undefined, completedAt: undefined } : step), runId: undefined, status: "waiting" }, t.steps[0].id, time);
+  t.runId = "current-2";
+  t.stepResult = {
+    stepId: t.steps[0].id,
+    runId: "current-2",
+    status: "blocked",
+    summary: "Needs input",
+  };
+  finished = w.finishStepRun(t, t.steps[0].id, "completed", "Provider completed", "current-2", time);
+  assert.equal(finished.steps[0].status, "blocked");
+  assert.equal(finished.steps[0].summary, "Needs input");
+});
+
 test("review stages remain human validated", () => {
   let t = task();
   t.steps = [
@@ -302,7 +427,7 @@ test("mission titles come only from the lead and never overwrite a human rename"
   );
 });
 
-test("more than three agents are configurable while unknown ownership remains exclusive", () => {
+test("more than three agents are configurable while intentional root ownership remains exclusive", () => {
   const input = {
     taskId: "t",
     provider: "codex",
@@ -319,7 +444,15 @@ test("more than three agents are configurable while unknown ownership remains ex
   };
   assert.equal(runtime.buildExecutionPlan(input).concurrency, 8);
   assert.equal(
-    runtime.buildExecutionPlan({ ...input, mode: "execute" }).concurrency,
+    runtime.buildExecutionPlan({
+      ...input,
+      mode: "execute",
+      agents: input.agents.map((agent) => ({
+        ...agent,
+        readOnly: false,
+        writeScope: ["*"],
+      })),
+    }).concurrency,
     1,
   );
   assert.equal(
@@ -556,4 +689,21 @@ test("pending workflow amendments are scoped to the active flexible stage", () =
     () => w.validateTaskWorkflow({ ...t, workflowAmendment: { ...t.workflowAmendment, stepId: "missing" } }),
     /workflowAmendment/,
   );
+});
+
+test("agent-selected automatic stages require a current explicit report, even without exit criteria", () => {
+  let t = w.startStep(task(), "t:step:1");
+  t.workflowOrigin = "agent";
+  t.steps[0].validation = "automatic";
+  t.steps[0].exitCriteria = [];
+  t.runId = "root";
+  let finished = w.finishStepRun(t, t.activeStepId, "completed", "Provider finished", "root");
+  assert.equal(finished.steps[0].status, "blocked");
+  assert.match(finished.stepResult.summary, /compte rendu/i);
+  t.stepResult = { stepId: t.activeStepId, runId: "root", status: "ready", summary: "Exploration achevée", completed: ["Sources parcourues"], remaining: ["Implémentation"], evidence: ["Modèle vérifié"] };
+  finished = w.finishStepRun(t, t.activeStepId, "completed", undefined, "root");
+  assert.equal(finished.steps[0].status, "completed");
+  assert.deepEqual(finished.steps[0].report.remaining, ["Implémentation"]);
+  const persisted = w.validateTaskWorkflow(finished);
+  assert.deepEqual(persisted.steps[0].report.completed, ["Sources parcourues"]);
 });

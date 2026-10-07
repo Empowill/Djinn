@@ -74,7 +74,7 @@ test("app-server preserves model, sandbox and history, and steers expected activ
     assert.equal(started.model, "configured");
     assert.equal(started.sandboxPolicy.networkAccess, false);
     assert.deepEqual(started.sandboxPolicy.writableRoots, ["/tmp/project"]);
-    assert.equal(started.approvalPolicy, "never");
+    assert.equal(started.approvalPolicy, "on-request");
     f.emit({
       method: "turn/completed",
       params: {
@@ -95,7 +95,7 @@ test("app-server preserves model, sandbox and history, and steers expected activ
     assert.equal(
       f.requests.filter((r) => r.method === "turn/start").at(-1).params
         .sandboxPolicy.type,
-      "readOnly",
+      "workspaceWrite",
     );
     f.emit({
       method: "turn/completed",
@@ -105,6 +105,84 @@ test("app-server preserves model, sandbox and history, and steers expected activ
       },
     });
     await next.completed;
+  } finally {
+    f.server.fail(new Error("Fixture closed"));
+  }
+});
+
+test("app-server registers dynamic tools and preserves item/tool/call responses", async () => {
+  const f = fixture();
+  const requests = [];
+  const dynamicTools = [
+    {
+      type: "function",
+      name: "publish_question",
+      description: "Publish a question",
+      inputSchema: { type: "object" },
+    },
+  ];
+  f.server.on("request", (method, id, params) =>
+    requests.push({ method, id, params }),
+  );
+  try {
+    const turn = await f.server.run(
+      "native-tools",
+      input,
+      () => {},
+      { dynamicTools },
+    );
+    assert.deepEqual(
+      f.requests.find((request) => request.method === "thread/start").params
+        .dynamicTools,
+      dynamicTools,
+    );
+    f.emit({
+      id: "tool-call-1",
+      method: "item/tool/call",
+      params: {
+        threadId: turn.threadId,
+        turnId: turn.turnId,
+        callId: "call-1",
+        namespace: null,
+        tool: "publish_question",
+        arguments: { title: "Choose" },
+      },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(requests.at(-1), {
+      method: "item/tool/call",
+      id: "tool-call-1",
+      params: {
+        threadId: turn.threadId,
+        turnId: turn.turnId,
+        callId: "call-1",
+        namespace: null,
+        tool: "publish_question",
+        arguments: { title: "Choose" },
+      },
+    });
+    assert.equal(
+      f.server.respond("tool-call-1", {
+        success: true,
+        contentItems: [{ type: "inputText", text: '{"ok":true}' }],
+      }),
+      true,
+    );
+    assert.deepEqual(f.requests.at(-1), {
+      id: "tool-call-1",
+      result: {
+        success: true,
+        contentItems: [{ type: "inputText", text: '{"ok":true}' }],
+      },
+    });
+    f.emit({
+      method: "turn/completed",
+      params: {
+        threadId: turn.threadId,
+        turn: { id: turn.turnId, status: "completed" },
+      },
+    });
+    await turn.completed;
   } finally {
     f.server.fail(new Error("Fixture closed"));
   }
@@ -143,6 +221,44 @@ test("warning is diagnostic; native permission expansion is declined; explicit f
     });
     assert.equal((await turn.completed).status, "failed");
     assert.equal(diagnostics.length, 2);
+  } finally {
+    f.server.fail(new Error("Fixture closed"));
+  }
+});
+
+test("holds native approval requests and responds with the original JSON-RPC id", async () => {
+  const f = fixture();
+  const requests = [];
+  f.server.on("request", (method, id, params) =>
+    requests.push({ method, id, params }),
+  );
+  try {
+    const turn = await f.server.run("chief", { ...input, mode: "review" }, () => {});
+    f.emit({
+      id: 9001,
+      method: "item/commandExecution/requestApproval",
+      params: { threadId: "thread-1", command: "npm test" },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(requests.at(-1), {
+      method: "item/commandExecution/requestApproval",
+      id: 9001,
+      params: { threadId: "thread-1", command: "npm test" },
+    });
+    assert.equal(f.requests.some((request) => request.id === 9001), false);
+    assert.equal(f.server.respond("9001", { decision: "accept" }), true);
+    assert.deepEqual(f.requests.at(-1), {
+      id: 9001,
+      result: { decision: "accept" },
+    });
+    f.emit({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: { id: "turn-1", status: "completed" },
+      },
+    });
+    assert.equal((await turn.completed).status, "completed");
   } finally {
     f.server.fail(new Error("Fixture closed"));
   }

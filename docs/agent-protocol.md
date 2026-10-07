@@ -18,7 +18,8 @@ Every event has this envelope:
 ```
 
 The `type` is one of `text`, `tool`, `question`, `artifact`, `agent`, `phase`,
-`note`, `mission_metadata`, `next_step`, `action`, `status`, `error`, `auth`, `guidance`, or
+`note`, `mission_metadata`, `next_step`, `action`, `work_item`, `report`, `step_result`,
+`permission_requested`, `permission_resolved`, `status`, `error`, `auth`, `guidance`, or
 `notification_clicked`.
 Lifecycle status data uses `running`,
 `completed`, `stopping`, `cancelled`, and `error`. `stopping` retains the native
@@ -30,7 +31,41 @@ Authentication progress uses `type: "auth"` with `data.provider`,
 `data.url` only when it is an HTTP(S) URL found in provider output; opening it
 still requires the renderer to call the explicit `openExternal` bridge method.
 
-## Model emitted events
+## Native structured interactions
+
+New Codex threads register these dynamic tools on `thread/start`:
+
+- `publish_question`: full non-empty context, optional choices or free text,
+  stable id and affected work item. Workers default to `blockingScope:"agent"`;
+  independent workers continue. Lead questions can block the mission.
+- `update_task`: stable work item id, title, status, owner, ticket and optional
+  branch/worktree. Update only meaningful changes.
+- `publish_test_action`: independently testable recipe, expected result and
+  `workItemId`/`target`. A package script is a name, never an arbitrary command.
+- `publish_report`: worker status, summary, completed, remaining and evidence.
+- `publish_step_report`: same required fields for the real lead's stage result.
+  An automatic agent-defined stage requires an explicit ready report.
+- `publish_artifact`: typed content; `markdown` is normalized to `document`.
+- `inspect_test_environment`: fixed local Docker listing, package script names
+  and explicitly selected loopback roots. Bounded and briefly cached, with no
+  provider-supplied shell, arguments or environment.
+
+The main process validates the current thread/turn ancestry, constrains authors
+to their actual role, and persists interaction events before acknowledging a
+successful publication. `userData/mission-structured` provides a bounded atomic
+projection alongside the journal. `getMissionInteractions(taskId)` recovers it
+without starting work or approving stages. Human decisions remain authoritative.
+
+Existing Codex sessions migrate once to a versioned native-tools session key
+because `thread/resume` cannot attach dynamic tools. The mission context and
+acquired decisions carry forward; older thread references remain stored.
+
+Mission renders a compact global recipe list. Starting a recipe records
+`testStartedAt`; human passed/problem/deferred results clear that marker. The
+latest published recipe version wins, and a recipe result does not approve the
+whole mission stage. Restored servers require native readiness confirmation.
+
+## Legacy model emitted events
 
 An agent can send a structured UI update by emitting one JSON object on one
 line with the `DJINN_EVENT:` prefix:
@@ -68,7 +103,8 @@ These model event types are accepted within the native run scope:
   `script` is a package script name such as `dev` or `start`; it is never a
   shell command. `directory` is a relative path to a nested app package.
 
-Malformed markers and unsupported event types remain ordinary model text. The
+Malformed markers and unsupported event types remain ordinary model text;
+recognized events with invalid fields produce explicit validation errors. The
 main process never executes model fields and never opens a URL because an agent
 mentioned one. External links can only be opened through the explicit bridge
 method, which accepts HTTP(S) URLs without credentials.

@@ -138,10 +138,28 @@ function canonicalPath(value) {
   }
   return path.join(fs.realpathSync(existing), ...suffix);
 }
+
+function normalizeOwnership(agent) {
+  const scope = validateWriteScope(agent.writeScope);
+  const hasScope = Boolean(scope?.length);
+  if (agent.readOnly !== undefined && typeof agent.readOnly !== "boolean")
+    throw new Error(`readOnly for ${agent.id} must be boolean`);
+  if (agent.readOnly === false && !hasScope)
+    throw new Error(
+      `Writer ${agent.id} must provide writeScope or explicit writeScope ["*"]`,
+    );
+  return {
+    scope,
+    readOnly: agent.readOnly === true || (agent.readOnly === undefined && !hasScope),
+  };
+}
+
 function prepareAgents(cwd, agents) {
   const root = fs.realpathSync(cwd);
   return agents.map((agent) => {
-    const scope = validateWriteScope(agent.writeScope);
+    const ownership = normalizeOwnership(agent);
+    const scope = ownership.scope;
+    const readOnly = ownership.readOnly;
     const isolation = validateIsolation(agent.isolation);
     const resources = validateResourceProfile(agent.resources);
     let workspaceRoot = root;
@@ -154,7 +172,7 @@ function prepareAgents(cwd, agents) {
       if (!fs.statSync(workspaceRoot).isDirectory())
         throw new Error(`Worktree for ${agent.id} is not a directory`);
     }
-    const writePaths = agent.readOnly
+    const writePaths = readOnly
       ? []
       : !scope?.length || scope.includes("*")
         ? [workspaceRoot]
@@ -168,6 +186,7 @@ function prepareAgents(cwd, agents) {
           });
     return {
       ...agent,
+      readOnly,
       isolation,
       resources,
       workspaceRoot,
@@ -203,10 +222,13 @@ function resourceConflict(a, b) {
 }
 
 function conflicts(a, b, mode = "execute") {
+  const leftOwnership = normalizeOwnership(a);
+  const rightOwnership = normalizeOwnership(b);
   if (resourceConflict(a, b)) return true;
-  if (mode !== "execute" || a.readOnly || b.readOnly) return false;
-  const left = a.writePaths || a.writeScope || ["*"],
-    right = b.writePaths || b.writeScope || ["*"];
+  if (mode !== "execute" || leftOwnership.readOnly || rightOwnership.readOnly)
+    return false;
+  const left = a.writePaths || leftOwnership.scope || [],
+    right = b.writePaths || rightOwnership.scope || [];
   const ownershipConflict =
     !left.length ||
     !right.length ||
@@ -288,7 +310,14 @@ function reasonFor(agent, active, completed, limit, mode, capacity) {
   return null;
 }
 function buildWaves(agents, limit, mode, options = {}) {
-  const remaining = agents.slice(),
+  const remaining = agents.map((agent) => {
+      const ownership = normalizeOwnership(agent);
+      return {
+        ...agent,
+        readOnly: ownership.readOnly,
+        writeScope: ownership.scope,
+      };
+    }),
     completed = new Map(),
     waves = [];
   const capacity = options?.capacity ? systemCapacity(options.capacity) : undefined;

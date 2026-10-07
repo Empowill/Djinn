@@ -10,8 +10,9 @@ import {
   Plus,
   UserRound,
 } from "lucide-react";
-import type { Agent, Task } from "./types";
+import type { Agent, MissionWorkItem, Task } from "./types";
 import { agentColor, agentOrbState, Orb } from "./visuals";
+import { agentDisplayState } from "./agent-state";
 import {
   agentById,
   allocateIntervalRows,
@@ -47,6 +48,160 @@ function humanKindLabel(kind: HumanIntervention["kind"]): string {
   return "Indication";
 }
 
+const workStatusLabels: Record<MissionWorkItem["status"], string> = {
+  pending: "En attente",
+  running: "En cours",
+  blocked: "Bloqué",
+  ready: "Prêt à tester",
+  done: "Terminé",
+};
+
+function workItemStatusLabel(
+  task: Task,
+  item: MissionWorkItem,
+  agent?: Agent,
+): string {
+  const attention = agent ? agentDisplayState(task, agent) : undefined;
+  if (attention?.permission) return "En attente d’autorisation";
+  if (attention?.question) return "Blocage · question à traiter";
+  if (agent && item.status === "running" && agent.status !== "running")
+    return agentDisplayState(task, agent).label;
+  return workStatusLabels[item.status];
+}
+
+function workItemsForTask(task: Task): MissionWorkItem[] {
+  const selectedStepId = task.selectedStepId || task.activeStepId;
+  const scoped = (task.workItems || []).filter(
+    (item) => !item.stepId || !selectedStepId || item.stepId === selectedStepId,
+  );
+  if (scoped.length) return scoped;
+  return task.agents.map((agent) => ({
+    id: `agent:${agent.id}`,
+    title: agent.activity || agent.summary || agent.role || agent.name,
+    status:
+      agent.status === "queued"
+        ? "pending"
+        : agent.status === "error"
+          ? "blocked"
+          : agent.status,
+    detail: agent.summary,
+    agentId: agent.id,
+    worktree: agent.worktree,
+    branch: agent.branch,
+    stepId: selectedStepId,
+    runId: agent.runId,
+    updatedAt: task.createdAt,
+  }));
+}
+
+function MissionWorkItemRow({
+  task,
+  item,
+  onAgent,
+}: {
+  task: Task;
+  item: MissionWorkItem;
+  onAgent: (agent: Agent) => void;
+}) {
+  const agent = item.agentId
+    ? task.agents.find((candidate) => candidate.id === item.agentId)
+    : undefined;
+  const display = agent ? agentDisplayState(task, agent) : undefined;
+  const status = workItemStatusLabel(task, item, agent);
+  const hasDetails = Boolean(
+    item.detail || item.ticket || item.worktree || item.branch || item.runId,
+  );
+  return (
+    <li className={`mission-work-item is-${item.status}`}>
+      <span
+        className={`mission-work-status ${display?.status || item.status}`}
+        aria-label={status}
+        title={status}
+      />
+      <div className="mission-work-copy">
+        <div className="mission-work-title-row">
+          <strong>{item.title}</strong>
+          {item.ticket && <span className="mission-work-ticket">{item.ticket}</span>}
+        </div>
+        <span className="mission-work-state">{status}</span>
+        {hasDetails && (
+          <details className="mission-work-details">
+            <summary>
+              Détails
+              <ChevronDown size={12} />
+            </summary>
+            <div>
+              {item.detail && <p>{item.detail}</p>}
+              {item.worktree && (
+                <span>
+                  Worktree <code>{item.worktree}</code>
+                </span>
+              )}
+              {item.branch && (
+                <span>
+                  Branche <code>{item.branch}</code>
+                </span>
+              )}
+              {item.runId && <span>Run {shortRunId(item.runId)}</span>}
+            </div>
+          </details>
+        )}
+      </div>
+      {agent && (
+        <button
+          className="mission-work-agent"
+          type="button"
+          onClick={() => onAgent(agent)}
+          aria-label={`Ouvrir le chat de ${agent.name}`}
+          title={`Ouvrir le chat de ${agent.name}`}
+        >
+          <Orb
+            status={display?.status || agent.status}
+            size={22}
+            color={agentColor(agent.id, task.agents.indexOf(agent))}
+            animation={agentOrbState(agent.id, task.agents.indexOf(agent))}
+          />
+          <span>{agent.name}</span>
+          <MessageSquare size={12} aria-hidden="true" />
+        </button>
+      )}
+    </li>
+  );
+}
+
+/** Compact work summary shown above the elapsed-time chart. */
+function MissionWorkList({
+  task,
+  onAgent,
+}: {
+  task: Task;
+  onAgent: (agent: Agent) => void;
+}) {
+  const items = workItemsForTask(task);
+  if (!items.length) return null;
+  return (
+    <section className="mission-work-list" aria-label="Tâches de la mission">
+      <div className="mission-work-heading">
+        <div>
+          <span className="eyebrow">TRAVAIL</span>
+          <h2>Tâches de l’étape</h2>
+        </div>
+        <span className="mission-work-count">{items.length}</span>
+      </div>
+      <ul>
+        {items.map((item) => (
+          <MissionWorkItemRow
+            key={item.id}
+            task={task}
+            item={item}
+            onAgent={onAgent}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function activityLabel(activity: TemporalActivityPoint): string {
   if (activity.lifecycle === "started") return "Déclenchement";
   if (activity.lifecycle === "completed") return "Fin enregistrée";
@@ -67,11 +222,12 @@ function AgentLabel({
 }) {
   const agent = agentById(task, lane.agentId);
   const isMissionLane = lane.agentId === "__mission__";
+  const display = agent ? agentDisplayState(task, agent) : undefined;
   const color = agentColor(
     lane.agentId,
     agent ? task.agents.indexOf(agent) : index,
   );
-  const status = agent?.status || "queued";
+  const status = display?.status || agent?.status || "queued";
   const content = (
     <>
       {isMissionLane ? (
@@ -95,7 +251,10 @@ function AgentLabel({
             (isMissionLane ? "Mission" : lane.agentId) ||
             "Mission"}
         </strong>
-        <small>{agent?.role || "Activité enregistrée"}</small>
+        <small>
+          {agent?.role || "Activité enregistrée"}
+          {display && ` · ${display.label}`}
+        </small>
       </span>
     </>
   );
@@ -486,6 +645,7 @@ export function TemporalTimeline({ task, onAgent }: TimelineProps) {
 
   return (
     <div className="temporal-timeline-content">
+      <MissionWorkList task={task} onAgent={onAgent} />
       <div className="temporal-toolbar">
         <div className="temporal-toolbar-copy">
           <span>

@@ -1,0 +1,246 @@
+.stage-report {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0 8px;
+  padding: 16px 17px;
+  border: 1px solid #383838;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #202020, #191919);
+}
+
+.stage-report.is-ready {
+  border-color: #3e5045;
+}
+
+.stage-report.is-blocked,
+.stage-report.is-needs_input {
+  border-color: #514936;
+}
+
+.stage-report-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stage-report-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #b7c6b9;
+  font: var(--font-size-body, 12px) var(--mono);
+  letter-spacing: 0.03em;
+}
+
+.stage-report.is-blocked .stage-report-status,
+.stage-report.is-needs_input .stage-report-status {
+  color: #cbbb87;
+}
+
+.stage-report-step {
+  overflow: hidden;
+  color: #777;
+  font: var(--font-size-body, 12px) var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-report h3 {
+  color: #e1e1e1;
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.stage-report-reason {
+  margin-top: -5px;
+  color: #a3a3a3;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.stage-report-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stage-report-list {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid #303030;
+  border-radius: 7px;
+  background: #181818;
+}
+
+.stage-report-list h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #b9b9b9;
+  font-size: var(--font-size-body, 12px);
+  font-weight: 550;
+}
+
+.stage-report-list h4 svg {
+  color: #9ba99b;
+}
+
+.stage-report-list.is-remaining h4 svg {
+  color: #b8a875;
+}
+
+.stage-report-list.is-evidence h4 svg {
+  color: #9baeca;
+}
+
+.stage-report-list h4 span {
+  margin-left: auto;
+  color: #737373;
+  font: var(--font-size-body, 12px) var(--mono);
+}
+
+.stage-report-list ul,
+.stage-report-evidence,
+.stage-report-criteria {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.stage-report-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: #9e9e9e;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.stage-report-list li > span:first-child {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: #818181;
+}
+
+.stage-report-list.is-completed li > span:first-child {
+  background: #9aaa9c;
+}
+
+.stage-report-list.is-remaining li > span:first-child {
+  background: #b6a671;
+}
+
+.stage-report-next {
+  padding: 10px 11px;
+  border-left: 2px solid #b7aa7a;
+  background: #b7aa7a0b;
+}
+
+.stage-report-next > span {
+  color: #b8ab7c;
+  font: var(--font-size-body, 12px) var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stage-report-next p {
+  margin-top: 4px;
+  color: #c2baa4;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.stage-report-folds {
+  display: grid;
+  gap: 7px;
+}
+
+.stage-report-details {
+  border-top: 1px solid #303030;
+}
+
+.stage-report-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 0 2px;
+  color: #919191;
+  cursor: pointer;
+  list-style: none;
+}
+
+.stage-report-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.stage-report-details summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stage-report-details summary > svg {
+  transition: transform 0.18s ease;
+}
+
+.stage-report-details[open] summary > svg {
+  transform: rotate(180deg);
+}
+
+.stage-report-criteria li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: #999;
+}
+
+.stage-report-criteria li.is-met > svg {
+  color: #9aaa9c;
+}
+
+.stage-report-criteria li.is-open > svg {
+  color: #b8a875;
+}
+
+.stage-report-criteria li > span {
+  display: grid;
+  gap: 2px;
+}
+
+.stage-report-criteria strong {
+  font-weight: 450;
+  line-height: 1.4;
+}
+
+.stage-report-criteria small {
+  color: #777;
+  line-height: 1.4;
+}
+
+.stage-report-evidence {
+  padding-left: 18px;
+  color: #999;
+  line-height: 1.5;
+}
+
+.stage-report-evidence li {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .stage-report-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .stage-report-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

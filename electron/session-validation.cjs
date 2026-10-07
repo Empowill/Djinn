@@ -2,6 +2,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateAction = validateAction;
+exports.validatePermission = validatePermission;
+exports.validateStepResult = validateStepResult;
+exports.validateWorkItem = validateWorkItem;
+exports.validateMissionReport = validateMissionReport;
 exports.validateTask = validateTask;
 exports.validateState = validateState;
 const workflow_1 = require("./workflow.cjs");
@@ -107,11 +111,31 @@ function validateAction(value, restored = false) {
         createdAt: date(a.createdAt, "action.createdAt"),
         updatedAt: date(a.updatedAt, "action.updatedAt"),
         agentId: optionalString(a.agentId, "action.agentId"),
+        workItemId: optionalString(a.workItemId, "action.workItemId"),
+        target: optionalString(a.target, "action.target"),
         url: restored && kind === "server" ? undefined : url,
         script: optionalString(a.script, "action.script"),
         directory,
         error: optionalString(a.error, "action.error"),
+        testStartedAt: optionalDate(a.testStartedAt, "action.testStartedAt"),
     };
+    if (a.testInstructions !== undefined) {
+        if (!Array.isArray(a.testInstructions) || a.testInstructions.length > 24)
+            return invalid("action.testInstructions");
+        action.testInstructions = a.testInstructions.map((v) => boundedText(v, "action.testInstructions", 4000));
+    }
+    if (a.expectedResult !== undefined)
+        action.expectedResult = boundedText(a.expectedResult, "action.expectedResult", 4000);
+    if (a.testResult !== undefined) {
+        const result = record(a.testResult, "action.testResult");
+        action.testResult = {
+            status: choice(result.status, ["passed", "problem", "deferred"], "action.testResult.status"),
+            recordedAt: date(result.recordedAt, "action.testResult.recordedAt"),
+            detail: result.detail === undefined
+                ? undefined
+                : boundedText(result.detail, "action.testResult.detail", 12000),
+        };
+    }
     if (action.id.length > 256 ||
         action.title.length > 1000 ||
         (action.detail?.length || 0) > 100000 ||
@@ -120,6 +144,104 @@ function validateAction(value, restored = false) {
         (action.script?.length || 0) > 256)
         return invalid("action.length");
     return action;
+}
+function boundedText(value, field, limit = 4000) {
+    const result = string(value, field);
+    if (result.length > limit || result.includes("\0"))
+        return invalid(field);
+    return result;
+}
+function validatePermission(value, restored = false) {
+    const p = record(value, "permission");
+    const status = choice(p.status, ["pending", "accepted", "declined", "cancelled"], "permission.status");
+    const result = {
+        id: id(p.id, "permission.id"),
+        taskId: id(p.taskId, "permission.taskId"),
+        runId: id(p.runId, "permission.runId"),
+        stepId: optionalString(p.stepId, "permission.stepId"),
+        agentId: id(p.agentId, "permission.agentId"),
+        agentName: optionalString(p.agentName, "permission.agentName"),
+        provider: choice(p.provider, ["codex", "claude"], "permission.provider"),
+        method: boundedText(p.method, "permission.method", 1000),
+        title: boundedText(p.title, "permission.title", 1000),
+        reason: p.reason === undefined
+            ? undefined
+            : boundedText(p.reason, "permission.reason", 12000),
+        command: p.command === undefined
+            ? undefined
+            : boundedText(p.command, "permission.command", 24000),
+        cwd: p.cwd === undefined
+            ? undefined
+            : boundedText(p.cwd, "permission.cwd", 4096),
+        status: restored && status === "pending" ? "cancelled" : status,
+        createdAt: date(p.createdAt, "permission.createdAt"),
+        updatedAt: optionalDate(p.updatedAt, "permission.updatedAt"),
+        canAcceptForSession: boolean(p.canAcceptForSession, "permission.canAcceptForSession", false),
+    };
+    if ([
+        result.id,
+        result.taskId,
+        result.runId,
+        result.agentId,
+        result.stepId || "",
+    ].some((v) => v.length > 256 || v.includes("\0")))
+        return invalid("permission.identity");
+    if (p.paths !== undefined) {
+        if (!Array.isArray(p.paths) || p.paths.length > 100)
+            return invalid("permission.paths");
+        result.paths = p.paths.map((v) => boundedText(v, "permission.paths", 4096));
+    }
+    if (p.questions !== undefined) {
+        if (!Array.isArray(p.questions) || p.questions.length > 24)
+            return invalid("permission.questions");
+        result.questions = p.questions.map((value) => {
+            const q = record(value, "permission.question");
+            const options = q.options;
+            if (options !== undefined &&
+                (!Array.isArray(options) || options.length > 20))
+                return invalid("permission.options");
+            return {
+                id: boundedText(q.id, "permission.question.id", 256),
+                question: boundedText(q.question, "permission.question", 12000),
+                ...(q.optional === true ? { optional: true } : {}),
+                options: options === undefined
+                    ? undefined
+                    : options.map((value) => {
+                        const o = record(value, "permission.option");
+                        return {
+                            label: boundedText(o.label, "permission.option.label", 1000),
+                            description: boundedText(o.description, "permission.option.description", 4000),
+                        };
+                    }),
+            };
+        });
+        if (new Set(result.questions.map((q) => q.id)).size !==
+            result.questions.length)
+            return invalid("permission.questions.ids");
+    }
+    return result;
+}
+function validateStepResult(value) {
+    return (0, workflow_1.validateStepReport)(value);
+}
+function validateWorkItem(value) {
+    const item = record(value, "workItem");
+    return {
+        id: boundedText(id(item.id, "workItem.id"), "workItem.id", 256),
+        title: boundedText(item.title, "workItem.title", 1000),
+        status: choice(item.status, ["pending", "running", "blocked", "ready", "done"], "workItem.status"),
+        updatedAt: date(item.updatedAt, "workItem.updatedAt"),
+        ...Object.fromEntries(["agentId", "stepId", "runId", "ticket", "worktree", "branch", "detail"].filter((field) => item[field] !== undefined).map((field) => [field, boundedText(item[field], `workItem.${field}`, field === "detail" ? 4000 : 4096)])),
+    };
+}
+function validateMissionReport(value) {
+    const item = record(value, "report");
+    return {
+        ...validateStepResult(item),
+        id: boundedText(id(item.id, "report.id"), "report.id", 256),
+        agentId: optionalString(item.agentId, "report.agentId"),
+        updatedAt: date(item.updatedAt, "report.updatedAt"),
+    };
 }
 function validateTask(value, restored = true) {
     const t = record(value, "mission");
@@ -137,6 +259,8 @@ function validateTask(value, restored = true) {
         context: string(q.context, `${p}.context`),
         recommendation: string(q.recommendation, `${p}.recommendation`),
         blocking: boolean(q.blocking, `${p}.blocking`),
+        blockingScope: q.blockingScope === undefined ? undefined : choice(q.blockingScope, ["agent", "mission"], `${p}.blockingScope`),
+        workItemId: optionalString(q.workItemId, `${p}.workItemId`),
         unlocks: string(q.unlocks, `${p}.unlocks`),
         agentId: optionalString(q.agentId, `${p}.agentId`),
         answer: optionalString(q.answer, `${p}.answer`),
@@ -225,9 +349,13 @@ function validateTask(value, restored = true) {
         runId: optionalString(a.runId, `${p}.runId`),
         id: id(a.id, `${p}.id`),
         name: string(a.name, `${p}.name`),
-        origin: a.origin === undefined ? undefined : choice(a.origin, ["codex"], `${p}.origin`),
+        origin: a.origin === undefined
+            ? undefined
+            : choice(a.origin, ["codex"], `${p}.origin`),
         live: a.live === undefined ? undefined : boolean(a.live, `${p}.live`),
-        provider: a.provider === undefined ? undefined : choice(a.provider, ["codex", "claude"], `${p}.provider`),
+        provider: a.provider === undefined
+            ? undefined
+            : choice(a.provider, ["codex", "claude"], `${p}.provider`),
         providerThreadId: optionalString(a.providerThreadId, `${p}.providerThreadId`),
         parentAgentId: optionalString(a.parentAgentId, `${p}.parentAgentId`),
         activity: optionalString(a.activity, `${p}.activity`),
@@ -252,7 +380,12 @@ function validateTask(value, restored = true) {
         branch: optionalString(a.branch, `${p}.branch`),
     })).map((a) => restored && a.status === "running"
         ? a.origin === "codex"
-            ? { ...a, status: "blocked", live: false, waitReason: "État actif à confirmer par le runtime Codex" }
+            ? {
+                ...a,
+                status: "blocked",
+                live: false,
+                waitReason: "État actif à confirmer par le runtime Codex",
+            }
             : { ...a, status: "queued" }
         : a);
     const events = collection(t.events, "events", (e, p) => ({
@@ -407,6 +540,24 @@ function validateTask(value, restored = true) {
                 return invalid("agentHistory.stepId");
             normalized.agentHistory[stepId] = validateTask({ ...t, agentHistory: undefined, agents }, restored).agents;
         }
+    }
+    if (t.permissions !== undefined) {
+        if (!Array.isArray(t.permissions) || t.permissions.length > 200)
+            return invalid("permissions");
+        normalized.permissions = t.permissions.map((p) => validatePermission(p, restored));
+        if (normalized.permissions.some((p) => p.taskId !== normalized.id) ||
+            new Set(normalized.permissions.map((p) => p.id)).size !==
+                normalized.permissions.length)
+            return invalid("permissions.identity");
+    }
+    if (t.stepResult !== undefined)
+        normalized.stepResult = validateStepResult(t.stepResult);
+    for (const field of ["workItems", "reports"]) {
+        if (t[field] === undefined)
+            continue;
+        if (!Array.isArray(t[field]) || t[field].length > 200)
+            return invalid(field);
+        Object.assign(normalized, { [field]: collection(t[field], field, (value) => field === "workItems" ? validateWorkItem(value) : validateMissionReport(value)) });
     }
     if (t.providerSessions !== undefined) {
         const sessions = record(t.providerSessions, "providerSessions");

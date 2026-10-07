@@ -1,3 +1,4 @@
+import { restoreMissionInteractions, restoreLegacyReports } from "./mission-interactions";
 import { useState, useEffect, useRef, useCallback } from "react";
 import type {
   AppState,
@@ -14,10 +15,17 @@ import type {
   MissionStep,
   StepType,
   ProviderId,
+  PermissionRequest,
+  PermissionDecision,
 } from "./types";
 import { initialState, event, now, uid, newTask } from "./data";
 import { enrichDemoState } from "./demo-supports";
 import { compactStateHistory } from "./state-history";
+import {
+  buildMissionPrompt,
+  compactRecords,
+  missionSupports,
+} from "./mission-context";
 import { reconnectNativeRun } from "./mission-view";
 import {
   StepCompletionTracker,
@@ -31,6 +39,10 @@ import {
   validateAction,
   validateTask,
   validateState,
+  validatePermission,
+  validateStepResult as parseStepResult,
+  validateWorkItem,
+  validateMissionReport,
 } from "./session-validation";
 import {
   stepMode,
@@ -40,6 +52,7 @@ import {
   approveStep,
   reopenStep,
   canStartStep,
+  focusStep as focusWorkflowStep,
   canResumeAfterHumanInput,
   invalidateDependentSteps,
   STEP_TYPES,
@@ -127,41 +140,6 @@ function selectImages(artifacts: Artifact[]): NonNullable<RunInput["images"]> {
   }
   return images;
 }
-function artifactContext(
-  artifacts: Artifact[],
-  images: NonNullable<RunInput["images"]>,
-) {
-  const attached = new Set(images.map((image) => image.id));
-  let remaining = 28000;
-  return [...artifacts]
-    .sort((a, b) => Number(!!b.sourceOfTruth) - Number(!!a.sourceOfTruth))
-    .map((a) => {
-      if (a.type === "screenshot")
-        return {
-          id: a.id,
-          title: a.title,
-          type: a.type,
-          sourceOfTruth: a.sourceOfTruth === true,
-          revision: a.revision,
-          editedBy: a.editedBy,
-          content: attached.has(a.id)
-            ? `Attached image ID ${a.id}. Review feedback x/y percentages reference this image; inspect its attached pixels.`
-            : "Local image: pixels are unavailable because this image is unsupported, invalid, or exceeds the attachment budget (5 images, 4 MiB each, 12 MiB total). Ask the human for a textual description if needed; never claim to have inspected this image.",
-        };
-      const content = a.content.slice(0, remaining);
-      remaining -= content.length;
-      return {
-        id: a.id,
-        title: a.title,
-        type: a.type,
-        sourceOfTruth: a.sourceOfTruth === true,
-        revision: a.revision,
-        editedBy: a.editedBy,
-        content,
-        truncated: content.length < a.content.length,
-      };
-    });
-}
 function contextExcerpt(value: unknown, limit: number) {
   const serialized = JSON.stringify(value);
   return serialized.length > limit
@@ -245,6 +223,9 @@ export function useDjinn() {
   >([]);
   const [busyActionIds, setBusyActionIds] = useState<string[]>([]);
   const actionLocks = useRef(new Set<string>());
+  const permissionLocks = useRef(new Set<string>());
+  const [busyPermissionIds, setBusyPermissionIds] = useState<string[]>([]);
+  const knownPermissions = useRef(new Set<string>());
   const pendingRuns = useRef(new Map<string, PendingRun>());
   const startLock = useRef(false);
   const instructionTransmissions = useRef(new Set<string>());
@@ -315,8 +296,24 @@ export function useDjinn() {
           typeof window.djinn?.getRuntimeSnapshot === "function"
             ? await window.djinn.getRuntimeSnapshot()
             : undefined;
+        const livePermissions =
+          live?.permissions ||
+          (typeof window.djinn?.getPendingPermissions === "function"
+            ? await window.djinn.getPendingPermissions()
+            : []);
         if (active) {
           if (restored) {
+            for (const mission of restored.tasks) {
+              Object.assign(mission, restoreLegacyReports(mission));
+              const current = livePermissions
+                .filter((p) => p.taskId === mission.id)
+                .map((p) => validatePermission(p));
+              const merged = new Map(
+                (mission.permissions || []).map((p) => [p.id, p]),
+              );
+              current.forEach((p) => merged.set(p.id, p));
+              mission.permissions = [...merged.values()].slice(-200);
+            }
             if (typeof window.djinn?.getActions === "function") {
               for (const mission of restored.tasks) {
                 try {
@@ -326,7 +323,14 @@ export function useDjinn() {
                   const merged = new Map(
                     (mission.actions || []).map((a) => [a.id, a]),
                   );
-                  live.forEach((a) => merged.set(a.id, a));
+                  live.forEach((a) => {
+                    const saved = merged.get(a.id);
+                    const sameVersion = !a.runId || !saved?.runId || a.runId === saved.runId;
+                    merged.set(a.id, { ...saved, ...a,
+                      testStartedAt: sameVersion && (a.status === "ready" || a.kind !== "server") ? saved?.testStartedAt : undefined,
+                      testResult: sameVersion && a.status !== "running" ? a.testResult || saved?.testResult : a.testResult,
+                    });
+                  });
                   mission.actions = [...merged.values()];
                 } catch {
                   /* The saved actions remain available without claiming a live server. */
@@ -351,6 +355,18 @@ export function useDjinn() {
                 mode: run.mode,
                 finished: false,
               });
+            }
+            // Recover durable tool publications through a compact native projection.
+            // This never replays completion events or starts another provider.
+            for (const mission of restored.tasks) {
+              try {
+                const publications = typeof window.djinn?.getMissionInteractions === "function"
+                  ? (await window.djinn.getMissionInteractions(mission.id)).events
+                  : live?.runs.find((run) => run.taskId === mission.id)?.structuredEvents || [];
+                Object.assign(mission, restoreMissionInteractions(mission, publications));
+              } catch (error) {
+                notify(`Publications de la mission indisponibles : ${message(error)}`);
+              }
             }
             commit(() => restored);
           }
@@ -406,6 +422,63 @@ export function useDjinn() {
     }, 500);
     return () => clearTimeout(timer);
   }, [state, ready, persistenceEnabled, notify]);
+  useEffect(() => {
+    if (!ready) return;
+    for (const mission of state.tasks) {
+      for (const permission of mission.permissions || []) {
+        if (
+          permission.status !== "pending" ||
+          knownPermissions.current.has(permission.id)
+        )
+          continue;
+        knownPermissions.current.add(permission.id);
+        const alert = {
+          taskId: mission.id,
+          questionId: `permission:${permission.id}`,
+          title: "Autorisation attendue",
+          body: `${permission.agentName || permission.agentId} — ${permission.title}`.slice(
+            0,
+            1000,
+          ),
+        };
+        if (window.djinn?.notifyQuestion) {
+          void window.djinn
+            .notifyQuestion(alert)
+            .then((result) => {
+              setNotificationStatus(
+                result.shown
+                  ? "Notification envoyée au système"
+                  : result.message ||
+                      "Autorisation disponible dans la mission.",
+              );
+            })
+            .catch((error) => setNotificationStatus(message(error)));
+        } else if (
+          typeof Notification !== "undefined" &&
+          Notification.permission === "granted"
+        ) {
+          try {
+            const notification = new Notification(alert.title, {
+              body: alert.body,
+              tag: alert.questionId,
+            });
+            notification.onclick = () => {
+              window.focus();
+              setState((s) => ({ ...s, selectedId: mission.id }));
+              window.dispatchEvent(
+                new CustomEvent("djinn:permission-focus", {
+                  detail: { taskId: mission.id, requestId: permission.id },
+                }),
+              );
+              notification.close();
+            };
+          } catch (error) {
+            setNotificationStatus(message(error));
+          }
+        }
+      }
+    }
+  }, [ready, state.tasks]);
   useEffect(() => {
     if (!ready) return;
     for (const alert of stepCompletions.current.sync(state.tasks)) {
@@ -623,11 +696,51 @@ export function useDjinn() {
             ...t,
             actions: [
               ...(t.actions || []).filter((a) => a.id !== action.id),
-              action,
+              {
+                ...t.actions?.find((a) => a.id === action.id),
+                ...action,
+                stepId:
+                  action.stepId ||
+                  e.stepId ||
+                  t.actions?.find((a) => a.id === action.id)?.stepId,
+                runId:
+                  action.runId ||
+                  t.actions?.find((a) => a.id === action.id)?.runId,
+                agentId:
+                  action.agentId ||
+                  t.actions?.find((a) => a.id === action.id)?.agentId,
+                testStartedAt: action.status === "running" || ["stopped", "error"].includes(action.status) ? undefined : action.testStartedAt || t.actions?.find((a) => a.id === action.id)?.testStartedAt,
+                testResult:
+                  action.status === "running"
+                    ? undefined
+                    : action.testResult ||
+                      t.actions?.find((a) => a.id === action.id)?.testResult,
+              },
             ].slice(-100),
           }));
         } catch (error) {
           notify(`Action indisponible : ${message(error)}`);
+        }
+        return;
+      }
+      if (
+        e.type === "permission_requested" ||
+        e.type === "permission_resolved"
+      ) {
+        try {
+          const request = validatePermission({
+            ...record(d.request || d),
+            taskId: e.taskId,
+          });
+          updateTask(e.taskId, (t) => ({
+            ...t,
+            permissions: [
+              ...(t.permissions || []).filter((p) => p.id !== request.id),
+              request,
+            ].slice(-200),
+          }));
+        } catch (error) {
+          notify(`Autorisation indisponible : ${message(error)}`);
         }
         return;
       }
@@ -637,23 +750,29 @@ export function useDjinn() {
           openCompletedStep(e.taskId, target.slice(5));
           return;
         }
-        setState((s) => ({
+        commit((s) => ({
           ...s,
           selectedId: s.tasks.some((t) => t.id === e.taskId)
             ? e.taskId
             : s.selectedId,
+          tasks: s.tasks.map((t) => t.id === e.taskId && t.activeStepId ? { ...t, selectedStepId: t.activeStepId } : t),
         }));
         const questionId = text(d.questionId);
         window.dispatchEvent(
           new CustomEvent(
-            questionId.startsWith("action:")
-              ? "djinn:action-focus"
-              : "djinn:question-focus",
+            questionId.startsWith("permission:")
+              ? "djinn:permission-focus"
+              : questionId.startsWith("action:")
+                ? "djinn:action-focus"
+                : "djinn:question-focus",
             {
               detail: {
                 taskId: e.taskId,
                 questionId,
                 actionId: questionId.slice(7),
+                requestId: questionId.startsWith("permission:")
+                  ? questionId.slice(11)
+                  : undefined,
               },
             },
           ),
@@ -689,6 +808,10 @@ export function useDjinn() {
         d.scope === "agent" ||
         Boolean(d.parentRunId) ||
         Boolean(agentId && agentId !== "lead");
+      // Native lead passes have their own child run, but their result belongs to
+      // the supervised root passage. Child lifecycle events still remain local.
+      const leadResult = agentId === "lead" && !!d.parentRunId;
+      const resultRunId = leadResult ? text(d.parentRunId) : e.runId;
       const session = pendingRuns.current.get(e.taskId);
       if (
         child &&
@@ -709,6 +832,7 @@ export function useDjinn() {
       }
       updateTask(e.taskId, (t) => {
         if (!child && t.runId && e.runId && e.runId !== t.runId) return t;
+        if (child && d.parentRunId && t.runId && d.parentRunId !== t.runId) return t;
         const scope = text(e.stepId, text(d.stepId));
         if (scope && !t.steps?.some((s) => s.id === scope)) return t;
         // Child passages are accepted only for the current stage; past events remain saved.
@@ -752,7 +876,48 @@ export function useDjinn() {
             entry.lifecycle = "completed";
           next.events = [...next.events, entry];
         };
-        if (e.type === "guidance") {
+        if (e.type === "step_result" && (!child || leadResult)) {
+          try {
+            const result = parseStepResult({
+              ...d,
+              stepId: scope || t.activeStepId,
+              runId: resultRunId,
+              reportedAt: e.timestamp,
+            });
+            next.stepResult = result;
+            next.steps = t.steps?.map((step) => step.id === result.stepId ? { ...step, report: result, summary: result.summary } : step);
+            add(
+              "note",
+              result.status === "ready"
+                ? "Résultat prêt"
+                : result.status === "blocked"
+                  ? "Préparation bloquée"
+                  : "Une réponse est attendue",
+              [result.summary, result.reason, result.nextAction]
+                .filter(Boolean)
+                .join("\n"),
+              "lead",
+            );
+          } catch (error) {
+            add("error", "Résultat invalide", message(error), "lead");
+          }
+        } else if (e.type === "work_item") {
+          try {
+            const item = validateWorkItem({ ...d, agentId: text(d.assignedAgentId, text(d.agentId)) || undefined, stepId: scope || t.activeStepId, runId: e.runId, updatedAt: e.timestamp });
+            const existing = t.workItems?.find((work) => work.id === item.id);
+            next.workItems = [...(t.workItems || []).filter((work) => work.id !== item.id), { ...existing, ...item }].slice(-200);
+          } catch (error) {
+            add("error", "Tâche invalide", message(error), agentId);
+          }
+        } else if (e.type === "report") {
+          try {
+            const report = validateMissionReport({ ...d, id: text(d.id, `${agentId || "lead"}:${scope || "mission"}`), agentId: agentId || undefined, stepId: scope || t.activeStepId, runId: e.runId, updatedAt: e.timestamp });
+            next.reports = [...(t.reports || []).filter((item) => item.id !== report.id), report].slice(-200);
+            add("note", "Compte rendu de contribution", [report.summary, report.remaining?.length ? `Reste à faire : ${report.remaining.join(" ; ")}` : "", report.nextAction].filter(Boolean).join("\n"), agentId);
+          } catch (error) {
+            add("error", "Compte rendu invalide", message(error), agentId);
+          }
+        } else if (e.type === "guidance") {
           const status = text(d.status);
           if (
             ["queued", "transmitted", "consumed", "prevented"].includes(status)
@@ -774,7 +939,7 @@ export function useDjinn() {
             add(
               "note",
               status === "consumed"
-                ? "Indication remise au destinataire"
+                ? "Indication remise au runtime"
                 : status === "prevented"
                   ? "Transmission empêchée"
                   : "Indication transmise",
@@ -805,6 +970,7 @@ export function useDjinn() {
           }
           let options = Array.isArray(d.options)
             ? d.options.map((o: unknown, i: number) => {
+                if (typeof o === "string") return { id: String.fromCharCode(97 + i), label: o, description: "" };
                 const v = record(o);
                 return {
                   id: text(v.id, String.fromCharCode(97 + i)),
@@ -813,24 +979,17 @@ export function useDjinn() {
                 };
               })
             : [];
-          if (!options.length)
-            options = [
-              { id: "a", label: "Valider la recommandation", description: "" },
-              {
-                id: "b",
-                label: "Proposer une autre approche",
-                description: "",
-              },
-            ];
           const q: Question = {
             stepId: scope || undefined,
             runId: e.runId,
             id,
             title,
-            context: text(d.context, detail),
+            context: text(d.context, text(d.question, detail)),
             recommendation: text(d.recommendation),
             options,
             blocking: d.blocking !== false,
+            blockingScope: d.blockingScope === "agent" || d.blockingScope === "mission" ? d.blockingScope : undefined,
+            workItemId: text(d.workItemId) || undefined,
             unlocks: text(d.unlocks),
             agentId: agentId || undefined,
             theme: text(d.theme, "Mission"),
@@ -1154,7 +1313,10 @@ export function useDjinn() {
                   : a,
               );
           } else if (status === "running") {
-            next.status = t.questions.some((q) => q.blocking && !q.answer)
+            next.status = t.questions.some(
+              (q) =>
+                q.blocking && !q.answer && (!q.stepId || q.stepId === scope),
+            )
               ? "waiting"
               : "running";
             if (
@@ -1175,14 +1337,34 @@ export function useDjinn() {
             d.phase !== "provider_completed"
           ) {
             next.runId = undefined;
+            const passageStartedAt = t.events.find(
+              (ev) => ev.runId === e.runId && ev.lifecycle === "started",
+            )?.time;
+            const awaitingBusinessInput = t.questions.some((question) => question.blocking && !question.answer && (!scope || !question.stepId || question.stepId === scope));
             const failedContribution = t.agents.some(
               (a) =>
                 a.id !== "lead" &&
-                (a.status === "error" || a.status === "blocked"),
+                (a.status === "error" || (a.status === "blocked" && !awaitingBusinessInput)) &&
+                (!scope || !a.stepId || a.stepId === scope) &&
+                (a.runId === e.runId ||
+                  (!!passageStartedAt &&
+                    t.events.some(
+                      (ev) =>
+                        ev.agentId === a.id &&
+                        ev.runId === a.runId &&
+                        ev.time >= passageStartedAt,
+                    ))),
             );
             const blocked =
-              t.questions.some((q) => q.blocking && !q.answer) ||
-              failedContribution;
+              t.questions.some(
+                (q) =>
+                  q.blocking && !q.answer && (!q.stepId || q.stepId === scope),
+              ) ||
+              failedContribution ||
+              (t.stepResult?.stepId === scope &&
+                t.stepResult?.runId === e.runId &&
+                (t.stepResult.status !== "ready" ||
+                  t.stepResult.criteria?.some((c) => !c.met)));
             next = finishStepRun(
               { ...next, runId: t.runId },
               scope || t.activeStepId || "",
@@ -1195,7 +1377,7 @@ export function useDjinn() {
                 .slice(-8000),
             );
             next.runId = undefined;
-            next.status = blocked ? "waiting" : "waiting";
+            next.status = "waiting";
             if (resumeRequested.current.has(t.id) && !blocked) {
               resumeRequested.current.delete(t.id);
               queueMicrotask(() => void startRef.current(undefined, t.id));
@@ -1203,6 +1385,11 @@ export function useDjinn() {
             next.agents = t.agents.map((a) =>
               a.id === "lead" ? { ...a, status: "done", progress: 100 } : a,
             );
+            if (scope)
+              next.agentHistory = {
+                ...next.agentHistory,
+                [scope]: next.agents,
+              };
             add(
               "note",
               "Le passage de l’agent est terminé",
@@ -1401,7 +1588,7 @@ export function useDjinn() {
   }, [updateTask, notify]);
   const task =
     state.tasks.find((t) => t.id === state.selectedId) || state.tasks[0];
-  const select = (id: string) => setState((s) => ({ ...s, selectedId: id }));
+  const select = (id: string) => commit((s) => ({ ...s, selectedId: id }));
   const loadDemo = () => {
     const existing = state.tasks.find((t) => t.demo);
     if (existing) {
@@ -1598,7 +1785,11 @@ export function useDjinn() {
       );
       return;
     }
-    if (task.questions.some((q) => q.blocking && !q.answer)) {
+    if (
+      task.questions.some(
+        (q) => q.blocking && !q.answer && (!q.stepId || q.stepId === stepId),
+      )
+    ) {
       notify("Répondez aux décisions bloquantes avant de lancer la suite.");
       return;
     }
@@ -1631,6 +1822,7 @@ export function useDjinn() {
           ? { ...t.agentHistory, [t.activeStepId]: t.agents }
           : t.agentHistory,
       status: "running",
+      stepResult: undefined,
       nextStepProposal: undefined,
       initialStepProposal:
         stage?.type === "discussion" ? undefined : t.initialStepProposal,
@@ -1717,37 +1909,16 @@ export function useDjinn() {
     const images = selectImages(
       task.artifacts.filter((a) => !a.stepId || a.stepId === stepId),
     );
-    const artifacts = artifactContext(task.artifacts, images);
-    const prompt = `You are Djinn, lead agent for this mission. Speak French. Stage: ${mode}. Goal: ${task.title}\n${task.brief.slice(0, 20000)}\nWorkflow: ${task.workflowMode || "fixed"}. ${stage?.type === "discussion" ? "Qualify the initial intent via discussion_type. Do not propose a continuation yet." : task.workflowMode === "flexible" ? "Work only on the current discussion. Choose the smallest useful next step from its result and the latest human intent; propose it via next_step {type,title,objective,reason} or explicitly explain that the mission may end here. Never assume a specification requires code or a prototype. A proposal neither adds nor starts a step." : "Respect the prepared workflow."}\nCurrent discussion type: ${stage?.type || "reflection"}. ${stage?.type === "specification" ? "Produce the product specification as a Markdown artifact, with decisions, scope and acceptance criteria. Do not implement code or create a prototype." : ""}\nSupports marked sourceOfTruth are canonical references. Prioritize them and their latest human edits; report conflicts with repository/project conventions.\nHuman steering instructions (latest instructions refine earlier ones): ${contextExcerpt((task.instructions || []).slice(-24), 12000)}\nConfiguration: ${contextExcerpt(task.configuration, 4000)}\nHuman decisions: ${contextExcerpt(
-      task.questions
-        .filter((q) => q.answer)
-        .map((q) => ({ id: q.id, title: q.title, answer: q.answer })),
-      10000,
-    )}\nReview feedback: ${contextExcerpt(task.feedback, 8000)}\nCurrent supports, including human edits (content budget 28000 characters): ${contextExcerpt(artifacts, 32000)}\nPrevious context: ${contextExcerpt(
-      task.events
-        .slice(-8)
-        .map((e) => ({ title: e.title, detail: e.detail.slice(0, 1200) })),
-      10000,
-    )}\n${stage?.type === "discussion" ? "Qualify the initial human intent only. Read context if needed, choose exactly one of exploration, reflection, specification, prototype or implementation, and emit discussion_type {type,title,objective,reason}. Do not implement, produce deliverables, propose next steps or agents. Finish this passage after classification; Djinn will start the chosen discussion with its own permissions. Ask a blocking question only if classification cannot be made from the intent." : mode === "plan" ? `Read the project and frame the work. Do not edit project source yet. Produce the supports appropriate to the current discussion: a specification document for specification, evidence for exploration, or decisions and options for reflection. Ask questions only for decisions that change the result. Propose at most ${task.configuration.concurrency} subagents as agent events with status queued, a bounded prompt, explicit writeScope relative file/directory ownership, dependsOn worker IDs only when essential, and readOnly for inspectors. Divide independent work from contract-dependent work so the independent parts can start immediately. Disjoint scopes can execute concurrently up to the configured limit; shared scopes and integration are serialized.` : mode === "review" ? "Review the implementation and human feedback against the latest supports. Verify touched areas. Produce a review report with evidence." : "Implement the agreed goal in the selected project against the latest supports. Respect local AGENTS.md. Run targeted checks. Prepare a usable local result: identify the appropriate development server script and its package directory. Djinn will start and manage that server after successful execution; do not launch an unmanaged background daemon. Emit useful end-of-passage actions for the human (open a verified URL, review a result, or perform a manual step) using action events, without inventing readiness. Produce artifacts explaining what changed and evidence."}\nNo commits, pushes, publishing, deployment, or external messages without explicit human instruction.\nUse the Djinn event protocol so the UI displays your work. Emit each UI element as one standalone line DJINN_EVENT:{"type":"EVENT_TYPE","data":{...fields}}. Example: DJINN_EVENT:{"type":"note","data":{"title":"Progress","detail":"Evidence here"}}. Supported types and data fields: discussion_type with type,title,objective,reason (initial qualification only); question with id,title,context,recommendation,options:[{id,label,description}],blocking,unlocks,agentId; artifact with id,title,type (diagram|wireframe|document|code),content (text or JSON string); agent with id,name,role,status,summary,prompt,writeScope:[relative path],dependsOn:[agent id],readOnly; phase with phase (brief|execution|review); note with title,detail; action with id,kind (server|link|manual),title,detail,script (package script name, server only),directory (relative package directory, server only),url (verified HTTP(S) URL, link only). Emit actions only for useful next steps, not routine progress. Only the human can approve review or delivery. IDs of questions must be unique across the mission: existing IDs ${contextExcerpt(
-      task.questions.map((q) => q.id),
-      6000,
-    )}. Diagram content is JSON with nodes:[{id,label,sublabel,x,y}],edges:[[from,to]]. Emit only real evidence, do not invent agents running or successful checks. Finish your passage to await human answers when a blocking question is raised.`;
-    const providerPrompt =
-      task.workflowOrigin === "agent" && stage?.type === "discussion"
-        ? prompt
-            .replace(
-              "Qualify the initial intent via discussion_type. Do not propose a continuation yet.",
-              "Define the complete timeline via one workflow_defined event before any project action.",
-            )
-            .replace(
-              "Qualify the initial human intent only. Read context if needed, choose exactly one of exploration, reflection, specification, prototype or implementation, and emit discussion_type {type,title,objective,reason}. Do not implement, produce deliverables, propose next steps or agents. Finish this passage after classification; Djinn will start the chosen discussion with its own permissions. Ask a blocking question only if classification cannot be made from the intent.",
-              "Define the complete timeline from the human intent and emit exactly one workflow_defined event with {steps:[{type,title,objective}],reason}. Use 1 to 8 stages from exploration, reflection, specification, prototype, implementation, review or delivery. This pass is read-only: do not implement, produce deliverables, propose next steps or agents, or emit artifacts, actions or phase events. The orchestrator will start the first selected stage with its own permissions. Ask a blocking question only if the timeline cannot be chosen from the intent.",
-            )
-            .replace(
-              "discussion_type with type,title,objective,reason (initial qualification only)",
-              "workflow_defined with steps and reason (initial timeline qualification only)",
-            )
-        : prompt;
+    const artifacts = missionSupports(
+      task.artifacts,
+      stage?.id,
+      images.map((image) => image.id),
+    );
+    const providerPrompt = buildMissionPrompt(
+      task,
+      stage,
+      images.map((image) => image.id),
+    );
     try {
       await window.djinn.saveState(ref.current);
       const result = await window.djinn.startRun({
@@ -1794,13 +1965,22 @@ export function useDjinn() {
             isolation: a.isolation,
             worktree: a.worktree,
             resources: a.resources,
-            prompt: `${(a.prompt || "").slice(0, 20000)}\nHuman steering instructions for your scope: ${contextExcerpt((task.instructions || []).filter((i) => !i.agentId || i.agentId === a.id).slice(-24), 12000)}\nHuman decisions: ${contextExcerpt(
-              task.questions.filter((q) => q.answer),
-              10000,
-            )}\nExisting question IDs: ${contextExcerpt(
-              task.questions.map((q) => q.id),
-              6000,
-            )}. Use a new unique ID for every new decision; never replace a different answered decision.\nCurrent supports: ${contextExcerpt(artifacts, 32000)}\nGoal: ${task.brief.slice(0, 20000)}. Work only within your assigned bounded scope, respect local AGENTS.md, and report evidence. Use the configured provider/model; do not silently substitute models, expand scope, or delegate additional work. No commits, pushes, publishing, deployment, or external messages.`,
+            prompt: `${(a.prompt || "").slice(0, 10000)}\nLatest instructions for your scope: ${JSON.stringify(
+              compactRecords(
+                (task.instructions || [])
+                  .filter((i) => !i.agentId || i.agentId === a.id)
+                  .slice()
+                  .reverse()
+                  .map((i) => ({ id: i.id, text: i.text })),
+                4000,
+              ),
+            )}\nAcquired decisions: ${contextExcerpt(
+              task.questions
+                .filter((q) => q.answer)
+                .map((q) => ({ id: q.id, title: q.title, answer: q.answer }))
+                .slice(-16),
+              4000,
+            )}\nCurrent supports: ${contextExcerpt(artifacts, 8000)}\nGoal: ${task.brief.slice(0, 4000)}. Work in your bounded ownership, respect AGENTS.md, preserve configured provider/model, report evidence and a concrete blocker if needed. Reuse valid checks; recheck affected areas only. Technical approvals use the native provider permission flow. No commits, pushes, publishing, deployment or external messages without explicit human instruction.`,
           })),
       });
       session.runId = result.runId;
@@ -2235,12 +2415,42 @@ export function useDjinn() {
   };
   const selectStep = (id: string) =>
     updateTask(task.id, (t) =>
-      t.steps?.some(
-        (s) => s.id === id && (s.status !== "pending" || id === t.activeStepId),
-      )
-        ? { ...t, selectedStepId: id }
-        : t,
+      t.steps?.some((s) => s.id === id) ? { ...t, selectedStepId: id } : t,
     );
+  const focusStep = (id: string) => {
+    try {
+      const current = ref.current.tasks.find((t) => t.id === task.id);
+      if (!current) return;
+      if (current.runId || current.status === "running") {
+        notify(
+          "Mettez la mission en pause avant de changer d’étape. Le travail déjà réalisé sera conservé.",
+        );
+        return;
+      }
+      const focused = focusWorkflowStep(current, id, { humanOverride: true });
+      updateTask(task.id, () => ({
+        ...focused,
+        agentHistory: current.activeStepId
+          ? { ...current.agentHistory, [current.activeStepId]: current.agents }
+          : current.agentHistory,
+        agents: current.agentHistory?.[id] || [],
+        events: [
+          ...focused.events,
+          {
+            ...event(
+              "note",
+              "Priorité changée par vous",
+              focused.steps?.find((s) => s.id === id)?.title,
+            ),
+            stepId: id,
+            actor: "human",
+          },
+        ],
+      }));
+    } catch (error) {
+      notify(message(error));
+    }
+  };
   const resumeStep = (id: string) => {
     try {
       updateTask(task.id, (t) => reopenStep(t, id));
@@ -2340,7 +2550,19 @@ export function useDjinn() {
         ...t,
         actions: [
           ...(t.actions || []).filter((a) => a.id !== result.id),
-          result,
+          {
+            ...t.actions?.find((a) => a.id === result.id),
+            ...result,
+            stepId: result.stepId || action.stepId,
+            runId: result.runId || action.runId,
+            agentId: result.agentId || action.agentId,
+            testStartedAt: operation === "open" && result.kind === "server" && result.status === "ready" ? time : ["run", "stop"].includes(operation) ? undefined : t.actions?.find((a) => a.id === result.id)?.testStartedAt,
+            testResult:
+              operation === "run"
+                ? undefined
+                : result.testResult ||
+                  t.actions?.find((a) => a.id === result.id)?.testResult,
+          },
         ],
         events: [
           ...t.events,
@@ -2370,6 +2592,158 @@ export function useDjinn() {
       actionLocks.current.delete(action.id);
       setBusyActionIds((current) => current.filter((id) => id !== action.id));
     }
+  };
+  const respondPermission = async (
+    request: PermissionRequest,
+    decision: PermissionDecision,
+    answers?: Record<string, string>,
+  ) => {
+    const current = ref.current.tasks
+      .find((t) => t.id === request.taskId)
+      ?.permissions?.find((p) => p.id === request.id);
+    if (
+      !current ||
+      current.status !== "pending" ||
+      permissionLocks.current.has(request.id)
+    )
+      return false;
+    if (decision === "acceptForSession" && !current.canAcceptForSession)
+      return false;
+    if (!window.djinn?.respondPermission) {
+      notify(
+        "La réponse aux autorisations nécessite le fournisseur connecté dans Electron.",
+      );
+      return false;
+    }
+    permissionLocks.current.add(request.id);
+    setBusyPermissionIds((ids) => [...ids, request.id]);
+    try {
+      const result = await window.djinn.respondPermission({
+        taskId: request.taskId,
+        requestId: request.id,
+        decision,
+        answers,
+      });
+      if (!result.resolved)
+        throw new Error(
+          "Cette demande n’est plus active. Actualisez son état avant de réessayer.",
+        );
+      updateTask(request.taskId, (t) => ({
+        ...t,
+        permissions: t.permissions?.map((p) =>
+          p.id === request.id && p.status === "pending"
+            ? {
+                ...p,
+                status: decision === "decline" ? "declined" : "accepted",
+                updatedAt: now(),
+              }
+            : p,
+        ),
+      }));
+      return true;
+    } catch (error) {
+      notify(`Autorisation non transmise : ${message(error)}`);
+      try {
+        const live = await window.djinn.getPendingPermissions?.();
+        if (live && !live.some((p) => p.id === request.id)) {
+          updateTask(request.taskId, (t) => ({
+            ...t,
+            permissions: t.permissions?.map((p) =>
+              p.id === request.id
+                ? { ...p, status: "cancelled", updatedAt: now() }
+                : p,
+            ),
+          }));
+        }
+      } catch {
+        /* Keep a failed reply visible and retryable until the native state is known. */
+      }
+      return false;
+    } finally {
+      permissionLocks.current.delete(request.id);
+      setBusyPermissionIds((ids) => ids.filter((id) => id !== request.id));
+    }
+  };
+  const startTest = async (action: TaskAction) => {
+    if (action.kind === "server") return performAction(action, "open");
+    if (action.kind === "link" && !(await performAction(action, "open"))) return false;
+    const time = now();
+    updateTask(task.id, (t) => ({
+      ...t,
+      actions: t.actions?.map((a) => a.id === action.id ? { ...a, testStartedAt: time } : a),
+    }));
+    openAction(task.id, action.id);
+    return true;
+  };
+  const recordTestResult = async (
+    action: TaskAction,
+    outcome: "passed" | "problem" | "deferred",
+    detail?: string,
+  ) => {
+    const missionId = task.id;
+    const latest = ref.current.tasks
+      .find((t) => t.id === missionId)
+      ?.actions?.find((a) => a.id === action.id);
+    if (
+      !latest ||
+      latest.runId !== action.runId ||
+      (outcome !== "deferred" &&
+        latest.kind === "server" &&
+        latest.status !== "ready")
+    ) {
+      notify(
+        "Préparez et ouvrez la version à tester avant de consigner ce résultat.",
+      );
+      return false;
+    }
+    const feedback = detail?.trim().slice(0, 12000);
+    if (outcome === "problem" && !feedback) {
+      notify(
+        "Décrivez le problème observé pour que l’agent puisse le corriger.",
+      );
+      return false;
+    }
+    updateTask(missionId, (t) => ({
+      ...t,
+      actions: t.actions?.map((a) =>
+        a.id === action.id
+          ? {
+              ...a,
+              testStartedAt: undefined,
+              testResult: {
+                status: outcome,
+                detail: feedback,
+                recordedAt: now(),
+              },
+            }
+          : a,
+      ),
+      events: [
+        ...t.events,
+        {
+          ...event(
+            "review",
+            outcome === "passed"
+              ? "Test validé par vous"
+              : outcome === "problem"
+                ? "Problème signalé"
+                : "Test reporté",
+            `${action.title}${feedback ? `\n${feedback}` : ""}`,
+            "lead",
+          ),
+          stepId: action.stepId,
+          runId: action.runId,
+          actor: "human",
+        },
+      ],
+    }));
+    if (outcome === "problem") {
+      await indicate(
+        `Retour de recette sur ${action.title} (${action.directory || action.url || action.id}) : ${feedback}. Corrigez la zone concernée puis recontrôlez-la ; conservez les autres résultats déjà validés.`,
+        "lead",
+      );
+    }
+    return true;
   };
   const openQuestion = (taskId: string, questionId: string) => {
     select(taskId);
@@ -2445,6 +2819,7 @@ export function useDjinn() {
     saveProject,
     updateTask,
     selectStep,
+    focusStep,
     resumeStep,
     validateStepResult,
     addNextStep,
@@ -2468,6 +2843,11 @@ export function useDjinn() {
     enableNotifications,
     actionAlerts,
     busyActionIds,
+    permissions: task.permissions || [],
+    busyPermissionIds,
+    respondPermission,
+    recordTestResult,
+    startTest,
     performAction,
     openAction,
     dismissActionAlert,

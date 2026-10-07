@@ -18,7 +18,7 @@ const labels = {
   running: "En cours",
   awaiting_human: "Résultat à valider",
   completed: "Validée",
-  blocked: "Décision attendue",
+  blocked: "Action nécessaire",
   paused: "En pause",
   error: "Erreur",
 };
@@ -27,6 +27,7 @@ export function StepTimeline({
   onSelect,
   onStart,
   onReopen,
+  onFocus,
   onConfigure,
   onAdd,
   starting = false,
@@ -35,12 +36,18 @@ export function StepTimeline({
   onSelect: (id: string) => void;
   onStart: (id: string) => void;
   onReopen: (id: string) => void;
+  onFocus?: (id: string) => void;
   onConfigure: () => void;
   onAdd?: () => void;
   starting?: boolean;
 }) {
   const steps = task.steps || [],
-    next = steps.find((s) => s.status !== "completed" || s.needsRevalidation),
+    next =
+      steps.find(
+        (s) =>
+          s.id === task.activeStepId &&
+          (s.status !== "completed" || s.needsRevalidation),
+      ) || steps.find((s) => s.status !== "completed" || s.needsRevalidation),
     selected = task.selectedStepId || task.activeStepId;
   return (
     <div className="workflow-strip">
@@ -49,7 +56,6 @@ export function StepTimeline({
           {steps.map((s, i) => (
             <button
               key={s.id}
-              disabled={s.status === "pending"}
               aria-current={selected === s.id ? "step" : undefined}
               className={`step-item phase-item ${selected === s.id ? "selected" : ""} ${s.status} ${s.status === "completed" ? "complete" : ""} ${s.id === task.activeStepId ? "current" : ""}`}
               onClick={() => onSelect(s.id)}
@@ -66,10 +72,14 @@ export function StepTimeline({
               <span className="phase-copy">
                 <strong>{s.title}</strong>
                 <small>
-                  {s.needsRevalidation ? "À revalider" : s.status === "completed" && s.validation === "automatic" ? "Terminée automatiquement" : labels[s.status]}
+                  {s.needsRevalidation
+                    ? "À revalider"
+                    : s.status === "completed" && s.validation === "automatic"
+                      ? "Terminée automatiquement"
+                      : labels[s.status]}
                   {s.id === task.activeStepId &&
                     task.runId &&
-                    " · Exécution active"}
+                    (task.permissions?.some((permission) => permission.status === "pending") ? " · Autorisation attendue" : " · Exécution active")}
                 </small>
               </span>
               {i < steps.length - 1 && (
@@ -89,6 +99,22 @@ export function StepTimeline({
         </button>
       </div>
       <div className="workflow-strip-actions">
+        {selected !== task.activeStepId &&
+          steps.find((s) => s.id === selected)?.status !== "completed" &&
+          onFocus && (
+            <button
+              className="button secondary small"
+              disabled={!!task.runId || starting}
+              title={
+                task.runId
+                  ? "Mettez la mission en pause pour changer la priorité"
+                  : "Conserver les résultats et changer la priorité"
+              }
+              onClick={() => onFocus(selected!)}
+            >
+              Travailler sur cette étape
+            </button>
+          )}
         {task.workflowMode === "flexible" && !next && onAdd && (
           <button
             className="button secondary small"
@@ -161,8 +187,9 @@ export function WorkflowEditor({
     <section className="workflow-editor">
       <h3>Workflow</h3>
       <p>
-        Les étapes commencées gardent leur identité. Chaque résultat attend
-        votre validation.
+        Les étapes commencées gardent leur historique. La recette et la
+        livraison attendent votre validation ; le travail courant avance
+        automatiquement.
       </p>
       {steps.map((s, i) => (
         <fieldset key={s.id} disabled={disabled || s.status !== "pending"}>
