@@ -1,0 +1,3 @@
+{
+  "css": ":root{color-scheme:dark;--background:#111111;--foreground:#e7e7e7;--surface:#191919;--border:#2c2c2c;--muted:#8f8f8f;--accent:#ebebeb;--chart-1:#b9c9e0;--chart-2:#cbbb87;--chart-3:#a9c4b0;--font-size-body:12px;--radius-control:7px;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px}*{box-sizing:border-box}body{background:var(--background);color:var(--foreground);font:var(--font-size-body)/1.55 system-ui,sans-serif;margin:20px}button,input,select,textarea{font:inherit;color:inherit}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}h1{font-size:22px}h2{font-size:18px}h3{font-size:16px}code,pre{font:12px/1.6 ui-monospace,monospace}"
+}

@@ -1,0 +1,2484 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import type {
+  AppState,
+  Task,
+  RuntimeEvent,
+  Environment,
+  Question,
+  Agent,
+  Artifact,
+  Phase,
+  RunInput,
+  TaskAction,
+  Project,
+  MissionStep,
+  StepType,
+  ProviderId,
+} from "./types";
+import { initialState, event, now, uid, newTask } from "./data";
+import { enrichDemoState } from "./demo-supports";
+import { compactStateHistory } from "./state-history";
+import { reconnectNativeRun } from "./mission-view";
+import {
+  StepCompletionTracker,
+  selectCompletedStep,
+} from "./step-notifications";
+import {
+  collectMissionJournal,
+  serializeMissionJournal,
+} from "./mission-journal-export";
+import {
+  validateAction,
+  validateTask,
+  validateState,
+} from "./session-validation";
+import {
+  stepMode,
+  startStep,
+  finishStepRun,
+  applyMissionTitle,
+  approveStep,
+  reopenStep,
+  canStartStep,
+  canResumeAfterHumanInput,
+  invalidateDependentSteps,
+  STEP_TYPES,
+  appendStep,
+  createDiscussionStep,
+  classifyDiscussion,
+  applyWorkflowProposal,
+  validateWorkflowProposal,
+  validateProject,
+  amendWorkflow,
+} from "./workflow";
+export { validateTask } from "./session-validation";
+
+const key = "djinn.workspace.v1";
+type RunMode = "plan" | "execute" | "review";
+type PendingRun = {
+  mode: RunMode;
+  runId?: string;
+  finished: boolean;
+  sentInstructionIds?: string[];
+};
+const text = (value: unknown, fallback = "") =>
+  typeof value === "string" ? value : fallback;
+const record = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+const message = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+const describe = (value: unknown) =>
+  typeof value === "string"
+    ? value
+    : value === undefined
+      ? ""
+      : JSON.stringify(value);
+export function getNextRunMode(task: Task): RunMode {
+  const step = task.steps?.find((s) => s.id === task.activeStepId);
+  if (step) return stepMode(step.type);
+  if (task.phase === "review" || task.phase === "delivery") return "review";
+  return task.planCompleted || task.phase === "execution" ? "execute" : "plan";
+}
+function selectImages(artifacts: Artifact[]): NonNullable<RunInput["images"]> {
+  const images: NonNullable<RunInput["images"]> = [];
+  let total = 0;
+  for (const artifact of artifacts) {
+    if (images.length === 5) break;
+    if (
+      artifact.type !== "screenshot" ||
+      !artifact.id ||
+      artifact.id.length > 256 ||
+      artifact.content.length > 8000000
+    )
+      continue;
+    const match =
+      /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(
+        artifact.content,
+      );
+    if (!match || match[2].length % 4 === 1) continue;
+    try {
+      const bytes = atob(match[2]);
+      if (
+        !bytes.length ||
+        bytes.length > 4 * 1024 * 1024 ||
+        total + bytes.length > 12 * 1024 * 1024
+      )
+        continue;
+      if (btoa(bytes).replace(/=+$/, "") !== match[2].replace(/=+$/, ""))
+        continue;
+      const valid =
+        match[1] === "image/png"
+          ? bytes.startsWith("\x89PNG\r\n\x1a\n")
+          : match[1] === "image/jpeg"
+            ? bytes.startsWith("\xff\xd8\xff")
+            : bytes.startsWith("RIFF") && bytes.slice(8, 12) === "WEBP";
+      if (!valid) continue;
+      images.push({
+        id: artifact.id,
+        title: (artifact.title || artifact.id).slice(0, 1000),
+        dataUrl: artifact.content,
+      });
+      total += bytes.length;
+    } catch {
+      /* Invalid or unsupported image data stays explicitly unavailable in the prompt. */
+    }
+  }
+  return images;
+}
+function artifactContext(
+  artifacts: Artifact[],
+  images: NonNullable<RunInput["images"]>,
+) {
+  const attached = new Set(images.map((image) => image.id));
+  let remaining = 28000;
+  return [...artifacts]
+    .sort((a, b) => Number(!!b.sourceOfTruth) - Number(!!a.sourceOfTruth))
+    .map((a) => {
+      if (a.type === "screenshot")
+        return {
+          id: a.id,
+          title: a.title,
+          type: a.type,
+          sourceOfTruth: a.sourceOfTruth === true,
+          revision: a.revision,
+          editedBy: a.editedBy,
+          content: attached.has(a.id)
+            ? `Attached image ID ${a.id}. Review feedback x/y percentages reference this image; inspect its attached pixels.`
+            : "Local image: pixels are unavailable because this image is unsupported, invalid, or exceeds the attachment budget (5 images, 4 MiB each, 12 MiB total). Ask the human for a textual description if needed; never claim to have inspected this image.",
+        };
+      const content = a.content.slice(0, remaining);
+      remaining -= content.length;
+      return {
+        id: a.id,
+        title: a.title,
+        type: a.type,
+        sourceOfTruth: a.sourceOfTruth === true,
+        revision: a.revision,
+        editedBy: a.editedBy,
+        content,
+        truncated: content.length < a.content.length,
+      };
+    });
+}
+function contextExcerpt(value: unknown, limit: number) {
+  const serialized = JSON.stringify(value);
+  return serialized.length > limit
+    ? serialized.slice(0, limit) +
+        " [Context abridged; full records are saved.]"
+    : serialized;
+}
+function initialGuidance(task: Task, stepId?: string) {
+  let budget = 16000;
+  return (task.instructions || [])
+    .filter(
+      (i) =>
+        (!i.stepId || i.stepId === stepId) &&
+        !i.appliedAt &&
+        (i.status !== "prevented" ||
+          [
+            "run_cancelled",
+            "blocking_answers_required",
+            "provider_not_started",
+          ].includes(i.reason || "")),
+    )
+    .filter((i) => {
+      if (budget < i.text.length || budget < 0) return false;
+      budget -= i.text.length;
+      return true;
+    })
+    .slice(0, 32)
+    .map((i) => ({ id: i.id, text: i.text, agentId: i.agentId }));
+}
+export function useDjinn() {
+  const [state, setState] = useState<AppState>(initialState);
+  const [ready, setReady] = useState(false);
+  const [persistenceEnabled, setPersistenceEnabled] = useState(false);
+  const [environment, setEnvironment] = useState<Environment>({
+    platform: "browser",
+    appVersion: "0.1.3",
+    providers: [
+      { id: "codex", name: "Codex", available: false, authenticated: null },
+      {
+        id: "claude",
+        name: "Claude Code",
+        available: false,
+        authenticated: null,
+      },
+    ],
+  });
+  const [toast, setToast] = useState("");
+  const [authStatus, setAuthStatus] = useState("");
+  const [questionAlerts, setQuestionAlerts] = useState<
+    {
+      id: string;
+      taskId: string;
+      questionId: string;
+      title: string;
+      body: string;
+    }[]
+  >([]);
+  const [notificationStatus, setNotificationStatus] = useState("");
+  const [browserPermission, setBrowserPermission] = useState<
+    NotificationPermission | "unsupported"
+  >(
+    typeof Notification !== "undefined"
+      ? Notification.permission
+      : "unsupported",
+  );
+  const [starting, setStarting] = useState(false);
+  const ref = useRef(state);
+  ref.current = state;
+  const knownQuestions = useRef(new Map<string, Set<string>>());
+  const stepCompletions = useRef(new StepCompletionTracker());
+  const knownActions = useRef(new Map<string, string>());
+  const knownActionTasks = useRef(new Set<string>());
+  const [actionAlerts, setActionAlerts] = useState<
+    {
+      id: string;
+      taskId: string;
+      actionId: string;
+      title: string;
+      body: string;
+    }[]
+  >([]);
+  const [busyActionIds, setBusyActionIds] = useState<string[]>([]);
+  const actionLocks = useRef(new Set<string>());
+  const pendingRuns = useRef(new Map<string, PendingRun>());
+  const startLock = useRef(false);
+  const instructionTransmissions = useRef(new Set<string>());
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const notify = useCallback((value: string) => {
+    setToast(value);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 4800);
+  }, []);
+  const openCompletedStep = useCallback((taskId: string, stepId: string) => {
+    const step = ref.current.tasks
+      .find((task) => task.id === taskId)
+      ?.steps?.find((step) => step.id === stepId && step.status !== "pending");
+    setState((state) => selectCompletedStep(state, taskId, stepId));
+    if (step)
+      window.dispatchEvent(
+        new CustomEvent("djinn:step-focus", { detail: { type: step.type } }),
+      );
+  }, []);
+  const commit = useCallback((update: (s: AppState) => AppState) => {
+    const next = compactStateHistory(update(ref.current));
+    ref.current = next;
+    setState(next);
+  }, []);
+  const updateTask = useCallback(
+    (id: string, update: (task: Task) => Task) => {
+      commit((s) => ({
+        ...s,
+        tasks: s.tasks.map((t) => (t.id === id ? update(t) : t)),
+      }));
+    },
+    [commit],
+  );
+  const runtimeReady = useRef(false);
+  const bootEvents = useRef<RuntimeEvent[]>([]);
+  const seenNativeEvents = useRef(new Set<string>());
+  const eventReceiver = useRef<(e: RuntimeEvent) => void>(() => {});
+  const resumeRequested = useRef(new Set<string>());
+  const startRef = useRef<
+    (mode?: RunMode, missionId?: string, stepId?: string) => Promise<void>
+  >(async () => {});
+  const resumeAfterStoppedRun = useCallback(
+    (missionId: string, runId: string) => {
+      const latest = ref.current.tasks.find((t) => t.id === missionId);
+      if (!latest || latest.demo) return;
+      const currentRun = pendingRuns.current.get(missionId)?.runId;
+      if (currentRun && currentRun !== runId) return;
+      if (latest.runId) {
+        // A delayed receipt from an old run must not restart its replacement.
+        if (latest.runId === runId) resumeRequested.current.add(missionId);
+      } else if (canResumeAfterHumanInput(latest)) {
+        resumeRequested.current.delete(missionId);
+        queueMicrotask(() => void startRef.current(undefined, missionId));
+      }
+    },
+    [],
+  );
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const saved: unknown = window.djinn
+          ? await window.djinn.loadState()
+          : JSON.parse(localStorage.getItem(key) || "null");
+        const restored =
+          saved === null ? undefined : enrichDemoState(validateState(saved));
+        const live =
+          typeof window.djinn?.getRuntimeSnapshot === "function"
+            ? await window.djinn.getRuntimeSnapshot()
+            : undefined;
+        if (active) {
+          if (restored) {
+            if (typeof window.djinn?.getActions === "function") {
+              for (const mission of restored.tasks) {
+                try {
+                  const live = (await window.djinn.getActions(mission.id)).map(
+                    (a) => validateAction(a),
+                  );
+                  const merged = new Map(
+                    (mission.actions || []).map((a) => [a.id, a]),
+                  );
+                  live.forEach((a) => merged.set(a.id, a));
+                  mission.actions = [...merged.values()];
+                } catch {
+                  /* The saved actions remain available without claiming a live server. */
+                }
+              }
+            }
+            for (const mission of restored.tasks)
+              for (const id of mission.runtimeEventIds || [])
+                seenNativeEvents.current.add(id);
+            for (const run of live?.runs || []) {
+              const mission = restored.tasks.find((t) => t.id === run.taskId);
+              const reconnected = mission && reconnectNativeRun(mission, run);
+              if (!mission || !reconnected) {
+                notify(
+                  "Un passage natif actif n’a pas d’étape sauvegardée correspondante ; aucune reprise concurrente n’est lancée.",
+                );
+                continue;
+              }
+              Object.assign(mission, reconnected);
+              pendingRuns.current.set(mission.id, {
+                runId: run.runId,
+                mode: run.mode,
+                finished: false,
+              });
+            }
+            commit(() => restored);
+          }
+          runtimeReady.current = true;
+          for (const e of [
+            ...(live?.runs.flatMap((run) => run.events) || []),
+            ...(live?.notificationClicks || []),
+            ...bootEvents.current,
+          ])
+            eventReceiver.current(e);
+          bootEvents.current = [];
+          setPersistenceEnabled(true);
+        }
+      } catch (error) {
+        if (active)
+          notify(
+            `Restauration impossible : ${message(error)}. La sauvegarde automatique est suspendue pour préserver votre espace existant. Exportez vos modifications avant de relancer Djinn.`,
+          );
+      } finally {
+        if (active) {
+          runtimeReady.current = true;
+          setReady(true);
+        }
+      }
+      if (window.djinn) {
+        try {
+          const env = await window.djinn.getEnvironment();
+          if (active) setEnvironment(env);
+        } catch (error) {
+          if (active) notify(`Connexions indisponibles : ${message(error)}`);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [notify, commit]);
+  useEffect(() => {
+    if (!ready || !persistenceEnabled) return;
+    const timer = setTimeout(() => {
+      if (window.djinn)
+        window.djinn
+          .saveState(state)
+          .catch((error) =>
+            notify(`Sauvegarde impossible : ${message(error)}`),
+          );
+      else
+        try {
+          localStorage.setItem(key, JSON.stringify(state));
+        } catch {
+          notify("Le stockage local est plein. Exportez votre mission.");
+        }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [state, ready, persistenceEnabled, notify]);
+  useEffect(() => {
+    if (!ready) return;
+    for (const alert of stepCompletions.current.sync(state.tasks)) {
+      if (typeof window.djinn?.notifyQuestion === "function") {
+        window.djinn
+          .notifyQuestion(alert)
+          .then((result) =>
+            setNotificationStatus(
+              result.shown
+                ? "Notification envoyée au système"
+                : result.message ||
+                    result.error ||
+                    "Vérifiez l’autorisation de Djinn dans les notifications macOS.",
+            ),
+          )
+          .catch((error) => setNotificationStatus(message(error)));
+      } else if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          const notification = new Notification(alert.title, {
+            body: alert.body,
+            tag: `${alert.taskId}:${alert.stepId}`,
+          });
+          notification.onclick = () => {
+            window.focus();
+            openCompletedStep(alert.taskId, alert.stepId);
+            notification.close();
+          };
+        } catch (error) {
+          setNotificationStatus(message(error));
+        }
+      }
+    }
+  }, [ready, state.tasks, openCompletedStep]);
+  useEffect(() => {
+    if (!ready) return;
+    const taskIds = new Set(state.tasks.map((t) => t.id));
+    setQuestionAlerts((previous) => {
+      const next = previous.filter((a) =>
+        state.tasks.some(
+          (t) =>
+            t.id === a.taskId &&
+            t.questions.some((q) => q.id === a.questionId && !q.answer),
+        ),
+      );
+      return next.length === previous.length ? previous : next;
+    });
+    for (const id of knownQuestions.current.keys())
+      if (!taskIds.has(id)) knownQuestions.current.delete(id);
+    for (const mission of state.tasks) {
+      const previous = knownQuestions.current.get(mission.id);
+      knownQuestions.current.set(
+        mission.id,
+        new Set(mission.questions.map((q) => q.id)),
+      );
+      if (!previous) continue;
+      for (const question of mission.questions) {
+        if (previous.has(question.id) || question.answer) continue;
+        const alert = {
+          id: `${mission.id}:${question.id}`,
+          taskId: mission.id,
+          questionId: question.id,
+          title: mission.title.slice(0, 256),
+          body: question.title.slice(0, 1000),
+        };
+        setQuestionAlerts((previous) =>
+          [alert, ...previous.filter((a) => a.id !== alert.id)].slice(0, 20),
+        );
+        if (window.djinn) {
+          window.djinn
+            .notifyQuestion(alert)
+            .then((result) =>
+              setNotificationStatus(
+                result.shown
+                  ? "Notification envoyée au système"
+                  : result.message ||
+                      result.error ||
+                      "Vérifiez l’autorisation de Djinn dans les notifications macOS.",
+              ),
+            )
+            .catch((error) => setNotificationStatus(message(error)));
+        } else if (
+          typeof Notification !== "undefined" &&
+          Notification.permission === "granted"
+        ) {
+          try {
+            const notification = new Notification(alert.title, {
+              body: alert.body,
+              tag: alert.id,
+            });
+            notification.onclick = () => {
+              window.focus();
+              window.dispatchEvent(
+                new CustomEvent("djinn:question-focus", { detail: alert }),
+              );
+              setState((current) => ({ ...current, selectedId: alert.taskId }));
+              notification.close();
+            };
+          } catch (error) {
+            setNotificationStatus(message(error));
+          }
+        }
+      }
+    }
+  }, [state.tasks, ready, notify]);
+  useEffect(() => {
+    if (!ready) return;
+    setActionAlerts((previous) =>
+      previous.filter((alert) =>
+        state.tasks.some(
+          (t) =>
+            t.id === alert.taskId &&
+            t.actions?.some(
+              (a) =>
+                a.id === alert.actionId &&
+                ["pending", "ready", "error"].includes(a.status),
+            ),
+        ),
+      ),
+    );
+    for (const mission of state.tasks) {
+      if (!knownActionTasks.current.has(mission.id)) {
+        knownActionTasks.current.add(mission.id);
+        (mission.actions || []).forEach((a) =>
+          knownActions.current.set(`${mission.id}:${a.id}`, a.status),
+        );
+        continue;
+      }
+      for (const action of mission.actions || []) {
+        const id = `${mission.id}:${action.id}`;
+        const previous = knownActions.current.get(id);
+        knownActions.current.set(id, action.status);
+        if (
+          previous === action.status ||
+          !["pending", "ready", "error"].includes(action.status)
+        )
+          continue;
+        const alert = {
+          id,
+          taskId: mission.id,
+          actionId: action.id,
+          title: mission.title,
+          body: action.title,
+        };
+        setActionAlerts((current) =>
+          [alert, ...current.filter((a) => a.id !== id)].slice(0, 20),
+        );
+        if (typeof window.djinn?.notifyQuestion === "function")
+          window.djinn
+            .notifyQuestion({
+              taskId: mission.id,
+              questionId: `action:${action.id}`,
+              title: mission.title,
+              body:
+                action.status === "ready"
+                  ? `${action.title} — prêt`
+                  : action.title,
+            })
+            .then((result) =>
+              setNotificationStatus(
+                result.shown
+                  ? "Notification envoyée au système"
+                  : result.message ||
+                      "Vérifiez l’autorisation de Djinn dans les notifications macOS.",
+              ),
+            )
+            .catch((error) => setNotificationStatus(message(error)));
+        else if (
+          typeof Notification !== "undefined" &&
+          Notification.permission === "granted"
+        ) {
+          try {
+            const notification = new Notification(alert.title, {
+              body: alert.body,
+              tag: alert.id,
+            });
+            notification.onclick = () => {
+              window.focus();
+              setState((current) => ({ ...current, selectedId: alert.taskId }));
+              window.dispatchEvent(
+                new CustomEvent("djinn:action-focus", { detail: alert }),
+              );
+              notification.close();
+            };
+          } catch (error) {
+            setNotificationStatus(message(error));
+          }
+        }
+      }
+    }
+  }, [state.tasks, ready]);
+  useEffect(() => {
+    document.documentElement.dataset.motion = state.settings.reduceMotion
+      ? "reduced"
+      : "full";
+  }, [state.settings.reduceMotion]);
+  useEffect(() => {
+    if (!window.djinn) return;
+    const receive = (e: RuntimeEvent) => {
+      if (!runtimeReady.current) {
+        bootEvents.current.push(e);
+        return;
+      }
+      if (e.eventId) {
+        if (seenNativeEvents.current.has(e.eventId)) return;
+        seenNativeEvents.current.add(e.eventId);
+      }
+      const d = record(e.data);
+      if (e.type === "action") {
+        try {
+          const action = validateAction(d);
+          updateTask(e.taskId, (t) => ({
+            ...t,
+            actions: [
+              ...(t.actions || []).filter((a) => a.id !== action.id),
+              action,
+            ].slice(-100),
+          }));
+        } catch (error) {
+          notify(`Action indisponible : ${message(error)}`);
+        }
+        return;
+      }
+      if (e.type === "notification_clicked") {
+        const target = text(d.questionId);
+        if (target.startsWith("step:") && e.taskId) {
+          openCompletedStep(e.taskId, target.slice(5));
+          return;
+        }
+        setState((s) => ({
+          ...s,
+          selectedId: s.tasks.some((t) => t.id === e.taskId)
+            ? e.taskId
+            : s.selectedId,
+        }));
+        const questionId = text(d.questionId);
+        window.dispatchEvent(
+          new CustomEvent(
+            questionId.startsWith("action:")
+              ? "djinn:action-focus"
+              : "djinn:question-focus",
+            {
+              detail: {
+                taskId: e.taskId,
+                questionId,
+                actionId: questionId.slice(7),
+              },
+            },
+          ),
+        );
+        return;
+      }
+      const detail = text(d.text, text(d.message, text(d.detail)));
+      const isAuth =
+        e.type === "auth" ||
+        e.type === "runtime.auth" ||
+        !e.taskId ||
+        d.operation === "login";
+      if (isAuth) {
+        const output = detail || text(d.status);
+        if (output)
+          setAuthStatus((previous) =>
+            `${previous ? `${previous}\n` : ""}${output}`.slice(-12000),
+          );
+        if (["completed", "error", "cancelled"].includes(text(d.status))) {
+          window.djinn
+            ?.getEnvironment()
+            .then(setEnvironment)
+            .catch((error) =>
+              notify(`Connexions indisponibles : ${message(error)}`),
+            );
+        }
+        if (e.type === "error" || d.status === "error")
+          notify(detail || "La connexion au fournisseur a échoué.");
+        return;
+      }
+      const agentId = text(d.agentId);
+      const child =
+        d.scope === "agent" ||
+        Boolean(d.parentRunId) ||
+        Boolean(agentId && agentId !== "lead");
+      const session = pendingRuns.current.get(e.taskId);
+      if (
+        child &&
+        d.parentRunId &&
+        session?.runId &&
+        d.parentRunId !== session.runId
+      )
+        return;
+      if (!child && session && e.runId) {
+        if (session.runId && session.runId !== e.runId) return;
+        session.runId = e.runId;
+        if (
+          e.type === "status" &&
+          ["completed", "cancelled", "error"].includes(text(d.status)) &&
+          d.phase !== "provider_completed"
+        )
+          session.finished = true;
+      }
+      updateTask(e.taskId, (t) => {
+        if (!child && t.runId && e.runId && e.runId !== t.runId) return t;
+        const scope = text(e.stepId, text(d.stepId));
+        if (scope && !t.steps?.some((s) => s.id === scope)) return t;
+        // Child passages are accepted only for the current stage; past events remain saved.
+        if (scope && scope !== t.activeStepId) return t;
+        let next = {
+          ...t,
+          ...(e.eventId
+            ? {
+                runtimeEventIds: [...(t.runtimeEventIds || []), e.eventId],
+              }
+            : {}),
+        };
+        const add = (
+          type: Task["events"][number]["type"],
+          title: string,
+          body = "",
+          owner?: string,
+        ) => {
+          const entry = event(type, title, body, owner);
+          if (e.eventId) entry.id = e.eventId;
+          entry.stepId = scope || undefined;
+          entry.time = Number.isFinite(Date.parse(e.timestamp))
+            ? e.timestamp
+            : entry.time;
+          entry.runId = text(d.runId, e.runId);
+          entry.worktree = text(d.worktree) || undefined;
+          entry.branch = text(d.branch) || undefined;
+          entry.actor = "agent";
+          const life =
+            d.status === "blocked"
+              ? "blocked"
+              : text(d.lifecycle).replace(/^agent_/, "");
+          if (["started", "completed", "blocked"].includes(life))
+            entry.lifecycle = life as typeof entry.lifecycle;
+          if (
+            e.type === "status" &&
+            !child &&
+            d.phase !== "provider_completed" &&
+            ["completed", "cancelled", "error"].includes(text(d.status))
+          )
+            entry.lifecycle = "completed";
+          next.events = [...next.events, entry];
+        };
+        if (e.type === "guidance") {
+          const status = text(d.status);
+          if (
+            ["queued", "transmitted", "consumed", "prevented"].includes(status)
+          ) {
+            next.instructions = (t.instructions || []).map((i) =>
+              i.id === d.id
+                ? {
+                    ...i,
+                    status: status as NonNullable<
+                      Task["instructions"]
+                    >[number]["status"],
+                    reason: text(d.reason) || undefined,
+                    ...(status === "consumed"
+                      ? { appliedAt: e.timestamp }
+                      : {}),
+                  }
+                : i,
+            );
+            add(
+              "note",
+              status === "consumed"
+                ? "Indication remise au destinataire"
+                : status === "prevented"
+                  ? "Transmission empêchée"
+                  : "Indication transmise",
+              text(d.reason) || text(d.text),
+              text(d.agentId, "lead"),
+            );
+          }
+        } else if (e.type === "mission_metadata") {
+          next = applyMissionTitle(next, text(d.title), e.timestamp);
+        } else if (e.type === "question") {
+          let id = text(
+            d.id,
+            `Q${String(t.questions.length + 1).padStart(2, "0")}`,
+          );
+          const title = text(d.title, "Une décision est nécessaire");
+          let existing = t.questions.find((x) => x.id === id);
+          if (existing?.answer && existing.title !== title) {
+            const usedIds = new Set(t.questions.map((q) => q.id));
+            let numericId = t.questions.reduce((max, q) => {
+              const number = /^Q(\d+)$/.test(q.id) ? BigInt(q.id.slice(1)) : 0n;
+              return number > max ? number : max;
+            }, 0n);
+            do {
+              numericId += 1n;
+              id = `Q${String(numericId).padStart(2, "0")}`;
+            } while (usedIds.has(id));
+            existing = undefined;
+          }
+          let options = Array.isArray(d.options)
+            ? d.options.map((o: unknown, i: number) => {
+                const v = record(o);
+                return {
+                  id: text(v.id, String.fromCharCode(97 + i)),
+                  label: text(v.label, text(v.title, `Option ${i + 1}`)),
+                  description: text(v.description),
+                };
+              })
+            : [];
+          if (!options.length)
+            options = [
+              { id: "a", label: "Valider la recommandation", description: "" },
+              {
+                id: "b",
+                label: "Proposer une autre approche",
+                description: "",
+              },
+            ];
+          const q: Question = {
+            stepId: scope || undefined,
+            runId: e.runId,
+            id,
+            title,
+            context: text(d.context, detail),
+            recommendation: text(d.recommendation),
+            options,
+            blocking: d.blocking !== false,
+            unlocks: text(d.unlocks),
+            agentId: agentId || undefined,
+            theme: text(d.theme, "Mission"),
+          };
+          next.questions = existing
+            ? t.questions.map((x) =>
+                x.id === id
+                  ? { ...q, answer: x.answer, answeredAt: x.answeredAt }
+                  : x,
+              )
+            : [...t.questions, q];
+          next.reviewApprovedAt = undefined;
+          if (next.questions.some((x) => x.blocking && !x.answer))
+            next.status = "waiting";
+          add("decision", q.title, q.context, q.agentId);
+        } else if (e.type === "agent") {
+          const id = text(d.id, agentId || "lead");
+          const old = t.agents.find((a) => a.id === id);
+          const status = text(
+            d.status,
+            old?.status || "queued",
+          ) as Agent["status"];
+          const a: Agent = {
+            stepId: scope || old?.stepId,
+            runId: text(d.runId, e.runId),
+            id,
+            name: text(d.name, old?.name || "Djinn"),
+            role: text(d.role, old?.role || "Orchestration"),
+            origin: d.origin === "codex" ? "codex" : old?.origin,
+            live: typeof d.live === "boolean" ? d.live : old?.live,
+            provider:
+              d.provider === "codex" || d.provider === "claude"
+                ? d.provider
+                : old?.provider,
+            providerThreadId:
+              text(d.providerThreadId, old?.providerThreadId) || undefined,
+            parentAgentId:
+              text(d.parentAgentId, old?.parentAgentId) || undefined,
+            activity: text(d.activity, old?.activity) || undefined,
+            writeScope: Array.isArray(d.writeScope)
+              ? d.writeScope.filter((p): p is string => typeof p === "string")
+              : old?.writeScope,
+            dependsOn: Array.isArray(d.dependsOn)
+              ? d.dependsOn.filter((p): p is string => typeof p === "string")
+              : old?.dependsOn,
+            readOnly:
+              typeof d.readOnly === "boolean" ? d.readOnly : old?.readOnly,
+            isolation:
+              d.isolation === "shared" || d.isolation === "worktree"
+                ? d.isolation
+                : old?.isolation,
+            resources:
+              d.resources && typeof d.resources === "object"
+                ? (d.resources as Agent["resources"])
+                : old?.resources,
+            waitReason:
+              typeof d.waitReason === "string"
+                ? d.waitReason || undefined
+                : old?.waitReason,
+            waitingForAgentIds: Array.isArray(d.waitingForAgentIds)
+              ? d.waitingForAgentIds.filter(
+                  (p): p is string => typeof p === "string",
+                )
+              : old?.waitingForAgentIds,
+            model: text(
+              d.model,
+              old?.model ||
+                (d.origin === "codex" || old?.origin === "codex"
+                  ? ""
+                  : t.model || t.provider),
+            ),
+            status: ["queued", "running", "blocked", "done", "error"].includes(
+              status,
+            )
+              ? status
+              : "queued",
+            summary: text(d.summary, detail || old?.summary || ""),
+            progress:
+              typeof d.progress === "number" && Number.isFinite(d.progress)
+                ? Math.max(0, Math.min(100, d.progress))
+                : status === "done"
+                  ? 100
+                  : old?.progress || 0,
+            prompt: text(d.prompt, old?.prompt),
+            worktree: text(d.worktree, old?.worktree) || undefined,
+            branch: text(d.branch, old?.branch) || undefined,
+          };
+          next.agents = old
+            ? t.agents.map((x) => (x.id === id ? a : x))
+            : [...t.agents, a];
+          add(
+            "agent",
+            `${a.name} · ${a.status === "done" ? "terminé" : a.role}`,
+            a.summary,
+            a.id,
+          );
+        } else if (e.type === "artifact") {
+          const rawId = text(d.id, uid());
+          const id = t.artifacts.some(
+            (a) => a.id === rawId && a.stepId !== scope,
+          )
+            ? `${rawId}:${scope}`
+            : rawId;
+          const type = text(d.type, "document") as Artifact["type"];
+          const a: Artifact = {
+            stepId: scope || undefined,
+            runId: e.runId,
+            revision: 1,
+            editedBy: "agent",
+            id,
+            title: text(d.title, "Support de mission"),
+            type: [
+              "diagram",
+              "wireframe",
+              "document",
+              "code",
+              "screenshot",
+              "visualization",
+            ].includes(type)
+              ? type
+              : "document",
+            content:
+              typeof d.content === "string"
+                ? d.content
+                : JSON.stringify(d.content ?? d),
+            updatedAt: now(),
+          };
+          const existing = t.artifacts.find((x) => x.id === id);
+          if (
+            existing?.editedBy === "human" &&
+            d.baseRevision !== existing.revision
+          ) {
+            a.id = `${id}:proposal:${uid()}`;
+            a.title += " — proposition de révision";
+            add(
+              "note",
+              "Révision proposée",
+              "La version modifiée par vous est conservée.",
+              agentId,
+            );
+            next.artifacts = [...t.artifacts, a];
+          } else {
+            a.sourceOfTruth = existing?.sourceOfTruth;
+            a.revision = (existing?.revision || 0) + 1;
+            a.revisions = existing
+              ? [
+                  ...(existing.revisions || []),
+                  {
+                    revision: existing.revision || 1,
+                    content: existing.content,
+                    updatedAt: existing.updatedAt,
+                    editedBy: existing.editedBy || "agent",
+                  },
+                ].slice(-20)
+              : [];
+            next.artifacts = existing
+              ? t.artifacts.map((x) => (x.id === id ? a : x))
+              : [...t.artifacts, a];
+          }
+          next.reviewApprovedAt = undefined;
+          add("note", `Support disponible : ${a.title}`, "", agentId || "lead");
+        } else if (e.type === "workflow_amended") {
+          if (
+            t.workflowMode === "flexible" &&
+            t.projectSnapshot?.workflowPolicy !== "enforced" &&
+            (!agentId || agentId === "lead") &&
+            scope === t.activeStepId
+          ) {
+            try {
+              const proposal =
+                Array.isArray(d.steps) && d.steps.length === 0
+                  ? { steps: [], reason: text(d.reason) }
+                  : validateWorkflowProposal(d);
+              next.workflowAmendment = {
+                ...proposal,
+                stepId: scope,
+                runId: e.runId,
+              };
+              add(
+                "note",
+                "Ajustement de timeline préparé",
+                proposal.reason,
+                "lead",
+              );
+            } catch {
+              /* invalid future suffix remains inert */
+            }
+          }
+        } else if (e.type === "workflow_defined") {
+          const initial = t.steps?.find((s) => s.id === t.activeStepId);
+          if (
+            initial?.type === "discussion" &&
+            initial.id === t.steps?.[0]?.id &&
+            t.workflowMode === "flexible" &&
+            t.workflowOrigin === "agent" &&
+            t.projectSnapshot?.workflowPolicy !== "enforced" &&
+            (!agentId || agentId === "lead") &&
+            scope === initial.id &&
+            !t.initialWorkflowProposal
+          ) {
+            try {
+              const proposal = validateWorkflowProposal(
+                { ...d, stepId: scope },
+                true,
+              ) as NonNullable<Task["initialWorkflowProposal"]>;
+              next.initialWorkflowProposal = proposal;
+              add(
+                "note",
+                "Timeline définie par Djinn",
+                proposal.reason,
+                "lead",
+              );
+            } catch {
+              // The native runtime validates provider events. Keep this guard
+              // for renderer fixtures and stale external bridge events.
+            }
+          }
+        } else if (e.type === "discussion_type") {
+          const initial = t.steps?.find((s) => s.id === t.activeStepId);
+          if (
+            initial?.type === "discussion" &&
+            initial.id === t.steps?.[0]?.id &&
+            t.workflowMode === "flexible" &&
+            t.workflowOrigin !== "agent" &&
+            t.projectSnapshot?.workflowPolicy !== "enforced" &&
+            (!agentId || agentId === "lead") &&
+            scope === initial.id &&
+            [
+              "exploration",
+              "reflection",
+              "specification",
+              "prototype",
+              "implementation",
+            ].includes(text(d.type)) &&
+            text(d.title).trim() &&
+            text(d.reason).trim()
+          ) {
+            next.initialStepProposal = {
+              type: d.type as NonNullable<Task["initialStepProposal"]>["type"],
+              title: text(d.title).slice(0, 1000),
+              objective: text(d.objective).slice(0, 100000),
+              reason: text(d.reason).slice(0, 100000),
+              stepId: scope,
+            };
+            add("note", "Discussion choisie par Djinn", text(d.reason), "lead");
+          }
+        } else if (e.type === "next_step") {
+          if (
+            t.workflowMode === "flexible" &&
+            t.projectSnapshot?.workflowPolicy !== "enforced" &&
+            (!agentId || agentId === "lead") &&
+            scope === t.activeStepId &&
+            STEP_TYPES.includes(d.type as StepType) &&
+            text(d.title).trim() &&
+            text(d.reason).trim()
+          ) {
+            next.nextStepProposal = {
+              type: d.type as StepType,
+              title: text(d.title).slice(0, 1000),
+              objective: text(d.objective).slice(0, 100000),
+              reason: text(d.reason).slice(0, 100000),
+              stepId: scope,
+            };
+            add("note", "Suite proposée par Djinn", text(d.reason), "lead");
+          }
+        } else if (e.type === "phase") {
+          // Provider progression is informational; only human actions change stages.
+          add(
+            "phase",
+            text(d.title, "Le plan avance"),
+            detail,
+            agentId || undefined,
+          );
+        } else if (e.type === "status") {
+          const status = text(d.status, detail);
+          if (!child && status === "running")
+            next.activity = {
+              lead:
+                d.waitingForAgents === true
+                  ? d.leadActivity === "responds"
+                    ? "responds"
+                    : "supervises"
+                  : "integrates",
+              activeAgents: Array.isArray(d.activeAgents)
+                ? d.activeAgents.map((a) => {
+                    const r = record(a);
+                    return {
+                      id: text(r.id),
+                      task: text(r.task),
+                      runId: text(r.runId),
+                    };
+                  })
+                : [],
+              lastActivityAt: e.timestamp,
+            };
+          if (child) {
+            if (agentId)
+              next.agents = t.agents.map((a) =>
+                a.id === agentId
+                  ? {
+                      ...a,
+                      status:
+                        status === "completed"
+                          ? d.supervisor === true
+                            ? "queued"
+                            : "done"
+                          : status === "error"
+                            ? "error"
+                            : status === "cancelled"
+                              ? "queued"
+                              : a.status,
+                      progress:
+                        status === "completed" && d.supervisor !== true
+                          ? 100
+                          : a.progress,
+                      summary:
+                        d.supervisor === true && status === "completed"
+                          ? "Chef joignable · Attend les sous-agents"
+                          : a.summary,
+                    }
+                  : a,
+              );
+          } else if (status === "running") {
+            next.status = t.questions.some((q) => q.blocking && !q.answer)
+              ? "waiting"
+              : "running";
+            if (
+              !t.events.some(
+                (ev) =>
+                  ev.runId === e.runId &&
+                  ev.agentId === "lead" &&
+                  ev.lifecycle === "started",
+              )
+            ) {
+              add("agent", "Djinn démarre", "", "lead");
+              next.events[next.events.length - 1].lifecycle = "started";
+            }
+          } else if (status === "blocked") {
+            next.status = "waiting";
+          } else if (
+            status === "completed" &&
+            d.phase !== "provider_completed"
+          ) {
+            next.runId = undefined;
+            const failedContribution = t.agents.some(
+              (a) =>
+                a.id !== "lead" &&
+                (a.status === "error" || a.status === "blocked"),
+            );
+            const blocked =
+              t.questions.some((q) => q.blocking && !q.answer) ||
+              failedContribution;
+            next = finishStepRun(
+              { ...next, runId: t.runId },
+              scope || t.activeStepId || "",
+              failedContribution ? "error" : "completed",
+              t.events
+                .filter((ev) => ev.agentId === "lead" && ev.type === "note")
+                .slice(-3)
+                .map((ev) => ev.detail)
+                .join("\n")
+                .slice(-8000),
+            );
+            next.runId = undefined;
+            next.status = blocked ? "waiting" : "waiting";
+            if (resumeRequested.current.has(t.id) && !blocked) {
+              resumeRequested.current.delete(t.id);
+              queueMicrotask(() => void startRef.current(undefined, t.id));
+            }
+            next.agents = t.agents.map((a) =>
+              a.id === "lead" ? { ...a, status: "done", progress: 100 } : a,
+            );
+            add(
+              "note",
+              "Le passage de l’agent est terminé",
+              "Consultez ses preuves et les supports avant de poursuivre.",
+              "lead",
+            );
+            if (
+              !blocked &&
+              next.initialStepProposal &&
+              t.steps?.find((s) => s.id === scope)?.type === "discussion" &&
+              t.workflowOrigin !== "agent"
+            ) {
+              next = classifyDiscussion(next, next.initialStepProposal);
+              // A fresh provider thread receives the newly selected permissions.
+              // The routing passage remains in the mission journal.
+              next.providerSessions = undefined;
+              next.agents = [];
+              resumeRequested.current.delete(t.id);
+              queueMicrotask(() => void startRef.current(undefined, t.id));
+            }
+            if (
+              !blocked &&
+              next.initialWorkflowProposal &&
+              t.workflowOrigin === "agent" &&
+              t.steps?.find((s) => s.id === scope)?.type === "discussion"
+            ) {
+              next = applyWorkflowProposal(next, next.initialWorkflowProposal);
+              next.providerSessions = undefined;
+              next.agents = [];
+              resumeRequested.current.delete(t.id);
+              queueMicrotask(() => void startRef.current(undefined, t.id));
+            }
+            if (!blocked && next.workflowAmendment?.stepId === scope) {
+              try {
+                next.activeStepId = scope;
+                next.selectedStepId = scope;
+                next = amendWorkflow(next, next.workflowAmendment, e.timestamp);
+                next.workflowAmendment = undefined;
+              } catch (error) {
+                add(
+                  "note",
+                  "Ajustement de timeline refusé",
+                  message(error),
+                  "lead",
+                );
+                next.workflowAmendment = undefined;
+              }
+            }
+            const completedStage = next.steps?.find((s) => s.id === scope);
+            if (
+              !blocked &&
+              completedStage?.validation === "automatic" &&
+              completedStage.status === "completed"
+            ) {
+              const index = next.steps!.findIndex((s) => s.id === scope);
+              const following = next.steps![index + 1];
+              next.status = following ? "idle" : "done";
+              if (following && canStartStep(next, following.id)) {
+                next.activeStepId = following.id;
+                next.selectedStepId = following.id;
+                next.agents = [];
+                resumeRequested.current.delete(t.id);
+                queueMicrotask(() => void startRef.current(undefined, t.id));
+              }
+            }
+          } else if (status === "cancelled") {
+            next = finishStepRun(
+              next,
+              scope || t.activeStepId || "",
+              "cancelled",
+            );
+            next.runId = undefined;
+            next.agents = t.agents.map((a) =>
+              a.status === "running"
+                ? {
+                    ...a,
+                    status: "queued",
+                    summary: "Exécution interrompue par vous.",
+                  }
+                : a,
+            );
+            add("note", "Mission mise en pause");
+            if (
+              resumeRequested.current.has(t.id) &&
+              !t.questions.some((q) => q.blocking && !q.answer?.trim())
+            ) {
+              resumeRequested.current.delete(t.id);
+              queueMicrotask(() => void startRef.current(undefined, t.id));
+            }
+          } else if (status === "error") {
+            next = finishStepRun(next, scope || t.activeStepId || "", "error");
+            next.runId = undefined;
+            add("error", "L’exécution a rencontré une erreur", detail);
+          }
+        } else if (e.type === "error") {
+          if (child)
+            next.agents = t.agents.map((a) =>
+              a.id === agentId ? { ...a, status: "error", summary: detail } : a,
+            );
+          else next.status = "error";
+          add(
+            "error",
+            "L’agent a rencontré une erreur",
+            detail,
+            agentId || "lead",
+          );
+        } else if (e.type === "tool") {
+          const evidence = [
+            detail,
+            d.input !== undefined ? `Entrée : ${describe(d.input)}` : "",
+            d.command !== undefined ? `Commande : ${describe(d.command)}` : "",
+            d.output !== undefined ? `Sortie : ${describe(d.output)}` : "",
+            d.exitCode !== undefined
+              ? `Code de sortie : ${describe(d.exitCode)}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+            .slice(0, 60000);
+          next.reviewApprovedAt = undefined;
+          add(
+            "tool",
+            text(d.title, text(d.name, "Action de l’agent")),
+            evidence,
+            agentId || "lead",
+          );
+        } else if (e.type === "text" || e.type === "note") {
+          if (
+            d.providerSession === true &&
+            typeof d.sessionKey === "string" &&
+            typeof d.providerThreadId === "string"
+          )
+            next.providerSessions = {
+              ...t.providerSessions,
+              [d.sessionKey]: d.providerThreadId,
+            };
+          if (
+            e.type === "text" &&
+            d.streaming === true &&
+            typeof d.messageId === "string"
+          ) {
+            const messageId = `${e.runId}:message:${d.messageId.slice(0, 256)}`;
+            const previous = next.events.find(
+              (entry) => entry.id === messageId,
+            );
+            const entry = {
+              ...event(
+                "note",
+                detail.split("\n")[0].slice(0, 140) || "Compte rendu",
+                detail.slice(0, 60000),
+                agentId || "lead",
+              ),
+              id: messageId,
+              time: previous?.time || e.timestamp,
+              stepId: scope || undefined,
+              runId: e.runId,
+            };
+            next.events = [
+              ...next.events.filter((entry) => entry.id !== messageId),
+              ...(detail ? [entry] : []),
+            ];
+          } else if (detail || d.title)
+            add(
+              "note",
+              text(
+                d.title,
+                detail.split("\n")[0].slice(0, 140) || "Compte rendu",
+              ),
+              detail.slice(0, 60000),
+              agentId || "lead",
+            );
+        }
+        if (next.activity && Array.isArray(d.activeAgents)) {
+          next.activity = {
+            ...next.activity,
+            activeAgents: d.activeAgents.map((a) => {
+              const r = record(a);
+              return {
+                id: text(r.id),
+                task: text(r.task),
+                runId: text(r.runId),
+              };
+            }),
+          };
+        }
+        if (
+          next.activity &&
+          (e.type === "text" || e.type === "tool" || e.type === "note")
+        )
+          next.activity = { ...next.activity, lastActivityAt: e.timestamp };
+        return next;
+      });
+    };
+    eventReceiver.current = receive;
+    return window.djinn.onEvent(receive);
+  }, [updateTask, notify]);
+  const task =
+    state.tasks.find((t) => t.id === state.selectedId) || state.tasks[0];
+  const select = (id: string) => setState((s) => ({ ...s, selectedId: id }));
+  const loadDemo = () => {
+    const existing = state.tasks.find((t) => t.demo);
+    if (existing) {
+      commit((s) => ({ ...enrichDemoState(s), selectedId: existing.id }));
+      return existing;
+    }
+    const demo = initialState().tasks[0];
+    commit((s) => ({ ...s, tasks: [...s.tasks, demo], selectedId: demo.id }));
+    return demo;
+  };
+  const addTask = (
+    title: string,
+    brief: string,
+    project: string,
+    provider: Task["provider"],
+    model: string,
+    options?: {
+      projectRecord?: Project;
+      steps?: MissionStep[];
+      concurrency?: number;
+      workflowMode?: Task["workflowMode"];
+      autoWorkflow?: boolean;
+      indication?: string;
+    },
+  ) => {
+    const t = newTask(title, brief, project, provider, model, options);
+    commit((s) => ({
+      ...s,
+      version: 2,
+      projects: options?.projectRecord
+        ? [
+            ...(s.projects || []).filter(
+              (p) => p.id !== options.projectRecord!.id,
+            ),
+            options.projectRecord!,
+          ]
+        : s.projects || [],
+      tasks: [...s.tasks, t],
+      selectedId: t.id,
+    }));
+    if (brief.trim())
+      queueMicrotask(() => void startRef.current(undefined, t.id));
+    return t;
+  };
+  const saveProject = async (project: Project) => {
+    const checked = validateProject(project);
+    const canonical = window.djinn
+      ? await window.djinn.validateProject(checked)
+      : checked;
+    commit((s) => ({
+      ...s,
+      version: 2,
+      projects: [
+        ...(s.projects || []).filter((p) => p.id !== canonical.id),
+        canonical,
+      ],
+    }));
+    if (window.djinn) await window.djinn.saveState(ref.current);
+    return canonical;
+  };
+  const answer = (id: string, value: string) => {
+    if (!value.trim()) return;
+    updateTask(task.id, (t) => {
+      const q = t.questions.find((x) => x.id === id);
+      if (!q) return t;
+      const answeredAt = now();
+      const questions = t.questions.map((x) =>
+        x.id === id ? { ...x, answer: value, answeredAt } : x,
+      );
+      const blocked = questions.some((x) => x.blocking && !x.answer);
+      const artifacts = t.demo
+        ? t.artifacts.map((a) => {
+            if (a.type !== "wireframe") return a;
+            let content: Record<string, unknown>;
+            try {
+              content = record(JSON.parse(a.content));
+            } catch {
+              return a;
+            }
+            if (id === "Q01")
+              content.layout =
+                value === q.options[1]?.label ? "team" : "status";
+            if (id === "Q02")
+              content.archive =
+                value === q.options[1]?.label ? "filter" : "dedicated";
+            return { ...a, content: JSON.stringify(content), updatedAt: now() };
+          })
+        : t.artifacts;
+      return {
+        ...t,
+        questions,
+        artifacts,
+        reviewApprovedAt: undefined,
+        phase: t.phase,
+        status: blocked ? "waiting" : t.runId ? "running" : "idle",
+        agents: t.agents.map((a) =>
+          a.id === q.agentId
+            ? {
+                ...a,
+                status: questions.some(
+                  (x) => x.agentId === a.id && x.blocking && !x.answer,
+                )
+                  ? "blocked"
+                  : "queued",
+                summary: `Décision reçue : ${value}`,
+              }
+            : a,
+        ),
+        events: [
+          ...t.events,
+          {
+            ...event("decision", `${id} · ${value}`, q.unlocks, q.agentId),
+            stepId: q.stepId || t.activeStepId,
+            time: answeredAt,
+            actor: "human",
+            interventionId: `answer:${id}:${answeredAt}`,
+          },
+        ],
+      };
+    });
+    notify(
+      "Décision enregistrée. Reprise dès que toutes les réponses bloquantes sont renseignées.",
+    );
+    const latest = ref.current.tasks.find((t) => t.id === task.id)!;
+    if (
+      !latest.questions.some(
+        (q) =>
+          q.blocking &&
+          !q.answer?.trim() &&
+          (!q.stepId || q.stepId === latest.activeStepId),
+      )
+    ) {
+      if (latest.runId) resumeRequested.current.add(latest.id);
+      else if (!latest.demo) void startRef.current(undefined, latest.id);
+    }
+    if (window.djinn && persistenceEnabled)
+      void window.djinn.saveState(ref.current).catch((e) => notify(message(e)));
+  };
+  const reopen = (id: string) =>
+    updateTask(task.id, (t) => ({
+      ...invalidateDependentSteps(
+        t,
+        t.questions.find((q) => q.id === id)?.stepId || t.activeStepId || "",
+      ),
+      questions: t.questions.map((q) =>
+        q.id === id ? { ...q, answer: undefined, answeredAt: undefined } : q,
+      ),
+      reviewApprovedAt: undefined,
+      status: "waiting",
+      events: [
+        ...t.events,
+        { ...event("decision", `${id} · décision réouverte`), actor: "human" },
+      ],
+    }));
+  const start = async (
+    requestedMode?: RunMode,
+    missionId = task.id,
+    requestedStepId?: string,
+  ) => {
+    const task = ref.current.tasks.find((t) => t.id === missionId);
+    if (!task || startLock.current || task.runId) return;
+    const stepId = requestedStepId || task.activeStepId;
+    const stage = task.steps?.find((s) => s.id === stepId);
+    const mode = stage
+      ? stepMode(stage.type)
+      : requestedMode || getNextRunMode(task);
+    if (!persistenceEnabled) {
+      notify(
+        "La sauvegarde est suspendue : exportez vos données avant de lancer un agent.",
+      );
+      return;
+    }
+    if (stage && !canStartStep(task, stage.id)) {
+      notify(
+        "Validez le résultat précédent et renseignez les décisions bloquantes avant de démarrer cette étape.",
+      );
+      return;
+    }
+    if (task.demo) {
+      notify(
+        "Cette mission est un exemple. Utilisez « Reprendre la démo » pour explorer, ou créez une mission pour lancer vos agents.",
+      );
+      return;
+    }
+    if (!window.djinn) {
+      notify(
+        "L’exécution des agents est disponible dans l’application Electron.",
+      );
+      return;
+    }
+    if (!task.project) {
+      notify(
+        "Choisissez un dossier de travail dans les paramètres de la mission.",
+      );
+      return;
+    }
+    if (task.questions.some((q) => q.blocking && !q.answer)) {
+      notify("Répondez aux décisions bloquantes avant de lancer la suite.");
+      return;
+    }
+    const provider = environment.providers.find((p) => p.id === task.provider);
+    if (!provider?.available) {
+      notify(
+        `${task.provider === "codex" ? "Codex" : "Claude Code"} n’est pas installé. Ouvrez les connexions pour le configurer.`,
+      );
+      return;
+    }
+    if (provider.authenticated === false) {
+      notify(
+        "Connectez votre abonnement dans les connexions avant de lancer la mission.",
+      );
+      return;
+    }
+    startLock.current = true;
+    setStarting(true);
+    const guidance = initialGuidance(task, stepId);
+    const session: PendingRun = {
+      mode,
+      finished: false,
+      sentInstructionIds: guidance.map((i) => i.id),
+    };
+    pendingRuns.current.set(task.id, session);
+    updateTask(task.id, (t) => ({
+      ...(stage ? startStep(t, stage.id) : t),
+      agentHistory:
+        t.activeStepId && t.activeStepId !== stepId
+          ? { ...t.agentHistory, [t.activeStepId]: t.agents }
+          : t.agentHistory,
+      status: "running",
+      nextStepProposal: undefined,
+      initialStepProposal:
+        stage?.type === "discussion" ? undefined : t.initialStepProposal,
+      initialWorkflowProposal:
+        stage?.type === "discussion" ? undefined : t.initialWorkflowProposal,
+      instructions: t.instructions?.map((i) =>
+        !i.appliedAt &&
+        [
+          "run_cancelled",
+          "blocking_answers_required",
+          "provider_not_started",
+        ].includes(i.reason || "")
+          ? { ...i, status: "queued", reason: undefined }
+          : i,
+      ),
+      agents: (t.activeStepId !== stepId
+        ? t.agentHistory?.[stepId || ""] || []
+        : t.agents
+      ).some((a) => a.id === "lead")
+        ? (t.activeStepId !== stepId
+            ? t.agentHistory?.[stepId || ""] || []
+            : t.agents
+          ).map((a) =>
+            a.id === "lead"
+              ? {
+                  ...a,
+                  stepId,
+                  model: t.model || t.provider,
+                  provider: t.provider,
+                  status: "running",
+                  progress: 0,
+                }
+              : a,
+          )
+        : [
+            {
+              id: "lead",
+              stepId,
+              name: "Djinn",
+              role: "Orchestration",
+              model: t.model || t.provider,
+              status: "running",
+              summary: "Le passage est en cours.",
+              progress: 0,
+            },
+            ...(t.activeStepId !== stepId
+              ? t.agentHistory?.[stepId || ""] || []
+              : t.agents),
+          ],
+      runMode: mode,
+      reviewApprovedAt: undefined,
+      phase: stage
+        ? (
+            {
+              discussion: "brief",
+              exploration: "brief",
+              reflection: "brief",
+              specification: "brief",
+              prototype: "execution",
+              implementation: "execution",
+              review: "review",
+              delivery: "delivery",
+            } as const
+          )[stage.type]
+        : t.phase,
+      events: [
+        ...t.events,
+        {
+          ...event(
+            "phase",
+            mode === "plan"
+              ? "Cadrage lancé"
+              : mode === "review"
+                ? "Review lancée"
+                : "Exécution lancée",
+            "Les événements apparaissent en direct.",
+            "lead",
+          ),
+          actor: "human",
+          stepId,
+        },
+      ],
+    }));
+    const images = selectImages(
+      task.artifacts.filter((a) => !a.stepId || a.stepId === stepId),
+    );
+    const artifacts = artifactContext(task.artifacts, images);
+    const prompt = `You are Djinn, lead agent for this mission. Speak French. Stage: ${mode}. Goal: ${task.title}\n${task.brief.slice(0, 20000)}\nWorkflow: ${task.workflowMode || "fixed"}. ${stage?.type === "discussion" ? "Qualify the initial intent via discussion_type. Do not propose a continuation yet." : task.workflowMode === "flexible" ? "Work only on the current discussion. Choose the smallest useful next step from its result and the latest human intent; propose it via next_step {type,title,objective,reason} or explicitly explain that the mission may end here. Never assume a specification requires code or a prototype. A proposal neither adds nor starts a step." : "Respect the prepared workflow."}\nCurrent discussion type: ${stage?.type || "reflection"}. ${stage?.type === "specification" ? "Produce the product specification as a Markdown artifact, with decisions, scope and acceptance criteria. Do not implement code or create a prototype." : ""}\nSupports marked sourceOfTruth are canonical references. Prioritize them and their latest human edits; report conflicts with repository/project conventions.\nHuman steering instructions (latest instructions refine earlier ones): ${contextExcerpt((task.instructions || []).slice(-24), 12000)}\nConfiguration: ${contextExcerpt(task.configuration, 4000)}\nHuman decisions: ${contextExcerpt(
+      task.questions
+        .filter((q) => q.answer)
+        .map((q) => ({ id: q.id, title: q.title, answer: q.answer })),
+      10000,
+    )}\nReview feedback: ${contextExcerpt(task.feedback, 8000)}\nCurrent supports, including human edits (content budget 28000 characters): ${contextExcerpt(artifacts, 32000)}\nPrevious context: ${contextExcerpt(
+      task.events
+        .slice(-8)
+        .map((e) => ({ title: e.title, detail: e.detail.slice(0, 1200) })),
+      10000,
+    )}\n${stage?.type === "discussion" ? "Qualify the initial human intent only. Read context if needed, choose exactly one of exploration, reflection, specification, prototype or implementation, and emit discussion_type {type,title,objective,reason}. Do not implement, produce deliverables, propose next steps or agents. Finish this passage after classification; Djinn will start the chosen discussion with its own permissions. Ask a blocking question only if classification cannot be made from the intent." : mode === "plan" ? `Read the project and frame the work. Do not edit project source yet. Produce the supports appropriate to the current discussion: a specification document for specification, evidence for exploration, or decisions and options for reflection. Ask questions only for decisions that change the result. Propose at most ${task.configuration.concurrency} subagents as agent events with status queued, a bounded prompt, explicit writeScope relative file/directory ownership, dependsOn worker IDs only when essential, and readOnly for inspectors. Divide independent work from contract-dependent work so the independent parts can start immediately. Disjoint scopes can execute concurrently up to the configured limit; shared scopes and integration are serialized.` : mode === "review" ? "Review the implementation and human feedback against the latest supports. Verify touched areas. Produce a review report with evidence." : "Implement the agreed goal in the selected project against the latest supports. Respect local AGENTS.md. Run targeted checks. Prepare a usable local result: identify the appropriate development server script and its package directory. Djinn will start and manage that server after successful execution; do not launch an unmanaged background daemon. Emit useful end-of-passage actions for the human (open a verified URL, review a result, or perform a manual step) using action events, without inventing readiness. Produce artifacts explaining what changed and evidence."}\nNo commits, pushes, publishing, deployment, or external messages without explicit human instruction.\nUse the Djinn event protocol so the UI displays your work. Emit each UI element as one standalone line DJINN_EVENT:{"type":"EVENT_TYPE","data":{...fields}}. Example: DJINN_EVENT:{"type":"note","data":{"title":"Progress","detail":"Evidence here"}}. Supported types and data fields: discussion_type with type,title,objective,reason (initial qualification only); question with id,title,context,recommendation,options:[{id,label,description}],blocking,unlocks,agentId; artifact with id,title,type (diagram|wireframe|document|code),content (text or JSON string); agent with id,name,role,status,summary,prompt,writeScope:[relative path],dependsOn:[agent id],readOnly; phase with phase (brief|execution|review); note with title,detail; action with id,kind (server|link|manual),title,detail,script (package script name, server only),directory (relative package directory, server only),url (verified HTTP(S) URL, link only). Emit actions only for useful next steps, not routine progress. Only the human can approve review or delivery. IDs of questions must be unique across the mission: existing IDs ${contextExcerpt(
+      task.questions.map((q) => q.id),
+      6000,
+    )}. Diagram content is JSON with nodes:[{id,label,sublabel,x,y}],edges:[[from,to]]. Emit only real evidence, do not invent agents running or successful checks. Finish your passage to await human answers when a blocking question is raised.`;
+    const providerPrompt =
+      task.workflowOrigin === "agent" && stage?.type === "discussion"
+        ? prompt
+            .replace(
+              "Qualify the initial intent via discussion_type. Do not propose a continuation yet.",
+              "Define the complete timeline via one workflow_defined event before any project action.",
+            )
+            .replace(
+              "Qualify the initial human intent only. Read context if needed, choose exactly one of exploration, reflection, specification, prototype or implementation, and emit discussion_type {type,title,objective,reason}. Do not implement, produce deliverables, propose next steps or agents. Finish this passage after classification; Djinn will start the chosen discussion with its own permissions. Ask a blocking question only if classification cannot be made from the intent.",
+              "Define the complete timeline from the human intent and emit exactly one workflow_defined event with {steps:[{type,title,objective}],reason}. Use 1 to 8 stages from exploration, reflection, specification, prototype, implementation, review or delivery. This pass is read-only: do not implement, produce deliverables, propose next steps or agents, or emit artifacts, actions or phase events. The orchestrator will start the first selected stage with its own permissions. Ask a blocking question only if the timeline cannot be chosen from the intent.",
+            )
+            .replace(
+              "discussion_type with type,title,objective,reason (initial qualification only)",
+              "workflow_defined with steps and reason (initial timeline qualification only)",
+            )
+        : prompt;
+    try {
+      await window.djinn.saveState(ref.current);
+      const result = await window.djinn.startRun({
+        stepId,
+        step: stage,
+        projectSnapshot: task.projectSnapshot,
+        workflowOrigin: task.workflowOrigin,
+        initialWorkflowProposal:
+          stage?.type === "discussion"
+            ? undefined
+            : task.initialWorkflowProposal,
+        workflowProposal: task.workflowProposal,
+        providerSessions: task.providerSessions,
+        guidance,
+        taskId: task.id,
+        provider: task.provider,
+        cwd: task.project,
+        prompt:
+          task.workflowOrigin === "agent" && stage?.type === "discussion"
+            ? `${providerPrompt}\nFinal routing contract: emit exactly one workflow_defined event with the complete timeline (1 to 8 stages using exploration, reflection, specification, prototype, implementation, review or delivery) and a non-empty reason. This read-only qualification pass must not emit legacy routing, artifacts, actions, agents, next_step or phase events.`
+            : providerPrompt,
+        model: task.model || undefined,
+        mode,
+        concurrency: task.configuration.concurrency,
+        images,
+        agents: task.agents
+          .filter(
+            (a) =>
+              stage?.type !== "discussion" &&
+              a.id !== "lead" &&
+              a.origin !== "codex" &&
+              a.prompt &&
+              a.status === "queued" &&
+              (!a.stepId || a.stepId === stepId),
+          )
+          .slice(0, 16)
+          .map((a) => ({
+            id: a.id,
+            name: a.name,
+            role: a.role,
+            writeScope: a.writeScope,
+            dependsOn: a.dependsOn,
+            readOnly: a.readOnly,
+            isolation: a.isolation,
+            worktree: a.worktree,
+            resources: a.resources,
+            prompt: `${(a.prompt || "").slice(0, 20000)}\nHuman steering instructions for your scope: ${contextExcerpt((task.instructions || []).filter((i) => !i.agentId || i.agentId === a.id).slice(-24), 12000)}\nHuman decisions: ${contextExcerpt(
+              task.questions.filter((q) => q.answer),
+              10000,
+            )}\nExisting question IDs: ${contextExcerpt(
+              task.questions.map((q) => q.id),
+              6000,
+            )}. Use a new unique ID for every new decision; never replace a different answered decision.\nCurrent supports: ${contextExcerpt(artifacts, 32000)}\nGoal: ${task.brief.slice(0, 20000)}. Work only within your assigned bounded scope, respect local AGENTS.md, and report evidence. Use the configured provider/model; do not silently substitute models, expand scope, or delegate additional work. No commits, pushes, publishing, deployment, or external messages.`,
+          })),
+      });
+      session.runId = result.runId;
+      if (!session.finished)
+        updateTask(task.id, (t) => ({
+          ...t,
+          runId: result.runId,
+          status: t.questions.some((q) => q.blocking && !q.answer)
+            ? "waiting"
+            : "running",
+          agents: t.agents.some((a) => a.id === "lead")
+            ? t.agents.map((a) =>
+                a.id === "lead" ? { ...a, status: "running" } : a,
+              )
+            : [
+                {
+                  id: "lead",
+                  name: "Djinn",
+                  role: "Orchestration",
+                  model: task.model || task.provider,
+                  status: "running",
+                  progress: 0,
+                  summary: "Votre agent prépare la prochaine étape.",
+                },
+                ...t.agents,
+              ],
+        }));
+    } catch (error) {
+      session.finished = true;
+      notify(message(error));
+      updateTask(task.id, (t) => ({
+        ...(stepId ? finishStepRun(t, stepId, "error", message(error)) : t),
+        status: "error",
+        runId: undefined,
+        agents: t.agents.map((agent) =>
+          agent.id === "lead" && agent.status === "running"
+            ? { ...agent, status: "error" }
+            : agent,
+        ),
+        events: [
+          ...t.events,
+          event("error", "Lancement impossible", message(error)),
+        ],
+      }));
+    } finally {
+      startLock.current = false;
+      setStarting(false);
+    }
+  };
+  startRef.current = start;
+  const switchProvider = async (
+    provider: ProviderId,
+    model: string,
+    resume: boolean,
+  ): Promise<boolean> => {
+    const latest = ref.current.tasks.find((t) => t.id === task.id);
+    if (
+      !latest ||
+      latest.runId ||
+      latest.status === "running" ||
+      startLock.current
+    ) {
+      notify(
+        "Mettez la mission en pause et attendez l’arrêt des agents avant de changer de fournisseur.",
+      );
+      return false;
+    }
+    if (!persistenceEnabled) {
+      notify(
+        "La sauvegarde est suspendue : exportez vos données avant de changer de fournisseur.",
+      );
+      return false;
+    }
+    const target = environment.providers.find((p) => p.id === provider);
+    if (!target?.available || target.authenticated === false) {
+      notify(
+        "Connectez ce fournisseur dans les connexions avant de reprendre la mission.",
+      );
+      return false;
+    }
+    const changed = provider !== latest.provider || model !== latest.model;
+    if (changed)
+      updateTask(latest.id, (t) => ({
+        ...t,
+        provider,
+        model,
+        providerSessions: undefined,
+        agents: t.agents.map((agent) =>
+          agent.origin === "codex" || agent.status === "done"
+            ? agent
+            : {
+                ...agent,
+                status: "queued",
+                model: model || provider,
+                provider,
+                waitReason: undefined,
+                waitingForAgentIds: undefined,
+              },
+        ),
+        events: [
+          ...t.events,
+          {
+            ...event(
+              "decision",
+              "Fournisseur changé",
+              `${t.provider === "claude" ? "Claude Code" : "Codex"} → ${provider === "claude" ? "Claude Code" : "Codex"}${model ? ` · ${model}` : " · modèle par défaut"}. Reprendre l’étape interrompue à partir des fichiers existants et des résultats conservés ; vérifier le travail déjà effectué avant de le poursuivre.`,
+              "lead",
+            ),
+            actor: "human",
+            stepId: t.activeStepId,
+          },
+        ],
+      }));
+    if (resume) await startRef.current(undefined, latest.id);
+    else if (changed)
+      notify("Fournisseur changé. Vous pouvez reprendre la mission.");
+    return true;
+  };
+  useEffect(() => {
+    if (!ready || !window.djinn) return;
+    for (const mission of state.tasks) {
+      if (!mission.runId) continue;
+      for (const instruction of mission.instructions || []) {
+        if (
+          instruction.status !== "queued" ||
+          instruction.appliedAt ||
+          instructionTransmissions.current.has(instruction.id) ||
+          pendingRuns.current
+            .get(mission.id)
+            ?.sentInstructionIds?.includes(instruction.id)
+        )
+          continue;
+        instructionTransmissions.current.add(instruction.id);
+        void window.djinn
+          .steerRun({
+            runId: mission.runId,
+            id: instruction.id,
+            text: instruction.text,
+            agentId: instruction.agentId,
+          })
+          .then((receipt) => {
+            updateTask(mission.id, (t) => ({
+              ...t,
+              instructions: (t.instructions || []).map((i) =>
+                i.id === instruction.id && !i.appliedAt
+                  ? {
+                      ...i,
+                      status: receipt.status as typeof i.status,
+                      reason: receipt.reason,
+                    }
+                  : i,
+              ),
+            }));
+            if (receipt.reason === "run_cancelled")
+              resumeAfterStoppedRun(mission.id, mission.runId!);
+          })
+          .catch((error) => {
+            const inactive =
+              record(error).code === "run_inactive" ||
+              /no longer active/.test(message(error));
+            updateTask(mission.id, (t) => ({
+              ...t,
+              instructions: (t.instructions || []).map((i) =>
+                i.id === instruction.id
+                  ? {
+                      ...i,
+                      status: inactive ? "queued" : "prevented",
+                      reason: message(error),
+                    }
+                  : i,
+              ),
+            }));
+            if (inactive) resumeAfterStoppedRun(mission.id, mission.runId!);
+          });
+      }
+    }
+  }, [state, ready, updateTask, resumeAfterStoppedRun]);
+  const pause = async () => {
+    if (task.runId && window.djinn) {
+      try {
+        await window.djinn.cancelRun(task.runId);
+      } catch (error) {
+        notify(message(error));
+        return;
+      }
+    }
+    const session = pendingRuns.current.get(task.id);
+    if (session) session.finished = true;
+    updateTask(task.id, (t) => ({
+      ...t,
+      status: "paused",
+      runId: t.runId,
+      steps: t.steps?.map((s) =>
+        s.id === t.activeStepId ? { ...s, status: "paused" } : s,
+      ),
+      events: [
+        ...t.events,
+        {
+          ...event(
+            "note",
+            "Mission mise en pause",
+            "Le contexte reste disponible pour la reprise.",
+          ),
+          actor: "human",
+        },
+      ],
+    }));
+    notify("Mission en pause. Votre contexte est conservé.");
+  };
+  const exportTask = async () => {
+    const payload = {
+      format: "djinn-session",
+      version: 2,
+      projects: state.projects || [],
+      exportedAt: now(),
+      task: {
+        ...task,
+        runId: undefined,
+        status: task.status === "running" ? "paused" : task.status,
+      },
+    };
+    try {
+      if (window.djinn) {
+        const result = await window.djinn.exportSession(payload);
+        if (result)
+          notify(
+            "Mission exportée. Le fichier peut être repris sur une autre machine.",
+          );
+      } else {
+        download(
+          `${task.title.replace(/\W+/g, "-")}.djinn.json`,
+          JSON.stringify(payload, null, 2),
+          "application/json",
+        );
+        notify("Mission exportée avec ses décisions, supports et timeline.");
+      }
+    } catch (error) {
+      notify(message(error));
+    }
+  };
+  const exportMissionJournal = async () => {
+    try {
+      const events = await collectMissionJournal(
+        task,
+        window.djinn?.getMissionJournalPage
+          ? (taskId, cursor, limit) =>
+              window.djinn!.getMissionJournalPage!(taskId, cursor, limit)
+          : undefined,
+      );
+      download(
+        `${task.title.replace(/\W+/g, "-")}.journal.jsonl`,
+        serializeMissionJournal(events),
+        "application/x-ndjson",
+      );
+      notify(
+        "Journal exporté. Le contexte envoyé au modèle reste borné séparément.",
+      );
+    } catch (error) {
+      notify(message(error));
+    }
+  };
+  const importTask = async (file?: File) => {
+    try {
+      let payload: unknown;
+      if (file) {
+        if (file.size > 20 * 1024 * 1024)
+          throw new Error("Le fichier dépasse 20 Mo.");
+        payload = JSON.parse(await file.text());
+      } else payload = await window.djinn?.importSession();
+      if (!payload) return;
+      const p = record(payload);
+      if (
+        ![1, 2].includes(p.version as number) ||
+        p.format !== "djinn-session" ||
+        !p.task
+      )
+        throw new Error("Choisissez une session Djinn v1 ou v2.");
+      const restored = validateState({
+        version: p.version,
+        tasks: [p.task],
+        ...(p.projects ? { projects: p.projects } : {}),
+      });
+      const imported = restored.tasks[0];
+      const t: Task = {
+        ...imported,
+        providerSessions: undefined,
+        id: uid(),
+        runId: undefined,
+        status: "paused",
+        events: [
+          ...imported.events,
+          event(
+            "note",
+            "Mission importée",
+            "Le contexte est conservé. Une reprise nécessite un lancement explicite.",
+          ),
+        ],
+      };
+      commit((s) => ({
+        ...s,
+        projects: [
+          ...(s.projects || []),
+          ...(restored.projects || []).filter(
+            (p) => !(s.projects || []).some((existing) => existing.id === p.id),
+          ),
+        ],
+        tasks: [...s.tasks, t],
+        selectedId: t.id,
+      }));
+      notify("Mission importée. Vérifiez le dossier avant de reprendre.");
+    } catch (error) {
+      notify(message(error));
+    }
+  };
+  const removeTask = () => {
+    if (task.runId) {
+      notify("Mettez la mission en pause avant de la supprimer.");
+      return;
+    }
+    setState((s) => {
+      const tasks = s.tasks.filter((t) => t.id !== task.id);
+      if (!tasks.length)
+        tasks.push(newTask("Nouvelle mission", "", "", "codex", ""));
+      return { ...s, tasks, selectedId: tasks[0].id };
+    });
+  };
+  const indicate = async (input: string, agentId?: string) => {
+    const value = input.trim();
+    if (!value || value.length > 12000) return false;
+    if (agentId && !task.agents.some((a) => a.id === agentId)) return false;
+    const instruction = {
+      id: uid(),
+      text: value,
+      time: now(),
+      agentId,
+      stepId: task.activeStepId,
+      status: "queued" as const,
+    };
+    updateTask(task.id, (t) => ({
+      ...(t.steps?.find((s) => s.id === t.activeStepId)?.status ===
+        "completed" && !t.runId
+        ? reopenStep(t, t.activeStepId!)
+        : t),
+      instructions: [...(t.instructions || []), instruction],
+      reviewApprovedAt: undefined,
+      status: t.status === "done" ? "idle" : t.status,
+      phase: t.phase,
+      events: [
+        ...t.events,
+        {
+          ...event("note", "Vous", value, agentId || "lead"),
+          stepId: t.activeStepId,
+          time: instruction.time,
+          actor: "human",
+          interventionId: instruction.id,
+        },
+      ],
+      agents: agentId
+        ? t.agents.map((a) =>
+            a.id === agentId && a.status !== "running"
+              ? {
+                  ...a,
+                  status: "queued",
+                  summary: "Un message attend votre prochain passage.",
+                }
+              : a,
+          )
+        : t.agents,
+    }));
+    if (task.runId && window.djinn) {
+      instructionTransmissions.current.add(instruction.id);
+      if (task.status === "paused") resumeRequested.current.add(task.id);
+      try {
+        const receipt = await window.djinn.steerRun({
+          runId: task.runId,
+          id: instruction.id,
+          text: value,
+          agentId,
+        });
+        updateTask(task.id, (t) => ({
+          ...t,
+          instructions: (t.instructions || []).map((i) =>
+            i.id === instruction.id && !i.appliedAt
+              ? {
+                  ...i,
+                  status: receipt.status as typeof i.status,
+                  reason: receipt.reason,
+                }
+              : i,
+          ),
+        }));
+        if (receipt.reason === "run_cancelled")
+          resumeAfterStoppedRun(task.id, task.runId);
+        if (receipt.status === "prevented")
+          notify(
+            `Indication conservée : ${receipt.reason || "transmission empêchée"}`,
+          );
+      } catch (error) {
+        const inactive =
+          record(error).code === "run_inactive" ||
+          /no longer active/.test(message(error));
+        updateTask(task.id, (t) => ({
+          ...t,
+          instructions: t.instructions?.map((i) =>
+            i.id === instruction.id
+              ? {
+                  ...i,
+                  status: inactive ? "queued" : "prevented",
+                  reason: message(error),
+                }
+              : i,
+          ),
+        }));
+        if (inactive) {
+          const latest = ref.current.tasks.find((t) => t.id === task.id)!;
+          if (latest.runId) resumeRequested.current.add(task.id);
+          else if (canResumeAfterHumanInput(latest))
+            void startRef.current(undefined, task.id);
+        }
+        notify(`Indication conservée pour la reprise : ${message(error)}`);
+      }
+    } else if (!task.demo) {
+      const latest = ref.current.tasks.find((t) => t.id === task.id)!;
+      if (canResumeAfterHumanInput(latest))
+        void startRef.current(undefined, latest.id);
+      else
+        notify(
+          "Indication enregistrée. Les décisions bloquantes doivent être renseignées pour reprendre.",
+        );
+    }
+    return true;
+  };
+  const selectStep = (id: string) =>
+    updateTask(task.id, (t) =>
+      t.steps?.some(
+        (s) => s.id === id && (s.status !== "pending" || id === t.activeStepId),
+      )
+        ? { ...t, selectedStepId: id }
+        : t,
+    );
+  const resumeStep = (id: string) => {
+    try {
+      updateTask(task.id, (t) => reopenStep(t, id));
+    } catch (error) {
+      notify(message(error));
+    }
+  };
+  const validateStepResult = (id: string) => {
+    try {
+      updateTask(task.id, (t) => ({
+        ...approveStep(t, id, "human"),
+        ...(t.steps?.find((s) => s.id === id)?.type === "review"
+          ? { reviewApprovedAt: now() }
+          : {}),
+        events: [
+          ...t.events,
+          {
+            ...event("phase", "Résultat validé par vous"),
+            stepId: id,
+            actor: "human",
+          },
+        ],
+      }));
+    } catch (error) {
+      notify(message(error));
+    }
+  };
+  const addNextStep = (type: StepType, title: string, objective: string) => {
+    try {
+      const latest = ref.current.tasks.find((t) => t.id === task.id)!;
+      const step = {
+        ...createDiscussionStep(uid(), type),
+        title: title.trim(),
+        objective: objective.trim(),
+      };
+      const updated = appendStep(latest, step);
+      updateTask(task.id, () => ({
+        ...updated,
+        nextStepProposal: undefined,
+        events: [
+          ...latest.events,
+          {
+            ...event("phase", "Étape ajoutée par vous", step.title),
+            stepId: step.id,
+            actor: "human",
+          },
+        ],
+      }));
+      return true;
+    } catch (error) {
+      notify(message(error));
+      return false;
+    }
+  };
+  const dismissQuestionAlert = (id: string) =>
+    setQuestionAlerts((previous) => previous.filter((a) => a.id !== id));
+  const dismissActionAlert = (id: string) =>
+    setActionAlerts((previous) => previous.filter((a) => a.id !== id));
+  const openAction = (taskId: string, actionId: string) => {
+    select(taskId);
+    dismissActionAlert(`${taskId}:${actionId}`);
+    window.dispatchEvent(
+      new CustomEvent("djinn:action-focus", { detail: { taskId, actionId } }),
+    );
+  };
+  const performAction = async (
+    action: TaskAction,
+    operation: "run" | "stop" | "complete" | "open",
+  ) => {
+    if (actionLocks.current.has(action.id)) return false;
+    actionLocks.current.add(action.id);
+    setBusyActionIds((current) => [...current, action.id]);
+    const taskId = task.id;
+    try {
+      let result: TaskAction;
+      if (typeof window.djinn?.performAction === "function") {
+        result = validateAction(
+          await window.djinn.performAction({
+            taskId,
+            cwd: task.project,
+            action,
+            operation,
+          }),
+        );
+      } else if (operation === "complete" && action.kind === "manual") {
+        result = { ...action, status: "done", updatedAt: now() };
+      } else if (operation === "open" && action.url && action.kind === "link") {
+        const safe = validateAction(action);
+        window.open(safe.url, "_blank", "noopener,noreferrer");
+        result = { ...action, status: "done", updatedAt: now() };
+      } else {
+        notify("Ouvrez Djinn dans Electron pour lancer le serveur.");
+        return false;
+      }
+      const time = now();
+      updateTask(taskId, (t) => ({
+        ...t,
+        actions: [
+          ...(t.actions || []).filter((a) => a.id !== result.id),
+          result,
+        ],
+        events: [
+          ...t.events,
+          {
+            ...event(
+              "note",
+              operation === "open"
+                ? "Aperçu ouvert"
+                : operation === "stop"
+                  ? "Serveur arrêté"
+                  : operation === "complete"
+                    ? "Action terminée"
+                    : "Serveur demandé",
+              action.title,
+            ),
+            actor: "human",
+            time,
+          },
+        ],
+      }));
+      dismissActionAlert(`${taskId}:${action.id}`);
+      return result.status !== "error";
+    } catch (error) {
+      notify(`Action impossible : ${message(error)}`);
+      return false;
+    } finally {
+      actionLocks.current.delete(action.id);
+      setBusyActionIds((current) => current.filter((id) => id !== action.id));
+    }
+  };
+  const openQuestion = (taskId: string, questionId: string) => {
+    select(taskId);
+    dismissQuestionAlert(`${taskId}:${questionId}`);
+    window.dispatchEvent(
+      new CustomEvent("djinn:question-focus", {
+        detail: { taskId, questionId },
+      }),
+    );
+  };
+  const enableNotifications = async () => {
+    if (window.djinn) {
+      try {
+        const result = await window.djinn.notifyQuestion({
+          taskId: task.id,
+          questionId: task.questions.find((q) => !q.answer)?.id || "test",
+          title: "Djinn",
+          body: "Les nouvelles questions vous seront signalées ici.",
+        });
+        setNotificationStatus(
+          result.shown
+            ? "Notification de test envoyée au système"
+            : result.message ||
+                result.error ||
+                "Vérifiez l’autorisation de Djinn dans les notifications macOS.",
+        );
+      } catch (error) {
+        setNotificationStatus(message(error));
+      }
+      return;
+    }
+    if (typeof Notification === "undefined") {
+      setNotificationStatus("Les alertes restent disponibles dans Djinn.");
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setBrowserPermission(permission);
+      setNotificationStatus(
+        permission === "granted"
+          ? "Notifications activées"
+          : permission === "denied"
+            ? "Notifications refusées dans les réglages du navigateur"
+            : "Les alertes restent disponibles dans Djinn.",
+      );
+    } catch (error) {
+      setNotificationStatus(message(error));
+    }
+  };
+  const refreshEnvironment = async () => {
+    if (window.djinn)
+      try {
+        setEnvironment(await window.djinn.getEnvironment());
+        notify("Connexions actualisées.");
+      } catch (error) {
+        notify(message(error));
+      }
+    else notify("Ouvrez Djinn dans Electron pour détecter vos CLI.");
+  };
+  return {
+    state,
+    loadDemo,
+    setState,
+    task,
+    ready,
+    persistenceEnabled,
+    environment,
+    authStatus,
+    toast,
+    notify,
+    select,
+    addTask,
+    saveProject,
+    updateTask,
+    selectStep,
+    resumeStep,
+    validateStepResult,
+    addNextStep,
+    answer,
+    reopen,
+    start,
+    switchProvider,
+    pause,
+    starting,
+    exportTask,
+    exportMissionJournal,
+    importTask,
+    removeTask,
+    refreshEnvironment,
+    indicate,
+    questionAlerts,
+    notificationStatus,
+    browserPermission,
+    dismissQuestionAlert,
+    openQuestion,
+    enableNotifications,
+    actionAlerts,
+    busyActionIds,
+    performAction,
+    openAction,
+    dismissActionAlert,
+  };
+}
+export function download(name: string, content: string, type = "text/plain") {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

@@ -1,0 +1,36 @@
+node_modules/
+dist/
+release/
+release-next/
+release-previous*/
+backups/
+test-results/
+playwright-report/
+.DS_Store
+
+*.tsbuildinfo
+
+# Local credentials, provider state and runtime output
+.env
+.env.*
+!.env.example
+.codex/
+.claude/
+.cursor/
+*.log
+*.backup
+*.journal.jsonl
+*.djinn.json
+coverage/
+.cache/
+*.dmg
+*.zip
+
+# Historical mission exports contain verbose local execution journals.
+# Keep only the small, fictional demonstration used by renderer tests.
+docs/*session*.djinn.json
+!docs/v0.2.1-session-harmonisation.djinn.json
+docs/demo.webm
+docs/screenshots/*
+!docs/screenshots/readme/
+!docs/screenshots/v0.2.1/

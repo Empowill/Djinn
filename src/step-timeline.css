@@ -1,0 +1,266 @@
+.workflow-strip {
+  padding: 10px 24px 8px;
+}
+
+.workflow-strip .step-timeline {
+  display: flex;
+  gap: 0;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 3px 0 8px;
+  scrollbar-width: thin;
+}
+
+.workflow-strip .step-item {
+  position: relative;
+  display: flex;
+  flex: 1 0 145px;
+  min-width: 145px;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 10px 5px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #646464;
+  text-align: left;
+}
+
+.workflow-strip .step-item:hover:not(:disabled) {
+  color: #bcbcbc;
+}
+
+.workflow-strip .step-item:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.workflow-strip .step-item:focus-visible {
+  outline: 2px solid #d7cba4;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.workflow-strip .step-item.selected {
+  background: transparent;
+  border-color: transparent;
+  color: #e4e4e4;
+}
+
+.workflow-strip .step-item.current {
+  color: #e6e6e6;
+}
+
+.workflow-strip .step-item.blocked:not(:disabled),
+.workflow-strip .step-item.awaiting_human:not(:disabled) {
+  color: #c6b78f;
+}
+
+.workflow-strip .step-item.error:not(:disabled) {
+  color: #c18b8b;
+}
+
+.workflow-strip .phase-circle.step-number {
+  position: relative;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  place-items: center;
+  border: 1px dashed #474747;
+  border-radius: 50%;
+  background: var(--bg);
+  color: #858585;
+  font: var(--font-size-body, 12px) var(--mono);
+}
+
+.workflow-strip .step-item.complete .phase-circle {
+  border-style: solid;
+  border-color: #555555;
+  background: #262626;
+  color: #d5d5d5;
+}
+
+.workflow-strip .step-item.current .phase-circle {
+  border-style: solid;
+  border-color: #c7c7c7;
+  background: #2e2e2e;
+  color: #e6e6e6;
+}
+
+.workflow-strip .step-item.selected .phase-circle {
+  border-color: #b8aa77;
+  box-shadow: 0 0 0 3px #b8aa7712;
+}
+
+.workflow-strip .phase-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workflow-strip .phase-copy strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--font-size-body, 12px);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-strip .phase-copy small {
+  overflow: hidden;
+  margin: 0;
+  color: #777777;
+  font: var(--font-size-body, 12px) var(--mono);
+  letter-spacing: 0.35px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-strip .step-item.current .phase-copy small,
+.workflow-strip .step-item.selected .phase-copy small {
+  color: #a1a1a1;
+}
+
+.workflow-strip .phase-spin {
+  width: 18px;
+  height: 18px;
+  border: 1px solid #d2d2d2;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  animation: spin 4s linear infinite;
+}
+
+.workflow-strip .phase-line {
+  display: block;
+  flex: 1 1 24px;
+  min-width: 24px;
+  height: 1px;
+  margin-left: 5px;
+  background: #333333;
+}
+
+.workflow-strip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding-top: 5px;
+}
+
+.workflow-strip-actions:empty {
+  display: none;
+}
+
+.workflow-strip .workflow-config {
+  margin-right: auto;
+  color: #898989;
+  font-size: var(--font-size-body, 12px);
+}
+
+.workflow-strip .workflow-config:hover {
+  color: #dedede;
+}
+
+.workflow-strip-actions .button.small {
+  padding: 7px 10px;
+  font-size: var(--font-size-body, 12px);
+}
+
+.workflow-editor legend {
+  padding: 0 5px;
+  color: #b1b1b1;
+  font-size: var(--font-size-body, 12px);
+}
+
+.workflow-editor-row {
+  flex-wrap: wrap;
+}
+
+.workflow-editor-row select {
+  flex: 1 1 120px;
+}
+
+.workflow-editor-row input {
+  flex: 1 1 160px;
+}
+
+.workflow-editor-row button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1100px) {
+  .workflow-strip {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .workflow-strip .step-item {
+    flex-basis: 132px;
+    min-width: 132px;
+  }
+
+  .workflow-strip .phase-line {
+    min-width: 18px;
+  }
+}
+
+.mission-scroll > .workflow-strip {
+  padding: 14px 24px;
+}
+.workflow-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.workflow-timeline-row .step-timeline {
+  flex: 1 1 auto;
+  padding-bottom: 3px;
+}
+.workflow-timeline-row .workflow-config {
+  flex: 0 0 auto;
+  margin-left: 0;
+  color: #888;
+}
+.next-step-suggestion {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #333;
+}
+.next-step-suggestion p {
+  margin: 0;
+  color: #aaa;
+  line-height: 1.6;
+}
+.project-sources-editor {
+  display: grid;
+  gap: 12px;
+}
+.project-sources-editor fieldset {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #333;
+  padding: 14px;
+  border-radius: 8px;
+}
+.project-sources-editor legend {
+  color: #aaa;
+  padding: 0 6px;
+}
+.form-fields .project-workflow-policy {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.form-fields .project-workflow-policy input {
+  width: auto;
+}
