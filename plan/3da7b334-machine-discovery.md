@@ -2,7 +2,7 @@
 id: 01a11888-644b-7e58-9f2c-390e3da7b334
 code: T17
 phase: 2
-status: open
+status: in-progress
 ---
 
 # T17 · Know the machine, spend it wisely
@@ -27,7 +27,8 @@ overloaded. Part of the orchestrator (T07).
 
 ## Done when
 - [x] `djinn machine` shows the discovered machine and the live load.
-- [ ] After a few runs, each project command has a measured cost.
+- [ ] After a few runs, each project command has a measured cost. (needs: an agent; no cost per command is
+  recorded yet)
 - [x] Djinn never starts more workers than the machine holds, and says why it waits.
 
 ## Decided along the way

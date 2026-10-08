@@ -2,7 +2,7 @@
 id: 01a118c9-246f-7a3d-8702-04081689571a
 code: T22
 phase: 2
-status: open
+status: in-progress
 ---
 
 # T22 · Workers that start fast, with the right context, and are measured
@@ -34,8 +34,10 @@ the context its task needs, no more.
 - [x] The bench has run, and its figures are in this file (Haiku, below). Opus waits for a go.
 - [x] A task can ask for a fork or a brief, and Djinn picks the brief by default.
 - [ ] Warm workers are on, bounded by the machine, and their idle cost is known. *Built, bounded and off by
-  default (`djinn up --warm-workers`); their memory is supposed until the bench measures it.*
-- [ ] Every worker's tokens and cost show per wish in the interface.
+  default (`djinn up --warm-workers`); their memory is supposed until the bench measures it.* (needs: the paid
+  bench, `go tool task bench-workers`, with a person's go)
+- [ ] Every worker's tokens and cost show per wish in the interface. (needs: an agent; `src/wish-task.tsx` shows
+  each task's cost, not its tokens nor a total for the wish)
 - [x] A lead starts from a brief built out of the store (`djinn wish brief`, T13).
 
 ## Decided along the way

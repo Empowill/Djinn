@@ -2,7 +2,7 @@
 id: 01a1184f-cf17-786b-a218-3485aef418cb
 code: T03
 phase: 1
-status: open
+status: in-progress
 ---
 
 # T03 · Keep the interface working: the `window.djinn` shim
@@ -33,7 +33,7 @@ status: open
   the legacy bridge are gone (branch `w27-ui-switch`).
 - [x] A wish made by the command line shows in the window without a reload; a question answered in the window
   reads as answered by the command line (`e2e/wish-live.spec.ts`).
-- [ ] Clément has reviewed the switch.
+- [ ] Clément has reviewed the switch. (needs: Clément's review)
 
 ## The switch
 

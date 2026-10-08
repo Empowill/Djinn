@@ -2,7 +2,7 @@
 id: 01a1184f-cf1a-7ae3-a231-dabcb81b5d99
 code: T06
 phase: 1
-status: open
+status: in-progress
 ---
 
 # T06 · End-to-end tests on the native window
@@ -29,7 +29,7 @@ status: open
 
 - [x] One end-to-end scenario runs against the native window on Linux: `go tool task e2e-native`, about 3 s once
       built (Ubuntu 22.04, GTK 3, WebKitGTK 2.50).
-- [ ] The same scenario runs on macOS.
+- [ ] The same scenario runs on macOS. (needs: a Mac, `go tool task e2e-native` once)
 
 ## Decided along the way
 

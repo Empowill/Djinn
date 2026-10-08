@@ -48,10 +48,13 @@ The top of the main README is for them; contributors come after.
 
 ## Done when
 - [ ] A fresh account with no administrator rights installs and runs Djinn on Linux, macOS and
-  Windows.
-- [ ] From a machine without Djinn, the one-line install and the agent prompt both work.
-- [ ] The time from `go install` to an open window on a real project is measured.
-- [ ] The README top is kept in sync by every change to the install.
+  Windows. (needs: a published release, then a person on each system)
+- [ ] From a machine without Djinn, the one-line install and the agent prompt both work. (needs: a published
+  release, and the agent prompt, not written yet)
+- [ ] The time from `go install` to an open window on a real project is measured. (needs: a release tag, and a
+  person to time it)
+- [ ] The README top is kept in sync by every change to the install. (needs: a test or a review rule that ties the
+  README lines to `scripts/install.*`; an agent can write the test)
 
 ## Open questions
 - What does the prompt for your agent say, word for word? *To write once `go install` works.*

@@ -2,7 +2,7 @@
 id: 01a11852-f378-7235-a5df-26f74527d734
 code: T10
 phase: 1
-status: open
+status: in-progress
 ---
 
 # T10 · English everywhere
@@ -36,8 +36,11 @@ read, install and contribute.
 - [ ] No French left in the repository outside `locales/fr.json`: left are the legacy Electron app
   (`electron/`, `scripts/`), the window check page (`tools/windowcheck/page/`), the test fixtures and
   assertions (the Node tests render the interface in French), two Electron-era README
-  screenshots, and stored values the interface still reads (below).
-- [ ] The interface maintainer has reviewed the keys and the English wording.
+  screenshots, and stored values the interface still reads (below). (08/10: `electron/` is gone; French is left in
+  `tools/windowcheck/page/`, `internal/server/transport_bench_test.go`, the e2e and Node assertions,
+  `docs/v0.2.1-session-harmonisation.djinn.json` and the two screenshots. needs: an agent for the text, a person
+  for the screenshots)
+- [ ] The interface maintainer has reviewed the keys and the English wording. (needs: the interface maintainer)
 
 ## Decided along the way
 - **One catalog per language, flat keys.** `locales/en.json` is the source, `locales/fr.json` its

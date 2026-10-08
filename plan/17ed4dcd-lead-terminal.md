@@ -2,7 +2,7 @@
 id: 01a118b4-0310-7924-8cee-d87717ed4dcd
 code: T21
 phase: 2
-status: open
+status: in-progress
 ---
 
 # T21 · The lead's terminal, inside the app, by voice
@@ -31,13 +31,14 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   What the terminal owes it is proved: a Space held in the native window on Linux reaches a program
   in raw mode as the system's key repeat (2 s held, 500 ms delay, 33 a second: 50 spaces, exactly
   the count expected), and `TestHeldSpaceArrivesAsRepeats` shows each space arriving on its own,
-  30 ms apart. Left: speak to Claude Code itself, on Linux and macOS.
+  30 ms apart. Left: speak to Claude Code itself, on Linux and macOS. (needs: a person with a microphone, on Linux
+  and on a Mac)
 - [x] Closing and reopening the window finds the terminal and its session where they were, while
   `djinn up` runs (e2e: a reopened page reads the same shell's output again). Closing the native
   window stops `djinn up`, so it hangs the terminal up.
 - [x] An update restarts Djinn and reopens the terminals that ran, on the same sessions, in the same folders;
   one that cannot start is reported (`TestUpdate`, T12). After a crash nothing is noted yet: `djinn wish resume`.
-- [ ] This flight plan's session resumes inside Djinn's terminal and goes on by voice.
+- [ ] This flight plan's session resumes inside Djinn's terminal and goes on by voice. (needs: a person, by voice)
 
 ## Decided along the way
 - **`TerminalService`** (`api/terminal/v1`, all methods internal): `Open` (by name: a running

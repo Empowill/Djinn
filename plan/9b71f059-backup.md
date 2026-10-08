@@ -2,7 +2,7 @@
 id: 01a118ac-4d4c-7def-9720-c8fc9b71f059
 code: T20
 phase: 3
-status: open
+status: done
 ---
 
 # T20 · Backups, on a server of your choice

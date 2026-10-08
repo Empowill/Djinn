@@ -44,35 +44,35 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 **Phase 1 · Native app**
 
-- [ ] [T01 · The native window: Wails, the embedded interface, dev and browser modes](plan/fe63ed30-native-window.md)
-- [ ] [T02 · Protos, API and command line: everything generated, a CLI by convention](plan/c30479be-api-and-cli.md)
-- [ ] [T03 · Keep the interface working: the `window.djinn` shim](plan/aef418cb-interface-shim.md)
+- [ ] [T01 · The native window: Wails, the embedded interface, dev and browser modes](plan/fe63ed30-native-window.md) (in progress)
+- [x] [T02 · Protos, API and command line: everything generated, a CLI by convention](plan/c30479be-api-and-cli.md)
+- [ ] [T03 · Keep the interface working: the `window.djinn` shim](plan/aef418cb-interface-shim.md) (in progress)
 - [ ] [T04 · Getting started: install in one line, or ask your agent](plan/929d6a88-getting-started.md)
-- [ ] [T05 · Testing: unit tests in seconds, `task e2e` an agent can run](plan/b6a680bf-testing.md)
-- [ ] [T06 · End-to-end tests on the native window](plan/b81b5d99-native-e2e.md)
-- [ ] [T10 · English everywhere](plan/4527d734-english-everywhere.md)
+- [x] [T05 · Testing: unit tests in seconds, `task e2e` an agent can run](plan/b6a680bf-testing.md)
+- [ ] [T06 · End-to-end tests on the native window](plan/b81b5d99-native-e2e.md) (in progress)
+- [ ] [T10 · English everywhere](plan/4527d734-english-everywhere.md) (in progress)
 - [ ] [T11 · Windows](plan/a586b68b-windows.md)
-- [ ] [T12 · Updates from inside the app](plan/1aa20487-auto-update.md)
+- [ ] [T12 · Updates from inside the app](plan/1aa20487-auto-update.md) (in progress)
 
 **Phase 2 · Orchestration and data**, after which Djinn runs on itself
 
-- [ ] [T07 · The orchestrator: workers, worktrees, scheduling, the machine](plan/8e8d3d76-orchestrator.md)
-- [ ] [T17 · Know the machine, spend it wisely](plan/3da7b334-machine-discovery.md)
-- [ ] [T18 · Antigravity as a worker provider](plan/a72eb1f8-antigravity-provider.md)
-- [ ] [T21 · The lead's terminal, inside the app, by voice](plan/17ed4dcd-lead-terminal.md)
-- [ ] [T22 · Workers that start fast, with the right context, and are measured](plan/1689571a-fast-workers.md)
-- [ ] [T08 · Data: what we store, and why](plan/716b9f97-data.md)
-- [ ] [T13 · Sessions across projects](plan/58ae4a59-cross-project-sessions.md)
+- [ ] [T07 · The orchestrator: workers, worktrees, scheduling, the machine](plan/8e8d3d76-orchestrator.md) (in progress)
+- [ ] [T17 · Know the machine, spend it wisely](plan/3da7b334-machine-discovery.md) (in progress)
+- [ ] [T18 · Antigravity as a worker provider](plan/a72eb1f8-antigravity-provider.md) (in progress)
+- [ ] [T21 · The lead's terminal, inside the app, by voice](plan/17ed4dcd-lead-terminal.md) (in progress)
+- [ ] [T22 · Workers that start fast, with the right context, and are measured](plan/1689571a-fast-workers.md) (in progress)
+- [x] [T08 · Data: what we store, and why](plan/716b9f97-data.md)
+- [ ] [T13 · Sessions across projects](plan/58ae4a59-cross-project-sessions.md) (in progress)
 
 **Phase 3 · Comfort**
 
-- [ ] [T14 · Spend big models only where they matter](plan/8ce817da-cost.md)
+- [x] [T14 · Spend big models only where they matter](plan/8ce817da-cost.md)
 - [ ] [T16 · Dispatch: plain Go code or a local model?](plan/263f074f-dispatch-bench.md)
-- [ ] [T09 · Quality of life and clean-up](plan/3792046b-quality-of-life.md)
+- [ ] [T09 · Quality of life and clean-up](plan/3792046b-quality-of-life.md) (in progress)
 - [ ] [T19 · Releases: binaries for every target](plan/71f9c331-releases.md)
-- [ ] [T20 · Backups, on a server of your choice](plan/9b71f059-backup.md)
-- [ ] [T23 · Summon a skill from another project](plan/a5c284be-summon-skills.md)
-- [ ] [T24 · A wish online: sync now, collaborate later](plan/7dc376e9-wish-online.md)
+- [x] [T20 · Backups, on a server of your choice](plan/9b71f059-backup.md)
+- [ ] [T23 · Summon a skill from another project](plan/a5c284be-summon-skills.md) (in progress)
+- [ ] [T24 · A wish online: sync now, collaborate later](plan/7dc376e9-wish-online.md) (in progress)
 
 **After v1**
 

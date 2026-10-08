@@ -58,5 +58,5 @@ its flight plan with them, semi-automatically, project by project.
 
 ## Done when
 - [ ] A task of a Git project runs on a second trusted machine, which pushes its branch; the
-      mission on the first machine follows it live.
-- [ ] A task of a non-Git project is never offered to another machine.
+      mission on the first machine follows it live. (needs: after v1; two trusted machines)
+- [ ] A task of a non-Git project is never offered to another machine. (needs: after v1; nothing built)

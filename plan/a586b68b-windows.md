@@ -38,9 +38,11 @@ checked against Windows first, because it is where the constraints are.
   drive the real window there.
 
 ## Done when
-- [ ] `go install`, then `djinn up`, opens the window on Windows 11 and a stream reaches it.
-- [ ] `task test` and `task e2e` pass on Windows.
-- [ ] A worker runs in a worktree on Windows, with its CPU and memory measured.
+- [ ] `go install`, then `djinn up`, opens the window on Windows 11 and a stream reaches it. (needs: a Windows 11
+  machine; `GOOS=windows go vet -tags headless ./...` passes on Linux, 08/10)
+- [ ] `task test` and `task e2e` pass on Windows. (needs: a Windows machine, or the CI's Windows job green)
+- [ ] A worker runs in a worktree on Windows, with its CPU and memory measured. (needs: a Windows machine, and the
+  per-worker measure, not built: Job Objects, T17)
 
 ## How we test on Windows
 - The unit tests run on Windows (`go tool task test`). Cross-checks from Linux:

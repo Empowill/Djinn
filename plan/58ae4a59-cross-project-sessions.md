@@ -2,7 +2,7 @@
 id: 01a11876-6480-7ec2-9833-abd058ae4a59
 code: T13
 phase: 2
-status: open
+status: in-progress
 ---
 
 # T13 · Sessions across projects
@@ -68,7 +68,9 @@ projects it touches, and a project is not necessarily a Git repository.
   matched by name or remote URL, and asked for when missing.
 
 ## Done when
-- [ ] One session drives tasks in two projects, one of them not a Git repository.
+- [x] One session drives tasks in two projects, one of them not a Git repository. (08/10, fake provider: one wish,
+  W1 done in a Git project's worktree, W2 done outside Git once its edit question was answered;
+  `TestSpawnInGit`, `TestSpawnOutsideGit`)
 - [x] A session exported here imports on another machine and finds or asks for its projects.
 - [x] `djinn wish resume <wish>` takes the lead's own session back in the lead's terminal, starting Djinn if it
   does not run, and attaches to it if it already runs.
@@ -80,7 +82,7 @@ projects it touches, and a project is not necessarily a Git repository.
 - [x] Djinn proposes a ready wish and never grants it: only `djinn wish grant`, or "My wish is granted" in the
   window, does.
 - [ ] The window ranks the wishes by dragging them (done in `w27-ui-switch`, T03), and shows them in one flight plan
-  (not yet: one wish at a time).
+  (not yet: one wish at a time). (needs: an agent, for the flight plan of several wishes)
 
 ## Decided along the way
 - **The export format is a proto**, `WishExport` in `api/plan/v1`, version 1: the wish, its project

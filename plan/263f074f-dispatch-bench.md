@@ -33,5 +33,7 @@ task starts now, on which worker, once its dependencies, write scopes and gates 
 - The model gets a case only where the Go code has no rule; if there is none, the model has no role.
 
 ## Done when
-- [ ] The benchmark runs with one task command and prints a table.
-- [ ] A decision is written down: Go only, or Go plus a model for named cases, with the numbers.
+- [ ] The benchmark runs with one task command and prints a table. (needs: an agent for the Go side and the
+  cases; Ollama with Gemma 4 on the machine for the model side)
+- [ ] A decision is written down: Go only, or Go plus a model for named cases, with the numbers. (needs: the
+  bench, then a person to decide)

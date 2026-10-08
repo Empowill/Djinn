@@ -2,7 +2,7 @@
 id: 01a118f6-c07d-7d18-8418-4cf67dc376e9
 code: T24
 phase: 3
-status: open
+status: in-progress
 ---
 
 # T24 · A wish online: sync now, collaborate later
@@ -48,8 +48,9 @@ hand-offs: one person works, the other reads. Later, several people work on the 
 
 ## Done when
 - [ ] `djinn wish sync` renders the page in Go (done), and the lead republishes it in one call (its instructions: next).
+  (needs: an agent for the lead's instructions, none mention the page yet; a real lead session to see it publish)
 - [x] A change in the wish updates the page without the model writing HTML.
-- [ ] A hand-off: the other person opens the link and sees the wish as it is.
+- [ ] A hand-off: the other person opens the link and sees the wish as it is. (needs: two people)
 
 ## Open questions
 - Can Djinn publish without a Claude session (an API for artifacts)? Not known today.

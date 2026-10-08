@@ -2,7 +2,7 @@
 id: 01a1184f-cf16-7cc3-9181-dd6ec30479be
 code: T02
 phase: 1
-status: open
+status: done
 ---
 
 # T02 · Protos, API and command line
@@ -26,9 +26,12 @@ line agents use, and the public API documentation.
 - MCP later, as a thin layer over the same calls.
 
 ## Done when
-- [ ] `djinn question answer Q03 b` is validated, sent, and printed.
-- [ ] A wrong input says, field by field, what was expected.
-- [ ] Adding a method to a proto adds its command, with no hand-written CLI code.
+- [x] `djinn question answer Q03 b` is validated, sent, and printed. (08/10, on a `djinn up` with its own
+  `DJINN_HOME`: `djinn question answer Q01 b` prints the question with `answer: choice: b`; `TestRun`)
+- [x] A wrong input says, field by field, what was expected. (08/10: `djinn question ask x not-a-uuid` with five
+  `--options` prints one line for `--options` and one for `<wish-id>`, exit 2; `TestParseErrors`)
+- [x] Adding a method to a proto adds its command, with no hand-written CLI code. (`internal/cli` reads the
+  commands from the embedded descriptors; `TestEveryPublicMethodIsExpressible`, `TestEmbeddedDescriptorsAreFresh`)
 
 ## Open questions
 

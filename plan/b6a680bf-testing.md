@@ -2,7 +2,7 @@
 id: 01a1184f-cf19-7585-8946-4b29b6a680bf
 code: T05
 phase: 1
-status: open
+status: done
 ---
 
 # T05 · Testing
@@ -23,7 +23,11 @@ status: open
   bridge on Linux.
 
 ## Done when
-- [ ] `task test` runs in seconds and needs nothing running.
-- [ ] `task e2e` runs the existing Playwright specs against the real Go server.
-- [ ] The window smoke test runs on Linux.
-- [ ] An agent drives the native window end to end, not only the browser.
+- [x] `task test` runs in seconds and needs nothing running. (08/10, Linux: `test-go` 23 s uncached, `test-ui`
+  1.4 s, `e2e` 18 s, all pass; e2e starts its own djinn in a temporary folder)
+- [x] `task e2e` runs the existing Playwright specs against the real Go server. (08/10: 13 specs pass against
+  `bin/djinn-e2e up --browser`)
+- [x] The window smoke test runs on Linux. (`go tool task check-window` on WebKitGTK, 08/10, recorded in T01; not
+  run again here: it opens a window)
+- [x] An agent drives the native window end to end, not only the browser. (`go tool task e2e-native` on Linux,
+  recorded in T06; not run again here: it opens a window)

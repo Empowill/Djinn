@@ -2,7 +2,7 @@
 id: 01a1188a-d9b7-7999-a9e1-6350a72eb1f8
 code: T18
 phase: 2
-status: open
+status: in-progress
 ---
 
 # T18 · Antigravity as a worker provider
@@ -76,7 +76,10 @@ Codex, within what Google's terms allow.
 ## Done when
 - [x] A worker can be started with `agy` in a worktree (`djinn task spawn --provider antigravity`), its
   stream-json events shown like Claude's. Not yet run against a real model.
-- [ ] A first real run, signed in by ADC, captured into fixtures replacing the supposed ones.
+- [ ] A first real run, signed in by ADC, captured into fixtures replacing the supposed ones. (needs: a person
+  signed in to Antigravity, and a paid run)
 - [ ] Checked on a real run: what plan mode and `--sandbox` really block in headless mode, and whether settings
   allow-rules apply headless (the documentation says granted tools run; the 1.3.0 binary says they do not).
-- [ ] The README lists Antigravity as optional, with the rules above.
+  (needs: the same real run)
+- [ ] The README lists Antigravity as optional, with the rules above. (needs: an agent; the README names Codex
+  and Claude Code only)

@@ -2,7 +2,7 @@
 id: 01a11865-73d2-7c81-8e78-bfa31aa20487
 code: T12
 phase: 1
-status: open
+status: in-progress
 ---
 
 # T12 · Updates from inside the app
@@ -47,10 +47,13 @@ release pipeline per operating system: the update reuses `go install`.
 - [x] The Djinn in use updates from a checkout on one click, without losing the session: `go tool task install`
       leaves the running Djinn alone, which offers the new one; "Update" (or `djinn update`) restarts on it and
       reopens the lead terminals. Linux (tested, and run by hand on real binaries); Windows vetted, not run.
-- [ ] A test release `v0.0.1-test` installs with one `go install` line on Linux.
+- [ ] A test release `v0.0.1-test` installs with one `go install` line on Linux. (needs: a maintainer to push the
+  tag; the repository has no tag yet)
 - [ ] A newer tag shows the offer in the window; the click installs and restarts on Linux,
-      macOS and Windows.
-- [ ] A `(devel)` build never offers an update.
+      macOS and Windows. (needs: the release check, not built (only the local path is watched); then a Mac and
+      a Windows machine)
+- [x] A `(devel)` build never offers an update. (`moduleVersion` keeps a checkout build `dev`, `TestModuleVersion`;
+      `newUpdater` returns no updater for `dev`, `cmd/djinn/update.go`)
 
 ## Decided along the way
 - **The local install comes first.** The Djinn we use is built from a checkout (`go tool task install`), so the

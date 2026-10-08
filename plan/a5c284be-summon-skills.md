@@ -2,7 +2,7 @@
 id: 01a118f2-6c13-7079-8190-b542a5c284be
 code: T23
 phase: 3
-status: open
+status: in-progress
 ---
 
 # T23 · Summon a skill from another project
@@ -24,7 +24,8 @@ project of a wish, and the skills each one holds: it can bring one where it is m
 
 ## Done when
 - [ ] A skill of one project is summoned into another, and an agent there uses it. Djinn hands
-  it to each agent (tested with fake agents); a real agent using it is still to see.
+  it to each agent (tested with fake agents); a real agent using it is still to see. (needs: a real run of each
+  agent, paid)
 - [x] A change to the source skill reaches the target without a copy: a link to its folder.
 - [x] Unsummoning leaves the target project as it was: nothing was ever written there.
 

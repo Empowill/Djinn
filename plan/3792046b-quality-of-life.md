@@ -2,15 +2,17 @@
 id: 01a1184f-cf1d-7255-b174-2c913792046b
 code: T09
 phase: 3
-status: open
+status: in-progress
 ---
 
 # T09 · Quality of life and clean-up
 
 Delegable, not needed to start testing. Given to Djinn itself once phase 2 is done.
 
-- [ ] The lead's terminal pinned at the bottom of the flight plan: moved to T21, in phase 2.
-- [ ] An inbox for instructions added while an agent works, with acknowledgements.
+- [x] The lead's terminal pinned at the bottom of the flight plan: moved to T21, in phase 2. (done in T21;
+  e2e "the terminal shows at the bottom and runs a command")
+- [ ] An inbox for instructions added while an agent works, with acknowledgements. (needs: an agent; workers
+  take `Send`, no service exposes it)
 - [ ] **Djinn's own icon in the system.** The logo shown in the window is also the app's icon:
   the dock, the task bar, the window switcher. Linux: an icon and a `.desktop` file in the
   user's folders (no sudo). macOS and Windows: the icon embedded in the build. Simple, tested on
@@ -23,12 +25,12 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     `DESKTOP=yes`. `desktop-file-validate` passes; GTK finds the icon at every size.
   - [x] Linux window: it had no icon. GTK 3 silently drops a window icon that does not fit one X11
     request (512 px or more), and the app gave 1024 px. The window gets `icon-256.png`.
-  - [ ] Seen in GNOME's Activities and dock after an install (by hand).
+  - [ ] Seen in GNOME's Activities and dock after an install (by hand). (needs: a person on GNOME)
   - [ ] Windows: the release build makes the `.exe` icon resource (`go-winres`, from
     `build/icon.ico`, into `cmd/djinn/*.syso`, not committed). Built here for amd64; to check by hand
-    in Explorer and the task bar on a real Windows.
+    in Explorer and the task bar on a real Windows. (needs: a Windows machine)
   - [ ] macOS: the Dock shows the icon at run time; Finder and Launchpad need an `.app` bundle with
-    `build/icon.icns` (T19).
+    `build/icon.icns` (T19). (needs: a Mac, and the bundle of T19)
 - [ ] **The page keeps your place.** When something above what you are reading changes (a
   question answered and removed, a section added), the window stays on what you read: it never
   jumps up. Browsers do it by scroll anchoring; WebKit, the engine of the window on macOS and
@@ -40,13 +42,15 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     `CSS.supports("overflow-anchor", "auto")` is false, on the wish's scroller.
   - [x] `e2e/wish-scroll.spec.ts`: a question out of sight above the one read opens, then is answered;
     the one read does not move by more than 1 px, any frame. Twice: Chromium's anchoring, and the script.
-  - [ ] Checked in the window, on Linux and macOS (by hand).
-- [ ] MCP, as a thin layer over the command line.
-- [ ] Native notifications and a global shortcut.
-- [ ] OpenAPI documentation of the public methods.
-- [ ] Analytics with DuckDB: who uses what, for how long.
-- [ ] Remove Electron and the code it no longer needs.
-- [ ] CPU limits per worker on Linux (systemd delegation).
-- [ ] Shared team settings versioned in the repository.
-- [ ] macOS specifics: no cgroups, pause by signal.
-- [ ] Later, after v1: trusted machines and distributed work, see T15.
+  - [ ] Checked in the window, on Linux and macOS (by hand). (needs: a person, on Linux and on a Mac)
+- [ ] MCP, as a thin layer over the command line. (needs: an agent)
+- [ ] Native notifications and a global shortcut. (needs: an agent; `NotifyQuestion` shows nothing yet)
+- [ ] OpenAPI documentation of the public methods. (needs: an agent)
+- [ ] Analytics with DuckDB: who uses what, for how long. (needs: an agent, after a decision on what to collect)
+- [ ] Remove Electron and the code it no longer needs. (`electron/` is gone, be8f52c; needs: an agent, for
+  `ELECTRON_SKIP_BINARY_DOWNLOAD` in `.github/workflows/ci.yml` and the Electron passages of
+  `docs/agent-protocol.md`)
+- [ ] CPU limits per worker on Linux (systemd delegation). (needs: an agent, on a systemd Linux)
+- [ ] Shared team settings versioned in the repository. (needs: an agent; only `.agents/permissions.txtpb` exists)
+- [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check)
+- [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)

@@ -2,7 +2,7 @@
 id: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76
 code: T07
 phase: 2
-status: open
+status: in-progress
 ---
 
 # T07 · The orchestrator
@@ -50,7 +50,8 @@ status: open
 - [x] `djinn task spawn` creates the worktree and runs a worker with a fake provider.
 - [x] Two workers with overlapping scopes never run together.
 - [x] A gate waits while the machine is under pressure, and says why.
-- [ ] Djinn runs its own phase 3 tasks.
+- [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
+  model, and a person who confirms it)
 
 ## Decided along the way
 - **What is built** (`internal/harness`, `TaskService` in `api/plan/v1`): `spawn`, `list`, `get`, `stop`,

@@ -2,7 +2,7 @@
 id: 01a1184f-cf15-74c4-bd3f-4d72fe63ed30
 code: T01
 phase: 1
-status: open
+status: in-progress
 ---
 
 # T01 · The native window
@@ -31,12 +31,18 @@ interface, without Node or Electron at runtime.
   the path of each system (on Linux: median latency under 1 ms, p90 under 2 ms).
 
 ## Done when
-- [ ] `djinn up` opens the window on Linux and macOS, rendering compared.
+- [ ] `djinn up` opens the window on Linux and macOS, rendering compared. (needs: a Mac, and a person to compare
+  the rendering with Linux)
 - [x] A server stream reaches the window under WebKitGTK (`check-window`, 08/10).
-- [ ] Same under WKWebView (macOS) and WebView2 (Windows).
-- [ ] `djinn up --browser` serves the interface; `task e2e` drives it.
-- [ ] The interface starts, adds a project and finds it again after a restart.
-- [ ] Editing React or Go during `task dev` shows up without restarting by hand.
+- [ ] Same under WKWebView (macOS) and WebView2 (Windows). (needs: `go tool task check-window` on a Mac and on
+  Windows)
+- [x] `djinn up --browser` serves the interface; `task e2e` drives it. (`go tool task e2e`, 08/10: 13 Playwright
+  specs pass against `djinn up --browser`, started by `e2e/global-setup.ts`)
+- [x] The interface starts, adds a project and finds it again after a restart. (08/10: `djinn project add`, stop
+  `djinn up` by its PID, start it again, `djinn project list` finds it; the window adds through
+  `ProjectService.Add` in `src/wish-dialogs.tsx`; `TestProjectAdd`)
+- [ ] Editing React or Go during `task dev` shows up without restarting by hand. (needs: a `dev` task, which
+  `Taskfile.yml` does not have yet: an agent can write it, a person checks the reload in the window)
 
 ## Open questions
 - Ubuntu 22.04 builds with the `gtk3` tag, which Wails drops in v3.1. When do we move to GTK 4? *Recommendation: before upgrading Wails past v3.0.x.*

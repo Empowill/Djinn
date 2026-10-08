@@ -4,6 +4,11 @@
 front matter holds the full id, a short code (`T01`) to say it out loud, the phase and the
 status. Each file says what to do, when it is done, and the questions still open.
 
+**Status**: `open` when no "Done when" box is checked, `in-progress` when some are, `done` when all are. A box is
+checked only with its proof in parentheses (a named test, a command's output); a box that needs a person, a machine
+or a real model stays unchecked and says so (`needs: …`). The README checks a task when it is `done`, and marks it
+"(in progress)" when it is `in-progress`.
+
 The checklist in the main [README](../README.md#roadmap-to-v1) tracks progress; there is no
 other tracker and no cloud service. A new task is a new file here, with a fresh UUIDv7.
 
