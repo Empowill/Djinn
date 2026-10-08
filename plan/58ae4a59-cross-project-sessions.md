@@ -22,7 +22,7 @@ projects it touches, and a project is not necessarily a Git repository.
 - **Opening a wish is a moment, not a command.** You say it ("open a new wish: …"); the lead
   recognizes it and opens the wish in Djinn (`djinn wish make`): a short title, the projects it
   touches, the first questions. The new wish shows at once in the flight plan, below the others
-  by rank. A fourth active wish waits (three at most).
+  by rank. A fourth active wish is refused (three at most): pause or grant one, or make it paused.
 - **Djinn is an orchestration layer, kept apart from the projects it works on.** One central
   store for the machine (missions, tasks, questions, journal) and one folder per project for its
   configuration and index, both in Djinn's data folder. Djinn writes nothing into a project and
@@ -52,8 +52,8 @@ projects it touches, and a project is not necessarily a Git repository.
   it, so that an answer, a task or a block goes back to the right wish. The machine and the
   gates are shared by all wishes; the rank decides who goes first.
 - **Three active wishes at most.** It protects the user's attention, not the machine: granting
-  every wish at once means the framework was misunderstood. A fourth waits until one is granted
-  or paused. How many workers run is a separate limit, set by the machine (T17), with one
+  every wish at once means the framework was misunderstood. A fourth is refused until one is
+  granted or paused. How many workers run is a separate limit, set by the machine (T17), with one
   orchestrator for all wishes.
 
 ## What we want
@@ -74,6 +74,12 @@ projects it touches, and a project is not necessarily a Git repository.
   does not run, and attaches to it if it already runs.
 - [ ] Without a lead session, `djinn wish resume` starts a new lead from a brief built out of the store (plan, open
   questions, decisions, journal). Today it opens a shell in the wish's first project and says there is no session.
+- [x] Three active wishes at most: a fourth is refused by the lamp, with the ways out (pause, grant, `--paused`).
+- [x] The active wishes are ranked by hand (`djinn wish move <wish> --to 1`); `plan.ActiveWishes` gives them in
+  order, for the scheduler (T07).
+- [x] Djinn proposes a ready wish and never grants it: only `djinn wish grant`, or "My wish is granted" in the
+  window, does.
+- [ ] The window ranks the wishes by dragging them, and shows them in one flight plan (T03).
 
 ## Decided along the way
 - **The export format is a proto**, `WishExport` in `api/plan/v1`, version 1: the wish, its project
@@ -117,6 +123,27 @@ projects it touches, and a project is not necessarily a Git repository.
   outside it: close it there first.
 - **Closing the window does not quit Djinn**: it is minimised (hidden on macOS); "Quit Djinn" in the tray menu,
   Ctrl+Q (Cmd+Q) in the window, or stopping `djinn up` quits.
+
+- **A wish has a state, in the lamp**: `Wish.state`, active, paused or granted; a wish stored before states is
+  active. `djinn wish pause`, `djinn wish activate` (it also reopens a granted wish), `djinn wish make --paused`. A
+  fourth active wish is refused (`FailedPrecondition`), with the active ones and the ways out. An import that would
+  be a fourth comes in paused, with a note. The limit of workers is another one, the machine's (T17).
+- **The rank**: `Wish.rank`, from 1, without gaps; 0 for a paused or granted wish. A new or activated wish goes
+  last; `djinn wish move <wish> --to n` moves one, and beyond the last means last. An import that replaces a wish
+  keeps its place. `djinn wish list` gives the active wishes by rank, then the paused ones, then the granted ones.
+  The rank stays on the machine: an export leaves it out.
+- **Ready to grant** is computed by the lamp on every read, never stored nor exported (`Wish.ready`): the wish has
+  tasks, each one done or stopped by the user, and no open question. A task waiting for an answer, failed,
+  interrupted, planned or running keeps it from being ready. Gates do not exist yet (T07): a gate waiting will
+  count when they do. A granted wish is never proposed again.
+- **Granting is the user's act**: `djinn wish grant <wish>` (`WishService.Grant`), ready or not; granting twice
+  changes nothing. The rights a wish gives its workers, `djinn wish grant` until now, are `djinn wish allow`
+  (`WishService.Allow`, `Wish.allowances`, `Allowance`), with the same field numbers; `WishServiceGrantRequest`
+  reserves the numbers of the old project and mode, so an old journal entry reads as a grant request without them.
+- **The window, through the legacy bridge until T03**: an imported mission carries `fromWish`. Its step awaits you
+  only when the wish is ready, with "My wish is granted", which calls `Grant`; a granted wish's step is approved.
+  A wish's documents no longer make a "Your move" on their own. The bridge reads the readiness at import: the
+  mission does not follow the wish afterwards.
 
 ## Open questions
 - The window shows one terminal at a time: `wish resume` switches it to the lead's, and a reload goes back to the
