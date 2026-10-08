@@ -240,6 +240,8 @@ type Wishes struct {
 	// Pages renders the wishes' pages and keeps the synced ones up to date; nil where djinn up does not run them,
 	// and Sync is then unavailable.
 	Pages *Pages
+
+	watch watchers // the open Watch streams
 }
 
 func (w *Wishes) Make(

@@ -51,10 +51,15 @@ for (const engine of ["native", "script"] as const)
 
     await page.goto(process.env.DJINN_URL!);
     await expect(
-      page.locator(".app-statusbar").getByText("Sauvegarde locale"),
-    ).toBeVisible();
+      page
+        .locator(".sidebar")
+        .getByRole("button", { name: "Importer un souhait" }),
+    ).toBeEnabled();
     const chooser = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "Importer un souhait" }).click();
+    await page
+      .locator(".sidebar")
+      .getByRole("button", { name: "Importer un souhait" })
+      .click();
     await (await chooser).setFiles(file);
 
     const scroller = page.locator(".mission-scroll");

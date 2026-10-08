@@ -1,6 +1,7 @@
 import { useState, isValidElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useDjinn } from "./data/djinn";
 import { MermaidDiagram } from "./mermaid-diagram";
 import "./agent-chat.css";
 import { t } from "./i18n";
@@ -50,6 +51,7 @@ function MarkdownCode({ children }: { children?: ReactNode }) {
   );
 }
 export function MarkdownBody({ text }: { text: string }) {
+  const djinn = useDjinn();
   return (
     <div className="ac-markdown">
       <ReactMarkdown
@@ -66,10 +68,12 @@ export function MarkdownBody({ text }: { text: string }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => {
-                  if (window.djinn) {
-                    e.preventDefault();
-                    void window.djinn.openExternal(href);
-                  }
+                  // In the window, the system's browser opens the link.
+                  if (!djinn) return;
+                  e.preventDefault();
+                  void djinn.clients.ui
+                    .openExternal({ url: href })
+                    .catch(() => window.open(href, "_blank", "noopener"));
                 }}
               >
                 {children}

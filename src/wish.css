@@ -1,0 +1,177 @@
+/* What the screens on the services add to Clément's styles (styles.css): the same tokens, the same lines. */
+.wish-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.wish-welcome {
+  justify-content: center;
+}
+.wish-welcome .hero-meta {
+  margin-top: var(--space-4);
+}
+
+/* The side panel: ranks, the three places, the sub-lists. */
+.wish-nav[draggable="true"] {
+  cursor: grab;
+}
+.wish-nav.dragged {
+  opacity: 0.4;
+}
+.wish-rank {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  font: var(--font-size-body) var(--mono);
+  color: var(--muted-dim);
+}
+.nav-counter.full {
+  background: var(--accent);
+  color: var(--bg);
+}
+.sidebar-section-label.sub {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--space-1);
+  padding: 12px 10px 6px;
+  font-size: var(--font-size-body);
+  letter-spacing: 0.5px;
+  color: var(--muted-dim);
+}
+.wish-list {
+  flex: 0 0 auto;
+}
+
+/* Sections of a wish. */
+.wish-section {
+  margin-top: 28px;
+}
+.wish-grant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* A task and its events. */
+.wish-task {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  margin-bottom: var(--space-2);
+}
+.wish-task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-2);
+}
+.wish-task-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 11px 14px;
+  text-align: left;
+}
+.wish-task-heading strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.wish-task-meta {
+  display: flex;
+  gap: var(--space-3);
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.wish-task-note {
+  margin: 0;
+  padding: 0 14px 11px 34px;
+  color: var(--muted);
+}
+.wish-task-note.error {
+  color: #e0a0a0;
+}
+.wish-task-events {
+  border-top: 1px solid var(--line);
+  padding: var(--space-3) 14px;
+  max-height: 420px;
+  overflow-y: auto;
+  font: var(--font-size-body) var(--mono);
+}
+.wish-task-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--muted-dim);
+  margin-bottom: var(--space-2);
+}
+.wish-event {
+  display: flex;
+  gap: var(--space-2);
+  padding: 3px 0;
+  color: #cfcfcf;
+}
+.wish-event svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--muted-dim);
+}
+.wish-event-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wish-event.kind-4,
+.wish-event.kind-6,
+.wish-event.kind-8 {
+  color: var(--muted);
+}
+.wish-event.kind-7 {
+  color: #e0a0a0;
+}
+
+/* Blocks: the lead's free content. */
+.wish-block {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  padding: 18px 20px;
+  margin-bottom: var(--space-3);
+}
+.wish-block h3 {
+  margin: 4px 0 10px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.wish-block-raw {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: var(--font-size-body) var(--mono);
+}
+
+/* Dialogs. */
+.wish-projects {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.wish-projects legend {
+  margin-bottom: var(--space-2);
+  color: var(--muted);
+}
+.wish-project-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

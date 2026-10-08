@@ -93,6 +93,8 @@ const (
 	WishServiceRenderProcedure = "/plan.v1.WishService/Render"
 	// WishServiceSyncProcedure is the fully-qualified name of the WishService's Sync RPC.
 	WishServiceSyncProcedure = "/plan.v1.WishService/Sync"
+	// WishServiceWatchProcedure is the fully-qualified name of the WishService's Watch RPC.
+	WishServiceWatchProcedure = "/plan.v1.WishService/Watch"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -523,6 +525,10 @@ type WishServiceClient interface {
 	// change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
 	// republish it where you put it last time. Delete the file to stop.
 	Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error)
+	// Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
+	// itself: the first message names everything, then each change follows; changes close together come as one. A
+	// task's events come from TaskService.Watch.
+	Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest]) (*connect.ServerStreamForClient[v1.WishServiceWatchResponse], error)
 }
 
 // NewWishServiceClient constructs a client for the plan.v1.WishService service. By default, it uses
@@ -632,6 +638,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Sync")),
 			connect.WithClientOptions(opts...),
 		),
+		watch: connect.NewClient[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse](
+			httpClient,
+			baseURL+WishServiceWatchProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Watch")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -653,6 +665,7 @@ type wishServiceClient struct {
 	move       *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
 	render     *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
 	sync       *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
+	watch      *connect.Client[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse]
 }
 
 // Make calls plan.v1.WishService.Make.
@@ -735,6 +748,11 @@ func (c *wishServiceClient) Sync(ctx context.Context, req *connect.Request[v1.Wi
 	return c.sync.CallUnary(ctx, req)
 }
 
+// Watch calls plan.v1.WishService.Watch.
+func (c *wishServiceClient) Watch(ctx context.Context, req *connect.Request[v1.WishServiceWatchRequest]) (*connect.ServerStreamForClient[v1.WishServiceWatchResponse], error) {
+	return c.watch.CallServerStream(ctx, req)
+}
+
 // WishServiceHandler is an implementation of the plan.v1.WishService service.
 type WishServiceHandler interface {
 	// Make a wish.
@@ -787,6 +805,10 @@ type WishServiceHandler interface {
 	// change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
 	// republish it where you put it last time. Delete the file to stop.
 	Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error)
+	// Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
+	// itself: the first message names everything, then each change follows; changes close together come as one. A
+	// task's events come from TaskService.Watch.
+	Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest], *connect.ServerStream[v1.WishServiceWatchResponse]) error
 }
 
 // NewWishServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -892,6 +914,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Sync")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceWatchHandler := connect.NewServerStreamHandler(
+		WishServiceWatchProcedure,
+		svc.Watch,
+		connect.WithSchema(wishServiceMethods.ByName("Watch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.WishService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WishServiceMakeProcedure:
@@ -926,6 +954,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceRenderHandler.ServeHTTP(w, r)
 		case WishServiceSyncProcedure:
 			wishServiceSyncHandler.ServeHTTP(w, r)
+		case WishServiceWatchProcedure:
+			wishServiceWatchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -997,6 +1027,10 @@ func (UnimplementedWishServiceHandler) Render(context.Context, *connect.Request[
 
 func (UnimplementedWishServiceHandler) Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Sync is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest], *connect.ServerStream[v1.WishServiceWatchResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Watch is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.

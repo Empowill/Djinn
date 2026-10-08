@@ -79,7 +79,8 @@ projects it touches, and a project is not necessarily a Git repository.
   order, for the scheduler (T07).
 - [x] Djinn proposes a ready wish and never grants it: only `djinn wish grant`, or "My wish is granted" in the
   window, does.
-- [ ] The window ranks the wishes by dragging them, and shows them in one flight plan (T03).
+- [ ] The window ranks the wishes by dragging them (done in `w27-ui-switch`, T03), and shows them in one flight plan
+  (not yet: one wish at a time).
 
 ## Decided along the way
 - **The export format is a proto**, `WishExport` in `api/plan/v1`, version 1: the wish, its project

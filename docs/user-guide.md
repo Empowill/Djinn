@@ -159,16 +159,11 @@ cloud infrastructure in this version.
 ## Checking
 
 ```sh
-npm run build
-npm test
-npm run test:e2e
-node scripts/electron-smoke.cjs
+go tool task test
 ```
 
-The Electron tests use a temporary data folder and a deterministic fake provider, so the process
-flows are checked without calling a paid model. The current README screenshots are in
-`docs/screenshots/readme/`. The Chromium runs check the review at 1440 and 1024 px, the
-visualizations, the notifications and switching providers.
+The tests use a temporary data folder and a fake provider that plays a script, so the flows are
+checked without calling a paid model.
 
 ## Current scope
 

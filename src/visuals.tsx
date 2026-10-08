@@ -1,7 +1,8 @@
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import { useId, useState, useEffect } from "react";
-import type { AgentStatus } from "./types";
 import { t } from "./i18n";
+
+type AgentStatus = "queued" | "running" | "blocked" | "done" | "error";
 export const agentColor = (id: string, index = 0) =>
   id === "lead"
     ? "#bbc0c8"

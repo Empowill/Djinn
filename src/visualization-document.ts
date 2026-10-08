@@ -1,4 +1,4 @@
-import { css as themeCss } from "../electron/visualization-theme.json";
+import { css as themeCss } from "./visualization-theme.json";
 import { t } from "./i18n";
 // Keep the browser fallback as restrictive as the native document protocol.
 export const VISUALIZATION_POLICY =

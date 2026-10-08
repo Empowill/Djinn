@@ -92,53 +92,11 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 _Screenshots of the built-in demonstration, with fictional data._
 
-## Local development of the alpha
+## Local development
 
-These commands are for contributors who want to explore or develop this experimental version.
-
-```sh
-npm ci
-npm run desktop
-```
-
-Install and sign in to at least one CLI: Codex or Claude Code. Djinn uses your local connection to the provider; the app never asks for an API key.
-
-The **Projects space** wish lets you explore the interface without calling a model or changing a project. The other journeys are under development.
-
-### Build the app
-
-```sh
-npm run build
-npm start
-```
-
-Create a local macOS package:
-
-```sh
-npm run package:local
-npm run verify:local-package
-```
-
-The bundle lands in `release/v<version>/mac-arm64/Djinn.app`. To prepare an update while an older version is working, use `DJINN_PACKAGE_SUFFIX=recovery` with both commands, then open the new package after stopping the old instance.
-
-## Your projects stay local
-
-The state is saved in the Electron user folder. A pause keeps the context; the `.djinn.json` export lets you resume a wish on another machine. Human validations stay explicit, review and delivery included. The CLIs' permissions stay on.
-
-Tool output shown in the history is bounded so that it does not swamp the save. The wish journal keeps the full output; large old saves are compacted, with a backup copy, before they are replaced.
-
-Build output, bundles, caches, logs and historical exports are kept out of Git. The repository only includes the small demonstration session the tests need.
-
-## Checking
-
-```sh
-npm test
-npm run build
-npm run test:e2e
-node scripts/electron-smoke.cjs
-```
-
-The native tests use controlled providers; the Chromium tests exercise the interface, resuming and the artifacts. They call no paid model.
+To build and test Djinn, see [`CONTRIBUTING.md`](CONTRIBUTING.md): `go tool task build`, then `bin/djinn up`;
+`go tool task test` runs every test, with no paid model. The window reads its wishes, tasks and questions from the
+djinn it runs in: the store stays on your machine, in Djinn's data folder.
 
 [User guide](docs/user-guide.md) · [Agent protocol](docs/agent-protocol.md) · [Adaptable wishes](docs/adaptable-wishes.md)
 

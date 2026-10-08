@@ -24,7 +24,11 @@ test("the interface loads from djinn", async ({ page }) => {
   expect(new URL(page.url()).search).toBe("");
   await expect(page).toHaveTitle(/Djinn$/);
   await expect(
-    page.getByRole("heading", { name: "Espace projets" }),
+    page.locator(".sidebar").getByRole("button", { name: "Nouveau souhait" }),
+  ).toBeVisible();
+  // The page follows djinn: the watch stream answers.
+  await expect(
+    page.locator(".app-statusbar").getByText("En direct"),
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
