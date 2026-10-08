@@ -55,6 +55,10 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 			args = append(args, "--sandbox")
 		}
 	}
+	if spec.SkillsDir != "" {
+		// A workspace folder's .agents/skills is a customization root (the documentation in the agy 1.3.0 binary).
+		args = append(args, "--add-dir", spec.SkillsDir)
+	}
 	if spec.Resume != "" {
 		if spec.Fork {
 			return nil, errors.New("agy cannot fork a conversation: resume it, or start a new one")

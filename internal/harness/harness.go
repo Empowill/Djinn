@@ -351,7 +351,9 @@ func (h *Harness) launch(
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: task.GetModel(),
 		MaxBudgetUSD: task.GetMaxBudgetUsd(),
 	}
-	err := h.start(r, provider, spec, "started "+short(task.GetProvider())+" "+where+", "+accessText(task, prep.question))
+	spec.Skills, spec.SkillsDir = h.summon(ctx, r, project)
+	err := h.start(r, provider, spec, "started "+short(task.GetProvider())+" "+where+", "+accessText(task, prep.question)+
+		skillsText(spec.Skills))
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrReadOnly) && task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
@@ -600,6 +602,8 @@ func (h *Harness) end(r *run, res Result) {
 		text += ": " + t.GetError()
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+	// The links to the summoned skills go with the worker; a worker started again makes them anew.
+	_ = os.RemoveAll(skillsDir(h.home, r.id))
 	h.forget(r)
 }
 

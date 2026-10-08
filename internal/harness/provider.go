@@ -44,6 +44,24 @@ type Spec struct {
 	// Env holds variables added to the environment Djinn passes on to the worker. Djinn never reads the
 	// environment it passes, nor records it.
 	Env []string
+	// Skills are the skills the project summons from other projects, found on this machine. The provider shows
+	// them to its agent by the agent's own path, and writes nothing in the project nor in the user's folders.
+	Skills []Skill
+	// SkillsDir is a folder of Djinn's own holding .claude/skills/<name> and .agents/skills/<name>, a link to each
+	// skill's folder in its source project; empty without skills, or when the links could not be made.
+	SkillsDir string
+}
+
+// Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.
+type Skill struct {
+	// Name is the skill's folder name.
+	Name string
+	// Source is where it comes from: <project>/<skill>.
+	Source string
+	// Dir is its folder in the source project, absolute.
+	Dir string
+	// Description is what it does, from its SKILL.md.
+	Description string
 }
 
 // Worker is one running agent.

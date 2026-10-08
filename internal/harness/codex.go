@@ -78,6 +78,11 @@ func (c Codex) threadRequest(spec Spec) (string, map[string]any) {
 	if spec.Model != "" {
 		params["model"] = spec.Model
 	}
+	if text := skillsInstructions(spec.Skills); text != "" {
+		// codex finds skills only in .agents/skills from the working folder up to the repository's root, and in
+		// the user's folders: it is told where the summoned ones are instead.
+		params["developerInstructions"] = text
+	}
 	if spec.Resume == "" {
 		return "thread/start", params
 	}
