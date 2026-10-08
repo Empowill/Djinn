@@ -23,6 +23,20 @@ Djinn is a local desktop app to work with **Codex** and **Claude Code**: a reada
 
 ![A wish in Djinn: steps, team and decisions](docs/screenshots/readme/mission.png)
 
+## Install
+
+**Coming with the first release: no release exists yet, so these lines do not work today.** One line, no sudo:
+the binary for your system, checked against its SHA-256 sum, in your own folders. Without a binary that fits, it
+falls back on `go install`.
+
+```sh
+curl -fsSL https://github.com/Empowill/Djinn/releases/latest/download/install.sh | sh    # macOS, Linux
+```
+
+```powershell
+irm https://github.com/Empowill/Djinn/releases/latest/download/install.ps1 | iex         # Windows
+```
+
 ## Roadmap to v1
 
 Djinn is tracked here, with no other tool: one box per task, one file per task in

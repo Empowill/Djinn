@@ -133,3 +133,53 @@ tasks:
       - git -C .release tag {{.VERSION}}
       - 'echo "Tagged {{.VERSION}}. Push it with: git push origin {{.VERSION}}"'
 
+  release-build:
+    desc: "Build one release archive of djinn into bin/release/, from the interface already in dist/ (a release tag carries it; else run task ui first): task release-build VERSION=v0.1.0 [GOOS=windows GOARCH=arm64 CGO=0]"
+    requires:
+      vars: [VERSION]
+    vars:
+      GOOS: "{{.GOOS | default OS}}"
+      GOARCH: "{{.GOARCH | default ARCH}}"
+      # Windows has the window without CGO; macOS and Linux need it, and a build without it opens the browser.
+      CGO: '{{.CGO | default (eq .GOOS "windows" | ternary "0" "1")}}'
+      TAGS: '{{if and (eq .GOOS "linux") (eq .CGO "1")}}{{.WINDOW_TAGS}}{{end}}'
+      # The name tells the user which one to take: gtk4 needs WebKitGTK 6.0, browser has no window.
+      VARIANT: '{{if and (eq .GOOS "linux") (eq .CGO "1") (ne .WINDOW_TAGS "gtk3")}}_gtk4{{else if and (ne .GOOS "windows") (eq .CGO "0")}}_browser{{end}}'
+      NAME: "djinn_{{.GOOS}}_{{.GOARCH}}{{.VARIANT}}"
+    preconditions:
+      - sh: test -f dist/index.html
+        msg: "dist/ holds no built interface: run go tool task ui first, or build from a release tag"
+    cmds:
+      # The target goes on the build alone: the packing below runs on this machine.
+      - GOOS={{.GOOS}} GOARCH={{.GOARCH}} CGO_ENABLED={{.CGO}} go build -trimpath -tags '{{.TAGS}}' -ldflags "-s -w -X main.version={{.VERSION}}" -o "bin/release/{{.NAME}}/djinn{{if eq .GOOS "windows"}}.exe{{end}}" ./cmd/djinn
+      - go run ./tools/releasepack pack bin/release/{{.NAME}}
+
+  release-build-macos:
+    desc: "Build the universal macOS release archive (arm64 and amd64 joined by lipo) into bin/release/, from the interface in dist/: task release-build-macos VERSION=v0.1.0. macOS only"
+    platforms: [darwin]
+    requires:
+      vars: [VERSION]
+    vars:
+      DIR: bin/release/djinn_darwin_universal
+    env:
+      CGO_ENABLED: "1"
+      # Go 1.26 runs on macOS 12 and later: the C part of the window must not ask for more.
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+    preconditions:
+      - sh: test -f dist/index.html
+        msg: "dist/ holds no built interface: run go tool task ui first, or build from a release tag"
+    cmds:
+      - for: [arm64, amd64]
+        cmd: GOARCH={{.ITEM}} go build -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o "bin/release/.darwin_{{.ITEM}}/djinn" ./cmd/djinn
+      - mkdir -p {{.DIR}}
+      - lipo -create -output {{.DIR}}/djinn bin/release/.darwin_arm64/djinn bin/release/.darwin_amd64/djinn
+      # Signing and notarization come here, once an Apple Developer ID exists (plan/71f9c331-releases.md):
+      #   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" {{.DIR}}/djinn
+      #   then the archive goes through `xcrun notarytool submit --wait`; a bare binary cannot be stapled.
+      - go run ./tools/releasepack pack {{.DIR}}
+
+  release-sums:
+    desc: Write bin/release/SHA256SUMS over the release archives
+    cmds:
+      - go run ./tools/releasepack sums bin/release
+

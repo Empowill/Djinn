@@ -33,7 +33,7 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
 | Linux | amd64, arm64 | CGO, `-tags gtk3` (WebKitGTK 4.1) | yes, with the runtime libraries |
 | Linux | amd64, arm64 | CGO, GTK4 (WebKitGTK 6.0) | yes, on recent systems; the only one left after Wails 3.1 |
 | macOS | universal (arm64 + amd64) | CGO, signed and notarized | yes |
-| Windows | amd64, arm64 | no CGO | yes |
+| Windows | amd64, arm64 | no CGO, cross-compiled from Linux | yes |
 | any | any | `go install`, no CGO | Windows only; the browser elsewhere |
 
 ## What we want
@@ -49,6 +49,33 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
 - [ ] A fresh account with no administrator rights installs a binary and opens the window on
   Linux (with the runtime libraries), macOS and Windows.
 - [ ] An update from inside the app replaces the binary in place (T12).
+
+## Decided along the way
+- **The CI is GitHub Actions.** `.github/workflows/ci.yml`, on every pull request and every push to `main`: `go tool
+  task lint` and `go tool task test` (Go, interface, end-to-end in headless Chromium) on Linux; `test-go` on macOS and
+  Windows. Windows reports without blocking until it is green once (T11).
+- **A tag builds, a person publishes.** `.github/workflows/release.yml`, on a `v*` tag: it checks that the tag carries
+  `dist/` and that Djinn builds without CGO (the `go install` fallback), builds every target, and opens a **draft**
+  release with the archives, `SHA256SUMS`, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md` and the install scripts. A
+  maintainer reads it and publishes it; only then is it the latest. A tag with a `-` (`v0.0.1-test`) is a pre-release.
+- **Every step runs by hand, the CI adds nothing.** `go tool task release-build VERSION=… [GOOS= GOARCH= CGO=]`
+  builds one archive into `bin/release/` (Windows from Linux too), `release-build-macos` the universal one (`lipo`,
+  macOS only), `release-sums` the sums. `tools/releasepack` packs and sums, portable. They use the `dist/` already
+  there: a tag carries it, a checkout runs `go tool task ui` first.
+- **Asset names carry no version**: `djinn_<os>_<arch>[_gtk4].tar.gz`, `djinn_windows_<arch>.zip`,
+  `djinn_darwin_universal.tar.gz`, each with a top folder holding `djinn` and the notices. So
+  `releases/latest/download/<name>` always works, with no API call. The version is the tag, and `djinn version`
+  prints it (`-X main.version`).
+- **Linux GTK 3 builds on Ubuntu 22.04**, the oldest supported: the binary needs glibc 2.34 or later. **GTK 4 builds on
+  Ubuntu 24.04, as an experiment**: never built locally yet, it may fail without failing the release. arm64 uses
+  GitHub's arm runners, no cross-compiler.
+- **macOS ships unsigned for now.** The steps to sign and notarize are written, commented, in the workflow and in
+  `release-build-macos`, with the secrets they need. A binary downloaded by `curl` gets no quarantine flag, so
+  `install.sh` works unsigned; a browser download is blocked until allowed in System Settings.
+- **Actions are pinned by commit**, with their version in a comment. `actionlint` (with `shellcheck`) checks the
+  workflows: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`.
+- **Sizes**, built locally at `-s -w`: Linux amd64 gtk3 36.8 MB (archive 12.9 MB), Windows amd64 37.3 MB (13.1 MB),
+  Windows arm64 35.3 MB (12.1 MB), without CGO (`go install`) 33.1 MB on Linux amd64 (11.5 MB).
 
 ## Open questions
 - Linux window without sudo: a binary per release, or a package that carries WebKitGTK
