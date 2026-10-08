@@ -84,6 +84,8 @@ const (
 	WishServiceResumeProcedure = "/plan.v1.WishService/Resume"
 	// WishServiceBriefProcedure is the fully-qualified name of the WishService's Brief RPC.
 	WishServiceBriefProcedure = "/plan.v1.WishService/Brief"
+	// WishServiceTellProcedure is the fully-qualified name of the WishService's Tell RPC.
+	WishServiceTellProcedure = "/plan.v1.WishService/Tell"
 	// WishServiceSnapshotProcedure is the fully-qualified name of the WishService's Snapshot RPC.
 	WishServiceSnapshotProcedure = "/plan.v1.WishService/Snapshot"
 	// WishServiceAllowProcedure is the fully-qualified name of the WishService's Allow RPC.
@@ -581,6 +583,10 @@ type WishServiceClient interface {
 	// decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
 	// No local path, no secret.
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
+	// Write to the wish's lead in its terminal, as if you typed it there, then Enter. The text waits while something
+	// is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
+	// djinn wish resume starts it.
+	Tell(context.Context, *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
@@ -669,6 +675,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Brief")),
 			connect.WithClientOptions(opts...),
 		),
+		tell: connect.NewClient[v1.WishServiceTellRequest, v1.WishServiceTellResponse](
+			httpClient,
+			baseURL+WishServiceTellProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Tell")),
+			connect.WithClientOptions(opts...),
+		),
 		snapshot: connect.NewClient[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse](
 			httpClient,
 			baseURL+WishServiceSnapshotProcedure,
@@ -736,6 +748,7 @@ type wishServiceClient struct {
 	setLead    *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
 	resume     *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
 	brief      *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
+	tell       *connect.Client[v1.WishServiceTellRequest, v1.WishServiceTellResponse]
 	snapshot   *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
 	allow      *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
 	grant      *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
@@ -785,6 +798,11 @@ func (c *wishServiceClient) Resume(ctx context.Context, req *connect.Request[v1.
 // Brief calls plan.v1.WishService.Brief.
 func (c *wishServiceClient) Brief(ctx context.Context, req *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {
 	return c.brief.CallUnary(ctx, req)
+}
+
+// Tell calls plan.v1.WishService.Tell.
+func (c *wishServiceClient) Tell(ctx context.Context, req *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error) {
+	return c.tell.CallUnary(ctx, req)
 }
 
 // Snapshot calls plan.v1.WishService.Snapshot.
@@ -861,6 +879,10 @@ type WishServiceHandler interface {
 	// decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
 	// No local path, no secret.
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
+	// Write to the wish's lead in its terminal, as if you typed it there, then Enter. The text waits while something
+	// is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
+	// djinn wish resume starts it.
+	Tell(context.Context, *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
@@ -945,6 +967,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Brief")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceTellHandler := connect.NewUnaryHandler(
+		WishServiceTellProcedure,
+		svc.Tell,
+		connect.WithSchema(wishServiceMethods.ByName("Tell")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceSnapshotHandler := connect.NewUnaryHandler(
 		WishServiceSnapshotProcedure,
 		svc.Snapshot,
@@ -1017,6 +1045,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceResumeHandler.ServeHTTP(w, r)
 		case WishServiceBriefProcedure:
 			wishServiceBriefHandler.ServeHTTP(w, r)
+		case WishServiceTellProcedure:
+			wishServiceTellHandler.ServeHTTP(w, r)
 		case WishServiceSnapshotProcedure:
 			wishServiceSnapshotHandler.ServeHTTP(w, r)
 		case WishServiceAllowProcedure:
@@ -1074,6 +1104,10 @@ func (UnimplementedWishServiceHandler) Resume(context.Context, *connect.Request[
 
 func (UnimplementedWishServiceHandler) Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Brief is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Tell(context.Context, *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Tell is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error) {

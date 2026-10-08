@@ -211,3 +211,32 @@ func TestLeadProcess(t *testing.T) {
 		}
 	}
 }
+
+// TestPostKeepsLineBreaksAndOrder: what the user writes to the lead keeps its line breaks inside one paste, and the
+// texts posted while the user types wait, then arrive in the order posted.
+func TestPostKeepsLineBreaksAndOrder(t *testing.T) {
+	_, term := fakeLead(t)
+	from := size(term)
+	if err := term.Write([]byte("hel")); err != nil {
+		t.Fatal(err)
+	}
+	failed := make(chan error, 2)
+	if !term.Post("first\nsecond\r\nthird", func(err error) { failed <- err }) {
+		t.Error("Post says nothing waits, yet the user is typing")
+	}
+	term.Post("then\tthis", func(err error) { failed <- err })
+	none(t, term, from, "the user is typing")
+	if err := term.Write([]byte("lo\r")); err != nil {
+		t.Fatal(err)
+	}
+	out := output(t, term, from, contains(`line "then this" pasted`))
+	first := strings.Index(out, `line "first\rsecond\rthird" pasted, enter apart`)
+	if i, j := strings.Index(out, `line "hello"`), strings.Index(out, `line "then this"`); i < 0 || first < i || j < first {
+		t.Fatalf("the user's line, then the texts in the order posted:\n%q", out)
+	}
+	select {
+	case err := <-failed:
+		t.Fatal(err)
+	default:
+	}
+}

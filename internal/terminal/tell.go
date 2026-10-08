@@ -36,12 +36,69 @@ var choiceMarks = []string{"tocancel"}
 // line are dropped: it is one line. Tell returns once the line is typed, or with ErrExited when the program ended
 // first.
 func (t *Terminal) Tell(line string) error {
-	line = strings.Map(func(r rune) rune {
+	return t.typeIn(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
-	}, line)
+	}, line), false)
+}
+
+// TellText is Tell for a text the user wrote, which may hold line breaks: they stay line breaks in a program that
+// takes bracketed paste, as in a paste, and become spaces in one that does not, where each would send a line.
+func (t *Terminal) TellText(text string) error {
+	text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text)
+	return t.typeIn(strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return ' '
+		}
+		if unicode.IsControl(r) && r != '\n' {
+			return -1
+		}
+		return r
+	}, text), true)
+}
+
+// post is a text Post keeps to tell, and what to call if it fails.
+type post struct {
+	text   string
+	failed func(error)
+}
+
+// Post tells text as TellText does, without waiting: the texts posted arrive in the order posted, and failed, if not
+// nil, gets the error of one that could not be typed. Post tells whether the text waits for the user: a line under
+// way at the prompt, or a choice on screen.
+func (t *Terminal) Post(text string, failed func(error)) (waits bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.posted = append(t.posted, post{text, failed})
+	if !t.posting {
+		t.posting = true
+		go t.drain()
+	}
+	return t.composing > 0 || t.choosing()
+}
+
+// drain tells what is posted, one text after the other, until none is left.
+func (t *Terminal) drain() {
+	for {
+		t.mu.Lock()
+		if len(t.posted) == 0 {
+			t.posting = false
+			t.mu.Unlock()
+			return
+		}
+		next := t.posted[0]
+		t.posted = t.posted[1:]
+		t.mu.Unlock()
+		if err := t.TellText(next.text); err != nil && next.failed != nil {
+			next.failed(err)
+		}
+	}
+}
+
+// typeIn types text as Tell does; with lines, a line break in it stays one if the program takes bracketed paste.
+func (t *Terminal) typeIn(line string, lines bool) error {
 	t.tell.Lock()
 	defer t.tell.Unlock()
 	for {
@@ -74,8 +131,12 @@ func (t *Terminal) Tell(line string) error {
 	paste := t.paste
 	t.mu.Unlock()
 	text := line
+	if lines && !paste {
+		text = strings.ReplaceAll(text, "\n", " ")
+	}
 	if paste { // The program tells a paste from keys: the line is one, and Enter after it submits.
-		text = "\x1b[200~" + line + "\x1b[201~"
+		// A terminal pastes a line break as Enter, which a paste keeps from sending.
+		text = "\x1b[200~" + strings.ReplaceAll(text, "\n", "\r") + "\x1b[201~"
 	}
 	if _, err := t.p.Write([]byte(text)); err != nil {
 		return err

@@ -58,6 +58,7 @@ import { type Entry, isLog, journal } from "./data/journal";
 import { t } from "./i18n";
 import { AttentionBar, attentionOf } from "./attention";
 import { MarkButtons, type OnMark, useWrites } from "./marks";
+import { LeadMessage } from "./lead-message";
 import { MarkdownBody } from "./markdown-body";
 import { providerName } from "./provider";
 import { useKeepPlace } from "./scroll-anchor";
@@ -104,6 +105,11 @@ export function WishView({
   } = useWrites(onToast);
   const act = (run: () => Promise<unknown>, changes: Change[], done?: string) =>
     write(wish.id, run, changes, done);
+  const resume = () =>
+    act(
+      () => clients.wishes.resume({ wishId: wish.id, provider: wish.provider }),
+      [Change.WISH],
+    );
   const attention = attentionOf(open, waiting, wish.ready ? [wish] : []);
   const tone = wishTone(wish, open.length, running);
 
@@ -134,18 +140,7 @@ export function WishView({
           <button
             className="button secondary small"
             title={t("wish.resume_detail")}
-            onClick={() =>
-              quiet(
-                act(
-                  () =>
-                    clients.wishes.resume({
-                      wishId: wish.id,
-                      provider: wish.provider,
-                    }),
-                  [Change.WISH],
-                ),
-              )
-            }
+            onClick={() => quiet(resume())}
           >
             <Terminal size={14} />
             <span>{t("wish.resume")}</span>
@@ -482,6 +477,9 @@ export function WishView({
           )}
         </div>
       </div>
+      {(wish.lead || wish.leadRunning) && (
+        <LeadMessage wish={wish} onResume={resume} onToast={onToast} />
+      )}
     </div>
   );
 }
