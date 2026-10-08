@@ -17,7 +17,7 @@ export default defineConfig({
     ...devices["Desktop Chrome"],
     viewport: { width: 1440, height: 1000 },
     colorScheme: "dark",
-    locale: "fr-FR",
+    locale: "en-US",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",

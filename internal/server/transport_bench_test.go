@@ -25,7 +25,7 @@ const (
 )
 
 // statePayload returns a JSON document of about size bytes shaped like the saved workspace (the stateJson of
-// ui.v1.SaveStateRequest): steps with French text, quotes and new lines, the characters JSON escapes.
+// ui.v1.SaveStateRequest): steps with text beyond ASCII, quotes and new lines, the characters JSON escapes.
 func statePayload(size int) string {
 	var b strings.Builder
 	b.WriteString(`{"version":3,"steps":[`)
@@ -33,8 +33,8 @@ func statePayload(size int) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		fmt.Fprintf(&b, `{"id":"step-%05d","title":"Étape %d : vérifier le \"flux\" du serveur","status":"done",`+
-			`"body":"L'agent a lu internal/server/server.go\npuis a lancé les tests : 42 passés.","at":%d}`,
+		fmt.Fprintf(&b, `{"id":"step-%05d","title":"Step %d — check the server's \"stream\" ✓","status":"done",`+
+			`"body":"The agent read internal/server/server.go\nthen ran the tests → 42 passed.","at":%d}`,
 			i, i, 1760000000000+i)
 	}
 	b.WriteString(`]}`)

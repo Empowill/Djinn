@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 4317",
     "build": "tsc -b && vite build",
-    "test": "node --test --require ./tests/setup-language.cjs tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.16.0",
