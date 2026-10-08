@@ -116,8 +116,10 @@ export function FlightPlan({
                     onClick={() => onOpen(wish.id)}
                     title={t("plan.open_wish")}
                   >
-                    <span className="plan-wish-rank">{wish.rank}</span>
-                    <strong>{wish.title}</strong>
+                    <span className="plan-wish-title">
+                      <span className="plan-wish-rank">{wish.rank}</span>
+                      <strong>{wish.title}</strong>
+                    </span>
                     <span className="plan-wish-counts">
                       {open > 0 && (
                         <span className="waiting">
@@ -127,7 +129,7 @@ export function FlightPlan({
                       {running > 0 && (
                         <span>{t("plan.running", { count: running })}</span>
                       )}
-                      {detail && (
+                      {detail && detail.tasks.length > 0 && (
                         <span>
                           {t("plan.tasks", { count: detail.tasks.length })}
                         </span>

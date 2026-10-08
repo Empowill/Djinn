@@ -5,6 +5,11 @@
   flex-direction: column;
   min-height: 0;
 }
+/* The content follows the header, even when the window is taller than both: the shared rule centers it. */
+.wish-view .overview-content {
+  margin: 0 auto auto;
+  padding-top: 24px;
+}
 .wish-welcome {
   justify-content: center;
 }
@@ -279,6 +284,11 @@
   font-weight: 500;
   color: #e7e7e7;
 }
+.plan-wish-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
 .plan-wish-rank {
   font: var(--font-size-body) var(--mono);
   color: var(--muted-dim);
@@ -352,4 +362,9 @@
 }
 .journal-list li.log > div {
   flex-direction: column;
+}
+.plan-decisions h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
