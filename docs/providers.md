@@ -118,6 +118,58 @@ What is verified and what is supposed:
 | Codex       | `AGENTS.md` from the repository's root down to the working folder, by itself (its documentation).                                                                              |
 | Antigravity | `GEMINI.md` and `AGENTS.md`, walking up from the working folder to the repository's root, by itself (the rules documentation in the agy 1.3.0 binary).                          |
 
+### Skills summoned from another project
+
+`djinn skill summon app/babysit-mr --into infra` records that project infra uses the skill babysit-mr of project app
+(`Project.summons`, in `api/plan/v1/plan.proto`). **Nothing is copied, nothing is written in either project, nor in
+the user's folders.** At each worker's launch in infra, Djinn finds the skill in app's `.agents/skills` or
+`.claude/skills` as it is now, and shows it to the agent by the agent's own path. `djinn skill list` shows each
+project's own skills and those it summons, a missing source included; `djinn skill unsummon app/babysit-mr --from
+infra` stops it for the next workers.
+
+For each task, Djinn makes a folder of its own, `<data folder>/skills/<task id>`, holding `.claude/skills/<skill>` and
+`.agents/skills/<skill>`, each a symbolic link to the skill's folder in its source. It is made anew at each start and
+removed when the task ends. A skill whose source is gone is left out: the worker starts, and the task says why in a
+`STATUS` event. Where links cannot be made (Windows without the right to create symbolic links), codex still gets
+the skills, Claude and agy do not, and an event says so.
+
+| Agent       | How it gets them                                                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Claude      | `--add-dir <folder>`; in `--settings`, allow `Read(//<skill folder>/**)`, deny `Edit` on the folder of links and on each skill's folder, whatever the mode. A read-only worker gets `--add-dir` only. |
+| Codex       | `developerInstructions` on `thread/start`, `thread/resume` and `thread/fork`: each skill's name, source, description and the path of its `SKILL.md`, read where it is. |
+| Antigravity | `--add-dir <folder>`: a workspace folder, whose `.agents` is a customization root.                                                                                   |
+
+What is verified and what is supposed:
+
+- **Claude**, from its documentation (`code.claude.com/docs/en/skills` and `/permissions`, read 2026-10-08) and
+  `claude --help` (2.1.293): skills load from `.claude/skills` of a folder passed with `--add-dir`, which Claude
+  watches, so a change in the source shows mid-session; a skill folder may be a symbolic link; an allow rule on a
+  path through a link must match both the link and its target, a deny rule either one; `//` starts an absolute path,
+  and Windows paths read `//c/...`. **Supposed:** that a read-only worker (`--restricted`) loads them, since the
+  skills of an added folder depend on the project setting source, and that it reads a skill's other files, since
+  `--restricted` confines the file tools to the working folders and the link leads out of them. **Lost:** a command
+  that writes through the link is not denied by a rule; its target is outside the working folders, so it should be
+  refused like any write there, which no real run has shown yet.
+- **Codex**, from its skills documentation (`learn.chatgpt.com/docs/build-skills`, read 2026-10-08), its config code
+  (`codex-rs/config/src/skills_config.rs`, main) and the app-server schema (`ThreadStartParams`, `ThreadResumeParams`,
+  `ThreadForkParams`, main): codex finds skills only in `.agents/skills` from the working folder up to the
+  repository's root, `$HOME/.agents/skills`, `/etc/codex/skills` and its own; `[[skills.config]]` only enables or
+  disables a skill, it adds none; moving `$HOME` or `$CODEX_HOME` would move its sign-in and configuration. So codex
+  is told where the skills are, the way it lists its own. **Supposed:** that `developerInstructions` replaces a
+  `developer_instructions` of the user's `config.toml` for that thread, as other thread parameters override the
+  configuration; that codex reads outside its workspace (its sandboxes restrict writing, not reading). A summoned
+  skill is not one of codex's own: no `$skill` mention, the model reads the file by itself. The source stays out of
+  the `workspace-write` sandbox's writable roots.
+- **Antigravity**, from `agy --help` (1.3.0) and the documentation in its binary: `--add-dir` adds a folder to the
+  workspace; a workspace root's `.agents` is a customization root, with skills in `skills/<name>/SKILL.md`; its
+  changelog says skills are discovered on `/add-dir`. **Supposed:** that a folder given with `--add-dir` at launch is
+  a customization root too, and that agy follows a linked skill folder. **Lost:** nothing keeps agy from editing the
+  source through the link, as `--mode accept-edits` covers the workspace. Not used: `.agents/skills.json` (written in
+  the project) and `~/.gemini/config/skills.json` (the user's).
+
+**Following the source.** A summoned skill is the source's folder as it is: its uncommitted changes, and whatever
+branch the source project has checked out. A skill can carry scripts: summoning one trusts its project from then on.
+
 ### Outside any project
 
 |             | Outside any project (read-only)                                                                                                                 |

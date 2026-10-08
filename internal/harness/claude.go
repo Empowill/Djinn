@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -51,8 +52,21 @@ func (c Claude) args(spec Spec) []string {
 			settings["permissions"] = perms
 			args = append(args, "--permission-mode", perms["defaultMode"].(string))
 		}
+		if allow, deny := claudeSkillRules(spec); len(allow)+len(deny) > 0 {
+			perms, _ := settings["permissions"].(map[string]any)
+			if perms == nil {
+				perms = map[string]any{"allow": []string{}, "deny": []string{}}
+				settings["permissions"] = perms
+			}
+			perms["allow"] = append(perms["allow"].([]string), allow...)
+			perms["deny"] = append(perms["deny"].([]string), deny...)
+		}
 		b, _ := json.Marshal(settings) // Maps of strings and slices of strings: it cannot fail.
 		args = append(args, "--settings", string(b))
+	}
+	if spec.SkillsDir != "" {
+		// Claude loads the skills of .claude/skills in a folder given with --add-dir (code.claude.com/docs/en/skills).
+		args = append(args, "--add-dir", spec.SkillsDir)
 	}
 	switch {
 	case spec.Resume != "":
@@ -99,6 +113,31 @@ func claudePermissions(p *djinnv1.Permissions) map[string]any {
 		mode = "auto"
 	}
 	return map[string]any{"allow": allow, "deny": deny, "defaultMode": mode}
+}
+
+// claudeSkillRules are the permission rules for the skills linked in spec.SkillsDir: reading each skill's folder
+// in its source project, which a link from the added folder leads to (an allow rule must match both the link and
+// its target); never editing either, whatever the mode (a deny rule matches either one).
+func claudeSkillRules(spec Spec) (allow, deny []string) {
+	if spec.SkillsDir == "" {
+		return nil, nil
+	}
+	deny = append(deny, "Edit("+claudeAbsolute(spec.SkillsDir)+"/**)")
+	for _, s := range spec.Skills {
+		allow = append(allow, "Read("+claudeAbsolute(s.Dir)+"/**)")
+		deny = append(deny, "Edit("+claudeAbsolute(s.Dir)+"/**)")
+	}
+	return allow, deny
+}
+
+// claudeAbsolute is an absolute path as Claude's permission rules write it: // then the path from the root, in
+// POSIX form; on Windows, C:\Users becomes //c/Users.
+func claudeAbsolute(path string) string {
+	s := filepath.ToSlash(path)
+	if vol := filepath.VolumeName(path); len(vol) == 2 && vol[1] == ':' {
+		s = "/" + strings.ToLower(vol[:1]) + s[2:]
+	}
+	return "/" + s
 }
 
 func (c Claude) Start(ctx context.Context, spec Spec) (Worker, error) {

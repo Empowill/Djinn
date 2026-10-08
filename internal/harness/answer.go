@@ -138,12 +138,15 @@ func (h *Harness) again(r *run) error {
 	}
 	readOnly, perms := accessSpec(t.GetAccess(), nil)
 	r.base = t.GetUsage()
-	return h.start(r, provider, Spec{
+	spec := Spec{
 		TaskID: t.GetId(), Dir: project.GetDirectory(), ReadOnly: readOnly, Permissions: perms, Model: t.GetModel(),
 		MaxBudgetUSD: budget, Resume: t.GetSessionId(),
 		Prompt: "The developer now allows you to edit the files of this project, and to run no command. " +
 			"Carry on with your task, as it was given:\n" + prompt,
-	}, "started "+short(t.GetProvider())+" again in "+project.GetDirectory()+", "+accessText(t, nil))
+	}
+	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)
+	return h.start(r, provider, spec, "started "+short(t.GetProvider())+" again in "+project.GetDirectory()+", "+
+		accessText(t, nil)+skillsText(spec.Skills))
 }
 
 // firstPrompt is what the task's worker was first asked: its first event.

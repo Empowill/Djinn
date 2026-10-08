@@ -119,6 +119,8 @@ To use Djinn, see the [README](README.md). To work on it:
   for each project it names; `djinn wish export <wish-id>` writes to your Downloads folder.
 - `djinn wish sync <wish-id>` renders the wish's page in Go and prints its file, kept up to date while
   `djinn up` runs (delete it to stop); the lead republishes that file. `djinn wish render <wish-id>` writes it once.
+- `djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app, without a copy: they
+  follow the source. `djinn skill list` shows the skills; `djinn skill unsummon app/babysit-mr --from infra` stops it.
 - Three wishes are active at most. `djinn wish pause <wish-id>` and `djinn wish activate <wish-id>` free and take a
   place; `djinn wish move <wish-id> --to 1` gives one priority; `djinn wish grant <wish-id>` says it is done.
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
