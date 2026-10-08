@@ -137,9 +137,11 @@ command, are to check on a real run.
 
 **Command.** `claude -p --input-format stream-json --output-format stream-json --verbose
 --permission-prompts none`, then in a project `--settings <json>` (and `--permission-mode` with permissions; see
-above), then `--session-id <task id>` (or `--resume <session>`, `--fork-session`),
-`--model`, `--max-budget-usd`. The prompt is a stream-json user message on the input; the input stays open for
-more messages and is closed once each has its result, which ends the process.
+above), then `--session-id <task id>` (or `--resume <session>`; a fork adds `--fork-session` and keeps
+`--session-id <task id>` for its new session), `--model`, `--max-budget-usd`. The prompt is a stream-json user
+message on the input; the input stays open for more messages and is closed once each has its result, which ends
+the process. A warm worker (`djinn up --warm-workers`) is the same command started before its task: it waits for
+its first message, which is the task's prompt.
 
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.
