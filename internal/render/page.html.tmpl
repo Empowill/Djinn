@@ -25,10 +25,12 @@
 <section id="questions">
   <h2>{{index .T "page.questions"}} <span class="n">{{len .Questions}}</span></h2>
   {{- range .Questions}}
-  <details class="card question{{if .Blocking}} now{{end}}"{{if .Blocking}} open{{end}}>
+  <details class="card question{{if .Blocking}} now{{end}}{{if .Investigating}} dig{{end}}"{{if .Blocking}} open{{end}}>
     <summary>
       <span class="code">{{.Code}}</span>
       {{- if .Blocking}}<span class="status bad">{{.Blocking}}</span>{{end}}
+      {{- if .Investigating}}<span class="status dig">{{index $.T "page.investigating"}}</span>{{end}}
+      {{- if .Revised}}<span class="status idle">{{.Revised}}</span>{{end}}
       <span class="qtitle">{{.Text}}</span>
       {{- if .RecomLine}}<span class="qreco">→ {{.RecomLine}}</span>{{end}}
     </summary>
@@ -46,6 +48,11 @@
     </ol>
     {{- else}}
     <p class="hint">{{index $.T "page.yes_only"}}</p>
+    {{- end}}
+    {{- if .Rounds}}
+    <details class="fold rounds"><summary>{{index $.T "page.rounds"}} <span class="n">{{len .Rounds}}</span></summary>
+      <ol>{{range .Rounds}}<li><time>{{.At}}</time> {{.Label}}{{if .Note}}: {{.Note}}{{end}}</li>{{end}}</ol>
+    </details>
     {{- end}}
     </div>
   </details>

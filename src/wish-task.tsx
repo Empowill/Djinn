@@ -32,6 +32,7 @@ import {
 } from "./data/format";
 import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
+import { StatusBadge } from "./status";
 import { TaskUsage, usageDetail } from "./usage";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
@@ -84,21 +85,24 @@ export function WishTask({
     : (task.dependsOn ?? [])
         .map((id) => codes?.get(id))
         .filter((code): code is string => !!code);
+  const tone = taskTone(task.status);
   return (
-    <article className={`wish-task ${open ? "open" : ""}`}>
+    <article
+      className={`wish-task tone-${tone} ${open ? "open" : ""}`}
+      id={`task-${task.id}`}
+    >
       <div className="wish-task-row">
         <button
           className="wish-task-heading"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
         >
-          <span className={`mission-dot ${taskTone(task.status)}`} />
+          <StatusBadge tone={tone} label={taskStatusText(task.status)} />
           <span className="agent-code">{task.code}</span>
           <strong>{task.title}</strong>
           <span className="wish-task-meta">
             {origin}
             {project?.name && <span>{project.name}</span>}
-            <span>{taskStatusText(task.status)}</span>
             <TaskUsage usage={task.usage} />
           </span>
           <ChevronDown size={14} className={open ? "rotated" : ""} />
@@ -115,9 +119,7 @@ export function WishTask({
         )}
       </div>
       {(task.waitReason || task.error || after.length > 0) && (
-        <p
-          className={`wish-task-note ${taskTone(task.status) === "error" ? "error" : ""}`}
-        >
+        <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
           {task.error || task.waitReason}
           {after.length > 0 && (
             <span className="wish-task-after">
@@ -172,14 +174,25 @@ function TaskBody({ task, forkOf }: { task: Task; forkOf: string }) {
           <MarkdownBody text={lastWord} />
         </div>
       )}
-      <div className="wish-task-events" ref={box} aria-live="polite">
-        {events.length === 0 && (
-          <p className="muted-text">{t("task.no_events")}</p>
-        )}
-        {events.map((event) => (
-          <EventLine key={event.id} event={event} />
-        ))}
-      </div>
+      <details
+        className="wish-task-events-fold"
+        open={!taskFinished(task.status)}
+      >
+        <summary>{t("task.events", { count: events.length })}</summary>
+        <div className="wish-task-events" ref={box} aria-live="polite">
+          {events.length === 0 ? (
+            <p className="muted-text">{t("task.no_events")}</p>
+          ) : (
+            <table className="compact-table event-table">
+              <tbody>
+                {events.map((event) => (
+                  <EventLine key={event.id} event={event} />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
@@ -212,10 +225,14 @@ function EventLine({ event }: { event: TaskEvent }) {
       ? usageDetail(event.usage)
       : event.text;
   return (
-    <div className={`wish-event kind-${event.kind}`}>
-      <time>{clock(event)}</time>
-      <Icon size={13} />
-      <span className="wish-event-text">{text}</span>
-    </div>
+    <tr className={`wish-event kind-${event.kind}`}>
+      <td>
+        <time>{clock(event)}</time>
+      </td>
+      <td title={TaskEventKind[event.kind]?.toLowerCase()}>
+        <Icon size={13} aria-hidden="true" />
+      </td>
+      <td className="wish-event-text">{text}</td>
+    </tr>
   );
 }

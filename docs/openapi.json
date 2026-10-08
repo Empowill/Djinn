@@ -224,6 +224,13 @@
             "description": "What the block is, in a word the lead chooses: decision, section, log, diagram, report…",
             "type": "string"
           },
+          "marks": {
+            "description": "What the developer marked on it from the window: read, approved.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Mark"
+            },
+            "type": "array"
+          },
           "mediaType": {
             "description": "Media type of the content: text/markdown when empty, or another, like application/json.",
             "type": "string"
@@ -372,6 +379,7 @@
         "enum": [
           "CHOICE_UNSPECIFIED",
           "CHOICE_YES",
+          "CHOICE_NO",
           "CHOICE_A",
           "CHOICE_B",
           "CHOICE_C",
@@ -392,6 +400,139 @@
           },
           "sessionId": {
             "description": "Identifier of the session, as the agent names it: claude --resume takes it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Mark": {
+        "description": "A mark the developer puts on a question, a decision or a block: read, or approved as it is. The lead reads the marks in the wish's brief and with djinn mark list.",
+        "properties": {
+          "actor": {
+            "description": "Who put it.",
+            "type": "string"
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When it was put."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/plan.v1.MarkKind",
+            "description": "Which mark."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.MarkKind": {
+        "description": "What a mark says.",
+        "enum": [
+          "MARK_KIND_UNSPECIFIED",
+          "MARK_KIND_READ",
+          "MARK_KIND_APPROVED"
+        ],
+        "type": "string"
+      },
+      "plan.v1.MarkServiceListRequest": {
+        "properties": {
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.MarkServiceListResponse": {
+        "properties": {
+          "marks": {
+            "description": "The marks, the latest last.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Marked"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.MarkServicePutRequest": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/plan.v1.MarkKind",
+            "description": "The mark: read, or approved."
+          },
+          "remove": {
+            "description": "Take the mark off instead. An answer stays.",
+            "type": "boolean"
+          },
+          "target": {
+            "$ref": "#/components/schemas/plan.v1.MarkTarget",
+            "description": "What to mark: a question's code, like Q03, or the identifier of a question or of a block."
+          },
+          "wishId": {
+            "description": "Wish of the question, needed only when its code exists in several wishes.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "plan.v1.MarkServicePutResponse": {
+        "properties": {
+          "marked": {
+            "$ref": "#/components/schemas/plan.v1.Marked",
+            "description": "The mark, and what it is on."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.MarkTarget": {
+        "description": "MarkTarget points to what a mark is on: a question by its code, or a question or a block by its identifier. Set one of: code, id.",
+        "properties": {
+          "code": {
+            "description": "A question's code, like Q03.",
+            "pattern": "^Q[0-9]{2,3}$",
+            "type": "string"
+          },
+          "id": {
+            "description": "The identifier of a question or of a block.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Marked": {
+        "description": "Marked is a mark with what it is on.",
+        "properties": {
+          "blockId": {
+            "description": "The block marked, if it is one.",
+            "type": "string"
+          },
+          "label": {
+            "description": "The question's code, or the block's kind.",
+            "type": "string"
+          },
+          "mark": {
+            "$ref": "#/components/schemas/plan.v1.Mark",
+            "description": "The mark."
+          },
+          "questionId": {
+            "description": "The question marked, if it is one.",
+            "type": "string"
+          },
+          "title": {
+            "description": "The question's text, or the block's title, in a line.",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "Wish of the question or block.",
             "type": "string"
           }
         },
@@ -555,6 +696,13 @@
             "format": "uuid",
             "type": "string"
           },
+          "marks": {
+            "description": "What the developer marked on it from the window: read, approved.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Mark"
+            },
+            "type": "array"
+          },
           "options": {
             "description": "Options offered, answered by their letter: A for the first one, then B, C and D.",
             "items": {
@@ -563,8 +711,20 @@
             "type": "array"
           },
           "recommendation": {
-            "description": "The option the asker recommends, and why, in Markdown.",
+            "description": "The option the asker recommends, and why, in Markdown. Starting with its letter (B: …) lets the developer approve it in one click.",
             "type": "string"
+          },
+          "revision": {
+            "description": "How many times the lead revised it.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "rounds": {
+            "description": "Its rounds, oldest first: each request to investigate, each revision by the lead. The last one an open question has is a request: it is being investigated, and waits for the lead, not for the developer.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Round"
+            },
+            "type": "array"
           },
           "text": {
             "description": "The question itself.",
@@ -597,7 +757,7 @@
         "properties": {
           "choice": {
             "$ref": "#/components/schemas/plan.v1.Choice",
-            "description": "The choice: yes, or the letter of an option."
+            "description": "The choice: yes, or the letter of an option. On options that say yes and no, yes or no, in any language Djinn speaks."
           },
           "note": {
             "description": "Why this choice, or what to do with it.",
@@ -675,6 +835,37 @@
         },
         "type": "object"
       },
+      "plan.v1.QuestionServiceEnlightenRequest": {
+        "properties": {
+          "note": {
+            "description": "What to dig into before deciding.",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "question": {
+            "$ref": "#/components/schemas/plan.v1.QuestionRef",
+            "description": "The question: its code, like Q03, or its identifier."
+          },
+          "wishId": {
+            "description": "Wish of the question, needed only when its code exists in several wishes.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "plan.v1.QuestionServiceEnlightenResponse": {
+        "properties": {
+          "question": {
+            "$ref": "#/components/schemas/plan.v1.Question",
+            "description": "The question, being investigated."
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.QuestionServiceListRequest": {
         "properties": {
           "open": {
@@ -704,6 +895,96 @@
           }
         },
         "type": "object"
+      },
+      "plan.v1.QuestionServiceReviseRequest": {
+        "properties": {
+          "context": {
+            "description": "What is at stake now, in Markdown; the former context when empty.",
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "options": {
+            "description": "The options now, up to four; the former ones when none.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "type": "array"
+          },
+          "question": {
+            "$ref": "#/components/schemas/plan.v1.QuestionRef",
+            "description": "The question: its code, like Q03, or its identifier."
+          },
+          "recommendation": {
+            "description": "The option you recommend now, and why; the former recommendation when empty.",
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "Wish of the question, needed only when its code exists in several wishes.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "plan.v1.QuestionServiceReviseResponse": {
+        "properties": {
+          "question": {
+            "$ref": "#/components/schemas/plan.v1.Question",
+            "description": "The question, revised."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Round": {
+        "description": "A round of a question before it is decided: a request to investigate, or the lead's revision.",
+        "properties": {
+          "actor": {
+            "description": "Who did it.",
+            "type": "string"
+          },
+          "context": {
+            "description": "For a revision, what the question said before it.",
+            "type": "string"
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/plan.v1.RoundKind",
+            "description": "Which round."
+          },
+          "note": {
+            "description": "For a request, what to dig into.",
+            "type": "string"
+          },
+          "options": {
+            "description": "For a revision, the options before it.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "recommendation": {
+            "description": "For a revision, the recommendation before it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.RoundKind": {
+        "description": "What a round is.",
+        "enum": [
+          "ROUND_KIND_UNSPECIFIED",
+          "ROUND_KIND_ENLIGHTEN",
+          "ROUND_KIND_REVISE"
+        ],
+        "type": "string"
       },
       "plan.v1.Skill": {
         "description": "A skill as a project sees it: its own, or summoned from another project.",
@@ -988,6 +1269,28 @@
           "task": {
             "$ref": "#/components/schemas/plan.v1.Task",
             "description": "The task, without its worktree."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDeleteRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDeleteResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, as it was."
           }
         },
         "type": "object"
@@ -1886,6 +2189,82 @@
         ]
       }
     },
+    "/plan.v1.MarkService/List": {
+      "post": {
+        "description": "List the marks of a wish, the latest last.",
+        "operationId": "MarkService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.MarkServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.MarkServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn mark list",
+        "tags": [
+          "MarkService"
+        ]
+      }
+    },
+    "/plan.v1.MarkService/Put": {
+      "post": {
+        "description": "Mark a question, a decision or a block: read, or approved as it is. Approving an open question answers it with the option its recommendation names, as djinn question answer does.",
+        "operationId": "MarkService_Put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.MarkServicePutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.MarkServicePutResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn mark put",
+        "tags": [
+          "MarkService"
+        ]
+      }
+    },
     "/plan.v1.ProjectService/Add": {
       "post": {
         "description": "Add a folder as a project. It need not be a Git repository.",
@@ -2038,6 +2417,44 @@
         ]
       }
     },
+    "/plan.v1.QuestionService/Enlighten": {
+      "post": {
+        "description": "Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.",
+        "operationId": "QuestionService_Enlighten",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.QuestionServiceEnlightenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.QuestionServiceEnlightenResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn question enlighten",
+        "tags": [
+          "QuestionService"
+        ]
+      }
+    },
     "/plan.v1.QuestionService/List": {
       "post": {
         "description": "List questions, the most recent last.",
@@ -2071,6 +2488,44 @@
           }
         },
         "summary": "djinn question list",
+        "tags": [
+          "QuestionService"
+        ]
+      }
+    },
+    "/plan.v1.QuestionService/Revise": {
+      "post": {
+        "description": "Revise an open question after investigating: its context, options or recommendation. The former ones stay in its rounds, and the question waits for the developer again.",
+        "operationId": "QuestionService_Revise",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.QuestionServiceReviseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.QuestionServiceReviseResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn question revise",
         "tags": [
           "QuestionService"
         ]
@@ -2223,6 +2678,44 @@
           }
         },
         "summary": "djinn task clean",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Delete": {
+      "post": {
+        "description": "Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its events. A task a worker of this Djinn ran stays, as the record of that work.",
+        "operationId": "TaskService_Delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceDeleteResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task delete",
         "tags": [
           "TaskService"
         ]
@@ -2937,6 +3430,10 @@
     {
       "description": "MachineService says what the machine has, how loaded it is, and how many workers Djinn runs on it.",
       "name": "MachineService"
+    },
+    {
+      "description": "Marks: what the developer read or approved from the window, on questions, decisions and blocks, so that the lead acts on a click without a word.",
+      "name": "MarkService"
     },
     {
       "description": "Projects Djinn works in.",

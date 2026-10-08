@@ -13,13 +13,20 @@ import { type KeyboardEvent, useState } from "react";
 
 import type { Project, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { WishState } from "../gen/ts/plan/v1/plan_pb";
-import { MAX_ACTIVE, isActive } from "./data/format";
+import { MAX_ACTIVE, isActive, wishTone } from "./data/format";
 import { t } from "./i18n";
+import { CountPill, ToneIcon } from "./status";
+
+// What the side panel counts in a wish.
+export interface WishCounts {
+  questions: number;
+  running: number;
+}
 
 export function WishSidebar({
   wishes,
   projects,
-  waiting = {},
+  counts = {},
   planSelected = false,
   onSelectPlan,
   selectedWishId,
@@ -32,8 +39,8 @@ export function WishSidebar({
 }: {
   wishes: Wish[];
   projects: Project[];
-  // How many questions wait in each active wish, by id.
-  waiting?: Readonly<Record<string, number>>;
+  // What each active wish holds, by id: questions that wait for you, workers that run.
+  counts?: Readonly<Record<string, WishCounts>>;
   // The flight plan of the active wishes shows.
   planSelected?: boolean;
   onSelectPlan?: () => void;
@@ -53,6 +60,8 @@ export function WishSidebar({
   const [dragged, setDragged] = useState("");
 
   const item = (wish: Wish, rank?: number) => {
+    const count = counts[wish.id] ?? { questions: 0, running: 0 };
+    const tone = wishTone(wish, count.questions, count.running);
     const keys = (event: KeyboardEvent) => {
       if (!rank || !event.altKey) return;
       if (event.key === "ArrowUp" && rank > 1) onMove(wish.id, rank - 1);
@@ -89,19 +98,25 @@ export function WishSidebar({
           if (rank && id && id !== wish.id) onMove(id, rank);
         }}
       >
-        <span
-          className={`mission-dot ${wish.ready ? "waiting" : rank ? "running" : wish.state === WishState.GRANTED ? "done" : "idle"}`}
-        />
+        <span className={`wish-tone tone-${tone}`}>
+          <ToneIcon tone={tone} size={12} />
+        </span>
         {!collapsed && (
           <>
             <span>{wish.title}</span>
-            {(waiting[wish.id] ?? 0) > 0 && (
-              <small
-                className="wish-waiting"
-                title={t("wish.questions_wait", { count: waiting[wish.id] })}
-              >
-                {waiting[wish.id]}
-              </small>
+            {count.questions > 0 && (
+              <CountPill
+                tone="waiting"
+                count={count.questions}
+                label={t("wish.questions_wait", { count: count.questions })}
+              />
+            )}
+            {count.running > 0 && (
+              <CountPill
+                tone="running"
+                count={count.running}
+                label={t("plan.running", { count: count.running })}
+              />
             )}
             {rank ? (
               <small className="wish-rank">
@@ -115,7 +130,10 @@ export function WishSidebar({
     );
   };
 
-  const waits = active.reduce((sum, w) => sum + (waiting[w.id] ?? 0), 0);
+  const waits = active.reduce(
+    (sum, w) => sum + (counts[w.id]?.questions ?? 0),
+    0,
+  );
   return (
     <>
       {onSelectPlan && active.length > 0 && (
@@ -127,12 +145,11 @@ export function WishSidebar({
           <Plane size={15} />
           {!collapsed && <span>{t("plan.title")}</span>}
           {waits > 0 && (
-            <small
-              className="wish-waiting"
-              title={t("wish.questions_wait", { count: waits })}
-            >
-              {waits}
-            </small>
+            <CountPill
+              tone="waiting"
+              count={waits}
+              label={t("wish.questions_wait", { count: waits })}
+            />
           )}
         </button>
       )}

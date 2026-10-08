@@ -22,6 +22,7 @@ type clients struct {
 	wishes    planv1connect.WishServiceClient
 	questions planv1connect.QuestionServiceClient
 	blocks    planv1connect.BlockServiceClient
+	marks     planv1connect.MarkServiceClient
 	skills    planv1connect.SkillServiceClient
 	store     *store.Store
 }
@@ -45,6 +46,7 @@ func serve(t *testing.T, opts ...Option) clients {
 		wishes:    planv1connect.NewWishServiceClient(srv.Client(), srv.URL),
 		questions: planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL),
 		blocks:    planv1connect.NewBlockServiceClient(srv.Client(), srv.URL),
+		marks:     planv1connect.NewMarkServiceClient(srv.Client(), srv.URL),
 		skills:    planv1connect.NewSkillServiceClient(srv.Client(), srv.URL),
 		store:     s,
 	}

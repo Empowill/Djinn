@@ -82,6 +82,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [x] [T20 · Backups, on a server of your choice](plan/9b71f059-backup.md)
 - [ ] [T23 · Summon a skill from another project](plan/a5c284be-summon-skills.md) (in progress)
 - [ ] [T24 · A wish online: sync now, collaborate later](plan/7dc376e9-wish-online.md) (in progress)
+- [ ] [T25 · Review and decide at a glance](plan/4a699d0f-review-at-a-glance.md) (in progress)
 
 **After v1**
 

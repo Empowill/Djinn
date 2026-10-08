@@ -14,6 +14,7 @@ import (
 	"html/template"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -136,7 +137,15 @@ type question struct {
 	Options   []option
 	// Blocking names the tasks that wait for the answer: such a question is open, and comes first.
 	Blocking string
+	// Investigating says the developer asked to find out more: the lead is on it.
+	Investigating bool
+	// Revised says how many times the lead revised it, when it did.
+	Revised string
+	// Rounds are its requests to investigate and its revisions, oldest first.
+	Rounds []round
 }
+
+type round struct{ At, Label, Note string }
 
 type option struct{ Letter, Text string }
 
@@ -196,7 +205,7 @@ func build(in Input) (*view, error) {
 		"page.actions", "page.contents", "page.context", "page.decision", "page.decisions", "page.details", "page.earlier",
 		"page.finished", "page.journal", "page.last_word", "page.older", "page.options", "page.planned",
 		"page.projects", "page.questions", "page.recommendation", "page.running", "page.tasks", "page.notes",
-		"page.when", "page.yes_only",
+		"page.when", "page.yes_only", "page.investigating", "page.rounds",
 	} {
 		v.T[key] = tr(key)
 	}
@@ -242,6 +251,19 @@ func build(in Input) (*view, error) {
 		}
 		if codes := blocking[q.GetId()]; len(codes) > 0 {
 			cq.Blocking = tr("page.blocking", "tasks", strings.Join(codes, ", "))
+		}
+		if n := q.GetRevision(); n > 0 {
+			cq.Revised = tr("page.revised", "count", strconv.Itoa(int(n)))
+		}
+		for _, r := range q.GetRounds() {
+			label := "page.round_revise"
+			if r.GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
+				label = "page.round_enlighten"
+			}
+			cq.Rounds = append(cq.Rounds, round{At: at(r.GetCreateTime()), Label: tr(label), Note: r.GetNote()})
+		}
+		if rounds := q.GetRounds(); len(rounds) > 0 {
+			cq.Investigating = rounds[len(rounds)-1].GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN
 		}
 		for i, o := range q.GetOptions() {
 			cq.Options = append(cq.Options, option{Letter: string(rune('A' + i)), Text: o})

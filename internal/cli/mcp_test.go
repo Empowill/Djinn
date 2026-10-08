@@ -96,8 +96,8 @@ func TestMCPListTools(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	// Every public method that answers once: the three streams (gate hold, wish watch, task watch) are left out.
-	if len(names) != 32 {
-		t.Errorf("got %d tools, want 32: %v", len(names), names)
+	if len(names) != 37 {
+		t.Errorf("got %d tools, want 37: %v", len(names), names)
 	}
 	for _, want := range []string{"question_answer", "wish_set_lead", "project_list", "machine_show"} {
 		if !slices.Contains(names, want) {
@@ -117,7 +117,7 @@ func TestMCPListTools(t *testing.T) {
 	if !slices.Equal(tool.InputSchema.Required, []string{"question", "choice"}) {
 		t.Errorf("required %v", tool.InputSchema.Required)
 	}
-	if c := props["choice"]; c.Type != "string" || !slices.Equal(c.Enum, []string{"yes", "a", "b", "c", "d"}) {
+	if c := props["choice"]; c.Type != "string" || !slices.Equal(c.Enum, []string{"yes", "no", "a", "b", "c", "d"}) {
 		t.Errorf("choice %+v", c)
 	}
 	if q := props["question"]; q.Type != "string" || !strings.Contains(q.Description, "Expects a match of ^Q[0-9]{2,3}$ or a UUID.") {

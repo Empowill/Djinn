@@ -410,3 +410,29 @@ func between(s, start, end string) string {
 	}
 	return s
 }
+
+// TestRounds: a question being investigated says so, a revised one says how many times, and its rounds fold below,
+// read-only, with the developer's note.
+func TestRounds(t *testing.T) {
+	enlighten := &planv1.Round{Kind: planv1.RoundKind_ROUND_KIND_ENLIGHTEN, CreateTime: ts(-30), Note: "How long does it burn?"}
+	revise := &planv1.Round{Kind: planv1.RoundKind_ROUND_KIND_REVISE, CreateTime: ts(-20)}
+	exp := &planv1.WishExport{
+		Wish: &planv1.Wish{Id: "w", Title: "Light the lamp"},
+		Questions: []*planv1.Question{
+			{Id: "q1", Code: "Q01", Text: "Which oil?", Revision: 1, CreateTime: ts(-40),
+				Rounds: []*planv1.Round{enlighten, revise, {Kind: planv1.RoundKind_ROUND_KIND_ENLIGHTEN, CreateTime: ts(-10)}}},
+			{Id: "q2", Code: "Q02", Text: "Which wick?", Revision: 1, CreateTime: ts(-40),
+				Rounds: []*planv1.Round{enlighten, revise}},
+		},
+	}
+	html := page(t, Input{Export: exp})
+	if n := strings.Count(html, `<span class="status dig">Being investigated</span>`); n != 1 {
+		t.Errorf("%d questions shown investigated, want Q01 only", n)
+	}
+	for _, s := range []string{`class="card question dig"`, "Revised ×1", `Rounds <span class="n">3</span>`,
+		"Asked to investigate: How long does it burn?", "Revised by the lead"} {
+		if !strings.Contains(html, s) {
+			t.Errorf("the page lacks %q", s)
+		}
+	}
+}

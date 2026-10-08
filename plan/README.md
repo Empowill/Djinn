@@ -30,6 +30,7 @@ other tracker and no cloud service. A new task is a new file here, with a fresh 
 | T08 | 2 | Data | [716b9f97-data.md](716b9f97-data.md) |
 | T21 | 2 | The lead's terminal, inside the app, by voice | [17ed4dcd-lead-terminal.md](17ed4dcd-lead-terminal.md) |
 | T22 | 2 | Workers that start fast, with the right context, and are measured | [1689571a-fast-workers.md](1689571a-fast-workers.md) |
+| T25 | 2 | Review and decide at a glance | [4a699d0f-review-at-a-glance.md](4a699d0f-review-at-a-glance.md) |
 | T14 | 3 | Spend big models only where they matter | [8ce817da-cost.md](8ce817da-cost.md) |
 | T16 | 3 | Dispatch: plain Go code or a local model? | [263f074f-dispatch-bench.md](263f074f-dispatch-bench.md) |
 | T09 | 3 | Quality of life and clean-up | [3792046b-quality-of-life.md](3792046b-quality-of-life.md) |

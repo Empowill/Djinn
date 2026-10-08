@@ -343,8 +343,65 @@ message Question {
   Answer answer = 7;
   // What is at stake, in Markdown: what the answer changes, what each option costs.
   string context = 8;
-  // The option the asker recommends, and why, in Markdown.
+  // The option the asker recommends, and why, in Markdown. Starting with its letter (B: …) lets the developer
+  // approve it in one click.
   string recommendation = 9;
+  // What the developer marked on it from the window: read, approved.
+  repeated Mark marks = 10;
+  // Its rounds, oldest first: each request to investigate, each revision by the lead. The last one an open question
+  // has is a request: it is being investigated, and waits for the lead, not for the developer.
+  repeated Round rounds = 11;
+  // How many times the lead revised it.
+  int32 revision = 12;
+}
+
+// A round of a question before it is decided: a request to investigate, or the lead's revision.
+message Round {
+  // Which round.
+  RoundKind kind = 1;
+  // Who did it.
+  string actor = 2;
+  // When.
+  google.protobuf.Timestamp create_time = 3;
+  // For a request, what to dig into.
+  string note = 4;
+  // For a revision, what the question said before it.
+  string context = 5;
+  // For a revision, the options before it.
+  repeated string options = 6;
+  // For a revision, the recommendation before it.
+  string recommendation = 7;
+}
+
+// What a round is.
+enum RoundKind {
+  // Not set.
+  ROUND_KIND_UNSPECIFIED = 0;
+  // The developer asked to investigate before deciding.
+  ROUND_KIND_ENLIGHTEN = 1;
+  // The lead revised the question after investigating.
+  ROUND_KIND_REVISE = 2;
+}
+
+// A mark the developer puts on a question, a decision or a block: read, or approved as it is. The lead reads the marks
+// in the wish's brief and with djinn mark list.
+message Mark {
+  // Which mark.
+  MarkKind kind = 1;
+  // Who put it.
+  string actor = 2;
+  // When it was put.
+  google.protobuf.Timestamp create_time = 3;
+}
+
+// What a mark says.
+enum MarkKind {
+  // Not set.
+  MARK_KIND_UNSPECIFIED = 0;
+  // Read: the developer has seen it.
+  MARK_KIND_READ = 1;
+  // Approved as it is. On an open question, it answers with the option the recommendation names.
+  MARK_KIND_APPROVED = 2;
 }
 
 // The answer to a question.
@@ -382,6 +439,56 @@ service QuestionService {
   rpc List(QuestionServiceListRequest) returns (QuestionServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+  // Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
+  rpc Enlighten(QuestionServiceEnlightenRequest) returns (QuestionServiceEnlightenResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
+  // rounds, and the question waits for the developer again.
+  rpc Revise(QuestionServiceReviseRequest) returns (QuestionServiceReviseResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+}
+
+message QuestionServiceEnlightenRequest {
+  // The question: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // What to dig into before deciding.
+  string note = 2 [(buf.validate.field).string.max_len = 2000];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message QuestionServiceEnlightenResponse {
+  // The question, being investigated.
+  Question question = 1;
+}
+
+message QuestionServiceReviseRequest {
+  // The question: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // What is at stake now, in Markdown; the former context when empty.
+  string context = 2 [(buf.validate.field).string.max_len = 20000];
+  // The options now, up to four; the former ones when none.
+  repeated string options = 3 [
+    (buf.validate.field).repeated.max_items = 4,
+    (buf.validate.field).repeated.items.string.min_len = 1
+  ];
+  // The option you recommend now, and why; the former recommendation when empty.
+  string recommendation = 4 [(buf.validate.field).string.max_len = 20000];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message QuestionServiceReviseResponse {
+  // The question, revised.
+  Question question = 1;
 }
 
 message QuestionServiceAskRequest {
@@ -1058,6 +1165,8 @@ message Block {
   google.protobuf.Timestamp create_time = 9;
   // When it last changed.
   google.protobuf.Timestamp update_time = 10;
+  // What the developer marked on it from the window: read, approved.
+  repeated Mark marks = 11;
 }
 
 // Blocks: the free content of a wish, beside its tasks and questions.
@@ -1138,6 +1247,82 @@ message BlockServiceDeleteRequest {
 }
 
 message BlockServiceDeleteResponse {}
+
+// Marks: what the developer read or approved from the window, on questions, decisions and blocks, so that the lead
+// acts on a click without a word.
+service MarkService {
+  // Mark a question, a decision or a block: read, or approved as it is. Approving an open question answers it with
+  // the option its recommendation names, as djinn question answer does.
+  rpc Put(MarkServicePutRequest) returns (MarkServicePutResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // List the marks of a wish, the latest last.
+  rpc List(MarkServiceListRequest) returns (MarkServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+}
+
+// MarkTarget points to what a mark is on: a question by its code, or a question or a block by its identifier.
+message MarkTarget {
+  oneof ref {
+    option (buf.validate.oneof).required = true;
+    // A question's code, like Q03.
+    string code = 1 [(buf.validate.field).string.pattern = "^Q[0-9]{2,3}$"];
+    // The identifier of a question or of a block.
+    string id = 2 [(buf.validate.field).string.uuid = true];
+  }
+}
+
+// Marked is a mark with what it is on.
+message Marked {
+  // Wish of the question or block.
+  string wish_id = 1;
+  // The question marked, if it is one.
+  string question_id = 2;
+  // The block marked, if it is one.
+  string block_id = 3;
+  // The question's code, or the block's kind.
+  string label = 4;
+  // The question's text, or the block's title, in a line.
+  string title = 5;
+  // The mark.
+  Mark mark = 6;
+}
+
+message MarkServicePutRequest {
+  // What to mark: a question's code, like Q03, or the identifier of a question or of a block.
+  MarkTarget target = 1 [(buf.validate.field).required = true];
+  // The mark: read, or approved.
+  MarkKind kind = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum.defined_only = true
+  ];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Take the mark off instead. An answer stays.
+  bool remove = 4;
+}
+
+message MarkServicePutResponse {
+  // The mark, and what it is on.
+  Marked marked = 1;
+}
+
+message MarkServiceListRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message MarkServiceListResponse {
+  // The marks, the latest last.
+  repeated Marked marks = 1;
+}
 
 // Tasks: one worker each, an agent process in the task's own worktree.
 service TaskService {

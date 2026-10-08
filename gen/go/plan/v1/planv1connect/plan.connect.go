@@ -33,6 +33,8 @@ const (
 	WishServiceName = "plan.v1.WishService"
 	// BlockServiceName is the fully-qualified name of the BlockService service.
 	BlockServiceName = "plan.v1.BlockService"
+	// MarkServiceName is the fully-qualified name of the MarkService service.
+	MarkServiceName = "plan.v1.MarkService"
 	// TaskServiceName is the fully-qualified name of the TaskService service.
 	TaskServiceName = "plan.v1.TaskService"
 )
@@ -51,6 +53,11 @@ const (
 	QuestionServiceAnswerProcedure = "/plan.v1.QuestionService/Answer"
 	// QuestionServiceListProcedure is the fully-qualified name of the QuestionService's List RPC.
 	QuestionServiceListProcedure = "/plan.v1.QuestionService/List"
+	// QuestionServiceEnlightenProcedure is the fully-qualified name of the QuestionService's Enlighten
+	// RPC.
+	QuestionServiceEnlightenProcedure = "/plan.v1.QuestionService/Enlighten"
+	// QuestionServiceReviseProcedure is the fully-qualified name of the QuestionService's Revise RPC.
+	QuestionServiceReviseProcedure = "/plan.v1.QuestionService/Revise"
 	// ProjectServiceAddProcedure is the fully-qualified name of the ProjectService's Add RPC.
 	ProjectServiceAddProcedure = "/plan.v1.ProjectService/Add"
 	// ProjectServiceListProcedure is the fully-qualified name of the ProjectService's List RPC.
@@ -101,6 +108,10 @@ const (
 	BlockServiceListProcedure = "/plan.v1.BlockService/List"
 	// BlockServiceDeleteProcedure is the fully-qualified name of the BlockService's Delete RPC.
 	BlockServiceDeleteProcedure = "/plan.v1.BlockService/Delete"
+	// MarkServicePutProcedure is the fully-qualified name of the MarkService's Put RPC.
+	MarkServicePutProcedure = "/plan.v1.MarkService/Put"
+	// MarkServiceListProcedure is the fully-qualified name of the MarkService's List RPC.
+	MarkServiceListProcedure = "/plan.v1.MarkService/List"
 	// TaskServiceSpawnProcedure is the fully-qualified name of the TaskService's Spawn RPC.
 	TaskServiceSpawnProcedure = "/plan.v1.TaskService/Spawn"
 	// TaskServiceListProcedure is the fully-qualified name of the TaskService's List RPC.
@@ -125,6 +136,11 @@ type QuestionServiceClient interface {
 	Answer(context.Context, *connect.Request[v1.QuestionServiceAnswerRequest]) (*connect.Response[v1.QuestionServiceAnswerResponse], error)
 	// List questions, the most recent last.
 	List(context.Context, *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error)
+	// Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
+	Enlighten(context.Context, *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error)
+	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
+	// rounds, and the question waits for the developer again.
+	Revise(context.Context, *connect.Request[v1.QuestionServiceReviseRequest]) (*connect.Response[v1.QuestionServiceReviseResponse], error)
 }
 
 // NewQuestionServiceClient constructs a client for the plan.v1.QuestionService service. By default,
@@ -156,14 +172,28 @@ func NewQuestionServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(questionServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
+		enlighten: connect.NewClient[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse](
+			httpClient,
+			baseURL+QuestionServiceEnlightenProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Enlighten")),
+			connect.WithClientOptions(opts...),
+		),
+		revise: connect.NewClient[v1.QuestionServiceReviseRequest, v1.QuestionServiceReviseResponse](
+			httpClient,
+			baseURL+QuestionServiceReviseProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Revise")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // questionServiceClient implements QuestionServiceClient.
 type questionServiceClient struct {
-	ask    *connect.Client[v1.QuestionServiceAskRequest, v1.QuestionServiceAskResponse]
-	answer *connect.Client[v1.QuestionServiceAnswerRequest, v1.QuestionServiceAnswerResponse]
-	list   *connect.Client[v1.QuestionServiceListRequest, v1.QuestionServiceListResponse]
+	ask       *connect.Client[v1.QuestionServiceAskRequest, v1.QuestionServiceAskResponse]
+	answer    *connect.Client[v1.QuestionServiceAnswerRequest, v1.QuestionServiceAnswerResponse]
+	list      *connect.Client[v1.QuestionServiceListRequest, v1.QuestionServiceListResponse]
+	enlighten *connect.Client[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse]
+	revise    *connect.Client[v1.QuestionServiceReviseRequest, v1.QuestionServiceReviseResponse]
 }
 
 // Ask calls plan.v1.QuestionService.Ask.
@@ -181,6 +211,16 @@ func (c *questionServiceClient) List(ctx context.Context, req *connect.Request[v
 	return c.list.CallUnary(ctx, req)
 }
 
+// Enlighten calls plan.v1.QuestionService.Enlighten.
+func (c *questionServiceClient) Enlighten(ctx context.Context, req *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error) {
+	return c.enlighten.CallUnary(ctx, req)
+}
+
+// Revise calls plan.v1.QuestionService.Revise.
+func (c *questionServiceClient) Revise(ctx context.Context, req *connect.Request[v1.QuestionServiceReviseRequest]) (*connect.Response[v1.QuestionServiceReviseResponse], error) {
+	return c.revise.CallUnary(ctx, req)
+}
+
 // QuestionServiceHandler is an implementation of the plan.v1.QuestionService service.
 type QuestionServiceHandler interface {
 	// Ask the developer a question. Offer up to four options to answer by letter, or none for a yes/no question.
@@ -189,6 +229,11 @@ type QuestionServiceHandler interface {
 	Answer(context.Context, *connect.Request[v1.QuestionServiceAnswerRequest]) (*connect.Response[v1.QuestionServiceAnswerResponse], error)
 	// List questions, the most recent last.
 	List(context.Context, *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error)
+	// Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
+	Enlighten(context.Context, *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error)
+	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
+	// rounds, and the question waits for the developer again.
+	Revise(context.Context, *connect.Request[v1.QuestionServiceReviseRequest]) (*connect.Response[v1.QuestionServiceReviseResponse], error)
 }
 
 // NewQuestionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -216,6 +261,18 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 		connect.WithSchema(questionServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
+	questionServiceEnlightenHandler := connect.NewUnaryHandler(
+		QuestionServiceEnlightenProcedure,
+		svc.Enlighten,
+		connect.WithSchema(questionServiceMethods.ByName("Enlighten")),
+		connect.WithHandlerOptions(opts...),
+	)
+	questionServiceReviseHandler := connect.NewUnaryHandler(
+		QuestionServiceReviseProcedure,
+		svc.Revise,
+		connect.WithSchema(questionServiceMethods.ByName("Revise")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.QuestionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case QuestionServiceAskProcedure:
@@ -224,6 +281,10 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 			questionServiceAnswerHandler.ServeHTTP(w, r)
 		case QuestionServiceListProcedure:
 			questionServiceListHandler.ServeHTTP(w, r)
+		case QuestionServiceEnlightenProcedure:
+			questionServiceEnlightenHandler.ServeHTTP(w, r)
+		case QuestionServiceReviseProcedure:
+			questionServiceReviseHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -243,6 +304,14 @@ func (UnimplementedQuestionServiceHandler) Answer(context.Context, *connect.Requ
 
 func (UnimplementedQuestionServiceHandler) List(context.Context, *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.List is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Enlighten(context.Context, *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Enlighten is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Revise(context.Context, *connect.Request[v1.QuestionServiceReviseRequest]) (*connect.Response[v1.QuestionServiceReviseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Revise is not implemented"))
 }
 
 // ProjectServiceClient is a client for the plan.v1.ProjectService service.
@@ -1161,6 +1230,108 @@ func (UnimplementedBlockServiceHandler) List(context.Context, *connect.Request[v
 
 func (UnimplementedBlockServiceHandler) Delete(context.Context, *connect.Request[v1.BlockServiceDeleteRequest]) (*connect.Response[v1.BlockServiceDeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.BlockService.Delete is not implemented"))
+}
+
+// MarkServiceClient is a client for the plan.v1.MarkService service.
+type MarkServiceClient interface {
+	// Mark a question, a decision or a block: read, or approved as it is. Approving an open question answers it with
+	// the option its recommendation names, as djinn question answer does.
+	Put(context.Context, *connect.Request[v1.MarkServicePutRequest]) (*connect.Response[v1.MarkServicePutResponse], error)
+	// List the marks of a wish, the latest last.
+	List(context.Context, *connect.Request[v1.MarkServiceListRequest]) (*connect.Response[v1.MarkServiceListResponse], error)
+}
+
+// NewMarkServiceClient constructs a client for the plan.v1.MarkService service. By default, it uses
+// the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewMarkServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) MarkServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	markServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("MarkService").Methods()
+	return &markServiceClient{
+		put: connect.NewClient[v1.MarkServicePutRequest, v1.MarkServicePutResponse](
+			httpClient,
+			baseURL+MarkServicePutProcedure,
+			connect.WithSchema(markServiceMethods.ByName("Put")),
+			connect.WithClientOptions(opts...),
+		),
+		list: connect.NewClient[v1.MarkServiceListRequest, v1.MarkServiceListResponse](
+			httpClient,
+			baseURL+MarkServiceListProcedure,
+			connect.WithSchema(markServiceMethods.ByName("List")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// markServiceClient implements MarkServiceClient.
+type markServiceClient struct {
+	put  *connect.Client[v1.MarkServicePutRequest, v1.MarkServicePutResponse]
+	list *connect.Client[v1.MarkServiceListRequest, v1.MarkServiceListResponse]
+}
+
+// Put calls plan.v1.MarkService.Put.
+func (c *markServiceClient) Put(ctx context.Context, req *connect.Request[v1.MarkServicePutRequest]) (*connect.Response[v1.MarkServicePutResponse], error) {
+	return c.put.CallUnary(ctx, req)
+}
+
+// List calls plan.v1.MarkService.List.
+func (c *markServiceClient) List(ctx context.Context, req *connect.Request[v1.MarkServiceListRequest]) (*connect.Response[v1.MarkServiceListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
+// MarkServiceHandler is an implementation of the plan.v1.MarkService service.
+type MarkServiceHandler interface {
+	// Mark a question, a decision or a block: read, or approved as it is. Approving an open question answers it with
+	// the option its recommendation names, as djinn question answer does.
+	Put(context.Context, *connect.Request[v1.MarkServicePutRequest]) (*connect.Response[v1.MarkServicePutResponse], error)
+	// List the marks of a wish, the latest last.
+	List(context.Context, *connect.Request[v1.MarkServiceListRequest]) (*connect.Response[v1.MarkServiceListResponse], error)
+}
+
+// NewMarkServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewMarkServiceHandler(svc MarkServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	markServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("MarkService").Methods()
+	markServicePutHandler := connect.NewUnaryHandler(
+		MarkServicePutProcedure,
+		svc.Put,
+		connect.WithSchema(markServiceMethods.ByName("Put")),
+		connect.WithHandlerOptions(opts...),
+	)
+	markServiceListHandler := connect.NewUnaryHandler(
+		MarkServiceListProcedure,
+		svc.List,
+		connect.WithSchema(markServiceMethods.ByName("List")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.MarkService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case MarkServicePutProcedure:
+			markServicePutHandler.ServeHTTP(w, r)
+		case MarkServiceListProcedure:
+			markServiceListHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedMarkServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedMarkServiceHandler struct{}
+
+func (UnimplementedMarkServiceHandler) Put(context.Context, *connect.Request[v1.MarkServicePutRequest]) (*connect.Response[v1.MarkServicePutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.MarkService.Put is not implemented"))
+}
+
+func (UnimplementedMarkServiceHandler) List(context.Context, *connect.Request[v1.MarkServiceListRequest]) (*connect.Response[v1.MarkServiceListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.MarkService.List is not implemented"))
 }
 
 // TaskServiceClient is a client for the plan.v1.TaskService service.
