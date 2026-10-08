@@ -31,8 +31,7 @@ the context its task needs, no more.
   before it runs.
 
 ## Done when
-- [ ] The bench has run, and its figures are in this file. *Prepared, not run: it waits for the developer's go
-  (see "The bench" below).*
+- [x] The bench has run, and its figures are in this file (Haiku, below). Opus waits for a go.
 - [x] A task can ask for a fork or a brief, and Djinn picks the brief by default.
 - [ ] Warm workers are on, bounded by the machine, and their idle cost is known. *Built, bounded and off by
   default (`djinn up --warm-workers`); their memory is supposed until the bench measures it.*
@@ -108,6 +107,26 @@ BENCH_PAID=yes BENCH_MAX_USD=7 BENCH_MODEL=opus go tool task bench-workers   # a
 - **To know before running.** `--bare` reads no OAuth sign-in: with a subscription and no `ANTHROPIC_API_KEY`, the
   bare runs fail at once, for free, and say so. The sessions land in claude's own folder, under the temporary
   folder's name. The cache makes the rounds after the first cheaper: compare medians, not the first round.
+
+### First run, Haiku, 3 rounds ($0.06)
+
+2026-10-08, model haiku, 3 rounds, $0.0616 spent. Medians:
+
+| Variant | Runs ok | First output | Result | Claude's ttft | Cache read | Cache write | Input | Output | Cost | Warm RSS |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cold | 3 of 3 | 2068 ms | 3524 ms | 1507 ms | 38153 | 12845 | 4 | 409 | $0.0032 | - |
+| bare | 0 of 3 | 0 ms | 0 ms | 0 ms | 0 | 0 | 0 | 0 | $0.0000 | - |
+| fork | 3 of 3 | 2034 ms | 2954 ms | 1337 ms | 78665 | 32625 | 8 | 484 | $0.0076 | - |
+| warm | 3 of 3 | 2136 ms | 2697 ms | 1728 ms | 43648 | 14546 | 4 | 300 | $0.0035 | 238 MB |
+| brief | 3 of 3 | 2284 ms | 3554 ms | 1850 ms | 38610 | 15398 | 4 | 338 | $0.0036 | - |
+
+What it says, on a tiny task with a small parent:
+- **A cold start is cheap**: about 2 s to the first output. The CLI's own start is not the cost to fight.
+- **Warm saves about 0.8 s** to the result (2.7 s against 3.5 s), for 238 MB of memory while it waits.
+- **A fork reads twice the cache and costs twice as much**, from a parent of only 40k tokens. From a lead of 150k
+  tokens, the gap grows with every turn: a brief stays the default.
+- **A brief costs what a cold start costs**, and carries the wish's state.
+- **`--bare` needs an API key**: it does not read the OAuth login. Not a path for people on a subscription.
 
 ## Open questions
 - Codex and Antigravity: what forking and resuming each offers (T07, T18). *Codex forks (`thread/fork`), agy does
