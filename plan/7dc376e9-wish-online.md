@@ -32,13 +32,25 @@ hand-offs: one person works, the other reads. Later, several people work on the 
   file stops it. No new state in the store. `djinn wish render` writes the page once, to Downloads or `--file`.
 - **A commit hook, not a poll.** The store calls back after each commit with the entities it changed; the pages
   mark the synced wishes they touch, and render them at most once a second.
-- **Order of the page:** what matters now first. Header with contents (pills naming only the sections present), to
-  decide (open questions; a question a waiting task needs is red, open and first; the others folded, their
-  recommendation in sight), waiting for you, running now (the workers running), tasks (running, waiting, failed in
-  clear, with their dependencies and why a planned one waits; planned and finished folded), decisions (the latest
-  first, a compact table; past 15, folded), notes (the blocks in their order, each under its title; a long block or
-  a run of more than three of one kind folded), journal (commands and `log` blocks, the latest first; past 30,
-  folded). Empty sections are not rendered.
+- **Order of the page:** what matters now first. A bar pinned to the top while something waits for the user (each
+  blocking question a line, the other questions a line each while they are two at most, else one line naming them;
+  the tasks cut short in one line; a project to attach; a ready wish), the most urgent first. Header with the tasks
+  counted by status and contents (pills naming only the sections present, coloured as their most urgent item). To
+  decide (open questions, a card each: the recommendation boxed and first, then the options, then the context; a
+  question a waiting task needs is red, open and first; the others orange and folded, their recommendation in sight;
+  a lone question open), waiting for you, who runs now (the running workers as cards, with their last event; the
+  finished work folded below as a table), tasks (waiting, failed and cut short in clear, with their dependencies;
+  planned folded as a table with why each waits), decisions (the latest first, a table: when, the question and the
+  choice in bold, why; past 15, folded), notes (the blocks in their order, each under its title; a long block
+  folded; a run of more than three of one kind gathered in one card, a folded line each, eight in sight), journal
+  (commands and `log` blocks, the latest first, a compact table; past 10, folded), worker events (what they said,
+  their status changes and errors, the latest first; past 10, folded). Empty sections are not rendered.
+- **One colour language, never colour alone.** Each state has a colour, an icon and a word: done green ✓, running
+  blue with a live dot, waiting for you orange ?, planned grey ○, failed red ✕, interrupted amber ↺, paused indigo ‖,
+  stopped grey ■; and for what waits: blocking red !, waiting for you orange ?, can wait neutral ◷. Used by the
+  tasks, the workers, the bar and the pills. A test checks every colour at 4.5:1 at least on its soft colour and on a
+  card, in light and dark.
+- **A Mermaid diagram shows as its source**, with a line that says so: the page runs no script.
 - **"Waiting for you" comes from the lamp only:** a task waiting on its edit question, a task cut short by a stop,
   a project not on this machine. No block kind is read as an action.
 - **Same scrubbing as the export,** plus the data folder (`djinn-data`). Tool calls and results stay out.
@@ -52,6 +64,10 @@ hand-offs: one person works, the other reads. Later, several people work on the 
     printed file as it is, in one call, without reading or rewriting it, no HTML by hand; `TestBrief` checks it)
   - [ ] Seen publishing. (needs: a real lead session)
 - [x] A change in the wish updates the page without the model writing HTML.
+- [x] The page reads at a glance: a bar of what waits, questions first with their recommendation boxed, one colour
+  language with icons and words, who runs now, compact tables for the rest, light and dark, 375 px without
+  horizontal scroll. (w37: `TestBar`, `TestColourLanguage`, `TestContrast`, `TestEvents`, `TestDiagram`,
+  `TestBusyPage`; screenshots of an imported wish rendered by a test djinn, light, dark and 375 px)
 - [ ] A hand-off: the other person opens the link and sees the wish as it is. (needs: two people)
 
 ## Open questions

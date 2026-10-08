@@ -144,7 +144,7 @@ func TestSync(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, file, "Plan B")
-	if strings.Count(string(before), `class="card question"`) != 1 {
+	if strings.Count(string(before), `<details class="q `) != 1 {
 		t.Errorf("the page shows the other wish's question too")
 	}
 
