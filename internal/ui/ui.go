@@ -45,6 +45,10 @@ type Service struct {
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
 	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
 	Restart func() (version string, terminals int, err error)
+	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: searchPath, which adds
+	// the login shell's PATH and the installers' folders to Djinn's own, then the applications that ship an agent.
+	// Tests replace it.
+	AgentPath func() string
 	// Install installs a build that SetBuild proposed: its project's install command, run on its commit, telling
 	// progress each step and what it waits for. It tells whether a newer Djinn waits at the path of the running one
 	// since, to restart on. Nil: no build installs.
@@ -251,7 +255,7 @@ var providers = []struct{ id, name, program string }{
 }
 
 func (s *Service) GetEnvironment(
-	context.Context, *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
+	ctx context.Context, req *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
 ) (*connect.Response[uiv1.UiServiceGetEnvironmentResponse], error) {
 	platform := runtime.GOOS
 	if platform == "windows" {
@@ -263,14 +267,22 @@ func (s *Service) GetEnvironment(
 	if s.Shortcuts != nil {
 		res.Shortcut = s.Shortcuts.State()
 	}
-	for _, p := range providers {
-		command, err := exec.LookPath(p.program)
-		if err != nil {
-			command = p.program
+	if req.Msg.GetAgents() {
+		if s.AgentPath != nil {
+			res.Providers = checkAgents(ctx, s.AgentPath(), false)
+		} else {
+			res.Providers = checkAgents(ctx, searchPath(), true)
 		}
-		res.Providers = append(res.Providers, &uiv1.Provider{
-			Id: p.id, Name: p.name, Available: err == nil, Command: command,
-		})
+	} else {
+		for _, p := range providers {
+			command, err := exec.LookPath(p.program)
+			if err != nil {
+				command = p.program
+			}
+			res.Providers = append(res.Providers, &uiv1.Provider{
+				Id: p.id, Name: p.name, Available: err == nil, Command: command,
+			})
+		}
 	}
 	return connect.NewResponse(res), nil
 }

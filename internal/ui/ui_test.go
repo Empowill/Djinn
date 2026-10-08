@@ -28,6 +28,9 @@ func newService(t *testing.T) (*Service, *[]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// No test runs the real agents: none is found.
+	empty := t.TempDir()
+	s.AgentPath = func() string { return empty }
 	var opened []string
 	s.Open = func(link string) error { opened = append(opened, link); return nil }
 	return s, &opened
@@ -310,7 +313,8 @@ func TestHandler(t *testing.T) {
 	defer server.Close()
 	client := uiv1connect.NewUiServiceClient(server.Client(), server.URL)
 
-	env, err := client.GetEnvironment(context.Background(), connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{}))
+	env, err := client.GetEnvironment(context.Background(),
+		connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{Agents: true}))
 	if err != nil {
 		t.Fatal(err)
 	}

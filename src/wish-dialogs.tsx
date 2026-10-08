@@ -1,6 +1,6 @@
 // The window's dialogs on the services: make a wish, add a project, look at a project, its checks and its skills, and the
 // settings: those that stay on this page (the language, the theme), and the global shortcut, which djinn takes.
-import { ArrowRight, BookOpen, FolderOpen, Terminal } from "lucide-react";
+import { ArrowRight, BookOpen, FolderOpen } from "lucide-react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 
 import {
@@ -14,9 +14,11 @@ import {
   type Skill,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
-import type {
-  Shortcut,
-  UiServiceGetEnvironmentResponse,
+import {
+  type Provider,
+  ProviderState,
+  type Shortcut,
+  type UiServiceGetEnvironmentResponse,
 } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
@@ -28,6 +30,7 @@ import {
   languages,
   setLanguage,
   systemLanguage,
+  type TextKey,
   t,
 } from "./i18n";
 import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
@@ -605,6 +608,61 @@ export function ShortcutField({
   );
 }
 
+// agentStates names where an agent stands, and the dot that shows it.
+const agentStates: Record<ProviderState, { label: TextKey; dot: string }> = {
+  [ProviderState.UNSPECIFIED]: {
+    label: "settings.agent_unknown",
+    dot: "neutral",
+  },
+  [ProviderState.MISSING]: { label: "settings.agent_missing", dot: "neutral" },
+  [ProviderState.SIGNED_OUT]: {
+    label: "settings.agent_signed_out",
+    dot: "blocked",
+  },
+  [ProviderState.READY]: { label: "settings.agent_ready", dot: "green" },
+  [ProviderState.UNKNOWN]: { label: "settings.agent_unknown", dot: "blocked" },
+};
+
+// AgentSetting is one agent: installed or not, its version, signed in or not, and the command that takes it further.
+function AgentSetting({ agent }: { agent: Provider }) {
+  const state = agentStates[agent.state] ?? agentStates[ProviderState.UNKNOWN];
+  const next =
+    agent.state === ProviderState.MISSING
+      ? { label: t("settings.agent_install"), command: agent.installCommand }
+      : agent.state === ProviderState.SIGNED_OUT
+        ? { label: t("settings.agent_login"), command: agent.loginCommand }
+        : agent.state === ProviderState.UNKNOWN && agent.loginCommand
+          ? {
+              label: t("settings.agent_login_unknown"),
+              command: agent.loginCommand,
+            }
+          : undefined;
+  return (
+    <div className="provider-setting">
+      <span className="provider-glyph">
+        {agent.id === "codex" ? "⬡" : agent.id === "agy" ? "◆" : "✳"}
+      </span>
+      <div>
+        <h3>{agent.name}</h3>
+        <span className="muted-text">
+          {agent.available
+            ? [agent.version, agent.command].filter(Boolean).join(" · ")
+            : t("settings.agent_missing")}
+        </span>
+        {next?.command && (
+          <small>
+            {next.label} <code>{next.command}</code>
+          </small>
+        )}
+      </div>
+      <span className="status-text">
+        <span className={`status-dot ${state.dot}`} />
+        {t(state.label)}
+      </span>
+    </div>
+  );
+}
+
 // Settings: the agents djinn finds on this machine, the language and the theme of the page, the global shortcut, and
 // the way to the documentation.
 export function Settings({
@@ -619,8 +677,9 @@ export function Settings({
   const [theme, setTheme] = useState<Theme>(chosenTheme);
   useEffect(() => {
     let live = true;
+    // Checking the agents runs each one's status command: it takes up to a few seconds.
     clients.ui
-      .getEnvironment({})
+      .getEnvironment({ agents: true })
       .then((res) => live && setEnv(res))
       .catch(() => undefined);
     return () => {
@@ -635,34 +694,14 @@ export function Settings({
       wide
     >
       <div className="provider-settings">
-        {env?.providers.map((p) => (
-          <div className="provider-setting" key={p.id}>
-            <span className="provider-glyph">
-              {p.id === "codex" ? "⬡" : "✳"}
-            </span>
-            <div>
-              <h3>{p.name}</h3>
-              <span className="muted-text">
-                {p.available ? p.command : t("settings.cli_missing")}
-              </span>
-            </div>
-            <span
-              className={`status-dot ${p.available ? "green" : "neutral"}`}
-            />
+        {env === undefined && (
+          <div className="provider-setting">
+            <span className="muted-text">{t("settings.agent_checking")}</span>
           </div>
+        )}
+        {env?.providers.map((p) => (
+          <AgentSetting agent={p} key={p.id} />
         ))}
-      </div>
-      <div className="cli-help">
-        <Terminal size={16} />
-        <div>
-          <strong>{t("settings.install_cli")}</strong>
-          <p>
-            {t("settings.cli_codex")} <code>npm install -g @openai/codex</code>
-            <br />
-            {t("settings.cli_claude")}{" "}
-            <code>npm install -g @anthropic-ai/claude-code</code>
-          </p>
-        </div>
       </div>
       <div className="settings-divider" />
       <div className="setting-row">
