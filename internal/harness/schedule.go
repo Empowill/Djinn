@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -144,7 +145,7 @@ func (h *Harness) schedule(ctx context.Context) {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
 		case d.Why != "":
-			h.setWaiting(ctx, t, d.Why)
+			h.setWaiting(ctx, t, d.Why, d.Machine)
 		default:
 			if err := h.launchPlanned(ctx, t); err != nil {
 				log.Printf("djinn: task %s: %v", t.GetCode(), err)
@@ -205,20 +206,21 @@ func (h *Harness) Describe(ctx context.Context, taskID string) (string, error) {
 	return t.GetCode() + " (" + t.GetTitle() + ")", nil
 }
 
-// setWaiting records why a planned task waits, when the reason changed, with an event.
-func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string) {
-	if t.GetWaitReason() == why {
+// setWaiting records why a planned task waits, and whether for the machine alone, when the reason changed, with an
+// event.
+func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine bool) {
+	if t.GetWaitReason() == why && t.GetMachineWait() == machine {
 		return
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason = why
+	t.WaitReason, t.MachineWait = why, machine
 	h.writeAlone(ctx, actorHarness, methodWait, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
 }
 
 // failPlanned ends a planned task that never will start.
 func (h *Harness) failPlanned(ctx context.Context, t *planv1.Task, why string) {
 	t = proto.CloneOf(t)
-	t.Status, t.Error, t.WaitReason, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", timestamppb.Now()
+	t.Status, t.Error, t.WaitReason, t.MachineWait, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", false, timestamppb.Now()
 	h.writeAlone(ctx, actorHarness, methodEnd, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "failed: " + why})
 	h.wake() // Its own dependents fail in turn.
 }
@@ -256,7 +258,7 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 // grants and the project's configuration as they are, and it may ask its edit question.
 func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 	t = proto.CloneOf(t)
-	t.WaitReason = ""
+	t.WaitReason, t.MachineWait = "", false
 	provider, ok := h.providers[t.GetProvider()]
 	if !ok {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
@@ -301,6 +303,39 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err
+}
+
+// Start starts a planned task that waits for the machine alone, now: the developer asked for it, whatever the slots
+// and the pressure. A task held by anything else (its wish, a dependency, a write scope) is refused, with why.
+func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskServiceStartRequest) (*planv1.Task, error) {
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	task, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if !planned(task) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not planned: %s", task.GetCode(), short(task.GetStatus())))
+	}
+	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	s, err := h.situation(ctx, tasks)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if why, failed := s.Held(task); why != "" || failed != "" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s waits for more than the machine: %s", task.GetCode(), cmp.Or(failed, why)))
+	}
+	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := h.launchPlanned(ctx, task); err != nil {
+		return nil, plan.Status(err)
+	}
+	task, err = store.Get[*planv1.Task](ctx, h.store, task.GetId())
+	return task, plan.Status(err)
 }
 
 // resolveDeps turns what a spawn names as dependencies, codes (W1, any case) or identifiers of tasks of the same

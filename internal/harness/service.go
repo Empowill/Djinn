@@ -92,6 +92,16 @@ func (s *Tasks) Resume(
 	return connect.NewResponse(&planv1.TaskServiceResumeResponse{Task: task}), nil
 }
 
+func (s *Tasks) Start(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceStartRequest],
+) (*connect.Response[planv1.TaskServiceStartResponse], error) {
+	task, err := s.h.Start(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceStartResponse{Task: task}), nil
+}
+
 func (s *Tasks) Watch(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceWatchRequest],
 	stream *connect.ServerStream[planv1.TaskServiceWatchResponse],

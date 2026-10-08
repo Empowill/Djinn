@@ -257,6 +257,9 @@ message Task {
   string fork_session = 25;
   // Where the fork comes from, for a reader: the code of the task (W1), or "lead".
   string fork_of = 26;
+  // The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
+  // start starts it anyway.
+  bool machine_wait = 27;
 }
 
 // TaskEventKind says what a worker event is. Its content stays free text.
@@ -1361,6 +1364,11 @@ service TaskService {
   rpc Resume(TaskServiceResumeRequest) returns (TaskServiceResumeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+  // Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
+  // task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+  rpc Start(TaskServiceStartRequest) returns (TaskServiceStartResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
   // Follow a task's events as they come, from the first one or after a position; ends with the task.
   rpc Watch(TaskServiceWatchRequest) returns (stream TaskServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -1519,6 +1527,19 @@ message TaskServiceResumeRequest {
 
 message TaskServiceResumeResponse {
   // The task, running again.
+  Task task = 1;
+}
+
+message TaskServiceStartRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServiceStartResponse {
+  // The task, its worker started.
   Task task = 1;
 }
 

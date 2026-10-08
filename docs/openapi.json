@@ -1257,6 +1257,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "machineWait": {
+            "description": "The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task start starts it anyway.",
+            "type": "boolean"
+          },
           "maxBudgetUsd": {
             "description": "Most the task may spend, in US dollars, over all its runs; 0 for no cap.",
             "type": "number"
@@ -1641,6 +1645,28 @@
           "task": {
             "$ref": "#/components/schemas/plan.v1.Task",
             "description": "The task: running, or waiting with its reason."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceStartRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceStartResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, its worker started."
           }
         },
         "type": "object"
@@ -3204,6 +3230,44 @@
           }
         },
         "summary": "djinn task spawn",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Start": {
+      "post": {
+        "description": "Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.",
+        "operationId": "TaskService_Start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceStartResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task start",
         "tags": [
           "TaskService"
         ]

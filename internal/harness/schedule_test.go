@@ -348,3 +348,43 @@ func TestNote(t *testing.T) {
 		t.Errorf("events: %q", texts)
 	}
 }
+
+// TestStartAnyway: a planned task that waits for the machine alone says so, and starts at once when forced, under
+// pressure; one that waits for a dependency is refused, and keeps waiting.
+func TestStartAnyway(t *testing.T) {
+	l := &limit{slots: 1, pressure: "simulated"}
+	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+	held := e.mustSpawn(t, wishID, "Held", "text ok", nil)
+	if !held.GetMachineWait() || held.GetWaitReason() != "the machine is under pressure: simulated" {
+		t.Fatalf("under pressure: %v", held)
+	}
+	after := e.mustSpawn(t, wishID, "After", "text after", &planv1.TaskServiceSpawnRequest{DependsOn: []string{held.GetCode()}})
+	if after.GetMachineWait() {
+		t.Errorf("waits for a dependency, not for the machine: %v", after)
+	}
+	start := func(id string) (*planv1.Task, error) {
+		res, err := e.tasks.Start(t.Context(), connect.NewRequest(&planv1.TaskServiceStartRequest{TaskId: id}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetTask(), nil
+	}
+	if _, err := start(after.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "waits for W1") {
+		t.Errorf("forcing a task held by a dependency: %v", err)
+	}
+	got, err := start(held.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetStartTime() == nil || got.GetMachineWait() || got.GetWaitReason() != "" {
+		t.Errorf("forced = %v", got)
+	}
+	if got := e.ended(t, held.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("forced, ended = %v", got)
+	}
+	if _, err := start(held.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("forcing a task that ran: %v", err)
+	}
+}

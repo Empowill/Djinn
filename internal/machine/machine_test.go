@@ -92,7 +92,11 @@ func TestPressure(t *testing.T) {
 		{"calm", Snapshot{Cores: 8, CPU: &Pressure{Some: 10}, Memory: &Pressure{Some: 1}, LoadKnown: true, Load1: 40}, ""},
 		{"cpu", Snapshot{Cores: 8, CPU: &Pressure{Some: 70}, Memory: &Pressure{}}, "waited for the CPU 70%"},
 		{"memory", Snapshot{Cores: 8, CPU: &Pressure{}, Memory: &Pressure{Some: 12}}, "waited for memory 12%"},
-		{"macOS level", Snapshot{Cores: 8, MemoryLevel: 2, MemoryTotal: 16 * GiB}, "memory pressure"},
+		{"macOS critical", Snapshot{Cores: 8, MemoryLevel: 4, MemoryTotal: 16 * GiB}, "critical memory pressure"},
+		{"macOS warning", Snapshot{Cores: 8, MemoryLevel: 2, MemoryTotal: 16 * GiB}, ""},
+		// A Mac busy with a test run: warning level, little memory free as macOS counts it, a load of 3.4 a core.
+		{"macOS busy", Snapshot{Cores: 10, MemoryLevel: 2, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 4, LoadKnown: true,
+			Load1: 34}, ""},
 		{"macOS calm", Snapshot{Cores: 8, MemoryLevel: 1, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 2}, ""},
 		{"load without PSI", Snapshot{Cores: 4, LoadKnown: true, Load1: 9}, "load is 9.0 on 4 cores"},
 		{"memory without PSI", Snapshot{Cores: 4, MemoryTotal: 16 * GiB, MemoryAvailable: GiB}, "1.0 GiB of memory available"},

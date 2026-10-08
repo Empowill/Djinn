@@ -34,6 +34,9 @@ type Snapshot struct {
 	Time        time.Time
 }
 
+// MemoryCritical is macOS's critical memory pressure level, the one that holds new workers.
+const MemoryCritical = 4
+
 // Policy turns a snapshot into a number of workers and a pressure verdict. Every threshold is a field: the
 // defaults are DefaultPolicy.
 type Policy struct {
@@ -50,7 +53,9 @@ type Policy struct {
 	CPUPressure    float64
 	MemoryPressure float64
 	// Without PSI: when the load average per core reaches LoadPerCore, or the memory available falls below
-	// MemoryFree of the total. On macOS, the system's own memory pressure level at warning or above.
+	// MemoryFree of the total. On macOS, only the system's own memory pressure level at critical: warning is frequent
+	// and passing on a busy Mac, and a build or a test run there loads every core well past LoadPerCore while a
+	// worker, mostly waiting for its model, would run fine. Neither holds a worker.
 	LoadPerCore float64
 	MemoryFree  float64
 }
@@ -101,9 +106,9 @@ func (p Policy) Pressure(s Snapshot) string {
 		return fmt.Sprintf("tasks waited for the CPU %.0f%% of the last 10 s (%.0f%% at most)", s.CPU.Some, p.CPUPressure)
 	case s.Memory != nil && s.Memory.Some >= p.MemoryPressure:
 		return fmt.Sprintf("tasks waited for memory %.0f%% of the last 10 s (%.0f%% at most)", s.Memory.Some, p.MemoryPressure)
-	case s.MemoryLevel >= 2:
-		return "the system reports memory pressure"
-	case s.CPU == nil && s.LoadKnown && s.Cores > 0 && s.Load1/float64(s.Cores) >= p.LoadPerCore:
+	case s.MemoryLevel >= MemoryCritical:
+		return "the system reports critical memory pressure"
+	case s.CPU == nil && s.MemoryLevel == 0 && s.LoadKnown && s.Cores > 0 && s.Load1/float64(s.Cores) >= p.LoadPerCore:
 		return fmt.Sprintf("the load is %.1f on %d cores (%.1f a core at most)", s.Load1, s.Cores, p.LoadPerCore)
 	case s.Memory == nil && s.MemoryLevel == 0 && s.MemoryTotal > 0 &&
 		float64(s.MemoryAvailable) < p.MemoryFree*float64(s.MemoryTotal):
