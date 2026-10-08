@@ -579,7 +579,10 @@ func (w *codexWorker) notification(events *lineEvents, method string, raw json.R
 		}
 		switch p.Turn.Status {
 		case "completed":
-		case "failed", "interrupted":
+			if w.lastErr != "" {
+				w.failure = w.lastErr // An error codex did not retry: the turn did not finish its work.
+			}
+		default: // failed, interrupted, or a status Djinn does not know: only completed is done.
 			why := p.Turn.Error.text()
 			if why == "" {
 				why = "codex turn " + p.Turn.Status

@@ -108,6 +108,7 @@ type run struct {
 	restart bool          // the worker stops to start again, allowed to edit
 	unread  []string      // messages the worker took on its input and has said nothing after yet
 	warm    *warm         // the warm worker the task takes, until launch
+	failure string        // the last error the current worker said: it never ends done
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
@@ -445,6 +446,7 @@ func (h *Harness) launch(
 func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error {
 	t := r.task
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
+	r.failure = ""
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
@@ -583,6 +585,9 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Usage != nil {
 		r.task.Usage, changed = sum(r.base, ev.Usage), true
 	}
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
+		r.failure = ev.Text
+	}
 	var task proto.Message
 	if changed {
 		task = r.task
@@ -645,7 +650,9 @@ func (h *Harness) finish(r *run, res Result) {
 }
 
 // end gives the task its final status, then lets its watchers go. A task whose worker read while it asks whether
-// it may edit waits for the answer.
+// it may edit waits for the answer. A task is done only when its worker ended without an error, whatever its
+// provider: an error it reported, an exit code other than 0, or an error it said on the way, even when its
+// process then exited 0, fails the task with the reason.
 func (h *Harness) end(r *run, res Result) {
 	for flushed := false; !flushed; {
 		select {
@@ -669,6 +676,8 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, res.Err.Error()
 	case res.ExitCode != 0:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, fmt.Sprintf("exit code %d", res.ExitCode)
+	case r.failure != "":
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, r.failure
 	case t.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_WAITING, "waiting for the answer to its edit question"
 	default:

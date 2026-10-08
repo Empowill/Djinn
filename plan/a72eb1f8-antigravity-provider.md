@@ -70,8 +70,12 @@ Codex, within what Google's terms allow.
   `--dangerously-skip-permissions`.
 - The stream read into Djinn's events (text deltas gathered per step, tool steps, result with its usage,
   `AGY_ERROR` and the soft-denial notice on the error output); tokens only, agy gives no cost.
-- Nine cases replayed by `TestCatalog`, all **written from the documentation and the binary, none captured**:
-  [`docs/providers.md`](../docs/providers.md#antigravity).
+- Cases replayed by `TestCatalog`, written from the documentation and the binary, but two **captured** from real
+  runs: [`docs/providers.md`](../docs/providers.md#antigravity).
+- 08/10, real runs W35, W36, W38 (agy 1.3.0, `--mode accept-edits`): agy denies a shell command headless and ends
+  its turn with status `SUCCESS` and `denied_actions`; Djinn marked them done. Such a turn now fails the task:
+  "agy stopped: it cannot run commands headless (<command>). Run this task with claude or codex."
+  (`TestCatalog/antigravity/permission-denied*`, `TestAgyDenialFailsTask`). Today agy suits edit-only tasks.
 
 ## Done when
 - [x] A worker can be started with `agy` in a worktree (`djinn task spawn --provider antigravity`), its

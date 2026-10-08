@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,8 +40,9 @@ type Antigravity struct {
 //
 // With permissions, edit becomes --mode accept-edits, and network off --sandbox, which only restricts more. agy
 // takes no list of commands at launch, and its headless runs do not apply its allow rules: a command that needs
-// an approval is soft-denied, listed or not. agy 1.3.0 has no auto mode on its command line (--mode takes
-// accept-edits or plan): AUTO runs as accept-edits.
+// an approval is denied, listed or not, and the denial ends agy's turn (real runs, agy 1.3.0, 2026-10-08): the
+// task fails. agy 1.3.0 has no auto mode on its command line (--mode takes accept-edits or plan): AUTO runs as
+// accept-edits.
 func (a Antigravity) args(spec Spec) ([]string, error) {
 	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 	if spec.ReadOnly {
@@ -123,6 +126,12 @@ type agyResult struct {
 	Error          string    `json:"error"`
 	NumTurns       int       `json:"num_turns"`
 	Usage          *agyUsage `json:"usage"`
+	// DeniedActions are the permissions agy refused in the turn, headless mode unable to ask for them:
+	// [{"action":"command","display_name":"RunCommand"}] (real runs, agy 1.3.0).
+	DeniedActions []struct {
+		Action      string `json:"action"`
+		DisplayName string `json:"display_name"`
+	} `json:"denied_actions"`
 }
 
 type agyUsage struct {
@@ -138,6 +147,14 @@ type agyParser struct {
 	text    map[int]*strings.Builder // text of the agent_response steps under way, by step index
 	order   []int                    // their indexes, in the order they started
 	toolsIn map[int]bool             // tool steps whose call is said already
+
+	// The last tool step started, and whether it gave an output: a denial ends the turn, and the denied step
+	// ends without output, or does not end (real runs, agy 1.3.0).
+	lastStep     int
+	lastCall     string
+	lastAnswered bool
+	denied       string // the permission named by the denial notice on the error output, when one came
+	failed       bool   // a result said the turn failed: the notice adds nothing
 }
 
 func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
@@ -203,12 +220,14 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
 				p.toolsIn = map[int]bool{}
 			}
 			p.toolsIn[s.StepIndex] = true
+			p.lastStep, p.lastCall, p.lastAnswered = s.StepIndex, agyCall(name, params), false
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, strings.TrimSpace(name+" "+compactOrEmpty(params)))
 		}
 		if s.State == "DONE" {
 			text := ""
 			if output != nil {
 				text = strings.TrimRight(*output, "\r\n")
+				p.lastAnswered = p.lastAnswered || s.StepIndex == p.lastStep
 			}
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
 			delete(p.toolsIn, s.StepIndex)
@@ -221,13 +240,24 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
 
 func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
 	end := &turnEnd{}
-	*events = append(*events, p.flush()...)
+	*events = append(*events, p.cut()...)
 	// SUCCESS, or ERROR, CANCELED, INTERRUPTED, INVALID, WAITING (--print-timeout reached), RUNNING.
-	if r.Status != "SUCCESS" {
+	switch {
+	case r.Status != "SUCCESS":
 		end.failure = r.Error
 		if end.failure == "" {
 			end.failure = "agy ended its turn with status " + r.Status
 		}
+	case len(r.DeniedActions) > 0:
+		// A turn with a denial says SUCCESS, but the denial ended it: the work was not done.
+		actions := make([]string, len(r.DeniedActions))
+		for i, a := range r.DeniedActions {
+			actions[i] = a.Action
+		}
+		end.failure = p.deniedReason(actions)
+	}
+	if end.failure != "" {
+		p.failed = true
 		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, end.failure)
 	}
 	// The usage of a result is what the whole conversation spent so far. agy gives no cost: tokens only. Its
@@ -253,8 +283,32 @@ func (p *agyParser) forget(step int) {
 	}
 }
 
-// flush says the text of a response cut short by the end of the process.
+// flush says the text of a response cut short by the end of the process, and why agy stopped when its error
+// output alone said it denied a permission: that notice may come after the result, the two outputs being read
+// apart.
 func (p *agyParser) flush() []Event {
+	events := p.cut()
+	if p.denied != "" && !p.failed {
+		p.failed = true
+		events = append(events, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: p.deniedReason([]string{p.denied})})
+	}
+	return events
+}
+
+// deniedReason says, for a person, why agy stopped: it denied the actions (permissions) it could not ask for.
+func (p *agyParser) deniedReason(actions []string) string {
+	what := "it cannot run commands headless"
+	if !slices.Contains(actions, "command") {
+		what = `headless, it cannot ask for the "` + strings.Join(actions, `", "`) + `" permission`
+	}
+	if p.lastCall != "" && !p.lastAnswered {
+		what += " (" + p.lastCall + ")"
+	}
+	return "agy stopped: " + what + ". Run this task with claude or codex."
+}
+
+// cut says the text of a response cut short.
+func (p *agyParser) cut() []Event {
 	var events []Event
 	for _, step := range p.order {
 		if text := p.text[step].String(); strings.TrimSpace(text) != "" {
@@ -268,8 +322,13 @@ func (p *agyParser) flush() []Event {
 // agyErrorPrefix starts the line agy writes on its error output when a turn ends on a model or agent failure.
 const agyErrorPrefix = "AGY_ERROR:"
 
-// agyDenied is in the line agy writes on its error output when it refused tools it could not ask for.
+// agyDenied is in the line agy writes on its error output when it refused tools it could not ask for:
+// `… a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied. …`
+// (real runs, agy 1.3.0).
 const agyDenied = "headless mode cannot prompt for"
+
+// agyDeniedPermission finds the permission in the denial notice.
+var agyDeniedPermission = regexp.MustCompile(`required the "([^"]+)" permission`)
 
 func (p *agyParser) stderr(raw string) []Event {
 	switch {
@@ -291,9 +350,27 @@ func (p *agyParser) stderr(raw string) []Event {
 		}
 		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: text, Raw: raw}}
 	case strings.Contains(raw, agyDenied):
+		p.denied = "command"
+		if m := agyDeniedPermission.FindStringSubmatch(raw); m != nil {
+			p.denied = m[1]
+		}
 		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "permission denied: " + raw, Raw: raw}}
 	}
 	return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: raw, Raw: raw}}
+}
+
+// agyCall is what a tool step calls, for a person: the command line of run_command, else the tool and its
+// parameters.
+func agyCall(name string, params json.RawMessage) string {
+	if name == "run_command" {
+		var p struct {
+			CommandLine string `json:"CommandLine"`
+		}
+		if json.Unmarshal(params, &p) == nil && p.CommandLine != "" {
+			return p.CommandLine
+		}
+	}
+	return strings.TrimSpace(name + " " + compactOrEmpty(params))
 }
 
 // compactOrEmpty writes JSON on one line; nothing for no JSON.

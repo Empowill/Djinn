@@ -302,7 +302,8 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 		}
 	case "result":
 		res = &turnEnd{}
-		if m.IsError {
+		// An error subtype (error_max_turns, error_during_execution…) fails the turn even when is_error is false.
+		if m.IsError || m.Subtype != "" && m.Subtype != "success" {
 			res.failure = strings.Join(m.Errors, "; ")
 			if res.failure == "" && m.Result != nil {
 				res.failure = *m.Result
