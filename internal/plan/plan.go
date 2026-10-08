@@ -47,7 +47,7 @@ type options struct {
 	approved []func(context.Context, *planv1.Marked)
 }
 
-// WithLeads gives the wishes the terminals of their leads, for WishService.Resume.
+// WithLeads gives the wishes the terminals of their leads, for WishService.Resume and Tell.
 func WithLeads(l Leads) Option { return func(o *options) { o.leads = l } }
 
 // WithAnswered calls f with a question once its answer is stored: the harness starts again the worker a yes
@@ -81,6 +81,10 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages}
+	if o.leads != nil {
+		// Whether a lead runs is part of each wish read: a terminal that starts or ends changes the wishes.
+		o.leads.Watch(func() { wishes.watch.notify([]watched{{"", planv1.Change_CHANGE_WISH}}) })
+	}
 	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
 	out[p] = h
 	p, h = planv1connect.NewQuestionServiceHandler(&Questions{Store: s, Answered: o.answered}, opt)
@@ -314,6 +318,11 @@ func (w *Wishes) List(
 	wishes = sorted(wishes)
 	if err := fill(ctx, w.Store, wishes...); err != nil {
 		return nil, Status(err)
+	}
+	if w.Leads != nil {
+		for _, wish := range wishes {
+			wish.LeadRunning = w.Leads.Running(LeadTerminal(wish.GetId()))
+		}
 	}
 	return connect.NewResponse(&planv1.WishServiceListResponse{Wishes: wishes}), nil
 }

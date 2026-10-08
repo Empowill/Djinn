@@ -1777,6 +1777,10 @@
             "$ref": "#/components/schemas/plan.v1.Lead",
             "description": "The lead: the agent session that drives the wish, for djinn wish resume to take it back."
           },
+          "leadRunning": {
+            "description": "The lead's terminal runs a program in this djinn up, which djinn wish tell writes to. Set by the list of the wishes, never stored.",
+            "type": "boolean"
+          },
           "projectIds": {
             "description": "Projects the wish works on.",
             "items": {
@@ -2221,6 +2225,34 @@
           "file": {
             "description": "The page, kept up to date: always the same file for a wish.",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceTellRequest": {
+        "properties": {
+          "text": {
+            "description": "What to say to the lead. Line breaks stay line breaks for an agent that takes a paste.",
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId",
+          "text"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceTellResponse": {
+        "properties": {
+          "waiting": {
+            "description": "The text waits in the lead's terminal: something is being typed there, or a choice is on screen. It goes once they are done.",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -3846,6 +3878,44 @@
           }
         },
         "summary": "djinn wish sync",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Tell": {
+      "post": {
+        "description": "Write to the wish's lead in its terminal, as if you typed it there, then Enter. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run: djinn wish resume starts it.",
+        "operationId": "WishService_Tell",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceTellRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceTellResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish tell",
         "tags": [
           "WishService"
         ]

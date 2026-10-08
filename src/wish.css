@@ -395,3 +395,86 @@
   align-items: center;
   gap: var(--space-2);
 }
+
+/* The button at the bottom right that writes to the lead: above the status bar, beside the toast at the center. */
+.lead-message {
+  position: absolute;
+  right: 20px;
+  bottom: calc(28px + var(--space-4));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.lead-message-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+  color: var(--muted);
+  box-shadow: 0 6px 18px #00000066;
+}
+.lead-message-toggle:hover,
+.lead-message-toggle.open {
+  color: var(--accent);
+  border-color: var(--line-strong);
+}
+.lead-message-toggle.off {
+  color: var(--muted-dim);
+}
+.lead-message-panel {
+  width: min(360px, calc(100vw - 40px));
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: 0 10px 35px #00000099;
+  padding: var(--space-2) var(--space-3) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.lead-message-panel header,
+.lead-message-panel footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.lead-message-panel textarea {
+  resize: vertical;
+  min-height: 56px;
+  max-height: 40vh;
+  font: var(--font-size-body) var(--mono);
+}
+.lead-message-off {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.lead-message-off p {
+  margin: 0;
+}
+.lead-message-hint {
+  color: var(--muted-dim);
+  min-width: 0;
+}
+.lead-message-sent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted);
+}
+/* The page scrolls past the button: nothing stays under it. */
+.wish-view .mission-scroll {
+  padding-bottom: 64px;
+}

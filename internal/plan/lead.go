@@ -25,7 +25,18 @@ type Leads interface {
 	Open(name, line, dir, exclusive string) (command []string, directory string, attached bool, err error)
 	// Show brings the window to the front, on the wish and the terminal.
 	Show(wishID, terminal string)
+	// Running tells whether the terminal called name runs a program.
+	Running(name string) bool
+	// Tell types text into the terminal called name as the developer would, then Enter, once nothing is being typed
+	// there and no choice is on screen; it returns at once, with whether the text waits, or ErrNoLead when the
+	// terminal runs no program. Texts told arrive in order.
+	Tell(name, text string) (waiting bool, err error)
+	// Watch calls f each time a terminal starts or ends; f never waits.
+	Watch(f func())
 }
+
+// ErrNoLead is the error of Leads.Tell when the lead's terminal runs no program.
+var ErrNoLead = errors.New("the lead does not run")
 
 // LeadTerminal is the name of the terminal of a wish's lead.
 func LeadTerminal(wishID string) string { return "lead-" + strings.ToLower(wishID) }
@@ -96,6 +107,32 @@ func (w *Wishes) SetLead(
 		return nil, Status(err)
 	}
 	return connect.NewResponse(&planv1.WishServiceSetLeadResponse{Wish: wish}), nil
+}
+
+// Tell writes to the wish's lead in its terminal, as the developer would type it there.
+func (w *Wishes) Tell(
+	ctx context.Context, req *connect.Request[planv1.WishServiceTellRequest],
+) (*connect.Response[planv1.WishServiceTellResponse], error) {
+	if w.Leads == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
+	}
+	text := strings.TrimSpace(req.Msg.GetText())
+	if text == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text: nothing to say"))
+	}
+	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
+	if err != nil {
+		return nil, Status(err)
+	}
+	waiting, err := w.Leads.Tell(LeadTerminal(wish.GetId()), text)
+	if errors.Is(err, ErrNoLead) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"%w: djinn wish resume %s starts it", err, wish.GetId()))
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&planv1.WishServiceTellResponse{Waiting: waiting}), nil
 }
 
 func (w *Wishes) Resume(

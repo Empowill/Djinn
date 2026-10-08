@@ -93,28 +93,35 @@ func (ws *watchers) remove(sub *watcher) {
 // changed notes what a committed transaction touched, for every stream. It runs in the writer's goroutine: it only
 // marks, and each stream sends.
 func (ws *watchers) changed(ms []proto.Message) {
-	type change struct {
-		wish string
-		kind planv1.Change
-	}
-	var changes []change
+	var changes []watched
 	for _, m := range ms {
 		switch m := m.(type) {
 		case *planv1.Wish:
-			changes = append(changes, change{m.GetId(), planv1.Change_CHANGE_WISH})
+			changes = append(changes, watched{m.GetId(), planv1.Change_CHANGE_WISH})
 		case *planv1.Task:
 			// Whether Djinn proposes to grant the wish follows its tasks and questions.
-			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TASK},
-				change{m.GetWishId(), planv1.Change_CHANGE_WISH})
+			changes = append(changes, watched{m.GetWishId(), planv1.Change_CHANGE_TASK},
+				watched{m.GetWishId(), planv1.Change_CHANGE_WISH})
 		case *planv1.Question:
-			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_QUESTION},
-				change{m.GetWishId(), planv1.Change_CHANGE_WISH})
+			changes = append(changes, watched{m.GetWishId(), planv1.Change_CHANGE_QUESTION},
+				watched{m.GetWishId(), planv1.Change_CHANGE_WISH})
 		case *planv1.Block:
-			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_BLOCK})
+			changes = append(changes, watched{m.GetWishId(), planv1.Change_CHANGE_BLOCK})
 		case *planv1.Project:
-			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT})
+			changes = append(changes, watched{"", planv1.Change_CHANGE_PROJECT})
 		}
 	}
+	ws.notify(changes)
+}
+
+// watched is what changed in a wish ("" for every wish, or the projects).
+type watched struct {
+	wish string
+	kind planv1.Change
+}
+
+// notify marks changes for every stream; it never waits.
+func (ws *watchers) notify(changes []watched) {
 	if len(changes) == 0 {
 		return
 	}

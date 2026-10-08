@@ -106,6 +106,8 @@ type Terminal struct {
 	lastTyped byte      // the last byte of them
 	lastKey   time.Time // when the user last typed
 	paste     bool      // the program takes bracketed paste
+	posted    []post    // what Post keeps to tell, in order
+	posting   bool      // a goroutine tells what is posted
 }
 
 // Open returns the running terminal of name, attached true, or starts one: command in dir at cols×rows, each

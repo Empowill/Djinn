@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -131,8 +132,14 @@ func runUp(args []string) (restart bool, err error) {
 	// The terminals hang up before the workers stop: the lead may be driving them. The note of the leads follows
 	// them until djinn up stops, and is left as it is before they hang up: a crash, or an error, keeps it.
 	leadNotes := newLeadNote(home, os.Stderr)
+	var leadsMoved atomic.Pointer[func()] // what follows the leads that run (plan.Leads.Watch)
 	terminals := terminal.NewManager(terminal.Config{
-		Command: terminal.ShellCommand(*term), Dir: *termDir, Changed: leadNotes.update,
+		Command: terminal.ShellCommand(*term), Dir: *termDir, Changed: func() {
+			leadNotes.update()
+			if f := leadsMoved.Load(); f != nil {
+				(*f)()
+			}
+		},
 	})
 	leadNotes.terms = terminals
 	defer terminals.Close()
@@ -196,19 +203,20 @@ func runUp(args []string) (restart bool, err error) {
 	go pages.Run(ctx)
 	// The lead of a wish hears in its terminal of each answer, approval and task that ends or waits, as if the
 	// developer typed it there: the wish moves on without anyone writing to it.
+	// What the developer writes to the lead from the window goes the same way, in order with the news.
 	nudges := &plan.Nudges{Tell: func(wishID, text string) {
 		if t := terminals.Lookup(plan.LeadTerminal(wishID)); t != nil {
-			go func() {
-				if err := t.Tell(text); err != nil && !errors.Is(err, terminal.ErrExited) {
+			t.Post(text, func(err error) {
+				if !errors.Is(err, terminal.ErrExited) {
 					log.Printf("djinn: tell the lead of %s: %v", wishID, err)
 				}
-			}()
+			})
 		}
 	}}
 	if err := nudges.Follow(ctx, db); err != nil {
 		return false, err
 	}
-	svc := services(db, workers, terminals, uiSvc, pages, nudges)
+	svc := services(db, workers, leads{terminals, uiSvc, &leadsMoved}, uiSvc, pages, nudges)
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
@@ -266,18 +274,17 @@ func runUp(args []string) (restart bool, err error) {
 // services returns the Connect services, by path prefix: the window's, the plan's on the database, the tasks' on
 // the harness, and the terminals'. The leads hear of answers and approvals through nudges.
 func services(
-	db *store.Store, h *harness.Harness, terminals *terminal.Manager, uiSvc *ui.Service, pages *plan.Pages,
-	nudges *plan.Nudges,
+	db *store.Store, h *harness.Harness, l leads, uiSvc *ui.Service, pages *plan.Pages, nudges *plan.Nudges,
 ) map[string]http.Handler {
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
 	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithNudges(nudges),
-		plan.WithLeads(leads{terminals, uiSvc}), plan.WithPages(pages))
+		plan.WithLeads(l), plan.WithPages(pages))
 	out[demoPrefix] = demoHandler
 	out[uiPrefix] = uiHandler
 	taskPrefix, taskHandler := harness.Handler(h)
 	out[taskPrefix] = taskHandler
-	terminalPrefix, terminalHandler := terminal.Handler(terminals)
+	terminalPrefix, terminalHandler := terminal.Handler(l.terminals)
 	out[terminalPrefix] = terminalHandler
 	return out
 }
@@ -286,6 +293,7 @@ func services(
 type leads struct {
 	terminals *terminal.Manager
 	ui        *ui.Service
+	moved     *atomic.Pointer[func()] // called when a terminal starts or ends
 }
 
 func (l leads) Open(name, line, dir, exclusive string) ([]string, string, bool, error) {
@@ -299,6 +307,22 @@ func (l leads) Open(name, line, dir, exclusive string) ([]string, string, bool, 
 	}
 	return t.Command, t.Dir, attached, nil
 }
+
+func (l leads) Running(name string) bool { return l.terminals.Lookup(name) != nil }
+
+func (l leads) Tell(name, text string) (bool, error) {
+	t := l.terminals.Lookup(name)
+	if t == nil {
+		return false, plan.ErrNoLead
+	}
+	return t.Post(text, func(err error) {
+		if !errors.Is(err, terminal.ErrExited) {
+			log.Printf("djinn: write to %s: %v", name, err)
+		}
+	}), nil
+}
+
+func (l leads) Watch(f func()) { l.moved.Store(&f) }
 
 func (l leads) Show(wishID, name string) {
 	if l.ui.Raise != nil {

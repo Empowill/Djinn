@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,6 +21,9 @@ type fakeLeads struct {
 	running map[string][]string // command of each running terminal, by name
 	opened  []string            // line of each program started
 	shown   []string            // wish/terminal of each show
+	told    []string            // terminal: text of each tell
+	waiting bool                // what Tell says of the texts told
+	watch   func()              // what Watch was given
 	err     error
 }
 
@@ -43,6 +47,18 @@ func (f *fakeLeads) Open(name, line, dir, exclusive string) ([]string, string, b
 }
 
 func (f *fakeLeads) Show(wishID, terminal string) { f.shown = append(f.shown, wishID+"/"+terminal) }
+
+func (f *fakeLeads) Running(name string) bool { _, ok := f.running[name]; return ok }
+
+func (f *fakeLeads) Tell(name, text string) (bool, error) {
+	if !f.Running(name) {
+		return false, ErrNoLead
+	}
+	f.told = append(f.told, name+": "+text)
+	return f.waiting, nil
+}
+
+func (f *fakeLeads) Watch(fn func()) { f.watch = fn }
 
 func setLead(t *testing.T, c clients, req *planv1.WishServiceSetLeadRequest) (*planv1.Wish, error) {
 	t.Helper()
@@ -275,5 +291,71 @@ func TestLeadFolders(t *testing.T) {
 		if got := localFolder(in, folders); got != want {
 			t.Errorf("localFolder(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestTell: what the developer writes reaches the lead's terminal while it runs; without a lead running, Tell says
+// how to start it, and the list of the wishes says which leads run.
+func TestTell(t *testing.T) {
+	ctx := t.Context()
+	if _, err := serve(t).wishes.Tell(ctx, connect.NewRequest(&planv1.WishServiceTellRequest{WishId: session, Text: "hi"})); code(err) != connect.CodeUnimplemented {
+		t.Errorf("tell without terminals: %v, want unimplemented", err)
+	}
+
+	leads := &fakeLeads{}
+	c := serve(t, WithLeads(leads))
+	if leads.watch == nil {
+		t.Fatal("the wishes do not follow the terminals")
+	}
+	id := c.wish(t)
+	tell := func(text string) (*planv1.WishServiceTellResponse, error) {
+		res, err := c.wishes.Tell(ctx, connect.NewRequest(&planv1.WishServiceTellRequest{WishId: id, Text: text}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	running := func() bool {
+		t.Helper()
+		res, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetWishes()[0].GetLeadRunning()
+	}
+
+	if _, err := tell("Hello"); code(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "djinn wish resume "+id) {
+		t.Errorf("tell without a lead: %v, want a hint to resume", err)
+	}
+	if running() {
+		t.Error("a lead runs, yet none was started")
+	}
+	// A terminal that starts or ends changes the wishes, for the window to read them again.
+	s := watch(t, c.wishes, id)
+	leads.running = map[string][]string{LeadTerminal(id): {"claude"}}
+	leads.watch()
+	if msg := next(t, s); !slices.Contains(msg.GetChanges(), planv1.Change_CHANGE_WISH) {
+		t.Errorf("after a lead started: %v, want the wishes changed", msg)
+	}
+	if !running() {
+		t.Error("the lead runs, yet the list says it does not")
+	}
+	res, err := tell("  First line\nsecond line \n")
+	if err != nil || res.GetWaiting() {
+		t.Fatalf("tell = %v, %v", res, err)
+	}
+	leads.waiting = true
+	if res, err = tell("Then"); err != nil || !res.GetWaiting() {
+		t.Errorf("tell while the developer types = %v, %v, want waiting", res, err)
+	}
+	if want := []string{"lead-" + id + ": First line\nsecond line", "lead-" + id + ": Then"}; strings.Join(leads.told, "|") != strings.Join(want, "|") {
+		t.Errorf("told %q, want %q", leads.told, want)
+	}
+	if _, err := tell(" \n "); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("tell nothing: %v, want invalid", err)
+	}
+	if _, err := c.wishes.Tell(ctx, connect.NewRequest(&planv1.WishServiceTellRequest{WishId: session, Text: "hi"})); code(err) != connect.CodeNotFound {
+		t.Errorf("tell an unknown wish: %v, want not found", err)
 	}
 }

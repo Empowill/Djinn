@@ -69,6 +69,9 @@ message Wish {
   // Kind of agent chosen when the wish was made: its lead runs it, and so does every task that names no other. Not
   // set on a wish made before the choice: Claude.
   Provider provider = 11;
+  // The lead's terminal runs a program in this djinn up, which djinn wish tell writes to. Set by the list of the
+  // wishes, never stored.
+  bool lead_running = 12;
 }
 
 // WishState is where a wish stands. A djinn grants three wishes at a time, never more: three are active at most.
@@ -735,6 +738,12 @@ service WishService {
   rpc Brief(WishServiceBriefRequest) returns (WishServiceBriefResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+  // Write to the wish's lead in its terminal, as if you typed it there, then Enter. The text waits while something
+  // is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
+  // djinn wish resume starts it.
+  rpc Tell(WishServiceTellRequest) returns (WishServiceTellResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
   // Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
   rpc Snapshot(WishServiceSnapshotRequest) returns (WishServiceSnapshotResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
@@ -1068,6 +1077,25 @@ message WishServiceBriefRequest {
 message WishServiceBriefResponse {
   // The brief, in Markdown: the stable part, then the part that moves.
   string text = 1;
+}
+
+message WishServiceTellRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What to say to the lead. Line breaks stay line breaks for an agent that takes a paste.
+  string text = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 20000
+  ];
+}
+
+message WishServiceTellResponse {
+  // The text waits in the lead's terminal: something is being typed there, or a choice is on screen. It goes once
+  // they are done.
+  bool waiting = 1;
 }
 
 message WishServiceSnapshotRequest {
