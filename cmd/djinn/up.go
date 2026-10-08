@@ -20,6 +20,7 @@ import (
 	"github.com/empowill/djinn/gen/go/demo/v1/demov1connect"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
+	"github.com/empowill/djinn/internal/backup"
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/demo"
 	"github.com/empowill/djinn/internal/gate"
@@ -129,6 +130,8 @@ func runUp(args []string) error {
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
 	svc[gatePrefix] = gateHandler
+	backupPrefix, backupHandler := backup.Handler(db, home, version)
+	svc[backupPrefix] = backupHandler
 	h := server.Handler(djinn.UI(), svc)
 
 	var ln net.Listener

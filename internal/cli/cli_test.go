@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	_ "github.com/empowill/djinn/gen/go/backup/v1"
 	_ "github.com/empowill/djinn/gen/go/demo/v1"
 	_ "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"

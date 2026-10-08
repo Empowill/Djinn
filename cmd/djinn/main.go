@@ -30,6 +30,10 @@ func main() {
 	if len(os.Args) > 2 && os.Args[1] == "gate" && os.Args[2] == "run" {
 		os.Exit(runGate(os.Args[3:]))
 	}
+	// `djinn backup` and `djinn backup restore` work with or without a running djinn.
+	if len(os.Args) > 1 && os.Args[1] == "backup" {
+		os.Exit(runBackup(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	home, _ := ui.Home() // Only fails without a home directory; the command line then says it finds no server.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := cli.Run(ctx, os.Args[1:], cli.Config{

@@ -53,7 +53,7 @@ func (w *Wishes) Export(
 	exp = portable(exp, newScrubber(all))
 	file := req.Msg.GetFile()
 	if file == "" {
-		dir, err := downloads()
+		dir, err := Downloads()
 		if err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("find the Downloads folder: %w", err))
 		}

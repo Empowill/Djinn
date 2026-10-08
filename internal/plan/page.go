@@ -267,7 +267,7 @@ func (w *Wishes) Render(
 		if err != nil {
 			return nil, Status(err)
 		}
-		dir, err := downloads()
+		dir, err := Downloads()
 		if err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("find the Downloads folder: %w", err))
 		}

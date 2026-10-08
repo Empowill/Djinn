@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+// Package backup.v1 is the backup of Djinn's data folder: one archive, taken while Djinn runs.
+package backup.v1;
+
+import "djinn/v1/options.proto";
+import "google/protobuf/timestamp.proto";
+
+// BackupService writes a backup of the data folder. The djinn that holds the database copies it, so the copy is
+// consistent while Djinn runs. The command line calls it through djinn backup; restoring runs while no djinn
+// does, so it is not a method here.
+service BackupService {
+  // Write a backup archive: a consistent copy of the database and the files of the data folder, without the
+  // worktrees (Git holds them), the socket, the address of the server or the logs.
+  rpc Create(BackupServiceCreateRequest) returns (BackupServiceCreateResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+}
+
+message BackupServiceCreateRequest {
+  // Archive to write, ending in .tar.gz, .tgz or .zip; replaced if it exists. By default a new file in the
+  // Downloads folder: .zip on Windows, .tar.gz elsewhere.
+  string file = 1;
+}
+
+message BackupServiceCreateResponse {
+  // The archive written.
+  string file = 1;
+  // Its size, in bytes.
+  int64 size = 2;
+  // Files it holds, the database and the manifest included.
+  int32 files = 3;
+}
+
+// Manifest opens every backup archive, as djinn-backup.json: a restore refuses an archive without it, or of a
+// format it does not know.
+message Manifest {
+  // Version of the archive's layout. Only 1 exists.
+  int32 format = 1;
+  // Version of the djinn that wrote it.
+  string version = 2;
+  // When the backup was taken.
+  google.protobuf.Timestamp create_time = 3;
+}

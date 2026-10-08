@@ -95,9 +95,9 @@ func sameRemote(a, b string) bool {
 	return ka != "" && ka == kb
 }
 
-// downloads returns the folder where files the user asked for land: the XDG download folder on Linux, which may
+// Downloads returns the folder where files the user asked for land: the XDG download folder on Linux, which may
 // have a translated name, else Downloads in the home folder, else the home folder itself.
-func downloads() (string, error) {
+func Downloads() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
