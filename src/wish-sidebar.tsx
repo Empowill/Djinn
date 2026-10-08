@@ -6,6 +6,7 @@ import {
   ChevronRight,
   FolderOpen,
   GripVertical,
+  Plane,
   Plus,
 } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
@@ -18,6 +19,9 @@ import { t } from "./i18n";
 export function WishSidebar({
   wishes,
   projects,
+  waiting = {},
+  planSelected = false,
+  onSelectPlan,
   selectedWishId,
   selectedProjectId,
   collapsed,
@@ -28,6 +32,11 @@ export function WishSidebar({
 }: {
   wishes: Wish[];
   projects: Project[];
+  // How many questions wait in each active wish, by id.
+  waiting?: Readonly<Record<string, number>>;
+  // The flight plan of the active wishes shows.
+  planSelected?: boolean;
+  onSelectPlan?: () => void;
   selectedWishId: string;
   selectedProjectId: string;
   collapsed: boolean;
@@ -86,6 +95,14 @@ export function WishSidebar({
         {!collapsed && (
           <>
             <span>{wish.title}</span>
+            {(waiting[wish.id] ?? 0) > 0 && (
+              <small
+                className="wish-waiting"
+                title={t("wish.questions_wait", { count: waiting[wish.id] })}
+              >
+                {waiting[wish.id]}
+              </small>
+            )}
             {rank ? (
               <small className="wish-rank">
                 <GripVertical size={11} aria-hidden="true" />
@@ -98,8 +115,27 @@ export function WishSidebar({
     );
   };
 
+  const waits = active.reduce((sum, w) => sum + (waiting[w.id] ?? 0), 0);
   return (
     <>
+      {onSelectPlan && active.length > 0 && (
+        <button
+          className={`nav-item plan-nav ${planSelected ? "selected" : ""}`}
+          onClick={onSelectPlan}
+          title={t("plan.title")}
+        >
+          <Plane size={15} />
+          {!collapsed && <span>{t("plan.title")}</span>}
+          {waits > 0 && (
+            <small
+              className="wish-waiting"
+              title={t("wish.questions_wait", { count: waits })}
+            >
+              {waits}
+            </small>
+          )}
+        </button>
+      )}
       <div className="sidebar-section-label">
         {!collapsed && <span>{t("sidebar.wishes")}</span>}
         {!collapsed && (

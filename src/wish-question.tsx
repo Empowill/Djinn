@@ -8,7 +8,7 @@ import {
   CornerDownRight,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { Choice, type Question } from "../gen/ts/plan/v1/plan_pb";
 import { answerText, choiceOf, letter, when } from "./data/format";
@@ -18,9 +18,15 @@ import { MarkdownBody } from "./markdown-body";
 export function WishQuestion({
   question: q,
   expanded: open = false,
+  origin,
+  blocking = [],
   onAnswer,
 }: {
   question: Question;
+  // Where the question comes from, in the flight plan of several wishes: its wish.
+  origin?: ReactNode;
+  // The codes of the tasks that wait for this answer.
+  blocking?: readonly string[];
   // Opened at first: the one question waiting, say.
   expanded?: boolean;
   // Answers the question; resolves once djinn has it. A rejection keeps the card open.
@@ -60,6 +66,12 @@ export function WishQuestion({
         </span>
         <div>
           <span className="question-meta">
+            {origin}
+            {blocking.length > 0 && (
+              <span className="question-blocking">
+                {t("page.blocking", { tasks: blocking.join(", ") })}
+              </span>
+            )}
             {answered ? (
               <>
                 {q.code} <span>·</span> {t("panels.decision_recorded")}

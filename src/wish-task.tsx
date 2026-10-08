@@ -1,5 +1,5 @@
-// A task of a wish: its code, what it does, where it stands, and, opened, its worker's events as they come
-// (TaskService.Watch).
+// A task of a wish: its code, what it does, where it stands, what it spent, and, opened, its facts, its worker's
+// last word and its events as they come (TaskService.Watch).
 import {
   Activity,
   AlertCircle,
@@ -9,12 +9,14 @@ import {
   Gauge,
   Lock,
   MessageSquare,
+  ScrollText,
   Terminal,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import {
   type Project,
+  Provider,
   type Task,
   type TaskEvent,
   TaskEventKind,
@@ -28,7 +30,9 @@ import {
   usd,
   when,
 } from "./data/format";
-import { t } from "./i18n";
+import { language, t } from "./i18n";
+import { MarkdownBody } from "./markdown-body";
+import { TaskUsage, usageDetail } from "./usage";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.PROMPT]: MessageSquare,
@@ -39,21 +43,47 @@ const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.STATUS]: Activity,
   [TaskEventKind.ERROR]: AlertCircle,
   [TaskEventKind.GATE]: Lock,
+  [TaskEventKind.LOG]: ScrollText,
 };
+
+const agentNames: Record<Provider, string> = {
+  [Provider.UNSPECIFIED]: "claude",
+  [Provider.CLAUDE]: "claude",
+  [Provider.FAKE]: "fake",
+  [Provider.CODEX]: "codex",
+  [Provider.ANTIGRAVITY]: "antigravity",
+};
+
+// agentOf names a task's agent, and its model when one was asked: "claude · haiku". A task stored before providers
+// ran Claude.
+export function agentOf(task: Task): string {
+  const name = agentNames[task.provider] ?? "claude";
+  return task.model ? `${name} · ${task.model}` : name;
+}
 
 export function WishTask({
   task,
   project,
+  codes,
+  origin,
   onStop,
 }: {
   task: Task;
   project?: Project;
+  // The codes of the wish's tasks, by id: what this one waits for, what it was forked from.
+  codes?: ReadonlyMap<string, string>;
+  // Where the task comes from, in the flight plan of several wishes: its wish.
+  origin?: ReactNode;
   onStop: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const stoppable =
     task.status === TaskStatus.RUNNING || task.status === TaskStatus.PENDING;
-  const cost = task.usage?.costUsd ?? 0;
+  const after = taskFinished(task.status)
+    ? []
+    : (task.dependsOn ?? [])
+        .map((id) => codes?.get(id))
+        .filter((code): code is string => !!code);
   return (
     <article className={`wish-task ${open ? "open" : ""}`}>
       <div className="wish-task-row">
@@ -66,9 +96,10 @@ export function WishTask({
           <span className="agent-code">{task.code}</span>
           <strong>{task.title}</strong>
           <span className="wish-task-meta">
+            {origin}
             {project?.name && <span>{project.name}</span>}
             <span>{taskStatusText(task.status)}</span>
-            {cost > 0 && <span>{usd(cost)}</span>}
+            <TaskUsage usage={task.usage} />
           </span>
           <ChevronDown size={14} className={open ? "rotated" : ""} />
         </button>
@@ -83,19 +114,26 @@ export function WishTask({
           </button>
         )}
       </div>
-      {(task.waitReason || task.error) && (
+      {(task.waitReason || task.error || after.length > 0) && (
         <p
           className={`wish-task-note ${taskTone(task.status) === "error" ? "error" : ""}`}
         >
           {task.error || task.waitReason}
+          {after.length > 0 && (
+            <span className="wish-task-after">
+              {t("page.after", { tasks: after.join(", ") })}
+            </span>
+          )}
         </p>
       )}
-      {open && <TaskEvents task={task} />}
+      {open && (
+        <TaskBody task={task} forkOf={codes?.get(task.forkOf ?? "") ?? ""} />
+      )}
     </article>
   );
 }
 
-function TaskEvents({ task }: { task: Task }) {
+function TaskBody({ task, forkOf }: { task: Task; forkOf: string }) {
   const events = useTaskEvents(task.id, task.status);
   const box = useRef<HTMLDivElement>(null);
   // Keep the newest event in sight while the worker runs, inside the box: the page stays where it is.
@@ -104,25 +142,66 @@ function TaskEvents({ task }: { task: Task }) {
     if (element && !taskFinished(task.status))
       element.scrollTop = element.scrollHeight;
   }, [events.length, task.status]);
+  // A finished worker's last text is its report: it shows first, as Markdown.
+  const lastWord = taskFinished(task.status) ? lastText(events) : "";
+  const spent = usageDetail(task.usage);
+  const scopes = task.writeScopes ?? [];
   return (
-    <div className="wish-task-events" ref={box} aria-live="polite">
+    <div className="wish-task-body">
       <div className="wish-task-facts">
+        <span>{agentOf(task)}</span>
         {task.branch && <span>{task.branch}</span>}
-        {task.model && <span>{task.model}</span>}
         {task.startTime && (
           <span>{t("task.started", { when: when(task.startTime) })}</span>
         )}
         {task.endTime && (
           <span>{t("task.ended", { when: when(task.endTime) })}</span>
         )}
+        {scopes.length > 0 && (
+          <span>{t("task.scopes", { scopes: scopes.join(", ") })}</span>
+        )}
+        {forkOf && <span>{t("task.fork_of", { task: forkOf })}</span>}
+        {task.maxBudgetUsd > 0 && (
+          <span>{t("task.budget", { cost: usd(task.maxBudgetUsd) })}</span>
+        )}
+        {spent && <span>{spent}</span>}
       </div>
-      {events.length === 0 && (
-        <p className="muted-text">{t("task.no_events")}</p>
+      {lastWord && (
+        <div className="wish-task-last-word">
+          <span className="eyebrow">{t("page.last_word")}</span>
+          <MarkdownBody text={lastWord} />
+        </div>
       )}
-      {events.map((event) => (
-        <EventLine key={event.id} event={event} />
-      ))}
+      <div className="wish-task-events" ref={box} aria-live="polite">
+        {events.length === 0 && (
+          <p className="muted-text">{t("task.no_events")}</p>
+        )}
+        {events.map((event) => (
+          <EventLine key={event.id} event={event} />
+        ))}
+      </div>
     </div>
+  );
+}
+
+// lastText is the last text a worker wrote.
+function lastText(events: readonly TaskEvent[]): string {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.kind === TaskEventKind.TEXT && e.text.trim()) return e.text;
+  }
+  return "";
+}
+
+// clock is an event's hour and minute.
+function clock(event: TaskEvent): string {
+  if (!event.createTime) return "";
+  return new Date(Number(event.createTime.seconds) * 1000).toLocaleTimeString(
+    language,
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+    },
   );
 }
 
@@ -130,10 +209,11 @@ function EventLine({ event }: { event: TaskEvent }) {
   const Icon = eventIcons[event.kind] ?? FileText;
   const text =
     event.kind === TaskEventKind.USAGE && event.usage
-      ? usd(event.usage.costUsd)
+      ? usageDetail(event.usage)
       : event.text;
   return (
     <div className={`wish-event kind-${event.kind}`}>
+      <time>{clock(event)}</time>
       <Icon size={13} />
       <span className="wish-event-text">{text}</span>
     </div>

@@ -82,6 +82,18 @@ export function useWishDetail(wishId: string): WishDetail {
   return useData((state) => state.details[wishId] ?? emptyDetail);
 }
 
+// useWishDetails reads the tasks, questions and blocks of several wishes while the screen shows them: the flight plan
+// of the active wishes. What is read is in the store's details, by wish.
+export function useWishDetails(wishIds: readonly string[]) {
+  const { store } = useRequiredDjinn();
+  const key = wishIds.join(",");
+  useEffect(() => {
+    const closes = key ? key.split(",").map((id) => store.open(id)) : [];
+    return () => closes.forEach((close) => close());
+  }, [store, key]);
+  return useData((state) => state.details);
+}
+
 const NO_EVENTS: never[] = [];
 
 // useTaskEvents follows a task's events while the screen shows them. A new status follows it again: a worker
