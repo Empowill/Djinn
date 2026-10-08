@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,10 +34,14 @@ type streamAgent struct {
 	parser streamParser
 	// encode writes a user message as the agent reads it on its input, without the newline.
 	encode func(text string) ([]byte, error)
+	// settle, when set, says the agent may take a message sent during a turn into that turn, and give one result
+	// for both: after a result that leaves messages without one, the agent has finished once it says nothing of a
+	// turn for settle. Unset, every message waits for a result of its own.
+	settle time.Duration
 }
 
 // startStream starts command with args, writes the prompt as the first message, and reads what the agent says.
-// The input stays open for more messages, and is closed once every message has its result: the agent then exits.
+// The input stays open for more messages, and is closed once the agent has answered them all: the agent then exits.
 func startStream(ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent) (Worker, error) {
 	return startStreamWith(ctx, spec, command, args, grace, a, true)
 }
@@ -91,11 +96,14 @@ type streamWorker struct {
 	events chan Event
 	done   chan struct{}
 
-	mu      sync.Mutex
-	pending int  // messages sent without a result yet
-	closed  bool // input closed: no more messages
-	failure string
-	stopped atomic.Bool // asked to stop: a turn cut short is no failure of the agent
+	mu       sync.Mutex
+	pending  int  // messages sent without a result yet
+	closed   bool // input closed: no more messages
+	active   bool // the agent said something of a turn since the last result
+	settling int  // the settle period under way, 0 for none
+	settles  int  // settle periods started, to number them
+	failure  string
+	stopped  atomic.Bool // asked to stop: a turn cut short is no failure of the agent
 }
 
 func (w *streamWorker) Events() <-chan Event { return w.events }
@@ -140,11 +148,50 @@ func (w *streamWorker) Send(text string) error {
 		return fmt.Errorf("write to %s: %w", w.a.name, err)
 	}
 	w.pending++
+	w.settling = 0 // A message sent after the last result has a turn of its own.
 	return nil
 }
 
-// read turns the process's lines into events. Once every message sent has its result, the input is closed and
-// the agent exits. A worker that said an error fails with it, even when every turn ended and the process exited 0.
+// closeInput closes the agent's input: it ends once it has answered what it read. The caller holds mu.
+func (w *streamWorker) closeInput() {
+	if !w.closed {
+		w.closed = true
+		w.p.stdin.Close()
+	}
+}
+
+// settle waits for a turn after a result that left messages without one. Claude takes a message sent during a
+// turn into that turn and gives a single result: if nothing of a turn follows for the agent's settle period, the
+// messages were answered, and the input is closed. A message, or a turn under way, cancels it. The caller holds mu.
+func (w *streamWorker) settle() {
+	w.settles++
+	w.settling = w.settles
+	n := w.settling
+	time.AfterFunc(w.a.settle, func() {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		if w.settling == n {
+			w.settling, w.pending = 0, 0
+			w.closeInput()
+		}
+	})
+}
+
+// ofTurn says whether events show the agent at work in a turn: text, a tool it calls, a tool's result. Its system
+// lines and usage may come after a result.
+func ofTurn(events []Event) bool {
+	return slices.ContainsFunc(events, func(ev Event) bool {
+		switch ev.Kind {
+		case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL,
+			planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT:
+			return true
+		}
+		return false
+	})
+}
+
+// read turns the process's lines into events. Once every message sent has its result, or the agent settled after
+// one (settle), the input is closed and the agent exits. A worker that said an error fails with it, even when every turn ended and the process exited 0.
 func (w *streamWorker) read() {
 	defer close(w.done)
 	defer close(w.events)
@@ -165,15 +212,24 @@ func (w *streamWorker) read() {
 		events, end := w.a.parser.stdout(l.text)
 		send(events)
 		if end == nil {
+			if ofTurn(events) {
+				w.mu.Lock()
+				w.active, w.settling = true, 0
+				w.mu.Unlock()
+			}
 			continue
 		}
 		w.mu.Lock()
 		if end.failure != "" {
 			w.failure = end.failure
 		}
-		if w.pending--; w.pending <= 0 && !w.closed {
-			w.closed = true
-			w.p.stdin.Close()
+		w.active, w.settling = false, 0
+		w.pending--
+		switch {
+		case w.pending <= 0:
+			w.closeInput()
+		case w.a.settle > 0 && !w.closed:
+			w.settle()
 		}
 		w.mu.Unlock()
 	}
@@ -183,7 +239,11 @@ func (w *streamWorker) read() {
 	if w.failure == "" {
 		w.failure = lastError
 	}
-	cut := w.pending > 0 && w.failure == "" && !w.stopped.Load()
+	if w.settling != 0 {
+		// The agent ended while settling after a result: the messages left were taken into its last turn.
+		w.settling, w.pending = 0, 0
+	}
+	cut := (w.pending > 0 || w.active) && w.failure == "" && !w.stopped.Load()
 	if cut {
 		// The process ended in the middle of a turn: whatever its exit code, the turn did not finish.
 		w.failure = w.a.name + " ended before the end of its turn"

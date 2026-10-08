@@ -207,9 +207,15 @@ command, are to check on a real run.
 --permission-prompts none`, then in a project `--settings <json>` (and `--permission-mode` with permissions; see
 above), then `--session-id <task id>` (or `--resume <session>`; a fork adds `--fork-session` and keeps
 `--session-id <task id>` for its new session), `--model`, `--max-budget-usd`. The prompt is a stream-json user
-message on the input; the input stays open for more messages and is closed once each has its result, which ends
-the process. A warm worker (`djinn up --warm-workers`) is the same command started before its task: it waits for
-its first message, which is the task's prompt.
+message on the input; the input stays open for more messages and is closed once claude has answered them, which
+ends the process. A message sent during a turn may be taken into that turn: claude then gives a single result for
+both, and nothing in its output says so (real runs, claude 2.1.294, 2026-10-08). After a result that leaves
+messages without one, Djinn waits `ClaudeSettle` (one minute): a text, a tool call or a tool result means a turn of
+their own is under way, and the input stays open; silence means they were answered, and the input is closed. A
+message sent meanwhile cancels the wait. **Supposed:** a wait closed too early loses nothing, since claude answers
+what it read before its input closed (as when stream-json messages are piped from a file). A warm worker
+(`djinn up --warm-workers`) is the same command started before its task: it waits for its first message, which is
+the task's prompt.
 
 **Finding claude.** An app started from the Finder or a desktop menu gets a bare PATH: the shell's startup files
 that add `~/.local/bin` (where Claude Code's installer puts `claude`) are never read, not even by the login shell
@@ -250,6 +256,7 @@ error subtype (`error_max_turns`, `error_during_execution`…) fails the turn ev
 | Process dies mid-turn                         | `claude/process-dies.jsonl`      | by hand                                     | error "claude ended before the end of its turn"; task failed                                                        |
 | Max turns reached, `is_error` false           | `claude/max-turns.jsonl`         | by hand                                     | error `error_max_turns` from the subtype; task failed, though claude exits 0                                        |
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
+| Message taken into the running turn           | `claude/message-in-turn.jsonl`   | by hand, from real runs (2.1.294, Opus 5.5) | one result for the prompt and the message; the input is closed once claude settled, and the task is done            |
 
 ## Codex
 

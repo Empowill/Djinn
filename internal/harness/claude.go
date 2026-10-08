@@ -16,7 +16,7 @@ import (
 )
 
 // Claude runs Claude Code: `claude -p` reading and writing stream-json, one JSON message per line. The process
-// stays open between turns, so Send can give it another message; it ends once every message has its result.
+// stays open between turns, so Send can give it another message; it ends once it has answered every message.
 type Claude struct {
 	// Command is the claude program; "claude", found on the PATH, by default.
 	Command string
@@ -24,7 +24,15 @@ type Claude struct {
 	Grace time.Duration
 	// Extra are arguments passed after Djinn's own: the workers' bench tries --bare and a system prompt file.
 	Extra []string
+	// Settle is how long claude may say nothing of a turn after a result before the messages sent during that turn
+	// count as answered by it; ClaudeSettle by default.
+	Settle time.Duration
 }
+
+// ClaudeSettle is how long a claude worker that took a message into its turn stays open after its result, in case
+// the message opens a turn of its own instead. claude gives one result for a turn and the messages it took in on
+// the way (real runs, claude 2.1.294, 2026-10-08): nothing in its output says which.
+const ClaudeSettle = time.Minute
 
 // claudeReadTools are the only tools of a read-only worker: reading files, finding them, searching them.
 const claudeReadTools = "Read,Glob,Grep"
@@ -151,7 +159,7 @@ func (c Claude) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
-	return startStream(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine})
+	return startStream(ctx, spec, command, c.args(spec), grace, c.agent())
 }
 
 // Warm starts claude without a message: it loads, then waits on its input. The first Send is its first message.
@@ -163,7 +171,15 @@ func (c Claude) Warm(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
-	return startStreamIdle(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine})
+	return startStreamIdle(ctx, spec, command, c.args(spec), grace, c.agent())
+}
+
+func (c Claude) agent() streamAgent {
+	settle := c.Settle
+	if settle == 0 {
+		settle = ClaudeSettle
+	}
+	return streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine, settle: settle}
 }
 
 // claudeMessageLine is a user message as claude reads it in stream-json.

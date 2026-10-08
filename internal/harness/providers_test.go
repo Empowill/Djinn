@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -114,6 +115,14 @@ func catalog() []catalogCase {
 			want: []string{"STATUS", "TEXT", "USAGE", "TEXT", "USAGE"},
 			check: func(t *testing.T, _ []Event, _, input string) {
 				if n := strings.Count(input, `"type":"user"`); n != 2 || !strings.Contains(input, "And then?") {
+					t.Errorf("input = %q", input)
+				}
+			}},
+		{provider: "claude", fixture: "message-in-turn", send: []string{"A hint from the lead."},
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TEXT", "TEXT", "USAGE"},
+			check: func(t *testing.T, _ []Event, _, input string) {
+				// One result for both messages: the worker ends once it settled, done.
+				if n := strings.Count(input, `"type":"user"`); n != 2 || !strings.Contains(input, "A hint from the lead.") {
 					t.Errorf("input = %q", input)
 				}
 			}},
@@ -365,7 +374,7 @@ func catalog() []catalogCase {
 func provider(name string) Provider {
 	switch name {
 	case "claude":
-		return Claude{Command: os.Args[0]}
+		return Claude{Command: os.Args[0], Settle: 50 * time.Millisecond}
 	case "antigravity":
 		return Antigravity{Command: os.Args[0]}
 	}
