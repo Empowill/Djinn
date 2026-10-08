@@ -1277,6 +1277,11 @@ html[data-theme="light"] .wordmark-period {
   margin-top: 6px;
   line-height: 1.6;
 }
+.notification-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
 .setting-row select,
 .setting-row input {
   font-size: var(--font-size-body, 12px);

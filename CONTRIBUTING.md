@@ -308,8 +308,11 @@ To use Djinn, see the [README](README.md). To test on a Mac with Codex, see [`do
 - An open question is blocking when a task waits for its answer, red; `djinn question ask … --before "before the merge"`
   makes it orange under those words; without them it can wait, grey. `djinn question revise … --before …` changes them,
   `--before ""` lets it wait. Everywhere, blocking comes first, then before X, then can wait.
-- With the window, a question asked in an active wish shows as a system notification: a click shows the wish, a
-  button answers it. A new inbox item shows as one too, and the side panel counts the new ones on the flight plan. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
+- With the window, what waits for you in an active wish shows as a system notification: a question (a button
+  answers it), a task that waits or failed, a wish ready to review; a click shows the wish there. None for the wish
+  the window shows while it is in front. A new inbox item shows as one too, and the side panel counts the new ones on
+  the flight plan. On macOS it needs the `.app` bundle (T19) and your permission: Djinn asks at its first start, and
+  the settings show the state. A headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.
 - `go tool task e2e-native`: drive the real window end to end through the Wails MCP server (a test build, window
