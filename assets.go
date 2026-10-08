@@ -24,3 +24,9 @@ func UI() fs.FS {
 //
 //go:embed build/icon.png
 var Icon []byte
+
+// Icon256 is the icon at 256 px, for the window on Linux: GTK 3 silently drops a window icon that does not fit one
+// X11 request, 512 px or more (gdk_x11_window_set_icon_list). Made by `go run ./tools/icons gen`.
+//
+//go:embed build/icon-256.png
+var Icon256 []byte
