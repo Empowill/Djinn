@@ -254,6 +254,21 @@ func (w *Wishes) Make(
 				wish.ProjectIds = append(wish.ProjectIds, project.GetId())
 			}
 		}
+		if req.Msg.GetPaused() {
+			wish.State = planv1.WishState_WISH_STATE_PAUSED
+			return tx.Put(wish)
+		}
+		actives, err := ActiveWishes(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if len(actives) >= MaxActive {
+			return full(actives, ", or make this one paused (djinn wish make --paused)")
+		}
+		if err := renumber(tx, actives); err != nil {
+			return err
+		}
+		wish.State, wish.Rank = planv1.WishState_WISH_STATE_ACTIVE, int32(len(actives)+1)
 		return tx.Put(wish)
 	})
 	if err != nil {
@@ -267,6 +282,10 @@ func (w *Wishes) List(
 ) (*connect.Response[planv1.WishServiceListResponse], error) {
 	wishes, err := store.List[*planv1.Wish](ctx, w.Store, nil)
 	if err != nil {
+		return nil, Status(err)
+	}
+	wishes = sorted(wishes)
+	if err := fill(ctx, w.Store, wishes...); err != nil {
 		return nil, Status(err)
 	}
 	return connect.NewResponse(&planv1.WishServiceListResponse{Wishes: wishes}), nil
@@ -304,6 +323,9 @@ func (w *Wishes) Allow(
 	})
 	if err != nil {
 		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
 	}
 	return connect.NewResponse(&planv1.WishServiceAllowResponse{Wish: wish}), nil
 }

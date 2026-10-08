@@ -79,6 +79,9 @@ func (w *Wishes) SetLead(
 	if err != nil {
 		return nil, err
 	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
 	return connect.NewResponse(&planv1.WishServiceSetLeadResponse{Wish: wish}), nil
 }
 
@@ -90,6 +93,9 @@ func (w *Wishes) Resume(
 	}
 	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
 	if err != nil {
+		return nil, Status(err)
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
 		return nil, Status(err)
 	}
 	res := &planv1.WishServiceResumeResponse{Wish: wish, Terminal: LeadTerminal(wish.GetId())}

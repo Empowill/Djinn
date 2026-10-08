@@ -95,7 +95,9 @@ func (w *Wishes) Import(
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.WishServiceImportResponse{Wish: res.GetWish(), Projects: res.GetProjects()}), nil
+	return connect.NewResponse(&planv1.WishServiceImportResponse{
+		Wish: res.GetWish(), Projects: res.GetProjects(), Note: res.GetNote(),
+	}), nil
 }
 
 // ImportData reads a wish from the content of a file.
@@ -117,6 +119,8 @@ func (w *Wishes) Snapshot(
 	if err != nil {
 		return nil, Status(err)
 	}
+	wish := exp.GetWish()
+	wish.Ready = wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
 	return connect.NewResponse(&planv1.WishServiceSnapshotResponse{Export: exp, Projects: projects}), nil
 }
 
@@ -317,6 +321,8 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 		}
 	}
 	scrub.message(exp.ProtoReflect())
+	// The rank is this machine's order of its wishes; the readiness is computed where the wish is read.
+	exp.Wish.Rank, exp.Wish.Ready = 0, false
 	if lead := exp.GetWish().GetLead(); lead != nil {
 		// The lead's session travels, so that the wish can be taken back where the agent's sessions are; its folder
 		// only as a project's name or ~.
@@ -442,10 +448,15 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			return err
 		}
 		wish := exp.GetWish()
+		// A wish replaced keeps its place among the active ones; another goes last.
+		place := MaxActive
 		if old, err := store.Get[*planv1.Wish](ctx, tx, wish.GetId()); err == nil {
 			if !replace {
 				return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf(
 					"wish %q (%s) is already here: import it with --replace to overwrite it", old.GetTitle(), old.GetId()))
+			}
+			if Active(old) && old.GetRank() > 0 {
+				place = int(old.GetRank()) - 1
 			}
 			if err := forget(ctx, tx, old.GetId()); err != nil {
 				return err
@@ -475,6 +486,23 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 		wish.ProjectIds = projectIDs
 		if lead := wish.GetLead(); lead != nil {
 			lead.Directory = localFolder(lead.GetDirectory(), folders)
+		}
+		wish.Rank, wish.Ready = 0, false
+		if Active(wish) {
+			actives, err := ActiveWishes(ctx, tx)
+			if err != nil {
+				return err
+			}
+			if len(actives) >= MaxActive {
+				wish.State = planv1.WishState_WISH_STATE_PAUSED
+				res.Note = fmt.Sprintf("imported paused: %d wishes are active here, and a djinn grants %d at a time. "+
+					"Pause or grant one, then djinn wish activate %s", len(actives), MaxActive, wish.GetId())
+			} else {
+				wish.State = planv1.WishState_WISH_STATE_ACTIVE
+				if err := renumber(tx, slices.Insert(actives, min(place, len(actives)), wish)); err != nil {
+					return err
+				}
+			}
 		}
 		res.Wish = wish
 		if err := tx.Put(wish); err != nil {

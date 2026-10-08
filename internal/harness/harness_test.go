@@ -29,6 +29,7 @@ type env struct {
 	tasks   planv1connect.TaskServiceClient
 	project planv1connect.ProjectServiceClient
 	wishes  planv1connect.WishServiceClient
+	last    string // the wish e.wish made last
 }
 
 // up starts the services on the database in home, as djinn up does: recover, then serve.
@@ -70,12 +71,18 @@ func (e *env) down() {
 	e.db = nil
 }
 
-// wish adds dir as a project and makes a wish on it.
+// wish adds dir as a project and makes a wish on it. The wish it made before is paused, as three wishes at most are
+// active: a test makes one per case.
 func (e *env) wish(t *testing.T, dir string) (wishID, projectID string) {
 	t.Helper()
 	p, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if e.last != "" {
+		if _, err := e.wishes.Pause(t.Context(), connect.NewRequest(&planv1.WishServicePauseRequest{WishId: e.last})); err != nil {
+			t.Fatal(err)
+		}
 	}
 	w, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
 		Title: "Run Djinn on itself", ProjectIds: []string{p.Msg.GetProject().GetId()},
@@ -83,7 +90,8 @@ func (e *env) wish(t *testing.T, dir string) (wishID, projectID string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return w.Msg.GetWish().GetId(), p.Msg.GetProject().GetId()
+	e.last = w.Msg.GetWish().GetId()
+	return e.last, p.Msg.GetProject().GetId()
 }
 
 func (e *env) spawn(t *testing.T, wishID, prompt string) *planv1.Task {
