@@ -34,13 +34,13 @@ func openWindow(ctx context.Context, url string, assets http.Handler, raise <-ch
 		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
 	}
 	if assets != nil {
-		opts.Assets = application.AssetOptions{Handler: assets}
+		opts.Assets = application.AssetOptions{Handler: windowAssets(assets)}
 		url = "/"
 	}
 	app := application.New(opts)
 	quit := func() { app.Quit() }
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "Djinn",
+		Title:  windowTitle,
 		Width:  1440,
 		Height: 1000,
 		URL:    url,

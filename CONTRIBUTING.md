@@ -129,6 +129,8 @@ To use Djinn, see the [README](README.md). To work on it:
   starting Djinn if needed. A second `djinn up` brings the window to the front.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.
+- `go tool task e2e-native`: drive the real window end to end through the Wails MCP server (a test build, window
+  "Djinn e2e"). Opens a window a few seconds, so it is not in `test` ([T06](plan/b81b5d99-native-e2e.md)).
 - Tests and CI build with `-tags headless`: no window, no CGO.
 
 ## How we work
