@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -210,8 +211,15 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("shown after the update: %v, %v", shows.Msg(), shows.Err())
 	}
 	shows.Close()
-	if _, err := os.Stat(filepath.Join(home, RestartFile)); !os.IsNotExist(err) {
-		t.Fatalf("the restart note is still there: %v", err)
+	// The note of the update is gone: in its place, the note of the lead that runs again, for a crash.
+	b, err := os.ReadFile(filepath.Join(home, RestartFile))
+	if err != nil {
+		t.Fatalf("no note of the leads after the update: %v", err)
+	}
+	var note restartNote
+	if err := json.Unmarshal(b, &note); err != nil || note.Version != "" || len(note.Terminals) != 1 ||
+		note.Terminals[0].Name != lead {
+		t.Fatalf("the note after the update: %+v, %v", note, err)
 	}
 }
 

@@ -74,7 +74,8 @@ release pipeline per operating system: the update reuses `go install`.
   what the window showed), stops as Djinn quits (terminals hung up, workers interrupted and recovered), then starts the
   new binary detached with the same `up` flags. The new one runs each terminal again and shows the same lead. A
   terminal that does not start is listed in the banner and by `djinn update` (exit 1); its wish keeps the lead, for
-  `djinn wish resume`. If the new binary does not start, `restart.json` stays for the next `djinn up`.
+  `djinn wish resume`. If the new binary does not start, `restart.json` stays for the next `djinn up`. While Djinn
+  runs, the same file notes the leads, for a crash (T21).
 
 - **Two sources, by how Djinn was installed** (`cmd/djinn/release.go`). A release binary knows the archive it came
   from (`-X main.releaseAsset=djinn_linux_amd64_gtk4`, stamped by `task release-build`): it follows the GitHub

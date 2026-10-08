@@ -89,7 +89,7 @@ changes only when you click "update". Three separations make it so:
    window unless asked (`check-window` opens one, on demand).
 
 When an update restarts Djinn, it reopens the window and the leads that were open, on the same
-sessions. You pick up where you were.
+sessions; so does the next start after a crash, but not after you quit. You pick up where you were.
 
 Why: dogfooding is our best test, and only if it is safe. A test that can kill your session
 gets switched off.

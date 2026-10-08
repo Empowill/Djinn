@@ -45,6 +45,9 @@ type Config struct {
 	Command []string
 	// Dir is the working directory when the window gives none. Empty: the home directory.
 	Dir string
+	// Changed, when set, runs once a program started and once one ended, outside the manager's lock: Running
+	// tells what runs then. Calls may overlap.
+	Changed func()
 }
 
 // Manager holds the terminals of a djinn up.
@@ -111,6 +114,12 @@ func (m *Manager) Open(name string, command []string, dir string, cols, rows int
 func (m *Manager) OpenExclusive(
 	name string, command []string, dir string, cols, rows int, exclusive string,
 ) (t *Terminal, attached bool, err error) {
+	started := false
+	defer func() { // After the unlock below: deferred calls run last first.
+		if started {
+			m.changed()
+		}
+	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -162,8 +171,19 @@ func (m *Manager) OpenExclusive(
 	}
 	m.byID[t.ID] = t
 	m.byName[name] = t
-	go t.pump()
+	go func() {
+		t.pump()
+		m.changed()
+	}()
+	started = true
 	return t, false, nil
+}
+
+// changed runs Config.Changed, if any.
+func (m *Manager) changed() {
+	if m.cfg.Changed != nil {
+		m.cfg.Changed()
+	}
 }
 
 // Get returns the terminal of id.

@@ -170,6 +170,48 @@ func TestOpenExclusiveRefusesASessionRunningElsewhere(t *testing.T) {
 	}
 }
 
+// TestChangedFollowsWhatRuns: Changed runs once a program starts and once it ends, when Running already says so; an
+// Open that attaches changes nothing.
+func TestChangedFollowsWhatRuns(t *testing.T) {
+	calls := make(chan []string, 10)
+	var m *Manager
+	m = NewManager(Config{Changed: func() {
+		var names []string
+		for _, r := range m.Running() {
+			names = append(names, r.Name)
+		}
+		calls <- names
+	}})
+	next := func() string {
+		t.Helper()
+		select {
+		case names := <-calls:
+			return strings.Join(names, ",")
+		case <-time.After(5 * time.Second):
+			t.Fatal("Changed did not run")
+			return ""
+		}
+	}
+	term := sh(t, m, "lead-a")
+	if got := next(); got != "lead-a" {
+		t.Fatalf("after the start: %q", got)
+	}
+	if _, attached, err := m.Open("lead-a", nil, "", 0, 0); err != nil || !attached {
+		t.Fatalf("attach: %v, %v", attached, err)
+	}
+	if err := term.Write([]byte("exit\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got := next(); got != "" {
+		t.Fatalf("after the end: %q", got)
+	}
+	select {
+	case names := <-calls:
+		t.Fatalf("one more call: %q", names)
+	default:
+	}
+}
+
 func TestResize(t *testing.T) {
 	m := NewManager(Config{})
 	term, _, err := m.Open("main", []string{"/bin/sh"}, t.TempDir(), 120, 30)
