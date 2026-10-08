@@ -515,7 +515,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			t.Scheduled = false
 			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
 				// Its worker runs on the machine that exported it, not here.
-				t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "exported while its worker ran on another machine"
+				t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "running when its wish was exported: no worker of this Djinn runs it"
 			}
 			if err := tx.Put(t); err != nil {
 				return err

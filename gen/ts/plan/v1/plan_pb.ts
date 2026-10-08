@@ -3792,8 +3792,8 @@ export const TaskService: GenService<{
     output: typeof TaskServiceCleanResponseSchema;
   },
   /**
-   * Delete a task no worker ever ran, such as a plan item taken for a task: it goes with its events. A task a worker
-   * ran stays, as the record of that work.
+   * Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
+   * events. A task a worker of this Djinn ran stays, as the record of that work.
    *
    * @generated from rpc plan.v1.TaskService.Delete
    */

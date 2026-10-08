@@ -1168,8 +1168,8 @@ service TaskService {
   rpc Clean(TaskServiceCleanRequest) returns (TaskServiceCleanResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
-  // Delete a task no worker ever ran, such as a plan item taken for a task: it goes with its events. A task a worker
-  // ran stays, as the record of that work.
+  // Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
+  // events. A task a worker of this Djinn ran stays, as the record of that work.
   rpc Delete(TaskServiceDeleteRequest) returns (TaskServiceDeleteResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }

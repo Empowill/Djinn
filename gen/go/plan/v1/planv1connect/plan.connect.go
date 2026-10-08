@@ -1180,8 +1180,8 @@ type TaskServiceClient interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
-	// Delete a task no worker ever ran, such as a plan item taken for a task: it goes with its events. A task a worker
-	// ran stays, as the record of that work.
+	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
+	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
 }
 
@@ -1304,8 +1304,8 @@ type TaskServiceHandler interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
-	// Delete a task no worker ever ran, such as a plan item taken for a task: it goes with its events. A task a worker
-	// ran stays, as the record of that work.
+	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
+	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
 }
 
