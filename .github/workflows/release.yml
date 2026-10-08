@@ -74,6 +74,27 @@ jobs:
           path: bin/release/*.tar.gz
           if-no-files-found: error
 
+  # Linux without WebKitGTK: no window, Djinn opens in the browser. install.sh takes it before falling back on go
+  # install. No CGO, so one runner builds both.
+  linux-browser:
+    name: Linux browser
+    needs: check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=linux GOARCH=amd64 CGO=0
+      - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=linux GOARCH=arm64 CGO=0
+      - name: The binary starts and knows its version
+        run: DJINN_HOME="$RUNNER_TEMP/djinn-home" bin/release/djinn_linux_amd64_browser/djinn version | grep -Fx "djinn $GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-browser
+          path: bin/release/*.tar.gz
+          if-no-files-found: error
+
   macos:
     name: macOS universal
     needs: check
@@ -147,7 +168,7 @@ jobs:
 
   publish:
     name: Draft the GitHub release
-    needs: [linux, macos, windows]
+    needs: [linux, linux-browser, macos, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

@@ -85,6 +85,7 @@ import { ProjectSettings } from "./project-settings";
 import { ProjectSidebar } from "./project-sidebar";
 import { ProviderSwitch } from "./provider-switch";
 import { useReducedMotion } from "./reduced-motion";
+import { useKeepPlace } from "./scroll-anchor";
 import { MissionTestBoard } from "./mission-test-board";
 import { StageReport } from "./mission-progress";
 import { AgentAvatars, AgentPickerDrawer } from "./agent-avatars";
@@ -320,6 +321,7 @@ export default function App() {
   const demoTimer = useRef<ReturnType<typeof setInterval>>(undefined);
   const importRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const keepPlace = useKeepPlace(scrollRef);
   const update = (t: Task) =>
     d.updateTask(t.id, (previous) => {
       const scoped = stepView(previous, t.selectedStepId || t.activeStepId);
@@ -1073,7 +1075,7 @@ export default function App() {
                 </button>
               </div>
             </header>
-            <div className="mission-scroll" ref={scrollRef}>
+            <div className="mission-scroll" ref={keepPlace}>
               <MissionHeader
                 task={mission}
                 providerControl={

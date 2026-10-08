@@ -27,7 +27,7 @@ const hasWindow = true
 func openWindow(ctx context.Context, url string, assets http.Handler, raise <-chan struct{}) error {
 	opts := application.Options{
 		Name: "Djinn",
-		Icon: djinn.Icon,
+		Icon: appIcon(),
 		// The window never closes, it only goes out of sight: these keep the app running whatever happens to it.
 		Mac:     application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
 		Linux:   application.LinuxOptions{DisableQuitOnLastWindowClosed: true, ProgramName: "djinn"},
@@ -91,4 +91,13 @@ func openWindow(ctx context.Context, url string, assets http.Handler, raise <-ch
 		}
 	}()
 	return app.Run()
+}
+
+// appIcon is the icon of the app, and on Linux of its window: there GTK 3 drops an icon of 512 px or more, so the
+// window gets the 256 px one.
+func appIcon() []byte {
+	if runtime.GOOS == "linux" {
+		return djinn.Icon256
+	}
+	return djinn.Icon
 }

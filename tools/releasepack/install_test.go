@@ -54,6 +54,12 @@ type install struct {
 // PATH, records its arguments and installs a stub, unless noGo hides every go.
 func runInstall(t *testing.T, root string, noGo bool, env ...string) install {
 	t.Helper()
+	return runInstallWith(t, root, noGo, nil, env...)
+}
+
+// runInstallWith is runInstall with fakes: shell scripts, by tool name, on the PATH in place of the real tools.
+func runInstallWith(t *testing.T, root string, noGo bool, fakes map[string]string, env ...string) install {
+	t.Helper()
 	for _, tool := range []string{"sh", "tar", "curl", "awk"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("the install script needs %s", tool)
@@ -78,9 +84,17 @@ chmod 755 "$GOBIN/djinn"
 			t.Fatal(err)
 		}
 	}
+	for tool, script := range fakes {
+		if err := os.WriteFile(filepath.Join(fakeBin, tool), []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// The PATH holds links to the tools the script uses, and the fake go: never a real go.
 	for _, tool := range []string{"curl", "tar", "gzip", "awk", "sha256sum", "shasum", "openssl", "mktemp", "uname",
 		"cut", "cp", "chmod", "mv", "mkdir", "rm", "ldconfig"} {
+		if _, faked := fakes[tool]; faked {
+			continue
+		}
 		if p, err := exec.LookPath(tool); err == nil {
 			if err := os.Symlink(p, filepath.Join(fakeBin, tool)); err != nil {
 				t.Fatal(err)
@@ -219,5 +233,48 @@ func TestInstallWithoutGoNorBinary(t *testing.T) {
 	r := runInstall(t, root, true, "DJINN_ASSET=djinn_elsewhere")
 	if !r.failed || !strings.Contains(r.out, "Go is not installed") {
 		t.Fatalf("install with nothing to install: failed=%v, output:\n%s", r.failed, r.out)
+	}
+}
+
+// linuxAmd64 is a uname that says Linux on x86_64, whatever runs the test.
+var linuxAmd64 = map[string]string{"uname": `case "$1" in -m) echo x86_64 ;; *) echo Linux ;; esac`}
+
+// TestInstallTakesTheBrowserBuildOnLinuxWithoutWebKitGTK: when the window builds do not start (no WebKitGTK), the
+// build without a window comes before go install.
+func TestInstallTakesTheBrowserBuildOnLinuxWithoutWebKitGTK(t *testing.T) {
+	skipOnWindows(t)
+	root := t.TempDir()
+	release(t, root, "latest/download", map[string]string{
+		"djinn_linux_amd64":         "exit 127",
+		"djinn_linux_amd64_gtk4":    "exit 127",
+		"djinn_linux_amd64_browser": "echo djinn v1.0.0 browser",
+	})
+	r := runInstallWith(t, root, false, linuxAmd64)
+	if r.failed {
+		t.Fatalf("install failed:\n%s", r.out)
+	}
+	if got := r.version(t); got != "djinn v1.0.0 browser" {
+		t.Fatalf("installed %q, want the browser build", got)
+	}
+	if _, err := os.Stat(r.goLog); err == nil {
+		t.Fatal("go ran although the browser build fitted")
+	}
+	if !strings.Contains(r.out, "open in your browser") || !strings.Contains(r.out, "libwebkit2gtk-4.1") {
+		t.Fatalf("the install does not say the window needs WebKitGTK:\n%s", r.out)
+	}
+}
+
+// TestInstallFallsBackOnGoWithoutABrowserBuild: a release without the browser build (an older one) still ends on go
+// install when the window builds do not start.
+func TestInstallFallsBackOnGoWithoutABrowserBuild(t *testing.T) {
+	skipOnWindows(t)
+	root := t.TempDir()
+	release(t, root, "latest/download", map[string]string{"djinn_linux_amd64": "exit 127"})
+	r := runInstallWith(t, root, false, linuxAmd64)
+	if r.failed {
+		t.Fatalf("install failed:\n%s", r.out)
+	}
+	if got := r.version(t); got != "djinn from-go" {
+		t.Fatalf("installed %q, want the one go built", got)
 	}
 }

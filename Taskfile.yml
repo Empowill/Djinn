@@ -36,7 +36,7 @@ tasks:
       - go build -tags '{{.WINDOW_TAGS}}' -o bin/djinn{{exeExt}} ./cmd/djinn
 
   install:
-    desc: "Install the Djinn you use, apart from the one you build (Go's bin folder, no sudo; TO=<folder> installs elsewhere). A running Djinn keeps going and offers to restart on it"
+    desc: "Install the Djinn you use, apart from the one you build (Go's bin folder, no sudo; TO=<folder> installs elsewhere), with its icon and menu entry on Linux. A running Djinn keeps going and offers to restart on it"
     deps: [ui]
     vars:
       GOBIN:
@@ -50,6 +50,9 @@ tasks:
       # Built next to the installed one, then renamed over it: the Djinn that runs keeps its file (tools/swapexe).
       - go build -tags '{{.WINDOW_TAGS}}' -ldflags "-X main.version=local-{{.COMMIT}}" -o "{{.DIR}}/.djinn-new{{exeExt}}" ./cmd/djinn
       - go run ./tools/swapexe "{{.DIR}}/.djinn-new{{exeExt}}" "{{.DIR}}/djinn{{exeExt}}"
+      # Linux: the icon and the menu entry in the user's folders. An install elsewhere (TO=) leaves the user's entry
+      # alone, unless DESKTOP=yes.
+      - '{{if or (not .TO) .DESKTOP}}go run ./tools/icons desktop --exec "{{.DIR}}/djinn{{exeExt}}"{{end}}'
       - 'echo "Installed djinn local-{{.COMMIT}} in {{.DIR}}. A running Djinn offers to restart on it (or: djinn update)."'
 
   test:
