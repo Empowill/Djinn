@@ -28,6 +28,19 @@ message Project {
   // URL of the Git remote, origin or else the first one, without credentials; empty without one. Another
   // machine finds the project by it, case ignored.
   string remote = 6;
+  // Skills of other projects this project summons: its workers get them at launch, nothing is copied.
+  repeated Summon summons = 7;
+}
+
+// A skill a project summons from another project. It stays in its source, and the summoning project follows it:
+// Djinn shows each worker the source's folder as it is, by its agent's own path, and writes nothing in the project.
+message Summon {
+  // The project that holds the skill.
+  string project_id = 1;
+  // The skill's folder name, in that project's .agents/skills or .claude/skills.
+  string skill = 2;
+  // When it was summoned.
+  google.protobuf.Timestamp create_time = 3;
 }
 
 // A wish is what you ask Djinn for, and what it works to grant. It may span several projects.
@@ -460,6 +473,89 @@ message ProjectServiceListRequest {}
 message ProjectServiceListResponse {
   // The projects.
   repeated Project projects = 1;
+}
+
+// Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe
+// scripts and references), in .agents/skills or .claude/skills. A project summons a skill of another project to
+// use it without copying it: it follows its source.
+service SkillService {
+  // Summon a skill of one project into another: djinn skill summon app/babysit-mr --into infra. Its workers get
+  // it from their next launch on; nothing is written in either project.
+  rpc Summon(SkillServiceSummonRequest) returns (SkillServiceSummonResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // List the skills of the projects: their own, and those they summon, with the ones whose source is missing.
+  rpc List(SkillServiceListRequest) returns (SkillServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Unsummon a skill: the project's next workers no longer get it. The project stays as it was.
+  rpc Unsummon(SkillServiceUnsummonRequest) returns (SkillServiceUnsummonResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+}
+
+// A skill as a project sees it: its own, or summoned from another project.
+message Skill {
+  // The project that uses the skill.
+  string project = 1;
+  // Its name: its folder's name.
+  string name = 2;
+  // Where a summoned skill comes from, as <project>/<skill>; empty for the project's own.
+  string source = 3;
+  // Its folder on this machine, in the project that holds it.
+  string directory = 4;
+  // What it does, from its SKILL.md.
+  string description = 5;
+  // Why a summoned skill cannot be found; empty when it is.
+  string missing = 6;
+}
+
+message SkillServiceSummonRequest {
+  // The skill, as <project>/<skill>: the project that holds it, then its folder name. Case ignored.
+  string skill = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 300,
+    (buf.validate.field).string.pattern = "^[^/]+/[A-Za-z0-9][A-Za-z0-9._-]*$"
+  ];
+  // The project that summons it, by name or identifier.
+  string into = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 100
+  ];
+}
+
+message SkillServiceSummonResponse {
+  // The skill, as the project now sees it.
+  Skill skill = 1;
+}
+
+message SkillServiceListRequest {
+  // Only the skills of this project, by name or identifier.
+  string project = 1 [(buf.validate.field).string.max_len = 100];
+}
+
+message SkillServiceListResponse {
+  // The skills, by project then name.
+  repeated Skill skills = 1;
+}
+
+message SkillServiceUnsummonRequest {
+  // The skill, as <project>/<skill>, as it was summoned. Case ignored.
+  string skill = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 300,
+    (buf.validate.field).string.pattern = "^[^/]+/[A-Za-z0-9][A-Za-z0-9._-]*$"
+  ];
+  // The project that summoned it, by name or identifier.
+  string from = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 100
+  ];
+}
+
+message SkillServiceUnsummonResponse {
+  // The project, without the skill.
+  Project project = 1;
 }
 
 // Wishes: what you ask Djinn for, across projects.

@@ -27,6 +27,8 @@ const (
 	QuestionServiceName = "plan.v1.QuestionService"
 	// ProjectServiceName is the fully-qualified name of the ProjectService service.
 	ProjectServiceName = "plan.v1.ProjectService"
+	// SkillServiceName is the fully-qualified name of the SkillService service.
+	SkillServiceName = "plan.v1.SkillService"
 	// WishServiceName is the fully-qualified name of the WishService service.
 	WishServiceName = "plan.v1.WishService"
 	// BlockServiceName is the fully-qualified name of the BlockService service.
@@ -53,6 +55,12 @@ const (
 	ProjectServiceAddProcedure = "/plan.v1.ProjectService/Add"
 	// ProjectServiceListProcedure is the fully-qualified name of the ProjectService's List RPC.
 	ProjectServiceListProcedure = "/plan.v1.ProjectService/List"
+	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
+	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
+	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
+	SkillServiceListProcedure = "/plan.v1.SkillService/List"
+	// SkillServiceUnsummonProcedure is the fully-qualified name of the SkillService's Unsummon RPC.
+	SkillServiceUnsummonProcedure = "/plan.v1.SkillService/Unsummon"
 	// WishServiceMakeProcedure is the fully-qualified name of the WishService's Make RPC.
 	WishServiceMakeProcedure = "/plan.v1.WishService/Make"
 	// WishServiceListProcedure is the fully-qualified name of the WishService's List RPC.
@@ -329,6 +337,136 @@ func (UnimplementedProjectServiceHandler) Add(context.Context, *connect.Request[
 
 func (UnimplementedProjectServiceHandler) List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.List is not implemented"))
+}
+
+// SkillServiceClient is a client for the plan.v1.SkillService service.
+type SkillServiceClient interface {
+	// Summon a skill of one project into another: djinn skill summon app/babysit-mr --into infra. Its workers get
+	// it from their next launch on; nothing is written in either project.
+	Summon(context.Context, *connect.Request[v1.SkillServiceSummonRequest]) (*connect.Response[v1.SkillServiceSummonResponse], error)
+	// List the skills of the projects: their own, and those they summon, with the ones whose source is missing.
+	List(context.Context, *connect.Request[v1.SkillServiceListRequest]) (*connect.Response[v1.SkillServiceListResponse], error)
+	// Unsummon a skill: the project's next workers no longer get it. The project stays as it was.
+	Unsummon(context.Context, *connect.Request[v1.SkillServiceUnsummonRequest]) (*connect.Response[v1.SkillServiceUnsummonResponse], error)
+}
+
+// NewSkillServiceClient constructs a client for the plan.v1.SkillService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSkillServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SkillServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	skillServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("SkillService").Methods()
+	return &skillServiceClient{
+		summon: connect.NewClient[v1.SkillServiceSummonRequest, v1.SkillServiceSummonResponse](
+			httpClient,
+			baseURL+SkillServiceSummonProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("Summon")),
+			connect.WithClientOptions(opts...),
+		),
+		list: connect.NewClient[v1.SkillServiceListRequest, v1.SkillServiceListResponse](
+			httpClient,
+			baseURL+SkillServiceListProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("List")),
+			connect.WithClientOptions(opts...),
+		),
+		unsummon: connect.NewClient[v1.SkillServiceUnsummonRequest, v1.SkillServiceUnsummonResponse](
+			httpClient,
+			baseURL+SkillServiceUnsummonProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("Unsummon")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// skillServiceClient implements SkillServiceClient.
+type skillServiceClient struct {
+	summon   *connect.Client[v1.SkillServiceSummonRequest, v1.SkillServiceSummonResponse]
+	list     *connect.Client[v1.SkillServiceListRequest, v1.SkillServiceListResponse]
+	unsummon *connect.Client[v1.SkillServiceUnsummonRequest, v1.SkillServiceUnsummonResponse]
+}
+
+// Summon calls plan.v1.SkillService.Summon.
+func (c *skillServiceClient) Summon(ctx context.Context, req *connect.Request[v1.SkillServiceSummonRequest]) (*connect.Response[v1.SkillServiceSummonResponse], error) {
+	return c.summon.CallUnary(ctx, req)
+}
+
+// List calls plan.v1.SkillService.List.
+func (c *skillServiceClient) List(ctx context.Context, req *connect.Request[v1.SkillServiceListRequest]) (*connect.Response[v1.SkillServiceListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
+// Unsummon calls plan.v1.SkillService.Unsummon.
+func (c *skillServiceClient) Unsummon(ctx context.Context, req *connect.Request[v1.SkillServiceUnsummonRequest]) (*connect.Response[v1.SkillServiceUnsummonResponse], error) {
+	return c.unsummon.CallUnary(ctx, req)
+}
+
+// SkillServiceHandler is an implementation of the plan.v1.SkillService service.
+type SkillServiceHandler interface {
+	// Summon a skill of one project into another: djinn skill summon app/babysit-mr --into infra. Its workers get
+	// it from their next launch on; nothing is written in either project.
+	Summon(context.Context, *connect.Request[v1.SkillServiceSummonRequest]) (*connect.Response[v1.SkillServiceSummonResponse], error)
+	// List the skills of the projects: their own, and those they summon, with the ones whose source is missing.
+	List(context.Context, *connect.Request[v1.SkillServiceListRequest]) (*connect.Response[v1.SkillServiceListResponse], error)
+	// Unsummon a skill: the project's next workers no longer get it. The project stays as it was.
+	Unsummon(context.Context, *connect.Request[v1.SkillServiceUnsummonRequest]) (*connect.Response[v1.SkillServiceUnsummonResponse], error)
+}
+
+// NewSkillServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSkillServiceHandler(svc SkillServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	skillServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("SkillService").Methods()
+	skillServiceSummonHandler := connect.NewUnaryHandler(
+		SkillServiceSummonProcedure,
+		svc.Summon,
+		connect.WithSchema(skillServiceMethods.ByName("Summon")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceListHandler := connect.NewUnaryHandler(
+		SkillServiceListProcedure,
+		svc.List,
+		connect.WithSchema(skillServiceMethods.ByName("List")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceUnsummonHandler := connect.NewUnaryHandler(
+		SkillServiceUnsummonProcedure,
+		svc.Unsummon,
+		connect.WithSchema(skillServiceMethods.ByName("Unsummon")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.SkillService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SkillServiceSummonProcedure:
+			skillServiceSummonHandler.ServeHTTP(w, r)
+		case SkillServiceListProcedure:
+			skillServiceListHandler.ServeHTTP(w, r)
+		case SkillServiceUnsummonProcedure:
+			skillServiceUnsummonHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSkillServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedSkillServiceHandler struct{}
+
+func (UnimplementedSkillServiceHandler) Summon(context.Context, *connect.Request[v1.SkillServiceSummonRequest]) (*connect.Response[v1.SkillServiceSummonResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.SkillService.Summon is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) List(context.Context, *connect.Request[v1.SkillServiceListRequest]) (*connect.Response[v1.SkillServiceListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.SkillService.List is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) Unsummon(context.Context, *connect.Request[v1.SkillServiceUnsummonRequest]) (*connect.Response[v1.SkillServiceUnsummonResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.SkillService.Unsummon is not implemented"))
 }
 
 // WishServiceClient is a client for the plan.v1.WishService service.
