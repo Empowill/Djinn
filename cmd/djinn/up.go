@@ -35,8 +35,10 @@ import (
 // runUp serves the interface and the API, then opens a native window on them, or with --browser prints the
 // URL to open. On macOS and Linux the window goes through the Wails asset server and the command line through a
 // Unix socket: no port is open. On Windows, and with --browser, everything goes through a loopback HTTP server
-// guarded by a token. Either way the server writes its address in the data directory for the command line.
-func runUp(args []string) error {
+// guarded by a token. Either way the server writes its address in the data directory for the command line. It
+// returns restart true when it stopped to restart on a newer binary (see update.go): the caller starts it, once
+// everything here is closed.
+func runUp(args []string) (restart bool, err error) {
 	flags := flag.NewFlagSet("up", flag.ContinueOnError)
 	browser := flags.Bool("browser", false, "print the URL to open in a browser instead of opening a window")
 	port := flags.Int("port", 0, "port of the loopback HTTP server (with --browser, and on Windows); 0 picks a free one")
@@ -46,27 +48,27 @@ func runUp(args []string) error {
 	maxWorkers := flags.Int("workers", 0, "most workers at once, 1 to 16; 0 decides from the machine "+
 		"(one per 2 cores and per 2 GiB of memory); default $DJINN_WORKERS")
 	if err := flags.Parse(args); err != nil {
-		return err
+		return false, err
 	}
 	if flags.NArg() > 0 {
-		return fmt.Errorf("unexpected argument %q", flags.Arg(0))
+		return false, fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
 	if *maxWorkers == 0 && os.Getenv("DJINN_WORKERS") != "" {
 		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKERS"), maxWorkers); err != nil {
-			return fmt.Errorf("DJINN_WORKERS: %w", err)
+			return false, fmt.Errorf("DJINN_WORKERS: %w", err)
 		}
 	}
 	if *maxWorkers < 0 || *maxWorkers > 16 {
-		return fmt.Errorf("--workers %d: expected 1 to 16, or 0 to decide from the machine", *maxWorkers)
+		return false, fmt.Errorf("--workers %d: expected 1 to 16, or 0 to decide from the machine", *maxWorkers)
 	}
 	home, err := ui.Home()
 	if err != nil {
-		return err
+		return false, err
 	}
 	// One djinn per data directory: a second djinn up brings the first one's window to the front instead.
 	if addr, err := server.ReadAddr(home); err == nil {
 		if cli.Alive(addr) {
-			return showRunning(addr, flags)
+			return false, showRunning(addr, flags)
 		}
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
 	}
@@ -74,7 +76,7 @@ func runUp(args []string) error {
 	defer stop()
 	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
 	if err != nil {
-		return fmt.Errorf("open the database: %w", err)
+		return false, fmt.Errorf("open the database: %w", err)
 	}
 	defer db.Close()
 	// The workers stop before the database closes: deferred calls run last first.
@@ -84,13 +86,13 @@ func runUp(args []string) error {
 	workers := harness.New(db, home, harness.Providers(), harness.WithCapacity(monitor.Capacity))
 	defer workers.Close()
 	if err := workers.Recover(ctx); err != nil {
-		return err
+		return false, err
 	}
 	workers.Schedule()
 	gates := gate.New(monitor.Pressure, workers)
 	if *termDir != "" {
 		if *termDir, err = filepath.Abs(*termDir); err != nil {
-			return err
+			return false, err
 		}
 	}
 	// The terminals hang up before the workers stop: the lead may be driving them.
@@ -106,7 +108,18 @@ func runUp(args []string) error {
 	}
 	uiSvc, err := ui.New(version)
 	if err != nil {
-		return err
+		return false, err
+	}
+	// After an update, the terminals that ran before it run again.
+	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
+	updates, err := newUpdater(version, home, uiSvc, terminals, stop)
+	if err != nil {
+		return false, err
+	}
+	defer func() { restart = err == nil && updates.Restarting() }()
+	if updates != nil {
+		uiSvc.Restart = updates.restart
+		go updates.run(ctx)
 	}
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
@@ -136,12 +149,12 @@ func runUp(args []string) error {
 	switch transport {
 	case server.Wails:
 		if ln, err = server.ListenUnix(filepath.Join(home, server.SocketFile)); err != nil {
-			return err
+			return false, err
 		}
 		addr = "unix://" + ln.Addr().String()
 	case server.HTTP:
 		if ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port)); err != nil {
-			return err
+			return false, err
 		}
 		origin := "http://" + ln.Addr().String()
 		token := server.NewToken()
@@ -152,7 +165,7 @@ func runUp(args []string) error {
 	remove, err := server.WriteAddr(home, addr)
 	if err != nil {
 		ln.Close()
-		return err
+		return false, err
 	}
 	defer remove()
 	served := make(chan error, 1)
@@ -161,14 +174,14 @@ func runUp(args []string) error {
 	switch {
 	case *browser:
 		fmt.Println("djinn: open", url)
-		return <-served
+		return false, <-served
 	case transport == server.Wails:
 		err = openWindow(ctx, "", h, raise)
 	default:
 		err = openWindow(ctx, url, nil, raise)
 	}
 	stop() // The window is closed: stop the server too.
-	return errors.Join(err, <-served)
+	return false, errors.Join(err, <-served)
 }
 
 // services returns the Connect services, by path prefix: the window's, the plan's on the database, the tasks' on

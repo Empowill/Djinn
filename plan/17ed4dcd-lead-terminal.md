@@ -35,6 +35,8 @@ included, so the session that builds Djinn can move into Djinn and keep going.
 - [x] Closing and reopening the window finds the terminal and its session where they were, while
   `djinn up` runs (e2e: a reopened page reads the same shell's output again). Closing the native
   window stops `djinn up`, so it hangs the terminal up.
+- [x] An update restarts Djinn and reopens the terminals that ran, on the same sessions, in the same folders;
+  one that cannot start is reported (`TestUpdate`, T12). After a crash nothing is noted yet: `djinn wish resume`.
 - [ ] This flight plan's session resumes inside Djinn's terminal and goes on by voice.
 
 ## Decided along the way
@@ -70,6 +72,10 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   unchanged. Collapsible, height dragged from its top edge (both remembered in `localStorage`),
   a restart button once the program ended. Keys typed in the terminal never reach the app's
   shortcuts (Escape, Ctrl+K…). Copy and paste: Ctrl+Shift+C / Ctrl+Shift+V, Cmd+C / Cmd+V on macOS.
+
+- **Restart**: the running terminals are noted in `restart.json` (name, the exact command line, folder) and run
+  again by the new Djinn with that same command: `claude --resume <id>` for a lead, the shell for `main`.
+  `terminal.Manager.Running` lists them.
 
 ## Open questions
 - macOS asks for microphone permission per app: the lead runs under Djinn, so Djinn needs the

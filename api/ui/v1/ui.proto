@@ -43,6 +43,17 @@ service UiService {
   rpc WatchShow(UiServiceWatchShowRequest) returns (stream UiServiceWatchShowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
+  // change. With the leads that a restart could not resume, once.
+  rpc WatchUpdate(UiServiceWatchUpdateRequest) returns (stream UiServiceWatchUpdateResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
+  // as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
+  // sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
+  rpc Update(UiServiceUpdateRequest) returns (UiServiceUpdateResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
   // Every change, in order, from a sequence number on. Resume a broken stream from the last number received plus one.
   rpc Watch(UiServiceWatchRequest) returns (stream UiServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
@@ -143,6 +154,26 @@ message UiServiceWatchShowResponse {
   string wish_id = 1;
   // The terminal to show; empty for none.
   string terminal = 2;
+}
+
+message UiServiceWatchUpdateRequest {}
+
+message UiServiceWatchUpdateResponse {
+  // Version of the running Djinn.
+  string current = 1;
+  // Version of the newer Djinn installed at the same path; empty when none waits.
+  string ready = 2;
+  // The terminals the last restart could not run again, one line each: name, command, folder and why.
+  repeated string not_resumed = 3;
+}
+
+message UiServiceUpdateRequest {}
+
+message UiServiceUpdateResponse {
+  // Version Djinn restarts on.
+  string version = 1;
+  // How many terminals the new Djinn will run again.
+  int32 terminals = 2;
 }
 
 message UiServiceWatchRequest {

@@ -44,6 +44,13 @@ func TestMain(m *testing.M) {
 		if v := os.Getenv("DJINN_TEST_VERSION"); v != "" {
 			version = v
 		}
+		// A copy of this binary "installed" by a test carries its version in a file next to it.
+		if exe, err := os.Executable(); err == nil {
+			if v, err := os.ReadFile(exe + ".version"); err == nil {
+				version = strings.TrimSpace(string(v))
+			}
+		}
+		updatePoll = updatePollForTests
 		main()
 		os.Exit(0)
 	}

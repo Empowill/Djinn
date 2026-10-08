@@ -44,10 +44,35 @@ release pipeline per operating system: the update reuses `go install`.
   and that a signed, notarized macOS bundle stays valid after the swap.
 
 ## Done when
+- [x] The Djinn in use updates from a checkout on one click, without losing the session: `go tool task install`
+      leaves the running Djinn alone, which offers the new one; "Update" (or `djinn update`) restarts on it and
+      reopens the lead terminals. Linux (tested, and run by hand on real binaries); Windows vetted, not run.
 - [ ] A test release `v0.0.1-test` installs with one `go install` line on Linux.
 - [ ] A newer tag shows the offer in the window; the click installs and restarts on Linux,
       macOS and Windows.
 - [ ] A `(devel)` build never offers an update.
+
+## Decided along the way
+- **The local install comes first.** The Djinn we use is built from a checkout (`go tool task install`), so the
+  update starts there; a release only changes where the new binary comes from.
+- **Install beside, then rename.** `task install` builds `.djinn-new` in the destination folder, then
+  `tools/swapexe` renames it over `djinn`: one atomic step, and the running Djinn keeps its old file. On Linux a plain
+  `go build -o` over a running binary also works (no `ETXTBSY`: Go writes a new file), but not in one step; on
+  macOS rewriting a running signed binary in place gets it killed. On Windows `swapexe` moves the running executable
+  aside (`.swapexe-old-*`, removed by a later install) and puts the new one in its place. `TO=<folder>` installs
+  elsewhere, for tests.
+- **Detect by the path.** `djinn up` (not a `dev` build) looks at `os.Executable()` every 3 s: when the file there
+  is no longer the one it started from, it runs `<path> version` and offers it if the version differs. No Go
+  toolchain needed at run time. The version is `local-<git describe --dirty>`: two installs of the same dirty tree
+  share it, and are not offered.
+- **`UiService.WatchUpdate` and `UiService.Update`** (internal): the window's banner ("A new version of Djinn is
+  ready — Update") and `djinn update`, a top-level command like `djinn up`, outside the generated ones. An agent never
+  needs it. `Update` fails while nothing newer waits.
+- **The restart** writes `restart.json` in the data directory (each running terminal: name, command, folder; and
+  what the window showed), stops as Djinn quits (terminals hung up, workers interrupted and recovered), then starts the
+  new binary detached with the same `up` flags. The new one runs each terminal again and shows the same lead. A
+  terminal that does not start is listed in the banner and by `djinn update` (exit 1); its wish keeps the lead, for
+  `djinn wish resume`. If the new binary does not start, `restart.json` stays for the next `djinn up`.
 
 ## Open questions
 - Installing with `go install` needs Go, a C compiler and the webview headers on the user's

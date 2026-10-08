@@ -36,17 +36,21 @@ tasks:
       - go build -tags '{{.WINDOW_TAGS}}' -o bin/djinn{{exeExt}} ./cmd/djinn
 
   install:
-    desc: Install the Djinn you use, apart from the one you build (Go's bin folder, no sudo)
+    desc: "Install the Djinn you use, apart from the one you build (Go's bin folder, no sudo; TO=<folder> installs elsewhere). A running Djinn keeps going and offers to restart on it"
     deps: [ui]
     vars:
-      INSTALL_DIR:
+      GOBIN:
         sh: go env GOBIN
       GOPATH:
         sh: go env GOPATH
+      DIR: '{{if .TO}}{{.TO}}{{else if .GOBIN}}{{.GOBIN}}{{else}}{{.GOPATH}}/bin{{end}}'
       COMMIT:
-        sh: git rev-parse --short HEAD
+        sh: git describe --always --dirty --abbrev=7
     cmds:
-      - go build -tags '{{.WINDOW_TAGS}}' -ldflags "-X main.version=local-{{.COMMIT}}" -o {{if .INSTALL_DIR}}{{.INSTALL_DIR}}{{else}}{{.GOPATH}}/bin{{end}}/djinn{{exeExt}} ./cmd/djinn
+      # Built next to the installed one, then renamed over it: the Djinn that runs keeps its file (tools/swapexe).
+      - go build -tags '{{.WINDOW_TAGS}}' -ldflags "-X main.version=local-{{.COMMIT}}" -o "{{.DIR}}/.djinn-new{{exeExt}}" ./cmd/djinn
+      - go run ./tools/swapexe "{{.DIR}}/.djinn-new{{exeExt}}" "{{.DIR}}/djinn{{exeExt}}"
+      - 'echo "Installed djinn local-{{.COMMIT}} in {{.DIR}}. A running Djinn offers to restart on it (or: djinn update)."'
 
   test:
     desc: "Run every test: Go, interface, end-to-end"
@@ -72,6 +76,12 @@ tasks:
     deps: [ui]
     cmds:
       - go test -race -tags headless {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}
+
+  test-pkg:
+    desc: "Run the Go tests of some packages, headless: task test-pkg -- -run TestUpdate ./cmd/djinn"
+    deps: [ui]
+    cmds:
+      - go test -tags headless {{.CLI_ARGS}}
 
   bench:
     desc: "Run the transport benchmarks over a Unix socket (see docs/transport.md); pass go test flags after --, e.g. -- -bench Stream -count 5"

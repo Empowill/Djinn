@@ -105,12 +105,14 @@ To use Djinn, see the [README](README.md). To work on it:
 - Task, buf and the protobuf generators come with the Go module.
 
 **Everyday commands** (`go tool task --list` for all)
-- `go tool task test`: every test (Go, interface, end-to-end). Parts: `test-go`, `test-ui`, `e2e`.
+- `go tool task test`: every test (Go, interface, end-to-end). Parts: `test-go`, `test-ui`, `e2e`;
+  `test-pkg -- -run TestX ./cmd/djinn` for some packages.
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
 - `go tool task lint`: every check (protos, Go, types, formatting). `go tool task format` fixes.
 - `go tool task gen`: code from the protos.
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
-- `go tool task install`: the Djinn you use, apart from the one you build.
+- `go tool task install`: the Djinn you use, apart from the one you build. The running one keeps going and offers
+  to restart on it ("Update" in the window, or `djinn update`), reopening the lead terminals.
 - `djinn up --terminal "claude --resume <session>" --terminal-dir <project>`: run that command in
   the window's terminal instead of your shell.
 - `djinn wish import plan.djinn` (or "Import a wish" in the window); `djinn project add <folder>`

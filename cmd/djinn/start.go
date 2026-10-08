@@ -22,9 +22,10 @@ const (
 	startTimeout = 30 * time.Second
 )
 
-// startDetached starts djinn up in the background, apart from this process and its terminal, its output in the log of
-// the data directory, and returns its address once it answers. It needs no administrator rights.
-func startDetached(ctx context.Context, home string, say io.Writer) (string, error) {
+// startDetached starts djinn with args (up and its flags) in the background, apart from this process and its
+// terminal, its output in the log of the data directory, and returns its address once it answers. It needs no
+// administrator rights.
+func startDetached(ctx context.Context, home string, say io.Writer, args ...string) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -39,7 +40,7 @@ func startDetached(ctx context.Context, home string, say io.Writer) (string, err
 	}
 	defer log.Close() // The child holds its own copy.
 	before, _ := log.Seek(0, io.SeekEnd)
-	cmd := exec.Command(exe, "up")
+	cmd := exec.Command(exe, args...)
 	// The same data directory, whatever decided it here.
 	cmd.Env = append(os.Environ(), "DJINN_HOME="+home)
 	cmd.Stdout, cmd.Stderr = log, log

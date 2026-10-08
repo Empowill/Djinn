@@ -13,6 +13,7 @@ import type { DjinnBridge, Project, RuntimeEvent } from "../src/types";
 import { createFocus } from "./focus";
 import { legacyExchange } from "./legacy-bridge";
 import { createTerminal } from "./terminal";
+import { createUpdate } from "./update";
 
 // Methods the Go side does not serve yet. Each rejects with a clear error the interface shows.
 const notAvailable = [
@@ -168,5 +169,6 @@ if (import.meta.env.PROD && typeof window !== "undefined") {
     window.djinn = createDjinn(transport);
     window.djinnTerminal = createTerminal(transport);
     window.djinnFocus = createFocus(transport);
+    window.djinnUpdate = createUpdate(transport);
   }
 }

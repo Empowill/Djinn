@@ -347,6 +347,7 @@ func writeHelp(w io.Writer) {
 		fmt.Fprintf(tw, "  %s\t%s\n", command(sd), comment(sd))
 	}
 	fmt.Fprintf(tw, "  version\tPrint the version of djinn.\n")
+	fmt.Fprintf(tw, "  update\tRestart the running djinn on the newer one installed at its path (go tool task install).\n")
 	tw.Flush()
 	fmt.Fprint(w, `
 Global flags, anywhere on the line:

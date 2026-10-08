@@ -176,6 +176,20 @@ func (m *Manager) Get(id string) (*Terminal, error) {
 	return nil, ErrNotFound
 }
 
+// Running returns the terminals whose program still runs, by name.
+func (m *Manager) Running() []*Terminal {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*Terminal
+	for _, t := range m.byName {
+		if !t.Exited() {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b *Terminal) int { return strings.Compare(a.Name, b.Name) })
+	return out
+}
+
 // Close hangs up every terminal, kills the programs still there after Grace, and returns once they ended. No
 // terminal opens after.
 func (m *Manager) Close() {

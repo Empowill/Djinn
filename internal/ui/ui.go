@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -39,6 +40,9 @@ type Service struct {
 	Raise func()
 	// Window tells that Raise brings a native window to the front.
 	Window bool
+	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
+	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
+	Restart func() (version string, terminals int, err error)
 
 	mu sync.Mutex // Serializes the writes of the state.
 
@@ -46,6 +50,11 @@ type Service struct {
 	lastShow *uiv1.UiServiceWatchShowResponse
 	lastAt   time.Time
 	watchers map[chan *uiv1.UiServiceWatchShowResponse]struct{}
+
+	updates    sync.Mutex
+	ready      string        // version of the newer Djinn waiting; empty for none
+	notResumed []string      // terminals the last restart could not run again
+	updated    chan struct{} // closed and replaced at each change
 }
 
 // replay is how long a request to show something waits for a window that opens after it: djinn wish resume may
@@ -131,15 +140,15 @@ func (s *Service) SaveState(
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := writeAtomic(filepath.Join(s.Home, stateFile), []byte(req.Msg.GetStateJson())); err != nil {
+	if err := WriteAtomic(filepath.Join(s.Home, stateFile), []byte(req.Msg.GetStateJson())); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("save the state: %w", err))
 	}
 	return connect.NewResponse(&uiv1.UiServiceSaveStateResponse{}), nil
 }
 
-// writeAtomic writes a temporary file next to path, readable by the owner only, then renames it over path: a
+// WriteAtomic writes a temporary file next to path, readable by the owner only, then renames it over path: a
 // reader sees the old content or the new one, never a part of it.
-func writeAtomic(path string, data []byte) error {
+func WriteAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -283,6 +292,85 @@ func (s *Service) Present(wishID, terminal string) {
 		default: // A window that does not read keeps what it has: the next request matters more than this one.
 		}
 	}
+}
+
+// SetReady says that a newer Djinn of version waits at the path of the running one; empty says none does.
+func (s *Service) SetReady(version string) {
+	s.updates.Lock()
+	defer s.updates.Unlock()
+	if s.ready == version {
+		return
+	}
+	s.ready = version
+	s.notifyUpdate()
+}
+
+// Ready is the version of the newer Djinn waiting; empty for none.
+func (s *Service) Ready() string {
+	s.updates.Lock()
+	defer s.updates.Unlock()
+	return s.ready
+}
+
+// SetNotResumed reports the terminals a restart could not run again.
+func (s *Service) SetNotResumed(lines []string) {
+	s.updates.Lock()
+	defer s.updates.Unlock()
+	s.notResumed = slices.Clone(lines)
+	s.notifyUpdate()
+}
+
+// LastShow is the last wish and terminal the window was asked to show, however old; empty for none.
+func (s *Service) LastShow() (wishID, terminal string) {
+	s.shows.Lock()
+	defer s.shows.Unlock()
+	return s.lastShow.GetWishId(), s.lastShow.GetTerminal()
+}
+
+// notifyUpdate wakes the watchers of the update; s.updates is held.
+func (s *Service) notifyUpdate() {
+	if s.updated != nil {
+		close(s.updated)
+	}
+	s.updated = make(chan struct{})
+}
+
+func (s *Service) WatchUpdate(
+	ctx context.Context, _ *connect.Request[uiv1.UiServiceWatchUpdateRequest],
+	stream *connect.ServerStream[uiv1.UiServiceWatchUpdateResponse],
+) error {
+	for {
+		s.updates.Lock()
+		if s.updated == nil {
+			s.updated = make(chan struct{})
+		}
+		changed := s.updated
+		msg := &uiv1.UiServiceWatchUpdateResponse{
+			Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed),
+		}
+		s.updates.Unlock()
+		if err := stream.Send(msg); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-changed:
+		}
+	}
+}
+
+func (s *Service) Update(
+	context.Context, *connect.Request[uiv1.UiServiceUpdateRequest],
+) (*connect.Response[uiv1.UiServiceUpdateResponse], error) {
+	if s.Restart == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn cannot update itself"))
+	}
+	version, terminals, err := s.Restart()
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&uiv1.UiServiceUpdateResponse{Version: version, Terminals: int32(terminals)}), nil
 }
 
 func (s *Service) WatchShow(
