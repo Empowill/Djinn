@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -31,11 +33,35 @@ import (
 // claude and antigravity read one message before the first line and after each result line. codex answers
 // JSON-RPC: an answer line of the fixture (id and result or error) gets the id of the client's next request, and
 // after a request line (id and method) the fake waits for the client's reply.
+//
+// DJINN_FAKE_PREFIX, a file, makes it play a prefix instead (Spec.Prefix): it writes its arguments to the file,
+// then runs them as a command.
 func TestMain(m *testing.M) {
+	if f := os.Getenv("DJINN_FAKE_PREFIX"); f != "" {
+		os.Exit(fakePrefix(f))
+	}
 	if provider := os.Getenv("DJINN_FAKE_PROVIDER"); provider != "" {
 		os.Exit(fakeProvider(provider))
 	}
 	os.Exit(m.Run())
+}
+
+// fakePrefix plays a prefix, as systemd-run --scope does: the command after its own arguments runs with its
+// streams, and its exit code is the prefix's.
+func fakePrefix(record string) int {
+	args := os.Args[1:]
+	_ = os.WriteFile(record, []byte(strings.Join(args, "\n")), 0o600)
+	os.Unsetenv("DJINN_FAKE_PREFIX")
+	i := slices.Index(args, "--")
+	if i < 0 || i+1 >= len(args) {
+		return 20
+	}
+	cmd := exec.Command(args[i+1], args[i+2:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return cmd.ProcessState.ExitCode()
+	}
+	return 0
 }
 
 func fakeProvider(provider string) int {

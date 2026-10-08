@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -17,6 +16,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -36,6 +36,10 @@ type Option func(*Harness)
 
 // WithCapacity limits the workers that run at once, and stops new ones while the machine is under pressure.
 func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c } }
+
+// WithPrefix runs every worker under prefix, its own command appended: djinn up --worker-cpu gives a systemd scope
+// that caps the worker's CPU (machine.CPULimit).
+func WithPrefix(prefix []string) Option { return func(h *Harness) { h.prefix = prefix } }
 
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
 // machine falls without telling anyone.
@@ -101,12 +105,10 @@ func (h *Harness) Running() int {
 }
 
 // planned tells whether Djinn starts the task by itself, once it is ready.
-func planned(t *planv1.Task) bool {
-	return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING && t.GetScheduled() && t.GetStartTime() == nil
-}
+func planned(t *planv1.Task) bool { return dispatch.Planned(t) }
 
 // schedule makes one pass over the planned tasks, the first wish first: each one starts, waits with its reason,
-// or fails when a dependency failed.
+// or fails when a dependency failed. The rules are internal/dispatch's.
 func (h *Harness) schedule(ctx context.Context) {
 	h.sched.Lock()
 	defer h.sched.Unlock()
@@ -118,64 +120,54 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 		return
 	}
-	var waiting []*planv1.Task
-	for _, t := range tasks {
-		if planned(t) {
-			waiting = append(waiting, t)
-		}
-	}
-	if len(waiting) == 0 {
+	if !slices.ContainsFunc(tasks, planned) {
 		return
 	}
-	waiting = h.order(ctx, waiting)
-	s := newSituation(ctx, h.store, tasks)
-	for _, t := range waiting {
+	s, err := h.situation(ctx, tasks)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Printf("djinn: schedule: %v", err)
+		}
+		return
+	}
+	for _, d := range s.Pass() {
 		if h.ctx.Err() != nil {
 			return
 		}
-		why, failed := h.blocker(s, t)
-		switch {
-		case failed != "":
-			h.failPlanned(ctx, t, failed)
-		case why != "":
-			h.setWaiting(ctx, t, why)
+		switch t := d.Task; {
+		case d.Failed != "":
+			h.failPlanned(ctx, t, d.Failed)
+		case d.Why != "":
+			h.setWaiting(ctx, t, d.Why)
 		default:
 			if err := h.launchPlanned(ctx, t); err != nil {
 				log.Printf("djinn: task %s: %v", t.GetCode(), err)
 			}
-			s.started[t.GetId()] = true
 		}
 	}
 }
 
-// order sorts tasks by the rank of their wish (plan.ActiveWishes), then the oldest first. The tasks of a wish that
-// is not active come last; blocker keeps them waiting.
-func (h *Harness) order(ctx context.Context, tasks []*planv1.Task) []*planv1.Task {
-	pos := h.wishRanks(ctx)
-	out := slices.Clone(tasks)
-	slices.SortStableFunc(out, func(a, b *planv1.Task) int {
-		return cmp.Or(cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())),
-			a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime()), strings.Compare(a.GetId(), b.GetId()))
-	})
-	return out
-}
-
-// wishRanks gives the position of a wish among the active ones, by rank; a wish that is not active comes last.
-func (h *Harness) wishRanks(ctx context.Context) func(wishID string) int {
-	active, err := plan.ActiveWishes(ctx, h.store)
-	if err != nil && ctx.Err() == nil {
-		log.Printf("djinn: rank the wishes: %v", err)
+// situation is what a scheduling decision reads: the tasks, every wish, which projects are in Git, and what the
+// machine allows now. The caller holds h.sched.
+func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatch.Situation, error) {
+	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
+	if err != nil {
+		return nil, err
 	}
-	pos := make(map[string]int, len(active))
-	for i, w := range active {
-		pos[w.GetId()] = i
+	projects, err := store.List[*planv1.Project](ctx, h.store, nil)
+	if err != nil {
+		return nil, err
 	}
-	return func(id string) int {
-		if p, ok := pos[id]; ok {
-			return p
-		}
-		return len(pos)
+	git := make(map[string]bool, len(projects))
+	for _, p := range projects {
+		git[p.GetId()] = p.GetGit()
 	}
+	var m *dispatch.Machine
+	if h.capacity != nil {
+		m = &dispatch.Machine{Running: h.Running()}
+		m.Slots, m.Rule, m.Pressure = h.capacity()
+	}
+	return dispatch.New(tasks, wishes, git, m), nil
 }
 
 // Ranks gives the position of each task's wish among the active wishes, the first served first; the task of a wish
@@ -205,100 +197,6 @@ func (h *Harness) Describe(ctx context.Context, taskID string) (string, error) {
 		return "", plan.Status(err)
 	}
 	return t.GetCode() + " (" + t.GetTitle() + ")", nil
-}
-
-// situation is what a scheduling pass knows of the tasks: every task by id, the projects, and the tasks it started.
-type situation struct {
-	ctx      context.Context
-	store    *store.Store
-	byID     map[string]*planv1.Task
-	tasks    []*planv1.Task
-	projects map[string]*planv1.Project
-	started  map[string]bool
-}
-
-func newSituation(ctx context.Context, s *store.Store, tasks []*planv1.Task) *situation {
-	byID := make(map[string]*planv1.Task, len(tasks))
-	for _, t := range tasks {
-		byID[t.GetId()] = t
-	}
-	return &situation{ctx: ctx, store: s, byID: byID, tasks: tasks, projects: map[string]*planv1.Project{}, started: map[string]bool{}}
-}
-
-// git tells whether the project is in Git, where worktrees separate the writers.
-func (s *situation) git(projectID string) bool {
-	p, ok := s.projects[projectID]
-	if !ok {
-		p, _ = store.Get[*planv1.Project](s.ctx, s.store, projectID)
-		s.projects[projectID] = p
-	}
-	return p.GetGit()
-}
-
-// writing tells whether a task writes in its project now: its worker runs, it was just started, or it waits for
-// the answer to its edit question and may start again any time.
-func (s *situation) writing(t *planv1.Task) bool {
-	switch t.GetStatus() {
-	case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_WAITING:
-		return true
-	}
-	return s.started[t.GetId()]
-}
-
-// blocker says why the task cannot start now (why), or why it never will (failed); both empty when it can start.
-// Its wish must be active (not paused nor granted); then come the dependencies, the write scopes, and the machine.
-func (h *Harness) blocker(s *situation, t *planv1.Task) (why, failed string) {
-	if wish, err := store.Get[*planv1.Wish](s.ctx, s.store, t.GetWishId()); err == nil && !plan.Active(wish) {
-		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), ""
-	}
-	for _, id := range t.GetDependsOn() {
-		d, ok := s.byID[id]
-		if !ok {
-			return "", "its dependency " + id + " is gone"
-		}
-		switch d.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_DONE:
-			continue
-		case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
-			return "", fmt.Sprintf("its dependency %s ended %s", d.GetCode(), short(d.GetStatus()))
-		}
-		if why == "" {
-			why = fmt.Sprintf("waits for %s (%s)", d.GetCode(), short(d.GetStatus()))
-		}
-	}
-	if why != "" {
-		return why, ""
-	}
-	if id := t.GetProjectId(); id != "" && !s.git(id) {
-		for _, o := range s.tasks {
-			if o.GetId() == t.GetId() || o.GetProjectId() != id || !s.writing(o) {
-				continue
-			}
-			if overlap(t.GetWriteScopes(), o.GetWriteScopes()) {
-				return fmt.Sprintf("%s writes %s, which overlaps %s", o.GetCode(), scopeText(o.GetWriteScopes()),
-					scopeText(t.GetWriteScopes())), ""
-			}
-		}
-	}
-	return h.full(), ""
-}
-
-// full says why no worker may start now, or "" when one may.
-func (h *Harness) full() string {
-	if h.capacity == nil {
-		return ""
-	}
-	slots, rule, pressure := h.capacity()
-	if pressure != "" {
-		return "the machine is under pressure: " + pressure
-	}
-	if running := h.Running(); running >= slots {
-		if running == 1 {
-			return "1 worker runs, the most this machine holds (" + rule + ")"
-		}
-		return fmt.Sprintf("%d workers run, the most this machine holds (%s)", running, rule)
-	}
-	return ""
 }
 
 // setWaiting records why a planned task waits, when the reason changed, with an event.
@@ -449,29 +347,4 @@ func cleanScopes(scopes []string) ([]string, error) {
 	}
 	slices.Sort(out)
 	return out, nil
-}
-
-// overlap tells whether two sets of write scopes share a path: one names the other, or a folder holding it. No
-// scope is the whole folder. Case is ignored, as on macOS and Windows.
-func overlap(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return true
-	}
-	for _, x := range a {
-		for _, y := range b {
-			x, y := strings.ToLower(x), strings.ToLower(y)
-			if x == y || strings.HasPrefix(y, x+"/") || strings.HasPrefix(x, y+"/") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// scopeText writes write scopes for a person.
-func scopeText(scopes []string) string {
-	if len(scopes) == 0 {
-		return "the whole folder"
-	}
-	return strings.Join(scopes, ", ")
 }

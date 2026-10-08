@@ -63,6 +63,8 @@ type Harness struct {
 
 	answering sync.Mutex // one answer to an edit question at a time
 
+	prefix []string // the command every worker runs under (WithPrefix)
+
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
 	tick       time.Duration // a pass at least this often
@@ -238,7 +240,11 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	why, failed := h.blocker(newSituation(ctx, h.store, tasks), task)
+	sit, err := h.situation(ctx, tasks)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	why, failed := sit.Blocker(task)
 	switch {
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))
@@ -436,6 +442,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
+	spec.Prefix = h.prefix
 	w, err := provider.Start(h.ctx, spec)
 	if err != nil {
 		return err

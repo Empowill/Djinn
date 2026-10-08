@@ -1,0 +1,312 @@
+[
+  {
+    "name": "one ready task, nothing limits",
+    "wishes": [{ "id": "A" }],
+    "tasks": [{ "code": "W1", "wish": "A", "status": "planned" }],
+    "expect": { "W1": "start" }
+  },
+  {
+    "name": "a dependency still runs",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "running" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W2": "wait" }
+  },
+  {
+    "name": "a dependency is done",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "done" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W2": "start" }
+  },
+  {
+    "name": "a chain: only its first planned link is ready",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "done" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] },
+      { "code": "W3", "wish": "A", "status": "planned", "depends_on": ["W2"] }
+    ],
+    "expect": { "W2": "start", "W3": "wait" }
+  },
+  {
+    "name": "two dependencies, one still runs",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "done" },
+      { "code": "W2", "wish": "A", "status": "running" },
+      { "code": "W3", "wish": "A", "status": "planned", "depends_on": ["W1", "W2"] }
+    ],
+    "expect": { "W3": "wait" }
+  },
+  {
+    "name": "a dependency failed: its dependent never starts",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "failed" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W2": "fail" }
+  },
+  {
+    "name": "a dependency stopped by the user",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "stopped" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W2": "fail" }
+  },
+  {
+    "name": "a dependency interrupted when djinn stopped",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "interrupted" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W2": "fail" }
+  },
+  {
+    "name": "a dependency that is gone",
+    "wishes": [{ "id": "A" }],
+    "tasks": [{ "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W9"] }],
+    "expect": { "W2": "fail" }
+  },
+  {
+    "name": "a dependency waits for its edit question",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "waiting" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W2": "wait" }
+  },
+  {
+    "name": "a worker that failed holds no one else",
+    "wishes": [{ "id": "A" }],
+    "projects": [{ "id": "app", "git": false }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "failed", "scopes": ["src"] },
+      { "code": "W2", "wish": "A", "project": "app", "status": "planned", "scopes": ["src"] }
+    ],
+    "expect": { "W2": "start" }
+  },
+  {
+    "name": "outside Git, overlapping scopes wait",
+    "wishes": [{ "id": "A" }],
+    "projects": [{ "id": "app", "git": false }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "running", "scopes": ["src"] },
+      { "code": "W2", "wish": "A", "project": "app", "status": "planned", "scopes": ["src/app"] }
+    ],
+    "expect": { "W2": "wait" }
+  },
+  {
+    "name": "outside Git, separate scopes both write",
+    "wishes": [{ "id": "A" }],
+    "projects": [{ "id": "app", "git": false }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "running", "scopes": ["docs"] },
+      { "code": "W2", "wish": "A", "project": "app", "status": "planned", "scopes": ["src"] }
+    ],
+    "expect": { "W2": "start" }
+  },
+  {
+    "name": "outside Git, a writer of the whole folder holds everyone",
+    "wishes": [{ "id": "A" }],
+    "projects": [{ "id": "app", "git": false }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "running" },
+      { "code": "W2", "wish": "A", "project": "app", "status": "planned", "scopes": ["docs"] }
+    ],
+    "expect": { "W2": "wait" }
+  },
+  {
+    "name": "outside Git, scopes ignore case",
+    "wishes": [{ "id": "A" }],
+    "projects": [{ "id": "app", "git": false }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "running", "scopes": ["SRC"] },
+      { "code": "W2", "wish": "A", "project": "app", "status": "planned", "scopes": ["src/x"] }
+    ],
+    "expect": { "W2": "wait" }
+  },
+  {
+    "name": "outside Git, a task waiting for its edit question keeps its scope",
+    "wishes": [{ "id": "A" }],
+    "projects": [{ "id": "app", "git": false }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "waiting", "scopes": ["src"] },
+      { "code": "W2", "wish": "A", "project": "app", "status": "planned", "scopes": ["src"] }
+    ],
+    "expect": { "W2": "wait" }
+  },
+  {
+    "name": "outside Git, two planned writers of one scope: the oldest starts",
+    "wishes": [{ "id": "A" }],
+    "projects": [{ "id": "app", "git": false }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "planned", "scopes": ["src"] },
+      { "code": "W2", "wish": "A", "project": "app", "status": "planned", "scopes": ["src"] }
+    ],
+    "expect": { "W1": "start", "W2": "wait" }
+  },
+  {
+    "name": "in Git, overlapping scopes both write: worktrees separate them",
+    "wishes": [{ "id": "A" }],
+    "projects": [{ "id": "app", "git": true }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "running", "scopes": ["src"] },
+      { "code": "W2", "wish": "A", "project": "app", "status": "planned", "scopes": ["src"] }
+    ],
+    "expect": { "W2": "start" }
+  },
+  {
+    "name": "the same scope in another project does not hold",
+    "wishes": [{ "id": "A" }],
+    "projects": [
+      { "id": "app", "git": false },
+      { "id": "infra", "git": false }
+    ],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "running", "scopes": ["src"] },
+      { "code": "W2", "wish": "A", "project": "infra", "status": "planned", "scopes": ["src"] }
+    ],
+    "expect": { "W2": "start" }
+  },
+  {
+    "name": "the machine is under pressure: nobody starts",
+    "machine": { "slots": 4, "running": 1, "pressure": "tasks waited for the CPU 70% of the last 10 s (50% at most)" },
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "planned" },
+      { "code": "W2", "wish": "A", "status": "planned" }
+    ],
+    "expect": { "W1": "wait", "W2": "wait" }
+  },
+  {
+    "name": "every slot taken",
+    "machine": { "slots": 2, "running": 2 },
+    "wishes": [{ "id": "A" }],
+    "tasks": [{ "code": "W1", "wish": "A", "status": "planned" }],
+    "expect": { "W1": "wait" }
+  },
+  {
+    "name": "one free slot, two ready: the oldest takes it",
+    "machine": { "slots": 2, "running": 1 },
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "planned" },
+      { "code": "W2", "wish": "A", "status": "planned" }
+    ],
+    "expect": { "W1": "start", "W2": "wait" }
+  },
+  {
+    "name": "a task waiting for a dependency leaves its slot to the next",
+    "machine": { "slots": 1, "running": 0 },
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "waiting" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] },
+      { "code": "W3", "wish": "A", "status": "planned" }
+    ],
+    "expect": { "W2": "wait", "W3": "start" }
+  },
+  {
+    "name": "wish ranks: the first wish takes the slot, though planned later",
+    "machine": { "slots": 1, "running": 0 },
+    "wishes": [
+      { "id": "A", "rank": 2 },
+      { "id": "B", "rank": 1 }
+    ],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "planned" },
+      { "code": "X1", "wish": "B", "status": "planned" }
+    ],
+    "expect": { "W1": "wait", "X1": "start" }
+  },
+  {
+    "name": "wish ranks, then age, over two free slots",
+    "machine": { "slots": 3, "running": 1 },
+    "wishes": [
+      { "id": "A", "rank": 2 },
+      { "id": "B", "rank": 1 },
+      { "id": "C", "rank": 3 }
+    ],
+    "tasks": [
+      { "code": "Z1", "wish": "C", "status": "planned" },
+      { "code": "W1", "wish": "A", "status": "planned" },
+      { "code": "W2", "wish": "A", "status": "planned" },
+      { "code": "X1", "wish": "B", "status": "planned" }
+    ],
+    "expect": { "X1": "start", "W1": "start", "W2": "wait", "Z1": "wait" }
+  },
+  {
+    "name": "a wish without a rank comes after the ranked ones",
+    "machine": { "slots": 1, "running": 0 },
+    "wishes": [
+      { "id": "A" },
+      { "id": "B", "rank": 1 }
+    ],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "planned" },
+      { "code": "X1", "wish": "B", "status": "planned" }
+    ],
+    "expect": { "W1": "wait", "X1": "start" }
+  },
+  {
+    "name": "a paused wish waits, and leaves the slot",
+    "machine": { "slots": 1, "running": 0 },
+    "wishes": [
+      { "id": "A", "state": "paused", "rank": 1 },
+      { "id": "B", "rank": 2 }
+    ],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "planned" },
+      { "code": "X1", "wish": "B", "status": "planned" }
+    ],
+    "expect": { "W1": "wait", "X1": "start" }
+  },
+  {
+    "name": "a granted wish starts nothing",
+    "wishes": [{ "id": "A", "state": "granted" }],
+    "tasks": [{ "code": "W1", "wish": "A", "status": "planned" }],
+    "expect": { "W1": "wait" }
+  },
+  {
+    "name": "a busy gate holds no task: the worker waits for it when it runs the command",
+    "machine": { "slots": 4, "running": 1 },
+    "wishes": [{ "id": "A" }],
+    "projects": [{ "id": "app", "git": true }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "project": "app", "status": "running" },
+      { "code": "W2", "wish": "A", "project": "app", "status": "planned" }
+    ],
+    "gates": [{ "name": "e2e", "holder": "W1" }],
+    "expect": { "W2": "start" }
+  },
+  {
+    "name": "a dependency and pressure: the dependency is the reason",
+    "machine": { "slots": 4, "running": 1, "pressure": "the load is 9.0 on 4 cores (2.0 a core at most)" },
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "running" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W2": "wait" }
+  },
+  {
+    "name": "a failed dependency fails its dependent even under pressure",
+    "machine": { "slots": 1, "running": 1, "pressure": "the system reports memory pressure" },
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "failed" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W2": "fail" }
+  }
+]

@@ -20,6 +20,7 @@ const gateUsage = `Usage: djinn gate run <name> [--task-id <task>] -- <command> 
 Take the gate <name> (codegen, stack, e2e, paid, or any other), run the command once it is granted, and give the
 gate back when the command ends, fails or is interrupted. Djinn grants a gate to one holder at a time, and only
 while the machine is not under pressure; meanwhile it says why it waits. The exit code is the command's.
+Djinn records what the command cost in its project (CPU time, peak memory, duration): djinn command list.
 
   --task-id <task>   Task the gate is taken for (default $DJINN_TASK_ID): its events show the gate.
   --addr URL         Address of the djinn server (default $DJINN_ADDR, then the one djinn up writes).
@@ -79,6 +80,7 @@ func runGate(args []string) int {
 		defer stop()
 		return gate.Run(ctx, machinev1connect.NewGateServiceClient(client, base), name, taskID, gate.Command{
 			Args: command, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Notice: os.Stderr,
+			Costs: machinev1connect.NewCommandServiceClient(client, base),
 		})
 	}()
 	if err != nil {

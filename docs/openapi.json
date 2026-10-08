@@ -35,6 +35,93 @@
         "format": "date-time",
         "type": "string"
       },
+      "machine.v1.CommandCost": {
+        "description": "CommandCost is what a command of a project costs, over the runs Djinn measured. The peak memory is the resident memory of the command's largest process, children included once they ended; 0 where the system does not give it (Windows).",
+        "properties": {
+          "command": {
+            "description": "The command and its arguments, as run, up to 200 characters; case is ignored.",
+            "type": "string"
+          },
+          "cpuSeconds": {
+            "description": "Mean CPU time of a run, user and system, in seconds: the command and the children it waited for.",
+            "type": "number"
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastCpuSeconds": {
+            "description": "CPU time of the last run, in seconds.",
+            "type": "number"
+          },
+          "lastExitCode": {
+            "description": "Exit code of the last run.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "lastPeakMemoryBytes": {
+            "description": "Peak memory of the last run, in bytes.",
+            "format": "uint64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "lastSeconds": {
+            "description": "Duration of the last run, in seconds.",
+            "type": "number"
+          },
+          "lastTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the last run ended."
+          },
+          "peakMemoryBytes": {
+            "description": "Highest peak memory of a run, in bytes.",
+            "format": "uint64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "projectId": {
+            "description": "Project the command runs in.",
+            "type": "string"
+          },
+          "runs": {
+            "description": "How many runs were measured.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "seconds": {
+            "description": "Mean duration of a run, in seconds.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "machine.v1.CommandServiceListRequest": {
+        "properties": {
+          "project": {
+            "description": "Only the commands of this project, by name or identifier.",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "machine.v1.CommandServiceListResponse": {
+        "properties": {
+          "costs": {
+            "description": "The commands, by project, the most run first.",
+            "items": {
+              "$ref": "#/components/schemas/machine.v1.CommandCost"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "machine.v1.Gate": {
         "description": "Gate is a gate held or waited for.",
         "properties": {
@@ -1809,6 +1896,44 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/machine.v1.CommandService/List": {
+      "post": {
+        "description": "List what the commands of the projects cost, the most run first.",
+        "operationId": "CommandService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/machine.v1.CommandServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/machine.v1.CommandServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn command list",
+        "tags": [
+          "CommandService"
+        ]
+      }
+    },
     "/machine.v1.GateService/List": {
       "post": {
         "description": "List the gates held or waited for.",
@@ -3118,6 +3243,10 @@
     {
       "description": "Blocks: the free content of a wish, beside its tasks and questions.",
       "name": "BlockService"
+    },
+    {
+      "description": "CommandService keeps what the commands of each project cost. Djinn measures each command a worker runs through djinn gate run: its CPU time, its peak memory and its duration, so that it learns what a project's usual commands cost.",
+      "name": "CommandService"
     },
     {
       "description": "GateService grants the gates: shared resources, such as code generation (codegen), the local stack (stack), an end-to-end run (e2e) or a paid model run (paid), each held by one holder at a time, and granted only while the machine is not under pressure. To run a command under a gate: djinn gate run <name> -- <command>.",

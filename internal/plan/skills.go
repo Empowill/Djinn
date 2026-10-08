@@ -172,11 +172,11 @@ func (k *Skills) Summon(
 	srcName, name, _ := strings.Cut(req.Msg.GetSkill(), "/")
 	var skill *planv1.Skill
 	err := write(ctx, k.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-		into, err := projectNamed(ctx, tx, req.Msg.GetInto())
+		into, err := ProjectNamed(ctx, tx, req.Msg.GetInto())
 		if err != nil {
 			return err
 		}
-		src, err := projectNamed(ctx, tx, srcName)
+		src, err := ProjectNamed(ctx, tx, srcName)
 		if err != nil {
 			return err
 		}
@@ -216,7 +216,7 @@ func (k *Skills) List(
 ) (*connect.Response[planv1.SkillServiceListResponse], error) {
 	var projects []*planv1.Project
 	if name := req.Msg.GetProject(); name != "" {
-		p, err := projectNamed(ctx, k.Store, name)
+		p, err := ProjectNamed(ctx, k.Store, name)
 		if err != nil {
 			return nil, Status(err)
 		}
@@ -255,11 +255,11 @@ func (k *Skills) Unsummon(
 	var from *planv1.Project
 	err := write(ctx, k.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
-		if from, err = projectNamed(ctx, tx, req.Msg.GetFrom()); err != nil {
+		if from, err = ProjectNamed(ctx, tx, req.Msg.GetFrom()); err != nil {
 			return err
 		}
 		// The source is matched by name, or by identifier when its project is no longer known.
-		src, err := projectNamed(ctx, tx, srcName)
+		src, err := ProjectNamed(ctx, tx, srcName)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
@@ -286,8 +286,8 @@ func summonedSkill(p *planv1.Project, s Summoned) *planv1.Skill {
 	}
 }
 
-// projectNamed is the project of this name, case ignored, or of this identifier.
-func projectNamed(ctx context.Context, r store.Reader, name string) (*planv1.Project, error) {
+// ProjectNamed is the project of this name, case ignored, or of this identifier.
+func ProjectNamed(ctx context.Context, r store.Reader, name string) (*planv1.Project, error) {
 	all, err := store.List[*planv1.Project](ctx, r, nil)
 	if err != nil {
 		return nil, err

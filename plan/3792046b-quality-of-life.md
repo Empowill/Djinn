@@ -50,7 +50,7 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     the one read does not move by more than 1 px, any frame. Twice: Chromium's anchoring, and the script.
   - [ ] Checked in the window, on Linux and macOS (by hand). (needs: a person, on Linux and on a Mac)
 - [x] MCP, as a thin layer over the command line. (`djinn mcp`, `internal/cli/mcp.go`: stdio, no library; one tool
-  per public unary method, 34, its input schema from the request, read and checked by the command line's code;
+  per public unary method, 35, its input schema from the request, read and checked by the command line's code;
   `TestMCPListTools`, `TestMCPCallTool`; tried by hand on a `djinn up --browser` in a temporary DJINN_HOME:
   `project_add` then `project_list`. The three streams stay on the command line; see
   [the convention](../docs/cli-convention.md#mcp))
@@ -76,7 +76,16 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   sets `ELECTRON_SKIP_BINARY_DOWNLOAD`, `docs/agent-protocol.md` describes the command line and the task events,
   the user guide launches `djinn up`; `git grep -i electron` finds only `plan/` history, the license's
   "electronic" and `electron-to-chromium`, which `browserslist` needs to build)
-- [ ] CPU limits per worker on Linux (systemd delegation). (needs: an agent, on a systemd Linux)
+- [ ] CPU limits per worker on Linux (systemd delegation).
+  - [x] `djinn up --worker-cpu 150` (or `$DJINN_WORKER_CPU`), off by default: each worker runs under
+    `systemd-run --user --scope -p CPUQuota=150% --`, no root; the scope keeps its PID, process group and streams.
+    At start, Djinn starts one scope and reads its `cpu.max`: systemd accepts `CPUQuota` and caps nothing when it
+    does not give the user the cpu controller, as on Ubuntu 22.04 (systemd 249 delegates memory and pids only).
+    Then, or without systemd-run, or off Linux, workers run uncapped and `djinn up` says why. (`TestPrefix` in
+    `internal/harness`, `TestCheckQuota` and `TestCPULimit` in `internal/machine`; on this machine `djinn up
+    --worker-cpu 150` printed "systemd does not give the cpu controller to your user", and ran)
+  - [ ] Checked capping on a systemd that delegates the cpu controller to users. (needs: a machine where it does,
+    or a person with root to add `Delegate=cpu cpuset io memory pids` to `user@.service` once)
 - [ ] Shared team settings versioned in the repository. (needs: an agent; only `.agents/permissions.txtpb` exists)
 - [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check)
 - [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)

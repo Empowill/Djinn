@@ -131,3 +131,93 @@ message GateServiceListResponse {
   // The gates held or waited for.
   repeated Gate gates = 1;
 }
+
+// CommandService keeps what the commands of each project cost. Djinn measures each command a worker runs through
+// djinn gate run: its CPU time, its peak memory and its duration, so that it learns what a project's usual commands
+// cost.
+service CommandService {
+  // List what the commands of the projects cost, the most run first.
+  rpc List(CommandServiceListRequest) returns (CommandServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
+  // task's, or the one whose folder holds the directory; a command outside any project is not recorded.
+  rpc Record(CommandServiceRecordRequest) returns (CommandServiceRecordResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+}
+
+// CommandCost is what a command of a project costs, over the runs Djinn measured. The peak memory is the resident
+// memory of the command's largest process, children included once they ended; 0 where the system does not give it
+// (Windows).
+message CommandCost {
+  option (djinn.v1.unique) = {
+    fields: [
+      "project_id",
+      "command"
+    ]
+  };
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // Project the command runs in.
+  string project_id = 2;
+  // The command and its arguments, as run, up to 200 characters; case is ignored.
+  string command = 3;
+  // How many runs were measured.
+  int32 runs = 4;
+  // Mean CPU time of a run, user and system, in seconds: the command and the children it waited for.
+  double cpu_seconds = 5;
+  // Mean duration of a run, in seconds.
+  double seconds = 6;
+  // Highest peak memory of a run, in bytes.
+  uint64 peak_memory_bytes = 7;
+  // CPU time of the last run, in seconds.
+  double last_cpu_seconds = 8;
+  // Duration of the last run, in seconds.
+  double last_seconds = 9;
+  // Peak memory of the last run, in bytes.
+  uint64 last_peak_memory_bytes = 10;
+  // Exit code of the last run.
+  int32 last_exit_code = 11;
+  // When the last run ended.
+  google.protobuf.Timestamp last_time = 12;
+}
+
+message CommandServiceListRequest {
+  // Only the commands of this project, by name or identifier.
+  string project = 1 [(buf.validate.field).string.max_len = 100];
+}
+
+message CommandServiceListResponse {
+  // The commands, by project, the most run first.
+  repeated CommandCost costs = 1;
+}
+
+message CommandServiceRecordRequest {
+  // Task that ran the command; its project is the command's.
+  string task_id = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Folder the command ran in, absolute: it finds the project when no task is given.
+  string directory = 2 [(buf.validate.field).string.max_len = 4096];
+  // The command and its arguments, as run.
+  string command = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 200
+  ];
+  // CPU time, user and system, in seconds.
+  double cpu_seconds = 4 [(buf.validate.field).double.gte = 0];
+  // Duration, in seconds.
+  double seconds = 5 [(buf.validate.field).double.gte = 0];
+  // Peak memory, in bytes; 0 when unknown.
+  uint64 peak_memory_bytes = 6;
+  // Exit code of the command.
+  int32 exit_code = 7;
+}
+
+message CommandServiceRecordResponse {
+  // What the command costs now; absent when it ran outside any project.
+  CommandCost cost = 1;
+}

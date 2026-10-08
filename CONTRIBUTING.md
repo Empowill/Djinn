@@ -135,6 +135,12 @@ To use Djinn, see the [README](README.md). To work on it:
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
 - `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
   `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
+- `djinn gate run <name> -- <command>` runs a command under a gate and records what it cost in its project (CPU
+  time, peak memory, duration); `djinn command list [--project <name>]` shows the costs. `djinn up --worker-cpu 150`
+  caps each worker at 150% of a core in a systemd user scope, where systemd gives your user the cpu controller
+  ([T17](plan/3da7b334-machine-discovery.md), [T09](plan/3792046b-quality-of-life.md)).
+- `go tool task bench-dispatch`: the scheduler's decisions on hand-written dispatch cases, as a table
+  ([T16](plan/263f074f-dispatch-bench.md)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`
   puts it back, Djinn stopped ([`docs/backup.md`](docs/backup.md)).
 - `djinn wish set-lead <wish-id> <session-id> --directory <folder>` records a wish's lead session;

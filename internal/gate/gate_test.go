@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -217,6 +219,23 @@ func TestMain(m *testing.M) {
 		os.Exit(3)
 	case "sleep":
 		time.Sleep(time.Minute)
+	case "nap":
+		time.Sleep(400 * time.Millisecond)
+	case "burn":
+		// The cost of a child counts once the command waited for it.
+		child := exec.Command(os.Args[0])
+		child.Env = append(os.Environ(), helperEnv+"=burn-child")
+		if err := child.Run(); err != nil {
+			os.Exit(1)
+		}
+	case "burn-child":
+		memory := make([]byte, 64<<20)
+		for i := range memory {
+			memory[i] = byte(i)
+		}
+		for start := time.Now(); time.Since(start) < 300*time.Millisecond; {
+		}
+		runtime.KeepAlive(memory)
 	}
 }
 
@@ -280,6 +299,61 @@ func TestRun(t *testing.T) {
 	}
 	cancel()
 	waitFree(t, g)
+}
+
+// costs records what djinn gate run sends.
+type costs struct {
+	machinev1connect.CommandServiceClient
+	got []*machinev1.CommandServiceRecordRequest
+}
+
+func (c *costs) Record(
+	_ context.Context, req *connect.Request[machinev1.CommandServiceRecordRequest],
+) (*connect.Response[machinev1.CommandServiceRecordResponse], error) {
+	c.got = append(c.got, req.Msg)
+	return connect.NewResponse(&machinev1.CommandServiceRecordResponse{}), nil
+}
+
+// TestRunCost: djinn gate run measures what the command cost, its children included, and records it for its task;
+// not when it was interrupted.
+func TestRunCost(t *testing.T) {
+	client := server(t, New(nil, nil))
+	rec := &costs{}
+	t.Setenv(helperEnv, "burn")
+	var notice bytes.Buffer
+	code, err := Run(t.Context(), client, "codegen", "", Command{Args: []string{os.Args[0], "-test.run=^$"}, Notice: &notice, Costs: rec})
+	if err != nil || code != 0 || len(rec.got) != 1 {
+		t.Fatalf("run = %d, %v, recorded %v, notice %q", code, err, rec.got, notice.String())
+	}
+	got := rec.got[0]
+	dir, _ := os.Getwd()
+	if got.GetCommand() != os.Args[0]+" -test.run=^$" || got.GetDirectory() != dir || got.GetExitCode() != 0 {
+		t.Errorf("recorded %v", got)
+	}
+	if got.GetCpuSeconds() < 0.1 || got.GetSeconds() < 0.3 || got.GetSeconds() < got.GetCpuSeconds()/float64(runtime.NumCPU()) {
+		t.Errorf("CPU %.3f s, duration %.3f s", got.GetCpuSeconds(), got.GetSeconds())
+	}
+	switch peak := got.GetPeakMemoryBytes(); runtime.GOOS {
+	case "linux", "darwin":
+		if peak < 64<<20 {
+			t.Errorf("peak memory %d", peak)
+		}
+	default:
+		if peak != 0 {
+			t.Errorf("peak memory %d where the system does not give it", peak)
+		}
+	}
+
+	// Interrupted (Ctrl-C reaches the command and djinn alike): nothing recorded, even if the command ends well.
+	t.Setenv(helperEnv, "nap")
+	ctx, cancel := context.WithCancel(t.Context())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	if code, err := Run(ctx, client, "codegen", "", Command{Args: []string{os.Args[0]}, Notice: &notice, Costs: rec}); code != 0 || err != nil {
+		t.Errorf("interrupted run = %d, %v", code, err)
+	}
+	if len(rec.got) != 1 {
+		t.Errorf("an interrupted command recorded: %v", rec.got[1:])
+	}
 }
 
 func connectRequest(name string) *connect.Request[machinev1.GateServiceHoldRequest] {

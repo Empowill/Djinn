@@ -289,20 +289,6 @@ func TestScopes(t *testing.T) {
 			t.Errorf("%q accepted", bad)
 		}
 	}
-	for _, tt := range []struct {
-		a, b []string
-		want bool
-	}{
-		{nil, []string{"x"}, true},
-		{[]string{"src"}, []string{"src/app"}, true},
-		{[]string{"SRC/App"}, []string{"src"}, true},
-		{[]string{"src"}, []string{"srcs"}, false},
-		{[]string{"docs", "src/a"}, []string{"src/b"}, false},
-	} {
-		if got := overlap(tt.a, tt.b); got != tt.want {
-			t.Errorf("overlap(%v, %v) = %v", tt.a, tt.b, got)
-		}
-	}
 }
 
 // TestRank: when a slot frees, the first wish of the rank is served first, whatever was planned first; the

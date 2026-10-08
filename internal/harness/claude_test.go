@@ -2,6 +2,7 @@ package harness
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -141,6 +142,37 @@ func TestClaudeArgs(t *testing.T) {
 				t.Errorf("a worker without permissions gets a permission mode: %v", got)
 			}
 		})
+	}
+}
+
+// TestPrefix: a worker runs under its prefix (djinn up --worker-cpu: a systemd scope), its own program found first.
+func TestPrefix(t *testing.T) {
+	env, args, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
+	record := filepath.Join(t.TempDir(), "prefix")
+	env = append(env, "DJINN_FAKE_PREFIX="+record)
+	prefix := []string{os.Args[0], "--scope", "--"}
+	w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env, Prefix: prefix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := collect(w)
+	if res := w.Wait(); res.ExitCode != 0 || res.Err != nil || !slices.Contains(kinds(events), "TEXT") {
+		t.Errorf("under the prefix: %+v, %v", res, kinds(events))
+	}
+	got, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claudeArgs, err := os.ReadFile(args)
+	if err != nil {
+		t.Fatal("the agent did not run:", err)
+	}
+	if want := "--scope\n--\n" + os.Args[0] + "\n" + string(claudeArgs); string(got) != want {
+		t.Errorf("the prefix ran %q, want %q", got, want)
+	}
+	if _, err := (Claude{Command: "djinn-no-such-agent"}).Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Prefix: prefix}); err == nil ||
+		!strings.Contains(err.Error(), "djinn-no-such-agent not found in PATH") {
+		t.Errorf("a missing agent under a prefix: %v", err)
 	}
 }
 

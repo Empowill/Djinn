@@ -76,7 +76,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 **Phase 3 · Comfort**
 
 - [x] [T14 · Spend big models only where they matter](plan/8ce817da-cost.md)
-- [ ] [T16 · Dispatch: plain Go code or a local model?](plan/263f074f-dispatch-bench.md)
+- [ ] [T16 · Dispatch: plain Go code or a local model?](plan/263f074f-dispatch-bench.md) (in progress)
 - [ ] [T09 · Quality of life and clean-up](plan/3792046b-quality-of-life.md) (in progress)
 - [ ] [T19 · Releases: binaries for every target](plan/71f9c331-releases.md)
 - [x] [T20 · Backups, on a server of your choice](plan/9b71f059-backup.md)

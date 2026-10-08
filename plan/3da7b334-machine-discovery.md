@@ -27,8 +27,10 @@ overloaded. Part of the orchestrator (T07).
 
 ## Done when
 - [x] `djinn machine` shows the discovered machine and the live load.
-- [ ] After a few runs, each project command has a measured cost. (needs: an agent; no cost per command is
-  recorded yet)
+- [x] After a few runs, each project command has a measured cost. (for the commands run through `djinn gate run`,
+  on Linux: `TestRunCost` in `internal/gate`, `TestCosts` in `internal/machine`; by hand, `djinn command list` after
+  three runs in a temporary data folder showed `sh -c exit 3`, 2 runs, and a `sort` of 300 MB at 0.64 s of CPU and
+  302 MB of peak memory. A command an agent runs with its own tool, outside a gate, is not measured)
 - [x] Djinn never starts more workers than the machine holds, and says why it waits.
 
 ## Decided along the way
@@ -43,3 +45,17 @@ overloaded. Part of the orchestrator (T07).
 - **Pressure** stops new workers and gates; what runs goes on. With PSI: tasks waited for the CPU 50% of the last
   10 s, or for memory 10% ("some"). Without: a load of 2 per core, or less than 10% of memory available; on macOS,
   the system's warning level.
+- **The cost of a command** (`CommandService`, `djinn command list [--project <name>]`): `djinn gate run` measures
+  the command it runs and sends it once the command ended by itself; one interrupted, or killed by a signal, is not
+  recorded. A `CommandCost` per project and command (case ignored, up to 200 characters, as run): the runs, the mean
+  CPU time and duration, the highest peak memory, and the last run. The project is the task's (`$DJINN_TASK_ID`),
+  else the deepest project whose folder holds the working directory; outside any project, nothing.
+- **How it is measured.** Linux and macOS: the `wait4` resource usage of the command. The CPU time counts the
+  command and every child it waited for; the peak memory is the resident memory of its largest process, not the sum
+  of a tree, and it has a floor: the djinn client's own memory before the command replaced it (about 20 MB). A child
+  left running when the command ends is not counted. macOS gives the same numbers (in bytes, not KiB); not run on a
+  Mac yet. Windows: the CPU time and the duration; no peak memory, which needs a Job Object around the command (0).
+  A cgroup per command would count a whole tree, but a systemd scope disappears with its last process, before its
+  `memory.peak` can be read.
+- **Not used yet.** The scheduler and the gates do not read the costs yet: a heavy command waiting for a gate
+  (the capacity, above) is the next step.

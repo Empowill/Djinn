@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file machine/v1/machine.proto.
  */
 export const file_machine_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChhtYWNoaW5lL3YxL21hY2hpbmUucHJvdG8SCm1hY2hpbmUudjEiMgoIUHJlc3N1cmUSEgoKc29tZV9hdmcxMBgBIAEoARISCgpmdWxsX2F2ZzEwGAIgASgBIuACCgdNYWNoaW5lEgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkSDQoFY29yZXMYAyABKAUSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQSEgoFbG9hZDEYBiABKAFIAIgBARIqCgxjcHVfcHJlc3N1cmUYByABKAsyFC5tYWNoaW5lLnYxLlByZXNzdXJlEi0KD21lbW9yeV9wcmVzc3VyZRgIIAEoCzIULm1hY2hpbmUudjEuUHJlc3N1cmUSDwoHd29ya2VycxgJIAEoBRIUCgx3b3JrZXJzX3J1bGUYCiABKAkSDwoHcnVubmluZxgLIAEoBRIQCghwcmVzc3VyZRgMIAEoCRItCglyZWFkX3RpbWUYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQggKBl9sb2FkMSIbChlNYWNoaW5lU2VydmljZVNob3dSZXF1ZXN0IkIKGk1hY2hpbmVTZXJ2aWNlU2hvd1Jlc3BvbnNlEiQKB21hY2hpbmUYASABKAsyEy5tYWNoaW5lLnYxLk1hY2hpbmUieAoER2F0ZRIMCgRuYW1lGAEgASgJEg4KBmhvbGRlchgCIAEoCRIWCg5ob2xkZXJfdGFza19pZBgDIAEoCRIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHd2FpdGluZxgFIAMoCSKFAQoWR2F0ZVNlcnZpY2VIb2xkUmVxdWVzdBI1CgRuYW1lGAEgASgJQie6SCTIAQFyHzIdXltBLVphLXpdW0EtWmEtejAtOV8tXXswLDM5fSQSHAoHdGFza19pZBgCIAEoCUILukgI2AEBcgOwAQESFgoEd2hhdBgDIAEoCUIIukgFcgMYyAEiTwoXR2F0ZVNlcnZpY2VIb2xkUmVzcG9uc2USJAoFc3RhdGUYASABKA4yFS5tYWNoaW5lLnYxLkdhdGVTdGF0ZRIOCgZyZWFzb24YAiABKAkiGAoWR2F0ZVNlcnZpY2VMaXN0UmVxdWVzdCI6ChdHYXRlU2VydmljZUxpc3RSZXNwb25zZRIfCgVnYXRlcxgBIAMoCzIQLm1hY2hpbmUudjEuR2F0ZSpUCglHYXRlU3RhdGUSGgoWR0FURV9TVEFURV9VTlNQRUNJRklFRBAAEhYKEkdBVEVfU1RBVEVfV0FJVElORxABEhMKD0dBVEVfU1RBVEVfSEVMRBACMm0KDk1hY2hpbmVTZXJ2aWNlElsKBFNob3cSJS5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1JlcXVlc3QaJi5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1Jlc3BvbnNlIgTI8xgBMr0BCgtHYXRlU2VydmljZRJXCgRIb2xkEiIubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXF1ZXN0GiMubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXNwb25zZSIEyPMYATABElUKBExpc3QSIi5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlcXVlc3QaIy5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlc3BvbnNlIgTI8xgBQp4BCg5jb20ubWFjaGluZS52MUIMTWFjaGluZVByb3RvUAFaNWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL21hY2hpbmUvdjE7bWFjaGluZXYxogIDTVhYqgIKTWFjaGluZS5WMcoCCk1hY2hpbmVcVjHiAhZNYWNoaW5lXFYxXEdQQk1ldGFkYXRh6gILTWFjaGluZTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
+  fileDesc("ChhtYWNoaW5lL3YxL21hY2hpbmUucHJvdG8SCm1hY2hpbmUudjEiMgoIUHJlc3N1cmUSEgoKc29tZV9hdmcxMBgBIAEoARISCgpmdWxsX2F2ZzEwGAIgASgBIuACCgdNYWNoaW5lEgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkSDQoFY29yZXMYAyABKAUSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQSEgoFbG9hZDEYBiABKAFIAIgBARIqCgxjcHVfcHJlc3N1cmUYByABKAsyFC5tYWNoaW5lLnYxLlByZXNzdXJlEi0KD21lbW9yeV9wcmVzc3VyZRgIIAEoCzIULm1hY2hpbmUudjEuUHJlc3N1cmUSDwoHd29ya2VycxgJIAEoBRIUCgx3b3JrZXJzX3J1bGUYCiABKAkSDwoHcnVubmluZxgLIAEoBRIQCghwcmVzc3VyZRgMIAEoCRItCglyZWFkX3RpbWUYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQggKBl9sb2FkMSIbChlNYWNoaW5lU2VydmljZVNob3dSZXF1ZXN0IkIKGk1hY2hpbmVTZXJ2aWNlU2hvd1Jlc3BvbnNlEiQKB21hY2hpbmUYASABKAsyEy5tYWNoaW5lLnYxLk1hY2hpbmUieAoER2F0ZRIMCgRuYW1lGAEgASgJEg4KBmhvbGRlchgCIAEoCRIWCg5ob2xkZXJfdGFza19pZBgDIAEoCRIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHd2FpdGluZxgFIAMoCSKFAQoWR2F0ZVNlcnZpY2VIb2xkUmVxdWVzdBI1CgRuYW1lGAEgASgJQie6SCTIAQFyHzIdXltBLVphLXpdW0EtWmEtejAtOV8tXXswLDM5fSQSHAoHdGFza19pZBgCIAEoCUILukgI2AEBcgOwAQESFgoEd2hhdBgDIAEoCUIIukgFcgMYyAEiTwoXR2F0ZVNlcnZpY2VIb2xkUmVzcG9uc2USJAoFc3RhdGUYASABKA4yFS5tYWNoaW5lLnYxLkdhdGVTdGF0ZRIOCgZyZWFzb24YAiABKAkiGAoWR2F0ZVNlcnZpY2VMaXN0UmVxdWVzdCI6ChdHYXRlU2VydmljZUxpc3RSZXNwb25zZRIfCgVnYXRlcxgBIAMoCzIQLm1hY2hpbmUudjEuR2F0ZSLJAgoLQ29tbWFuZENvc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBEhIKCnByb2plY3RfaWQYAiABKAkSDwoHY29tbWFuZBgDIAEoCRIMCgRydW5zGAQgASgFEhMKC2NwdV9zZWNvbmRzGAUgASgBEg8KB3NlY29uZHMYBiABKAESGQoRcGVha19tZW1vcnlfYnl0ZXMYByABKAQSGAoQbGFzdF9jcHVfc2Vjb25kcxgIIAEoARIUCgxsYXN0X3NlY29uZHMYCSABKAESHgoWbGFzdF9wZWFrX21lbW9yeV9ieXRlcxgKIAEoBBIWCg5sYXN0X2V4aXRfY29kZRgLIAEoBRItCglsYXN0X3RpbWUYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wOhnS8xgVCgpwcm9qZWN0X2lkCgdjb21tYW5kIjUKGUNvbW1hbmRTZXJ2aWNlTGlzdFJlcXVlc3QSGAoHcHJvamVjdBgBIAEoCUIHukgEcgIYZCJEChpDb21tYW5kU2VydmljZUxpc3RSZXNwb25zZRImCgVjb3N0cxgBIAMoCzIXLm1hY2hpbmUudjEuQ29tbWFuZENvc3Qi6gEKG0NvbW1hbmRTZXJ2aWNlUmVjb3JkUmVxdWVzdBIcCgd0YXNrX2lkGAEgASgJQgu6SAjYAQFyA7ABARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgEhwKB2NvbW1hbmQYAyABKAlCC7pICMgBAXIDGMgBEiMKC2NwdV9zZWNvbmRzGAQgASgBQg66SAsSCSkAAAAAAAAAABIfCgdzZWNvbmRzGAUgASgBQg66SAsSCSkAAAAAAAAAABIZChFwZWFrX21lbW9yeV9ieXRlcxgGIAEoBBIRCglleGl0X2NvZGUYByABKAUiRQocQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXNwb25zZRIlCgRjb3N0GAEgASgLMhcubWFjaGluZS52MS5Db21tYW5kQ29zdCpUCglHYXRlU3RhdGUSGgoWR0FURV9TVEFURV9VTlNQRUNJRklFRBAAEhYKEkdBVEVfU1RBVEVfV0FJVElORxABEhMKD0dBVEVfU1RBVEVfSEVMRBACMm0KDk1hY2hpbmVTZXJ2aWNlElsKBFNob3cSJS5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1JlcXVlc3QaJi5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1Jlc3BvbnNlIgTI8xgBMr0BCgtHYXRlU2VydmljZRJXCgRIb2xkEiIubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXF1ZXN0GiMubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXNwb25zZSIEyPMYATABElUKBExpc3QSIi5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlcXVlc3QaIy5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlc3BvbnNlIgTI8xgBMtABCg5Db21tYW5kU2VydmljZRJbCgRMaXN0EiUubWFjaGluZS52MS5Db21tYW5kU2VydmljZUxpc3RSZXF1ZXN0GiYubWFjaGluZS52MS5Db21tYW5kU2VydmljZUxpc3RSZXNwb25zZSIEyPMYARJhCgZSZWNvcmQSJy5tYWNoaW5lLnYxLkNvbW1hbmRTZXJ2aWNlUmVjb3JkUmVxdWVzdBooLm1hY2hpbmUudjEuQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXNwb25zZSIEyPMYAkKeAQoOY29tLm1hY2hpbmUudjFCDE1hY2hpbmVQcm90b1ABWjVnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9tYWNoaW5lL3YxO21hY2hpbmV2MaICA01YWKoCCk1hY2hpbmUuVjHKAgpNYWNoaW5lXFYx4gIWTWFjaGluZVxWMVxHUEJNZXRhZGF0YeoCC01hY2hpbmU6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
 
 /**
  * Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of
@@ -328,6 +328,224 @@ export const GateServiceListResponseSchema: GenMessage<GateServiceListResponse> 
   messageDesc(file_machine_v1_machine, 8);
 
 /**
+ * CommandCost is what a command of a project costs, over the runs Djinn measured. The peak memory is the resident
+ * memory of the command's largest process, children included once they ended; 0 where the system does not give it
+ * (Windows).
+ *
+ * @generated from message machine.v1.CommandCost
+ */
+export type CommandCost = Message<"machine.v1.CommandCost"> & {
+  /**
+   * Identifier, a UUIDv7.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * Project the command runs in.
+   *
+   * @generated from field: string project_id = 2;
+   */
+  projectId: string;
+
+  /**
+   * The command and its arguments, as run, up to 200 characters; case is ignored.
+   *
+   * @generated from field: string command = 3;
+   */
+  command: string;
+
+  /**
+   * How many runs were measured.
+   *
+   * @generated from field: int32 runs = 4;
+   */
+  runs: number;
+
+  /**
+   * Mean CPU time of a run, user and system, in seconds: the command and the children it waited for.
+   *
+   * @generated from field: double cpu_seconds = 5;
+   */
+  cpuSeconds: number;
+
+  /**
+   * Mean duration of a run, in seconds.
+   *
+   * @generated from field: double seconds = 6;
+   */
+  seconds: number;
+
+  /**
+   * Highest peak memory of a run, in bytes.
+   *
+   * @generated from field: uint64 peak_memory_bytes = 7;
+   */
+  peakMemoryBytes: bigint;
+
+  /**
+   * CPU time of the last run, in seconds.
+   *
+   * @generated from field: double last_cpu_seconds = 8;
+   */
+  lastCpuSeconds: number;
+
+  /**
+   * Duration of the last run, in seconds.
+   *
+   * @generated from field: double last_seconds = 9;
+   */
+  lastSeconds: number;
+
+  /**
+   * Peak memory of the last run, in bytes.
+   *
+   * @generated from field: uint64 last_peak_memory_bytes = 10;
+   */
+  lastPeakMemoryBytes: bigint;
+
+  /**
+   * Exit code of the last run.
+   *
+   * @generated from field: int32 last_exit_code = 11;
+   */
+  lastExitCode: number;
+
+  /**
+   * When the last run ended.
+   *
+   * @generated from field: google.protobuf.Timestamp last_time = 12;
+   */
+  lastTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message machine.v1.CommandCost.
+ * Use `create(CommandCostSchema)` to create a new message.
+ */
+export const CommandCostSchema: GenMessage<CommandCost> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 9);
+
+/**
+ * @generated from message machine.v1.CommandServiceListRequest
+ */
+export type CommandServiceListRequest = Message<"machine.v1.CommandServiceListRequest"> & {
+  /**
+   * Only the commands of this project, by name or identifier.
+   *
+   * @generated from field: string project = 1;
+   */
+  project: string;
+};
+
+/**
+ * Describes the message machine.v1.CommandServiceListRequest.
+ * Use `create(CommandServiceListRequestSchema)` to create a new message.
+ */
+export const CommandServiceListRequestSchema: GenMessage<CommandServiceListRequest> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 10);
+
+/**
+ * @generated from message machine.v1.CommandServiceListResponse
+ */
+export type CommandServiceListResponse = Message<"machine.v1.CommandServiceListResponse"> & {
+  /**
+   * The commands, by project, the most run first.
+   *
+   * @generated from field: repeated machine.v1.CommandCost costs = 1;
+   */
+  costs: CommandCost[];
+};
+
+/**
+ * Describes the message machine.v1.CommandServiceListResponse.
+ * Use `create(CommandServiceListResponseSchema)` to create a new message.
+ */
+export const CommandServiceListResponseSchema: GenMessage<CommandServiceListResponse> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 11);
+
+/**
+ * @generated from message machine.v1.CommandServiceRecordRequest
+ */
+export type CommandServiceRecordRequest = Message<"machine.v1.CommandServiceRecordRequest"> & {
+  /**
+   * Task that ran the command; its project is the command's.
+   *
+   * @generated from field: string task_id = 1;
+   */
+  taskId: string;
+
+  /**
+   * Folder the command ran in, absolute: it finds the project when no task is given.
+   *
+   * @generated from field: string directory = 2;
+   */
+  directory: string;
+
+  /**
+   * The command and its arguments, as run.
+   *
+   * @generated from field: string command = 3;
+   */
+  command: string;
+
+  /**
+   * CPU time, user and system, in seconds.
+   *
+   * @generated from field: double cpu_seconds = 4;
+   */
+  cpuSeconds: number;
+
+  /**
+   * Duration, in seconds.
+   *
+   * @generated from field: double seconds = 5;
+   */
+  seconds: number;
+
+  /**
+   * Peak memory, in bytes; 0 when unknown.
+   *
+   * @generated from field: uint64 peak_memory_bytes = 6;
+   */
+  peakMemoryBytes: bigint;
+
+  /**
+   * Exit code of the command.
+   *
+   * @generated from field: int32 exit_code = 7;
+   */
+  exitCode: number;
+};
+
+/**
+ * Describes the message machine.v1.CommandServiceRecordRequest.
+ * Use `create(CommandServiceRecordRequestSchema)` to create a new message.
+ */
+export const CommandServiceRecordRequestSchema: GenMessage<CommandServiceRecordRequest> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 12);
+
+/**
+ * @generated from message machine.v1.CommandServiceRecordResponse
+ */
+export type CommandServiceRecordResponse = Message<"machine.v1.CommandServiceRecordResponse"> & {
+  /**
+   * What the command costs now; absent when it ran outside any project.
+   *
+   * @generated from field: machine.v1.CommandCost cost = 1;
+   */
+  cost?: CommandCost | undefined;
+};
+
+/**
+ * Describes the message machine.v1.CommandServiceRecordResponse.
+ * Use `create(CommandServiceRecordResponseSchema)` to create a new message.
+ */
+export const CommandServiceRecordResponseSchema: GenMessage<CommandServiceRecordResponse> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 13);
+
+/**
  * GateState is where a holder stands with its gate.
  *
  * @generated from enum machine.v1.GateState
@@ -411,4 +629,36 @@ export const GateService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_machine_v1_machine, 1);
+
+/**
+ * CommandService keeps what the commands of each project cost. Djinn measures each command a worker runs through
+ * djinn gate run: its CPU time, its peak memory and its duration, so that it learns what a project's usual commands
+ * cost.
+ *
+ * @generated from service machine.v1.CommandService
+ */
+export const CommandService: GenService<{
+  /**
+   * List what the commands of the projects cost, the most run first.
+   *
+   * @generated from rpc machine.v1.CommandService.List
+   */
+  list: {
+    methodKind: "unary";
+    input: typeof CommandServiceListRequestSchema;
+    output: typeof CommandServiceListResponseSchema;
+  },
+  /**
+   * Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
+   * task's, or the one whose folder holds the directory; a command outside any project is not recorded.
+   *
+   * @generated from rpc machine.v1.CommandService.Record
+   */
+  record: {
+    methodKind: "unary";
+    input: typeof CommandServiceRecordRequestSchema;
+    output: typeof CommandServiceRecordResponseSchema;
+  },
+}> = /*@__PURE__*/
+  serviceDesc(file_machine_v1_machine, 2);
 
