@@ -11,6 +11,21 @@ export const root = path.resolve(
   "..",
 );
 
+// raw loads a "?raw" import as Vite does: the file's text.
+const raw = {
+  name: "raw",
+  setup(build) {
+    build.onResolve({ filter: /\?raw$/ }, (args) => ({
+      path: path.join(args.resolveDir, args.path.replace(/\?raw$/, "")),
+      namespace: "raw",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "raw" }, (args) => ({
+      contents: fs.readFileSync(args.path, "utf8"),
+      loader: "text",
+    }));
+  },
+};
+
 // bundle writes source (TypeScript, paths relative to the repository) to a temporary entry, bundles and imports it.
 export async function bundle(name, source) {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), `djinn-${name}-`));
@@ -29,7 +44,12 @@ export async function bundle(name, source) {
       platform: "node",
       nodePaths: [path.join(root, "node_modules")],
       define: { "import.meta.env.PROD": "false" },
-      loader: { ".json": "json" },
+      loader: { ".json": "json", ".css": "empty" },
+      // CommonJS dependencies (react-dom/server) require Node's own modules.
+      banner: {
+        js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
+      },
+      plugins: [raw],
       logLevel: "error",
     });
     return await import(pathToFileURL(path.join(out, `${name}.mjs`)).href);

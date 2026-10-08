@@ -70,7 +70,9 @@ function useRequiredDjinn(): Djinn {
 // useData selects a part of the store's state; the screen renders again when that part changes.
 export function useData<T>(select: (state: State) => T): T {
   const { store } = useRequiredDjinn();
-  return useSyncExternalStore(store.subscribe, () => select(store.getState()));
+  const read = () => select(store.getState());
+  // The same snapshot on a server render, for the tests that render a screen to text.
+  return useSyncExternalStore(store.subscribe, read, read);
 }
 
 // useWishDetail reads a wish's tasks, questions and blocks while the screen shows it.
