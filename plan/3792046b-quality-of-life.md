@@ -24,9 +24,9 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   - [x] Linux window: it had no icon. GTK 3 silently drops a window icon that does not fit one X11
     request (512 px or more), and the app gave 1024 px. The window gets `icon-256.png`.
   - [ ] Seen in GNOME's Activities and dock after an install (by hand).
-  - [ ] Windows: the `.exe` icon in Explorer needs a resource (`.syso`, icon ID 3, made from
-    `build/icon.ico` by `winres`) in `cmd/djinn`; Wails then uses it for the window too. Today the
-    window and task bar take the PNG at run time.
+  - [ ] Windows: the release build makes the `.exe` icon resource (`go-winres`, from
+    `build/icon.ico`, into `cmd/djinn/*.syso`, not committed). Built here for amd64; to check by hand
+    in Explorer and the task bar on a real Windows.
   - [ ] macOS: the Dock shows the icon at run time; Finder and Launchpad need an `.app` bundle with
     `build/icon.icns` (T19).
 - [ ] **The page keeps your place.** When something above what you are reading changes (a

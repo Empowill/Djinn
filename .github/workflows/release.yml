@@ -158,6 +158,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # The .exe carries Djinn's icon (Explorer, the task bar): a resource made from build/icon.ico.
+      # go-winres is a build tool only (0BSD-style license); nothing of it ships.
+      - run: go run github.com/tc-hib/go-winres@v0.3.3 simply --icon build/icon.ico --arch amd64,arm64 --manifest gui --product-name Djinn --out cmd/djinn/rsrc
       - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=windows GOARCH=amd64
       - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=windows GOARCH=arm64
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

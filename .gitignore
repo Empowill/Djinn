@@ -37,6 +37,7 @@ docs/screenshots/*
 !docs/screenshots/readme/
 
 # Go and Task
+/cmd/djinn/*.syso
 /.task/
 /bin/
 /djinn
