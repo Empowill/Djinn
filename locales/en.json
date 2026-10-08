@@ -1,4 +1,6 @@
 {
+  "answer.no": "no",
+  "answer.yes": "yes",
   "app.close_notification": "Close the notification",
   "app.close_window": "Close the window",
   "app.collapse_nav": "Collapse the navigation",

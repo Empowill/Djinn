@@ -452,8 +452,11 @@ type Choice int32
 const (
 	// No choice.
 	Choice_CHOICE_UNSPECIFIED Choice = 0
-	// Yes, for a question without options.
+	// Yes, for a question without options. On options that say yes and no, the one that says yes: the answer keeps its
+	// letter.
 	Choice_CHOICE_YES Choice = 1
+	// No, on options that say yes and no: the one that says no. The answer keeps its letter.
+	Choice_CHOICE_NO Choice = 6
 	// The first option.
 	Choice_CHOICE_A Choice = 2
 	// The second option.
@@ -469,6 +472,7 @@ var (
 	Choice_name = map[int32]string{
 		0: "CHOICE_UNSPECIFIED",
 		1: "CHOICE_YES",
+		6: "CHOICE_NO",
 		2: "CHOICE_A",
 		3: "CHOICE_B",
 		4: "CHOICE_C",
@@ -477,6 +481,7 @@ var (
 	Choice_value = map[string]int32{
 		"CHOICE_UNSPECIFIED": 0,
 		"CHOICE_YES":         1,
+		"CHOICE_NO":          6,
 		"CHOICE_A":           2,
 		"CHOICE_B":           3,
 		"CHOICE_C":           4,
@@ -1917,7 +1922,8 @@ type QuestionServiceAnswerRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question to answer: its code, like Q03, or its identifier.
 	Question *QuestionRef `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
-	// The choice: yes, or the letter of an option.
+	// The choice: yes, or the letter of an option. On options that say yes and no, yes or no, in any language Djinn
+	// speaks.
 	Choice Choice `protobuf:"varint,2,opt,name=choice,proto3,enum=plan.v1.Choice" json:"choice,omitempty"`
 	// Why this choice, or what to do with it.
 	Note string `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
@@ -6376,11 +6382,12 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x13TASK_EVENT_KIND_LOG\x10\b\x12\x19\n" +
 	"\x15TASK_EVENT_KIND_OTHER\x10\t\x12\x18\n" +
 	"\x14TASK_EVENT_KIND_GATE\x10\n" +
-	"*h\n" +
+	"*w\n" +
 	"\x06Choice\x12\x16\n" +
 	"\x12CHOICE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
-	"CHOICE_YES\x10\x01\x12\f\n" +
+	"CHOICE_YES\x10\x01\x12\r\n" +
+	"\tCHOICE_NO\x10\x06\x12\f\n" +
 	"\bCHOICE_A\x10\x02\x12\f\n" +
 	"\bCHOICE_B\x10\x03\x12\f\n" +
 	"\bCHOICE_C\x10\x04\x12\f\n" +

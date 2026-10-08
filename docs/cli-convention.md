@@ -29,7 +29,7 @@ The arguments are the fields of the request.
 | any other field                             | `--kebab-case value` or `--kebab-case=value`             |
 | `bool`                                      | `--open`, without a value (`--open=false` also works)    |
 | `repeated`                                  | A repeatable flag: `--options a --options b`             |
-| enum                                        | The value without its type prefix, any case: `b`, `B`    |
+| enum                                        | The value without its type prefix, any case: `b`, `B`; `yes` and `no` also in the user's language |
 | `google.protobuf.Timestamp`                 | RFC 3339: `2026-10-07T09:00:00Z`                         |
 | a message holding only a `oneof` of scalars | One input, stored in the first member whose rules pass   |
 | `string directory` or `*_directory`         | A folder: a relative path is made absolute, from the current directory, before sending |
@@ -51,7 +51,7 @@ argument the user typed, with what was expected:
 ```
 $ djinn question answer
 error: <question>: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID
-  <choice>: value is required; expected one of yes, a, b, c, d
+  <choice>: value is required; expected one of yes, no, a, b, c, d
   run djinn question answer --help for the arguments
 ```
 
