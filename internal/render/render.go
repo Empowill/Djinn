@@ -1,6 +1,7 @@
 // Package render writes the page of a wish: one HTML file standing alone, made by Djinn from its store, never by a
-// model. Open questions come first, then what waits for the user, the tasks, the decisions, the free blocks and the
-// journal. An empty section is not rendered.
+// model. It shows first what matters now: the open questions, what waits for the user and the workers running. Then
+// the tasks (the planned and the finished ones folded), the decisions (the latest first), the free blocks and the
+// journal. An empty section is not rendered, and the contents at the top name only the sections present.
 //
 // The page shows what it is given: the caller strips secrets and local paths first, as an export does.
 package render
@@ -40,6 +41,25 @@ type Input struct {
 
 // maxJournal is the most journal entries a page shows, the latest ones.
 const maxJournal = 200
+
+// shownJournal is the most journal entries shown before the others are folded.
+const shownJournal = 30
+
+// shownDecisions is the most decisions shown before the older ones are folded.
+const shownDecisions = 15
+
+// longBlock is the size, in characters or lines, from which a block is folded under its title.
+const longBlock, longBlockLines = 800, 16
+
+// blockRun is the most blocks of one kind in a row shown whole: a longer run is folded, block by block, to a list
+// of titles.
+const blockRun = 3
+
+// longNote is the size, in characters, from which the note of a decision is folded.
+const longNote = 240
+
+// logKind is the kind of the blocks that tell the story of the wish: they go to the journal, not to the notes.
+const logKind = "log"
 
 // maxLastWord is the most of a worker's last text a page shows, in characters.
 const maxLastWord = 600
@@ -86,20 +106,36 @@ type view struct {
 	Rendered   string
 	State      string // where the wish stands: active and its rank, paused, granted
 	StateClass string
+	Contents   []link // the sections present, in their order
 	Questions  []question
 	Actions    []string
-	Active     []task
+	Running    []task // the workers running now
+	Tasks      []task // what needs an eye: running, waiting, cut short, failed
+	Planned    []task
 	Finished   []task
-	Decisions  []decision
+	TaskCount  int
+	Decisions  []decision // the latest ones
+	Older      []decision // the decisions before them, folded
 	Blocks     []block
-	Journal    []entry
+	Journal    []entry // the latest entries
+	Earlier    []entry // the entries before them, folded
 	JournalCut string
+}
+
+// link is an entry of the contents: a section of the page and how many things it holds.
+type link struct {
+	ID, Label, Class string
+	Count            int
 }
 
 type question struct {
 	Code, Text     string
 	Context, Recom template.HTML
-	Options        []option
+	// RecomLine is the recommendation's first line, shown on the folded card.
+	RecomLine string
+	Options   []option
+	// Blocking names the tasks that wait for the answer: such a question is open, and comes first.
+	Blocking string
 }
 
 type option struct{ Letter, Text string }
@@ -107,10 +143,14 @@ type option struct{ Letter, Text string }
 type decision struct {
 	Code, Text, Choice, At string
 	Note                   template.HTML
+	// A long note is folded, to keep the table compact.
+	LongNote bool
 }
 
 type task struct {
 	Code, Title, Status, StatusClass, Project, Agent, Spent, Time, Error, LastWord string
+	// After names the tasks this one waits to be done; Wait says why a planned task has not started yet.
+	After, Wait string
 }
 
 type block struct {
@@ -118,9 +158,16 @@ type block struct {
 	Markdown                   bool
 	HTML                       template.HTML
 	Text                       string
+	// Long blocks are folded under their title.
+	Long bool
 }
 
-type entry struct{ At, Command, Summary string }
+// entry is a line of the journal: a command, or a log block.
+type entry struct {
+	at                   time.Time
+	At, Command, Summary string
+	Note                 template.HTML
+}
 
 func build(in Input) (*view, error) {
 	exp := in.Export
@@ -146,9 +193,10 @@ func build(in Input) (*view, error) {
 	}
 	v := &view{Lang: lang, Title: exp.GetWish().GetTitle(), T: map[string]string{}}
 	for _, key := range []string{
-		"page.actions", "page.context", "page.decisions", "page.finished", "page.journal", "page.last_word",
-		"page.options", "page.projects", "page.questions", "page.recommendation", "page.tasks", "page.notes",
-		"page.yes_only",
+		"page.actions", "page.contents", "page.context", "page.decision", "page.decisions", "page.details", "page.earlier",
+		"page.finished", "page.journal", "page.last_word", "page.older", "page.options", "page.planned",
+		"page.projects", "page.questions", "page.recommendation", "page.running", "page.tasks", "page.notes",
+		"page.when", "page.yes_only",
 	} {
 		v.T[key] = tr(key)
 	}
@@ -173,27 +221,49 @@ func build(in Input) (*view, error) {
 		tasks[t.GetId()] = t
 	}
 
-	// Open questions, oldest first: the order they were asked in. Decisions, the latest first.
+	// A question a waiting task needs answered blocks it: it comes first, open.
+	blocking := map[string][]string{}
+	for _, t := range exp.GetTasks() {
+		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING && t.GetEditQuestionId() != "" {
+			blocking[t.GetEditQuestionId()] = append(blocking[t.GetEditQuestionId()], t.GetCode())
+		}
+	}
+
+	// Open questions, the blocking ones first, then in the order they were asked. Decisions, the latest first.
 	var answered []*planv1.Question
 	for _, q := range exp.GetQuestions() {
 		if q.GetAnswer() != nil {
 			answered = append(answered, q)
 			continue
 		}
-		cq := question{Code: q.GetCode(), Text: q.GetText(), Context: md(q.GetContext()), Recom: md(q.GetRecommendation())}
+		cq := question{
+			Code: q.GetCode(), Text: q.GetText(), Context: md(q.GetContext()), Recom: md(q.GetRecommendation()),
+			RecomLine: firstLine(q.GetRecommendation(), 160),
+		}
+		if codes := blocking[q.GetId()]; len(codes) > 0 {
+			cq.Blocking = tr("page.blocking", "tasks", strings.Join(codes, ", "))
+		}
 		for i, o := range q.GetOptions() {
 			cq.Options = append(cq.Options, option{Letter: string(rune('A' + i)), Text: o})
 		}
 		v.Questions = append(v.Questions, cq)
 	}
+	slices.SortStableFunc(v.Questions, func(a, b question) int {
+		return cmp.Compare(b2i(a.Blocking == ""), b2i(b.Blocking == ""))
+	})
 	slices.SortStableFunc(answered, func(a, b *planv1.Question) int {
 		return b.GetAnswer().GetCreateTime().AsTime().Compare(a.GetAnswer().GetCreateTime().AsTime())
 	})
-	for _, q := range answered {
-		v.Decisions = append(v.Decisions, decision{
+	for i, q := range answered {
+		d := decision{
 			Code: q.GetCode(), Text: q.GetText(), Choice: choice(q, tr), At: at(q.GetAnswer().GetCreateTime()),
-			Note: md(q.GetAnswer().GetNote()),
-		})
+			Note: md(q.GetAnswer().GetNote()), LongNote: utf8.RuneCountInString(q.GetAnswer().GetNote()) > longNote,
+		}
+		if i < shownDecisions {
+			v.Decisions = append(v.Decisions, d)
+		} else {
+			v.Older = append(v.Older, d)
+		}
 	}
 
 	// What waits for the user, as the lamp knows it: a worker that asks to edit, one that Djinn's stop cut
@@ -230,6 +300,16 @@ func build(in Input) (*view, error) {
 			LastWord: cut(strings.TrimSpace(lastWord[t.GetId()]), maxLastWord),
 		}
 		ct.Status, ct.StatusClass = status(t.GetStatus(), tr)
+		var after []string
+		for _, id := range t.GetDependsOn() {
+			if d := tasks[id]; d != nil {
+				after = append(after, d.GetCode())
+			}
+		}
+		if len(after) > 0 {
+			ct.After = tr("page.after", "tasks", strings.Join(after, ", "))
+		}
+		ct.Wait = t.GetWaitReason()
 		ct.Agent = strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 		if t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED {
 			ct.Agent = "claude"
@@ -247,19 +327,40 @@ func build(in Input) (*view, error) {
 		} else if s != nil {
 			ct.Time = tr("page.started", "time", at(s))
 		}
+		v.TaskCount++
 		switch t.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
+		case planv1.TaskStatus_TASK_STATUS_PENDING:
+			v.Planned = append(v.Planned, ct)
+		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
 			v.Finished = append(v.Finished, ct)
+		case planv1.TaskStatus_TASK_STATUS_RUNNING:
+			v.Running = append(v.Running, ct)
+			v.Tasks = append(v.Tasks, ct)
 		case planv1.TaskStatus_TASK_STATUS_WAITING:
 			// Its error only says it waits: the status and the actions say it better.
 			ct.Error = ""
-			v.Active = append(v.Active, ct)
+			v.Tasks = append(v.Tasks, ct)
 		default:
-			v.Active = append(v.Active, ct)
+			// Failed, cut short, or a status this Djinn does not name yet: in clear.
+			v.Tasks = append(v.Tasks, ct)
 		}
 	}
 
+	var journal []entry
+	var kinds []string // the kind of each block shown, to find the runs
 	for _, b := range exp.GetBlocks() {
+		if strings.EqualFold(b.GetKind(), logKind) {
+			e := entry{at: b.GetCreateTime().AsTime(), At: at(b.GetCreateTime()), Summary: b.GetTitle()}
+			if content := strings.TrimSpace(b.GetContent()); content != "" && isMarkdown(b.GetMediaType()) {
+				e.Summary, e.Note = "", md(content)
+			} else if content != "" {
+				e.Summary = cut(content, 600)
+			}
+			if e.Summary != "" || e.Note != "" {
+				journal = append(journal, e)
+			}
+			continue
+		}
 		cb := block{Kind: b.GetKind(), Title: b.GetTitle(), Updated: at(b.GetUpdateTime())}
 		if t := tasks[b.GetTaskId()]; t != nil {
 			cb.Task = tr("page.about_task", "task", t.GetCode())
@@ -272,21 +373,81 @@ func build(in Input) (*view, error) {
 		if cb.Title == "" && cb.HTML == "" && cb.Text == "" {
 			continue
 		}
+		// Every block shows under a title: its own, or its first line.
+		if cb.Title == "" {
+			cb.Title = cmp.Or(firstLine(b.GetContent(), 80), cb.Kind)
+		}
+		cb.Long = utf8.RuneCountInString(b.GetContent()) > longBlock || strings.Count(b.GetContent(), "\n") >= longBlockLines
 		v.Blocks = append(v.Blocks, cb)
+		kinds = append(kinds, strings.ToLower(b.GetKind()))
+	}
+	for start := 0; start < len(kinds); {
+		end := start + 1
+		for end < len(kinds) && kinds[end] == kinds[start] {
+			end++
+		}
+		if kinds[start] != "" && end-start > blockRun {
+			for i := start; i < end; i++ {
+				v.Blocks[i].Long = true
+			}
+		}
+		start = end
 	}
 
-	commands := exp.GetCommands()
-	if n := len(commands) - maxJournal; n > 0 {
-		v.JournalCut = tr("page.journal_cut", "count", fmt.Sprint(n))
-		commands = commands[n:]
-	}
-	for i := len(commands) - 1; i >= 0; i-- {
-		c := commands[i]
-		v.Journal = append(v.Journal, entry{
-			At: at(c.GetAt()), Command: command(c.GetMethod()), Summary: cut(summary(c, questions, tasks, projects, tr), 200),
+	// The journal: the commands and the log blocks, the latest first.
+	for _, c := range exp.GetCommands() {
+		journal = append(journal, entry{
+			at: c.GetAt().AsTime(), At: at(c.GetAt()), Command: command(c.GetMethod()),
+			Summary: cut(summary(c, questions, tasks, projects, tr), 200),
 		})
 	}
+	slices.SortStableFunc(journal, func(a, b entry) int { return b.at.Compare(a.at) })
+	if n := len(journal) - maxJournal; n > 0 {
+		v.JournalCut = tr("page.journal_cut", "count", fmt.Sprint(n))
+		journal = journal[:maxJournal]
+	}
+	v.Journal, v.Earlier = journal[:min(len(journal), shownJournal)], journal[min(len(journal), shownJournal):]
+
+	v.Contents = contents(v, tr)
 	return v, nil
+}
+
+// contents lists the sections the page holds, in their order, each with how many things it shows.
+func contents(v *view, tr func(string, ...string) string) []link {
+	var links []link
+	add := func(id, key, class string, n int) {
+		if n > 0 {
+			links = append(links, link{ID: id, Label: tr(key), Class: class, Count: n})
+		}
+	}
+	add("questions", "page.questions", "ask", len(v.Questions))
+	add("actions", "page.actions", "warn", len(v.Actions))
+	add("running", "page.running", "run", len(v.Running))
+	add("tasks", "page.tasks", "", v.TaskCount)
+	add("decisions", "page.decisions", "", len(v.Decisions)+len(v.Older))
+	add("notes", "page.notes", "", len(v.Blocks))
+	add("journal", "page.journal", "", len(v.Journal)+len(v.Earlier))
+	return links
+}
+
+// firstLine is the first line of Markdown text, as plain text, shortened to n characters.
+func firstLine(source string, n int) string {
+	for line := range strings.Lines(source) {
+		line = strings.TrimSpace(line)
+		line = strings.TrimLeft(line, "#>-*+ ")
+		line = strings.NewReplacer("**", "", "__", "", "`", "").Replace(line)
+		if line = strings.TrimSpace(line); line != "" {
+			return cut(line, n)
+		}
+	}
+	return ""
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // md renders Markdown, without raw HTML.
