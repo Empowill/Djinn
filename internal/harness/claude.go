@@ -21,6 +21,8 @@ type Claude struct {
 	Command string
 	// Grace is how long a worker asked to stop has before it is killed; Grace by default.
 	Grace time.Duration
+	// Extra are arguments passed after Djinn's own: the workers' bench tries --bare and a system prompt file.
+	Extra []string
 }
 
 // claudeReadTools are the only tools of a read-only worker: reading files, finding them, searching them.
@@ -71,7 +73,7 @@ func (c Claude) args(spec Spec) []string {
 	if spec.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(spec.MaxBudgetUSD, 'f', -1, 64))
 	}
-	return args
+	return append(args, c.Extra...)
 }
 
 // claudePermissions are the permissions of Claude's settings for p: allow and deny rules, and the mode. Edit
