@@ -113,6 +113,18 @@ func (c Claude) Start(ctx context.Context, spec Spec) (Worker, error) {
 	return startStream(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine})
 }
 
+// Warm starts claude without a message: it loads, then waits on its input. The first Send is its first message.
+func (c Claude) Warm(ctx context.Context, spec Spec) (Worker, error) {
+	command, grace := c.Command, c.Grace
+	if command == "" {
+		command = "claude"
+	}
+	if grace == 0 {
+		grace = Grace
+	}
+	return startStreamIdle(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine})
+}
+
 // claudeMessageLine is a user message as claude reads it in stream-json.
 func claudeMessageLine(text string) ([]byte, error) {
 	return json.Marshal(map[string]any{

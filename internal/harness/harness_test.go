@@ -35,11 +35,17 @@ type env struct {
 // up starts the services on the database in home, as djinn up does: recover, schedule, then serve.
 func up(t *testing.T, home string, opts ...Option) *env {
 	t.Helper()
+	return upWith(t, home, Providers(), opts...)
+}
+
+// upWith is up with these providers.
+func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, opts ...Option) *env {
+	t.Helper()
 	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := New(db, home, Providers(), opts...)
+	h := New(db, home, providers, opts...)
 	if err := h.Recover(t.Context()); err != nil {
 		t.Fatal(err)
 	}
