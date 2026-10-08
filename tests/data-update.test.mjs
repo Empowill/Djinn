@@ -1,33 +1,14 @@
-// The update client against an in-memory UiService. Run with `node --test shim/`.
+// The update client against an in-memory UiService. Run with `go tool task test-ui`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { build } from "esbuild";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const out = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-update-"));
-test.after(() => fs.rmSync(out, { recursive: true, force: true }));
+import { bundle } from "./bundle.mjs";
 
-fs.writeFileSync(
-  path.join(out, "entry.ts"),
-  `export { createUpdate } from ${JSON.stringify(path.join(here, "update.ts"))};
+const { createUpdate, createRouterTransport, UiService } = await bundle(
+  "update",
+  `export { createUpdate } from "@/src/data/update.ts";
 export { createRouterTransport } from "@connectrpc/connect";
-export { UiService } from ${JSON.stringify(path.join(here, "../gen/ts/ui/v1/ui_pb.ts"))};`,
-);
-await build({
-  entryPoints: [path.join(out, "entry.ts")],
-  outfile: path.join(out, "update.mjs"),
-  bundle: true,
-  format: "esm",
-  platform: "node",
-  nodePaths: [path.join(here, "../node_modules")],
-  logLevel: "error",
-});
-const { createUpdate, createRouterTransport, UiService } = await import(
-  pathToFileURL(path.join(out, "update.mjs")).href
+export { UiService } from "@/gen/ts/ui/v1/ui_pb.ts";`,
 );
 
 test("a newer Djinn is offered, and restarts only on update()", async () => {

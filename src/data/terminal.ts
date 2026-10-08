@@ -1,4 +1,4 @@
-// window.djinnTerminal: the terminals of djinn up (TerminalService), for the terminal pinned at the bottom of the
+// The terminals of djinn up (TerminalService), for the terminal pinned at the bottom of the
 // window. The output comes as a server stream; the keys go as small unary requests, one at a time so they keep their
 // order. A browser cannot stream from client to server over HTTP/1.1, and a request takes well under a millisecond
 // on this machine, far below the key repeat interval (about 30 ms): see docs/transport.md.
@@ -8,7 +8,7 @@ import {
   createClient,
 } from "@connectrpc/connect";
 
-import { TerminalService } from "../gen/ts/terminal/v1/terminal_pb";
+import { TerminalService } from "../../gen/ts/terminal/v1/terminal_pb";
 
 export interface TerminalInfo {
   id: string;
@@ -51,11 +51,6 @@ export interface DjinnTerminal {
   close(id: string): Promise<void>;
 }
 
-declare global {
-  interface Window {
-    djinnTerminal?: DjinnTerminal;
-  }
-}
 
 // Above this many writes waiting, they leave together: a burst (a paste in pieces, a stalled link) catches up in one
 // request. Below, each keeps its own request, as a terminal delivers each key on its own.

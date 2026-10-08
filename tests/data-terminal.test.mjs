@@ -1,34 +1,14 @@
-// The terminal client against an in-memory TerminalService. Run with `node --test shim/`.
+// The terminal client against an in-memory TerminalService. Run with `go tool task test-ui`.
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { build } from "esbuild";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const out = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-terminal-"));
-test.after(() => fs.rmSync(out, { recursive: true, force: true }));
+import { bundle } from "./bundle.mjs";
 
-// Bundle the client with the test's own Connect code, so both share one copy of the generated descriptors.
-fs.writeFileSync(
-  path.join(out, "entry.ts"),
-  `export { createTerminal } from ${JSON.stringify(path.join(here, "terminal.ts"))};
+const { createTerminal, createRouterTransport, TerminalService } = await bundle(
+  "terminal",
+  `export { createTerminal } from "@/src/data/terminal.ts";
 export { createRouterTransport } from "@connectrpc/connect";
-export * from ${JSON.stringify(path.join(here, "../gen/ts/terminal/v1/terminal_pb.ts"))};`,
-);
-await build({
-  entryPoints: [path.join(out, "entry.ts")],
-  outfile: path.join(out, "terminal.mjs"),
-  bundle: true,
-  format: "esm",
-  platform: "node",
-  nodePaths: [path.join(here, "../node_modules")],
-  logLevel: "error",
-});
-const { createTerminal, createRouterTransport, TerminalService } = await import(
-  pathToFileURL(path.join(out, "terminal.mjs")).href
+export * from "@/gen/ts/terminal/v1/terminal_pb.ts";`,
 );
 
 // server answers each write after a delay, and records the writes in flight and what they carried.

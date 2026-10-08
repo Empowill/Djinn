@@ -1,8 +1,8 @@
-// window.djinnUpdate: whether a newer Djinn waits at the path of the running one (UiService.WatchUpdate), and the
+// Whether a newer Djinn waits at the path of the running one (UiService.WatchUpdate), and the
 // click that restarts on it (UiService.Update). Nothing restarts without that click.
 import { type Transport, createClient } from "@connectrpc/connect";
 
-import { UiService } from "../gen/ts/ui/v1/ui_pb";
+import { UiService } from "../../gen/ts/ui/v1/ui_pb";
 
 export interface UpdateState {
   // Version of the running Djinn.
@@ -20,11 +20,6 @@ export interface DjinnUpdate {
   update(): Promise<{ version: string; terminals: number }>;
 }
 
-declare global {
-  interface Window {
-    djinnUpdate?: DjinnUpdate;
-  }
-}
 
 export function createUpdate(transport: Transport, retry = 1000): DjinnUpdate {
   const ui = createClient(UiService, transport);
