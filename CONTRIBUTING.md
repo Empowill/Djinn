@@ -111,7 +111,8 @@ To use Djinn, see the [README](README.md). To work on it:
 - `go tool task lint`: every check (protos, Go, types, formatting). `go tool task format` fixes.
 - `go tool task gen`: code from the protos.
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
-- `go tool task install`: the Djinn you use, apart from the one you build. The running one keeps going and offers
+- `go tool task install`: the Djinn you use, apart from the one you build, with its icon and menu entry on Linux
+  (`~/.local/share`). The running one keeps going and offers
   to restart on it ("Update" in the window, or `djinn update` from your terminal; `--yes` elsewhere), reopening the lead terminals.
 - `djinn up --terminal "claude --resume <session>" --terminal-dir <project>`: run that command in
   the window's terminal instead of your shell.

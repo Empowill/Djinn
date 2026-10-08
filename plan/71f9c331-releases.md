@@ -34,6 +34,7 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
 | Linux | amd64, arm64 | CGO, GTK4 (WebKitGTK 6.0) | yes, on recent systems; the only one left after Wails 3.1 |
 | macOS | universal (arm64 + amd64) | CGO, signed and notarized | yes |
 | Windows | amd64, arm64 | no CGO, cross-compiled from Linux | yes |
+| Linux | amd64, arm64 | no CGO (`_browser`) | no: the browser, for a Linux without WebKitGTK |
 | any | any | `go install`, no CGO | Windows only; the browser elsewhere |
 
 ## What we want
@@ -62,7 +63,11 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
   builds one archive into `bin/release/` (Windows from Linux too), `release-build-macos` the universal one (`lipo`,
   macOS only), `release-sums` the sums. `tools/releasepack` packs and sums, portable. They use the `dist/` already
   there: a tag carries it, a checkout runs `go tool task ui` first.
-- **Asset names carry no version**: `djinn_<os>_<arch>[_gtk4].tar.gz`, `djinn_windows_<arch>.zip`,
+- **Linux without WebKitGTK gets a binary too.** `djinn_linux_<arch>_browser.tar.gz`, built without CGO (11 MB):
+  no window, `djinn up` opens the browser. `install.sh` tries the window builds whose WebKitGTK it finds, then this
+  one, then `go install`; it says how to get the window. A release without it (an older one) still ends on `go
+  install`. Tested in `tools/releasepack/install_test.go`.
+- **Asset names carry no version**: `djinn_<os>_<arch>[_gtk4|_browser].tar.gz`, `djinn_windows_<arch>.zip`,
   `djinn_darwin_universal.tar.gz`, each with a top folder holding `djinn` and the notices. So
   `releases/latest/download/<name>` always works, with no API call. The version is the tag, and `djinn version`
   prints it (`-X main.version`).
