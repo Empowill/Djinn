@@ -30,11 +30,12 @@ const (
 	actorHarness = "harness"
 	actorWorker  = "worker"
 
-	methodStart   = "harness/start"   // the task's worker starts; the request is the task
-	methodEvent   = "harness/event"   // the worker said something; the request is the event
-	methodEnd     = "harness/end"     // the worker ended; the request is the task
-	methodRecover = "harness/recover" // djinn up found a task whose worker it had lost; the request is the task
-	methodAnswer  = "harness/answer"  // the task took the answer to its edit question; the request is the task
+	methodStart    = "harness/start"    // the task's worker starts; the request is the task
+	methodEvent    = "harness/event"    // the worker said something; the request is the event
+	methodEnd      = "harness/end"      // the worker ended; the request is the task
+	methodRecover  = "harness/recover"  // djinn up found a task whose worker it had lost; the request is the task
+	methodAnswer   = "harness/answer"   // the task took the answer to its edit question; the request is the task
+	methodReceived = "harness/received" // the worker took a message in; the request is the event
 )
 
 // maxText is the most of an event's text, and of its raw line, that is kept.
@@ -86,6 +87,7 @@ type run struct {
 	done  chan struct{} // closed once the task has its final status
 	wake  chan struct{} // an answer waits in answers
 	notes chan Event    // events from outside the worker (a gate), for the pump to write
+	sends chan *message // messages for the worker (inbox.go), for the pump to deliver
 
 	// Guarded by Harness.mu.
 	worker   Worker
@@ -99,6 +101,7 @@ type run struct {
 	seq     int64         // last event written
 	base    *planv1.Usage // what the task had spent before this worker
 	restart bool          // the worker stops to start again, allowed to edit
+	unread  []string      // messages the worker took on its input and has said nothing after yet
 	warm    *warm         // the warm worker the task takes, until launch
 }
 
@@ -107,7 +110,7 @@ type run struct {
 func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 	r := &run{
 		id: task.GetId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
-		notes: make(chan Event, 64), subs: map[chan *planv1.TaskEvent]struct{}{},
+		notes: make(chan Event, 64), sends: make(chan *message), subs: map[chan *planv1.TaskEvent]struct{}{},
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -536,11 +539,14 @@ func (h *Harness) drain(r *run) Result {
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				r.unread = nil // A worker started again never had them.
 				return r.worker.Wait()
 			}
 			h.record(r, ev)
 		case ev := <-r.notes:
 			h.write(r, actorHarness, methodEvent, nil, ev)
+		case m := <-r.sends:
+			m.reply <- h.deliver(r, m)
 		case <-r.wake:
 			for _, q := range h.takeAnswers(r) {
 				if h.applyAnswer(r, q) && !r.restart {
@@ -565,6 +571,7 @@ func (h *Harness) record(r *run, ev Event) {
 	if changed {
 		task = r.task
 	}
+	h.acknowledge(r, ev)
 	h.write(r, actorWorker, methodEvent, task, ev)
 }
 
@@ -679,10 +686,21 @@ func (h *Harness) forget(r *run) {
 // write records an event of the run, and the task when it is not nil, in one transaction journaled under
 // actor and method, then hands the event to the watchers. The store is written even while Djinn stops.
 func (h *Harness) write(r *run, actor, method string, task proto.Message, ev Event) {
-	te := newEvent(r.id, r.seq+1, ev)
-	var req proto.Message = te
+	var req proto.Message
 	if task != nil && method != methodEvent {
 		req = task
+	}
+	if _, err := h.writeAs(r, actor, method, req, task, ev); err != nil {
+		// The worker goes on: losing one event is better than losing the worker.
+		log.Printf("djinn: task %s: record an event: %v", r.id, err)
+	}
+}
+
+// writeAs is write, journaling req; nil journals the event.
+func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message, ev Event) (*planv1.TaskEvent, error) {
+	te := newEvent(r.id, r.seq+1, ev)
+	if req == nil {
+		req = te
 	}
 	err := h.store.Tx(context.Background(), func(tx *store.Tx) error {
 		if err := tx.Journal(actor, method, req); err != nil {
@@ -696,12 +714,11 @@ func (h *Harness) write(r *run, actor, method string, task proto.Message, ev Eve
 		return tx.Put(te)
 	})
 	if err != nil {
-		// The worker goes on: losing one event is better than losing the worker.
-		log.Printf("djinn: task %s: record an event: %v", r.id, err)
-		return
+		return nil, err
 	}
 	r.seq++
 	h.publish(r, te)
+	return te, nil
 }
 
 // newEvent builds a stored event, its text and raw line cut to maxText.

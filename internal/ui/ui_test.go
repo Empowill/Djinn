@@ -277,14 +277,6 @@ func TestOpenExternal(t *testing.T) {
 	}
 }
 
-func TestNotifyQuestionShowsNothingWithoutError(t *testing.T) {
-	s, _ := newService(t)
-	res, err := s.NotifyQuestion(context.Background(), connect.NewRequest(&uiv1.UiServiceNotifyQuestionRequest{Title: "t"}))
-	if err != nil || res.Msg.GetShown() {
-		t.Fatalf("NotifyQuestion = %v, %v; want not shown, no error", res, err)
-	}
-}
-
 // The handler the server mounts answers over HTTP, and Watch is left to the server.
 func TestHandler(t *testing.T) {
 	s, _ := newService(t)

@@ -1,18 +1,28 @@
 // A task of a wish: its code, what it does, where it stands, what it spent, and, opened, its facts, its worker's
-// last word and its events as they come (TaskService.Watch).
+// last word and its events as they come (TaskService.Watch), with a box to send the running worker an instruction
+// (TaskService.Send).
 import {
   Activity,
   AlertCircle,
+  CheckCheck,
   ChevronDown,
   CircleStop,
   FileText,
   Gauge,
   Lock,
   MessageSquare,
+  MessageSquarePlus,
   ScrollText,
+  Send,
   Terminal,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   type Project,
@@ -44,6 +54,8 @@ const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.ERROR]: AlertCircle,
   [TaskEventKind.GATE]: Lock,
   [TaskEventKind.LOG]: ScrollText,
+  [TaskEventKind.MESSAGE]: MessageSquarePlus,
+  [TaskEventKind.RECEIVED]: CheckCheck,
 };
 
 const agentNames: Record<Provider, string> = {
@@ -67,6 +79,7 @@ export function WishTask({
   codes,
   origin,
   onStop,
+  onSend,
 }: {
   task: Task;
   project?: Project;
@@ -75,6 +88,7 @@ export function WishTask({
   // Where the task comes from, in the flight plan of several wishes: its wish.
   origin?: ReactNode;
   onStop: () => void;
+  onSend: (text: string) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
   const stoppable =
@@ -128,6 +142,9 @@ export function WishTask({
       )}
       {open && (
         <TaskBody task={task} forkOf={codes?.get(task.forkOf ?? "") ?? ""} />
+      )}
+      {open && task.status === TaskStatus.RUNNING && (
+        <SendBox onSend={onSend} />
       )}
     </article>
   );
@@ -205,12 +222,54 @@ function clock(event: TaskEvent): string {
   );
 }
 
+// SendBox sends the running worker an instruction; djinn's refusal shows as a toast, and the text stays.
+function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const message = text.trim();
+    if (!message || busy) return;
+    setBusy(true);
+    try {
+      await onSend(message);
+      setText("");
+    } catch {
+      // The toast says why.
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="wish-task-send" onSubmit={submit}>
+      <input
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        placeholder={t("task.message_placeholder")}
+        aria-label={t("task.message_placeholder")}
+        disabled={busy}
+      />
+      <button
+        className="icon-button"
+        type="submit"
+        disabled={busy || !text.trim()}
+        title={t("task.message_send")}
+        aria-label={t("task.message_send")}
+      >
+        <Send size={14} />
+      </button>
+    </form>
+  );
+}
+
 function EventLine({ event }: { event: TaskEvent }) {
   const Icon = eventIcons[event.kind] ?? FileText;
   const text =
     event.kind === TaskEventKind.USAGE && event.usage
       ? usageDetail(event.usage)
-      : event.text;
+      : event.kind === TaskEventKind.RECEIVED
+        ? t("task.received", { text: event.text })
+        : event.text;
   return (
     <div className={`wish-event kind-${event.kind}`}>
       <time>{clock(event)}</time>

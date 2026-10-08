@@ -372,6 +372,7 @@
         "enum": [
           "CHOICE_UNSPECIFIED",
           "CHOICE_YES",
+          "CHOICE_NO",
           "CHOICE_A",
           "CHOICE_B",
           "CHOICE_C",
@@ -597,7 +598,7 @@
         "properties": {
           "choice": {
             "$ref": "#/components/schemas/plan.v1.Choice",
-            "description": "The choice: yes, or the letter of an option."
+            "description": "The choice: yes, or the letter of an option. On options that say yes and no, yes or no, in any language Djinn speaks."
           },
           "note": {
             "description": "Why this choice, or what to do with it.",
@@ -966,6 +967,68 @@
         ],
         "type": "string"
       },
+      "plan.v1.TaskEvent": {
+        "description": "An event of a task's worker: what it said, the tools it called, what it spent.",
+        "properties": {
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the event arrived."
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/plan.v1.TaskEventKind",
+            "description": "What the event is."
+          },
+          "raw": {
+            "description": "The provider's line as it came, when the event comes from one.",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Position in the task, from 1, with no gap.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "taskId": {
+            "description": "Task of the worker.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The event for a reader: the text, the tool and its input, the error.",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/plan.v1.Usage",
+            "description": "What the worker spent so far, on a usage event."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskEventKind": {
+        "description": "TaskEventKind says what a worker event is. Its content stays free text.",
+        "enum": [
+          "TASK_EVENT_KIND_UNSPECIFIED",
+          "TASK_EVENT_KIND_PROMPT",
+          "TASK_EVENT_KIND_TEXT",
+          "TASK_EVENT_KIND_TOOL_CALL",
+          "TASK_EVENT_KIND_TOOL_RESULT",
+          "TASK_EVENT_KIND_USAGE",
+          "TASK_EVENT_KIND_STATUS",
+          "TASK_EVENT_KIND_ERROR",
+          "TASK_EVENT_KIND_LOG",
+          "TASK_EVENT_KIND_OTHER",
+          "TASK_EVENT_KIND_GATE",
+          "TASK_EVENT_KIND_MESSAGE",
+          "TASK_EVENT_KIND_RECEIVED"
+        ],
+        "type": "string"
+      },
       "plan.v1.TaskServiceCleanRequest": {
         "properties": {
           "force": {
@@ -988,6 +1051,28 @@
           "task": {
             "$ref": "#/components/schemas/plan.v1.Task",
             "description": "The task, without its worktree."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDeleteRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDeleteResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, as it was."
           }
         },
         "type": "object"
@@ -1037,6 +1122,34 @@
               "$ref": "#/components/schemas/plan.v1.Task"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceSendRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task, running.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "text": {
+            "description": "The message, as the worker reads it.",
+            "maxLength": 20000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "text"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceSendResponse": {
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/plan.v1.TaskEvent",
+            "description": "The message, as an event of the task."
           }
         },
         "type": "object"
@@ -2228,6 +2341,44 @@
         ]
       }
     },
+    "/plan.v1.TaskService/Delete": {
+      "post": {
+        "description": "Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its events. A task a worker of this Djinn ran stays, as the record of that work.",
+        "operationId": "TaskService_Delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceDeleteResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task delete",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
     "/plan.v1.TaskService/Get": {
       "post": {
         "description": "Show a task.",
@@ -2299,6 +2450,44 @@
           }
         },
         "summary": "djinn task list",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Send": {
+      "post": {
+        "description": "Send a message to a running worker: an instruction added while it works. The message is an event of the task, and a \"received\" event follows once the worker says something after it.",
+        "operationId": "TaskService_Send",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceSendResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task send",
         "tags": [
           "TaskService"
         ]

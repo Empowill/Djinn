@@ -115,6 +115,8 @@ const (
 	TaskServiceCleanProcedure = "/plan.v1.TaskService/Clean"
 	// TaskServiceDeleteProcedure is the fully-qualified name of the TaskService's Delete RPC.
 	TaskServiceDeleteProcedure = "/plan.v1.TaskService/Delete"
+	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
+	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
 )
 
 // QuestionServiceClient is a client for the plan.v1.QuestionService service.
@@ -1183,6 +1185,9 @@ type TaskServiceClient interface {
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
+	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
+	// and a "received" event follows once the worker says something after it.
+	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the plan.v1.TaskService service. By default, it uses
@@ -1238,6 +1243,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
+		send: connect.NewClient[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse](
+			httpClient,
+			baseURL+TaskServiceSendProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Send")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1250,6 +1261,7 @@ type taskServiceClient struct {
 	watch  *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
 	clean  *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
 	delete *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
+	send   *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -1287,6 +1299,11 @@ func (c *taskServiceClient) Delete(ctx context.Context, req *connect.Request[v1.
 	return c.delete.CallUnary(ctx, req)
 }
 
+// Send calls plan.v1.TaskService.Send.
+func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
+	return c.send.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
@@ -1307,6 +1324,9 @@ type TaskServiceHandler interface {
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
+	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
+	// and a "received" event follows once the worker says something after it.
+	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -1358,6 +1378,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceSendHandler := connect.NewUnaryHandler(
+		TaskServiceSendProcedure,
+		svc.Send,
+		connect.WithSchema(taskServiceMethods.ByName("Send")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceSpawnProcedure:
@@ -1374,6 +1400,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceCleanHandler.ServeHTTP(w, r)
 		case TaskServiceDeleteProcedure:
 			taskServiceDeleteHandler.ServeHTTP(w, r)
+		case TaskServiceSendProcedure:
+			taskServiceSendHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1409,4 +1437,8 @@ func (UnimplementedTaskServiceHandler) Clean(context.Context, *connect.Request[v
 
 func (UnimplementedTaskServiceHandler) Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Delete is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Send is not implemented"))
 }

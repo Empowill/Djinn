@@ -245,6 +245,13 @@ export function FlightPlan({
                       ),
                     )
                   }
+                  onSend={(text) =>
+                    act(
+                      wish.id,
+                      () => clients.tasks.send({ taskId: item.id, text }),
+                      [],
+                    )
+                  }
                 />
               ))}
             </section>

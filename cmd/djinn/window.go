@@ -4,13 +4,18 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"runtime"
+	"strings"
+	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 
 	"github.com/empowill/djinn"
+	"github.com/empowill/djinn/internal/ui"
 )
 
 // hasWindow tells that this build opens a native window: Wails needs CGO on macOS and Linux, not on Windows.
@@ -24,7 +29,9 @@ const hasWindow = true
 // window is minimised, so that it stays in the dock or the task bar; on macOS it is hidden, as macOS apps do, and the
 // Dock shows it again. Quitting is explicit: "Quit Djinn" in the tray menu, Ctrl+Q (Cmd+Q on macOS) in the window,
 // or stopping djinn up. Each value received on raise brings the window back to the front.
-func openWindow(ctx context.Context, url string, assets http.Handler, raise <-chan struct{}) error {
+//
+// While the window runs, notices show the questions as system notifications.
+func openWindow(ctx context.Context, url string, assets http.Handler, raise <-chan struct{}, notices *ui.Notices) error {
 	opts := application.Options{
 		Name: "Djinn",
 		Icon: appIcon(),
@@ -32,6 +39,9 @@ func openWindow(ctx context.Context, url string, assets http.Handler, raise <-ch
 		Mac:     application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
 		Linux:   application.LinuxOptions{DisableQuitOnLastWindowClosed: true, ProgramName: "djinn"},
 		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true},
+		Services: []application.Service{
+			application.NewService(&noticeService{svc: notifications.New(), notices: notices, ctx: ctx}),
+		},
 	}
 	if assets != nil {
 		opts.Assets = application.AssetOptions{Handler: windowAssets(assets)}
@@ -100,4 +110,86 @@ func appIcon() []byte {
 		return djinn.Icon256
 	}
 	return djinn.Icon
+}
+
+// noticeService starts the notification service of Wails with the app, then shows the notices through it. A system
+// that cannot show notifications (no session bus on Linux, an app without a bundle on macOS) leaves them off, and
+// the window opens all the same. It has no exported method of its own: the page cannot call it.
+type noticeService struct {
+	svc     *notifications.NotificationService
+	notices *ui.Notices
+	ctx     context.Context
+
+	mu         sync.Mutex
+	started    bool
+	categories map[string]bool // registered, by identifier
+}
+
+func (n *noticeService) ServiceStartup(ctx context.Context, opts application.ServiceOptions) error {
+	if err := n.svc.ServiceStartup(ctx, opts); err != nil {
+		log.Printf("djinn: no system notifications: %v", err)
+		return nil
+	}
+	n.mu.Lock()
+	n.started = true
+	n.mu.Unlock()
+	n.svc.OnNotificationResponse(func(res notifications.NotificationResult) {
+		if res.Error != nil {
+			log.Printf("djinn: a notification's response: %v", res.Error)
+			return
+		}
+		r := ui.Response{QuestionID: res.Response.ID}
+		r.WishID, _ = res.Response.UserInfo["wish_id"].(string)
+		if action := res.Response.ActionIdentifier; action != notifications.DefaultActionIdentifier {
+			r.Action = action
+		}
+		go n.notices.Respond(n.ctx, r)
+	})
+	n.notices.Use(wailsNotifier{n})
+	return nil
+}
+
+func (n *noticeService) ServiceShutdown() error {
+	n.notices.Use(nil)
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if !n.started {
+		return nil
+	}
+	n.started = false
+	return n.svc.ServiceShutdown()
+}
+
+// wailsNotifier shows a notice through the service: its buttons are a category of the service, one per set of
+// buttons, registered once.
+type wailsNotifier struct{ n *noticeService }
+
+func (w wailsNotifier) Notify(note ui.Notification) error {
+	opts := notifications.NotificationOptions{
+		ID: note.ID, Title: note.Title, Body: note.Body,
+		Data: map[string]any{"wish_id": note.WishID},
+	}
+	if len(note.Actions) == 0 {
+		return w.n.svc.SendNotification(opts)
+	}
+	category := notifications.NotificationCategory{ID: "djinn-answer"}
+	for _, a := range note.Actions {
+		category.ID += "-" + a.ID
+		category.Actions = append(category.Actions, notifications.NotificationAction{ID: a.ID, Title: a.Title})
+	}
+	category.ID = strings.ToLower(category.ID)
+	w.n.mu.Lock()
+	if !w.n.categories[category.ID] {
+		if err := w.n.svc.RegisterNotificationCategory(category); err != nil {
+			w.n.mu.Unlock()
+			return err
+		}
+		if w.n.categories == nil {
+			w.n.categories = map[string]bool{}
+		}
+		w.n.categories[category.ID] = true
+	}
+	w.n.mu.Unlock()
+	opts.CategoryID = category.ID
+	return w.n.svc.SendNotificationWithActions(opts)
 }

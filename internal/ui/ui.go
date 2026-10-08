@@ -260,13 +260,6 @@ func openBrowser(link string) error {
 	return nil
 }
 
-// NotifyQuestion shows nothing yet: the native notifications come with the window.
-func (s *Service) NotifyQuestion(
-	context.Context, *connect.Request[uiv1.UiServiceNotifyQuestionRequest],
-) (*connect.Response[uiv1.UiServiceNotifyQuestionResponse], error) {
-	return connect.NewResponse(&uiv1.UiServiceNotifyQuestionResponse{}), nil
-}
-
 func (s *Service) Show(
 	_ context.Context, req *connect.Request[uiv1.UiServiceShowRequest],
 ) (*connect.Response[uiv1.UiServiceShowResponse], error) {

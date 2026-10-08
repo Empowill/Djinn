@@ -11,8 +11,14 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
 
 - [x] The lead's terminal pinned at the bottom of the flight plan: moved to T21, in phase 2. (done in T21;
   e2e "the terminal shows at the bottom and runs a command")
-- [ ] An inbox for instructions added while an agent works, with acknowledgements. (needs: an agent; workers
-  take `Send`, no service exposes it)
+- [x] An inbox for instructions added while an agent works, with acknowledgements: `djinn task send <task> "…"`
+  (`TaskService.Send`), or the box under a running task's events in the window. The message is a `MESSAGE` event of
+  the task, journaled as the command; the first text or tool call of the worker after it is preceded by a
+  `RECEIVED` event. A worker that ends first never acknowledges it. (`TestSendToRunningWorker`,
+  `TestSendUnacknowledged`, `TestSendRefused` with the fake provider; e2e `task-send.spec.ts`)
+  - [ ] What "received" proves with a real agent: the agent said something after the message reached its input,
+    not that the model read it. Claude may answer it only at the end of its turn. (needs: a recorded claude stream
+    with a message sent mid-turn)
 - [ ] **Djinn's own icon in the system.** The logo shown in the window is also the app's icon:
   the dock, the task bar, the window switcher. Linux: an icon and a `.desktop` file in the
   user's folders (no sudo). macOS and Windows: the icon embedded in the build. Simple, tested on
@@ -44,11 +50,24 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     the one read does not move by more than 1 px, any frame. Twice: Chromium's anchoring, and the script.
   - [ ] Checked in the window, on Linux and macOS (by hand). (needs: a person, on Linux and on a Mac)
 - [x] MCP, as a thin layer over the command line. (`djinn mcp`, `internal/cli/mcp.go`: stdio, no library; one tool
-  per public unary method, 32, its input schema from the request, read and checked by the command line's code;
+  per public unary method, 34, its input schema from the request, read and checked by the command line's code;
   `TestMCPListTools`, `TestMCPCallTool`; tried by hand on a `djinn up --browser` in a temporary DJINN_HOME:
   `project_add` then `project_list`. The three streams stay on the command line; see
   [the convention](../docs/cli-convention.md#mcp))
-- [ ] Native notifications and a global shortcut. (needs: an agent; `NotifyQuestion` shows nothing yet)
+- [ ] Native notifications and a global shortcut.
+  - [x] A question asked in an active wish shows a system notification (Wails' notification service): the wish
+    and the question's code as title, its text and options as body. A question of a paused wish, an imported one
+    (older than a minute) or a decision shows none; each question shows once. (`TestNoticesShowTheQuestionsOfActiveWishes`,
+    `TestNoticesTranslateAndClip`, `TestNoticesWithoutNotifier`, with a fake notifier)
+  - [x] A click brings the window forward on the wish; a button answers: Yes, or A to D. Linux supports buttons
+    (D-Bus actions; no reply field). An answer goes through the server, as the window's would; one refused shows
+    the wish. (`TestNoticesRespond`; `TestAnswerFromANotification` on a real `djinn up`)
+  - [x] Off in headless builds and with `--browser`: no notifier is set. A system that cannot show them (no session
+    bus, macOS without a bundle) leaves them off and the window opens. `UiService.NotifyQuestion`, never called,
+    is gone. (`window_none.go`; `noticeService.ServiceStartup` returns no error)
+  - [ ] Seen on GNOME, with a click and a button (by hand). (needs: a person on Linux)
+  - [ ] macOS: needs the `.app` bundle and its identifier. (needs: T19, then a Mac)
+  - [ ] A global shortcut. (needs: an agent)
 - [x] OpenAPI documentation of the public methods. (`docs/openapi.json`, OpenAPI 3.1, written by `go tool task gen`
   through `tools/openapi`; `TestOpenAPIIsFresh`, `TestOpenAPI`; Redocly lint: valid, one warning on the localhost
   server; its `ProjectService/List` answered a curl with the bearer token)

@@ -18,6 +18,8 @@ import (
 
 	"github.com/empowill/djinn"
 	"github.com/empowill/djinn/gen/go/demo/v1/demov1connect"
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/backup"
@@ -27,6 +29,7 @@ import (
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/terminal"
@@ -180,15 +183,23 @@ func runUp(args []string) (restart bool, err error) {
 	defer remove()
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(ctx, ln, h) }()
+	// The window shows each question asked in an active wish as a system notification. An answer from one goes
+	// through the server, as the window's would.
+	notices := &ui.Notices{
+		Store: db, Language: render.SystemLanguage(),
+		Show:   func(wishID string) { leads{terminals, uiSvc}.Show(wishID, "") },
+		Answer: func(ctx context.Context, id string, choice planv1.Choice) error { return answer(ctx, addr, id, choice) },
+	}
+	go notices.Run(ctx)
 
 	switch {
 	case *browser:
 		fmt.Println("djinn: open", url)
 		return false, <-served
 	case transport == server.Wails:
-		err = openWindow(ctx, "", h, raise)
+		err = openWindow(ctx, "", h, raise, notices)
 	default:
-		err = openWindow(ctx, url, nil, raise)
+		err = openWindow(ctx, url, nil, raise, notices)
 	}
 	stop() // The window is closed: stop the server too.
 	return false, errors.Join(err, <-served)
@@ -234,6 +245,18 @@ func (l leads) Show(wishID, name string) {
 		l.ui.Raise()
 	}
 	l.ui.Present(wishID, name)
+}
+
+// answer answers a question through the djinn that answers at addr.
+func answer(ctx context.Context, addr, questionID string, choice planv1.Choice) error {
+	client, base, err := cli.Dial(addr)
+	if err != nil {
+		return err
+	}
+	_, err = planv1connect.NewQuestionServiceClient(client, base).Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: questionID}}, Choice: choice,
+	}))
+	return err
 }
 
 // showRunning asks the djinn that answers at addr to bring its window to the front, and says so.

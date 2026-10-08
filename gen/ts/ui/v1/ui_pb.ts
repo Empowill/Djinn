@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0ImgKH1VpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIQCghwbGF0Zm9ybRgCIAEoCRIiCglwcm92aWRlcnMYAyADKAsyDy51aS52MS5Qcm92aWRlciJICghQcm92aWRlchIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCWF2YWlsYWJsZRgDIAEoCBIPCgdjb21tYW5kGAQgASgJIhsKGVVpU2VydmljZUxvYWRTdGF0ZVJlcXVlc3QiMAoaVWlTZXJ2aWNlTG9hZFN0YXRlUmVzcG9uc2USEgoKc3RhdGVfanNvbhgBIAEoCSIvChlVaVNlcnZpY2VTYXZlU3RhdGVSZXF1ZXN0EhIKCnN0YXRlX2pzb24YASABKAkiHAoaVWlTZXJ2aWNlU2F2ZVN0YXRlUmVzcG9uc2UiNAofVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVxdWVzdBIRCglkaXJlY3RvcnkYASABKAkiQgogVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVzcG9uc2USEQoJZGlyZWN0b3J5GAEgASgJEgsKA2dpdBgCIAEoCCIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiYwoeVWlTZXJ2aWNlTm90aWZ5UXVlc3Rpb25SZXF1ZXN0Eg8KB3Rhc2tfaWQYASABKAkSEwoLcXVlc3Rpb25faWQYAiABKAkSDQoFdGl0bGUYAyABKAkSDAoEYm9keRgEIAEoCSIwCh9VaVNlcnZpY2VOb3RpZnlRdWVzdGlvblJlc3BvbnNlEg0KBXNob3duGAEgASgIIkIKFFVpU2VydmljZVNob3dSZXF1ZXN0Eg8KB3dpc2hfaWQYASABKAkSGQoIdGVybWluYWwYAiABKAlCB7pIBHICGEAiJwoVVWlTZXJ2aWNlU2hvd1Jlc3BvbnNlEg4KBndpbmRvdxgBIAEoCCIbChlVaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0Ij8KGlVpU2VydmljZVdhdGNoU2hvd1Jlc3BvbnNlEg8KB3dpc2hfaWQYASABKAkSEAoIdGVybWluYWwYAiABKAkiHQobVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0IlMKHFVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2USDwoHY3VycmVudBgBIAEoCRINCgVyZWFkeRgCIAEoCRITCgtub3RfcmVzdW1lZBgDIAMoCSIYChZVaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Ij0KF1VpU2VydmljZVVwZGF0ZVJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEQoJdGVybWluYWxzGAIgASgFIikKFVVpU2VydmljZVdhdGNoUmVxdWVzdBIQCghmcm9tX3NlcRgBIAEoBCJ7ChZVaVNlcnZpY2VXYXRjaFJlc3BvbnNlEgsKA3NlcRgBIAEoBBIjCgdwcm9qZWN0GAIgASgLMhAucGxhbi52MS5Qcm9qZWN0SAASJQoIcXVlc3Rpb24YAyABKAsyES5wbGFuLnYxLlF1ZXN0aW9uSABCCAoGZW50aXR5MvQHCglVaVNlcnZpY2USZQoOR2V0RW52aXJvbm1lbnQSJS51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlcXVlc3QaJi51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlIgTI8xgCElYKCUxvYWRTdGF0ZRIgLnVpLnYxLlVpU2VydmljZUxvYWRTdGF0ZVJlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VMb2FkU3RhdGVSZXNwb25zZSIEyPMYAhJWCglTYXZlU3RhdGUSIC51aS52MS5VaVNlcnZpY2VTYXZlU3RhdGVSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlU2F2ZVN0YXRlUmVzcG9uc2UiBMjzGAISaAoPVmFsaWRhdGVQcm9qZWN0EiYudWkudjEuVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVxdWVzdBonLnVpLnYxLlVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlc3BvbnNlIgTI8xgCEl8KDE9wZW5FeHRlcm5hbBIjLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlcXVlc3QaJC51aS52MS5VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZSIEyPMYAhJlCg5Ob3RpZnlRdWVzdGlvbhIlLnVpLnYxLlVpU2VydmljZU5vdGlmeVF1ZXN0aW9uUmVxdWVzdBomLnVpLnYxLlVpU2VydmljZU5vdGlmeVF1ZXN0aW9uUmVzcG9uc2UiBMjzGAISRwoEU2hvdxIbLnVpLnYxLlVpU2VydmljZVNob3dSZXF1ZXN0GhwudWkudjEuVWlTZXJ2aWNlU2hvd1Jlc3BvbnNlIgTI8xgCElgKCVdhdGNoU2hvdxIgLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZSIEyPMYAjABEl4KC1dhdGNoVXBkYXRlEiIudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZSIEyPMYAjABEk0KBlVwZGF0ZRIdLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlcXVlc3QaHi51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXNwb25zZSIEyPMYAhJMCgVXYXRjaBIcLnVpLnYxLlVpU2VydmljZVdhdGNoUmVxdWVzdBodLnVpLnYxLlVpU2VydmljZVdhdGNoUmVzcG9uc2UiBMjzGAIwAUJ2Cgljb20udWkudjFCB1VpUHJvdG9QAVorZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdWkvdjE7dWl2MaICA1VYWKoCBVVpLlYxygIFVWlcVjHiAhFVaVxWMVxHUEJNZXRhZGF0YeoCBlVpOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0ImgKH1VpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIQCghwbGF0Zm9ybRgCIAEoCRIiCglwcm92aWRlcnMYAyADKAsyDy51aS52MS5Qcm92aWRlciJICghQcm92aWRlchIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCWF2YWlsYWJsZRgDIAEoCBIPCgdjb21tYW5kGAQgASgJIhsKGVVpU2VydmljZUxvYWRTdGF0ZVJlcXVlc3QiMAoaVWlTZXJ2aWNlTG9hZFN0YXRlUmVzcG9uc2USEgoKc3RhdGVfanNvbhgBIAEoCSIvChlVaVNlcnZpY2VTYXZlU3RhdGVSZXF1ZXN0EhIKCnN0YXRlX2pzb24YASABKAkiHAoaVWlTZXJ2aWNlU2F2ZVN0YXRlUmVzcG9uc2UiNAofVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVxdWVzdBIRCglkaXJlY3RvcnkYASABKAkiQgogVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVzcG9uc2USEQoJZGlyZWN0b3J5GAEgASgJEgsKA2dpdBgCIAEoCCIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiQgoUVWlTZXJ2aWNlU2hvd1JlcXVlc3QSDwoHd2lzaF9pZBgBIAEoCRIZCgh0ZXJtaW5hbBgCIAEoCUIHukgEcgIYQCInChVVaVNlcnZpY2VTaG93UmVzcG9uc2USDgoGd2luZG93GAEgASgIIhsKGVVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QiPwoaVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2USDwoHd2lzaF9pZBgBIAEoCRIQCgh0ZXJtaW5hbBgCIAEoCSIdChtVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlcXVlc3QiUwocVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZRIPCgdjdXJyZW50GAEgASgJEg0KBXJlYWR5GAIgASgJEhMKC25vdF9yZXN1bWVkGAMgAygJIhgKFlVpU2VydmljZVVwZGF0ZVJlcXVlc3QiPQoXVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIRCgl0ZXJtaW5hbHMYAiABKAUiKQoVVWlTZXJ2aWNlV2F0Y2hSZXF1ZXN0EhAKCGZyb21fc2VxGAEgASgEInsKFlVpU2VydmljZVdhdGNoUmVzcG9uc2USCwoDc2VxGAEgASgEEiMKB3Byb2plY3QYAiABKAsyEC5wbGFuLnYxLlByb2plY3RIABIlCghxdWVzdGlvbhgDIAEoCzIRLnBsYW4udjEuUXVlc3Rpb25IAEIICgZlbnRpdHkyjQcKCVVpU2VydmljZRJlCg5HZXRFbnZpcm9ubWVudBIlLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVxdWVzdBomLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2UiBMjzGAISVgoJTG9hZFN0YXRlEiAudWkudjEuVWlTZXJ2aWNlTG9hZFN0YXRlUmVxdWVzdBohLnVpLnYxLlVpU2VydmljZUxvYWRTdGF0ZVJlc3BvbnNlIgTI8xgCElYKCVNhdmVTdGF0ZRIgLnVpLnYxLlVpU2VydmljZVNhdmVTdGF0ZVJlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VTYXZlU3RhdGVSZXNwb25zZSIEyPMYAhJoCg9WYWxpZGF0ZVByb2plY3QSJi51aS52MS5VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJYCglXYXRjaFNob3cSIC51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2UiBMjzGAIwARJeCgtXYXRjaFVwZGF0ZRIiLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2UiBMjzGAIwARJNCgZVcGRhdGUSHS51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Gh4udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2UiBMjzGAISTAoFV2F0Y2gSHC51aS52MS5VaVNlcnZpY2VXYXRjaFJlcXVlc3QaHS51aS52MS5VaVNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgCMAFCdgoJY29tLnVpLnYxQgdVaVByb3RvUAFaK2dpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3VpL3YxO3VpdjGiAgNVWFiqAgVVaS5WMcoCBVVpXFYx4gIRVWlcVjFcR1BCTWV0YWRhdGHqAgZVaTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -254,65 +254,6 @@ export const UiServiceOpenExternalResponseSchema: GenMessage<UiServiceOpenExtern
   messageDesc(file_ui_v1_ui, 10);
 
 /**
- * @generated from message ui.v1.UiServiceNotifyQuestionRequest
- */
-export type UiServiceNotifyQuestionRequest = Message<"ui.v1.UiServiceNotifyQuestionRequest"> & {
-  /**
-   * Mission the question belongs to.
-   *
-   * @generated from field: string task_id = 1;
-   */
-  taskId: string;
-
-  /**
-   * The question.
-   *
-   * @generated from field: string question_id = 2;
-   */
-  questionId: string;
-
-  /**
-   * Title of the notification.
-   *
-   * @generated from field: string title = 3;
-   */
-  title: string;
-
-  /**
-   * Text of the notification.
-   *
-   * @generated from field: string body = 4;
-   */
-  body: string;
-};
-
-/**
- * Describes the message ui.v1.UiServiceNotifyQuestionRequest.
- * Use `create(UiServiceNotifyQuestionRequestSchema)` to create a new message.
- */
-export const UiServiceNotifyQuestionRequestSchema: GenMessage<UiServiceNotifyQuestionRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 11);
-
-/**
- * @generated from message ui.v1.UiServiceNotifyQuestionResponse
- */
-export type UiServiceNotifyQuestionResponse = Message<"ui.v1.UiServiceNotifyQuestionResponse"> & {
-  /**
-   * A notification was shown.
-   *
-   * @generated from field: bool shown = 1;
-   */
-  shown: boolean;
-};
-
-/**
- * Describes the message ui.v1.UiServiceNotifyQuestionResponse.
- * Use `create(UiServiceNotifyQuestionResponseSchema)` to create a new message.
- */
-export const UiServiceNotifyQuestionResponseSchema: GenMessage<UiServiceNotifyQuestionResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 12);
-
-/**
  * @generated from message ui.v1.UiServiceShowRequest
  */
 export type UiServiceShowRequest = Message<"ui.v1.UiServiceShowRequest"> & {
@@ -336,7 +277,7 @@ export type UiServiceShowRequest = Message<"ui.v1.UiServiceShowRequest"> & {
  * Use `create(UiServiceShowRequestSchema)` to create a new message.
  */
 export const UiServiceShowRequestSchema: GenMessage<UiServiceShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 13);
+  messageDesc(file_ui_v1_ui, 11);
 
 /**
  * @generated from message ui.v1.UiServiceShowResponse
@@ -355,7 +296,7 @@ export type UiServiceShowResponse = Message<"ui.v1.UiServiceShowResponse"> & {
  * Use `create(UiServiceShowResponseSchema)` to create a new message.
  */
 export const UiServiceShowResponseSchema: GenMessage<UiServiceShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 14);
+  messageDesc(file_ui_v1_ui, 12);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowRequest
@@ -368,7 +309,7 @@ export type UiServiceWatchShowRequest = Message<"ui.v1.UiServiceWatchShowRequest
  * Use `create(UiServiceWatchShowRequestSchema)` to create a new message.
  */
 export const UiServiceWatchShowRequestSchema: GenMessage<UiServiceWatchShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 15);
+  messageDesc(file_ui_v1_ui, 13);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowResponse
@@ -394,7 +335,7 @@ export type UiServiceWatchShowResponse = Message<"ui.v1.UiServiceWatchShowRespon
  * Use `create(UiServiceWatchShowResponseSchema)` to create a new message.
  */
 export const UiServiceWatchShowResponseSchema: GenMessage<UiServiceWatchShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 16);
+  messageDesc(file_ui_v1_ui, 14);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateRequest
@@ -407,7 +348,7 @@ export type UiServiceWatchUpdateRequest = Message<"ui.v1.UiServiceWatchUpdateReq
  * Use `create(UiServiceWatchUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateRequestSchema: GenMessage<UiServiceWatchUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 17);
+  messageDesc(file_ui_v1_ui, 15);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateResponse
@@ -440,7 +381,7 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
  * Use `create(UiServiceWatchUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 18);
+  messageDesc(file_ui_v1_ui, 16);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateRequest
@@ -453,7 +394,7 @@ export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
  * Use `create(UiServiceUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceUpdateRequestSchema: GenMessage<UiServiceUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 19);
+  messageDesc(file_ui_v1_ui, 17);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateResponse
@@ -479,7 +420,7 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
  * Use `create(UiServiceUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 20);
+  messageDesc(file_ui_v1_ui, 18);
 
 /**
  * @generated from message ui.v1.UiServiceWatchRequest
@@ -498,7 +439,7 @@ export type UiServiceWatchRequest = Message<"ui.v1.UiServiceWatchRequest"> & {
  * Use `create(UiServiceWatchRequestSchema)` to create a new message.
  */
 export const UiServiceWatchRequestSchema: GenMessage<UiServiceWatchRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 21);
+  messageDesc(file_ui_v1_ui, 19);
 
 /**
  * @generated from message ui.v1.UiServiceWatchResponse
@@ -540,7 +481,7 @@ export type UiServiceWatchResponse = Message<"ui.v1.UiServiceWatchResponse"> & {
  * Use `create(UiServiceWatchResponseSchema)` to create a new message.
  */
 export const UiServiceWatchResponseSchema: GenMessage<UiServiceWatchResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 22);
+  messageDesc(file_ui_v1_ui, 20);
 
 /**
  * What the window needs to show and follow the plan.
@@ -597,16 +538,6 @@ export const UiService: GenService<{
     methodKind: "unary";
     input: typeof UiServiceOpenExternalRequestSchema;
     output: typeof UiServiceOpenExternalResponseSchema;
-  },
-  /**
-   * Tell the user a question is waiting. Not shown yet.
-   *
-   * @generated from rpc ui.v1.UiService.NotifyQuestion
-   */
-  notifyQuestion: {
-    methodKind: "unary";
-    input: typeof UiServiceNotifyQuestionRequestSchema;
-    output: typeof UiServiceNotifyQuestionResponseSchema;
   },
   /**
    * Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the

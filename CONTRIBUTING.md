@@ -144,6 +144,10 @@ To use Djinn, see the [README](README.md). To work on it:
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
   --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)
   compares them ([T22](plan/1689571a-fast-workers.md)).
+- `djinn task send <task-id> "…"` gives a running worker an instruction (or the box under its events, in the window):
+  an event of the task, then "received" once the worker says something after it.
+- With the window, a question asked in an active wish shows as a system notification: a click shows the wish, a
+  button answers it. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.
 - `go tool task e2e-native`: drive the real window end to end through the Wails MCP server (a test build, window
@@ -168,6 +172,8 @@ their contributors.
   [pty](https://github.com/creack/pty) (the terminal's pseudo-terminal on macOS and Linux),
   [conpty](https://github.com/charmbracelet/x/tree/main/conpty) from Charm (the same on Windows),
   [goldmark](https://github.com/yuin/goldmark) (the Markdown of a wish's page),
+  [godbus](https://github.com/godbus/dbus) and [go-toast](https://git.sr.ht/~jackmordaunt/go-toast) (the system
+  notifications of the window, through Wails, on Linux and on Windows),
   [x/sys](https://github.com/golang/sys), [x/term](https://github.com/golang/term) (tests),
   [x/mod](https://github.com/golang/mod) (release versions); as module tools,
   [Task](https://github.com/go-task/task) and [buf](https://github.com/bufbuild/buf).

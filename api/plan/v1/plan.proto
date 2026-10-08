@@ -280,6 +280,10 @@ enum TaskEventKind {
   TASK_EVENT_KIND_OTHER = 9;
   // The task waits for a gate, takes it or gives it back (djinn gate run).
   TASK_EVENT_KIND_GATE = 10;
+  // A message the lead or the user sent the worker while it works (djinn task send).
+  TASK_EVENT_KIND_MESSAGE = 11;
+  // The worker took a message in: it said something after the message reached it. Its text is the message's.
+  TASK_EVENT_KIND_RECEIVED = 12;
 }
 
 // An event of a task's worker: what it said, the tools it called, what it spent.
@@ -1173,6 +1177,11 @@ service TaskService {
   rpc Delete(TaskServiceDeleteRequest) returns (TaskServiceDeleteResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+  // Send a message to a running worker: an instruction added while it works. The message is an event of the task,
+  // and a "received" event follows once the worker says something after it.
+  rpc Send(TaskServiceSendRequest) returns (TaskServiceSendResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
 }
 
 message TaskServiceSpawnRequest {
@@ -1270,6 +1279,24 @@ message TaskServiceStopRequest {
 message TaskServiceStopResponse {
   // The task, stopped.
   Task task = 1;
+}
+
+message TaskServiceSendRequest {
+  // The task, running.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The message, as the worker reads it.
+  string text = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 20000
+  ];
+}
+
+message TaskServiceSendResponse {
+  // The message, as an event of the task.
+  TaskEvent event = 1;
 }
 
 message TaskServiceWatchRequest {
