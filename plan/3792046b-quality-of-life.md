@@ -11,6 +11,10 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
 
 - [ ] The lead's terminal pinned at the bottom of the flight plan: moved to T21, in phase 2.
 - [ ] An inbox for instructions added while an agent works, with acknowledgements.
+- [ ] **Djinn's own icon in the system.** The logo shown in the window is also the app's icon:
+  the dock, the task bar, the window switcher. Linux: an icon and a `.desktop` file in the
+  user's folders (no sudo). macOS and Windows: the icon embedded in the build. Simple, tested on
+  each system.
 - [ ] **The page keeps your place.** When something above what you are reading changes (a
   question answered and removed, a section added), the window stays on what you read: it never
   jumps up. Browsers do it by scroll anchoring; WebKit, the engine of the window on macOS and
