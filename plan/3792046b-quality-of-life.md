@@ -43,9 +43,15 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   - [x] `e2e/wish-scroll.spec.ts`: a question out of sight above the one read opens, then is answered;
     the one read does not move by more than 1 px, any frame. Twice: Chromium's anchoring, and the script.
   - [ ] Checked in the window, on Linux and macOS (by hand). (needs: a person, on Linux and on a Mac)
-- [ ] MCP, as a thin layer over the command line. (needs: an agent)
+- [x] MCP, as a thin layer over the command line. (`djinn mcp`, `internal/cli/mcp.go`: stdio, no library; one tool
+  per public unary method, 32, its input schema from the request, read and checked by the command line's code;
+  `TestMCPListTools`, `TestMCPCallTool`; tried by hand on a `djinn up --browser` in a temporary DJINN_HOME:
+  `project_add` then `project_list`. The three streams stay on the command line; see
+  [the convention](../docs/cli-convention.md#mcp))
 - [ ] Native notifications and a global shortcut. (needs: an agent; `NotifyQuestion` shows nothing yet)
-- [ ] OpenAPI documentation of the public methods. (needs: an agent)
+- [x] OpenAPI documentation of the public methods. (`docs/openapi.json`, OpenAPI 3.1, written by `go tool task gen`
+  through `tools/openapi`; `TestOpenAPIIsFresh`, `TestOpenAPI`; Redocly lint: valid, one warning on the localhost
+  server; its `ProjectService/List` answered a curl with the bearer token)
 - [ ] Analytics with DuckDB: who uses what, for how long. (needs: an agent, after a decision on what to collect)
 - [x] Remove Electron and the code it no longer needs. (`electron/` is gone, be8f52c; 845461b: the CI no longer
   sets `ELECTRON_SKIP_BINARY_DOWNLOAD`, `docs/agent-protocol.md` describes the command line and the task events,

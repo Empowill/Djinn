@@ -73,6 +73,37 @@ token goes in an `Authorization: Bearer` header; default `$DJINN_ADDR`, then the
 `server.addr` of the data directory) and `-h`/`--help` may appear anywhere before `--`, so a request field cannot be
 named `json`, `addr` or `help`.
 
+## MCP
+
+`djinn mcp` serves the same commands to an agent that speaks the [Model Context
+Protocol](https://modelcontextprotocol.io), on stdin and stdout (its stdio transport, JSON-RPC 2.0 one message
+per line). Add it to an agent as a stdio server whose command is `djinn mcp`; `--addr` and `$DJINN_ADDR` work
+as above.
+
+- **One tool per public method that answers once**, named like its command in snake_case: `djinn wish set-lead`
+  is `wish_set_lead`. The streaming methods (`gate hold`, `wish watch`, `task watch`) stay on the command line: a
+  tool call answers once.
+- **The input schema is the request**, field by field, by proto name: what is positional on the command line is
+  `required`; an enum lists its short values; a `oneof` reference and a time are strings; a repeated field is an
+  array. The description is the proto comment, with what the field expects.
+- **The same reading and the same checks.** Each value is read as the command line reads its text (a relative
+  path starts from the folder `djinn mcp` runs in), then protovalidate checks the request before it is sent. A
+  faulty argument is a tool error named by its field: `question: value is required; expected a match of
+  ^Q[0-9]{2,3}$ or a UUID`.
+- **The answer is the response in protobuf JSON**, with the proto field names, as `--json` prints it. A call that
+  fails is a tool error with the server's message (`not_found: no question Q99`).
+- **Autostart** works as on the command line: `wish_resume` starts `djinn up` when none answers.
+
+No MCP library: the server is `internal/cli/mcp.go`, the protocol's `initialize`, `ping`, `tools/list`,
+`tools/call` and `notifications/cancelled`.
+
+## OpenAPI
+
+[`openapi.json`](openapi.json) describes the same public methods for any HTTP client, in OpenAPI 3.1: each is a
+`POST` of the [Connect protocol](https://connectrpc.com/docs/protocol) on `/<package>.<Service>/<Method>`, its body
+the request in protobuf JSON. `go tool task gen` writes it (`tools/openapi`), and `TestOpenAPIIsFresh` fails when it
+lags behind the protos. Streaming methods are named there, not described.
+
 ## How it works
 
 `go tool task gen` runs `buf generate` (Go messages and Connect handlers) and writes `gen/djinn.binpb`, the

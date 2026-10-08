@@ -38,6 +38,7 @@ type Config struct {
 	// Start starts djinn up in the background and returns its address once it answers, for the methods marked
 	// autostart when no server answers. Nil leaves them failing as the others do.
 	Start  func(ctx context.Context) (addr string, err error)
+	Stdin  io.Reader // djinn mcp reads its requests here
 	Stdout io.Writer
 	Stderr io.Writer
 }
@@ -88,6 +89,17 @@ func run(ctx context.Context, args []string, cfg Config) error {
 		writeHelp(cfg.Stdout)
 		return nil
 	}
+	// djinn mcp serves the public methods to an agent that speaks MCP, on stdin and stdout.
+	if rest[0] == "mcp" {
+		switch {
+		case help:
+			fmt.Fprint(cfg.Stdout, mcpHelp)
+			return nil
+		case len(rest) > 1:
+			return usageError{fmt.Errorf("djinn mcp takes no argument, got %q", rest[1])}
+		}
+		return serveMCP(ctx, cfg)
+	}
 
 	services := commands()
 	names := []string{"help", "version"}
@@ -124,15 +136,13 @@ func run(ctx context.Context, args []string, cfg Config) error {
 
 	req, err := parse(md.Input(), rest[2:])
 	if err == nil {
-		err = check(req)
+		err = check(req, label)
 	}
 	if err != nil {
 		return usageError{fmt.Errorf("%w\nrun djinn %s %s --help for the arguments", err, command(sd), name)}
 	}
-	if cfg.Addr == "" && cfg.Start != nil && proto.GetExtension(md.Options(), djinnv1.E_Autostart) == true {
-		if cfg.Addr, err = running(ctx, cfg); err != nil {
-			return err
-		}
+	if cfg, err = autostart(ctx, cfg, md); err != nil {
+		return err
 	}
 	if md.IsStreamingServer() && !md.IsStreamingClient() {
 		// A stream prints each message as it comes: a JSON object per line with --json, a blank line between
@@ -169,6 +179,17 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 	writeText(cfg.Stdout, res)
 	return nil
+}
+
+// autostart gives cfg the address of a running djinn, started if needed, when md is marked autostart and no
+// address was given.
+func autostart(ctx context.Context, cfg Config, md protoreflect.MethodDescriptor) (Config, error) {
+	if cfg.Addr == "" && cfg.Start != nil && proto.GetExtension(md.Options(), djinnv1.E_Autostart) == true {
+		var err error
+		cfg.Addr, err = running(ctx, cfg)
+		return cfg, err
+	}
+	return cfg, nil
 }
 
 // running returns the address of the djinn that answers, after starting one when none does.
@@ -347,6 +368,7 @@ func writeHelp(w io.Writer) {
 		fmt.Fprintf(tw, "  %s\t%s\n", command(sd), comment(sd))
 	}
 	fmt.Fprintf(tw, "  version\tPrint the version of djinn.\n")
+	fmt.Fprintf(tw, "  mcp\tServe these commands as MCP tools on stdin and stdout, for an agent that speaks MCP.\n")
 	fmt.Fprintf(tw, "  update\tRestart the running djinn on the newer one installed at its path (go tool task install).\n")
 	tw.Flush()
 	fmt.Fprint(w, `
@@ -359,6 +381,16 @@ Global flags, anywhere on the line:
 A unique prefix of a command or a method is enough: djinn q answer.
 `)
 }
+
+const mcpHelp = `Usage: djinn mcp [--addr URL]
+
+Serve the commands of djinn as MCP tools, on stdin and stdout (the stdio transport of the Model Context
+Protocol). Each public method that answers once is a tool: djinn wish set-lead is wish_set_lead. Its arguments
+are the fields of the request, by their proto names, read and checked as the command line does. A relative path
+starts from the folder djinn mcp runs in. The streaming methods (watch, gate hold) stay on the command line.
+
+Add it to an agent, for example: claude mcp add djinn -- djinn mcp
+`
 
 func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 	fmt.Fprintf(w, "%s\n\nUsage: djinn %s <method> [arguments] [flags]\n\nMethods:\n", comment(sd), command(sd))
