@@ -161,8 +161,13 @@ const exported = create(m.WishExportSchema, {
 });
 const data = toBinary(m.WishExportSchema, exported);
 
-function server({ already = false } = {}) {
-  const calls = { imported: [], exported: [] };
+// server answers as a WishService holding the exported wish; wish overrides some of its fields.
+function server({ already = false, wish = {} } = {}) {
+  const calls = { imported: [], exported: [], granted: [] };
+  const held = create(m.WishExportSchema, {
+    ...exported,
+    wish: { ...exported.wish, ...wish },
+  });
   const transport = m.createRouterTransport(({ service }) =>
     service(m.WishService, {
       importData: (req) => {
@@ -177,7 +182,7 @@ function server({ already = false } = {}) {
       snapshot: (req) => {
         assert.equal(req.wishId, wishId);
         return {
-          export: exported,
+          export: held,
           projects: [
             {
               id: projectId,
@@ -190,10 +195,14 @@ function server({ already = false } = {}) {
           ],
         };
       },
-      list: () => ({ wishes: [exported.wish] }),
+      list: () => ({ wishes: [held.wish] }),
       export: (req) => {
         calls.exported.push(req.wishId);
         return { file: "/home/me/Downloads/djinn-on-wails.djinn", size: 10n };
+      },
+      grant: (req) => {
+        calls.granted.push(req.wishId);
+        return { wish: { ...held.wish, state: m.WishState.GRANTED } };
       },
     }),
   );
@@ -252,6 +261,47 @@ test("an imported wish becomes a mission the interface accepts", async () => {
     [["T01 · The native window", "done"]],
   );
   assert.equal(state.projects[0].name, "djinn");
+  // A wish at work: no result to approve, nothing proposed.
+  assert.equal(mission.fromWish, true);
+  assert.notEqual(mission.steps[0].status, "awaiting_human");
+  assert.notEqual(mission.steps[0].status, "completed");
+});
+
+// The mission of a wish as the interface keeps it, from a server holding the wish with these fields.
+async function missionOf(wish) {
+  const { transport } = server({ wish });
+  const session = await m
+    .createDjinn(transport, async () => file(data))
+    .importSession();
+  return m.validateState({
+    version: session.version,
+    tasks: [session.task],
+    projects: session.projects,
+  }).tasks[0];
+}
+
+test("a ready wish shows its result, to grant; a granted one is approved", async () => {
+  const ready = await missionOf({ ready: true });
+  assert.equal(ready.steps[0].status, "awaiting_human");
+  const granted = await missionOf({
+    state: m.WishState.GRANTED,
+    grantTime: at,
+  });
+  assert.equal(granted.steps[0].status, "completed");
+  assert.equal(granted.steps[0].approvedAt, "2026-10-07T21:10:00.000Z");
+});
+
+test("a mission that is a wish is granted through the server; another one says why not", async () => {
+  const { transport, calls } = server({ wish: { ready: true } });
+  const djinn = m.createDjinn(transport);
+  assert.deepEqual(await djinn.grantWish({ title: "Djinn on Wails" }), {
+    granted: true,
+  });
+  assert.deepEqual(calls.granted, [wishId]);
+  await assert.rejects(
+    djinn.grantWish({ title: "Something else" }),
+    (error) => error.code === "not_available",
+  );
 });
 
 test("a wish already here is shown, not imported twice", async () => {

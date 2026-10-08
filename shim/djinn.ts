@@ -77,6 +77,8 @@ export function createDjinn(
     importSession: () => call(exchange.importSession),
     exportSession: (session: unknown) =>
       call(() => exchange.exportSession(session)),
+    // Grant a mission's wish, which the user says is done.
+    grantWish: (mission: unknown) => call(() => exchange.grantWish(mission)),
     getEnvironment: () =>
       call(async () => {
         const env = await ui.getEnvironment({});

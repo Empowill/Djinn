@@ -526,6 +526,7 @@ function validateTask(value, restored = true) {
                     : choice(i.status, ["queued", "transmitted", "consumed", "prevented"], `${p}.status`),
                 reason: optionalString(i.reason, `${p}.reason`),
             })),
+        ...(boolean(t.fromWish, "fromWish", false) ? { fromWish: true } : {}),
         demo: boolean(t.demo, "demo", false),
         planCompleted: boolean(t.planCompleted, "planCompleted", false),
         reviewApprovedAt: optionalDate(t.reviewApprovedAt, "reviewApprovedAt"),

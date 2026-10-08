@@ -1253,13 +1253,17 @@ export default function App() {
                               })}
                             </span>
                             <h3>
-                              {selectedStage.needsRevalidation
-                                ? t("app.result_revalidate")
-                                : selectedStage.status === "completed"
-                                  ? selectedStage.validation === "automatic"
-                                    ? t("app.result_done_review_next")
-                                    : t("app.result_validated")
-                                  : t("app.pass_finished")}
+                              {task.fromWish
+                                ? selectedStage.status === "completed"
+                                  ? t("app.wish_granted")
+                                  : t("app.wish_ready")
+                                : selectedStage.needsRevalidation
+                                  ? t("app.result_revalidate")
+                                  : selectedStage.status === "completed"
+                                    ? selectedStage.validation === "automatic"
+                                      ? t("app.result_done_review_next")
+                                      : t("app.result_validated")
+                                    : t("app.pass_finished")}
                             </h3>
                             <StageReport step={selectedStage} />
                             {selectedStage.status === "awaiting_human" && (
@@ -1275,10 +1279,15 @@ export default function App() {
                                     task.feedback.some((f) => !f.resolved))
                                 }
                                 onClick={() =>
-                                  d.validateStepResult(selectedStage.id)
+                                  task.fromWish
+                                    ? void d.grantWish(selectedStage.id)
+                                    : d.validateStepResult(selectedStage.id)
                                 }
                               >
-                                {t("app.validate_result")} <Check size={14} />
+                                {task.fromWish
+                                  ? t("app.grant_wish")
+                                  : t("app.validate_result")}{" "}
+                                <Check size={14} />
                               </button>
                             )}
                             {selectedStage.approvedAt && (

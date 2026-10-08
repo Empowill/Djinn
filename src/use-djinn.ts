@@ -2601,6 +2601,15 @@ export function useDjinn() {
       notify(message(error));
     }
   };
+  // A mission imported from a wish: the wish is granted in Djinn first, then its step is approved here.
+  const grantWish = async (id: string) => {
+    try {
+      await window.djinn?.grantWish?.(task);
+      validateStepResult(id);
+    } catch (error) {
+      notify(message(error));
+    }
+  };
   const addNextStep = (type: StepType, title: string, objective: string) => {
     try {
       const latest = ref.current.tasks.find((t) => t.id === task.id)!;
@@ -2950,6 +2959,7 @@ export function useDjinn() {
     focusStep,
     resumeStep,
     validateStepResult,
+    grantWish,
     addNextStep,
     answer,
     reopen,

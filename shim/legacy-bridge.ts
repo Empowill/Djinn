@@ -22,6 +22,7 @@ import {
   WishExportSchema,
   WishService,
   type WishServiceSnapshotResponse,
+  WishState,
 } from "../gen/ts/plan/v1/plan_pb";
 
 // The largest file the import reads, as the server does.
@@ -31,14 +32,32 @@ const MAX_DETAIL = 4000;
 
 type Fail = (code: string, message: string) => Error;
 
-// legacyExchange gives the bridge its importSession and exportSession. pick chooses the file to import; by
-// default a file picker of the page.
+// legacyExchange gives the bridge its importSession, exportSession and grantWish. pick chooses the file to import;
+// by default a file picker of the page.
 export function legacyExchange(
   transport: Transport,
   fail: Fail,
   pick: () => Promise<File | null> = pickFile,
 ) {
   const wishes = createClient(WishService, transport);
+  // The wish of a mission, found by its title: the interface keeps no wish identifier yet. Only a mission that is a
+  // wish of Djinn has one: the interface's own missions wait for the switch to the Go services. A session file holds
+  // its mission in task; grantWish gets the mission itself.
+  const wishOf = async (session: unknown) => {
+    const s = session as { title?: unknown; task?: { title?: unknown } };
+    const title = String(s?.task?.title ?? s?.title ?? "");
+    const { wishes: all } = await wishes.list({});
+    const latest = [...all].reverse();
+    const wish =
+      latest.find((w) => w.title === title) ??
+      latest.find((w) => w.title.toLowerCase() === title.toLowerCase());
+    if (!wish)
+      throw fail(
+        "not_available",
+        "Only a wish of Djinn can be exported or granted yet: import it or make it with djinn wish make",
+      );
+    return wish;
+  };
   return {
     // Import a .djinn file (or its JSON form) as a wish, then hand it to the interface as a mission.
     importSession: async () => {
@@ -64,21 +83,15 @@ export function legacyExchange(
     // Export the mission's wish to a .djinn file in the Downloads folder. Only a mission that is a wish of Djinn
     // can be exported: the interface's own missions wait for the switch to the Go services.
     exportSession: async (session: unknown) => {
-      const title = String(
-        (session as { task?: { title?: unknown } })?.task?.title ?? "",
-      );
-      const { wishes: all } = await wishes.list({});
-      const latest = [...all].reverse();
-      const wish =
-        latest.find((w) => w.title === title) ??
-        latest.find((w) => w.title.toLowerCase() === title.toLowerCase());
-      if (!wish)
-        throw fail(
-          "not_available",
-          "Only a wish of Djinn can be exported yet: import it or make it with djinn wish make",
-        );
+      const wish = await wishOf(session);
       const { file } = await wishes.export({ wishId: wish.id });
       return { path: file, filename: file.split(/[\\/]/).pop() };
+    },
+    // Grant the mission's wish: the user says it is done. Djinn proposes it once the wish is ready, never grants it.
+    grantWish: async (mission: unknown) => {
+      const wish = await wishOf(mission);
+      await wishes.grant({ wishId: wish.id });
+      return { granted: true };
     },
   };
 }
@@ -239,9 +252,18 @@ export function wishToSession(snapshot: WishServiceSnapshotResponse) {
       }),
   ].sort((a, b) => a.time.localeCompare(b.time));
 
+  // Djinn proposes to grant a ready wish: only then does the step show a result, and the button to grant it. A wish
+  // still at work shows none, nor a move to make.
+  const granted = wish.state === WishState.GRANTED;
+  const stepStatus = granted
+    ? "completed"
+    : wish.ready
+      ? "awaiting_human"
+      : "running";
   const task = {
     id: wish.id,
     title: wish.title,
+    fromWish: true,
     brief,
     project: main?.directory ?? "",
     ...(main ? { projectId: main.id } : {}),
@@ -322,11 +344,18 @@ export function wishToSession(snapshot: WishServiceSnapshotResponse) {
         type: "implementation",
         title: wish.title.slice(0, 1000),
         objective: brief || wish.title,
-        status: "awaiting_human",
+        status: stepStatus,
         exitCriteria: [],
         expectedArtifacts: [],
         skills: [],
         startedAt: created,
+        ...(granted && wish.grantTime
+          ? {
+              completedAt: at(wish.grantTime),
+              approvedAt: at(wish.grantTime),
+              approvedBy: "human",
+            }
+          : {}),
       },
     ],
     activeStepId: stepId,

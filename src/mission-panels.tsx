@@ -463,8 +463,11 @@ export function Overview({
     !!stepResult &&
     stepResult.stepId === task.activeStepId &&
     stepResult.status !== "ready";
+  // A wish's documents are no move to make: they show below, out of the action center.
   const hasRestitution =
-    !!actions && (task.artifacts.length > 0 || (task.actions || []).length > 0);
+    !!actions &&
+    !task.fromWish &&
+    (task.artifacts.length > 0 || (task.actions || []).length > 0);
   const hasActionCenter =
     open.length > 0 ||
     permissionRequests.length > 0 ||
@@ -577,6 +580,7 @@ export function Overview({
         </section>
       )}
       {!hasActionCenter && workSummary}
+      {!hasActionCenter && task.fromWish && actions}
       {answered.length > 0 && (
         <div className="decision-history">
           <button className="text-button" onClick={() => setHistory(!history)}>

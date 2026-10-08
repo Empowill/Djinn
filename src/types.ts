@@ -380,6 +380,8 @@ export interface Task {
   titleGeneratedAt?: string;
   titleEditedAt?: string;
   legacyHistory?: boolean;
+  /** A mission imported from a wish of Djinn: its result is the wish, granted through the bridge (until T03). */
+  fromWish?: boolean;
   provider: ProviderId;
   model: string;
   phase: Phase;
@@ -563,6 +565,8 @@ export interface DjinnBridge {
   saveState(state: AppState): Promise<unknown>;
   exportSession(session: unknown): Promise<unknown>;
   importSession(): Promise<unknown>;
+  /** Grants the wish of a mission imported from Djinn: the user says it is done. */
+  grantWish?(mission: unknown): Promise<unknown>;
   startRun(input: RunInput): Promise<{ runId: string }>;
   steerRun(input: {
     runId: string;
