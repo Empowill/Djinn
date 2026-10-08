@@ -27,7 +27,14 @@ func (s *Service) Open(
 	_ context.Context, req *connect.Request[terminalv1.TerminalServiceOpenRequest],
 ) (*connect.Response[terminalv1.TerminalServiceOpenResponse], error) {
 	msg := req.Msg
-	t, attached, err := s.m.Open(msg.GetName(), msg.GetCommand(), msg.GetDirectory(), int(msg.GetCols()), int(msg.GetRows()))
+	command := msg.GetCommand()
+	if msg.GetLine() != "" {
+		if len(command) > 0 {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("set a command or a line, not both"))
+		}
+		command = ShellCommand(msg.GetLine())
+	}
+	t, attached, err := s.m.Open(msg.GetName(), command, msg.GetDirectory(), int(msg.GetCols()), int(msg.GetRows()))
 	if err != nil {
 		return nil, status(err, connect.CodeInvalidArgument)
 	}
