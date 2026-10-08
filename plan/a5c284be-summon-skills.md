@@ -11,6 +11,8 @@ status: open
 project of a wish, and the skills each one holds: it can bring one where it is missing.
 
 ## Decided
+- **A summoned skill follows its source as it is** (Q42). Pinning a commit with a diff to accept can
+  come later, if a need shows.
 - **The word is "summon"** (« invoquer »). `djinn summon app/babysit-mr --into infra`.
   Easy to say aloud. The skill keeps its standard name: *skill*.
 - **Nothing is copied.** A summoned skill stays bound to its source project and follows its
@@ -43,10 +45,5 @@ project of a wish, and the skills each one holds: it can bring one where it is m
 - **The skill follows its source as it is** for now: the simplest, and what was decided first.
 
 ## Open questions
-- Follow the source as it moves, or pin a commit and show the diff before updating? Skills can
-  carry code. Today the worker gets the source's folder as it is: uncommitted changes and the
-  branch checked out included. Recommended: pin a commit for a source in Git, and show the diff
-  for the developer to accept before a worker gets a newer one; follow the folder only for a
-  source outside Git.
 - A real run of each agent with a summoned skill, to turn the supposed rows of
   `docs/providers.md` into verified ones (Antigravity's `--add-dir` above all).
