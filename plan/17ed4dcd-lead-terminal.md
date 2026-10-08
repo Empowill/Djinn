@@ -78,6 +78,8 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   `terminal.Manager.Running` lists them.
 
 ## Open questions
+- Reopen the leads after a crash too, not after a deliberate Quit: keep the note of open terminals
+  current, and read it at start-up.
 - macOS asks for microphone permission per app: the lead runs under Djinn, so Djinn needs the
   permission (and `NSMicrophoneUsageDescription` when packaged). Not checked: no Mac at hand.
 - Windows: the terminal compiles and is vetted, but has not run on a Windows machine yet; a
