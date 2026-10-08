@@ -91,8 +91,8 @@ func format(msg protoreflect.Message) []string {
 	return args
 }
 
-// check validates the request before it is sent, and names each faulty argument as the command line does.
-func check(msg proto.Message) error {
+// check validates the request before it is sent, and names each faulty argument with name: label on the command line.
+func check(msg proto.Message, name func(protoreflect.FieldDescriptor) string) error {
 	err := protovalidate.Validate(msg)
 	var verr *protovalidate.ValidationError
 	if !errors.As(err, &verr) {
@@ -104,7 +104,7 @@ func check(msg proto.Message) error {
 		line := v.Proto.GetMessage()
 		if path := v.Proto.GetField().GetElements(); len(path) > 0 {
 			if fd := md.Fields().ByNumber(protoreflect.FieldNumber(path[0].GetFieldNumber())); fd != nil {
-				line = label(fd) + ": " + line
+				line = name(fd) + ": " + line
 				if want := expect(fd); want != "" {
 					line += "; expected " + want
 				}

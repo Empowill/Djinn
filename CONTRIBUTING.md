@@ -109,7 +109,7 @@ To use Djinn, see the [README](README.md). To work on it:
   `test-pkg -- -run TestX ./cmd/djinn` for some packages.
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
 - `go tool task lint`: every check (protos, Go, types, formatting). `go tool task format` fixes.
-- `go tool task gen`: code from the protos.
+- `go tool task gen`: code from the protos, and [`docs/openapi.json`](docs/openapi.json).
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
 - `go tool task install`: the Djinn you use, apart from the one you build, with its icon and menu entry on Linux
   (`~/.local/share`). The running one keeps going and offers
@@ -125,6 +125,8 @@ To use Djinn, see the [README](README.md). To work on it:
 - Three wishes are active at most. `djinn wish pause <wish-id>` and `djinn wish activate <wish-id>` free and take a
   place; `djinn wish move <wish-id> --to 1` gives one priority; `djinn wish grant <wish-id>` says it is done.
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
+- `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
+  `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`
   puts it back, Djinn stopped ([`docs/backup.md`](docs/backup.md)).
 - `djinn wish set-lead <wish-id> <session-id> --directory <folder>` records a wish's lead session;

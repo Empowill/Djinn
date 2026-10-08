@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -180,7 +181,22 @@ func TestParseErrors(t *testing.T) {
 }
 
 // fake is an in-memory server that records the requests it receives.
-type fake struct{ calls []proto.Message }
+type fake struct {
+	mu    sync.Mutex // djinn mcp calls side by side
+	calls []proto.Message
+}
+
+func (f *fake) record(m proto.Message) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, m)
+}
+
+func (f *fake) seen() []proto.Message {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.calls)
+}
 
 type questions struct {
 	planv1connect.UnimplementedQuestionServiceHandler
@@ -193,7 +209,7 @@ type projects struct {
 }
 
 func (f questions) Answer(_ context.Context, req *connect.Request[planv1.QuestionServiceAnswerRequest]) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
-	f.calls = append(f.calls, req.Msg)
+	f.record(req.Msg)
 	if req.Msg.GetQuestion().GetCode() == "Q99" {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no question Q99"))
 	}
@@ -203,7 +219,7 @@ func (f questions) Answer(_ context.Context, req *connect.Request[planv1.Questio
 }
 
 func (f projects) List(_ context.Context, req *connect.Request[planv1.ProjectServiceListRequest]) (*connect.Response[planv1.ProjectServiceListResponse], error) {
-	f.calls = append(f.calls, req.Msg)
+	f.record(req.Msg)
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: []*planv1.Project{
 		{Id: projectID, Name: "api", Directory: "/src/api"},
 		{Id: wishID, Name: "web", Directory: "/src/web"},

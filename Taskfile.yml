@@ -9,10 +9,12 @@ vars:
 
 tasks:
   gen:
-    desc: Generate Go code, and the descriptors the command line embeds, from the protos in api/
+    desc: Generate Go code, the descriptors the command line embeds, and docs/openapi.json, from the protos in api/
     cmds:
       - go tool buf generate
       - go tool buf build --exclude-imports --as-file-descriptor-set -o gen/djinn.binpb
+      # Compiled after the line above: it reads the descriptors just written.
+      - go run ./tools/openapi docs/openapi.json
 
   ui:
     desc: Build the interface into dist/, only when its sources changed (the djinn binary embeds it)

@@ -71,6 +71,7 @@ func main() {
 		Version: version,
 		Addr:    os.Getenv("DJINN_ADDR"),
 		Home:    home,
+		Stdin:   os.Stdin,
 		Stdout:  os.Stdout,
 		Stderr:  os.Stderr,
 		Start:   func(ctx context.Context) (string, error) { return startDetached(ctx, home, os.Stderr, "up") },

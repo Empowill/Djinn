@@ -1,0 +1,2962 @@
+{
+  "components": {
+    "responses": {
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "properties": {
+                "code": {
+                  "description": "The Connect code, like not_found or invalid_argument.",
+                  "type": "string"
+                },
+                "details": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code"
+              ],
+              "type": "object"
+            }
+          }
+        },
+        "description": "A Connect error."
+      }
+    },
+    "schemas": {
+      "google.protobuf.Timestamp": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "machine.v1.Gate": {
+        "description": "Gate is a gate held or waited for.",
+        "properties": {
+          "holder": {
+            "description": "Who holds it, and what for; empty when nobody does.",
+            "type": "string"
+          },
+          "holderTaskId": {
+            "description": "Task of the holder; empty for a holder outside any task.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Name of the gate, in lower case.",
+            "type": "string"
+          },
+          "since": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "Since when it is held."
+          },
+          "waiting": {
+            "description": "Who waits for it, the next one first.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "machine.v1.GateServiceListRequest": {
+        "properties": {},
+        "type": "object"
+      },
+      "machine.v1.GateServiceListResponse": {
+        "properties": {
+          "gates": {
+            "description": "The gates held or waited for.",
+            "items": {
+              "$ref": "#/components/schemas/machine.v1.Gate"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "machine.v1.Machine": {
+        "description": "Machine is the machine Djinn runs on, as read now.",
+        "properties": {
+          "arch": {
+            "description": "Processor architecture: amd64, arm64.",
+            "type": "string"
+          },
+          "cores": {
+            "description": "Logical cores Djinn may use.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "cpuPressure": {
+            "$ref": "#/components/schemas/machine.v1.Pressure",
+            "description": "CPU pressure; absent where the system gives none (Linux without PSI, macOS, Windows)."
+          },
+          "load1": {
+            "description": "Load average over the last minute; absent where the system gives none (Windows).",
+            "type": "number"
+          },
+          "memoryAvailableBytes": {
+            "description": "Memory available to new programs, in bytes.",
+            "format": "uint64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "memoryPressure": {
+            "$ref": "#/components/schemas/machine.v1.Pressure",
+            "description": "Memory pressure; absent where the system gives none."
+          },
+          "memoryTotalBytes": {
+            "description": "Memory, in bytes.",
+            "format": "uint64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "os": {
+            "description": "Operating system: linux, darwin, windows.",
+            "type": "string"
+          },
+          "pressure": {
+            "description": "Why the machine is under pressure; empty when it is not. Under pressure, no worker starts and no gate is granted.",
+            "type": "string"
+          },
+          "readTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the machine was read."
+          },
+          "running": {
+            "description": "Workers running now.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "workers": {
+            "description": "The most workers Djinn runs at once on this machine.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "workersRule": {
+            "description": "How workers was decided.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "machine.v1.MachineServiceShowRequest": {
+        "properties": {},
+        "type": "object"
+      },
+      "machine.v1.MachineServiceShowResponse": {
+        "properties": {
+          "machine": {
+            "$ref": "#/components/schemas/machine.v1.Machine",
+            "description": "The machine."
+          }
+        },
+        "type": "object"
+      },
+      "machine.v1.Pressure": {
+        "description": "Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of Linux.",
+        "properties": {
+          "fullAvg10": {
+            "description": "Percent of the last 10 seconds during which every task waited.",
+            "type": "number"
+          },
+          "someAvg10": {
+            "description": "Percent of the last 10 seconds during which at least one task waited.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Allowance": {
+        "description": "Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that applies to every task of the wish in that project, and to no other wish.",
+        "enum": [
+          "ALLOWANCE_UNSPECIFIED",
+          "ALLOWANCE_NONE",
+          "ALLOWANCE_EDIT",
+          "ALLOWANCE_AUTO"
+        ],
+        "type": "string"
+      },
+      "plan.v1.Answer": {
+        "description": "The answer to a question.",
+        "properties": {
+          "choice": {
+            "$ref": "#/components/schemas/plan.v1.Choice",
+            "description": "What was chosen."
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the question was answered."
+          },
+          "note": {
+            "description": "Free text that comes with the choice.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Block": {
+        "description": "A block is free content of a wish, laid out by the lead: a decision taken outside a question, a section of analysis, a line of the journal, a diagram. Djinn computes nothing from it, and shows a kind it does not know as text: nothing is lost.",
+        "properties": {
+          "content": {
+            "description": "The content.",
+            "type": "string"
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the block was created."
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What the block is, in a word the lead chooses: decision, section, log, diagram, report…",
+            "type": "string"
+          },
+          "mediaType": {
+            "description": "Media type of the content: text/markdown when empty, or another, like application/json.",
+            "type": "string"
+          },
+          "position": {
+            "description": "Order within the wish, lowest first. New blocks go 1000 after the last one, so that a block slips between two others without moving them.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "taskId": {
+            "description": "Task the block is about, if any.",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title, in a line.",
+            "type": "string"
+          },
+          "updateTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When it last changed."
+          },
+          "wishId": {
+            "description": "Wish the block belongs to.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.BlockServiceDeleteRequest": {
+        "properties": {
+          "id": {
+            "description": "The block.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "plan.v1.BlockServiceDeleteResponse": {
+        "properties": {},
+        "type": "object"
+      },
+      "plan.v1.BlockServiceListRequest": {
+        "properties": {
+          "kind": {
+            "description": "Only the blocks of this kind, case ignored.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "taskId": {
+            "description": "Only the blocks about this task.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.BlockServiceListResponse": {
+        "properties": {
+          "blocks": {
+            "description": "The blocks, by position.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Block"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.BlockServicePutRequest": {
+        "properties": {
+          "content": {
+            "description": "The content, Markdown unless --media-type says otherwise.",
+            "maxLength": 1000000,
+            "type": "string"
+          },
+          "id": {
+            "description": "The block to change; a new block when empty.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What the block is, in a word: decision, section, log, diagram, report…",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "mediaType": {
+            "description": "Media type of the content, like application/json; text/markdown by default.",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "position": {
+            "description": "Order within the wish; by default 1000 after the last block, for a new one.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "taskId": {
+            "description": "Task the block is about.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title, in a line.",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "Wish the block belongs to.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.BlockServicePutResponse": {
+        "properties": {
+          "block": {
+            "$ref": "#/components/schemas/plan.v1.Block",
+            "description": "The block."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Choice": {
+        "description": "Choice is an answer to a question: YES for a question without options, or the letter of an option.",
+        "enum": [
+          "CHOICE_UNSPECIFIED",
+          "CHOICE_YES",
+          "CHOICE_A",
+          "CHOICE_B",
+          "CHOICE_C",
+          "CHOICE_D"
+        ],
+        "type": "string"
+      },
+      "plan.v1.Lead": {
+        "description": "The lead of a wish: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and the session's identifier, which the agent's own command line resumes.",
+        "properties": {
+          "directory": {
+            "description": "Folder the session runs in on this machine: an agent finds its sessions by folder. An export replaces it by its project's name or ~, and an import puts this machine's folder back when it knows it.",
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/plan.v1.Provider",
+            "description": "Kind of agent: claude or codex."
+          },
+          "sessionId": {
+            "description": "Identifier of the session, as the agent names it: claude --resume takes it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Project": {
+        "description": "A project is a folder Djinn works in, a Git repository or not.",
+        "properties": {
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the project was added."
+          },
+          "directory": {
+            "description": "Absolute path of the folder on this machine, symbolic links resolved. Empty for a project an imported wish names but this machine does not have yet: djinn project add <folder> attaches it.",
+            "type": "string"
+          },
+          "git": {
+            "description": "Whether the folder is inside a Git repository.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "description": "Short name, unique without regard to case.",
+            "type": "string"
+          },
+          "remote": {
+            "description": "URL of the Git remote, origin or else the first one, without credentials; empty without one. Another machine finds the project by it, case ignored.",
+            "type": "string"
+          },
+          "summons": {
+            "description": "Skills of other projects this project summons: its workers get them at launch, nothing is copied.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Summon"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.ProjectAllowance": {
+        "description": "ProjectAllowance is the right a wish allows its workers in one project.",
+        "properties": {
+          "allowance": {
+            "$ref": "#/components/schemas/plan.v1.Allowance",
+            "description": "The right."
+          },
+          "projectId": {
+            "description": "The project.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.ProjectMatch": {
+        "description": "ProjectMatch is how one project of an imported wish was found on this machine.",
+        "properties": {
+          "match": {
+            "$ref": "#/components/schemas/plan.v1.ProjectMatchKind",
+            "description": "How it was found."
+          },
+          "note": {
+            "description": "What to check or do, when there is something.",
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/plan.v1.Project",
+            "description": "The project on this machine."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.ProjectMatchKind": {
+        "description": "ProjectMatchKind says how an imported project was found on this machine.",
+        "enum": [
+          "PROJECT_MATCH_KIND_UNSPECIFIED",
+          "PROJECT_MATCH_KIND_REMOTE",
+          "PROJECT_MATCH_KIND_NAME",
+          "PROJECT_MATCH_KIND_NEW"
+        ],
+        "type": "string"
+      },
+      "plan.v1.ProjectServiceAddRequest": {
+        "properties": {
+          "directory": {
+            "description": "The folder of the project; a relative path starts from the current directory.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "name": {
+            "description": "Short name, unique without regard to case; by default the name of the folder.",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "directory"
+        ],
+        "type": "object"
+      },
+      "plan.v1.ProjectServiceAddResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/plan.v1.Project",
+            "description": "The project added."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.ProjectServiceListRequest": {
+        "properties": {},
+        "type": "object"
+      },
+      "plan.v1.ProjectServiceListResponse": {
+        "properties": {
+          "projects": {
+            "description": "The projects.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Project"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Provider": {
+        "description": "Provider is the kind of agent a worker runs.",
+        "enum": [
+          "PROVIDER_UNSPECIFIED",
+          "PROVIDER_CLAUDE",
+          "PROVIDER_FAKE",
+          "PROVIDER_CODEX",
+          "PROVIDER_ANTIGRAVITY"
+        ],
+        "type": "string"
+      },
+      "plan.v1.Question": {
+        "description": "A question an agent asks the developer. Once answered, it is a decision.",
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/plan.v1.Answer",
+            "description": "The answer; a question that has one is a decision."
+          },
+          "code": {
+            "description": "Short code to dictate, like Q03, unique within the wish and never reused.",
+            "type": "string"
+          },
+          "context": {
+            "description": "What is at stake, in Markdown: what the answer changes, what each option costs.",
+            "type": "string"
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the question was asked."
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "options": {
+            "description": "Options offered, answered by their letter: A for the first one, then B, C and D.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "recommendation": {
+            "description": "The option the asker recommends, and why, in Markdown.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The question itself.",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "Wish the question belongs to.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.QuestionRef": {
+        "description": "QuestionRef points to a question by its code or by its identifier. Set one of: code, id.",
+        "properties": {
+          "code": {
+            "description": "Short code, like Q03.",
+            "pattern": "^Q[0-9]{2,3}$",
+            "type": "string"
+          },
+          "id": {
+            "description": "Identifier, a UUID.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.QuestionServiceAnswerRequest": {
+        "properties": {
+          "choice": {
+            "$ref": "#/components/schemas/plan.v1.Choice",
+            "description": "The choice: yes, or the letter of an option."
+          },
+          "note": {
+            "description": "Why this choice, or what to do with it.",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "question": {
+            "$ref": "#/components/schemas/plan.v1.QuestionRef",
+            "description": "The question to answer: its code, like Q03, or its identifier."
+          },
+          "wishId": {
+            "description": "Wish of the question, needed only when its code exists in several wishes.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "choice"
+        ],
+        "type": "object"
+      },
+      "plan.v1.QuestionServiceAnswerResponse": {
+        "properties": {
+          "question": {
+            "$ref": "#/components/schemas/plan.v1.Question",
+            "description": "The question, now a decision."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.QuestionServiceAskRequest": {
+        "properties": {
+          "context": {
+            "description": "What is at stake, in Markdown: what the answer changes, what each option costs.",
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "options": {
+            "description": "An option the developer can pick; repeat for each one, up to four.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "type": "array"
+          },
+          "recommendation": {
+            "description": "The option you recommend, and why, in Markdown.",
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "text": {
+            "description": "The question, in one or two sentences.",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "Wish the question belongs to.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.QuestionServiceAskResponse": {
+        "properties": {
+          "question": {
+            "$ref": "#/components/schemas/plan.v1.Question",
+            "description": "The question, with its code."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.QuestionServiceListRequest": {
+        "properties": {
+          "open": {
+            "description": "Only the questions still waiting for an answer.",
+            "type": "boolean"
+          },
+          "since": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "Only the questions asked at or after this time."
+          },
+          "wishId": {
+            "description": "Only the questions of this wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.QuestionServiceListResponse": {
+        "properties": {
+          "questions": {
+            "description": "The questions.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Question"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Skill": {
+        "description": "A skill as a project sees it: its own, or summoned from another project.",
+        "properties": {
+          "description": {
+            "description": "What it does, from its SKILL.md.",
+            "type": "string"
+          },
+          "directory": {
+            "description": "Its folder on this machine, in the project that holds it.",
+            "type": "string"
+          },
+          "missing": {
+            "description": "Why a summoned skill cannot be found; empty when it is.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Its name: its folder's name.",
+            "type": "string"
+          },
+          "project": {
+            "description": "The project that uses the skill.",
+            "type": "string"
+          },
+          "source": {
+            "description": "Where a summoned skill comes from, as <project>/<skill>; empty for the project's own.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.SkillServiceListRequest": {
+        "properties": {
+          "project": {
+            "description": "Only the skills of this project, by name or identifier.",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.SkillServiceListResponse": {
+        "properties": {
+          "skills": {
+            "description": "The skills, by project then name.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Skill"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.SkillServiceSummonRequest": {
+        "properties": {
+          "into": {
+            "description": "The project that summons it, by name or identifier.",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "skill": {
+            "description": "The skill, as <project>/<skill>: the project that holds it, then its folder name. Case ignored.",
+            "maxLength": 300,
+            "pattern": "^[^/]+/[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill"
+        ],
+        "type": "object"
+      },
+      "plan.v1.SkillServiceSummonResponse": {
+        "properties": {
+          "skill": {
+            "$ref": "#/components/schemas/plan.v1.Skill",
+            "description": "The skill, as the project now sees it."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.SkillServiceUnsummonRequest": {
+        "properties": {
+          "from": {
+            "description": "The project that summoned it, by name or identifier.",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "skill": {
+            "description": "The skill, as <project>/<skill>, as it was summoned. Case ignored.",
+            "maxLength": 300,
+            "pattern": "^[^/]+/[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill"
+        ],
+        "type": "object"
+      },
+      "plan.v1.SkillServiceUnsummonResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/plan.v1.Project",
+            "description": "The project, without the skill."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Summon": {
+        "description": "A skill a project summons from another project. It stays in its source, and the summoning project follows it: Djinn shows each worker the source's folder as it is, by its agent's own path, and writes nothing in the project.",
+        "properties": {
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When it was summoned."
+          },
+          "projectId": {
+            "description": "The project that holds the skill.",
+            "type": "string"
+          },
+          "skill": {
+            "description": "The skill's folder name, in that project's .agents/skills or .claude/skills.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Task": {
+        "description": "A task is one item of a wish's flight plan, done in one project.",
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/plan.v1.TaskAccess",
+            "description": "Where its worker's rights come from."
+          },
+          "branch": {
+            "description": "Branch of the worktree.",
+            "type": "string"
+          },
+          "code": {
+            "description": "Short code to dictate, like W2, unique within the wish.",
+            "type": "string"
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the task was created."
+          },
+          "dependsOn": {
+            "description": "Tasks that must be done before this one starts, by identifier. A task whose dependency ends without being done fails too.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "editQuestionId": {
+            "description": "The question asking the developer whether the worker may edit the project's files, for a task whose access is, or was, ASKING.",
+            "type": "string"
+          },
+          "endTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When its worker ended."
+          },
+          "error": {
+            "description": "Why the task failed or stopped.",
+            "type": "string"
+          },
+          "exitCode": {
+            "description": "Exit code of the worker's process, once it ended.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "forkOf": {
+            "description": "Where the fork comes from, for a reader: the code of the task (W1), or \"lead\".",
+            "type": "string"
+          },
+          "forkSession": {
+            "description": "The session the worker started from, forked: a copy of another task's or of the lead's conversation, with a new session of its own. Empty for a worker that starts from its prompt alone, the default. Stays on this machine: an export leaves it out.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxBudgetUsd": {
+            "description": "Most the task may spend, in US dollars, over all its runs; 0 for no cap.",
+            "type": "number"
+          },
+          "model": {
+            "description": "Model of the agent, as spawned; empty for the provider's default. A worker started again keeps it.",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Project the task works in; empty for a task outside any project, which only reads.",
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/plan.v1.Provider",
+            "description": "Kind of agent that works on the task."
+          },
+          "scheduled": {
+            "description": "Djinn starts the task's worker by itself, once its dependencies are done, its scopes free and a slot free: the task was spawned or planned on this machine. A task imported with a wish is not.",
+            "type": "boolean"
+          },
+          "sessionId": {
+            "description": "Session of the agent, to resume it.",
+            "type": "string"
+          },
+          "startTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When its worker started."
+          },
+          "status": {
+            "$ref": "#/components/schemas/plan.v1.TaskStatus",
+            "description": "Where the task stands."
+          },
+          "title": {
+            "description": "What the task does.",
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/plan.v1.Usage",
+            "description": "What the worker spent so far, summed over its runs."
+          },
+          "waitReason": {
+            "description": "Why a planned task has not started yet; empty once it has.",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "Wish the task belongs to.",
+            "type": "string"
+          },
+          "worktree": {
+            "description": "Root of the task's Git worktree, in Djinn's data folder; empty outside Git, where the worker runs in the project folder.",
+            "type": "string"
+          },
+          "writeScopes": {
+            "description": "What the task writes, as paths in the project's folder (\"src\", \"docs/api.md\"); empty for the whole folder. Outside Git, two tasks whose scopes overlap never run together. In Git, each task has its own worktree, and scopes are not checked.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskAccess": {
+        "description": "TaskAccess says where the rights of a task's worker come from (docs/providers.md, \"What a worker may do\").",
+        "enum": [
+          "TASK_ACCESS_UNSPECIFIED",
+          "TASK_ACCESS_READ_ONLY",
+          "TASK_ACCESS_AGENTS",
+          "TASK_ACCESS_NATIVE",
+          "TASK_ACCESS_ASKING",
+          "TASK_ACCESS_EDIT_GRANTED",
+          "TASK_ACCESS_EDIT_REFUSED",
+          "TASK_ACCESS_WISH_EDIT",
+          "TASK_ACCESS_WISH_AUTO"
+        ],
+        "type": "string"
+      },
+      "plan.v1.TaskServiceCleanRequest": {
+        "properties": {
+          "force": {
+            "description": "Remove the worktree even when it holds changes not committed.",
+            "type": "boolean"
+          },
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceCleanResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, without its worktree."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceGetRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceGetResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceListRequest": {
+        "properties": {
+          "projectId": {
+            "description": "Only the tasks in this project.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "Only the tasks of this wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceListResponse": {
+        "properties": {
+          "tasks": {
+            "description": "The tasks.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Task"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceSpawnRequest": {
+        "properties": {
+          "dependsOn": {
+            "description": "A task of the same wish that must be done first: its code (W1) or its identifier.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "fork": {
+            "description": "Start the worker from a copy of this task's conversation (its code, W1, or its identifier), with a session of its own, instead of from the prompt alone. The inherited context is read again at every turn: prefer a short prompt, the default. Claude and Codex fork; Antigravity cannot.",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "fromLead": {
+            "description": "Start the worker from a copy of the lead's conversation, as --fork does from a task.",
+            "type": "boolean"
+          },
+          "later": {
+            "description": "Only plan the task: the call returns at once, and djinn up starts the worker when the task is ready.",
+            "type": "boolean"
+          },
+          "maxBudgetUsd": {
+            "description": "Most the worker may spend, in US dollars, when the provider can enforce it.",
+            "type": "number"
+          },
+          "model": {
+            "description": "Model of the agent; by default the provider's.",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Project to work in; by default the wish's project, when it has only one. For a wish without any project, the task runs outside any project: read-only, in an empty folder of its own.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "What to ask the worker; by default the title.",
+            "maxLength": 200000,
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/plan.v1.Provider",
+            "description": "Kind of agent; by default claude."
+          },
+          "title": {
+            "description": "What the task does, in a sentence.",
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "Wish the task belongs to.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "writeScopes": {
+            "description": "A path the task writes, in the project's folder; none for the whole folder. Outside Git, tasks whose scopes overlap never run together.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceSpawnResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task: running, or waiting with its reason."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceStopRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceStopResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, stopped."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskStatus": {
+        "description": "TaskStatus is where a task stands.",
+        "enum": [
+          "TASK_STATUS_UNSPECIFIED",
+          "TASK_STATUS_PENDING",
+          "TASK_STATUS_RUNNING",
+          "TASK_STATUS_DONE",
+          "TASK_STATUS_FAILED",
+          "TASK_STATUS_STOPPED",
+          "TASK_STATUS_INTERRUPTED",
+          "TASK_STATUS_WAITING"
+        ],
+        "type": "string"
+      },
+      "plan.v1.Usage": {
+        "description": "Usage is what a worker spent, as its provider reports it.",
+        "properties": {
+          "cacheReadTokens": {
+            "description": "Tokens read from the prompt cache.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "cacheWriteTokens": {
+            "description": "Tokens written to the prompt cache.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "costUsd": {
+            "description": "Cost in US dollars, as the provider computes it.",
+            "type": "number"
+          },
+          "inputTokens": {
+            "description": "Tokens read, cache aside.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "outputTokens": {
+            "description": "Tokens written.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Wish": {
+        "description": "A wish is what you ask Djinn for, and what it works to grant. It may span several projects.",
+        "properties": {
+          "allowances": {
+            "description": "Rights the developer allows the wish's workers, per project, ahead of any task.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.ProjectAllowance"
+            },
+            "type": "array"
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the wish was made."
+          },
+          "grantTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the user granted the wish."
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "lead": {
+            "$ref": "#/components/schemas/plan.v1.Lead",
+            "description": "The lead: the agent session that drives the wish, for djinn wish resume to take it back."
+          },
+          "projectIds": {
+            "description": "Projects the wish works on.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rank": {
+            "description": "Place among the active wishes, from 1: the first one has priority. 0 for a paused or granted wish.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "ready": {
+            "description": "Djinn proposes to grant the wish: it has tasks, all finished, no question is open, and no task waits for an answer or failed. Computed on every read, never stored. Only the user grants a wish.",
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/plan.v1.WishState",
+            "description": "Where the wish stands: active, paused or granted. Three wishes are active at most."
+          },
+          "title": {
+            "description": "What is wished, in a sentence.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceActivateRequest": {
+        "properties": {
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceActivateResponse": {
+        "properties": {
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish, active."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceAllowRequest": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/plan.v1.Allowance",
+            "description": "The right: edit, auto, or none to take it back."
+          },
+          "projectId": {
+            "description": "The project; by default the wish's project, when it has only one.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceAllowResponse": {
+        "properties": {
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish, with its allowances."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceBriefRequest": {
+        "properties": {
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceBriefResponse": {
+        "properties": {
+          "text": {
+            "description": "The brief, in Markdown: the stable part, then the part that moves.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceExportRequest": {
+        "properties": {
+          "file": {
+            "description": "File to write; a relative path starts from the current directory. A name ending in .json is written as JSON, any other as binary protobuf. By default, the wish's title with .djinn in the Downloads folder.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish to export.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceExportResponse": {
+        "properties": {
+          "file": {
+            "description": "The file written.",
+            "type": "string"
+          },
+          "size": {
+            "description": "Its size, in bytes.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceGrantRequest": {
+        "properties": {
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceGrantResponse": {
+        "properties": {
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish, granted."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceImportRequest": {
+        "properties": {
+          "file": {
+            "description": "The file to import, binary protobuf or JSON; a relative path starts from the current directory.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "replace": {
+            "description": "Replace the wish if it is already here, with everything it holds. Without it, a wish already here is refused.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceImportResponse": {
+        "properties": {
+          "note": {
+            "description": "What to know, when there is something: an active wish imported paused, three being active here.",
+            "type": "string"
+          },
+          "projects": {
+            "description": "How each of its projects was found on this machine.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.ProjectMatch"
+            },
+            "type": "array"
+          },
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish imported."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceListRequest": {
+        "properties": {},
+        "type": "object"
+      },
+      "plan.v1.WishServiceListResponse": {
+        "properties": {
+          "wishes": {
+            "description": "The wishes.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Wish"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceMakeRequest": {
+        "properties": {
+          "paused": {
+            "description": "Make it paused: it waits, out of the three active wishes.",
+            "type": "boolean"
+          },
+          "projectIds": {
+            "description": "A project the wish works on; repeat for each one.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "What you wish, in a sentence.",
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceMakeResponse": {
+        "properties": {
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish made."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceMoveRequest": {
+        "properties": {
+          "to": {
+            "description": "Its new rank, from 1 for the first; beyond the last, it goes last.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wishId": {
+            "description": "The wish, active.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceMoveResponse": {
+        "properties": {
+          "wishes": {
+            "description": "The active wishes, by rank.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Wish"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServicePauseRequest": {
+        "properties": {
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServicePauseResponse": {
+        "properties": {
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish, paused."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceRenderRequest": {
+        "properties": {
+          "file": {
+            "description": "File to write; a relative path starts from the current directory. By default, the wish's title with .html in the Downloads folder.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceRenderResponse": {
+        "properties": {
+          "file": {
+            "description": "The file written.",
+            "type": "string"
+          },
+          "size": {
+            "description": "Its size, in bytes.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceResumeRequest": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/plan.v1.Provider",
+            "description": "Kind of agent for a new lead, when the wish has none to resume: claude (the default), codex or antigravity."
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceResumeResponse": {
+        "properties": {
+          "attached": {
+            "description": "The lead was already running: the window attached to it, nothing was started.",
+            "type": "boolean"
+          },
+          "command": {
+            "description": "The command line the terminal runs, program first.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "directory": {
+            "description": "Its working directory.",
+            "type": "string"
+          },
+          "note": {
+            "description": "What to know, when there is something: no session to resume, a terminal that runs something else.",
+            "type": "string"
+          },
+          "terminal": {
+            "description": "Name of the lead's terminal in the window.",
+            "type": "string"
+          },
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceSetLeadRequest": {
+        "properties": {
+          "directory": {
+            "description": "Folder the session runs in. By default, the folder of the wish's first project.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/plan.v1.Provider",
+            "description": "Kind of agent: claude (the default) or codex."
+          },
+          "sessionId": {
+            "description": "Identifier of the lead's session, as the agent names it.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId",
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceSetLeadResponse": {
+        "properties": {
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish, with its lead."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceSyncRequest": {
+        "properties": {
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceSyncResponse": {
+        "properties": {
+          "file": {
+            "description": "The page, kept up to date: always the same file for a wish.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishState": {
+        "description": "WishState is where a wish stands. A djinn grants three wishes at a time, never more: three are active at most.",
+        "enum": [
+          "WISH_STATE_UNSPECIFIED",
+          "WISH_STATE_ACTIVE",
+          "WISH_STATE_PAUSED",
+          "WISH_STATE_GRANTED"
+        ],
+        "type": "string"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "description": "The token of an http address in server.addr. The Unix socket needs none.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "The public methods of Djinn, generated from the protos in api/ (go tool task gen). They are the commands of the djinn command line and the tools of djinn mcp.\n\nEach method is a POST of the [Connect protocol](https://connectrpc.com/docs/protocol): `Content-Type: application/json`, the request in protobuf JSON as the body. djinn up writes its address in `server.addr` of the data directory: on macOS and Linux a Unix socket, `curl --unix-socket <data>/djinn.sock http://localhost/plan.v1.ProjectService/List -H 'Content-Type: application/json' -d '{}'`; on Windows or with `djinn up --browser`, `http://127.0.0.1:PORT/?token=…`, whose token goes in an `Authorization: Bearer` header.\n\nThe streaming methods use Connect's streaming protocol and are not described here: `/machine.v1.GateService/Hold`, `/plan.v1.TaskService/Watch`, `/plan.v1.WishService/Watch`.",
+    "license": {
+      "identifier": "Apache-2.0",
+      "name": "Apache-2.0"
+    },
+    "title": "Djinn",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/machine.v1.GateService/List": {
+      "post": {
+        "description": "List the gates held or waited for.",
+        "operationId": "GateService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/machine.v1.GateServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/machine.v1.GateServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn gate list",
+        "tags": [
+          "GateService"
+        ]
+      }
+    },
+    "/machine.v1.MachineService/Show": {
+      "post": {
+        "description": "Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.",
+        "operationId": "MachineService_Show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/machine.v1.MachineServiceShowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/machine.v1.MachineServiceShowResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn machine show",
+        "tags": [
+          "MachineService"
+        ]
+      }
+    },
+    "/plan.v1.BlockService/Delete": {
+      "post": {
+        "description": "Delete a block.",
+        "operationId": "BlockService_Delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.BlockServiceDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.BlockServiceDeleteResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn block delete",
+        "tags": [
+          "BlockService"
+        ]
+      }
+    },
+    "/plan.v1.BlockService/List": {
+      "post": {
+        "description": "List the blocks of a wish, in order.",
+        "operationId": "BlockService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.BlockServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.BlockServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn block list",
+        "tags": [
+          "BlockService"
+        ]
+      }
+    },
+    "/plan.v1.BlockService/Put": {
+      "post": {
+        "description": "Add a block to a wish, or change one: given its id, the fields set replace those of the block.",
+        "operationId": "BlockService_Put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.BlockServicePutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.BlockServicePutResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn block put",
+        "tags": [
+          "BlockService"
+        ]
+      }
+    },
+    "/plan.v1.ProjectService/Add": {
+      "post": {
+        "description": "Add a folder as a project. It need not be a Git repository.",
+        "operationId": "ProjectService_Add",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.ProjectServiceAddRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.ProjectServiceAddResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn project add",
+        "tags": [
+          "ProjectService"
+        ]
+      }
+    },
+    "/plan.v1.ProjectService/List": {
+      "post": {
+        "description": "List the projects.",
+        "operationId": "ProjectService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.ProjectServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.ProjectServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn project list",
+        "tags": [
+          "ProjectService"
+        ]
+      }
+    },
+    "/plan.v1.QuestionService/Answer": {
+      "post": {
+        "description": "Answer a question, which turns it into a decision.",
+        "operationId": "QuestionService_Answer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.QuestionServiceAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.QuestionServiceAnswerResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn question answer",
+        "tags": [
+          "QuestionService"
+        ]
+      }
+    },
+    "/plan.v1.QuestionService/Ask": {
+      "post": {
+        "description": "Ask the developer a question. Offer up to four options to answer by letter, or none for a yes/no question.",
+        "operationId": "QuestionService_Ask",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.QuestionServiceAskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.QuestionServiceAskResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn question ask",
+        "tags": [
+          "QuestionService"
+        ]
+      }
+    },
+    "/plan.v1.QuestionService/List": {
+      "post": {
+        "description": "List questions, the most recent last.",
+        "operationId": "QuestionService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.QuestionServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.QuestionServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn question list",
+        "tags": [
+          "QuestionService"
+        ]
+      }
+    },
+    "/plan.v1.SkillService/List": {
+      "post": {
+        "description": "List the skills of the projects: their own, and those they summon, with the ones whose source is missing.",
+        "operationId": "SkillService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.SkillServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.SkillServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn skill list",
+        "tags": [
+          "SkillService"
+        ]
+      }
+    },
+    "/plan.v1.SkillService/Summon": {
+      "post": {
+        "description": "Summon a skill of one project into another: djinn skill summon app/babysit-mr --into infra. Its workers get it from their next launch on; nothing is written in either project.",
+        "operationId": "SkillService_Summon",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.SkillServiceSummonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.SkillServiceSummonResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn skill summon",
+        "tags": [
+          "SkillService"
+        ]
+      }
+    },
+    "/plan.v1.SkillService/Unsummon": {
+      "post": {
+        "description": "Unsummon a skill: the project's next workers no longer get it. The project stays as it was.",
+        "operationId": "SkillService_Unsummon",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.SkillServiceUnsummonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.SkillServiceUnsummonResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn skill unsummon",
+        "tags": [
+          "SkillService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Clean": {
+      "post": {
+        "description": "Remove the worktree of a finished task. Its branch stays.",
+        "operationId": "TaskService_Clean",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceCleanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceCleanResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task clean",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Get": {
+      "post": {
+        "description": "Show a task.",
+        "operationId": "TaskService_Get",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceGetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceGetResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task get",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/List": {
+      "post": {
+        "description": "List the tasks, the oldest first.",
+        "operationId": "TaskService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task list",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Spawn": {
+      "post": {
+        "description": "Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start yet (a dependency not done, its write scope taken, no slot free, the machine under pressure) waits, and says why; djinn up starts it as soon as it can.",
+        "operationId": "TaskService_Spawn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceSpawnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceSpawnResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task spawn",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Stop": {
+      "post": {
+        "description": "Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not started is stopped at once.",
+        "operationId": "TaskService_Stop",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceStopRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceStopResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task stop",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Activate": {
+      "post": {
+        "description": "Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one first.",
+        "operationId": "WishService_Activate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceActivateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceActivateResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish activate",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Allow": {
+      "post": {
+        "description": "Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.",
+        "operationId": "WishService_Allow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceAllowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceAllowResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish allow",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Brief": {
+      "post": {
+        "description": "The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions, decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache. No local path, no secret.",
+        "operationId": "WishService_Brief",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceBriefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceBriefResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish brief",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Export": {
+      "post": {
+        "description": "Export a wish to a file, to open it on another machine: its plan, questions, decisions, blocks and journal. Never code, which travels through Git, never a secret, never a local path: projects are named by their name and remote.",
+        "operationId": "WishService_Export",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceExportResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish export",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Grant": {
+      "post": {
+        "description": "Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every task finished, no question open), and you may grant it before.",
+        "operationId": "WishService_Grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceGrantResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish grant",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Import": {
+      "post": {
+        "description": "Import a wish from a file written by export. Each project is found on this machine by its remote, then by its name; one not found is added without a folder, for djinn project add <folder> to attach.",
+        "operationId": "WishService_Import",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceImportResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish import",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/List": {
+      "post": {
+        "description": "List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones, the most recent last.",
+        "operationId": "WishService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish list",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Make": {
+      "post": {
+        "description": "Make a wish.",
+        "operationId": "WishService_Make",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceMakeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceMakeResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish make",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Move": {
+      "post": {
+        "description": "Move an active wish to another rank: --to 1 gives it priority over the others.",
+        "operationId": "WishService_Move",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceMoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceMoveResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish move",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Pause": {
+      "post": {
+        "description": "Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.",
+        "operationId": "WishService_Pause",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServicePauseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServicePauseResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish pause",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Render": {
+      "post": {
+        "description": "Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no local path.",
+        "operationId": "WishService_Render",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceRenderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceRenderResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish render",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Resume": {
+      "post": {
+        "description": "Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.",
+        "operationId": "WishService_Resume",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceResumeResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish resume",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/SetLead": {
+      "post": {
+        "description": "Record the lead of a wish: the agent session that drives it, for djinn wish resume to take it back. Starts djinn if it is not running.",
+        "operationId": "WishService_SetLead",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceSetLeadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceSetLeadResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish set-lead",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Sync": {
+      "post": {
+        "description": "Render the wish's page in Djinn's data folder, print where, and keep it up to date while djinn up runs: every change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or republish it where you put it last time. Delete the file to stop.",
+        "operationId": "WishService_Sync",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceSyncResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish sync",
+        "tags": [
+          "WishService"
+        ]
+      }
+    }
+  },
+  "security": [
+    {},
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "The address in server.addr: the Unix socket, or the loopback port.",
+      "url": "http://localhost"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Blocks: the free content of a wish, beside its tasks and questions.",
+      "name": "BlockService"
+    },
+    {
+      "description": "GateService grants the gates: shared resources, such as code generation (codegen), the local stack (stack), an end-to-end run (e2e) or a paid model run (paid), each held by one holder at a time, and granted only while the machine is not under pressure. To run a command under a gate: djinn gate run <name> -- <command>.",
+      "name": "GateService"
+    },
+    {
+      "description": "MachineService says what the machine has, how loaded it is, and how many workers Djinn runs on it.",
+      "name": "MachineService"
+    },
+    {
+      "description": "Projects Djinn works in.",
+      "name": "ProjectService"
+    },
+    {
+      "description": "Questions agents ask, and the decisions taken.",
+      "name": "QuestionService"
+    },
+    {
+      "description": "Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe scripts and references), in .agents/skills or .claude/skills. A project summons a skill of another project to use it without copying it: it follows its source.",
+      "name": "SkillService"
+    },
+    {
+      "description": "Tasks: one worker each, an agent process in the task's own worktree.",
+      "name": "TaskService"
+    },
+    {
+      "description": "Wishes: what you ask Djinn for, across projects.",
+      "name": "WishService"
+    }
+  ]
+}
