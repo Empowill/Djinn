@@ -96,6 +96,16 @@ tasks:
       - go build -tags headless -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
       - npx playwright test --config e2e/playwright.config.ts
 
+  e2e-native:
+    desc: "Drive the real native window end to end through the MCP server of Wails (e2e/native/): builds a test variant, bin/djinn-e2e-native, opens its window a few seconds. Not part of test; -- -v shows each step, DJINN_E2E_NATIVE_HOLD=5s keeps the window up to look at it"
+    deps: [ui]
+    env:
+      DJINN_E2E_NATIVE: "{{.ROOT_DIR}}/bin/djinn-e2e-native{{exeExt}}"
+    cmds:
+      # The mcp tag adds the MCP server and titles the window "Djinn e2e" (cmd/djinn/window_mcp.go): never shipped.
+      - go build -tags '{{.WINDOW_TAGS}} mcp' -o bin/djinn-e2e-native{{exeExt}} ./cmd/djinn
+      - go test -count=1 {{.CLI_ARGS}} ./e2e/native
+
   check-window:
     desc: "Open a native window for a few seconds and check that a Connect stream reaches it value by value, on this system's path (add -- -path wails or -- -path http to compare, -- -bench to time the formats)"
     deps: [ui]
@@ -107,15 +117,16 @@ tasks:
     deps: [ui]
     cmds:
       - go tool buf lint
-      - go run ./tools/gofmtcheck cmd internal tools locales
+      - go run ./tools/gofmtcheck cmd internal tools locales e2e
       - go vet -tags headless ./...
+      - go vet -tags 'headless mcp' ./cmd/djinn
       - npx tsc -b --noEmit
       - npx prettier --check --log-level warn "src/**/*.{ts,tsx,css}" "shim/**/*.ts" "e2e/**/*.ts"
 
   format:
     desc: Format the Go and TypeScript code in place
     cmds:
-      - gofmt -w cmd internal tools locales
+      - gofmt -w cmd internal tools locales e2e
       - npx prettier --write --log-level warn "src/**/*.{ts,tsx,css}" "shim/**/*.ts" "e2e/**/*.ts"
 
   release:
