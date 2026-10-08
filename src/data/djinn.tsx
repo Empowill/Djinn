@@ -1,11 +1,23 @@
 // What the page reaches of djinn, made once and handed to the screens through React context: the store of the plan,
 // the terminals, what djinn asks the window to show, and the update.
 import type { Transport } from "@connectrpc/connect";
-import { type ReactNode, createContext, useContext, useEffect, useSyncExternalStore } from "react";
+import {
+  type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useSyncExternalStore,
+} from "react";
 
 import { type Clients, createClients } from "./client";
 import { type DjinnFocus, createFocus } from "./focus";
-import { type State, type Store, type WishDetail, createStore, emptyDetail } from "./store";
+import {
+  type State,
+  type Store,
+  type WishDetail,
+  createStore,
+  emptyDetail,
+} from "./store";
 import { type DjinnTerminal, createTerminal } from "./terminal";
 import { type DjinnUpdate, createUpdate } from "./update";
 
@@ -31,9 +43,17 @@ export function createDjinn(transport: Transport, retry = 1000): Djinn {
 const DjinnContext = createContext<Djinn | null>(null);
 
 // DjinnProvider gives the screens djinn, and follows it while it is mounted.
-export function DjinnProvider({ djinn, children }: { djinn: Djinn; children: ReactNode }) {
+export function DjinnProvider({
+  djinn,
+  children,
+}: {
+  djinn: Djinn;
+  children: ReactNode;
+}) {
   useEffect(() => djinn.store.start(), [djinn]);
-  return <DjinnContext.Provider value={djinn}>{children}</DjinnContext.Provider>;
+  return (
+    <DjinnContext.Provider value={djinn}>{children}</DjinnContext.Provider>
+  );
 }
 
 // useDjinn is djinn, or null outside a DjinnProvider: a screen rendered alone, in a test.
@@ -66,7 +86,10 @@ const NO_EVENTS: never[] = [];
 // started again sends more.
 export function useTaskEvents(taskId: string, status: number, follow = true) {
   const { store } = useRequiredDjinn();
-  useEffect(() => (follow ? store.follow(taskId) : undefined), [store, taskId, status, follow]);
+  useEffect(
+    () => (follow ? store.follow(taskId) : undefined),
+    [store, taskId, status, follow],
+  );
   return useData((state) => state.events[taskId] ?? NO_EVENTS);
 }
 

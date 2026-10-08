@@ -13,9 +13,21 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { type Project, type Task, type TaskEvent, TaskEventKind, TaskStatus } from "../gen/ts/plan/v1/plan_pb";
+import {
+  type Project,
+  type Task,
+  type TaskEvent,
+  TaskEventKind,
+  TaskStatus,
+} from "../gen/ts/plan/v1/plan_pb";
 import { useTaskEvents } from "./data/djinn";
-import { taskFinished, taskStatusText, taskTone, usd, when } from "./data/format";
+import {
+  taskFinished,
+  taskStatusText,
+  taskTone,
+  usd,
+  when,
+} from "./data/format";
 import { t } from "./i18n";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
@@ -29,14 +41,27 @@ const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.GATE]: Lock,
 };
 
-export function WishTask({ task, project, onStop }: { task: Task; project?: Project; onStop: () => void }) {
+export function WishTask({
+  task,
+  project,
+  onStop,
+}: {
+  task: Task;
+  project?: Project;
+  onStop: () => void;
+}) {
   const [open, setOpen] = useState(false);
-  const stoppable = task.status === TaskStatus.RUNNING || task.status === TaskStatus.PENDING;
+  const stoppable =
+    task.status === TaskStatus.RUNNING || task.status === TaskStatus.PENDING;
   const cost = task.usage?.costUsd ?? 0;
   return (
     <article className={`wish-task ${open ? "open" : ""}`}>
       <div className="wish-task-row">
-        <button className="wish-task-heading" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <button
+          className="wish-task-heading"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+        >
           <span className={`mission-dot ${taskTone(task.status)}`} />
           <span className="agent-code">{task.code}</span>
           <strong>{task.title}</strong>
@@ -48,7 +73,12 @@ export function WishTask({ task, project, onStop }: { task: Task; project?: Proj
           <ChevronDown size={14} className={open ? "rotated" : ""} />
         </button>
         {stoppable && (
-          <button className="icon-button" onClick={onStop} title={t("task.stop")} aria-label={t("task.stop")}>
+          <button
+            className="icon-button"
+            onClick={onStop}
+            title={t("task.stop")}
+            aria-label={t("task.stop")}
+          >
             <CircleStop size={14} />
           </button>
         )}
@@ -56,7 +86,9 @@ export function WishTask({ task, project, onStop }: { task: Task; project?: Proj
       {(task.waitReason || task.error) && (
         <p
           className={`wish-task-note ${taskTone(task.status) === "error" ? "error" : ""}`}
-        >{task.error || task.waitReason}</p>
+        >
+          {task.error || task.waitReason}
+        </p>
       )}
       {open && <TaskEvents task={task} />}
     </article>
@@ -77,10 +109,16 @@ function TaskEvents({ task }: { task: Task }) {
       <div className="wish-task-facts">
         {task.branch && <span>{task.branch}</span>}
         {task.model && <span>{task.model}</span>}
-        {task.startTime && <span>{t("task.started", { when: when(task.startTime) })}</span>}
-        {task.endTime && <span>{t("task.ended", { when: when(task.endTime) })}</span>}
+        {task.startTime && (
+          <span>{t("task.started", { when: when(task.startTime) })}</span>
+        )}
+        {task.endTime && (
+          <span>{t("task.ended", { when: when(task.endTime) })}</span>
+        )}
       </div>
-      {events.length === 0 && <p className="muted-text">{t("task.no_events")}</p>}
+      {events.length === 0 && (
+        <p className="muted-text">{t("task.no_events")}</p>
+      )}
       {events.map((event) => (
         <EventLine key={event.id} event={event} />
       ))}
@@ -90,7 +128,10 @@ function TaskEvents({ task }: { task: Task }) {
 
 function EventLine({ event }: { event: TaskEvent }) {
   const Icon = eventIcons[event.kind] ?? FileText;
-  const text = event.kind === TaskEventKind.USAGE && event.usage ? usd(event.usage.costUsd) : event.text;
+  const text =
+    event.kind === TaskEventKind.USAGE && event.usage
+      ? usd(event.usage.costUsd)
+      : event.text;
   return (
     <div className={`wish-event kind-${event.kind}`}>
       <Icon size={13} />

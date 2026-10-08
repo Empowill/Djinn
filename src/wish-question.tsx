@@ -1,6 +1,12 @@
 // A question of a wish, on Clément's question card: its options by letter, what is at stake, the recommendation, and
 // an answer that goes to QuestionService.Answer. Answered, it is a decision.
-import { ArrowRight, Check, CheckCircle2, ChevronDown, CornerDownRight } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  CornerDownRight,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 
@@ -11,15 +17,20 @@ import { MarkdownBody } from "./markdown-body";
 
 export function WishQuestion({
   question: q,
+  expanded: open = false,
   onAnswer,
 }: {
   question: Question;
+  // Opened at first: the one question waiting, say.
+  expanded?: boolean;
   // Answers the question; resolves once djinn has it. A rejection keeps the card open.
   onAnswer: (choice: Choice, note: string) => Promise<void>;
 }) {
   const answered = !!q.answer;
-  const [expanded, setExpanded] = useState(!answered);
-  const [choice, setChoice] = useState<Choice>(q.options.length ? Choice.UNSPECIFIED : Choice.YES);
+  const [expanded, setExpanded] = useState(open && !answered);
+  const [choice, setChoice] = useState<Choice>(
+    q.options.length ? Choice.A : Choice.YES,
+  );
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
   const send = async () => {
@@ -32,7 +43,6 @@ export function WishQuestion({
   };
   return (
     <motion.article
-      layout
       id={`question-${q.id}`}
       className={`question-card ${answered ? "answered" : "blocking"}`}
       initial={{ opacity: 0, y: 14 }}
@@ -40,8 +50,14 @@ export function WishQuestion({
       exit={{ opacity: 0, x: 30 }}
       transition={{ duration: 0.35 }}
     >
-      <button className="question-heading" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>
-        <span className="question-id">{answered ? <Check size={14} /> : q.code}</span>
+      <button
+        className="question-heading"
+        onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+      >
+        <span className="question-id">
+          {answered ? <Check size={14} /> : q.code}
+        </span>
         <div>
           <span className="question-meta">
             {answered ? (
@@ -75,7 +91,10 @@ export function WishQuestion({
               {answered ? (
                 <div className="answered-info">
                   <span>
-                    <CheckCircle2 size={15} /> {t("question.decided", { when: when(q.answer?.createTime) })}
+                    <CheckCircle2 size={15} />{" "}
+                    {t("question.decided", {
+                      when: when(q.answer?.createTime),
+                    })}
                   </span>
                   {q.answer?.note && <p>{q.answer.note}</p>}
                 </div>
@@ -101,7 +120,9 @@ export function WishQuestion({
                             onClick={() => setChoice(choiceOf(index))}
                             aria-pressed={selected}
                           >
-                            <span className="option-radio">{selected && <span />}</span>
+                            <span className="option-radio">
+                              {selected && <span />}
+                            </span>
                             <div>
                               <strong>{letter(index)}</strong>
                               <p>{option}</p>
@@ -114,7 +135,11 @@ export function WishQuestion({
                   <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    placeholder={q.options.length ? t("question.note_placeholder") : t("question.answer_placeholder")}
+                    placeholder={
+                      q.options.length
+                        ? t("question.note_placeholder")
+                        : t("question.answer_placeholder")
+                    }
                     rows={2}
                     maxLength={2000}
                     aria-label={t("question.note_label")}
@@ -129,7 +154,9 @@ export function WishQuestion({
                       disabled={sending || choice === Choice.UNSPECIFIED}
                       onClick={() => void send()}
                     >
-                      {q.options.length ? t("panels.confirm_choice") : t("panels.confirm_answer")}
+                      {q.options.length
+                        ? t("panels.confirm_choice")
+                        : t("panels.confirm_answer")}
                       <ArrowRight size={14} />
                     </button>
                   </div>

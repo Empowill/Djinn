@@ -28,6 +28,8 @@ import (
 
 	"connectrpc.com/connect"
 
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
@@ -54,7 +56,7 @@ func TestNativeWindow(t *testing.T) {
 			if err := d.eval(`return {
 				title: document.title,
 				terminal: !!document.querySelector(".lead-terminal .xterm"),
-				bridge: typeof window.djinn?.saveState === "function",
+				bridge: !!document.querySelector(".wish-app"),
 			};`, &page); err != nil {
 				return err
 			}
@@ -68,23 +70,39 @@ func TestNativeWindow(t *testing.T) {
 		}
 	})
 
-	// SaveState answers with an empty message: the Wails asset server once turned that into HTTP 501.
-	t.Run("the state saves and loads back through the window", func(t *testing.T) {
-		var got struct {
-			Marker string `json:"marker"`
-		}
-		err := d.eval(fmt.Sprintf(`
-			const state = (await window.djinn.loadState()) ?? {};
-			state.e2eMarker = %q;
-			await window.djinn.saveState(state);
-			const back = await window.djinn.loadState();
-			return { marker: back?.e2eMarker ?? "" };`, d.token), &got)
+	// The window reads the wishes itself and follows them (WishService.Watch through wails://): a wish made from the
+	// command line shows without a reload.
+	t.Run("a wish made by the command line shows in the window", func(t *testing.T) {
+		addr, err := server.ReadAddr(d.home)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.Marker != d.token {
-			t.Fatalf("loaded marker %q, want %q", got.Marker, d.token)
+		client, base, err := cli.Dial(addr)
+		if err != nil {
+			t.Fatal(err)
 		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		wishes := planv1connect.NewWishServiceClient(client, base)
+		title := "Native " + d.token[:8]
+		if _, err := wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: title, Paused: true})); err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, 10*time.Second, func() error {
+			var page struct {
+				Titles []string `json:"titles"`
+			}
+			if err := d.eval(`return { titles: [...document.querySelectorAll(".wish-nav")].map((b) => b.textContent) };`,
+				&page); err != nil {
+				return err
+			}
+			for _, got := range page.Titles {
+				if strings.Contains(got, title) {
+					return nil
+				}
+			}
+			return fmt.Errorf("no wish %q in the side panel: %q", title, page.Titles)
+		})
 	})
 
 	t.Run("the terminal runs a command and shows its output", func(t *testing.T) {
@@ -171,7 +189,7 @@ func TestNativeWindow(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		ui := uiv1connect.NewUiServiceClient(client, base)
-		if _, err := ui.LoadState(ctx, connect.NewRequest(&uiv1.UiServiceLoadStateRequest{})); err != nil {
+		if _, err := ui.GetEnvironment(ctx, connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{})); err != nil {
 			t.Fatalf("djinn no longer answers once its window is closed: %v", err)
 		}
 	})

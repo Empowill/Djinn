@@ -20,7 +20,6 @@ export interface DjinnUpdate {
   update(): Promise<{ version: string; terminals: number }>;
 }
 
-
 export function createUpdate(transport: Transport, retry = 1000): DjinnUpdate {
   const ui = createClient(UiService, transport);
   const listeners = new Set<(state: UpdateState) => void>();

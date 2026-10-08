@@ -51,7 +51,6 @@ export interface DjinnTerminal {
   close(id: string): Promise<void>;
 }
 
-
 // Above this many writes waiting, they leave together: a burst (a paste in pieces, a stalled link) catches up in one
 // request. Below, each keeps its own request, as a terminal delivers each key on its own.
 const backlog = 16;

@@ -7,7 +7,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { useClients, useData, useDjinn, useMachine, useStore } from "./data/djinn";
+import {
+  useClients,
+  useData,
+  useDjinn,
+  useMachine,
+  useStore,
+} from "./data/djinn";
 import { importWish } from "./data/exchange";
 import { isActive } from "./data/format";
 import { Brand, Toast } from "./frame";
@@ -45,7 +51,9 @@ export function WishApp() {
   const live = useData((s) => s.live);
   const error = useData((s) => s.error);
   const [selected, setSelected] = useState(() => stored("djinn.wish"));
-  const [collapsed, setCollapsed] = useState(() => stored("djinn.sidebar.collapsed") === "1");
+  const [collapsed, setCollapsed] = useState(
+    () => stored("djinn.sidebar.collapsed") === "1",
+  );
   const [modal, setModal] = useState<Modal>(null);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
@@ -53,7 +61,10 @@ export function WishApp() {
   const closeToast = useCallback(() => setToast(""), []);
 
   useEffect(() => store("djinn.wish", selected), [selected]);
-  useEffect(() => store("djinn.sidebar.collapsed", collapsed ? "1" : ""), [collapsed]);
+  useEffect(
+    () => store("djinn.sidebar.collapsed", collapsed ? "1" : ""),
+    [collapsed],
+  );
   // djinn wish resume asks the window to show a wish.
   useEffect(
     () =>
@@ -75,7 +86,8 @@ export function WishApp() {
   }, []);
 
   // The wish shown: the one chosen, else the first one by rank.
-  const wish = wishes.find((w) => w.id === selected) ?? wishes.find(isActive) ?? wishes[0];
+  const wish =
+    wishes.find((w) => w.id === selected) ?? wishes.find(isActive) ?? wishes[0];
   const project = projects.find((p) => p.id === projectId);
 
   const move = (wishId: string, to: number) =>
@@ -89,7 +101,9 @@ export function WishApp() {
       const res = await importWish(clients, file);
       await data.changed(res.wishId, [Change.WISH, Change.PROJECT]);
       setSelected(res.wishId);
-      setToast(res.already ? t("import.already") : res.note || t("import.done"));
+      setToast(
+        res.already ? t("import.already") : res.note || t("import.done"),
+      );
     } catch (err) {
       setToast(message(err));
     }
@@ -107,7 +121,11 @@ export function WishApp() {
           </button>
           {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
         </div>
-        <button className="new-mission" onClick={() => setModal("make")} title={t("app.new_wish")}>
+        <button
+          className="new-mission"
+          onClick={() => setModal("make")}
+          title={t("app.new_wish")}
+        >
           <Plus size={16} />
           {!collapsed && (
             <>
@@ -127,12 +145,21 @@ export function WishApp() {
           onMove={move}
           onNewProject={() => setModal("project")}
         />
-        <button className="nav-item import-nav" onClick={() => importRef.current?.click()} title={t("app.import_wish")}>
+        <button
+          className="nav-item import-nav"
+          onClick={() => importRef.current?.click()}
+          title={t("app.import_wish")}
+          disabled={!loaded}
+        >
           <Upload size={15} />
           {!collapsed && <span>{t("app.import_wish")}</span>}
         </button>
         <div className="sidebar-bottom">
-          <button className="profile" onClick={() => setModal("settings")} title={t("app.connections_preferences")}>
+          <button
+            className="profile"
+            onClick={() => setModal("settings")}
+            title={t("app.connections_preferences")}
+          >
             <span className="profile-avatar">C</span>
             {!collapsed && (
               <>
@@ -150,7 +177,11 @@ export function WishApp() {
         {wish ? (
           <WishView key={wish.id} wish={wish} onToast={setToast} />
         ) : (
-          <Welcome loaded={loaded} onMake={() => setModal("make")} onImport={() => importRef.current?.click()} />
+          <Welcome
+            loaded={loaded}
+            onMake={() => setModal("make")}
+            onImport={() => importRef.current?.click()}
+          />
         )}
         <StatusBar live={live} error={error} />
       </main>
@@ -178,7 +209,9 @@ export function WishApp() {
           />
         )}
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
-        {project && <ProjectPanel project={project} onClose={() => setProjectId("")} />}
+        {project && (
+          <ProjectPanel project={project} onClose={() => setProjectId("")} />
+        )}
       </AnimatePresence>
       <Toast text={toast} onClose={closeToast} />
       <input
@@ -198,7 +231,15 @@ export function WishApp() {
 }
 
 // Welcome is the window without a wish: make one, or import one.
-function Welcome({ loaded, onMake, onImport }: { loaded: boolean; onMake: () => void; onImport: () => void }) {
+function Welcome({
+  loaded,
+  onMake,
+  onImport,
+}: {
+  loaded: boolean;
+  onMake: () => void;
+  onImport: () => void;
+}) {
   return (
     <div className="mission-scroll wish-welcome">
       <div className="hero">
@@ -210,12 +251,18 @@ function Welcome({ loaded, onMake, onImport }: { loaded: boolean; onMake: () => 
               <Plus size={14} />
               {t("app.new_wish")}
             </button>
-            <button className="button secondary" onClick={onImport}>
+            <button
+              className="button secondary"
+              onClick={onImport}
+              disabled={!loaded}
+            >
               <Upload size={14} />
               {t("app.import_wish")}
             </button>
           </div>
-          <p className="form-tip">{t("welcome.cli", { command: 'djinn wish make "…"' })}</p>
+          <p className="form-tip">
+            {t("welcome.cli", { command: 'djinn wish make "…"' })}
+          </p>
         </div>
       </div>
     </div>

@@ -15,7 +15,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   Allowance,
@@ -29,14 +29,28 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients, useData, useStore, useWishDetail } from "./data/djinn";
-import { allowanceOf, isActive, isOpen, projectsOf, when, wishStateText } from "./data/format";
+import {
+  allowanceOf,
+  isActive,
+  isOpen,
+  projectsOf,
+  when,
+  wishStateText,
+} from "./data/format";
 import { t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
+import { useKeepPlace } from "./scroll-anchor";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
 
-export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string) => void }) {
+export function WishView({
+  wish,
+  onToast,
+}: {
+  wish: Wish;
+  onToast: (text: string) => void;
+}) {
   const clients = useClients();
   const store = useStore();
   const allProjects = useData((s) => s.projects);
@@ -44,12 +58,21 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
   const projects = projectsOf(wish, allProjects);
   const open = detail.questions.filter(isOpen);
   const decided = detail.questions.filter((q) => !isOpen(q));
-  const running = detail.tasks.some((task) => task.status === TaskStatus.RUNNING);
+  const running = detail.tasks.some(
+    (task) => task.status === TaskStatus.RUNNING,
+  );
   const granted = wish.state === WishState.GRANTED;
   const [history, setHistory] = useState(false);
+  // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const keepPlace = useKeepPlace(scrollRef);
 
   // act runs a write; djinn's answer or its refusal shows as a toast, and what changed is read again.
-  const act = async (run: () => Promise<unknown>, changes: Change[], done?: string) => {
+  const act = async (
+    run: () => Promise<unknown>,
+    changes: Change[],
+    done?: string,
+  ) => {
     try {
       await run();
       if (done) onToast(done);
@@ -79,7 +102,11 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
       <header className="topbar">
         <div className="breadcrumbs">
           {projects.map((project) => (
-            <span className="header-project" key={project.id} title={project.directory || t("project.no_folder")}>
+            <span
+              className="header-project"
+              key={project.id}
+              title={project.directory || t("project.no_folder")}
+            >
               {project.name}
               <ChevronRight size={12} aria-hidden="true" />
             </span>
@@ -90,7 +117,14 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
           <button
             className="button secondary small"
             title={t("wish.resume_detail")}
-            onClick={() => quiet(act(() => clients.wishes.resume({ wishId: wish.id }), [Change.WISH]))}
+            onClick={() =>
+              quiet(
+                act(
+                  () => clients.wishes.resume({ wishId: wish.id }),
+                  [Change.WISH],
+                ),
+              )
+            }
           >
             <Terminal size={14} />
             <span>{t("wish.resume")}</span>
@@ -126,12 +160,14 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
           </button>
         </div>
       </header>
-      <div className="mission-scroll">
+      <div className="mission-scroll" ref={keepPlace}>
         <div className="hero mission-header">
           <div className="hero-copy">
             <h1>{wish.title}</h1>
             <div className="hero-meta">
-              <span className={`badge ${granted ? "" : "muted"}`}>{wishStateText(wish)}</span>
+              <span className={`badge ${granted ? "" : "muted"}`}>
+                {wishStateText(wish)}
+              </span>
               {projects.map((project) => (
                 <span key={project.id} title={project.directory}>
                   <GitBranch size={13} />
@@ -145,7 +181,14 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
               {granted ? (
                 <button
                   className="text-button"
-                  onClick={() => quiet(act(() => clients.wishes.activate({ wishId: wish.id }), [Change.WISH]))}
+                  onClick={() =>
+                    quiet(
+                      act(
+                        () => clients.wishes.activate({ wishId: wish.id }),
+                        [Change.WISH],
+                      ),
+                    )
+                  }
                 >
                   <Play size={13} />
                   {t("wish.reopen")}
@@ -153,7 +196,14 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
               ) : isActive(wish) ? (
                 <button
                   className="text-button"
-                  onClick={() => quiet(act(() => clients.wishes.pause({ wishId: wish.id }), [Change.WISH]))}
+                  onClick={() =>
+                    quiet(
+                      act(
+                        () => clients.wishes.pause({ wishId: wish.id }),
+                        [Change.WISH],
+                      ),
+                    )
+                  }
                 >
                   <Pause size={13} />
                   {t("wish.pause")}
@@ -161,7 +211,14 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
               ) : (
                 <button
                   className="text-button"
-                  onClick={() => quiet(act(() => clients.wishes.activate({ wishId: wish.id }), [Change.WISH]))}
+                  onClick={() =>
+                    quiet(
+                      act(
+                        () => clients.wishes.activate({ wishId: wish.id }),
+                        [Change.WISH],
+                      ),
+                    )
+                  }
                 >
                   <Play size={13} />
                   {t("wish.activate")}
@@ -176,19 +233,38 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
 
         <div className="overview-content">
           {(open.length > 0 || wish.ready) && (
-            <section className="action-center" id="action-center" aria-label={t("panels.your_move")}>
+            <section
+              className="action-center"
+              id="action-center"
+              aria-label={t("panels.your_move")}
+            >
               <div className="action-center-heading">
                 <div>
                   <span className="eyebrow">{t("panels.next_action")}</span>
                   <h2>{t("panels.your_move")}</h2>
-                  <p>{open.length ? t("wish.questions_wait", { count: open.length }) : t("wish.ready_detail")}</p>
+                  <p>
+                    {open.length
+                      ? t("wish.questions_wait", { count: open.length })
+                      : t("wish.ready_detail")}
+                  </p>
                 </div>
               </div>
               {open.length > 0 && (
                 <section className="decisions-section">
+                  <div className="section-heading">
+                    <h3>
+                      {t("panels.decisions")}
+                      <span className="count">{open.length}</span>
+                    </h3>
+                  </div>
                   <AnimatePresence mode="popLayout">
                     {open.map((q) => (
-                      <WishQuestion key={q.id} question={q} onAnswer={(choice, note) => answer(q.id, choice, note)} />
+                      <WishQuestion
+                        key={q.id}
+                        question={q}
+                        expanded={open.length === 1}
+                        onAnswer={(choice, note) => answer(q.id, choice, note)}
+                      />
                     ))}
                   </AnimatePresence>
                 </section>
@@ -196,7 +272,9 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
               {wish.ready && (
                 <article className="step-result-action wish-grant">
                   <div>
-                    <span className="step-result-kicker">{t("wish.ready")}</span>
+                    <span className="step-result-kicker">
+                      {t("wish.ready")}
+                    </span>
                     <h3>{t("wish.ready_title")}</h3>
                   </div>
                   <button
@@ -204,7 +282,11 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
                     className="button accent"
                     onClick={() =>
                       quiet(
-                        act(() => clients.wishes.grant({ wishId: wish.id }), [Change.WISH], t("wish.granted_toast")),
+                        act(
+                          () => clients.wishes.grant({ wishId: wish.id }),
+                          [Change.WISH],
+                          t("wish.granted_toast"),
+                        ),
                       )
                     }
                   >
@@ -224,14 +306,23 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
               </h3>
             </div>
             {detail.tasks.length === 0 ? (
-              <p className="muted-text">{detail.loaded ? t("wish.no_tasks") : t("common.loading")}</p>
+              <p className="muted-text">
+                {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
+              </p>
             ) : (
               detail.tasks.map((task) => (
                 <WishTask
                   key={task.id}
                   task={task}
                   project={allProjects.find((p) => p.id === task.projectId)}
-                  onStop={() => quiet(act(() => clients.tasks.stop({ taskId: task.id }), [Change.TASK]))}
+                  onStop={() =>
+                    quiet(
+                      act(
+                        () => clients.tasks.stop({ taskId: task.id }),
+                        [Change.TASK],
+                      ),
+                    )
+                  }
                 />
               ))
             )}
@@ -239,7 +330,10 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
 
           {decided.length > 0 && (
             <div className="decision-history">
-              <button className="text-button" onClick={() => setHistory(!history)}>
+              <button
+                className="text-button"
+                onClick={() => setHistory(!history)}
+              >
                 <CheckCircle2 size={14} />
                 {t("panels.decisions_recorded", { count: decided.length })}
                 <ChevronDown size={13} className={history ? "rotated" : ""} />
@@ -252,7 +346,11 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
                     exit={{ opacity: 0, height: 0 }}
                   >
                     {decided.map((q) => (
-                      <WishQuestion key={q.id} question={q} onAnswer={async () => {}} />
+                      <WishQuestion
+                        key={q.id}
+                        question={q}
+                        onAnswer={async () => {}}
+                      />
                     ))}
                   </motion.div>
                 )}
@@ -273,7 +371,17 @@ export function WishView({ wish, onToast }: { wish: Wish; onToast: (text: string
               wish={wish}
               projects={projects}
               onAllow={(projectId, mode) =>
-                quiet(act(() => clients.wishes.allow({ wishId: wish.id, projectId, mode }), [Change.WISH]))
+                quiet(
+                  act(
+                    () =>
+                      clients.wishes.allow({
+                        wishId: wish.id,
+                        projectId,
+                        mode,
+                      }),
+                    [Change.WISH],
+                  ),
+                )
               }
             />
           )}
@@ -290,7 +398,11 @@ function WishBlock({ block }: { block: Block }) {
     <article className="wish-block" id={`block-${block.id}`}>
       <span className="eyebrow">{block.kind}</span>
       {block.title && <h3>{block.title}</h3>}
-      {markdown ? <MarkdownBody text={block.content} /> : <pre className="wish-block-raw">{block.content}</pre>}
+      {markdown ? (
+        <MarkdownBody text={block.content} />
+      ) : (
+        <pre className="wish-block-raw">{block.content}</pre>
+      )}
     </article>
   );
 }

@@ -87,6 +87,7 @@
   "panels.confirm_answer": "Valider la réponse",
   "panels.confirm_choice": "Valider ce choix",
   "panels.decision_recorded": "Décision enregistrée",
+  "panels.decisions": "Décisions",
   "panels.decisions_recorded.one": "{count} décision enregistrée",
   "panels.decisions_recorded.other": "{count} décisions enregistrées",
   "panels.next_action": "PROCHAINE ACTION",

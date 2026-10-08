@@ -97,7 +97,12 @@ export function createStore(clients: Clients, retry = 1000): Store {
     for (const change of changes) {
       if (change === Change.PROJECT) pending.projects = true;
       if (change === Change.WISH) pending.wishes = true;
-      if (change !== Change.TASK && change !== Change.QUESTION && change !== Change.BLOCK) continue;
+      if (
+        change !== Change.TASK &&
+        change !== Change.QUESTION &&
+        change !== Change.BLOCK
+      )
+        continue;
       // Without a wish, every wish shown; a wish not shown is read when it is.
       const ids = wishId ? [wishId] : [...opened.keys()];
       for (const id of ids) {
@@ -118,7 +123,8 @@ export function createStore(clients: Clients, retry = 1000): Store {
     const patch: Partial<State> = {};
     const errors: string[] = [];
     const reads: Promise<void>[] = [];
-    const attempt = (run: () => Promise<void>) => reads.push(run().catch((error) => void errors.push(message(error))));
+    const attempt = (run: () => Promise<void>) =>
+      reads.push(run().catch((error) => void errors.push(message(error))));
     if (wishes)
       attempt(async () => {
         patch.wishes = (await clients.wishes.list({})).wishes;
@@ -178,7 +184,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
     return flushing;
   }
 
-  const following = new Map<string, { count: number; abort: AbortController }>();
+  const following = new Map<
+    string,
+    { count: number; abort: AbortController }
+  >();
 
   async function followEvents(taskId: string, abort: AbortController) {
     let buffer: TaskEvent[] = [];
@@ -187,7 +196,9 @@ export function createStore(clients: Clients, retry = 1000): Store {
     const push = () => {
       timer = undefined;
       if (!buffer.length) return;
-      const kept = [...(state.events[taskId] ?? []), ...buffer].slice(-MAX_EVENTS);
+      const kept = [...(state.events[taskId] ?? []), ...buffer].slice(
+        -MAX_EVENTS,
+      );
       buffer = [];
       set({ events: { ...state.events, [taskId]: kept } });
     };
@@ -195,7 +206,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
       const known = state.events[taskId] ?? [];
       const afterSeq = buffer.at(-1)?.seq ?? known.at(-1)?.seq ?? 0n;
       try {
-        for await (const res of clients.tasks.watch({ taskId, afterSeq }, { signal: abort.signal })) {
+        for await (const res of clients.tasks.watch(
+          { taskId, afterSeq },
+          { signal: abort.signal },
+        )) {
           if (!res.event) continue;
           buffer.push(res.event);
           timer ??= setTimeout(push, 50);
@@ -226,7 +240,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
       void (async () => {
         while (!abort.signal.aborted) {
           try {
-            for await (const res of clients.wishes.watch({}, { signal: abort.signal })) {
+            for await (const res of clients.wishes.watch(
+              {},
+              { signal: abort.signal },
+            )) {
               if (!state.live) set({ live: true });
               mark(res.wishId, res.changes);
               void flush();
@@ -275,7 +292,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
     },
     async readMachine() {
       try {
-        const [machine, gates] = await Promise.all([clients.machine.show({}), clients.gates.list({})]);
+        const [machine, gates] = await Promise.all([
+          clients.machine.show({}),
+          clients.gates.list({}),
+        ]);
         set({ machine: machine.machine, gates: gates.gates });
       } catch (error) {
         set({ error: message(error) });

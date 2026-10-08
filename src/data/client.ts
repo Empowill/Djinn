@@ -1,9 +1,17 @@
 // The clients of the djinn server, generated from the protos. The page reads the services in their own shapes: no
 // model of its own sits between them and the screens.
-import { Code, ConnectError, type Transport, createClient } from "@connectrpc/connect";
+import {
+  Code,
+  ConnectError,
+  type Transport,
+  createClient,
+} from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 
-import { GateService, MachineService } from "../../gen/ts/machine/v1/machine_pb";
+import {
+  GateService,
+  MachineService,
+} from "../../gen/ts/machine/v1/machine_pb";
 import {
   BlockService,
   ProjectService,
@@ -16,7 +24,10 @@ import { UiService } from "../../gen/ts/ui/v1/ui_pb";
 
 // djinnTransport reaches the djinn server at baseUrl in the binary Protobuf format: against JSON, it encodes and
 // decodes about three times faster on both ends (docs/transport.md). fetch replaces the global one, for the tests.
-export function djinnTransport(baseUrl: string, fetch?: typeof globalThis.fetch): Transport {
+export function djinnTransport(
+  baseUrl: string,
+  fetch?: typeof globalThis.fetch,
+): Transport {
   return createConnectTransport({ baseUrl, useBinaryFormat: true, fetch });
 }
 

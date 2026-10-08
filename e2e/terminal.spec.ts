@@ -98,12 +98,26 @@ test("a key reaches the terminal in well under a key repeat", async ({
 }) => {
   await page.goto(djinnURL());
   await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
+  // The page's own requests, one after the other as the terminal sends keys: Connect in JSON, same origin, the
+  // session cookie.
   const mean = await page.evaluate(async () => {
-    const api = window.djinnTerminal!;
-    const { terminal } = await api.open({ name: "main", cols: 80, rows: 24 });
+    const call = async (method: string, body: object) => {
+      const res = await fetch(`/terminal.v1.TerminalService/${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`${method}: ${res.status}`);
+      return res.json();
+    };
+    const { terminal } = await call("Open", {
+      name: "main",
+      cols: 80,
+      rows: 24,
+    });
     const n = 200;
     const start = performance.now();
-    for (let i = 0; i < n; i++) await api.write(terminal.id, new Uint8Array());
+    for (let i = 0; i < n; i++) await call("Write", { id: terminal.id });
     return (performance.now() - start) / n;
   });
   console.log(`write round trip over loopback HTTP: ${mean.toFixed(2)} ms`);

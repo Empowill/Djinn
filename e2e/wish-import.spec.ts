@@ -20,21 +20,26 @@ function djinn(...args: string[]): string {
 }
 
 type Wish = { id: string; state: string; ready?: boolean };
-const wishes = (): Wish[] => JSON.parse(djinn("wish", "list", "--json")).wishes;
+const wishes = (): Wish[] =>
+  JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];
 
-// open shows the interface once its saved workspace is loaded. The load replaces the whole workspace: a wish
-// imported before it ends is lost. The status bar says "Sauvegarde locale" only after it.
+// open shows the interface. Importing waits for the wishes to be read: the button stays disabled until then.
 async function open(page: Page) {
   await page.goto(process.env.DJINN_URL!);
   await expect(
-    page.locator(".app-statusbar").getByText("Sauvegarde locale"),
-  ).toBeVisible();
+    page
+      .locator(".sidebar")
+      .getByRole("button", { name: "Importer un souhait" }),
+  ).toBeEnabled();
 }
 
 // importFile imports a wish file through the interface's button and its file picker.
 async function importFile(page: Page, file: string) {
   const chooser = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Importer un souhait" }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Importer un souhait" })
+    .click();
   await (await chooser).setFiles(file);
 }
 
@@ -105,8 +110,11 @@ test("a wish file imports from the interface", async ({ page }) => {
   await expect(page.getByText("Ship the lamp").first()).toBeVisible();
   await expect(page.getByText("Which oil for the wick?").first()).toBeVisible();
   await expect(page.getByText("Lexicon of the lamp").first()).toBeVisible();
-  await page.getByRole("button", { name: "Ouvrir le support" }).first().click();
+  // A block shows as the lead wrote it, in Markdown.
   await expect(page.getByText("A wick carries the oil.").first()).toBeVisible();
+  await expect(page.locator(".wish-block strong")).toHaveText("wick");
+  // Its task, from the file.
+  await expect(page.getByText("Polish the brass").first()).toBeVisible();
   // A wish at work: no result to approve, nothing to grant.
   await expect(page.getByText("Valider ce résultat")).toHaveCount(0);
   await expect(page.getByText("Mon vœu est exaucé")).toHaveCount(0);
@@ -117,8 +125,7 @@ test("a wish file imports from the interface", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-// A wish whose tasks are all done and whose question is answered: Djinn proposes to grant it. Its title is its own:
-// the interface finds a mission's wish by title.
+// A wish whose tasks are all done and whose question is answered: Djinn proposes to grant it.
 const readyOf = (readyId: string, title: string) => ({
   version: 1,
   create_time: at,
@@ -158,13 +165,18 @@ test("a ready wish is granted by the user, from the interface", async ({
   // A djinn grants three wishes at a time: the earlier specs' wishes make way, or this one would import paused.
   for (const w of wishes().filter((w) => w.state === "WISH_STATE_ACTIVE"))
     djinn("wish", "pause", w.id);
-  // As on a loaded machine, the saved workspace comes late: the import must wait for it, or it is lost.
-  await page.route("**/ui.v1.UiService/LoadState", async (route) => {
+  // As on a loaded machine, djinn answers late: the import button waits for the wishes to be read.
+  await page.route("**/plan.v1.WishService/List", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 400));
     await route.continue();
   });
 
-  await open(page);
+  await page.goto(process.env.DJINN_URL!);
+  const button = page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Importer un souhait" });
+  await expect(button).toBeDisabled();
+  await expect(button).toBeEnabled();
   await importFile(page, file);
 
   await expect(page.getByText(title).first()).toBeVisible();

@@ -1,7 +1,13 @@
 // The side panel's lists, read from the services: the wishes, the active ones by rank (drag one up or down, or
 // Alt+Arrow) and how many of the three places they take, then the paused ones and the granted ones; and the
 // projects.
-import { ChevronDown, ChevronRight, FolderOpen, GripVertical, Plus } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  GripVertical,
+  Plus,
+} from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
 import type { Project, Wish } from "../gen/ts/plan/v1/plan_pb";
@@ -41,7 +47,8 @@ export function WishSidebar({
     const keys = (event: KeyboardEvent) => {
       if (!rank || !event.altKey) return;
       if (event.key === "ArrowUp" && rank > 1) onMove(wish.id, rank - 1);
-      else if (event.key === "ArrowDown" && rank < active.length) onMove(wish.id, rank + 1);
+      else if (event.key === "ArrowDown" && rank < active.length)
+        onMove(wish.id, rank + 1);
       else return;
       event.preventDefault();
     };
@@ -51,7 +58,11 @@ export function WishSidebar({
         className={`mission-nav wish-nav ${wish.id === selectedWishId ? "selected" : ""} ${dragged === wish.id ? "dragged" : ""}`}
         onClick={() => onSelectWish(wish.id)}
         onKeyDown={keys}
-        title={rank ? t("sidebar.wish_rank", { rank, title: wish.title }) : wish.title}
+        title={
+          rank
+            ? t("sidebar.wish_rank", { rank, title: wish.title })
+            : wish.title
+        }
         draggable={!!rank}
         onDragStart={(event) => {
           event.dataTransfer.setData("text/plain", wish.id);
@@ -105,7 +116,9 @@ export function WishSidebar({
       </div>
       <div className="mission-list wish-list">
         {active.map((wish, i) => item(wish, wish.rank || i + 1))}
-        {!active.length && !collapsed && <p className="project-empty">{t("sidebar.no_active")}</p>}
+        {!active.length && !collapsed && (
+          <p className="project-empty">{t("sidebar.no_active")}</p>
+        )}
         {paused.length > 0 && (
           <>
             {!collapsed && (
@@ -124,7 +137,11 @@ export function WishSidebar({
                 onClick={() => setShowGranted(!showGranted)}
                 aria-expanded={showGranted}
               >
-                {showGranted ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                {showGranted ? (
+                  <ChevronDown size={12} />
+                ) : (
+                  <ChevronRight size={12} />
+                )}
                 <span>{t("sidebar.granted", { count: granted.length })}</span>
               </button>
             )}
@@ -134,13 +151,20 @@ export function WishSidebar({
       </div>
       <div className="sidebar-section-label project-section-label">
         {!collapsed && <span>{t("sidebar.projects")}</span>}
-        <button onClick={onNewProject} title={t("sidebar.new_project")} aria-label={t("sidebar.new_project")}>
+        <button
+          onClick={onNewProject}
+          title={t("sidebar.new_project")}
+          aria-label={t("sidebar.new_project")}
+        >
           <Plus size={15} />
         </button>
       </div>
       <div className="mission-list project-list">
         {projects.map((project) => (
-          <div key={project.id} className={`project-nav ${selectedProjectId === project.id ? "selected" : ""}`}>
+          <div
+            key={project.id}
+            className={`project-nav ${selectedProjectId === project.id ? "selected" : ""}`}
+          >
             <button
               className="project-select"
               title={project.directory || t("project.no_folder")}

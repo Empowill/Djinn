@@ -17,14 +17,18 @@ export interface Imported {
   note: string;
 }
 
-export async function importWish(clients: Clients, file: File): Promise<Imported> {
+export async function importWish(
+  clients: Clients,
+  file: File,
+): Promise<Imported> {
   if (file.size > MAX_FILE) throw new Error("The file is larger than 100 MB");
   const data = new Uint8Array(await file.arrayBuffer());
   try {
     const res = await clients.wishes.importData({ data });
     return { wishId: res.wish?.id ?? "", already: false, note: res.note };
   } catch (error) {
-    if (!(error instanceof ConnectError) || error.code !== Code.AlreadyExists) throw error;
+    if (!(error instanceof ConnectError) || error.code !== Code.AlreadyExists)
+      throw error;
     return { wishId: wishIdOf(data), already: true, note: "" };
   }
 }
@@ -32,6 +36,7 @@ export async function importWish(clients: Clients, file: File): Promise<Imported
 // wishIdOf reads the wish's identifier from an export, JSON or binary.
 export function wishIdOf(data: Uint8Array): string {
   const first = new TextDecoder().decode(data.subarray(0, 1)).trim();
-  if (first === "{") return JSON.parse(new TextDecoder().decode(data))?.wish?.id ?? "";
+  if (first === "{")
+    return JSON.parse(new TextDecoder().decode(data))?.wish?.id ?? "";
   return fromBinary(WishExportSchema, data).wish?.id ?? "";
 }

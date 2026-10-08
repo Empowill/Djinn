@@ -33,7 +33,9 @@ export function when(ts?: Timestamp): string {
 
 // A wish stored before states is active.
 export function isActive(wish: Wish): boolean {
-  return wish.state === WishState.ACTIVE || wish.state === WishState.UNSPECIFIED;
+  return (
+    wish.state === WishState.ACTIVE || wish.state === WishState.UNSPECIFIED
+  );
 }
 
 export function wishStateText(wish: Wish): string {
@@ -108,7 +110,9 @@ export function isOpen(question: Question): boolean {
 }
 
 export function allowanceOf(wish: Wish, projectId: string): Allowance {
-  const found = wish.allowances.find((a) => a.projectId.toLowerCase() === projectId.toLowerCase());
+  const found = wish.allowances.find(
+    (a) => a.projectId.toLowerCase() === projectId.toLowerCase(),
+  );
   return found?.allowance || Allowance.NONE;
 }
 
