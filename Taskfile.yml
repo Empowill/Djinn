@@ -19,7 +19,6 @@ tasks:
     sources:
       - src/**/*
       - locales/*.json
-      - shim/**/*
       - gen/ts/**/*
       - index.html
       - vite.config.ts
@@ -63,10 +62,10 @@ tasks:
       - task: e2e
 
   test-ui:
-    desc: Run the interface tests (Node) and the shim tests
+    desc: Run the interface tests (Node), and those of its data module on in-memory services
     cmds:
       - npm test
-      - node --test shim/*.test.mjs
+      - node --test tests/*.test.mjs
 
   test-go:
     desc: Run the Go unit tests (builds the interface first if it changed)
@@ -129,13 +128,13 @@ tasks:
       - go vet -tags headless ./...
       - go vet -tags 'headless mcp' ./cmd/djinn
       - npx tsc -b --noEmit
-      - npx prettier --check --log-level warn "src/**/*.{ts,tsx,css}" "shim/**/*.ts" "e2e/**/*.ts"
+      - npx prettier --check --log-level warn "src/**/*.{ts,tsx,css}" "e2e/**/*.ts"
 
   format:
     desc: Format the Go and TypeScript code in place
     cmds:
       - gofmt -w cmd internal tools locales e2e
-      - npx prettier --write --log-level warn "src/**/*.{ts,tsx,css}" "shim/**/*.ts" "e2e/**/*.ts"
+      - npx prettier --write --log-level warn "src/**/*.{ts,tsx,css}" "e2e/**/*.ts"
 
   release:
     desc: "Tag a release that carries the built interface: task release VERSION=v0.1.0 (pushing the tag stays a separate step)"

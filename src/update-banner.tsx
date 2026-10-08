@@ -1,9 +1,10 @@
 // A discreet banner at the top of the window when a newer Djinn waits at the path of the running one (installed with
 // `go tool task install`), with the button that restarts on it. Nothing restarts without that click. After a restart,
-// it lists the terminals that did not start again. Shown only when djinn serves the page (window.djinnUpdate).
+// it lists the terminals that did not start again. Shown only when djinn serves the page (a DjinnProvider).
 import { useEffect, useState } from "react";
 
-import type { UpdateState } from "../shim/update";
+import { useDjinn } from "./data/djinn";
+import type { UpdateState } from "./data/update";
 import { t } from "./i18n";
 import "./update-banner.css";
 
@@ -13,7 +14,7 @@ type Phase =
   | { kind: "failed"; message: string };
 
 export function UpdateBanner() {
-  const api = typeof window !== "undefined" ? window.djinnUpdate : undefined;
+  const api = useDjinn()?.update;
   const [state, setState] = useState<UpdateState | undefined>();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [dismissed, setDismissed] = useState(false);

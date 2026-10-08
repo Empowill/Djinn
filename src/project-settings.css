@@ -1,5 +1,0 @@
-/* Stable style entry point for consumers importing ProjectSettings. */
-.project-settings {
-  display: block;
-  min-width: 0;
-}

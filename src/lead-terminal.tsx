@@ -1,6 +1,6 @@
 // The terminal pinned at the bottom of the window: a real terminal (xterm.js) on a pseudo-terminal of djinn up,
 // running the user's shell or the command djinn up was given (--terminal), such as the lead agent. It shows only
-// when djinn serves the page (window.djinnTerminal, from the shim); elsewhere the app renders alone.
+// when djinn serves the page (a DjinnProvider); elsewhere the app renders alone.
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import type {} from "../shim/focus";
-import type { DjinnTerminal, TerminalInfo } from "../shim/terminal";
+import { type Djinn, useDjinn } from "./data/djinn";
+import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
 import { t } from "./i18n";
 
@@ -40,12 +40,12 @@ function store(key: string, value: string) {
 
 // LeadTerminalFrame lays the app out above the terminal, when there is one.
 export function LeadTerminalFrame({ children }: { children: ReactNode }) {
-  const api = typeof window !== "undefined" ? window.djinnTerminal : undefined;
-  if (!api) return <>{children}</>;
+  const djinn = useDjinn();
+  if (!djinn) return <>{children}</>;
   return (
     <div className="lead-frame">
       <div className="lead-frame-app">{children}</div>
-      <LeadTerminal api={api} />
+      <LeadTerminal djinn={djinn} />
     </div>
   );
 }
@@ -56,7 +56,8 @@ type Status =
   | { kind: "exited"; info: TerminalInfo; code: number }
   | { kind: "error"; message: string };
 
-function LeadTerminal({ api }: { api: DjinnTerminal }) {
+function LeadTerminal({ djinn }: { djinn: Djinn }) {
+  const api = djinn.terminal;
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.terminal.collapsed") === "1",
   );
@@ -80,13 +81,13 @@ function LeadTerminal({ api }: { api: DjinnTerminal }) {
   // Show the terminal djinn asks for, such as a wish's lead.
   useEffect(
     () =>
-      window.djinnFocus?.subscribe((focus) => {
+      djinn.focus.subscribe((focus) => {
         if (!focus.terminal) return;
         ended.current = undefined;
         setName(focus.terminal);
         setCollapsed(false);
       }),
-    [],
+    [djinn],
   );
 
   // The emulator, the program, and the links between them.
@@ -109,8 +110,9 @@ function LeadTerminal({ api }: { api: DjinnTerminal }) {
     term.loadAddon(fit);
     term.loadAddon(
       new WebLinksAddon((_event, uri) => {
-        if (window.djinn) void window.djinn.openExternal(uri);
-        else window.open(uri, "_blank", "noopener");
+        void djinn.clients.ui
+          .openExternal({ url: uri })
+          .catch(() => window.open(uri, "_blank", "noopener"));
       }),
     );
     term.open(element);
@@ -214,7 +216,7 @@ function LeadTerminal({ api }: { api: DjinnTerminal }) {
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [api, generation, name]);
+  }, [api, djinn, generation, name]);
 
   // Fit the emulator to its box whenever the box changes.
   useEffect(() => {
