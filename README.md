@@ -53,7 +53,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [ ] [T01 · The native window: Wails, the embedded interface, dev and browser modes](plan/fe63ed30-native-window.md) (in progress)
 - [x] [T02 · Protos, API and command line: everything generated, a CLI by convention](plan/c30479be-api-and-cli.md)
 - [ ] [T03 · Keep the interface working: the `window.djinn` shim](plan/aef418cb-interface-shim.md) (in progress)
-- [ ] [T04 · Getting started: install in one line, or ask your agent](plan/929d6a88-getting-started.md)
+- [ ] [T04 · Getting started: install in one line, or ask your agent](plan/929d6a88-getting-started.md) (in progress)
 - [x] [T05 · Testing: unit tests in seconds, `task e2e` an agent can run](plan/b6a680bf-testing.md)
 - [ ] [T06 · End-to-end tests on the native window](plan/b81b5d99-native-e2e.md) (in progress)
 - [ ] [T10 · English everywhere](plan/4527d734-english-everywhere.md) (in progress)
