@@ -113,6 +113,8 @@ const (
 	TaskServiceWatchProcedure = "/plan.v1.TaskService/Watch"
 	// TaskServiceCleanProcedure is the fully-qualified name of the TaskService's Clean RPC.
 	TaskServiceCleanProcedure = "/plan.v1.TaskService/Clean"
+	// TaskServiceDeleteProcedure is the fully-qualified name of the TaskService's Delete RPC.
+	TaskServiceDeleteProcedure = "/plan.v1.TaskService/Delete"
 )
 
 // QuestionServiceClient is a client for the plan.v1.QuestionService service.
@@ -1178,6 +1180,9 @@ type TaskServiceClient interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
+	// Delete a task no worker ever ran, such as a plan item taken for a task: it goes with its events. A task a worker
+	// ran stays, as the record of that work.
+	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the plan.v1.TaskService service. By default, it uses
@@ -1227,17 +1232,24 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Clean")),
 			connect.WithClientOptions(opts...),
 		),
+		delete: connect.NewClient[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse](
+			httpClient,
+			baseURL+TaskServiceDeleteProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Delete")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // taskServiceClient implements TaskServiceClient.
 type taskServiceClient struct {
-	spawn *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
-	list  *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
-	get   *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
-	stop  *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
-	watch *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
-	clean *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
+	spawn  *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
+	list   *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
+	get    *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
+	stop   *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
+	watch  *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
+	clean  *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
+	delete *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -1270,6 +1282,11 @@ func (c *taskServiceClient) Clean(ctx context.Context, req *connect.Request[v1.T
 	return c.clean.CallUnary(ctx, req)
 }
 
+// Delete calls plan.v1.TaskService.Delete.
+func (c *taskServiceClient) Delete(ctx context.Context, req *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {
+	return c.delete.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
@@ -1287,6 +1304,9 @@ type TaskServiceHandler interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
+	// Delete a task no worker ever ran, such as a plan item taken for a task: it goes with its events. A task a worker
+	// ran stays, as the record of that work.
+	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -1332,6 +1352,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Clean")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceDeleteHandler := connect.NewUnaryHandler(
+		TaskServiceDeleteProcedure,
+		svc.Delete,
+		connect.WithSchema(taskServiceMethods.ByName("Delete")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceSpawnProcedure:
@@ -1346,6 +1372,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceWatchHandler.ServeHTTP(w, r)
 		case TaskServiceCleanProcedure:
 			taskServiceCleanHandler.ServeHTTP(w, r)
+		case TaskServiceDeleteProcedure:
+			taskServiceDeleteHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1377,4 +1405,8 @@ func (UnimplementedTaskServiceHandler) Watch(context.Context, *connect.Request[v
 
 func (UnimplementedTaskServiceHandler) Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Clean is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Delete is not implemented"))
 }

@@ -1168,6 +1168,11 @@ service TaskService {
   rpc Clean(TaskServiceCleanRequest) returns (TaskServiceCleanResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+  // Delete a task no worker ever ran, such as a plan item taken for a task: it goes with its events. A task a worker
+  // ran stays, as the record of that work.
+  rpc Delete(TaskServiceDeleteRequest) returns (TaskServiceDeleteResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
 }
 
 message TaskServiceSpawnRequest {
@@ -1296,5 +1301,18 @@ message TaskServiceCleanRequest {
 
 message TaskServiceCleanResponse {
   // The task, without its worktree.
+  Task task = 1;
+}
+
+message TaskServiceDeleteRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServiceDeleteResponse {
+  // The task, as it was.
   Task task = 1;
 }

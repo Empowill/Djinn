@@ -98,3 +98,13 @@ func (s *Tasks) Clean(
 	}
 	return connect.NewResponse(&planv1.TaskServiceCleanResponse{Task: task}), nil
 }
+
+func (s *Tasks) Delete(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDeleteRequest],
+) (*connect.Response[planv1.TaskServiceDeleteResponse], error) {
+	task, err := s.h.Delete(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceDeleteResponse{Task: task}), nil
+}
