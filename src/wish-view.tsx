@@ -387,6 +387,14 @@ export function WishView({
                       ),
                     )
                   }
+                  onStart={() =>
+                    quiet(
+                      act(
+                        () => clients.tasks.start({ taskId: task.id }),
+                        [Change.TASK],
+                      ),
+                    )
+                  }
                   onSend={(text) =>
                     act(() => clients.tasks.send({ taskId: task.id, text }), [])
                   }

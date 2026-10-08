@@ -101,6 +101,16 @@
   padding: 0 14px 11px 34px;
   color: var(--muted);
 }
+.wish-task-note.machine-wait {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.wish-task-note.machine-wait strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .wish-task-note.error {
   color: #e0a0a0;
 }

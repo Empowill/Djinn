@@ -12,6 +12,7 @@ import {
   Lock,
   MessageSquare,
   MessageSquarePlus,
+  Play,
   ScrollText,
   Send,
   Terminal,
@@ -80,6 +81,7 @@ export function WishTask({
   codes,
   origin,
   onStop,
+  onStart,
   onSend,
 }: {
   task: Task;
@@ -89,6 +91,8 @@ export function WishTask({
   // Where the task comes from, in the flight plan of several wishes: its wish.
   origin?: ReactNode;
   onStop: () => void;
+  // Starts a task that waits for the machine alone, anyway (TaskService.Start).
+  onStart?: () => void;
   onSend: (text: string) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
@@ -102,6 +106,7 @@ export function WishTask({
         .map((id) => codes?.get(id))
         .filter((code): code is string => !!code);
   const tone = taskTone(task.status);
+  const machineWait = task.status === TaskStatus.PENDING && task.machineWait;
   return (
     <article
       className={`wish-task tone-${tone} ${open ? "open" : ""}`}
@@ -134,15 +139,32 @@ export function WishTask({
           </button>
         )}
       </div>
-      {(task.waitReason || task.error || after.length > 0) && (
-        <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
-          {task.error || task.waitReason}
-          {after.length > 0 && (
-            <span className="wish-task-after">
-              {t("page.after", { tasks: after.join(", ") })}
-            </span>
+      {machineWait ? (
+        <div className="wish-task-note machine-wait">
+          <strong>{t("task.machine_wait")}</strong>
+          <span>{task.waitReason}</span>
+          {onStart && (
+            <button
+              className="button secondary small"
+              onClick={onStart}
+              title={t("task.start_anyway_detail")}
+            >
+              <Play size={13} />
+              <span>{t("task.start_anyway")}</span>
+            </button>
           )}
-        </p>
+        </div>
+      ) : (
+        (task.waitReason || task.error || after.length > 0) && (
+          <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
+            {task.error || task.waitReason}
+            {after.length > 0 && (
+              <span className="wish-task-after">
+                {t("page.after", { tasks: after.join(", ") })}
+              </span>
+            )}
+          </p>
+        )
       )}
       {open && (
         <TaskBody task={task} forkOf={codes?.get(task.forkOf ?? "") ?? ""} />

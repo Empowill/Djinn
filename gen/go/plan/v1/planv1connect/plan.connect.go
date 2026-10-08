@@ -124,6 +124,8 @@ const (
 	TaskServicePauseProcedure = "/plan.v1.TaskService/Pause"
 	// TaskServiceResumeProcedure is the fully-qualified name of the TaskService's Resume RPC.
 	TaskServiceResumeProcedure = "/plan.v1.TaskService/Resume"
+	// TaskServiceStartProcedure is the fully-qualified name of the TaskService's Start RPC.
+	TaskServiceStartProcedure = "/plan.v1.TaskService/Start"
 	// TaskServiceWatchProcedure is the fully-qualified name of the TaskService's Watch RPC.
 	TaskServiceWatchProcedure = "/plan.v1.TaskService/Watch"
 	// TaskServiceCleanProcedure is the fully-qualified name of the TaskService's Clean RPC.
@@ -1358,6 +1360,9 @@ type TaskServiceClient interface {
 	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
+	// Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
+	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
@@ -1417,6 +1422,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Resume")),
 			connect.WithClientOptions(opts...),
 		),
+		start: connect.NewClient[v1.TaskServiceStartRequest, v1.TaskServiceStartResponse](
+			httpClient,
+			baseURL+TaskServiceStartProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Start")),
+			connect.WithClientOptions(opts...),
+		),
 		watch: connect.NewClient[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse](
 			httpClient,
 			baseURL+TaskServiceWatchProcedure,
@@ -1452,6 +1463,7 @@ type taskServiceClient struct {
 	stop   *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
 	pause  *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
 	resume *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
+	start  *connect.Client[v1.TaskServiceStartRequest, v1.TaskServiceStartResponse]
 	watch  *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
 	clean  *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
 	delete *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
@@ -1486,6 +1498,11 @@ func (c *taskServiceClient) Pause(ctx context.Context, req *connect.Request[v1.T
 // Resume calls plan.v1.TaskService.Resume.
 func (c *taskServiceClient) Resume(ctx context.Context, req *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error) {
 	return c.resume.CallUnary(ctx, req)
+}
+
+// Start calls plan.v1.TaskService.Start.
+func (c *taskServiceClient) Start(ctx context.Context, req *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error) {
+	return c.start.CallUnary(ctx, req)
 }
 
 // Watch calls plan.v1.TaskService.Watch.
@@ -1526,6 +1543,9 @@ type TaskServiceHandler interface {
 	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
+	// Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
+	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
@@ -1581,6 +1601,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Resume")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceStartHandler := connect.NewUnaryHandler(
+		TaskServiceStartProcedure,
+		svc.Start,
+		connect.WithSchema(taskServiceMethods.ByName("Start")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceWatchHandler := connect.NewServerStreamHandler(
 		TaskServiceWatchProcedure,
 		svc.Watch,
@@ -1619,6 +1645,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServicePauseHandler.ServeHTTP(w, r)
 		case TaskServiceResumeProcedure:
 			taskServiceResumeHandler.ServeHTTP(w, r)
+		case TaskServiceStartProcedure:
+			taskServiceStartHandler.ServeHTTP(w, r)
 		case TaskServiceWatchProcedure:
 			taskServiceWatchHandler.ServeHTTP(w, r)
 		case TaskServiceCleanProcedure:
@@ -1658,6 +1686,10 @@ func (UnimplementedTaskServiceHandler) Pause(context.Context, *connect.Request[v
 
 func (UnimplementedTaskServiceHandler) Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Resume is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Start is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error {

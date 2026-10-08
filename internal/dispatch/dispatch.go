@@ -63,6 +63,8 @@ type Decision struct {
 	Why string
 	// Why it never will start: it fails.
 	Failed string
+	// It waits for the machine alone: no slot free, or the machine under pressure. Forced, it may start.
+	Machine bool
 }
 
 // Planned tells whether Djinn starts the task by itself, once it is ready.
@@ -75,11 +77,15 @@ func Planned(t *planv1.Task) bool {
 func (s *Situation) Pass() []Decision {
 	var out []Decision
 	for _, t := range s.Order() {
-		why, failed := s.Blocker(t)
+		why, failed := s.Held(t)
+		machine := false
 		if why == "" && failed == "" {
-			s.Start(t)
+			if why = s.full(); why == "" {
+				s.Start(t)
+			}
+			machine = why != ""
 		}
-		out = append(out, Decision{Task: t, Why: why, Failed: failed})
+		out = append(out, Decision{Task: t, Why: why, Failed: failed, Machine: machine})
 	}
 	return out
 }
@@ -123,6 +129,15 @@ func (s *Situation) writing(t *planv1.Task) bool {
 // Its wish must be active (not paused nor granted); then come the dependencies, the write scopes, and the machine.
 // A wish the situation does not know does not hold the task.
 func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
+	if why, failed = s.Held(t); why != "" || failed != "" {
+		return why, failed
+	}
+	return s.full(), ""
+}
+
+// Held is Blocker without the machine: what holds the task whatever the machine allows. A task forced to start
+// (djinn task start) needs Held empty.
+func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 	if wish, ok := s.wishes[t.GetWishId()]; ok && !plan.Active(wish) {
 		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), ""
 	}
@@ -156,7 +171,7 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 			}
 		}
 	}
-	return s.full(), ""
+	return "", ""
 }
 
 // full says why no worker may start now, or "" when one may.

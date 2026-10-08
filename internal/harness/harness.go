@@ -251,7 +251,11 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	why, failed := sit.Blocker(task)
+	why, failed := sit.Held(task)
+	if why == "" && failed == "" {
+		why, _ = sit.Blocker(task)
+		task.MachineWait = why != ""
+	}
 	switch {
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))
@@ -830,7 +834,7 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 		h.sched.Unlock()
 		return h.Stop(ctx, procedure, req)
 	}
-	task.Status, task.Error, task.WaitReason, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request before it started", "", timestamppb.Now()
+	task.Status, task.Error, task.WaitReason, task.MachineWait, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request before it started", "", false, timestamppb.Now()
 	h.writeAlone(ctx, actorLocal, procedure, req, task.GetId(), task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "stopped: " + task.GetError()})
 	h.sched.Unlock()
 	h.wake() // Its dependents fail in turn.
