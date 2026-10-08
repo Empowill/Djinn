@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+
+	"github.com/empowill/djinn/internal/ui"
 )
 
 // hasWindow is false in a build without a native window: a headless build (-tags headless), made for tests and
@@ -14,6 +16,6 @@ import (
 const hasWindow = false
 
 // openWindow is unavailable in a build without a native window.
-func openWindow(context.Context, string, http.Handler, <-chan struct{}) error {
+func openWindow(context.Context, string, http.Handler, <-chan struct{}, *ui.Notices) error {
 	return errors.New("this build has no native window: use --browser, or rebuild with CGO and the system libraries of the window (see the README)")
 }

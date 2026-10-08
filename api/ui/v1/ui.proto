@@ -29,10 +29,6 @@ service UiService {
   rpc OpenExternal(UiServiceOpenExternalRequest) returns (UiServiceOpenExternalResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
-  // Tell the user a question is waiting. Not shown yet.
-  rpc NotifyQuestion(UiServiceNotifyQuestionRequest) returns (UiServiceNotifyQuestionResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
-  }
   // Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
   // window shows them too. In browser mode, djinn up prints the address of the page again.
   rpc Show(UiServiceShowRequest) returns (UiServiceShowResponse) {
@@ -117,22 +113,6 @@ message UiServiceOpenExternalRequest {
 message UiServiceOpenExternalResponse {
   // The link as opened.
   string url = 1;
-}
-
-message UiServiceNotifyQuestionRequest {
-  // Mission the question belongs to.
-  string task_id = 1;
-  // The question.
-  string question_id = 2;
-  // Title of the notification.
-  string title = 3;
-  // Text of the notification.
-  string body = 4;
-}
-
-message UiServiceNotifyQuestionResponse {
-  // A notification was shown.
-  bool shown = 1;
 }
 
 message UiServiceShowRequest {

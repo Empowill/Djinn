@@ -46,9 +46,6 @@ const (
 	UiServiceValidateProjectProcedure = "/ui.v1.UiService/ValidateProject"
 	// UiServiceOpenExternalProcedure is the fully-qualified name of the UiService's OpenExternal RPC.
 	UiServiceOpenExternalProcedure = "/ui.v1.UiService/OpenExternal"
-	// UiServiceNotifyQuestionProcedure is the fully-qualified name of the UiService's NotifyQuestion
-	// RPC.
-	UiServiceNotifyQuestionProcedure = "/ui.v1.UiService/NotifyQuestion"
 	// UiServiceShowProcedure is the fully-qualified name of the UiService's Show RPC.
 	UiServiceShowProcedure = "/ui.v1.UiService/Show"
 	// UiServiceWatchShowProcedure is the fully-qualified name of the UiService's WatchShow RPC.
@@ -73,8 +70,6 @@ type UiServiceClient interface {
 	ValidateProject(context.Context, *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error)
 	// Open an HTTP or HTTPS link in the default browser.
 	OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error)
-	// Tell the user a question is waiting. Not shown yet.
-	NotifyQuestion(context.Context, *connect.Request[v1.UiServiceNotifyQuestionRequest]) (*connect.Response[v1.UiServiceNotifyQuestionResponse], error)
 	// Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
 	// window shows them too. In browser mode, djinn up prints the address of the page again.
 	Show(context.Context, *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error)
@@ -133,12 +128,6 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(uiServiceMethods.ByName("OpenExternal")),
 			connect.WithClientOptions(opts...),
 		),
-		notifyQuestion: connect.NewClient[v1.UiServiceNotifyQuestionRequest, v1.UiServiceNotifyQuestionResponse](
-			httpClient,
-			baseURL+UiServiceNotifyQuestionProcedure,
-			connect.WithSchema(uiServiceMethods.ByName("NotifyQuestion")),
-			connect.WithClientOptions(opts...),
-		),
 		show: connect.NewClient[v1.UiServiceShowRequest, v1.UiServiceShowResponse](
 			httpClient,
 			baseURL+UiServiceShowProcedure,
@@ -179,7 +168,6 @@ type uiServiceClient struct {
 	saveState       *connect.Client[v1.UiServiceSaveStateRequest, v1.UiServiceSaveStateResponse]
 	validateProject *connect.Client[v1.UiServiceValidateProjectRequest, v1.UiServiceValidateProjectResponse]
 	openExternal    *connect.Client[v1.UiServiceOpenExternalRequest, v1.UiServiceOpenExternalResponse]
-	notifyQuestion  *connect.Client[v1.UiServiceNotifyQuestionRequest, v1.UiServiceNotifyQuestionResponse]
 	show            *connect.Client[v1.UiServiceShowRequest, v1.UiServiceShowResponse]
 	watchShow       *connect.Client[v1.UiServiceWatchShowRequest, v1.UiServiceWatchShowResponse]
 	watchUpdate     *connect.Client[v1.UiServiceWatchUpdateRequest, v1.UiServiceWatchUpdateResponse]
@@ -210,11 +198,6 @@ func (c *uiServiceClient) ValidateProject(ctx context.Context, req *connect.Requ
 // OpenExternal calls ui.v1.UiService.OpenExternal.
 func (c *uiServiceClient) OpenExternal(ctx context.Context, req *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error) {
 	return c.openExternal.CallUnary(ctx, req)
-}
-
-// NotifyQuestion calls ui.v1.UiService.NotifyQuestion.
-func (c *uiServiceClient) NotifyQuestion(ctx context.Context, req *connect.Request[v1.UiServiceNotifyQuestionRequest]) (*connect.Response[v1.UiServiceNotifyQuestionResponse], error) {
-	return c.notifyQuestion.CallUnary(ctx, req)
 }
 
 // Show calls ui.v1.UiService.Show.
@@ -254,8 +237,6 @@ type UiServiceHandler interface {
 	ValidateProject(context.Context, *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error)
 	// Open an HTTP or HTTPS link in the default browser.
 	OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error)
-	// Tell the user a question is waiting. Not shown yet.
-	NotifyQuestion(context.Context, *connect.Request[v1.UiServiceNotifyQuestionRequest]) (*connect.Response[v1.UiServiceNotifyQuestionResponse], error)
 	// Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
 	// window shows them too. In browser mode, djinn up prints the address of the page again.
 	Show(context.Context, *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error)
@@ -310,12 +291,6 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(uiServiceMethods.ByName("OpenExternal")),
 		connect.WithHandlerOptions(opts...),
 	)
-	uiServiceNotifyQuestionHandler := connect.NewUnaryHandler(
-		UiServiceNotifyQuestionProcedure,
-		svc.NotifyQuestion,
-		connect.WithSchema(uiServiceMethods.ByName("NotifyQuestion")),
-		connect.WithHandlerOptions(opts...),
-	)
 	uiServiceShowHandler := connect.NewUnaryHandler(
 		UiServiceShowProcedure,
 		svc.Show,
@@ -358,8 +333,6 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 			uiServiceValidateProjectHandler.ServeHTTP(w, r)
 		case UiServiceOpenExternalProcedure:
 			uiServiceOpenExternalHandler.ServeHTTP(w, r)
-		case UiServiceNotifyQuestionProcedure:
-			uiServiceNotifyQuestionHandler.ServeHTTP(w, r)
 		case UiServiceShowProcedure:
 			uiServiceShowHandler.ServeHTTP(w, r)
 		case UiServiceWatchShowProcedure:
@@ -397,10 +370,6 @@ func (UnimplementedUiServiceHandler) ValidateProject(context.Context, *connect.R
 
 func (UnimplementedUiServiceHandler) OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.OpenExternal is not implemented"))
-}
-
-func (UnimplementedUiServiceHandler) NotifyQuestion(context.Context, *connect.Request[v1.UiServiceNotifyQuestionRequest]) (*connect.Response[v1.UiServiceNotifyQuestionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.NotifyQuestion is not implemented"))
 }
 
 func (UnimplementedUiServiceHandler) Show(context.Context, *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error) {

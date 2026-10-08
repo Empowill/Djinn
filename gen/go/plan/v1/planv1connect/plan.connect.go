@@ -113,6 +113,8 @@ const (
 	TaskServiceWatchProcedure = "/plan.v1.TaskService/Watch"
 	// TaskServiceCleanProcedure is the fully-qualified name of the TaskService's Clean RPC.
 	TaskServiceCleanProcedure = "/plan.v1.TaskService/Clean"
+	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
+	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
 )
 
 // QuestionServiceClient is a client for the plan.v1.QuestionService service.
@@ -1178,6 +1180,9 @@ type TaskServiceClient interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
+	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
+	// and a "received" event follows once the worker says something after it.
+	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the plan.v1.TaskService service. By default, it uses
@@ -1227,6 +1232,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Clean")),
 			connect.WithClientOptions(opts...),
 		),
+		send: connect.NewClient[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse](
+			httpClient,
+			baseURL+TaskServiceSendProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Send")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1238,6 +1249,7 @@ type taskServiceClient struct {
 	stop  *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
 	watch *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
 	clean *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
+	send  *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -1270,6 +1282,11 @@ func (c *taskServiceClient) Clean(ctx context.Context, req *connect.Request[v1.T
 	return c.clean.CallUnary(ctx, req)
 }
 
+// Send calls plan.v1.TaskService.Send.
+func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
+	return c.send.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
@@ -1287,6 +1304,9 @@ type TaskServiceHandler interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
+	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
+	// and a "received" event follows once the worker says something after it.
+	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -1332,6 +1352,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Clean")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceSendHandler := connect.NewUnaryHandler(
+		TaskServiceSendProcedure,
+		svc.Send,
+		connect.WithSchema(taskServiceMethods.ByName("Send")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceSpawnProcedure:
@@ -1346,6 +1372,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceWatchHandler.ServeHTTP(w, r)
 		case TaskServiceCleanProcedure:
 			taskServiceCleanHandler.ServeHTTP(w, r)
+		case TaskServiceSendProcedure:
+			taskServiceSendHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1377,4 +1405,8 @@ func (UnimplementedTaskServiceHandler) Watch(context.Context, *connect.Request[v
 
 func (UnimplementedTaskServiceHandler) Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Clean is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Send is not implemented"))
 }

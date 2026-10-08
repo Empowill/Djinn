@@ -58,6 +58,7 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`djinn question list --wish-id <wish> --open`.\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\"` (`--project-id`, `--depends-on W1`, `--later`, " +
 	"`--fork W1`, `--from-lead`); `djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
+	"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
 	"`djinn task stop <task>`.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\"`; `djinn block list <wish>`.\n" +
 	"- `djinn wish render <wish>`: the wish's page, for the developer.\n" +

@@ -98,3 +98,13 @@ func (s *Tasks) Clean(
 	}
 	return connect.NewResponse(&planv1.TaskServiceCleanResponse{Task: task}), nil
 }
+
+func (s *Tasks) Send(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceSendRequest],
+) (*connect.Response[planv1.TaskServiceSendResponse], error) {
+	ev, err := s.h.Send(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceSendResponse{Event: ev}), nil
+}

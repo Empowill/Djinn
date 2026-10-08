@@ -91,7 +91,7 @@ Not switched yet, screen by screen:
 - **Search and shortcuts** (Ctrl+K palette): gone with the mission model; only Ctrl+N stays.
 - **A project's setup**: a folder typed in, no folder picker (`selectDirectory` was never served), no indexing
   options. Summoning a skill stays on the command line.
-- **Notifications** of a new question (`UiService.NotifyQuestion`): not wired.
+- **Notifications** of a new question: shown by the server itself, not by the page (T09).
 - **A terminal per wish** (T13's open question): still one terminal, switched by `djinn wish resume`.
 - **Visualizations** (HTML artifacts in a frame): gone with the artifact workspace. Mermaid in a block shows an
   empty frame in the page djinn serves: the frame's inline script meets the page's policy. It was so before.
