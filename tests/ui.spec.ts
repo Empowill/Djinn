@@ -305,7 +305,7 @@ test.describe("mission workspace", () => {
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(exported)),
     });
-    await expect(page.getByText("Mission importée.")).toBeVisible();
+    await expect(page.getByText("Souhait importé.")).toBeVisible();
     await expect(page.locator(".mission-list .mission-nav")).toHaveCount(2);
   });
 

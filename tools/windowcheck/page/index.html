@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Djinn window check</title>
+<style>body { font: 16px system-ui, sans-serif; margin: 2rem; }</style>
+</head>
+<body>
+<p>Djinn window check: reading a Connect stream. This window closes by itself.</p>
+<p>Value: <output id="value">0</output></p>
+<script>
+// Speaks the Connect protocol by hand, to need no bundle: in the binary Protobuf format, as the interface does, or
+// in JSON. It reads demo.v1.DemoService/Count and records when each value is read, then checks that a unary call
+// with an empty response succeeds; with bench=1 it then times the
+// round trips of windowcheck.v1.Bench (see main.go). Then it posts everything to /windowcheck/result.
+const now = () => performance.timeOrigin + performance.now(); // Milliseconds since the epoch, sub-millisecond.
+const params = new URLSearchParams(location.search);
+const count = Number(params.get("count")) || 100;
+const output = document.getElementById("value");
+const utf8 = new TextEncoder();
+const text = new TextDecoder();
+
+// The messages used here have one field, number 1: a string (StringValue) or an integer (CountRequest,
+// CountResponse, UInt32Value). In JSON, a wrapper is its bare value; CountRequest and CountResponse are objects.
+function varint(n) {
+  const out = [];
+  for (; n > 127; n >>>= 7) out.push((n & 127) | 128);
+  out.push(n);
+  return out;
+}
+function readVarint(b) {
+  let n = 0;
+  for (let i = 1, shift = 0; i < b.length; i++, shift += 7) {
+    n += (b[i] & 127) * 2 ** shift;
+    if (!(b[i] & 128)) return n;
+  }
+  return 0; // An empty message: the field holds its default.
+}
+const codecs = {
+  json: {
+    name: "json",
+    countRequest: (upTo) => utf8.encode(JSON.stringify({ upTo })),
+    countResponse: (b) => JSON.parse(text.decode(b)).value ?? 0,
+    string: (s) => utf8.encode(JSON.stringify(s)),
+    readString: (b) => JSON.parse(text.decode(b)),
+    uint32: (n) => utf8.encode(String(n)),
+  },
+  binary: {
+    name: "proto",
+    countRequest: (upTo) => new Uint8Array([8, ...varint(upTo)]),
+    countResponse: readVarint,
+    string(s) {
+      const body = utf8.encode(s);
+      const head = [10, ...varint(body.length)];
+      const out = new Uint8Array(head.length + body.length);
+      out.set(head);
+      out.set(body, head.length);
+      return out;
+    },
+    readString(b) {
+      let i = 1;
+      while (b[i] & 128) i++;
+      return text.decode(b.subarray(i + 1));
+    },
+    uint32: (n) => new Uint8Array([8, ...varint(n)]),
+  },
+};
+
+function envelope(body) {
+  const out = new Uint8Array(5 + body.length);
+  new DataView(out.buffer).setUint32(1, body.length);
+  out.set(body, 5);
+  return out;
+}
+
+// stream calls a server stream and hands each message to onMessage with the time it was read; it returns the
+// number of reads the body took.
+async function stream(codec, path, request, onMessage) {
+  const res = await fetch(path, {
+    method: "POST",
+    body: envelope(request),
+    headers: { "Content-Type": "application/connect+" + codec.name, "Connect-Protocol-Version": "1" },
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const reader = res.body.getReader();
+  let buf = new Uint8Array(0);
+  for (let reads = 0; ; reads++) {
+    const { done, value } = await reader.read();
+    const t = now();
+    if (done) return reads;
+    const merged = new Uint8Array(buf.length + value.length);
+    merged.set(buf);
+    merged.set(value, buf.length);
+    buf = merged;
+    while (buf.length >= 5) {
+      const flags = buf[0];
+      const len = new DataView(buf.buffer, buf.byteOffset).getUint32(1);
+      if (buf.length < 5 + len) break;
+      const msg = buf.slice(5, 5 + len);
+      buf = buf.slice(5 + len);
+      if (flags & 2) {
+        // The end of the stream is JSON in both formats.
+        const end = JSON.parse(text.decode(msg));
+        if (end.error) throw new Error(end.error.code + ": " + end.error.message);
+        continue;
+      }
+      onMessage(msg, t);
+    }
+  }
+}
+
+async function unary(codec, path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    body,
+    headers: { "Content-Type": "application/" + codec.name, "Connect-Protocol-Version": "1" },
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status + ": " + (await res.text()));
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+// statePayload is the JSON document of the benchmarks in internal/server: a saved workspace of about size bytes.
+function statePayload(size) {
+  let s = '{"version":3,"steps":[';
+  for (let i = 0; s.length < size; i++) {
+    if (i > 0) s += ",";
+    s += `{"id":"step-${String(i).padStart(5, "0")}","title":"Étape ${i} : vérifier le \\"flux\\" du serveur",` +
+      `"status":"done","body":"L'agent a lu internal/server/server.go\\npuis a lancé les tests : 42 passés.",` +
+      `"at":${1760000000000 + i}}`;
+  }
+  return s + "]}";
+}
+
+// bench times, from the page alone (one clock), a unary echo of a saved workspace of several sizes, then a burst
+// of small messages, in both formats, one after the other, three times. A webview may round performance.now() to
+// the millisecond: each time covers many calls.
+async function bench() {
+  const out = { unary: [], burst: [] };
+  for (const size of [1 << 10, 32 << 10, 512 << 10]) {
+    const state = statePayload(size);
+    const calls = size > 100000 ? 20 : 200;
+    for (const codec of [codecs.json, codecs.binary, codecs.json, codecs.binary, codecs.json, codecs.binary]) {
+      const echo = async () => {
+        const back = codec.readString(await unary(codec, "/windowcheck.v1.Bench/Echo", codec.string(state)));
+        if (back.length !== state.length) throw new Error("echo: wrong length");
+      };
+      await echo(); // Warm up.
+      const t = performance.now();
+      for (let i = 0; i < calls; i++) await echo();
+      out.unary.push({ format: codec.name, size, calls, ms: performance.now() - t });
+    }
+  }
+  const n = 5000;
+  for (const codec of [codecs.json, codecs.binary, codecs.json, codecs.binary, codecs.json, codecs.binary]) {
+    let got = 0;
+    const t = performance.now();
+    const reads = await stream(codec, "/windowcheck.v1.Bench/Burst", codec.uint32(n), (msg) => {
+      if (codec.readString(msg).length > 0) got++;
+    });
+    const ms = performance.now() - t;
+    if (got !== n) throw new Error(`burst: ${got} of ${n} messages`);
+    out.burst.push({ format: codec.name, messages: n, ms, reads });
+  }
+  return out;
+}
+
+async function run() {
+  const codec = codecs[params.get("format")] || codecs.binary;
+  const values = [];
+  let error = "";
+  let reads = 0;
+  let benchResult = null;
+  try {
+    reads = await stream(codec, "/demo.v1.DemoService/Count", codec.countRequest(count), (msg, t) => {
+      const v = codec.countResponse(msg);
+      values.push({ v, t });
+      output.textContent = String(v);
+    });
+    // An empty response, as LoadState with nothing saved: in binary, connect-go writes no byte, and the window must
+    // still get its 200, not the 501 of the Wails asset server.
+    if (codec.readString(await unary(codec, "/windowcheck.v1.Bench/Echo", codec.string(""))) !== "")
+      throw new Error("empty echo: not empty");
+    if (params.get("bench")) benchResult = await bench();
+  } catch (e) {
+    error = String(e);
+  }
+  await fetch("/windowcheck/result", {
+    method: "POST",
+    body: JSON.stringify({ values, reads, error, bench: benchResult }),
+  });
+}
+
+run();
+</script>
+</body>
+</html>

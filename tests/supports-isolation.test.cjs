@@ -8,6 +8,18 @@ const filename = require("node:path").resolve("src/visualization-document.ts");
 const loaded = new Module(filename, module);
 loaded.filename = filename;
 loaded.paths = Module._nodeModulePaths(require("node:path").dirname(filename));
+// The module imports ./i18n at run time: load sibling TypeScript files the same way.
+Module._extensions[".ts"] ??= (mod, file) =>
+  mod._compile(
+    ts.transpileModule(fs.readFileSync(file, "utf8"), {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+        esModuleInterop: true,
+      },
+    }).outputText,
+    file,
+  );
 loaded._compile(
   ts.transpileModule(fs.readFileSync(filename, "utf8"), {
     compilerOptions: {

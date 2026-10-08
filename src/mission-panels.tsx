@@ -37,6 +37,7 @@ import { Orb, Machine, Wave, agentColor, agentOrbState } from "./visuals";
 import { getNextRunMode } from "./use-djinn";
 import { PermissionPanel } from "./permission-panel";
 import { agentStatusLabel } from "./mission-progress";
+import { language, t } from "./i18n";
 
 type AgentScheduling = Agent & {
   writeScope?: string[];
@@ -49,13 +50,13 @@ type AgentScheduling = Agent & {
 const scheduling = (agent: Agent) => agent as AgentScheduling;
 
 const waitReasonLabels: Record<string, string> = {
-  concurrency_limit: "Plafond de workers atteint",
-  dependency: "Dépendance non satisfaite",
-  awaiting_dependency: "Dépendance non satisfaite",
-  worker_dependency: "Dépendance non satisfaite",
-  write_conflict: "Conflit de périmètre d’écriture",
-  scope_conflict: "Conflit de périmètre d’écriture",
-  ownership_conflict: "Conflit de propriété d’écriture",
+  concurrency_limit: t("panels.wait_concurrency_limit"),
+  dependency: t("panels.wait_dependency"),
+  awaiting_dependency: t("panels.wait_dependency"),
+  worker_dependency: t("panels.wait_dependency"),
+  write_conflict: t("panels.wait_write_conflict"),
+  scope_conflict: t("panels.wait_write_conflict"),
+  ownership_conflict: t("panels.wait_ownership_conflict"),
 };
 
 const namesFor = (ids: string[] | undefined, agents: Agent[]) =>
@@ -97,18 +98,18 @@ export function agentWaitSummary(
     : eventReason
       ? eventReason
       : waitingFor.length
-        ? "Attend la fin d’un autre worker"
+        ? t("panels.wait_other_worker")
         : dependencies.length
-          ? "Dépendance non satisfaite"
+          ? t("panels.wait_dependency")
           : value.status === "blocked"
-            ? "Bloqué · motif natif non communiqué"
-            : "En attente · motif natif non communiqué";
+            ? t("panels.wait_blocked_unknown")
+            : t("panels.wait_queued_unknown");
   const detail = waitingFor.length
-    ? `Attend : ${waitingFor.join(", ")}`
+    ? t("panels.waits_for", { names: waitingFor.join(", ") })
     : dependencies.length
-      ? `Dépend de : ${dependencies.join(", ")}`
+      ? t("panels.depends_on", { names: dependencies.join(", ") })
       : nativeWaitEvent
-        ? `Dernier signal : ${nativeWaitEvent.title}`
+        ? t("panels.last_signal", { title: nativeWaitEvent.title })
         : undefined;
   return { title: reason, detail };
 }
@@ -121,16 +122,16 @@ export function agentIsReadOnly(agent: Agent): boolean {
   return scheduling(agent).readOnly === true;
 }
 export const formatTime = (value: string) =>
-  new Date(value).toLocaleTimeString("fr-FR", {
+  new Date(value).toLocaleTimeString(language, {
     hour: "2-digit",
     minute: "2-digit",
   });
 export const statusLabels = {
-  queued: "En attente",
-  running: "En cours",
-  blocked: "Bloqué",
-  done: "Terminé",
-  error: "Erreur",
+  queued: t("panels.status_queued"),
+  running: t("panels.status_running"),
+  blocked: t("panels.status_blocked"),
+  done: t("panels.status_done"),
+  error: t("panels.status_error"),
 };
 export function QuestionCard({
   question: q,
@@ -169,12 +170,12 @@ export function QuestionCard({
         </span>
         <div>
           <span className="question-meta">
-            {q.theme || "Mission"} <span>·</span>{" "}
+            {q.theme || t("common.wish")} <span>·</span>{" "}
             {q.answer
-              ? "Décision enregistrée"
+              ? t("panels.decision_recorded")
               : q.blocking
-                ? "Votre réponse débloque la suite"
-                : "Peut attendre"}
+                ? t("panels.answer_unblocks")
+                : t("panels.can_wait")}
           </span>
           <h3>{q.title}</h3>
           {q.answer && <p className="answer-value">{q.answer}</p>}
@@ -195,11 +196,15 @@ export function QuestionCard({
               {q.answer ? (
                 <div className="answered-info">
                   <span>
-                    <CheckCircle2 size={15} /> Décision du{" "}
-                    {new Date(q.answeredAt || Date.now()).toLocaleDateString(
-                      "fr-FR",
-                    )}{" "}
-                    à {formatTime(q.answeredAt || new Date().toISOString())}
+                    <CheckCircle2 size={15} />{" "}
+                    {t("panels.decided_on", {
+                      date: new Date(
+                        q.answeredAt || Date.now(),
+                      ).toLocaleDateString(language),
+                      time: formatTime(
+                        q.answeredAt || new Date().toISOString(),
+                      ),
+                    })}
                   </span>
                   <button
                     className="text-button"
@@ -207,7 +212,7 @@ export function QuestionCard({
                     onClick={onReopen}
                   >
                     <RotateCcw size={13} />
-                    Revoir la décision
+                    {t("panels.reopen_decision")}
                   </button>
                 </div>
               ) : (
@@ -216,7 +221,7 @@ export function QuestionCard({
                     <div className="recommendation">
                       <span className="mini-spark">✳</span>
                       <div>
-                        <span>Recommandation</span>
+                        <span>{t("panels.recommendation")}</span>
                         <p>{recommendation}</p>
                       </div>
                     </div>
@@ -251,9 +256,9 @@ export function QuestionCard({
                       value={custom}
                       disabled={readOnly}
                       onChange={(e) => setCustom(e.target.value)}
-                      placeholder="Précisez votre choix et ce qu’il change…"
+                      placeholder={t("panels.custom_answer_placeholder")}
                       rows={3}
-                      aria-label="Votre réponse personnalisée"
+                      aria-label={t("panels.custom_answer_label")}
                     />
                   ) : (
                     <button
@@ -262,14 +267,13 @@ export function QuestionCard({
                       onClick={() => setCustomMode(true)}
                     >
                       <MessageSquare size={13} />
-                      J’ai une autre idée
+                      {t("panels.other_idea")}
                     </button>
                   )}
                   <div className="question-footer">
                     <span>
                       <CornerDownRight size={14} />
-                      {q.unlocks ||
-                        "Cette réponse rejoindra le contexte de la mission."}
+                      {q.unlocks || t("panels.answer_joins_context")}
                     </span>
                     <button
                       className="button accent small"
@@ -281,8 +285,8 @@ export function QuestionCard({
                       }
                     >
                       {options.length > 0 && !customMode
-                        ? "Valider ce choix"
-                        : "Valider la réponse"}
+                        ? t("panels.confirm_choice")
+                        : t("panels.confirm_answer")}
                       <ArrowRight size={14} />
                     </button>
                   </div>
@@ -303,7 +307,9 @@ export function MissionHeader({
   providerControl?: ReactNode;
 }) {
   const activeStep = task.steps?.find((step) => step.id === task.activeStepId);
-  const pendingPermission = task.permissions?.find((request) => request.status === "pending");
+  const pendingPermission = task.permissions?.find(
+    (request) => request.status === "pending",
+  );
   return (
     <div className="hero mission-header">
       <div className="hero-copy">
@@ -315,10 +321,7 @@ export function MissionHeader({
             </span>
           ))}
         </h1>
-        <p>
-          {task.brief ||
-            "Décrivez votre intention. Djinn en fera un plan de travail partagé."}
-        </p>
+        <p>{task.brief || t("panels.brief_placeholder")}</p>
         {activeStep?.objective && (
           <p className="step-objective">
             <strong>{activeStep.title}</strong> · {activeStep.objective}
@@ -326,17 +329,39 @@ export function MissionHeader({
         )}
         <div className="hero-meta">
           {pendingPermission && (
-            <button className="button secondary small" onClick={() => window.dispatchEvent(new CustomEvent("djinn:permission-focus", { detail: { taskId: task.id, requestId: pendingPermission.id } }))}>
-              <LockKeyhole size={13} /> Autorisation attendue · {pendingPermission.agentName || task.agents.find((agent) => agent.id === pendingPermission.agentId)?.name || "Agent"}
+            <button
+              className="button secondary small"
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent("djinn:permission-focus", {
+                    detail: {
+                      taskId: task.id,
+                      requestId: pendingPermission.id,
+                    },
+                  }),
+                )
+              }
+            >
+              <LockKeyhole size={13} />{" "}
+              {t("panels.permission_awaited", {
+                agent:
+                  pendingPermission.agentName ||
+                  task.agents.find(
+                    (agent) => agent.id === pendingPermission.agentId,
+                  )?.name ||
+                  "Agent",
+              })}
             </button>
           )}
           <span>
             <GitBranch size={13} />
-            {task.project ? task.project.split("/").pop() : "Mission d’exemple"}
+            {task.project
+              ? task.project.split("/").pop()
+              : t("panels.sample_wish")}
           </span>
           <span>
             <Clock3 size={13} />
-            {new Date(task.createdAt).toLocaleDateString("fr-FR", {
+            {new Date(task.createdAt).toLocaleDateString(language, {
               day: "numeric",
               month: "short",
             })}
@@ -344,7 +369,7 @@ export function MissionHeader({
           {providerControl || (
             <span className="badge muted">
               {task.demo
-                ? "Exploration interactive"
+                ? t("panels.interactive_exploration")
                 : task.provider === "codex"
                   ? "Codex"
                   : "Claude Code"}
@@ -399,7 +424,12 @@ export function Overview({
   const active = task.agents.filter((a) => a.status === "running").length;
   const selectedStepId = task.selectedStepId || task.activeStepId;
   const permissionRequests = permissions.filter(
-    (request) => request.status === "pending" && (selectedStepId === task.activeStepId || !request.stepId || !selectedStepId || request.stepId === selectedStepId),
+    (request) =>
+      request.status === "pending" &&
+      (selectedStepId === task.activeStepId ||
+        !request.stepId ||
+        !selectedStepId ||
+        request.stepId === selectedStepId),
   );
   const activeStep = task.steps?.find((step) => step.id === task.activeStepId);
   const currentResult =
@@ -420,14 +450,13 @@ export function Overview({
     ? {
         stepId: task.activeStepId,
         status: "blocked" as const,
-        summary: "Le passage a été interrompu par une erreur.",
+        summary: t("panels.run_interrupted"),
         reason: (
           latestError?.detail ||
           latestError?.title ||
-          "Le fournisseur ou un sous-agent n’a pas terminé ce passage."
+          t("panels.run_unfinished")
         ).slice(0, 4000),
-        nextAction:
-          "Corrigez la cause indiquée, puis reprenez cette étape. Votre travail est conservé.",
+        nextAction: t("panels.run_fix_and_resume"),
       }
     : currentResult;
   const resultNeedsAction =
@@ -435,9 +464,7 @@ export function Overview({
     stepResult.stepId === task.activeStepId &&
     stepResult.status !== "ready";
   const hasRestitution =
-    !!actions &&
-    (task.artifacts.length > 0 ||
-      (task.actions || []).length > 0);
+    !!actions && (task.artifacts.length > 0 || (task.actions || []).length > 0);
   const hasActionCenter =
     open.length > 0 ||
     permissionRequests.length > 0 ||
@@ -449,16 +476,13 @@ export function Overview({
         <section
           className="action-center"
           id="action-center"
-          aria-label="À toi de jouer"
+          aria-label={t("panels.your_move")}
         >
           <div className="action-center-heading">
             <div>
-              <span className="eyebrow">PROCHAINE ACTION</span>
-              <h2>À toi de jouer</h2>
-              <p>
-                Décidez ce qui peut avancer, autorisez les demandes utiles et
-                validez le résultat.
-              </p>
+              <span className="eyebrow">{t("panels.next_action")}</span>
+              <h2>{t("panels.your_move")}</h2>
+              <p>{t("panels.your_move_detail")}</p>
             </div>
             {open.length > 0 && (
               <span
@@ -466,8 +490,8 @@ export function Overview({
               >
                 <span className="status-dot" />
                 {open.some((q) => q.blocking)
-                  ? "Réponse requise"
-                  : "Peut avancer"}
+                  ? t("panels.answer_required")
+                  : t("panels.can_proceed")}
               </span>
             )}
           </div>
@@ -476,8 +500,8 @@ export function Overview({
               <div>
                 <span className="step-result-kicker">
                   {stepResult.status === "blocked"
-                    ? "Action nécessaire"
-                    : "Réponse attendue"}
+                    ? t("panels.action_needed")
+                    : t("panels.answer_expected")}
                 </span>
                 <h3>{stepResult.summary}</h3>
                 {stepResult.reason && <p>{stepResult.reason}</p>}
@@ -491,11 +515,13 @@ export function Overview({
                   className="button secondary small"
                   onClick={() =>
                     void onSteer?.(
-                      `Action demandée pour l’étape : ${stepResult.nextAction || stepResult.summary}`,
+                      t("panels.step_action_requested", {
+                        action: stepResult.nextAction || stepResult.summary,
+                      }),
                     )
                   }
                 >
-                  Indiquer au chef <ArrowRight size={13} />
+                  {t("panels.tell_lead")} <ArrowRight size={13} />
                 </button>
               ) : (
                 <button
@@ -503,7 +529,7 @@ export function Overview({
                   className="button accent small"
                   onClick={onResume}
                 >
-                  Reprendre cette étape <ArrowRight size={13} />
+                  {t("panels.resume_step")} <ArrowRight size={13} />
                 </button>
               )}
             </article>
@@ -520,7 +546,8 @@ export function Overview({
                 <section className="decisions-section">
                   <div className="section-heading">
                     <h3>
-                      Décisions<span className="count">{open.length}</span>
+                      {t("panels.decisions")}
+                      <span className="count">{open.length}</span>
                     </h3>
                   </div>
                   <AnimatePresence mode="popLayout">
@@ -554,8 +581,7 @@ export function Overview({
         <div className="decision-history">
           <button className="text-button" onClick={() => setHistory(!history)}>
             <CheckCircle2 size={14} />
-            {answered.length} décision{answered.length > 1 ? "s" : ""}{" "}
-            enregistrée{answered.length > 1 ? "s" : ""}
+            {t("panels.decisions_recorded", { count: answered.length })}
             <ChevronDown size={13} className={history ? "rotated" : ""} />
           </button>
           <AnimatePresence>
@@ -583,16 +609,16 @@ export function Overview({
         <span>
           <Activity size={13} />
           {readOnly
-            ? "Historique de l’étape"
-            : `${active} agent${active > 1 ? "s" : ""} en cours`}
+            ? t("panels.step_history")
+            : t("panels.agents_running", { count: active })}
         </span>
         <span>
           <FileText size={13} />
-          {task.artifacts.length} supports de mission
+          {t("panels.wish_supports", { count: task.artifacts.length })}
         </span>
         <span>
           <LockKeyhole size={13} />
-          Contexte conservé sur votre machine
+          {t("panels.context_kept_local")}
         </span>
       </div>
     </div>
@@ -645,7 +671,7 @@ export function EventRow({
                 : undefined
             }
           >
-            {agent?.name || "Mission"}
+            {agent?.name || t("common.wish")}
           </span>
           <time>{formatTime(entry.time)}</time>
         </div>
@@ -704,17 +730,21 @@ export function ActivityRail({
   return (
     <aside className="activity-rail">
       <div className="rail-header">
-        <span className="eyebrow">ACTIVITÉ</span>
+        <span className="eyebrow">{t("panels.activity")}</span>
         <span className="live-indicator">
           <span />
-          {task.demo ? "DÉMO" : task.runId ? "LIVE" : "JOURNAL"}
+          {task.demo
+            ? t("panels.live_demo")
+            : task.runId
+              ? "LIVE"
+              : t("panels.live_journal")}
         </span>
       </div>
       <div className="signal-visual">
         <Wave paused={task.status === "paused"} />
       </div>
       <div className="rail-title">
-        <h3>Événements</h3>
+        <h3>{t("panels.events")}</h3>
         <span>{task.events.length}</span>
       </div>
       <div className="rail-events">
@@ -732,11 +762,11 @@ export function ActivityRail({
         </AnimatePresence>
       </div>
       <button className="rail-link" onClick={onTimeline}>
-        Timeline complète
+        {t("panels.full_timeline")}
         <ArrowUpRight size={14} />
       </button>
       <div className="rail-agents">
-        <span className="eyebrow">SUR LE PONT</span>
+        <span className="eyebrow">{t("panels.on_deck")}</span>
         {task.agents.slice(0, 4).map((a) => (
           <button onClick={() => onAgent(a)} key={a.id}>
             <Orb

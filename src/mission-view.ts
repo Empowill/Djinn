@@ -1,4 +1,5 @@
 import type { Task, NativeRuntimeRun } from "./types";
+import { t } from "./i18n";
 
 export function reconnectNativeRun(
   task: Task,
@@ -19,7 +20,7 @@ export function reconnectNativeRun(
       runId: observed.runId || run.runId,
       progress: observed.status === "done" ? 100 : old?.progress || 0,
       summary:
-        observed.summary || old?.summary || "Activité observée par Codex",
+        observed.summary || old?.summary || t("wish_view.codex_activity"),
     };
     if (index < 0) agents.push(record);
     else agents[index] = record;
@@ -91,7 +92,9 @@ export function stepView(
   const belongs = (item: { stepId?: string }) => item.stepId === stepId;
   return {
     ...task,
-    questions: task.questions.filter((item) => belongs(item) || (stepId === task.activeStepId && !item.answer)),
+    questions: task.questions.filter(
+      (item) => belongs(item) || (stepId === task.activeStepId && !item.answer),
+    ),
     agents: (stepId === task.activeStepId
       ? task.agents
       : task.agentHistory?.[stepId] || []
@@ -100,7 +103,13 @@ export function stepView(
     artifacts: task.artifacts.filter(belongs),
     feedback: task.feedback.filter(belongs),
     // An independent recipe stays usable while later stages and sibling agents run.
-    actions: task.actions?.filter((item) => belongs(item) || (stepId === task.activeStepId && item.status !== "done" && item.testResult?.status !== "passed")),
+    actions: task.actions?.filter(
+      (item) =>
+        belongs(item) ||
+        (stepId === task.activeStepId &&
+          item.status !== "done" &&
+          item.testResult?.status !== "passed"),
+    ),
     instructions: task.instructions?.filter(belongs),
   };
 }

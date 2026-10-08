@@ -1,5 +1,6 @@
 import type { MissionStep, StepType, WorkflowTemplate } from "./types";
 import { STEP_TYPES } from "./workflow";
+import { t } from "./i18n";
 
 const FORMAT = "djinn-workflow" as const;
 const VERSION = 1 as const;
@@ -17,18 +18,14 @@ const STEP_FIELDS = [
 const TEMPLATE_FIELDS = ["id", "title", "steps"] as const;
 
 const fail = (field: string): never => {
-  throw new Error(`Le workflow portable est invalide (${field}).`);
+  throw new Error(t("transfer.invalid_workflow", { field }));
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 
 const text = (value: unknown, field: string, max = MAX_TEXT): string => {
-  if (
-    typeof value !== "string" ||
-    value.length > max ||
-    value.includes("\0")
-  )
+  if (typeof value !== "string" || value.length > max || value.includes("\0"))
     return fail(field);
   return value;
 };
@@ -82,7 +79,11 @@ function validatePendingStep(value: unknown, field: string): MissionStep {
 function validatePendingTemplate(value: unknown): WorkflowTemplate {
   if (!isRecord(value)) return fail("workflow");
   keysAreExactly(value, TEMPLATE_FIELDS, "workflow");
-  if (!Array.isArray(value.steps) || value.steps.length === 0 || value.steps.length > 100)
+  if (
+    !Array.isArray(value.steps) ||
+    value.steps.length === 0 ||
+    value.steps.length > 100
+  )
     return fail("workflow.steps");
   const steps = value.steps.map((step, index) =>
     validatePendingStep(step, `workflow.steps.${index}`),

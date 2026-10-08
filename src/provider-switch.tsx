@@ -17,6 +17,7 @@ import {
 import type { Environment, ProviderId, Task } from "./types";
 import { ModelPicker } from "./model-picker";
 import "./provider-switch.css";
+import { t } from "./i18n";
 
 export type ProviderSwitchProvider = Pick<
   Environment["providers"][number],
@@ -56,8 +57,8 @@ function providerIsReady(provider: ProviderSwitchProvider | undefined) {
 }
 
 function providerAvailability(provider: ProviderSwitchProvider) {
-  if (!provider.available) return "Indisponible";
-  if (provider.authenticated === false) return "Non authentifié";
+  if (!provider.available) return t("providers.unavailable");
+  if (provider.authenticated === false) return t("providers.not_authenticated");
   return "";
 }
 
@@ -199,7 +200,7 @@ export function ProviderSwitch({
       if (accepted) {
         setOpen(false);
       } else {
-        setError("Le changement de fournisseur n’a pas pu être appliqué.");
+        setError(t("providers.switch_failed"));
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -227,11 +228,7 @@ export function ProviderSwitch({
         aria-controls={`${switchId}-panel`}
         aria-disabled={busy}
         onClick={handleSummaryClick}
-        title={
-          busy
-            ? "La mission est en cours d’exécution"
-            : "Changer de fournisseur"
-        }
+        title={busy ? t("providers.wish_running") : t("providers.switch")}
       >
         <span className="badge muted provider-switch-badge">
           <span>{displayProviderName(currentProvider)}</span>
@@ -252,21 +249,18 @@ export function ProviderSwitch({
       >
         <div className="provider-switch-heading">
           <div>
-            <span className="eyebrow">CONFIGURATION</span>
-            <h3>Changer de fournisseur</h3>
+            <span className="eyebrow">{t("providers.eyebrow")}</span>
+            <h3>{t("providers.switch")}</h3>
           </div>
           <ChevronDown size={15} aria-hidden="true" />
         </div>
-        <p className="provider-switch-copy">
-          Les sorties, les décisions et l’historique de cette mission sont
-          conservés.
-        </p>
+        <p className="provider-switch-copy">{t("providers.kept")}</p>
 
         <label
           className="provider-switch-field"
           htmlFor={`${switchId}-provider`}
         >
-          <span>Fournisseur</span>
+          <span>{t("providers.provider")}</span>
           <select
             id={`${switchId}-provider`}
             value={draftProvider}
@@ -295,7 +289,7 @@ export function ProviderSwitch({
           <p className="provider-switch-status" role="status">
             <LockKeyhole size={13} aria-hidden="true" />
             {providerAvailability(selectedProvider) ||
-              "Fournisseur indisponible"}
+              t("providers.provider_unavailable")}
           </p>
         )}
 
@@ -303,7 +297,7 @@ export function ProviderSwitch({
           className="provider-switch-model"
           disabled={busy || submitting || !selectedProviderReady}
         >
-          <legend>Modèle</legend>
+          <legend>{t("providers.model")}</legend>
           <ModelPicker
             provider={draftProvider}
             value={draftModel}
@@ -314,7 +308,7 @@ export function ProviderSwitch({
         {task.demo && (
           <p className="provider-switch-demo" role="note">
             <AlertCircle size={13} aria-hidden="true" />
-            La reprise est désactivée dans la mission d’exemple.
+            {t("providers.demo_resume_disabled")}
           </p>
         )}
         {error && (
@@ -332,7 +326,7 @@ export function ProviderSwitch({
             onClick={() => void submit(false)}
           >
             <Check size={14} aria-hidden="true" />
-            Appliquer
+            {t("providers.apply")}
           </button>
           <button
             type="button"
@@ -350,8 +344,8 @@ export function ProviderSwitch({
               <Check size={14} aria-hidden="true" />
             )}
             {switchingProvider
-              ? "Changer et reprendre"
-              : "Reprendre la mission"}
+              ? t("providers.switch_and_resume")
+              : t("providers.resume_wish")}
           </button>
         </div>
       </div>

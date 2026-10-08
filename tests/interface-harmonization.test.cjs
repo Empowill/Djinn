@@ -204,7 +204,7 @@ test("mission composer keeps spring layout, focus, and reduced-motion contracts"
 
 test("settings exposes an explicit complete demo loader", () => {
   const app = fs.readFileSync(path.join(root, "app.tsx"), "utf8");
-  assert.match(app, /Charger la démo complète/);
+  assert.match(app, /settings\.load_demo/);
   assert.match(app, /demoLoader/);
   assert.match(app, /await demoLoader\(\)/);
 });

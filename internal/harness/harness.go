@@ -1,0 +1,742 @@
+package harness
+
+import (
+	"cmp"
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
+)
+
+// Who changed a task, as the journal records it: the user's commands are journaled as received; what the
+// harness and the workers bring is journaled under these names.
+const (
+	actorLocal   = "local"
+	actorHarness = "harness"
+	actorWorker  = "worker"
+
+	methodStart   = "harness/start"   // the task's worker starts; the request is the task
+	methodEvent   = "harness/event"   // the worker said something; the request is the event
+	methodEnd     = "harness/end"     // the worker ended; the request is the task
+	methodRecover = "harness/recover" // djinn up found a task whose worker it had lost; the request is the task
+	methodAnswer  = "harness/answer"  // the task took the answer to its edit question; the request is the task
+)
+
+// maxText is the most of an event's text, and of its raw line, that is kept.
+const maxText = 64 << 10
+
+// Providers are the providers Djinn knows, by the name a task gives.
+func Providers() map[planv1.Provider]Provider {
+	return map[planv1.Provider]Provider{
+		planv1.Provider_PROVIDER_CLAUDE:      Claude{},
+		planv1.Provider_PROVIDER_FAKE:        Fake{},
+		planv1.Provider_PROVIDER_CODEX:       Codex{},
+		planv1.Provider_PROVIDER_ANTIGRAVITY: Antigravity{},
+	}
+}
+
+// Harness runs the tasks' workers and records what they say. Close it before the store.
+type Harness struct {
+	store     *store.Store
+	home      string
+	providers map[planv1.Provider]Provider
+
+	ctx    context.Context // cancelled by Close: every worker stops
+	cancel context.CancelFunc
+	wg     sync.WaitGroup // one per run
+
+	answering sync.Mutex // one answer to an edit question at a time
+
+	mu     sync.Mutex
+	closed bool
+	runs   map[string]*run // by task id
+}
+
+// run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
+type run struct {
+	id   string
+	done chan struct{} // closed once the task has its final status
+	wake chan struct{} // an answer waits in answers
+
+	// Guarded by Harness.mu.
+	worker   Worker
+	stopping bool
+	final    bool               // the task is getting its final status: an answer waits for done instead
+	answers  []*planv1.Question // answers to the task's edit question, for the pump to apply
+	subs     map[chan *planv1.TaskEvent]struct{}
+
+	// Owned by whoever writes the task: Spawn, then the pump.
+	task    *planv1.Task
+	seq     int64         // last event written
+	base    *planv1.Usage // what the task had spent before this worker
+	restart bool          // the worker stops to start again, allowed to edit
+}
+
+// newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
+// It fails when Djinn is stopping, or when the task already runs.
+func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
+	r := &run{
+		id: task.GetId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
+		subs: map[chan *planv1.TaskEvent]struct{}{},
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	switch {
+	case h.closed:
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("djinn is stopping"))
+	case h.runs[r.id] != nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is running", task.GetCode()))
+	}
+	h.runs[r.id] = r
+	h.wg.Add(1)
+	return r, nil
+}
+
+// New returns a harness on the store s. Worktrees go under home, Djinn's data folder.
+func New(s *store.Store, home string, providers map[planv1.Provider]Provider) *Harness {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Harness{store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{}}
+}
+
+// Close stops every worker, waits for them to end, and records their tasks as interrupted.
+func (h *Harness) Close() {
+	h.mu.Lock()
+	h.closed = true
+	h.mu.Unlock()
+	h.cancel()
+	h.wg.Wait()
+}
+
+// Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
+// what resuming them needs (provider, session, worktree); nothing restarts them.
+func (h *Harness) Recover(ctx context.Context) error {
+	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
+	if err != nil {
+		return err
+	}
+	for _, t := range tasks {
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+			continue
+		}
+		// A task no worker ever started (planned, or imported with a wish) waits for one: nothing to interrupt.
+		if t.GetStartTime() == nil {
+			continue
+		}
+		t.Status, t.Error, t.EndTime = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up ended while the worker ran", timestamppb.Now()
+		err := h.store.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal(actorHarness, methodRecover, t); err != nil {
+				return err
+			}
+			seq, err := lastSeq(ctx, tx, t.GetId())
+			if err != nil {
+				return err
+			}
+			if err := tx.Put(t); err != nil {
+				return err
+			}
+			return tx.Put(newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()}))
+		})
+		if err != nil {
+			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
+		}
+	}
+	return nil
+}
+
+// Spawn creates a task and starts its worker: in a Git project, in a new worktree on its own branch. procedure
+// is the method the request came by, for the journal. What the worker may do is decided here (decideAccess): in a
+// folder outside Git without any agent configuration, the worker starts read-only, and the task asks the
+// developer whether it may edit the project's files.
+func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
+	kind := cmp.Or(req.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
+	provider, ok := h.providers[kind]
+	if !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", kind))
+	}
+	task := &planv1.Task{
+		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Provider: kind, CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
+	}
+	r, err := h.newRun(task, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
+	var project *planv1.Project
+	var declared *djinnv1.Permissions
+	var question *planv1.Question
+	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
+	err = h.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+			return err
+		}
+		wish, err := store.Get[*planv1.Wish](ctx, tx, req.GetWishId())
+		if err != nil {
+			return err
+		}
+		if project, err = pickProject(ctx, tx, wish, req.GetProjectId()); err != nil {
+			return err
+		}
+		task.ProjectId = project.GetId()
+		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
+			return err
+		}
+		if task.Access, declared, err = decideAccess(project, kind, plan.GrantOf(wish, project.GetId())); err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
+		}
+		if task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING {
+			question = editQuestion(task, project)
+			if err := plan.Ask(ctx, tx, question); err != nil {
+				return err
+			}
+			task.EditQuestionId = question.GetId()
+		}
+		if err := tx.Put(task); err != nil {
+			return err
+		}
+		return tx.Put(prompted)
+	})
+	if err != nil {
+		h.forget(r)
+		return nil, plan.Status(err)
+	}
+	h.publish(r, prompted)
+
+	// From here the task exists: a failure ends it.
+	dir := project.GetDirectory()
+	if project == nil {
+		// Outside any project the worker only reads, in an empty folder of its own.
+		dir = scratchDir(h.home, task.GetId())
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("create the task's folder: %w", err)})
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: create its folder: %w", task.GetCode(), err))
+		}
+	}
+	if project.GetGit() {
+		task.Branch = branchName(task.GetCode(), task.GetTitle(), task.GetId())
+		task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
+		if dir, err = addWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch()); err != nil {
+			task.Branch, task.Worktree = "", ""
+			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("create the worktree: %w", err)})
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: create the worktree: %w", task.GetCode(), err))
+		}
+	}
+	where := "in " + dir
+	if task.GetBranch() != "" {
+		where += ", on branch " + task.GetBranch()
+	}
+	readOnly, perms := accessSpec(task.GetAccess(), declared)
+	spec := Spec{
+		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: task.GetModel(),
+		MaxBudgetUSD: task.GetMaxBudgetUsd(),
+	}
+	err = h.start(r, provider, spec, "started "+short(kind)+" "+where+", "+accessText(task, question))
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrReadOnly) && task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
+		// The agent cannot be kept from writing: it waits for the developer's answer instead of reading first.
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: err.Error()})
+		h.finish(r, Result{})
+		waiting, err := store.Get[*planv1.Task](ctx, h.store, task.GetId())
+		return waiting, plan.Status(err)
+	default:
+		h.finish(r, Result{ExitCode: -1, Err: err})
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
+	}
+	started := proto.CloneOf(task)
+	go h.pump(r)
+	return started, nil
+}
+
+// start marks the run's task running, says so with text, and starts its worker with spec. On an error the task is
+// left to the caller to end.
+func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error {
+	t := r.task
+	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
+	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+	// A worker that calls djinn knows its task.
+	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
+	w, err := provider.Start(h.ctx, spec)
+	if err != nil {
+		return err
+	}
+	h.mu.Lock()
+	r.worker = w
+	if r.stopping {
+		w.Stop()
+	}
+	h.mu.Unlock()
+	return nil
+}
+
+// accessText says, in the task's start event, where its worker's rights come from.
+func accessText(t *planv1.Task, question *planv1.Question) string {
+	switch t.GetAccess() {
+	case planv1.TaskAccess_TASK_ACCESS_READ_ONLY:
+		return "read-only: outside any project"
+	case planv1.TaskAccess_TASK_ACCESS_AGENTS:
+		return "with the project's " + filepath.ToSlash(PermissionsFile)
+	case planv1.TaskAccess_TASK_ACCESS_ASKING:
+		return "read-only until " + question.GetCode() + " is answered: the folder is outside Git and has no agent configuration"
+	case planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED:
+		return "allowed to edit the project's files, and to run no command"
+	case planv1.TaskAccess_TASK_ACCESS_WISH_EDIT:
+		return "allowed to edit by the wish"
+	case planv1.TaskAccess_TASK_ACCESS_WISH_AUTO:
+		return "in auto mode by the wish"
+	}
+	return "with the agent's own configuration of the project"
+}
+
+// editQuestion is the question a task asks when its project is a folder outside Git without any agent
+// configuration: may its worker edit the project's files?
+func editQuestion(t *planv1.Task, project *planv1.Project) *planv1.Question {
+	return &planv1.Question{
+		Id: store.NewID(), WishId: t.GetWishId(), CreateTime: timestamppb.Now(),
+		Text: fmt.Sprintf("May the worker of task %s change the files of %s? It reads only until you answer: %s is outside Git, "+
+			"and has no agent configuration (no %s, AGENTS.md nor configuration file of its agent).",
+			t.GetCode(), project.GetName(), project.GetDirectory(), filepath.ToSlash(PermissionsFile)),
+		Options: []string{
+			"Yes: it starts again, allowed to edit the project's files, and to run no command",
+			"No: it only reads",
+		},
+	}
+}
+
+// pickProject is the project a task of wish works in: id, or the wish's only project; none for a wish without
+// any project.
+func pickProject(ctx context.Context, tx *store.Tx, wish *planv1.Wish, id string) (*planv1.Project, error) {
+	ids := wish.GetProjectIds()
+	if id == "" {
+		if len(ids) == 0 {
+			return nil, nil
+		}
+		if len(ids) != 1 {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"the wish has %d projects: name one with --project-id", len(ids)))
+		}
+		id = ids[0]
+	}
+	project, err := store.Get[*planv1.Project](ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) > 0 && !slices.ContainsFunc(ids, func(s string) bool { return s == project.GetId() }) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"project %s is not one of the wish's projects", project.GetName()))
+	}
+	return project, nil
+}
+
+// nextCode is the code of a new task of the wish: W1, W2…, after the highest one. Tasks are never deleted, so a
+// code is never given twice; the unique index guards it anyway.
+func nextCode(ctx context.Context, tx *store.Tx, wishID string) (string, error) {
+	tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wishID})
+	if err != nil {
+		return "", err
+	}
+	last := 0
+	for _, t := range tasks {
+		var n int
+		if _, err := fmt.Sscanf(t.GetCode(), "W%d", &n); err == nil && n > last {
+			last = n
+		}
+	}
+	return fmt.Sprintf("W%d", last+1), nil
+}
+
+// pump records the worker's events until the task ends for good: a worker stopped to start again, allowed to
+// edit, is followed by the next one.
+func (h *Harness) pump(r *run) {
+	for !h.settle(r, h.drain(r)) {
+	}
+}
+
+// drain records the worker's events, and applies the answers to the task's edit question, until the worker ends.
+func (h *Harness) drain(r *run) Result {
+	events := r.worker.Events()
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				return r.worker.Wait()
+			}
+			h.record(r, ev)
+		case <-r.wake:
+			for _, q := range h.takeAnswers(r) {
+				if h.applyAnswer(r, q) && !r.restart {
+					r.restart = true
+					r.worker.Stop()
+				}
+			}
+		}
+	}
+}
+
+// record writes an event of the worker, with the task when the event changes it.
+func (h *Harness) record(r *run, ev Event) {
+	changed := false
+	if ev.SessionID != "" && ev.SessionID != r.task.GetSessionId() {
+		r.task.SessionId, changed = ev.SessionID, true
+	}
+	if ev.Usage != nil {
+		r.task.Usage, changed = sum(r.base, ev.Usage), true
+	}
+	var task proto.Message
+	if changed {
+		task = r.task
+	}
+	h.write(r, actorWorker, methodEvent, task, ev)
+}
+
+// takeAnswers takes the answers waiting for the run.
+func (h *Harness) takeAnswers(r *run) []*planv1.Question {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	answers := r.answers
+	r.answers = nil
+	return answers
+}
+
+// settle follows the end of a worker: it starts the task's worker again when a yes to its edit question asked for
+// it, and says false; otherwise it gives the task its final status, lets its watchers go, and says true. No answer
+// reaches the run once its status is final: the answer waits until the run is gone.
+func (h *Harness) settle(r *run, res Result) bool {
+	for {
+		h.mu.Lock()
+		answers := r.answers
+		r.answers = nil
+		if len(answers) > 0 {
+			h.mu.Unlock()
+			for _, q := range answers {
+				if h.applyAnswer(r, q) {
+					r.restart = true
+				}
+			}
+			continue
+		}
+		restart := r.restart && !r.stopping && h.ctx.Err() == nil
+		r.restart = false
+		if !restart {
+			r.final = true
+		}
+		h.mu.Unlock()
+		if !restart {
+			break
+		}
+		err := h.again(r)
+		if err == nil {
+			return false
+		}
+		res = Result{ExitCode: -1, Err: err}
+	}
+	h.end(r, res)
+	return true
+}
+
+// finish settles a run whose worker did not start, or that waits without a worker; the pump follows the worker
+// that a yes to the edit question started meanwhile.
+func (h *Harness) finish(r *run, res Result) {
+	if !h.settle(r, res) {
+		go h.pump(r)
+	}
+}
+
+// end gives the task its final status, then lets its watchers go. A task whose worker read while it asks whether
+// it may edit waits for the answer.
+func (h *Harness) end(r *run, res Result) {
+	h.mu.Lock()
+	stopping := r.stopping
+	h.mu.Unlock()
+	t := r.task
+	t.EndTime, t.ExitCode = timestamppb.Now(), int32(res.ExitCode)
+	switch {
+	case stopping:
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request"
+	case h.ctx.Err() != nil:
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up stopped while the worker ran"
+	case res.Err != nil:
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, res.Err.Error()
+	case res.ExitCode != 0:
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, fmt.Sprintf("exit code %d", res.ExitCode)
+	case t.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_WAITING, "waiting for the answer to its edit question"
+	default:
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_DONE, ""
+	}
+	text := short(t.GetStatus())
+	if t.GetError() != "" {
+		text += ": " + t.GetError()
+	}
+	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+	h.forget(r)
+}
+
+// forget removes the run once its task is written for good, and ends its watchers' live feed.
+func (h *Harness) forget(r *run) {
+	h.mu.Lock()
+	delete(h.runs, r.id)
+	for ch := range r.subs {
+		close(ch)
+	}
+	r.subs = nil
+	h.mu.Unlock()
+	close(r.done)
+	h.wg.Done()
+}
+
+// write records an event of the run, and the task when it is not nil, in one transaction journaled under
+// actor and method, then hands the event to the watchers. The store is written even while Djinn stops.
+func (h *Harness) write(r *run, actor, method string, task proto.Message, ev Event) {
+	te := newEvent(r.id, r.seq+1, ev)
+	var req proto.Message = te
+	if task != nil && method != methodEvent {
+		req = task
+	}
+	err := h.store.Tx(context.Background(), func(tx *store.Tx) error {
+		if err := tx.Journal(actor, method, req); err != nil {
+			return err
+		}
+		if task != nil {
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return tx.Put(te)
+	})
+	if err != nil {
+		// The worker goes on: losing one event is better than losing the worker.
+		log.Printf("djinn: task %s: record an event: %v", r.id, err)
+		return
+	}
+	r.seq++
+	h.publish(r, te)
+}
+
+// newEvent builds a stored event, its text and raw line cut to maxText.
+func newEvent(taskID string, seq int64, ev Event) *planv1.TaskEvent {
+	return &planv1.TaskEvent{
+		Id: store.NewID(), TaskId: taskID, Seq: seq, Kind: ev.Kind, Text: clip(ev.Text), Usage: ev.Usage,
+		Raw: clip(ev.Raw), CreateTime: timestamppb.Now(),
+	}
+}
+
+func clip(s string) string {
+	if len(s) <= maxText {
+		return s
+	}
+	return s[:maxText] + fmt.Sprintf("… (%d bytes cut)", len(s)-maxText)
+}
+
+// sum adds what a run spent to what the task had spent before it.
+func sum(base, run *planv1.Usage) *planv1.Usage {
+	return &planv1.Usage{
+		InputTokens:      base.GetInputTokens() + run.GetInputTokens(),
+		OutputTokens:     base.GetOutputTokens() + run.GetOutputTokens(),
+		CacheReadTokens:  base.GetCacheReadTokens() + run.GetCacheReadTokens(),
+		CacheWriteTokens: base.GetCacheWriteTokens() + run.GetCacheWriteTokens(),
+		CostUsd:          base.GetCostUsd() + run.GetCostUsd(),
+	}
+}
+
+// lastSeq is the position of the task's last event.
+func lastSeq(ctx context.Context, r store.Reader, taskID string) (int64, error) {
+	events, err := store.List[*planv1.TaskEvent](ctx, r, store.Where{"task_id": taskID})
+	if err != nil {
+		return 0, err
+	}
+	var last int64
+	for _, e := range events {
+		last = max(last, e.GetSeq())
+	}
+	return last, nil
+}
+
+// Stop asks the task's worker to stop, and waits until it has, or ctx ends.
+func (h *Harness) Stop(ctx context.Context, procedure string, req *planv1.TaskServiceStopRequest) (*planv1.Task, error) {
+	id := req.GetTaskId()
+	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.mu.Lock()
+	r := h.runs[id]
+	if r == nil {
+		h.mu.Unlock()
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
+	}
+	r.stopping = true
+	if r.worker != nil {
+		r.worker.Stop()
+	}
+	h.mu.Unlock()
+	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
+		return nil, plan.Status(err)
+	}
+	select {
+	case <-r.done:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	task, err = store.Get[*planv1.Task](ctx, h.store, id)
+	return task, plan.Status(err)
+}
+
+// Watch sends the task's events after the position after, as they come, until the task has ended and all its
+// events are sent, or ctx ends.
+func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send func(*planv1.TaskEvent) error) error {
+	if _, err := store.Get[*planv1.Task](ctx, h.store, taskID); err != nil {
+		return plan.Status(err)
+	}
+	emit := func(ev *planv1.TaskEvent) error {
+		if ev.GetSeq() <= after {
+			return nil
+		}
+		after = ev.GetSeq()
+		return send(ev)
+	}
+	for {
+		// Subscribe, then read what is stored: an event written in between comes both ways, and only once out.
+		ch := h.subscribe(taskID)
+		events, err := store.List[*planv1.TaskEvent](ctx, h.store, store.Where{"task_id": taskID})
+		if err != nil {
+			h.unsubscribe(taskID, ch)
+			return plan.Status(err)
+		}
+		slices.SortFunc(events, func(a, b *planv1.TaskEvent) int { return cmp.Compare(a.GetSeq(), b.GetSeq()) })
+		for _, ev := range events {
+			if err := emit(ev); err != nil {
+				h.unsubscribe(taskID, ch)
+				return err
+			}
+		}
+		if ch == nil {
+			return nil // The task has ended: the store holds all its events.
+		}
+	live:
+		for {
+			select {
+			case ev, ok := <-ch:
+				if !ok {
+					break live // The task ended, or this watcher fell behind: read the store again.
+				}
+				if err := emit(ev); err != nil {
+					h.unsubscribe(taskID, ch)
+					return err
+				}
+			case <-ctx.Done():
+				h.unsubscribe(taskID, ch)
+				return nil
+			}
+		}
+	}
+}
+
+// subscribe returns a channel of the task's next events, or nil when no worker runs for it.
+func (h *Harness) subscribe(taskID string) chan *planv1.TaskEvent {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	r := h.runs[taskID]
+	if r == nil {
+		return nil
+	}
+	ch := make(chan *planv1.TaskEvent, 256)
+	r.subs[ch] = struct{}{}
+	return ch
+}
+
+func (h *Harness) unsubscribe(taskID string, ch chan *planv1.TaskEvent) {
+	if ch == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if r := h.runs[taskID]; r != nil {
+		if _, ok := r.subs[ch]; ok {
+			delete(r.subs, ch)
+			close(ch)
+		}
+	}
+}
+
+// publish hands an event to the run's watchers. A watcher too slow to keep up is let go: it reads the store again.
+func (h *Harness) publish(r *run, ev *planv1.TaskEvent) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for ch := range r.subs {
+		select {
+		case ch <- ev:
+		default:
+			delete(r.subs, ch)
+			close(ch)
+		}
+	}
+}
+
+// Clean removes the worktree of a task that has ended. Its branch stays.
+func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskServiceCleanRequest) (*planv1.Task, error) {
+	id := req.GetTaskId()
+	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.mu.Lock()
+	running := h.runs[id] != nil
+	h.mu.Unlock()
+	switch {
+	case running:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is running: stop it first", task.GetCode()))
+	case task.GetWorktree() == "":
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s has no worktree", task.GetCode()))
+	}
+	project, err := store.Get[*planv1.Project](ctx, h.store, task.GetProjectId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := removeWorktree(ctx, project.GetDirectory(), task.GetWorktree(), req.GetForce()); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
+	}
+	text := "worktree removed"
+	if task.GetBranch() != "" {
+		text += ", branch " + task.GetBranch() + " kept"
+	}
+	task.Worktree = ""
+	err = h.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+			return err
+		}
+		seq, err := lastSeq(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if err := tx.Put(task); err != nil {
+			return err
+		}
+		return tx.Put(newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	return task, nil
+}
+
+// short is an enum value as the command line writes it: TASK_STATUS_DONE is done, PROVIDER_FAKE is fake.
+func short(e fmt.Stringer) string {
+	s := strings.TrimPrefix(strings.TrimPrefix(e.String(), "TASK_STATUS_"), "PROVIDER_")
+	return strings.ToLower(s)
+}

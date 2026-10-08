@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+// What an agent may do in a project, written once for every agent.
+package djinn.v1;
+
+import "buf/validate/validate.proto";
+
+// Mode says what happens to an action the permissions do not list.
+enum Mode {
+  // Not set: LISTED.
+  MODE_UNSPECIFIED = 0;
+  // Refused. The agent reads, does what is listed, and nothing else.
+  MODE_LISTED = 1;
+  // The agent's own auto mode decides, its provider's reviewer approving or refusing each action as the provider
+  // documents it; Djinn adds no check of its own. It needs edit: with edit false, the mode is LISTED, since a
+  // reviewer could approve a command that writes.
+  MODE_AUTO = 2;
+}
+
+// Permissions is what an agent may do in a project, the same whichever agent runs. A project writes it in
+// .agents/permissions.txtpb; Djinn reads it when it starts a worker there and translates it for that agent at
+// launch, writing nothing in the project. What Djinn passes never allows more than this message does; the agent's
+// own configuration files still apply on top, as the agent applies them by itself. Reading the project is always
+// allowed. How each agent receives it, and what it cannot receive: docs/providers.md.
+message Permissions {
+  // Whether the agent may create, change and delete files in the project.
+  bool edit = 1;
+  // Commands the agent may run without review, each a prefix of whole words: "go tool task test" allows
+  // "go tool task test" and "go tool task test -- -run X", not "go tool task test-go". Words are separated by one
+  // space and hold no wildcard nor shell operator.
+  repeated string commands = 2 [(buf.validate.field).repeated.items.string.pattern = "^[A-Za-z0-9_./:=@%+,-]+( [A-Za-z0-9_./:=@%+,-]+)*$"];
+  // Commands the agent may never run, in any mode, written like commands. A denied command wins over an allowed
+  // one.
+  repeated string denied_commands = 3 [(buf.validate.field).repeated.items.string.pattern = "^[A-Za-z0-9_./:=@%+,-]+( [A-Za-z0-9_./:=@%+,-]+)*$"];
+  // Whether the agent's own web tools, and its sandbox when it has one, may reach the network. Its model's API is
+  // always reached.
+  bool network = 4;
+  // What happens to an action not listed here.
+  Mode mode = 5;
+}

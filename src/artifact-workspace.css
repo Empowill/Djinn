@@ -706,7 +706,8 @@
   padding: 22px 24px 25px;
   overflow: auto;
   color: #cfcfcf;
-  font: var(--font-size-body, 12px)/1.75 ui-monospace,
+  font:
+    var(--font-size-body, 12px)/1.75 ui-monospace,
     SFMono-Regular,
     Menlo,
     Consolas,
@@ -831,7 +832,8 @@
   background: #121212;
   border: 1px solid #3a3a3a;
   border-radius: 6px;
-  font: var(--font-size-body, 12px)/1.65 ui-monospace,
+  font:
+    var(--font-size-body, 12px)/1.65 ui-monospace,
     SFMono-Regular,
     Menlo,
     Consolas,
@@ -1246,7 +1248,8 @@
 .art-mini-nav-item span {
   margin-left: auto;
   color: #868686;
-  font: var(--font-size-body, 12px) ui-monospace,
+  font:
+    var(--font-size-body, 12px) ui-monospace,
     monospace;
 }
 
@@ -1449,7 +1452,8 @@
 
 .art-mini-group-heading span:last-child {
   color: #b1b1b1;
-  font: var(--font-size-body, 12px) ui-monospace,
+  font:
+    var(--font-size-body, 12px) ui-monospace,
     monospace;
 }
 
@@ -1560,7 +1564,8 @@
 .art-mini-progress small {
   min-width: 24px;
   color: #858585;
-  font: var(--font-size-body, 12px) ui-monospace,
+  font:
+    var(--font-size-body, 12px) ui-monospace,
     monospace;
   text-align: right;
 }

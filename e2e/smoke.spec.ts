@@ -1,0 +1,51 @@
+import { expect, test, type Page } from "@playwright/test";
+
+// djinnURL is the URL printed by `djinn up --browser`, token included.
+function djinnURL(pathname = "/"): string {
+  const url = new URL(process.env.DJINN_URL!);
+  url.pathname = pathname;
+  return url.toString();
+}
+
+// collectErrors records the uncaught exceptions and console errors of the page.
+function collectErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(msg.text());
+  });
+  return errors;
+}
+
+test("the interface loads from djinn", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto(djinnURL());
+  // The token left the address bar: it is now an HttpOnly cookie.
+  expect(new URL(page.url()).search).toBe("");
+  await expect(page).toHaveTitle(/Djinn$/);
+  await expect(
+    page.getByRole("heading", { name: "Espace projets" }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("the demo stream reaches the page value by value", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto(djinnURL("/e2e/stream.html"));
+  await expect(page.locator("#status")).toHaveText("streaming");
+  const value = page.locator("#value");
+  await expect(value).not.toHaveText("0");
+  const first = Number(await value.textContent());
+  // The count runs to 600 at one value every 100 ms: seeing it move proves the stream is not buffered.
+  await expect
+    .poll(async () => Number(await value.textContent()))
+    .toBeGreaterThan(first + 3);
+  expect(errors).toEqual([]);
+});
+
+test("a request without the token is refused", async ({ request }) => {
+  const url = new URL(djinnURL());
+  url.search = "";
+  const res = await request.get(url.toString(), { maxRedirects: 0 });
+  expect(res.status()).toBe(401);
+});

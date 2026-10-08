@@ -12,9 +12,12 @@ import {
   validateProject,
   validateTaskWorkflow,
 } from "./workflow";
+import { t } from "./i18n";
 
+// A function rather than a direct call: validateTask names its record `t`.
+const codexWaitReason = () => t("validation.codex_state_unconfirmed");
 const invalid = (field: string): never => {
-  throw new Error(`Le format de la mission est invalide (${field}).`);
+  throw new Error(t("workflow.invalid_format", { field }));
 };
 function record(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -295,17 +298,36 @@ export function validateStepResult(value: unknown): StepResult {
   return validateStepReport(value);
 }
 
-export function validateWorkItem(value: unknown): NonNullable<Task["workItems"]>[number] {
+export function validateWorkItem(
+  value: unknown,
+): NonNullable<Task["workItems"]>[number] {
   const item = record(value, "workItem");
   return {
     id: boundedText(id(item.id, "workItem.id"), "workItem.id", 256),
     title: boundedText(item.title, "workItem.title", 1000),
-    status: choice(item.status, ["pending", "running", "blocked", "ready", "done"] as const, "workItem.status"),
+    status: choice(
+      item.status,
+      ["pending", "running", "blocked", "ready", "done"] as const,
+      "workItem.status",
+    ),
     updatedAt: date(item.updatedAt, "workItem.updatedAt"),
-    ...Object.fromEntries(["agentId", "stepId", "runId", "ticket", "worktree", "branch", "detail"].filter((field) => item[field] !== undefined).map((field) => [field, boundedText(item[field], `workItem.${field}`, field === "detail" ? 4000 : 4096)])),
+    ...Object.fromEntries(
+      ["agentId", "stepId", "runId", "ticket", "worktree", "branch", "detail"]
+        .filter((field) => item[field] !== undefined)
+        .map((field) => [
+          field,
+          boundedText(
+            item[field],
+            `workItem.${field}`,
+            field === "detail" ? 4000 : 4096,
+          ),
+        ]),
+    ),
   };
 }
-export function validateMissionReport(value: unknown): NonNullable<Task["reports"]>[number] {
+export function validateMissionReport(
+  value: unknown,
+): NonNullable<Task["reports"]>[number] {
   const item = record(value, "report");
   return {
     ...validateStepResult(item),
@@ -336,7 +358,14 @@ export function validateTask(value: unknown, restored = true): Task {
     context: string(q.context, `${p}.context`),
     recommendation: string(q.recommendation, `${p}.recommendation`),
     blocking: boolean(q.blocking, `${p}.blocking`),
-    blockingScope: q.blockingScope === undefined ? undefined : choice(q.blockingScope, ["agent", "mission"] as const, `${p}.blockingScope`),
+    blockingScope:
+      q.blockingScope === undefined
+        ? undefined
+        : choice(
+            q.blockingScope,
+            ["agent", "mission"] as const,
+            `${p}.blockingScope`,
+          ),
     workItemId: optionalString(q.workItemId, `${p}.workItemId`),
     unlocks: string(q.unlocks, `${p}.unlocks`),
     agentId: optionalString(q.agentId, `${p}.agentId`),
@@ -489,7 +518,7 @@ export function validateTask(value: unknown, restored = true): Task {
             ...a,
             status: "blocked" as const,
             live: false,
-            waitReason: "État actif à confirmer par le runtime Codex",
+            waitReason: codexWaitReason(),
           }
         : { ...a, status: "queued" as const }
       : a,
@@ -711,8 +740,15 @@ export function validateTask(value: unknown, restored = true): Task {
     normalized.stepResult = validateStepResult(t.stepResult);
   for (const field of ["workItems", "reports"] as const) {
     if (t[field] === undefined) continue;
-    if (!Array.isArray(t[field]) || t[field].length > 200) return invalid(field);
-    Object.assign(normalized, { [field]: collection(t[field], field, (value) => field === "workItems" ? validateWorkItem(value) : validateMissionReport(value)) });
+    if (!Array.isArray(t[field]) || t[field].length > 200)
+      return invalid(field);
+    Object.assign(normalized, {
+      [field]: collection(t[field], field, (value) =>
+        field === "workItems"
+          ? validateWorkItem(value)
+          : validateMissionReport(value),
+      ),
+    });
   }
   if (t.providerSessions !== undefined) {
     const sessions = record(t.providerSessions, "providerSessions");

@@ -19,6 +19,7 @@ import type {
 import { now, uid } from "./data";
 import { validateProject } from "./workflow";
 import { ModelPicker } from "./model-picker";
+import { language, t } from "./i18n";
 import "./project-setup.css";
 
 export interface ProjectSetupProps {
@@ -55,7 +56,7 @@ function pathName(directory: string): string {
       .replace(/[\\/]+$/u, "")
       .split(/[\\/]/u)
       .filter(Boolean)
-      .at(-1) || "Projet"
+      .at(-1) || t("setup.default_project_name")
   );
 }
 
@@ -77,8 +78,7 @@ function emptyReport(
     scannedAt: now(),
     filesScanned: 0,
     historyCount: 0,
-    summary:
-      "Le repérage local n’a pas reçu de rapport agent. Vous pouvez continuer avec les réglages du projet.",
+    summary: t("setup.fallback_summary"),
     evidence: [],
     workflows: [],
     sourcesOfTruth: [],
@@ -188,7 +188,7 @@ function ProviderChoice({
     <div
       className="project-setup-provider"
       role="group"
-      aria-label="Fournisseur"
+      aria-label={t("setup.provider")}
     >
       {(["codex", "claude"] as const).map((candidate) => (
         <button
@@ -206,13 +206,15 @@ function ProviderChoice({
 }
 
 function formatCount(value: number): string {
-  return new Intl.NumberFormat("fr-FR").format(value);
+  return new Intl.NumberFormat(language).format(value);
 }
 
 function reportStatus(report: ProjectDiscoveryReport): string {
-  if (report.analysis.status === "fallback") return "Repérage local";
-  if (report.analysis.status === "local") return "Analyse locale";
-  return `Analyse ${providerName(report.analysis.provider || "codex")}`;
+  if (report.analysis.status === "fallback") return t("setup.status_fallback");
+  if (report.analysis.status === "local") return t("setup.status_local");
+  return t("setup.status_agent", {
+    provider: providerName(report.analysis.provider || "codex"),
+  });
 }
 
 export function ProjectSetupReport({
@@ -281,7 +283,9 @@ export function ProjectSetupReport({
     >
       <div className="project-setup-report-heading">
         <div>
-          <span className="project-setup-kicker">Rapport de découverte</span>
+          <span className="project-setup-kicker">
+            {t("setup.report_kicker")}
+          </span>
           <h3 id="project-setup-report-title">{report.name}</h3>
           <code className="project-setup-report-directory">
             {report.directory}
@@ -294,18 +298,25 @@ export function ProjectSetupReport({
         </span>
       </div>
       <p className="project-setup-summary">
-        {report.summary || "Aucun résumé n’a été fourni."}
+        {report.summary || t("setup.no_summary")}
       </p>
-      <div className="project-setup-metrics" aria-label="Résumé du scan">
+      <div
+        className="project-setup-metrics"
+        aria-label={t("setup.scan_summary")}
+      >
         <span>
-          <strong>{formatCount(report.filesScanned)}</strong> fichiers repérés
+          <strong>{formatCount(report.filesScanned)}</strong>{" "}
+          {t("setup.files_found", { count: report.filesScanned })}
         </span>
         <span>
-          <strong>{formatCount(report.historyCount)}</strong> éléments
-          d’historique
+          <strong>{formatCount(report.historyCount)}</strong>{" "}
+          {t("setup.history_items", { count: report.historyCount })}
         </span>
         <span>
-          <strong>{report.sourcesOfTruth.length}</strong> références proposées
+          <strong>{report.sourcesOfTruth.length}</strong>{" "}
+          {t("setup.suggested_references", {
+            count: report.sourcesOfTruth.length,
+          })}
         </span>
       </div>
       {report.analysis.detail && (
@@ -314,19 +325,19 @@ export function ProjectSetupReport({
         </p>
       )}
       <details className="project-setup-evidence-details">
-        <summary>Voir les connaissances, scripts, skills et références</summary>
+        <summary>{t("setup.evidence_toggle")}</summary>
         <div className="project-setup-evidence-grid">
           {renderEvidence(
-            "Connaissances",
+            t("setup.group_knowledge"),
             grouped.knowledge,
-            "Aucune instruction repérée.",
+            t("setup.no_instructions"),
           )}
-          {renderEvidence("Scripts", grouped.scripts, "Aucun script repéré.")}
-          {renderEvidence("Skills", grouped.skills, "Aucun skill repéré.")}
+          {renderEvidence("Scripts", grouped.scripts, t("setup.no_scripts"))}
+          {renderEvidence("Skills", grouped.skills, t("setup.no_skills"))}
           {renderEvidence(
-            "Références",
+            t("setup.group_references"),
             grouped.references,
-            "Aucune référence technique repérée.",
+            t("setup.no_references"),
           )}
         </div>
       </details>
@@ -336,7 +347,9 @@ export function ProjectSetupReport({
           aria-labelledby="project-setup-sources-title"
         >
           <div className="project-setup-subheading">
-            <h4 id="project-setup-sources-title">Sources proposées</h4>
+            <h4 id="project-setup-sources-title">
+              {t("setup.suggested_sources")}
+            </h4>
             <span>{report.sourcesOfTruth.length}</span>
           </div>
           <div className="project-setup-choice-list">
@@ -366,11 +379,8 @@ export function ProjectSetupReport({
             onChange={(event) => onIncludeConventions(event.target.checked)}
           />
           <span>
-            <strong>Ajouter les conventions détectées</strong>
-            <small>
-              Cette action enrichit le projet localement. Enregistrez ensuite
-              pour la confirmer.
-            </small>
+            <strong>{t("setup.add_conventions")}</strong>
+            <small>{t("setup.add_conventions_detail")}</small>
           </span>
         </label>
       )}
@@ -386,7 +396,7 @@ export function ProjectSetupReport({
         className="button accent project-setup-apply"
         onClick={onApply}
       >
-        <Check size={14} aria-hidden="true" /> Appliquer les suggestions
+        <Check size={14} aria-hidden="true" /> {t("setup.apply_suggestions")}
       </button>
     </section>
   );
@@ -530,23 +540,21 @@ export function ProjectSetup({
 
   const pickDirectory = async () => {
     if (!window.djinn?.selectDirectory) {
-      onToast(
-        "Le sélecteur de dossier est disponible dans l’application locale.",
-      );
+      onToast(t("setup.picker_unavailable"));
       return;
     }
     try {
       const picked = await window.djinn.selectDirectory();
       if (picked) setDirectory(picked);
     } catch (error) {
-      onToast((error as Error).message || "Impossible de choisir ce dossier.");
+      onToast((error as Error).message || t("setup.pick_failed"));
     }
   };
 
   const analyze = async () => {
     const trimmedDirectory = directory.trim();
     if (!trimmedDirectory) {
-      onToast("Choisissez le dossier du projet avant l’analyse.");
+      onToast(t("setup.directory_before_scan"));
       return;
     }
     if (scanning) return;
@@ -562,7 +570,7 @@ export function ProjectSetup({
         const fallback = emptyReport(
           trimmedDirectory,
           provider,
-          "Le pont de découverte est indisponible dans cet aperçu : seul un repérage local vide est affiché.",
+          t("setup.discovery_unavailable"),
         );
         if (mountedRef.current && scanRef.current === id) setReport(fallback);
         return;
@@ -588,7 +596,7 @@ export function ProjectSetup({
     } catch (error) {
       if (!mountedRef.current || scanRef.current !== id) return;
       const message = error instanceof Error ? error.message : String(error);
-      setScanError(message || "Le projet n’a pas pu être analysé.");
+      setScanError(message || t("setup.scan_failed"));
     } finally {
       if (mountedRef.current && scanRef.current === id) {
         scanRef.current = null;
@@ -605,7 +613,7 @@ export function ProjectSetup({
     try {
       await window.djinn?.cancelProjectDiscovery?.(activeScan);
     } catch (error) {
-      onToast((error as Error).message || "Impossible d’annuler l’analyse.");
+      onToast((error as Error).message || t("setup.cancel_failed"));
     }
   };
 
@@ -625,7 +633,7 @@ export function ProjectSetup({
     const nextSources = [...sources, ...addedSources];
     setSources(nextSources);
     if (includeConventions && report.conventions.trim()) {
-      const marker = "Conventions détectées par le scan";
+      const marker = t("setup.conventions_marker");
       if (!conventions.includes(marker)) {
         setConventions(
           conventions.trim()
@@ -646,8 +654,8 @@ export function ProjectSetup({
     });
     onToast(
       addedSources.length || includeConventions
-        ? "Suggestions appliquées dans le formulaire. Vérifiez puis enregistrez le projet."
-        : "Aucune nouvelle suggestion à ajouter.",
+        ? t("setup.suggestions_applied")
+        : t("setup.no_new_suggestion"),
     );
   };
 
@@ -655,10 +663,10 @@ export function ProjectSetup({
     if (!value.trim()) return {};
     const parsed: unknown = JSON.parse(value);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-      throw new Error("Les emplacements doivent être un objet JSON.");
+      throw new Error(t("setup.locations_not_object"));
     for (const [key, entry] of Object.entries(parsed)) {
       if (!key.trim() || typeof entry !== "string")
-        throw new Error("Chaque emplacement doit associer un nom à un chemin.");
+        throw new Error(t("setup.location_needs_path"));
     }
     return parsed as Record<string, string>;
   };
@@ -669,11 +677,11 @@ export function ProjectSetup({
     const trimmedName = name.trim();
     const trimmedDirectory = directory.trim();
     if (!trimmedName) {
-      onToast("Donnez un nom au projet.");
+      onToast(t("setup.name_required"));
       return;
     }
     if (!trimmedDirectory) {
-      onToast("Choisissez le dossier du projet.");
+      onToast(t("setup.directory_required"));
       return;
     }
     setSaving(true);
@@ -699,9 +707,7 @@ export function ProjectSetup({
         result = await window.djinn.validateProject(next);
       await onSave(result);
     } catch (error) {
-      onToast(
-        (error as Error).message || "Impossible d’enregistrer le projet.",
-      );
+      onToast((error as Error).message || t("setup.save_failed"));
     } finally {
       setSaving(false);
     }
@@ -710,37 +716,35 @@ export function ProjectSetup({
   return (
     <form
       className="project-setup project-settings"
-      aria-label={project ? "Paramètres du projet" : "Créer un projet"}
+      aria-label={project ? t("setup.settings_label") : t("setup.create_label")}
       onSubmit={handleSubmit}
     >
       <p className="modal-description">
-        {project
-          ? "Enregistrez le projet avec ses réglages. Un repérage du dépôt reste disponible à la demande dans la section optionnelle."
-          : "Donnez un nom et un dossier. Vous pourrez lancer un repérage manuel des instructions et conventions quand vous le souhaiterez."}
+        {project ? t("setup.edit_description") : t("setup.create_description")}
       </p>
-      <section className="project-setup-core" aria-label="Identité du projet">
+      <section className="project-setup-core" aria-label={t("setup.identity")}>
         <label>
-          Nom du projet
+          {t("setup.name")}
           <input
             autoFocus
             value={name}
             maxLength={1000}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Mon projet"
+            placeholder={t("setup.name_placeholder")}
           />
         </label>
         <label>
-          Dossier du projet
+          {t("setup.directory")}
           <div className="directory-field project-setup-directory">
             <input
               value={directory}
               maxLength={4096}
               onChange={(event) => setDirectory(event.target.value)}
-              placeholder="/chemin/vers/votre/projet"
+              placeholder={t("setup.directory_placeholder")}
             />
             <button
               type="button"
-              aria-label="Choisir le dossier du projet"
+              aria-label={t("setup.pick_directory")}
               onClick={pickDirectory}
             >
               <FolderOpen size={17} aria-hidden="true" />
@@ -752,10 +756,9 @@ export function ProjectSetup({
           open={discoveryOpen}
           onToggle={(event) => setDiscoveryOpen(event.currentTarget.open)}
         >
-          <summary>Repérage optionnel · lancement manuel</summary>
+          <summary>{t("setup.discovery_summary")}</summary>
           <p className="project-setup-discovery-copy">
-            Aucun repérage ne démarre à l’ouverture. Lancez-le uniquement pour
-            obtenir des suggestions de sources et de conventions.
+            {t("setup.discovery_detail")}
           </p>
           <div className="project-setup-scan-actions">
             <button
@@ -774,10 +777,10 @@ export function ProjectSetup({
                 <Sparkles size={15} aria-hidden="true" />
               )}
               {scanning
-                ? "Analyse en cours…"
+                ? t("setup.scanning")
                 : project
-                  ? "Ré-analyser le projet"
-                  : "Analyser le projet"}
+                  ? t("setup.rescan")
+                  : t("setup.scan")}
             </button>
             {scanning && (
               <button
@@ -785,7 +788,7 @@ export function ProjectSetup({
                 className="button secondary"
                 onClick={() => void cancelScan()}
               >
-                <X size={14} aria-hidden="true" /> Annuler
+                <X size={14} aria-hidden="true" /> {t("common.cancel")}
               </button>
             )}
           </div>
@@ -801,12 +804,16 @@ export function ProjectSetup({
                   size={14}
                   aria-hidden="true"
                 />
-                <span>Lecture du dépôt avec {providerName(provider)}</span>
+                <span>
+                  {t("setup.reading_repository", {
+                    provider: providerName(provider),
+                  })}
+                </span>
               </div>
               <div className="project-setup-progress-track" aria-hidden="true">
                 <span />
               </div>
-              <small>Lecture seule · aucune modification du dépôt</small>
+              <small>{t("setup.read_only")}</small>
             </div>
           )}
           {scanError && (
@@ -834,19 +841,19 @@ export function ProjectSetup({
         />
       )}
       <details className="project-setup-advanced">
-        <summary>Réglages avancés</summary>
+        <summary>{t("setup.advanced")}</summary>
         <div className="project-setup-advanced-grid">
           <label>
-            Conventions du projet
+            {t("setup.conventions")}
             <textarea
               rows={4}
               value={conventions}
               onChange={(event) => setConventions(event.target.value)}
-              placeholder="Règles, structure, commandes et décisions à respecter…"
+              placeholder={t("setup.conventions_placeholder")}
             />
           </label>
           <label>
-            Emplacements relatifs (optionnel)
+            {t("setup.locations")}
             <textarea
               rows={3}
               value={locationsText}
@@ -862,7 +869,7 @@ export function ProjectSetup({
               placeholder={'{"prototype":"app/prototypes"}'}
               spellCheck={false}
             />
-            <small>Utilisez des chemins relatifs au dossier du projet.</small>
+            <small>{t("setup.locations_hint")}</small>
           </label>
           <section
             className="project-setup-sources"
@@ -870,10 +877,8 @@ export function ProjectSetup({
           >
             <div className="project-setup-subheading">
               <div>
-                <h4 id="project-setup-sources-heading">Sources de vérité</h4>
-                <p>
-                  Références transmises au contexte des prochaines missions.
-                </p>
+                <h4 id="project-setup-sources-heading">{t("setup.sources")}</h4>
+                <p>{t("setup.sources_detail")}</p>
               </div>
               <button
                 type="button"
@@ -882,19 +887,21 @@ export function ProjectSetup({
                   setSources((current) => [...current, emptySource()])
                 }
               >
-                <Plus size={13} aria-hidden="true" /> Ajouter
+                <Plus size={13} aria-hidden="true" /> {t("setup.add")}
               </button>
             </div>
             {!sources.length && (
               <p className="project-setup-empty-copy">
-                Aucune source enregistrée.
+                {t("setup.no_sources")}
               </p>
             )}
             {sources.map((source, index) => (
               <fieldset className="project-setup-source" key={source.id}>
-                <legend>Référence {index + 1}</legend>
+                <legend>
+                  {t("setup.reference_number", { number: index + 1 })}
+                </legend>
                 <label>
-                  Nom de la référence
+                  {t("setup.reference_name")}
                   <input
                     value={source.title}
                     onChange={(event) =>
@@ -906,11 +913,11 @@ export function ProjectSetup({
                         ),
                       )
                     }
-                    placeholder="Décisions produit"
+                    placeholder={t("setup.reference_name_placeholder")}
                   />
                 </label>
                 <label>
-                  Chemin relatif
+                  {t("setup.reference_path")}
                   <input
                     value={source.path}
                     onChange={(event) =>
@@ -926,7 +933,7 @@ export function ProjectSetup({
                   />
                 </label>
                 <label>
-                  Rôle de la référence
+                  {t("setup.reference_role")}
                   <input
                     value={source.description}
                     onChange={(event) =>
@@ -938,7 +945,7 @@ export function ProjectSetup({
                         ),
                       )
                     }
-                    placeholder="Décisions acceptées et vocabulaire du projet"
+                    placeholder={t("setup.reference_role_placeholder")}
                   />
                 </label>
                 <button
@@ -950,14 +957,14 @@ export function ProjectSetup({
                     )
                   }
                 >
-                  <Trash2 size={13} aria-hidden="true" /> Retirer cette
-                  référence
+                  <Trash2 size={13} aria-hidden="true" />{" "}
+                  {t("setup.remove_reference")}
                 </button>
               </fieldset>
             ))}
           </section>
           <label>
-            Fournisseur d’analyse et d’exécution
+            {t("setup.provider_label")}
             <ProviderChoice
               provider={provider}
               onChange={(next) => {
@@ -968,7 +975,7 @@ export function ProjectSetup({
           </label>
           <div className="project-setup-model-field">
             <span>
-              Modèle <small>(facultatif)</small>
+              {t("setup.model")} <small>{t("setup.optional")}</small>
             </span>
             <ModelPicker
               provider={provider}
@@ -977,7 +984,7 @@ export function ProjectSetup({
             />
           </div>
           <label>
-            Workers simultanés <small>(facultatif)</small>
+            {t("setup.concurrency")} <small>{t("setup.optional")}</small>
             <input
               type="number"
               min={1}
@@ -997,7 +1004,7 @@ export function ProjectSetup({
       </details>
       <div className="modal-footer project-setup-footer">
         <button type="button" className="button secondary" onClick={onClose}>
-          Annuler
+          {t("common.cancel")}
         </button>
         <button type="submit" className="button accent" disabled={saving}>
           {saving ? (
@@ -1009,7 +1016,7 @@ export function ProjectSetup({
           ) : (
             <FileUp size={15} aria-hidden="true" />
           )}
-          {project ? "Enregistrer le projet" : "Créer le projet"}
+          {project ? t("setup.save") : t("setup.create")}
         </button>
       </div>
     </form>

@@ -4,6 +4,7 @@ import {
   visualizationDocument,
   visualizationMessage,
 } from "./visualization-document";
+import { t } from "./i18n";
 export function VisualizationFrame({ artifact }: { artifact: Artifact }) {
   const frame = useRef<HTMLIFrameElement>(null),
     [url, setUrl] = useState(""),
@@ -39,10 +40,7 @@ export function VisualizationFrame({ artifact }: { artifact: Artifact }) {
               setUrl(result.url);
             }
           })
-          .catch(
-            () =>
-              active && setError("Le document isolé ne peut pas être préparé."),
-          );
+          .catch(() => active && setError(t("visualization.prepare_failed")));
       else {
         blob = URL.createObjectURL(new Blob([document], { type: "text/html" }));
         setUrl(blob);
@@ -59,16 +57,17 @@ export function VisualizationFrame({ artifact }: { artifact: Artifact }) {
   return (
     <div className="visualization-support">
       <div className="art-stage-caption">
-        <span>
-          Visualisation interactive · données et hypothèses décrites dans le
-          support
-        </span>
+        <span>{t("visualization.caption")}</span>
         <button className="text-button" onClick={() => setSource(!source)}>
-          {source ? "Lire la visualisation" : "Afficher la source"}
+          {source
+            ? t("visualization.show_visualization")
+            : t("visualization.show_source")}
         </button>
       </div>
-      {error ? <p role="alert">Visualisation indisponible : {error}</p> : null}
-      {!url && !error && <p role="status">Préparation de la visualisation…</p>}
+      {error ? (
+        <p role="alert">{t("visualization.unavailable", { error })}</p>
+      ) : null}
+      {!url && !error && <p role="status">{t("visualization.preparing")}</p>}
       <iframe
         ref={frame}
         title={artifact.title}
@@ -82,7 +81,7 @@ export function VisualizationFrame({ artifact }: { artifact: Artifact }) {
           display: source ? "none" : "block",
           border: 0,
         }}
-        onError={() => setError("Le document isolé ne peut pas être chargé.")}
+        onError={() => setError(t("visualization.load_failed"))}
       />
       {source && <pre className="visualization-source">{artifact.content}</pre>}
     </div>

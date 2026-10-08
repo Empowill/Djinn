@@ -1,0 +1,90 @@
+/* The terminal pinned at the bottom of the window (lead-terminal.tsx). The app keeps the space above it. */
+.lead-frame {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+.lead-frame-app {
+  flex: 1;
+  min-height: 0;
+}
+.lead-frame-app > .app {
+  height: 100%;
+  min-height: 0;
+}
+.lead-terminal {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+.lead-terminal-grip {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 2;
+}
+.lead-terminal-bar {
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  background: #131313;
+  font: var(--font-size-body) var(--mono);
+  color: var(--muted);
+}
+.lead-terminal-bar button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+}
+.lead-terminal-bar button:hover {
+  background: var(--surface-raised);
+  color: var(--accent);
+}
+.lead-terminal-title {
+  flex: 1;
+  overflow: hidden;
+}
+.lead-terminal-title > span {
+  white-space: nowrap;
+}
+.lead-terminal-command {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted-dim);
+}
+.lead-terminal-state {
+  white-space: nowrap;
+  color: var(--muted-dim);
+}
+.lead-terminal-state.error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #d78a7c;
+}
+.lead-terminal-screen {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0 0 var(--space-2);
+}
+.lead-terminal.collapsed .lead-terminal-screen {
+  display: none;
+}

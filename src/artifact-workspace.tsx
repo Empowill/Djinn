@@ -32,6 +32,7 @@ import type { Artifact, Feedback, Task } from "./types";
 import "./artifact-workspace.css";
 import { MarkdownBody } from "./markdown-body";
 import { VisualizationFrame } from "./visualization-frame";
+import { t, type TextKey } from "./i18n";
 import { invalidateDependentSteps } from "./workflow";
 
 type DiagramNode = {
@@ -104,7 +105,7 @@ const DEFAULT_PROJECTS: PreviewProject[] = [
     name: "Atlas",
     owner: "Camille",
     status: "En cours",
-    team: "Produit",
+    team: t("workspace.demo_team_product"),
     progress: 68,
     accent: "#d1d1d1",
   },
@@ -122,7 +123,7 @@ const DEFAULT_PROJECTS: PreviewProject[] = [
     name: "Echo",
     owner: "Lina",
     status: "Planifié",
-    team: "Qualité",
+    team: t("workspace.demo_team_quality"),
     progress: 18,
     accent: "#b0b0b0",
   },
@@ -131,7 +132,7 @@ const DEFAULT_PROJECTS: PreviewProject[] = [
     name: "Lumen",
     owner: "Nora",
     status: "En cours",
-    team: "Produit",
+    team: t("workspace.demo_team_product"),
     progress: 44,
     accent: "#afafaf",
   },
@@ -147,6 +148,21 @@ const DEFAULT_PROJECTS: PreviewProject[] = [
 ];
 
 const STATUS_FILTERS = ["Tous", "Planifié", "En cours", "Review"] as const;
+
+// The statuses and the filter are stored in the wireframe's JSON in French: they stay as data,
+// only their label is translated.
+const STATUS_LABELS: Record<string, TextKey> = {
+  Tous: "workspace.status_all",
+  Planifié: "workspace.status_planned",
+  "En cours": "workspace.status_in_progress",
+  Review: "workspace.status_review",
+  Archivé: "workspace.status_archived",
+};
+
+function statusLabel(status: string) {
+  const key = STATUS_LABELS[status];
+  return key ? t(key) : status;
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -173,7 +189,8 @@ function parseDiagram(content: string): DiagramModel {
     .map((node, index) => ({
       id:
         typeof node.id === "string" && node.id ? node.id : `node-${index + 1}`,
-      label: typeof node.label === "string" ? node.label : "Nouveau nœud",
+      label:
+        typeof node.label === "string" ? node.label : t("workspace.new_node"),
       sublabel: typeof node.sublabel === "string" ? node.sublabel : "",
       x: Number.isFinite(node.x)
         ? clamp(Number(node.x), 90, DIAGRAM_WIDTH - 90)
@@ -224,7 +241,7 @@ function parseWireframe(content: string): WireframeModel {
     heading:
       typeof raw.heading === "string" && raw.heading.trim()
         ? raw.heading
-        : "Vos projets",
+        : t("workspace.wireframe_heading"),
     layout: raw.layout === "team" ? "team" : "status",
     archive: raw.archive === "filter" ? "filter" : "dedicated",
     ...(projects && projects.length ? { projects } : {}),
@@ -239,24 +256,24 @@ function serialize(value: unknown) {
 
 function relativeTime(value: string) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "à l’instant";
+  if (Number.isNaN(date.getTime())) return t("workspace.time_just_now");
   const seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
-  if (seconds < 60) return "à l’instant";
+  if (seconds < 60) return t("workspace.time_just_now");
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `il y a ${minutes} min`;
+  if (minutes < 60) return t("workspace.time_minutes_ago", { minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `il y a ${hours} h`;
-  return `il y a ${Math.round(hours / 24)} j`;
+  if (hours < 24) return t("workspace.time_hours_ago", { hours });
+  return t("workspace.time_days_ago", { days: Math.round(hours / 24) });
 }
 
 function typeLabel(type: Artifact["type"]) {
   return {
-    diagram: "Diagramme",
-    wireframe: "Support de cadrage",
-    document: "Document",
-    code: "Texte",
-    screenshot: "Capture",
-    visualization: "Visualisation",
+    diagram: t("workspace.type_diagram"),
+    wireframe: t("workspace.type_wireframe"),
+    document: t("workspace.type_document"),
+    code: t("workspace.type_code"),
+    screenshot: t("workspace.type_screenshot"),
+    visualization: t("workspace.type_visualization"),
   }[type];
 }
 
@@ -544,19 +561,17 @@ export default function ArtifactWorkspace({
     )
       return;
     if (draftConflict) {
-      onToast(
-        "La version enregistrée a changé. Comparez les versions avant de conserver votre brouillon.",
-      );
+      onToast(t("workspace.draft_conflict_toast"));
       return;
     }
     patchArtifact(selectedArtifact.id, documentDraft, {
-      eventTitle: "Support enregistré",
+      eventTitle: t("workspace.artifact_saved"),
       eventDetail: selectedArtifact.title,
     });
     setDocumentDirty(false);
     setDraftBase(documentDraft);
     draftCache.current.delete(draftOwner.current);
-    onToast("Support enregistré");
+    onToast(t("workspace.artifact_saved"));
   }, [documentDraft, draftConflict, onToast, patchArtifact, selectedArtifact]);
 
   const preserveDraftRevision = () => {
@@ -564,7 +579,9 @@ export default function ArtifactWorkspace({
     const proposal: Artifact = {
       ...selectedArtifact,
       id: `${selectedArtifact.id}:proposal:human-${uid()}`,
-      title: `${selectedArtifact.title} — proposition de révision humaine`,
+      title: t("workspace.human_revision_title", {
+        title: selectedArtifact.title,
+      }),
       content: documentDraft,
       updatedAt: now(),
       editedBy: "human",
@@ -575,23 +592,23 @@ export default function ArtifactWorkspace({
     onUpdate(
       appendEvent(
         { ...task, artifacts: [...task.artifacts, proposal] },
-        "Révision humaine conservée",
+        t("workspace.human_revision_kept"),
         proposal.title,
       ),
     );
     draftCache.current.delete(draftOwner.current);
     setDocumentDirty(false);
     setSelectedId(proposal.id);
-    onToast("Brouillon conservé dans une révision distincte");
+    onToast(t("workspace.draft_kept_as_revision"));
   };
 
   const saveDiagram = useCallback(
-    (next: DiagramModel, detail = "Diagramme mis à jour") => {
+    (next: DiagramModel, detail = t("workspace.diagram_updated")) => {
       setDiagram(next);
       diagramRef.current = next;
       if (selectedArtifact?.type === "diagram") {
         patchArtifact(selectedArtifact.id, serialize(next), {
-          eventTitle: "Architecture enregistrée",
+          eventTitle: t("workspace.architecture_saved"),
           eventDetail: detail,
         });
       }
@@ -608,7 +625,7 @@ export default function ArtifactWorkspace({
           serialize(next),
           detail
             ? {
-                eventTitle: "Support de cadrage mis à jour",
+                eventTitle: t("workspace.wireframe_updated"),
                 eventDetail: detail,
               }
             : undefined,
@@ -688,8 +705,8 @@ export default function ArtifactWorkspace({
       if (current && selectedArtifact?.type === "diagram") {
         const moved = current.nodes.find((node) => node.id === drag.id);
         patchArtifact(selectedArtifact.id, serialize(current), {
-          eventTitle: "Architecture enregistrée",
-          eventDetail: moved?.label || "Nœud déplacé",
+          eventTitle: t("workspace.architecture_saved"),
+          eventDetail: moved?.label || t("workspace.node_moved"),
         });
       }
       setDrag(null);
@@ -752,7 +769,7 @@ export default function ArtifactWorkspace({
     let nextTask: Task = { ...task, feedback: [...task.feedback, feedback] };
     nextTask = appendEvent(
       nextTask,
-      "Commentaire épinglé",
+      t("workspace.comment_pinned"),
       `${selectedArtifact.title} · ${feedback.text}`,
       "review",
       feedback.id,
@@ -761,7 +778,7 @@ export default function ArtifactWorkspace({
     setPendingPin(null);
     setFeedbackText("");
     setActiveFeedbackId(feedback.id);
-    onToast("Commentaire ajouté à la review");
+    onToast(t("workspace.comment_added"));
   }, [
     appendEvent,
     feedbackText,
@@ -784,7 +801,9 @@ export default function ArtifactWorkspace({
       };
       nextTask = appendEvent(
         nextTask,
-        feedback.resolved ? "Commentaire rouvert" : "Commentaire résolu",
+        feedback.resolved
+          ? t("workspace.comment_reopened")
+          : t("workspace.comment_resolved"),
         feedback.text,
         "review",
       );
@@ -801,7 +820,7 @@ export default function ArtifactWorkspace({
       };
       nextTask = appendEvent(
         nextTask,
-        "Commentaire supprimé",
+        t("workspace.comment_deleted"),
         feedback.text,
         "review",
       );
@@ -814,9 +833,9 @@ export default function ArtifactWorkspace({
   const addDocument = useCallback(() => {
     const artifact: Artifact = {
       id: `document-${uid()}`,
-      title: "Nouveau document",
+      title: t("workspace.new_document"),
       type: "document",
-      content: "# Nouveau document\n\n",
+      content: `# ${t("workspace.new_document")}\n\n`,
       updatedAt: now(),
       stepId: task.selectedStepId || task.activeStepId,
       revision: 1,
@@ -825,12 +844,12 @@ export default function ArtifactWorkspace({
     onUpdate(
       appendEvent(
         { ...task, artifacts: [...task.artifacts, artifact] },
-        "Document ajouté",
+        t("workspace.document_added"),
         artifact.title,
       ),
     );
     setSelectedId(artifact.id);
-    onToast("Nouveau document ajouté");
+    onToast(t("workspace.new_document_added"));
   }, [appendEvent, onToast, onUpdate, task]);
 
   const removeArtifact = useCallback(() => {
@@ -851,12 +870,12 @@ export default function ArtifactWorkspace({
           (feedback) => feedback.artifactId !== selectedArtifact.id,
         ),
       },
-      "Support supprimé",
+      t("workspace.artifact_deleted"),
       selectedArtifact.title,
     );
     onUpdate(nextTask);
     setSelectedId(nextSelected);
-    onToast("Support supprimé");
+    onToast(t("workspace.artifact_deleted"));
   }, [appendEvent, onToast, onUpdate, selectedArtifact, task]);
 
   const handleUpload = useCallback(
@@ -865,11 +884,11 @@ export default function ArtifactWorkspace({
       event.target.value = "";
       if (!file) return;
       if (!file.type.startsWith("image/")) {
-        onToast("Choisissez une image");
+        onToast(t("workspace.choose_image"));
         return;
       }
       if (file.size > MAX_SCREENSHOT_BYTES) {
-        onToast("La capture doit faire 4 Mo ou moins");
+        onToast(t("workspace.screenshot_too_large"));
         return;
       }
       setUploading(true);
@@ -877,12 +896,13 @@ export default function ArtifactWorkspace({
       reader.onload = () => {
         if (typeof reader.result !== "string") {
           setUploading(false);
-          onToast("Impossible de lire cette capture");
+          onToast(t("workspace.screenshot_unreadable"));
           return;
         }
         const artifact: Artifact = {
           id: `screenshot-${uid()}`,
-          title: file.name.replace(/\.[^.]+$/, "") || "Capture",
+          title:
+            file.name.replace(/\.[^.]+$/, "") || t("workspace.type_screenshot"),
           type: "screenshot",
           content: reader.result,
           updatedAt: now(),
@@ -892,24 +912,22 @@ export default function ArtifactWorkspace({
         };
         const nextTask = appendEvent(
           { ...task, artifacts: [...task.artifacts, artifact] },
-          "Capture ajoutée",
+          t("workspace.screenshot_added"),
           artifact.title,
         );
         if (JSON.stringify(nextTask).length > MAX_TASK_PERSISTED_BYTES) {
           setUploading(false);
-          onToast(
-            "Cette capture dépasserait la limite de sauvegarde de la mission",
-          );
+          onToast(t("workspace.screenshot_over_limit"));
           return;
         }
         onUpdate(nextTask);
         setSelectedId(artifact.id);
         setUploading(false);
-        onToast("Capture ajoutée");
+        onToast(t("workspace.screenshot_added"));
       };
       reader.onerror = () => {
         setUploading(false);
-        onToast("Impossible de lire cette capture");
+        onToast(t("workspace.screenshot_unreadable"));
       };
       reader.readAsDataURL(file);
     },
@@ -927,7 +945,7 @@ export default function ArtifactWorkspace({
       anchor.download = name;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      onToast("Capture téléchargée");
+      onToast(t("workspace.screenshot_downloaded"));
       return;
     }
     try {
@@ -936,7 +954,7 @@ export default function ArtifactWorkspace({
           name,
           content: selectedArtifact.content,
         });
-        onToast("Support exporté");
+        onToast(t("workspace.artifact_exported"));
         return;
       }
     } catch {
@@ -956,7 +974,7 @@ export default function ArtifactWorkspace({
     anchor.download = name;
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    onToast("Support téléchargé");
+    onToast(t("workspace.artifact_downloaded"));
   }, [onToast, selectedArtifact]);
 
   const updateWireframe = useCallback(
@@ -982,7 +1000,10 @@ export default function ArtifactWorkspace({
                 setActiveFeedbackId(feedback.id);
                 setPendingPin(null);
               }}
-              aria-label={`Commentaire ${index + 1}: ${feedback.text}`}
+              aria-label={t("workspace.comment_pin_label", {
+                number: index + 1,
+                text: feedback.text,
+              })}
               title={feedback.text}
             >
               {feedback.resolved ? (
@@ -1012,9 +1033,10 @@ export default function ArtifactWorkspace({
       <div className="art-diagram-wrap">
         <div className="art-stage-caption">
           <span>
-            <span className="art-caption-mark" /> architecture éditable
+            <span className="art-caption-mark" />{" "}
+            {t("workspace.diagram_caption")}
           </span>
-          <span>glisser les nœuds pour réorganiser</span>
+          <span>{t("workspace.diagram_hint")}</span>
         </div>
         {model.nodes.length ? (
           <svg
@@ -1022,7 +1044,7 @@ export default function ArtifactWorkspace({
             className="art-diagram"
             viewBox={`0 0 ${DIAGRAM_WIDTH} ${DIAGRAM_HEIGHT}`}
             role="img"
-            aria-label="Diagramme éditable"
+            aria-label={t("workspace.diagram_label")}
             onPointerMove={handleDiagramPointerMove}
             onPointerUp={handleDiagramPointerUp}
             onPointerCancel={handleDiagramPointerUp}
@@ -1085,7 +1107,7 @@ export default function ArtifactWorkspace({
                   onClick={() => setSelectedNodeId(node.id)}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Modifier ${node.label}`}
+                  aria-label={t("workspace.edit_node", { label: node.label })}
                 >
                   <rect width="164" height="68" rx="8" />
                   <rect
@@ -1109,7 +1131,7 @@ export default function ArtifactWorkspace({
         ) : (
           <div className="art-empty-stage">
             <Network size={30} />
-            <span>Ce diagramme ne contient aucun nœud valide.</span>
+            <span>{t("workspace.diagram_empty")}</span>
           </div>
         )}
       </div>
@@ -1148,14 +1170,18 @@ export default function ArtifactWorkspace({
       setWireframeFilter(filter);
       updateWireframe(
         { ...model, filter, view: activeView },
-        `Filtre ${filter.toLowerCase()}`,
+        t("workspace.event_filter", {
+          filter: statusLabel(filter).toLowerCase(),
+        }),
       );
     };
     const changeView = (view: "active" | "archive") => {
       setWireframeFilter("Tous");
       updateWireframe(
         { ...model, view, filter: "Tous" },
-        view === "archive" ? "Archives affichées" : "Projets actifs affichés",
+        view === "archive"
+          ? t("workspace.archives_shown")
+          : t("workspace.active_projects_shown"),
       );
     };
     const cycleStatus = (project: PreviewProject) => {
@@ -1172,24 +1198,24 @@ export default function ArtifactWorkspace({
           item.id === project.id ? { ...item, status: nextStatus } : item,
         ),
       };
-      updateWireframe(next, `${project.name} · ${nextStatus}`);
+      updateWireframe(next, `${project.name} · ${statusLabel(nextStatus)}`);
     };
     const addPreview = () => {
       const item: PreviewProject = {
         id: `preview-${uid()}`,
-        name: "Nouveau projet",
-        owner: "Vous",
+        name: t("workspace.new_project"),
+        owner: t("workspace.owner_you"),
         status: "Planifié",
-        team: "Produit",
+        team: t("workspace.demo_team_product"),
         progress: 12,
         accent: "#ebebeb",
       };
       updateWireframe(
         { ...model, projects: [...projects, item], view: "active" },
-        "Projet de démonstration ajouté",
+        t("workspace.demo_project_added"),
       );
       setWireframeFilter("Tous");
-      onToast("Projet de démonstration ajouté au support");
+      onToast(t("workspace.demo_project_added_toast"));
     };
     return (
       <div className="art-wireframe-wrap">
@@ -1199,12 +1225,14 @@ export default function ArtifactWorkspace({
               <span className="art-brand-orb">D</span>
               <span>djinn</span>
             </div>
-            <div className="art-mini-nav-label">Espace projet</div>
+            <div className="art-mini-nav-label">
+              {t("workspace.mini_space")}
+            </div>
             <button
               className={`art-mini-nav-item ${activeView === "active" ? "is-current" : ""}`}
               onClick={() => changeView("active")}
             >
-              <LayoutDashboard size={14} /> Projets{" "}
+              <LayoutDashboard size={14} /> {t("workspace.mini_projects")}{" "}
               <span>
                 {
                   projects.filter((project) => project.status !== "Archivé")
@@ -1216,7 +1244,7 @@ export default function ArtifactWorkspace({
               className={`art-mini-nav-item ${activeView === "archive" ? "is-current" : ""}`}
               onClick={() => changeView("archive")}
             >
-              <Archive size={14} /> Archives{" "}
+              <Archive size={14} /> {t("workspace.mini_archives")}{" "}
               <span>
                 {
                   projects.filter((project) => project.status === "Archivé")
@@ -1226,45 +1254,47 @@ export default function ArtifactWorkspace({
             </button>
             <div className="art-mini-sidebar-bottom">
               <span className="art-mini-avatar">Y</span>
-              <span>Votre espace</span>
+              <span>{t("workspace.mini_your_space")}</span>
             </div>
           </aside>
           <div className="art-mini-main">
             <div className="art-mini-header">
               <div>
-                <span className="art-mini-eyebrow">SUPPORT DE CADRAGE</span>
+                <span className="art-mini-eyebrow">
+                  {t("workspace.wireframe_eyebrow")}
+                </span>
                 <h3>{model.heading}</h3>
               </div>
               <button className="art-mini-add" onClick={addPreview}>
-                <Plus size={14} /> Ajouter
+                <Plus size={14} /> {t("workspace.mini_add")}
               </button>
             </div>
             <div className="art-mini-toolbar">
               <div
                 className="art-mini-layout-toggle"
-                aria-label="Organisation du support"
+                aria-label={t("workspace.wireframe_layout_label")}
               >
                 <button
                   className={model.layout === "status" ? "is-current" : ""}
                   onClick={() =>
                     updateWireframe(
                       { ...model, layout: "status" },
-                      "Vue par statut",
+                      t("workspace.view_by_status"),
                     )
                   }
                 >
-                  <SlidersHorizontal size={13} /> Statut
+                  <SlidersHorizontal size={13} /> {t("workspace.mini_status")}
                 </button>
                 <button
                   className={model.layout === "team" ? "is-current" : ""}
                   onClick={() =>
                     updateWireframe(
                       { ...model, layout: "team" },
-                      "Vue par équipe",
+                      t("workspace.view_by_team"),
                     )
                   }
                 >
-                  <Users size={13} /> Équipe
+                  <Users size={13} /> {t("workspace.mini_team")}
                 </button>
               </div>
               <label className="art-mini-search">
@@ -1272,8 +1302,8 @@ export default function ArtifactWorkspace({
                 <input
                   value={wireframeSearch}
                   onChange={(event) => setWireframeSearch(event.target.value)}
-                  placeholder="Rechercher"
-                  aria-label="Rechercher un projet"
+                  placeholder={t("workspace.mini_search")}
+                  aria-label={t("workspace.search_project")}
                 />
               </label>
             </div>
@@ -1285,36 +1315,36 @@ export default function ArtifactWorkspace({
                     className={wireframeFilter === filter ? "is-active" : ""}
                     onClick={() => changeFilter(filter)}
                   >
-                    {filter}
+                    {statusLabel(filter)}
                   </button>
                 ))}
               </div>
               <div
                 className="art-mini-archive-mode"
-                aria-label="Organisation des archives"
+                aria-label={t("workspace.archive_mode_label")}
               >
-                <span>Archives</span>
+                <span>{t("workspace.mini_archives")}</span>
                 <button
                   className={model.archive === "dedicated" ? "is-active" : ""}
                   onClick={() =>
                     updateWireframe(
                       { ...model, archive: "dedicated" },
-                      "Archives dédiées",
+                      t("workspace.archives_dedicated"),
                     )
                   }
                 >
-                  dédiées
+                  {t("workspace.archive_mode_dedicated")}
                 </button>
                 <button
                   className={model.archive === "filter" ? "is-active" : ""}
                   onClick={() =>
                     updateWireframe(
                       { ...model, archive: "filter" },
-                      "Archives comme filtre",
+                      t("workspace.archives_as_filter"),
                     )
                   }
                 >
-                  filtre
+                  {t("workspace.archive_mode_filter")}
                 </button>
               </div>
               {activeView === "archive" && (
@@ -1322,7 +1352,7 @@ export default function ArtifactWorkspace({
                   className="art-mini-back"
                   onClick={() => changeView("active")}
                 >
-                  <ChevronRight size={13} /> Projets actifs
+                  <ChevronRight size={13} /> {t("workspace.active_projects")}
                 </button>
               )}
             </div>
@@ -1360,15 +1390,14 @@ export default function ArtifactWorkspace({
             {!searched.length && (
               <div className="art-mini-empty">
                 <Filter size={18} />
-                <span>Aucun projet pour ce filtre.</span>
+                <span>{t("workspace.no_project_for_filter")}</span>
                 <button onClick={() => changeFilter("Tous")}>
-                  Réinitialiser
+                  {t("workspace.reset")}
                 </button>
               </div>
             )}
             <div className="art-mini-footnote">
-              <Sparkles size={12} /> Interface de démonstration · les
-              interactions modifient ce support de cadrage.
+              <Sparkles size={12} /> {t("workspace.wireframe_footnote")}
             </div>
           </div>
         </div>
@@ -1381,13 +1410,13 @@ export default function ArtifactWorkspace({
       return (
         <div className="art-no-artifacts">
           <FolderOpen size={30} />
-          <h3>Aucun support pour le moment</h3>
-          <p>Ajoutez un document ou une capture pour commencer la review.</p>
+          <h3>{t("workspace.no_artifacts_title")}</h3>
+          <p>{t("workspace.no_artifacts_hint")}</p>
           <button
             className="art-button art-button--primary"
             onClick={addDocument}
           >
-            <Plus size={15} /> Ajouter un document
+            <Plus size={15} /> {t("workspace.add_document")}
           </button>
         </div>
       );
@@ -1398,9 +1427,10 @@ export default function ArtifactWorkspace({
         <div className="art-text-preview">
           <div className="art-stage-caption">
             <span>
-              <span className="art-caption-mark" /> texte de secours
+              <span className="art-caption-mark" />{" "}
+              {t("workspace.fallback_text_caption")}
             </span>
-            <span>le JSON du diagramme est invalide</span>
+            <span>{t("workspace.diagram_json_invalid")}</span>
           </div>
           <pre>{selectedArtifact.content}</pre>
         </div>
@@ -1428,7 +1458,7 @@ export default function ArtifactWorkspace({
       ) : (
         <div className="art-empty-stage">
           <FileImage size={30} />
-          <span>Cette capture ne peut pas être affichée.</span>
+          <span>{t("workspace.screenshot_unviewable")}</span>
         </div>
       );
     }
@@ -1436,9 +1466,10 @@ export default function ArtifactWorkspace({
       <div className="art-text-preview">
         <div className="art-stage-caption">
           <span>
-            <span className="art-caption-mark" /> aperçu texte brut
+            <span className="art-caption-mark" />{" "}
+            {t("workspace.raw_text_caption")}
           </span>
-          <span>aucun code n’est exécuté dans cette vue</span>
+          <span>{t("workspace.raw_text_hint")}</span>
         </div>
         <pre>{selectedArtifact.content}</pre>
       </div>
@@ -1459,17 +1490,19 @@ export default function ArtifactWorkspace({
       <section className="art-editor-panel">
         <div className="art-panel-heading">
           <div>
-            <span className="art-kicker">ÉDITEUR</span>
+            <span className="art-kicker">{t("workspace.editor_kicker")}</span>
             <h3>
               {selectedArtifact.type === "document"
-                ? "Modifier le document"
+                ? t("workspace.edit_document")
                 : diagramFallback
-                  ? "Réparer le diagramme"
-                  : "Modifier le texte"}
+                  ? t("workspace.repair_diagram")
+                  : t("workspace.edit_text")}
             </h3>
           </div>
           <span className={`art-dirty ${documentDirty ? "is-dirty" : ""}`}>
-            {documentDirty ? "Modifications non enregistrées" : "Enregistré"}
+            {documentDirty
+              ? t("workspace.unsaved_changes")
+              : t("workspace.saved")}
           </span>
         </div>
         <textarea
@@ -1484,23 +1517,23 @@ export default function ArtifactWorkspace({
             });
           }}
           spellCheck={false}
-          aria-label="Contenu du support"
+          aria-label={t("workspace.artifact_content_label")}
         />
         <div className="art-editor-actions">
           <span>
             {selectedArtifact.type === "document"
-              ? "Source Markdown"
+              ? t("workspace.source_markdown")
               : selectedArtifact.type === "visualization"
-                ? "Source HTML locale"
-                : "Texte source"}{" "}
-            · les modifications humaines sont conservées
+                ? t("workspace.source_html")
+                : t("workspace.source_text")}{" "}
+            {t("workspace.human_edits_kept")}
           </span>
           <button
             className="art-button art-button--primary"
             onClick={saveTextArtifact}
             disabled={!documentDirty || draftConflict}
           >
-            <Check size={15} /> Enregistrer
+            <Check size={15} /> {t("common.save")}
           </button>
         </div>
       </section>
@@ -1517,27 +1550,29 @@ export default function ArtifactWorkspace({
       return (
         <div className="art-inspector-empty">
           <Move size={16} />
-          <span>Sélectionnez un nœud pour modifier son libellé.</span>
+          <span>{t("workspace.select_node_hint")}</span>
         </div>
       );
     return (
       <div className="art-inspector">
         <div className="art-panel-heading">
           <div>
-            <span className="art-kicker">NŒUD SÉLECTIONNÉ</span>
-            <h3>Propriétés</h3>
+            <span className="art-kicker">
+              {t("workspace.selected_node_kicker")}
+            </span>
+            <h3>{t("workspace.properties")}</h3>
           </div>
           <Move size={15} />
         </div>
         <label>
-          Libellé
+          {t("workspace.node_label")}
           <input
             value={selectedNode.label}
             onChange={(event) => updateNode("label", event.target.value)}
           />
         </label>
         <label>
-          Sous-libellé
+          {t("workspace.node_sublabel")}
           <input
             value={selectedNode.sublabel}
             onChange={(event) => updateNode("sublabel", event.target.value)}
@@ -1547,7 +1582,7 @@ export default function ArtifactWorkspace({
           className="art-button art-button--secondary"
           onClick={() => saveDiagram(diagram, selectedNode.label)}
         >
-          <Check size={14} /> Enregistrer le nœud
+          <Check size={14} /> {t("workspace.save_node")}
         </button>
       </div>
     );
@@ -1565,8 +1600,10 @@ export default function ArtifactWorkspace({
             <span className="art-kicker">ANNOTATIONS</span>
             <h3>
               {selectedFeedback.length
-                ? `${selectedFeedback.length} commentaire${selectedFeedback.length > 1 ? "s" : ""}`
-                : "Aucun commentaire"}
+                ? t("workspace.comment_count", {
+                    count: selectedFeedback.length,
+                  })
+                : t("workspace.no_comments")}
             </h3>
           </div>
           <MessageCircle size={16} />
@@ -1575,10 +1612,10 @@ export default function ArtifactWorkspace({
           <div className="art-pin-composer">
             <div className="art-pin-composer-title">
               <span className="art-pin-number">+</span>
-              <span>Nouveau point de review</span>
+              <span>{t("workspace.new_review_point")}</span>
               <button
                 onClick={() => setPendingPin(null)}
-                aria-label="Annuler le point"
+                aria-label={t("workspace.cancel_point")}
               >
                 <X size={14} />
               </button>
@@ -1587,7 +1624,7 @@ export default function ArtifactWorkspace({
               autoFocus
               value={feedbackText}
               onChange={(event) => setFeedbackText(event.target.value)}
-              placeholder="Décrivez ce qui doit évoluer…"
+              placeholder={t("workspace.feedback_placeholder")}
               rows={3}
             />
             <button
@@ -1595,22 +1632,22 @@ export default function ArtifactWorkspace({
               onClick={submitFeedback}
               disabled={!feedbackText.trim()}
             >
-              <Send size={14} /> Épingler le commentaire
+              <Send size={14} /> {t("workspace.pin_comment")}
             </button>
           </div>
         ) : (
           <div className="art-pin-hint">
             <CircleDot size={15} />
-            <span>Cliquez sur le support pour ajouter un point.</span>
+            <span>{t("workspace.click_to_add_point")}</span>
           </div>
         )}
         {activeFeedback && (
           <div className="art-active-feedback">
             <div className="art-feedback-meta">
-              <span>Point sélectionné</span>
+              <span>{t("workspace.selected_point")}</span>
               <button
                 onClick={() => setActiveFeedbackId(null)}
-                aria-label="Fermer"
+                aria-label={t("common.close")}
               >
                 <X size={13} />
               </button>
@@ -1623,13 +1660,15 @@ export default function ArtifactWorkspace({
                 ) : (
                   <CheckCircle2 size={13} />
                 )}{" "}
-                {activeFeedback.resolved ? "Rouvrir" : "Résoudre"}
+                {activeFeedback.resolved
+                  ? t("workspace.reopen")
+                  : t("workspace.resolve")}
               </button>
               <button
                 className="is-danger"
                 onClick={() => deleteFeedback(activeFeedback)}
               >
-                <Trash2 size={13} /> Supprimer
+                <Trash2 size={13} /> {t("common.delete")}
               </button>
             </div>
           </div>
@@ -1648,8 +1687,10 @@ export default function ArtifactWorkspace({
                 <span className="art-comment-copy">
                   <span>{feedback.text}</span>
                   <small>
-                    {feedback.resolved ? "Résolu" : "À traiter"} ·{" "}
-                    {Math.round(feedback.x)}% × {Math.round(feedback.y)}%
+                    {feedback.resolved
+                      ? t("workspace.resolved")
+                      : t("workspace.to_do")}{" "}
+                    · {Math.round(feedback.x)}% × {Math.round(feedback.y)}%
                   </small>
                 </span>
                 <ChevronRight size={14} />
@@ -1670,7 +1711,7 @@ export default function ArtifactWorkspace({
     <section
       className={`art-workspace ${review ? "is-review" : ""}`}
       aria-label={
-        review ? "Espace de review des supports" : "Espace des supports"
+        review ? t("workspace.review_space_label") : t("workspace.space_label")
       }
     >
       <header className="art-workspace-header">
@@ -1679,28 +1720,38 @@ export default function ArtifactWorkspace({
             <Sparkles size={15} />
           </div>
           <div>
-            <span className="art-kicker">{review ? "REVIEW" : "SUPPORTS"}</span>
-            <h2>{review ? "Review" : "Supports"}</h2>
+            <span className="art-kicker">
+              {review
+                ? t("workspace.review_kicker")
+                : t("workspace.artifacts_kicker")}
+            </span>
+            <h2>
+              {review
+                ? t("workspace.review_title")
+                : t("workspace.artifacts_title")}
+            </h2>
           </div>
         </div>
         <div className="art-header-actions">
           <span className="art-header-count">
-            {task.artifacts.length.toString().padStart(2, "0")} support
-            {task.artifacts.length > 1 ? "s" : ""}
+            {t("workspace.artifact_count", {
+              count: task.artifacts.length,
+              number: task.artifacts.length.toString().padStart(2, "0"),
+            })}
           </span>
           <button
             className="art-button art-button--secondary"
             onClick={exportArtifact}
             disabled={!selectedArtifact}
           >
-            <ArrowDownToLine size={15} /> Exporter
+            <ArrowDownToLine size={15} /> {t("workspace.export")}
           </button>
           <button
             className="art-icon-button art-icon-button--danger"
             onClick={removeArtifact}
             disabled={!selectedArtifact}
-            title="Supprimer ce support"
-            aria-label="Supprimer ce support"
+            title={t("workspace.delete_artifact")}
+            aria-label={t("workspace.delete_artifact")}
           >
             <Trash2 size={15} />
           </button>
@@ -1709,11 +1760,11 @@ export default function ArtifactWorkspace({
       {review && (
         <div className="art-review-banner">
           <span className="art-live-dot" />
-          <strong>Review</strong>
+          <strong>{t("workspace.review_title")}</strong>
           <span>
             {supportedForReview
-              ? "Cliquez pour annoter."
-              : "Annotations sur les supports visuels."}
+              ? t("workspace.click_to_annotate")
+              : t("workspace.annotations_visual_only")}
           </span>
         </div>
       )}
@@ -1721,8 +1772,10 @@ export default function ArtifactWorkspace({
         <aside className="art-sidebar">
           <div className="art-sidebar-heading">
             <div>
-              <span className="art-kicker">MISSION / SUPPORTS</span>
-              <h3>Bibliothèque</h3>
+              <span className="art-kicker">
+                {t("workspace.library_kicker")}
+              </span>
+              <h3>{t("workspace.library")}</h3>
             </div>
             <span className="art-sidebar-index">01</span>
           </div>
@@ -1731,8 +1784,8 @@ export default function ArtifactWorkspace({
             <input
               value={artifactQuery}
               onChange={(event) => setArtifactQuery(event.target.value)}
-              placeholder="Filtrer les supports"
-              aria-label="Filtrer les supports"
+              placeholder={t("workspace.filter_artifacts")}
+              aria-label={t("workspace.filter_artifacts")}
             />
           </label>
           <div className="art-artifact-list">
@@ -1748,7 +1801,9 @@ export default function ArtifactWorkspace({
                 <span className="art-artifact-copy">
                   <strong>{artifact.title}</strong>
                   <em>
-                    {artifact.sourceOfTruth ? "Source de vérité · " : ""}
+                    {artifact.sourceOfTruth
+                      ? `${t("workspace.source_of_truth")} · `
+                      : ""}
                     {relativeTime(artifact.updatedAt)}
                   </em>
                 </span>
@@ -1760,16 +1815,18 @@ export default function ArtifactWorkspace({
           </div>
           {!visibleArtifacts.length && (
             <div className="art-sidebar-empty">
-              Aucun support ne correspond à cette recherche.
+              {t("workspace.no_artifact_match")}
             </div>
           )}
           <div className="art-sidebar-footer">
             <button className="art-sidebar-action" onClick={addDocument}>
-              <Plus size={15} /> Nouveau document
+              <Plus size={15} /> {t("workspace.new_document")}
             </button>
             <label className="art-sidebar-action">
               <Upload size={15} />{" "}
-              {uploading ? "Lecture…" : "Importer une capture"}
+              {uploading
+                ? t("workspace.reading")
+                : t("workspace.import_screenshot")}
               <input
                 ref={uploadRef}
                 type="file"
@@ -1781,7 +1838,7 @@ export default function ArtifactWorkspace({
           </div>
         </aside>
         <main className="art-main">
-          <nav className="art-tabs" aria-label="Onglets des supports">
+          <nav className="art-tabs" aria-label={t("workspace.tabs_label")}>
             {task.artifacts.map((artifact) => (
               <button
                 key={artifact.id}
@@ -1819,16 +1876,16 @@ export default function ArtifactWorkspace({
                             ),
                           },
                           canonical
-                            ? "Source de vérité définie par vous"
-                            : "Source de vérité retirée par vous",
+                            ? t("workspace.source_of_truth_set")
+                            : t("workspace.source_of_truth_removed"),
                           selectedArtifact.title,
                         ),
                       );
                     }}
                   >
                     {selectedArtifact.sourceOfTruth
-                      ? "Source de vérité"
-                      : "Définir comme source de vérité"}
+                      ? t("workspace.source_of_truth")
+                      : t("workspace.set_source_of_truth")}
                   </button>
                   <span>
                     {typeIcon(selectedArtifact.type, 15)}{" "}
@@ -1848,13 +1905,13 @@ export default function ArtifactWorkspace({
                     <div
                       className="art-document-modes"
                       role="group"
-                      aria-label="Mode du document"
+                      aria-label={t("workspace.document_mode_label")}
                     >
                       {(
                         [
-                          ["read", "Lecture"],
-                          ["edit", "Édition"],
-                          ["preview", "Aperçu"],
+                          ["read", t("workspace.mode_read")],
+                          ["edit", t("workspace.mode_edit")],
+                          ["preview", t("workspace.mode_preview")],
                         ] as const
                       ).map(([mode, label]) => (
                         <button
@@ -1868,31 +1925,32 @@ export default function ArtifactWorkspace({
                       ))}
                       <span>
                         {documentDirty
-                          ? "Brouillon non enregistré"
-                          : `Révision ${selectedArtifact.revision || 1} · ${selectedArtifact.editedBy === "human" ? "modification humaine" : "agent"}`}
+                          ? t("workspace.unsaved_draft")
+                          : t("workspace.revision_by", {
+                              revision: selectedArtifact.revision || 1,
+                              author:
+                                selectedArtifact.editedBy === "human"
+                                  ? t("workspace.author_human_edit")
+                                  : t("workspace.author_agent"),
+                            })}
                       </span>
                     </div>
                   )}
                   {proposalOriginal && (
                     <section
                       className="art-revision-notice"
-                      aria-label="Proposition de révision"
+                      aria-label={t("workspace.revision_proposal_label")}
                     >
-                      <strong>
-                        Proposition de révision · original conservé
-                      </strong>
-                      <p>
-                        Cette proposition est un support distinct. Consultez les
-                        deux versions avant de valider le résultat de l’étape.
-                      </p>
+                      <strong>{t("workspace.revision_proposal_title")}</strong>
+                      <p>{t("workspace.revision_proposal_body")}</p>
                       <button
                         className="art-button"
                         onClick={() => setSelectedId(proposalOriginal.id)}
                       >
-                        Consulter l’original
+                        {t("workspace.view_original")}
                       </button>
                       <details>
-                        <summary>Comparer les sources</summary>
+                        <summary>{t("workspace.compare_sources")}</summary>
                         <div className="art-revision-comparison">
                           <pre>{proposalOriginal.content}</pre>
                           <pre>{selectedArtifact.content}</pre>
@@ -1902,17 +1960,11 @@ export default function ArtifactWorkspace({
                   )}
                   {draftConflict && (
                     <section className="art-revision-notice" role="alert">
-                      <strong>
-                        Une nouvelle version est arrivée pendant votre édition
-                      </strong>
-                      <p>
-                        Votre brouillon est conservé. Enregistrez-le comme
-                        révision distincte ou repartez explicitement de la
-                        version enregistrée.
-                      </p>
+                      <strong>{t("workspace.draft_conflict_title")}</strong>
+                      <p>{t("workspace.draft_conflict_body")}</p>
                       <details>
                         <summary>
-                          Comparer la version enregistrée et mon brouillon
+                          {t("workspace.compare_saved_and_draft")}
                         </summary>
                         <div className="art-revision-comparison">
                           <pre>{selectedArtifact.content}</pre>
@@ -1924,7 +1976,7 @@ export default function ArtifactWorkspace({
                           className="art-button"
                           onClick={preserveDraftRevision}
                         >
-                          Conserver mon brouillon comme révision
+                          {t("workspace.keep_draft_as_revision")}
                         </button>
                         <button
                           className="art-button"
@@ -1935,7 +1987,7 @@ export default function ArtifactWorkspace({
                             draftCache.current.delete(draftOwner.current);
                           }}
                         >
-                          Repartir de la version enregistrée
+                          {t("workspace.restart_from_saved")}
                         </button>
                       </div>
                     </section>
@@ -1943,17 +1995,23 @@ export default function ArtifactWorkspace({
                   {selectedArtifact.revisions?.length ? (
                     <details className="art-revision-history">
                       <summary>
-                        Historique · {selectedArtifact.revisions.length}{" "}
-                        révision(s) conservée(s)
+                        {t("workspace.revision_history", {
+                          count: selectedArtifact.revisions.length,
+                        })}
                       </summary>
                       {[...selectedArtifact.revisions]
                         .reverse()
                         .map((revision, index) => (
                           <details key={`${revision.revision}-${index}`}>
                             <summary>
-                              Révision {revision.revision} ·{" "}
-                              {revision.editedBy === "human" ? "vous" : "agent"}{" "}
-                              · {relativeTime(revision.updatedAt)}
+                              {t("workspace.revision_entry", {
+                                revision: revision.revision,
+                                author:
+                                  revision.editedBy === "human"
+                                    ? t("workspace.author_you")
+                                    : t("workspace.author_agent"),
+                                time: relativeTime(revision.updatedAt),
+                              })}
                             </summary>
                             <pre>{revision.content}</pre>
                           </details>
@@ -1989,13 +2047,13 @@ export default function ArtifactWorkspace({
           ) : (
             <div className="art-empty-workspace">
               <FolderOpen size={32} />
-              <h3>La bibliothèque est prête.</h3>
-              <p>Ajoutez un document ou une capture.</p>
+              <h3>{t("workspace.library_ready")}</h3>
+              <p>{t("workspace.library_ready_hint")}</p>
               <button
                 className="art-button art-button--primary"
                 onClick={addDocument}
               >
-                <Plus size={15} /> Ajouter un document
+                <Plus size={15} /> {t("workspace.add_document")}
               </button>
             </div>
           )}
@@ -2028,7 +2086,7 @@ function ProjectCard({
           </span>
         </div>
         <button className="art-mini-status" onClick={onCycle}>
-          <StatusDot status={project.status} /> {project.status}
+          <StatusDot status={project.status} /> {statusLabel(project.status)}
         </button>
       </div>
       <div className="art-mini-progress">

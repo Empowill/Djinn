@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+// The interface reserved to the native window. Agents never call it.
+package ui.v1;
+
+import "buf/validate/validate.proto";
+import "djinn/v1/options.proto";
+import "plan/v1/plan.proto";
+
+// What the window needs to show and follow the plan.
+service UiService {
+  // The environment the window runs in.
+  rpc GetEnvironment(UiServiceGetEnvironmentRequest) returns (UiServiceGetEnvironmentResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // The application state, as the window last saved it.
+  rpc LoadState(UiServiceLoadStateRequest) returns (UiServiceLoadStateResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Replace the application state.
+  rpc SaveState(UiServiceSaveStateRequest) returns (UiServiceSaveStateResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Check that a project directory exists and can be read.
+  rpc ValidateProject(UiServiceValidateProjectRequest) returns (UiServiceValidateProjectResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Open an HTTP or HTTPS link in the default browser.
+  rpc OpenExternal(UiServiceOpenExternalRequest) returns (UiServiceOpenExternalResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Tell the user a question is waiting. Not shown yet.
+  rpc NotifyQuestion(UiServiceNotifyQuestionRequest) returns (UiServiceNotifyQuestionResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
+  // window shows them too. In browser mode, djinn up prints the address of the page again.
+  rpc Show(UiServiceShowRequest) returns (UiServiceShowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // What the window is asked to show, as it comes. A request of the last minute comes first, for a window that
+  // opens after it.
+  rpc WatchShow(UiServiceWatchShowRequest) returns (stream UiServiceWatchShowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Every change, in order, from a sequence number on. Resume a broken stream from the last number received plus one.
+  rpc Watch(UiServiceWatchRequest) returns (stream UiServiceWatchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+}
+
+message UiServiceGetEnvironmentRequest {}
+
+message UiServiceGetEnvironmentResponse {
+  // Version of djinn.
+  string version = 1;
+  // Operating system, with the names Node.js uses: linux, darwin, win32.
+  string platform = 2;
+  // The agent command lines Djinn knows, and whether they are installed.
+  repeated Provider providers = 3;
+}
+
+// An agent command line.
+message Provider {
+  // Identifier: codex or claude.
+  string id = 1;
+  // Name shown in the window.
+  string name = 2;
+  // The command is found on this machine.
+  bool available = 3;
+  // The command, as resolved on the PATH when available.
+  string command = 4;
+}
+
+message UiServiceLoadStateRequest {}
+
+message UiServiceLoadStateResponse {
+  // The state as JSON, exactly as saved; empty when nothing was saved yet.
+  string state_json = 1;
+}
+
+message UiServiceSaveStateRequest {
+  // The state as JSON. It must be a JSON object.
+  string state_json = 1;
+}
+
+message UiServiceSaveStateResponse {}
+
+message UiServiceValidateProjectRequest {
+  // Path of the project directory.
+  string directory = 1;
+}
+
+message UiServiceValidateProjectResponse {
+  // Absolute path of the directory, with symbolic links resolved.
+  string directory = 1;
+  // The directory is inside a Git repository.
+  bool git = 2;
+}
+
+message UiServiceOpenExternalRequest {
+  // The link, http or https only.
+  string url = 1;
+}
+
+message UiServiceOpenExternalResponse {
+  // The link as opened.
+  string url = 1;
+}
+
+message UiServiceNotifyQuestionRequest {
+  // Mission the question belongs to.
+  string task_id = 1;
+  // The question.
+  string question_id = 2;
+  // Title of the notification.
+  string title = 3;
+  // Text of the notification.
+  string body = 4;
+}
+
+message UiServiceNotifyQuestionResponse {
+  // A notification was shown.
+  bool shown = 1;
+}
+
+message UiServiceShowRequest {
+  // A wish to show, if any.
+  string wish_id = 1;
+  // A terminal to show at the bottom of the window, by name, if any.
+  string terminal = 2 [(buf.validate.field).string.max_len = 64];
+}
+
+message UiServiceShowResponse {
+  // A native window was brought to the front; false in browser mode.
+  bool window = 1;
+}
+
+message UiServiceWatchShowRequest {}
+
+message UiServiceWatchShowResponse {
+  // The wish to show; empty for none.
+  string wish_id = 1;
+  // The terminal to show; empty for none.
+  string terminal = 2;
+}
+
+message UiServiceWatchRequest {
+  // First sequence number to send; 0 sends everything still kept.
+  uint64 from_seq = 1;
+}
+
+message UiServiceWatchResponse {
+  // Sequence number of the change, strictly increasing.
+  uint64 seq = 1;
+  // The entity as it is after the change.
+  oneof entity {
+    // A project added or changed.
+    plan.v1.Project project = 2;
+    // A question asked or answered.
+    plan.v1.Question question = 3;
+  }
+}

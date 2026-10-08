@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { PermissionDecision, PermissionRequest } from "./types";
 import "./permission-panel.css";
+import { t } from "./i18n";
 
 type Answers = Record<string, string>;
 
@@ -33,7 +34,7 @@ function PermissionQuestion({
     <fieldset className="permission-question" disabled={disabled}>
       <legend>
         {question.question}
-        {question.optional ? " (facultatif)" : ""}
+        {question.optional ? t("permissions.optional_suffix") : ""}
       </legend>
       {question.options?.length ? (
         <div className="permission-options">
@@ -57,7 +58,7 @@ function PermissionQuestion({
         <input
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder="Votre réponse…"
+          placeholder={t("permissions.answer_placeholder")}
           aria-label={question.question}
         />
       )}
@@ -98,21 +99,23 @@ function PermissionCard({
         decision,
         Object.keys(answers).length ? answers : undefined,
       );
-      if (!resolved) setError("La demande n’a pas pu être résolue.");
+      if (!resolved) setError(t("permissions.unresolved"));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Réponse impossible.");
+      setError(
+        cause instanceof Error ? cause.message : t("permissions.answer_failed"),
+      );
     } finally {
       setBusy(false);
     }
   };
   const statusText =
     request.status === "accepted"
-      ? "Acceptée"
+      ? t("permissions.status_accepted")
       : request.status === "declined"
-        ? "Refusée"
+        ? t("permissions.status_declined")
         : request.status === "cancelled"
-          ? "Annulée"
-          : "En attente";
+          ? t("permissions.status_cancelled")
+          : t("permissions.status_pending");
   return (
     <article
       id={`permission-${request.id}`}
@@ -137,7 +140,7 @@ function PermissionCard({
             <span>·</span>
             <span>{providerLabel(request.provider)}</span>
             <span className={`permission-status is-${request.status}`}>
-              {isBusy ? "Envoi…" : statusText}
+              {isBusy ? t("permissions.sending") : statusText}
             </span>
           </div>
           <h3>{request.title}</h3>
@@ -158,31 +161,31 @@ function PermissionCard({
         }
       >
         <summary>
-          Voir la commande et le périmètre
+          {t("permissions.show_details")}
           <ChevronDown size={13} />
         </summary>
         <div className="permission-detail-body">
           {request.method && (
             <div>
-              <span>Méthode</span>
+              <span>{t("permissions.method")}</span>
               <code>{request.method}</code>
             </div>
           )}
           {request.command && (
             <div>
-              <span>Commande</span>
+              <span>{t("permissions.command")}</span>
               <code>{request.command}</code>
             </div>
           )}
           {request.cwd && (
             <div>
-              <span>Dossier</span>
+              <span>{t("permissions.folder")}</span>
               <code>{request.cwd}</code>
             </div>
           )}
           {!!request.paths?.length && (
             <div>
-              <span>Chemins concernés</span>
+              <span>{t("permissions.paths")}</span>
               <code>{request.paths.join("\n")}</code>
             </div>
           )}
@@ -218,7 +221,7 @@ function PermissionCard({
             disabled={disabled}
             onClick={() => void resolve("decline")}
           >
-            Refuser
+            {t("permissions.decline")}
           </button>
           <button
             type="button"
@@ -226,7 +229,7 @@ function PermissionCard({
             disabled={disabled || missingAnswer}
             onClick={() => void resolve("accept")}
           >
-            Autoriser une fois
+            {t("permissions.accept_once")}
           </button>
           {request.canAcceptForSession && (
             <button
@@ -235,7 +238,7 @@ function PermissionCard({
               disabled={disabled || missingAnswer}
               onClick={() => void resolve("acceptForSession")}
             >
-              Autoriser pour la session
+              {t("permissions.accept_for_session")}
             </button>
           )}
         </div>
@@ -273,15 +276,17 @@ export function PermissionPanel({
   // not keep an action section alive once the agent has no pending request.
   if (!pending.length) return null;
   return (
-    <section className="permission-panel" aria-label="Permissions à décider">
+    <section
+      className="permission-panel"
+      aria-label={t("permissions.panel_label")}
+    >
       <div className="permission-panel-heading">
         <div>
           <h3>
-            Permissions<span className="count">{pending.length}</span>
+            {t("permissions.title")}
+            <span className="count">{pending.length}</span>
           </h3>
-          <p>
-            Vérifiez la commande et son périmètre avant de décider.
-          </p>
+          <p>{t("permissions.check_before_deciding")}</p>
         </div>
         <ShieldCheck size={17} aria-hidden="true" />
       </div>
@@ -298,8 +303,7 @@ export function PermissionPanel({
       {history.length > 0 && (
         <details onToggle={(event) => setHistoryOpen(event.currentTarget.open)}>
           <summary>
-            {history.length} autorisation{history.length > 1 ? "s" : ""} traitée
-            {history.length > 1 ? "s" : ""}
+            {t("permissions.history", { count: history.length })}
           </summary>
           {historyOpen &&
             history.map((request) => (

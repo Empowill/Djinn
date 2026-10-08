@@ -9,8 +9,11 @@ exports.validateMissionReport = validateMissionReport;
 exports.validateTask = validateTask;
 exports.validateState = validateState;
 const workflow_1 = require("./workflow.cjs");
+const i18n_1 = require("./i18n.cjs");
+// A function rather than a direct call: validateTask names its record `t`.
+const codexWaitReason = () => (0, i18n_1.t)("validation.codex_state_unconfirmed");
 const invalid = (field) => {
-    throw new Error(`Le format de la mission est invalide (${field}).`);
+    throw new Error((0, i18n_1.t)("workflow.invalid_format", { field }));
 };
 function record(value, field) {
     if (!value || typeof value !== "object" || Array.isArray(value))
@@ -231,7 +234,12 @@ function validateWorkItem(value) {
         title: boundedText(item.title, "workItem.title", 1000),
         status: choice(item.status, ["pending", "running", "blocked", "ready", "done"], "workItem.status"),
         updatedAt: date(item.updatedAt, "workItem.updatedAt"),
-        ...Object.fromEntries(["agentId", "stepId", "runId", "ticket", "worktree", "branch", "detail"].filter((field) => item[field] !== undefined).map((field) => [field, boundedText(item[field], `workItem.${field}`, field === "detail" ? 4000 : 4096)])),
+        ...Object.fromEntries(["agentId", "stepId", "runId", "ticket", "worktree", "branch", "detail"]
+            .filter((field) => item[field] !== undefined)
+            .map((field) => [
+            field,
+            boundedText(item[field], `workItem.${field}`, field === "detail" ? 4000 : 4096),
+        ])),
     };
 }
 function validateMissionReport(value) {
@@ -259,7 +267,9 @@ function validateTask(value, restored = true) {
         context: string(q.context, `${p}.context`),
         recommendation: string(q.recommendation, `${p}.recommendation`),
         blocking: boolean(q.blocking, `${p}.blocking`),
-        blockingScope: q.blockingScope === undefined ? undefined : choice(q.blockingScope, ["agent", "mission"], `${p}.blockingScope`),
+        blockingScope: q.blockingScope === undefined
+            ? undefined
+            : choice(q.blockingScope, ["agent", "mission"], `${p}.blockingScope`),
         workItemId: optionalString(q.workItemId, `${p}.workItemId`),
         unlocks: string(q.unlocks, `${p}.unlocks`),
         agentId: optionalString(q.agentId, `${p}.agentId`),
@@ -384,7 +394,7 @@ function validateTask(value, restored = true) {
                 ...a,
                 status: "blocked",
                 live: false,
-                waitReason: "État actif à confirmer par le runtime Codex",
+                waitReason: codexWaitReason(),
             }
             : { ...a, status: "queued" }
         : a);
@@ -557,7 +567,11 @@ function validateTask(value, restored = true) {
             continue;
         if (!Array.isArray(t[field]) || t[field].length > 200)
             return invalid(field);
-        Object.assign(normalized, { [field]: collection(t[field], field, (value) => field === "workItems" ? validateWorkItem(value) : validateMissionReport(value)) });
+        Object.assign(normalized, {
+            [field]: collection(t[field], field, (value) => field === "workItems"
+                ? validateWorkItem(value)
+                : validateMissionReport(value)),
+        });
     }
     if (t.providerSessions !== undefined) {
         const sessions = record(t.providerSessions, "providerSessions");

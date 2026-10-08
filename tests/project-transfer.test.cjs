@@ -23,8 +23,8 @@ function loadTypeScript(relativePath) {
   loaded.filename = filename;
   loaded.paths = Module._nodeModulePaths(path.dirname(filename));
   loaded.require = (request) =>
-    request === "./workflow"
-      ? loadTypeScript("src/workflow.ts")
+    request.startsWith("./")
+      ? loadTypeScript(`src/${request.slice(2)}.ts`)
       : require(request);
   loaded._compile(outputText, filename);
   return loaded.exports;

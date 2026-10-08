@@ -52,7 +52,11 @@ export const stableJournalEventId = journalEventIdentity;
 function isHuman(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const data = eventData(value);
-  return value.actor === "human" || value.source === "human" || data?.actor === "human";
+  return (
+    value.actor === "human" ||
+    value.source === "human" ||
+    data?.actor === "human"
+  );
 }
 
 function eventTime(value: unknown): number {
@@ -86,7 +90,10 @@ export function mergeMissionJournalEvents(
   nativeEvents: readonly unknown[],
   taskEvents: readonly unknown[],
 ): MissionJournalEvent[] {
-  const merged = new Map<string, { value: MissionJournalEvent; order: number }>();
+  const merged = new Map<
+    string,
+    { value: MissionJournalEvent; order: number }
+  >();
   const records = [...nativeEvents, ...taskEvents];
 
   records.forEach((raw, order) => {
@@ -116,14 +123,16 @@ export function mergeMissionJournalEvents(
   });
 
   return [...merged.values()]
-    .sort((a, b) => eventTime(a.value) - eventTime(b.value) || a.order - b.order)
+    .sort(
+      (a, b) => eventTime(a.value) - eventTime(b.value) || a.order - b.order,
+    )
     .map(({ value }) => value);
 }
 
 export const mergeJournalEvents = mergeMissionJournalEvents;
 
 function invalidPage(message: string): Error {
-  const error = new Error(`Journal pagination invalide : ${message}`);
+  const error = new Error(`Invalid journal pagination: ${message}`);
   error.name = "MissionJournalPaginationError";
   return error;
 }
@@ -135,7 +144,7 @@ export async function readAllMissionJournalPages(
   pageSize = DEFAULT_PAGE_SIZE,
 ): Promise<unknown[]> {
   if (!Number.isSafeInteger(pageSize) || pageSize < 1) {
-    throw invalidPage("la taille de page doit être un entier positif");
+    throw invalidPage("the page size must be a positive integer");
   }
 
   const events: unknown[] = [];
@@ -143,46 +152,49 @@ export async function readAllMissionJournalPages(
   let cursor = 0;
 
   for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber += 1) {
-    if (cursors.has(cursor)) throw invalidPage("le curseur boucle");
+    if (cursors.has(cursor)) throw invalidPage("the cursor loops");
     cursors.add(cursor);
     const page = await readPage(taskId, cursor, pageSize);
     if (!isRecord(page) || !Array.isArray(page.events))
-      throw invalidPage("la page doit contenir un tableau events");
+      throw invalidPage("the page must hold an events array");
     if (page.events.some((event) => !isRecord(event)))
-      throw invalidPage("events doit contenir des objets");
+      throw invalidPage("events must hold objects");
     if (typeof page.hasMore !== "boolean")
-      throw invalidPage("hasMore doit être un booléen");
+      throw invalidPage("hasMore must be a boolean");
     if (
       page.nextCursor !== null &&
       (!Number.isSafeInteger(page.nextCursor) || page.nextCursor < 0)
     )
-      throw invalidPage("nextCursor doit être null ou un entier positif");
+      throw invalidPage("nextCursor must be null or a positive integer");
     if (!page.hasMore) {
       if (page.nextCursor !== null)
-        throw invalidPage("nextCursor doit être null à la dernière page");
+        throw invalidPage("nextCursor must be null on the last page");
       events.push(...page.events);
       return events;
     }
     if (page.nextCursor === null || page.nextCursor <= cursor)
-      throw invalidPage("le curseur suivant doit progresser");
+      throw invalidPage("the next cursor must move forward");
     if (!page.events.length)
-      throw invalidPage("une page intermédiaire ne peut pas être vide");
+      throw invalidPage("an intermediate page cannot be empty");
     events.push(...page.events);
     cursor = page.nextCursor;
   }
 
-  throw invalidPage(`plus de ${MAX_PAGES} pages ont été demandées`);
+  throw invalidPage(`more than ${MAX_PAGES} pages were requested`);
 }
 
 export const readMissionJournalPages = readAllMissionJournalPages;
 
 export function serializeMissionJournal(events: readonly unknown[]): string {
-  return events
-    .map((value) => {
-      if (!isRecord(value)) throw new Error("Journal invalide : événement non objet");
-      return JSON.stringify(value);
-    })
-    .join("\n") + (events.length ? "\n" : "");
+  return (
+    events
+      .map((value) => {
+        if (!isRecord(value))
+          throw new Error("Invalid journal: an event is not an object");
+        return JSON.stringify(value);
+      })
+      .join("\n") + (events.length ? "\n" : "")
+  );
 }
 
 export const serializeJournal = serializeMissionJournal;

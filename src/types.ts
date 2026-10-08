@@ -535,7 +535,9 @@ export interface DjinnBridge {
     notificationClicks?: RuntimeEnvelope[];
     permissions?: PermissionRequest[];
   }>;
-  getMissionInteractions?(taskId: string): Promise<{ taskId: string; events: RuntimeEvent[] }>;
+  getMissionInteractions?(
+    taskId: string,
+  ): Promise<{ taskId: string; events: RuntimeEvent[] }>;
   getMissionJournalPage?(
     taskId: string,
     cursor?: number,

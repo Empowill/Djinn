@@ -7,6 +7,15 @@ const path = require('node:path');
 const Module = require('node:module');
 const ts = require('typescript');
 
+// Nested src/ modules (./i18n) are TypeScript too.
+Module._extensions['.ts'] = (m, file) =>
+  m._compile(
+    ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+      fileName: file,
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+    }).outputText,
+    file,
+  );
 const filename = path.resolve(__dirname, '../src/temporal-layout.ts');
 const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   fileName: filename,

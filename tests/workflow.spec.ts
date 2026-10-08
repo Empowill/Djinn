@@ -169,7 +169,7 @@ async function setup(page: Page, state = base()) {
     });
   await page.goto("/");
   await expect(
-    page.getByRole("navigation", { name: "Étapes de la mission" }),
+    page.getByRole("navigation", { name: "Étapes du souhait" }),
   ).toBeVisible();
 }
 async function send(page: Page, text: string) {
@@ -202,7 +202,7 @@ test("message launches current stage, title arrives from harness, completion awa
   await setup(page);
   await expect(
     page
-      .getByRole("navigation", { name: "Étapes de la mission" })
+      .getByRole("navigation", { name: "Étapes du souhait" })
       .getByRole("button", { name: /Implémentation/ }),
   ).toBeDisabled();
   await send(page, "Commençons la réflexion.");
@@ -223,7 +223,7 @@ test("message launches current stage, title arrives from harness, completion awa
   ).toBeVisible();
   await expect(
     page
-      .getByRole("navigation", { name: "Étapes de la mission" })
+      .getByRole("navigation", { name: "Étapes du souhait" })
       .getByRole("button", { name: /Implémentation/ }),
   ).toBeDisabled();
   await page
@@ -284,7 +284,7 @@ test("all blocking answers resume same stage automatically, without approving it
     .toBe("s1");
   await expect(
     page
-      .getByRole("navigation", { name: "Étapes de la mission" })
+      .getByRole("navigation", { name: "Étapes du souhait" })
       .getByRole("button", { name: /Implémentation/ }),
   ).toBeDisabled();
 });
@@ -408,7 +408,7 @@ test("past step selection changes underlying context and never launches a proces
   ];
   await setup(page, state);
   await page
-    .getByRole("navigation", { name: "Étapes de la mission" })
+    .getByRole("navigation", { name: "Étapes du souhait" })
     .getByRole("button", { name: /Réflexion.*Validée/ })
     .click();
   await expect(page.locator(".team-section")).toContainText("Ancien chef");
@@ -427,7 +427,7 @@ test("past step selection changes underlying context and never launches a proces
     .toBe(0);
   await expect(
     page
-      .getByRole("navigation", { name: "Étapes de la mission" })
+      .getByRole("navigation", { name: "Étapes du souhait" })
       .getByRole("button", { name: /Review/ }),
   ).toBeDisabled();
 });
@@ -446,7 +446,7 @@ test("new missions use the fullscreen intent and let the agent define a timeline
   ] as any;
   await setup(page, state);
   await page
-    .getByRole("button", { name: /^Nouvelle mission/ })
+    .getByRole("button", { name: /^Nouveau souhait/ })
     .first()
     .click();
   await expect(
@@ -550,7 +550,7 @@ for (const provider of ["codex", "claude"] as const) {
       });
       await setup(page, state);
       await page
-        .getByRole("button", { name: /^Nouvelle mission/ })
+        .getByRole("button", { name: /^Nouveau souhait/ })
         .first()
         .click();
       await page

@@ -1,4 +1,5 @@
 import type { AppState, StepStatus, Task } from "./types";
+import { t } from "./i18n";
 
 export type StepCompletionAlert = {
   taskId: string;
@@ -39,8 +40,8 @@ export class StepCompletionTracker {
           taskId: task.id,
           stepId: step.id,
           questionId,
-          title: "Étape terminée",
-          body: `${task.title} — ${step.title}${step.status === "awaiting_human" ? " · Résultat à valider" : ""}`.slice(
+          title: t("notifications.step_done"),
+          body: `${task.title} — ${step.title}${step.status === "awaiting_human" ? t("notifications.to_validate_suffix") : ""}`.slice(
             0,
             1000,
           ),

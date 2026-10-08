@@ -32,6 +32,7 @@ exports.approveStep = approveStep;
 exports.applyMissionTitle = applyMissionTitle;
 exports.invalidateDependentSteps = invalidateDependentSteps;
 exports.reopenStep = reopenStep;
+const i18n_1 = require("./i18n.cjs");
 exports.MAX_SUB_AGENTS = 16;
 exports.STEP_TYPES = [
     "discussion",
@@ -71,7 +72,7 @@ function validationForTask(task, step) {
     return "human";
 }
 const fail = (field) => {
-    throw new Error(`Le format de la mission est invalide (${field}).`);
+    throw new Error((0, i18n_1.t)("workflow.invalid_format", { field }));
 };
 const object = (v, field) => {
     if (!v || typeof v !== "object" || Array.isArray(v))
@@ -180,7 +181,9 @@ function validateStepReport(value) {
                 met: value.met,
                 ...(value.evidence === undefined
                     ? {}
-                    : { evidence: text(value.evidence, `stepResult.criteria.${index}.evidence`, 4000) }),
+                    : {
+                        evidence: text(value.evidence, `stepResult.criteria.${index}.evidence`, 4000),
+                    }),
             };
         });
     }
@@ -424,14 +427,14 @@ function stepPhase(type) {
                 : "brief";
 }
 const DISCUSSION_TITLES = {
-    discussion: "Discussion automatique",
-    exploration: "Exploration",
-    reflection: "Réflexion",
-    specification: "Spécification",
-    prototype: "Prototype",
-    implementation: "Implémentation",
-    review: "Review",
-    delivery: "Livraison",
+    discussion: (0, i18n_1.t)("workflow.step_discussion"),
+    exploration: (0, i18n_1.t)("workflow.step_exploration"),
+    reflection: (0, i18n_1.t)("workflow.step_reflection"),
+    specification: (0, i18n_1.t)("workflow.step_specification"),
+    prototype: (0, i18n_1.t)("workflow.step_prototype"),
+    implementation: (0, i18n_1.t)("workflow.step_implementation"),
+    review: (0, i18n_1.t)("workflow.step_review"),
+    delivery: (0, i18n_1.t)("workflow.step_delivery"),
 };
 function createDiscussionStep(prefix, type = "discussion") {
     if (!exports.STEP_TYPES.includes(type))
@@ -451,10 +454,10 @@ function createDiscussionStep(prefix, type = "discussion") {
 }
 function createDefaultSteps(prefix) {
     return [
-        ["reflection", "Réflexion"],
-        ["implementation", "Implémentation"],
-        ["review", "Review"],
-        ["delivery", "Livraison"],
+        ["reflection", (0, i18n_1.t)("workflow.step_reflection")],
+        ["implementation", (0, i18n_1.t)("workflow.step_implementation")],
+        ["review", (0, i18n_1.t)("workflow.step_review")],
+        ["delivery", (0, i18n_1.t)("workflow.step_delivery")],
     ].map(([type, title], index) => ({
         id: `${prefix}:step:${index + 1}`,
         type,
@@ -511,7 +514,8 @@ function validateTaskWorkflow(task, restored = false) {
     t.steps = validateSteps(t.steps, restored);
     if (t.stepResult !== undefined) {
         t.stepResult = validateStepReport(t.stepResult);
-        if (t.stepResult.stepId && !t.steps.some((step) => step.id === t.stepResult?.stepId))
+        if (t.stepResult.stepId &&
+            !t.steps.some((step) => step.id === t.stepResult?.stepId))
             return fail("stepResult.stepId");
     }
     if (t.projectId !== undefined)
@@ -688,8 +692,7 @@ function canStartStep(task, stepId) {
     // explicit override; the shared shape keeps the start path race-free.
     const bypassPredecessors = flexibleFocus || focused;
     const predecessorReady = (step) => {
-        if (step.status !== "completed" ||
-            step.needsRevalidation)
+        if (step.status !== "completed" || step.needsRevalidation)
             return false;
         if (validationForTask(task, step) !== "automatic")
             return step.approvedBy === "human" && !!step.approvedAt;
@@ -786,14 +789,14 @@ function appendStep(task, step) {
 }
 function normalizeAmendmentInput(value) {
     if (Array.isArray(value)) {
-        return { steps: value, reason: "Timeline ajustée par le chef." };
+        return { steps: value, reason: (0, i18n_1.t)("workflow.amended_reason") };
     }
     const input = object(value, "workflow.amendment");
     const steps = input.steps ?? input.pendingSteps ?? input.suffix;
     if (!Array.isArray(steps))
         return fail("workflow.amendment.steps");
     const reason = input.reason === undefined
-        ? "Timeline ajustée par le chef."
+        ? (0, i18n_1.t)("workflow.amended_reason")
         : text(input.reason, "workflow.amendment.reason", 100000);
     if (!reason.trim())
         return fail("workflow.amendment.reason");
@@ -818,12 +821,9 @@ function normalizePendingAmendmentStep(value, field, fallbackId) {
     ])
         if (raw[key] !== undefined)
             return fail(`${field}.${key}`);
-    const validation = raw.validation ??
-        (defaultValidationForType(raw.type) || "human");
+    const validation = raw.validation ?? (defaultValidationForType(raw.type) || "human");
     const candidate = {
-        id: raw.id === undefined
-            ? fallbackId
-            : identifier(raw.id, `${field}.id`),
+        id: raw.id === undefined ? fallbackId : identifier(raw.id, `${field}.id`),
         type: raw.type,
         title: text(raw.title, `${field}.title`, 1000),
         objective: text(raw.objective, `${field}.objective`, 100000),
@@ -884,7 +884,8 @@ function amendWorkflow(task, value, now = new Date().toISOString()) {
     });
     const amendedSteps = [...prefix, ...nextSteps];
     const firstPending = amendedSteps.find((step) => step.status === "pending");
-    const activeStepId = task.activeStepId && amendedSteps.some((step) => step.id === task.activeStepId)
+    const activeStepId = task.activeStepId &&
+        amendedSteps.some((step) => step.id === task.activeStepId)
         ? task.activeStepId
         : firstPending?.id || prefix.at(-1)?.id;
     const normalizedProposal = task.workflowProposal
@@ -922,7 +923,7 @@ function amendWorkflow(task, value, now = new Date().toISOString()) {
                 id: `${task.id}:workflow-amend:${now}`,
                 time: now,
                 type: "phase",
-                title: "Timeline ajustée par le chef",
+                title: (0, i18n_1.t)("workflow.amended_title"),
                 detail: input.reason,
                 stepId: prefix.at(-1)?.id,
                 actor: "agent",
@@ -938,10 +939,10 @@ function revisePendingSteps(task, suffix, reason, now = new Date().toISOString()
 }
 exports.reviseWorkflow = amendWorkflow;
 function hasHumanApprovalForStep(task, stepId) {
-    return task.events?.some((event) => event.stepId === stepId &&
+    return (task.events?.some((event) => event.stepId === stepId &&
         event.actor === "human" &&
         event.type === "phase" &&
-        /valid|approv|approuv/i.test(`${event.title} ${event.detail}`)) || false;
+        /valid|approv|approuv/i.test(`${event.title} ${event.detail}`)) || false);
 }
 function isAutomaticRoutingCompletion(task, step) {
     return (step.status === "completed" &&
@@ -1057,8 +1058,7 @@ function applyWorkflowProposal(task, proposal) {
         type: step.type,
         title: step.title,
         objective: step.objective,
-        validation: step.validation ??
-            (defaultValidationForType(step.type) || "human"),
+        validation: step.validation ?? (defaultValidationForType(step.type) || "human"),
         status: "pending",
         exitCriteria: step.exitCriteria || [],
         expectedArtifacts: step.expectedArtifacts || [],
@@ -1087,8 +1087,7 @@ function applyWorkflowProposal(task, proposal) {
                 exitCriteria: step.exitCriteria,
                 expectedArtifacts: step.expectedArtifacts,
                 skills: step.skills,
-                validation: step.validation ??
-                    (defaultValidationForType(step.type) || "human"),
+                validation: step.validation ?? (defaultValidationForType(step.type) || "human"),
             })),
         },
         steps,
@@ -1168,13 +1167,15 @@ function finishStepRun(task, stepId, result, summary, runId, now = new Date().to
         scopedResult?.status !== "needs_input"
         ? {
             stepId,
-            ...(runId || task.runId
-                ? { runId: runId || task.runId }
-                : {}),
+            ...(runId || task.runId ? { runId: runId || task.runId } : {}),
             status: "blocked",
-            summary: scopedResult ? "Les critères de sortie ne sont pas tous démontrés." : "Le compte rendu de cette étape est manquant.",
-            reason: scopedResult ? "Le passage n’a pas fourni une preuve prête pour chaque critère de sortie." : "L’agent a terminé son passage sans publier son résultat structuré ni les preuves requises.",
-            nextAction: "Fournissez les preuves manquantes ou relancez cette étape.",
+            summary: scopedResult
+                ? (0, i18n_1.t)("workflow.criteria_unproven")
+                : (0, i18n_1.t)("workflow.report_missing"),
+            reason: scopedResult
+                ? (0, i18n_1.t)("workflow.criteria_unproven_reason")
+                : (0, i18n_1.t)("workflow.report_missing_reason"),
+            nextAction: (0, i18n_1.t)("workflow.provide_evidence"),
             criteria: requiredCriteria.map((criterion) => {
                 const evidence = scopedResult?.criteria?.find((item) => item.criterion.trim() === criterion);
                 return {
@@ -1189,30 +1190,46 @@ function finishStepRun(task, stepId, result, summary, runId, now = new Date().to
             }),
         }
         : undefined;
-    const pendingQuestions = task.questions.filter((question) => question.blocking && !question.answer?.trim() && (!question.stepId || question.stepId === stepId));
+    const pendingQuestions = task.questions.filter((question) => question.blocking &&
+        !question.answer?.trim() &&
+        (!question.stepId || question.stepId === stepId));
     const contributions = (task.reports || []).filter((report) => report.stepId === stepId);
-    const interruptedReport = result === "completed" && pendingQuestions.length && !scopedResult ? {
-        stepId,
-        runId: runId || task.runId,
-        status: "needs_input",
-        summary: "Une réponse est nécessaire pour poursuivre le travail concerné.",
-        completed: [...new Set(contributions.flatMap((report) => report.completed || []))],
-        remaining: [...new Set([...pendingQuestions.map((question) => question.title), ...contributions.flatMap((report) => report.remaining || [])])],
-        evidence: [...new Set(contributions.flatMap((report) => report.evidence || []))],
-        nextAction: "Répondez aux questions affichées dans Mission. Les recettes indépendantes restent disponibles.",
-        reportedAt: now,
-    } : undefined;
+    const interruptedReport = result === "completed" && pendingQuestions.length && !scopedResult
+        ? {
+            stepId,
+            runId: runId || task.runId,
+            status: "needs_input",
+            summary: (0, i18n_1.t)("workflow.answer_needed"),
+            completed: [
+                ...new Set(contributions.flatMap((report) => report.completed || [])),
+            ],
+            remaining: [
+                ...new Set([
+                    ...pendingQuestions.map((question) => question.title),
+                    ...contributions.flatMap((report) => report.remaining || []),
+                ]),
+            ],
+            evidence: [
+                ...new Set(contributions.flatMap((report) => report.evidence || [])),
+            ],
+            nextAction: (0, i18n_1.t)("workflow.answer_needed_next"),
+            reportedAt: now,
+        }
+        : undefined;
     const finalReport = synthesizedStepResult || scopedResult || interruptedReport;
     const automatic = automaticCandidate && !explicitBlocked;
     const completionSummary = finalReport?.summary || explicitSummary || summary;
     const nextStep = automatic
         ? task.steps
-            ?.slice((task.steps.findIndex((candidate) => candidate.id === stepId) || 0) + 1)
+            ?.slice((task.steps.findIndex((candidate) => candidate.id === stepId) || 0) +
+            1)
             .find((candidate) => candidate.status === "pending")
         : undefined;
     return {
         ...task,
-        ...(synthesizedStepResult || interruptedReport ? { stepResult: synthesizedStepResult || interruptedReport } : {}),
+        ...(synthesizedStepResult || interruptedReport
+            ? { stepResult: synthesizedStepResult || interruptedReport }
+            : {}),
         activeStepId: nextStep?.id || task.activeStepId,
         selectedStepId: nextStep?.id || task.selectedStepId,
         phase: nextStep ? stepPhase(nextStep.type) : task.phase,

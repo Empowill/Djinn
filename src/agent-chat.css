@@ -592,7 +592,8 @@
   outline: none;
   min-height: 44px;
   max-height: 152px;
-  font: var(--font-size-body, 12px)/1.7 "DM Sans",
+  font:
+    var(--font-size-body, 12px)/1.7 "DM Sans",
     sans-serif;
   color: #dedede;
   overflow: auto;

@@ -1,4 +1,5 @@
 import type { Artifact, MissionStep, Task } from "./types";
+import { language, t } from "./i18n";
 
 /** Keep current decisions and evidence; provider tool transcripts stay in the journal. */
 export function compactRecords<T>(records: T[], budget: number): T[] {
@@ -91,7 +92,7 @@ export function buildMissionPrompt(
     2000,
   );
   return [
-    `You are Djinn, the persistent mission lead. Speak French. Goal: ${task.title.slice(0, 500)}\n${task.brief.slice(0, 3000)}`,
+    `You are Djinn, the persistent mission lead. Speak ${new Intl.DisplayNames(["en"], { type: "language" }).of(language)}. Goal: ${task.title.slice(0, 500)}\n${task.brief.slice(0, 3000)}`,
     `Current discussion: ${stage?.type || "reflection"}. Objective: ${(stage?.objective || task.brief).slice(0, 2000)}.`,
     "Use the shortest useful path to a usable result. Latest human instructions refine the goal and take priority over the proposed timeline. Adapt scope and priorities; keep acquired decisions. Stage names do not require another confirmation for authorized local work. Ask only unresolved business decisions, grouped together. Use native permission requests for technical approvals.",
     "Use bounded subagents for the mission with explicit disjoint ownership, keep independent results testable independently, and integrate their evidence. Preserve the configured model. Serialize shared heavy operations. Reuse valid checks and recheck only affected areas after fixes; scale verification to permissions/data/API risk. Do not repeat a known blocked operation without a relevant change.",
@@ -99,14 +100,36 @@ export function buildMissionPrompt(
     `Acquired decisions (newest first): ${JSON.stringify(decisions)}`,
     `Current supports (canonical first, then current/latest; excerpts marked truncated): ${JSON.stringify(supports)}`,
     `Previous results (latest first): ${JSON.stringify(summaries)}`,
-    `Recent runtime incidents and provider changes: ${JSON.stringify(compactRecords(task.events.filter((entry) => entry.type === "error" || entry.title === "Fournisseur changé").slice().reverse().map((entry) => ({ title: entry.title, detail: entry.detail.slice(0, 1000), stepId: entry.stepId })), 2000))}`,
+    `Recent runtime incidents and provider changes: ${JSON.stringify(
+      compactRecords(
+        task.events
+          .filter(
+            (entry) =>
+              entry.type === "error" || entry.title === t("providers.changed"),
+          )
+          .slice()
+          .reverse()
+          .map((entry) => ({
+            title: entry.title,
+            detail: entry.detail.slice(0, 1000),
+            stepId: entry.stepId,
+          })),
+        2000,
+      ),
+    )}`,
     `Work items: ${JSON.stringify(compactRecords((task.workItems || []).slice().reverse(), 2000))}`,
     `Latest contribution reports: ${JSON.stringify(compactRecords((task.reports || []).slice().reverse(), 2000))}`,
     `Open decisions: ${JSON.stringify(
       compactRecords(
         task.questions
           .filter((q) => !q.answer)
-          .map((q) => ({ id: q.id, title: q.title, context: q.context.slice(0, 1000), agentId: q.agentId, blocking: q.blocking })),
+          .map((q) => ({
+            id: q.id,
+            title: q.title,
+            context: q.context.slice(0, 1000),
+            agentId: q.agentId,
+            blocking: q.blocking,
+          })),
         2000,
       ),
     )}`,

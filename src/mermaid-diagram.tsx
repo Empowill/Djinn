@@ -4,6 +4,7 @@ import {
   VISUALIZATION_POLICY,
 } from "./visualization-document";
 import "./mermaid-diagram.css";
+import { t } from "./i18n";
 
 // Load the locally bundled engine only when a Markdown Mermaid block is visible.
 // It executes in a scripts-only iframe, never in the Electron renderer.
@@ -36,21 +37,16 @@ function DiagramFrame({ source }: { source: string }) {
       if (result && "error" in result) setError(result.error!);
     };
     window.addEventListener("message", receive);
-    if (source.length > 30000)
-      setError("Diagramme trop long : consultez la source.");
+    if (source.length > 30000) setError(t("mermaid.too_long"));
     else
       void loadEngine()
         .then((runtime) => {
           if (!active) return;
-          const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${VISUALIZATION_POLICY}"><style>:root{color-scheme:dark}body{margin:12px;background:#191919;color:#e7e7e7;font:12px/1.6 system-ui}svg{max-width:100%;height:auto;display:block;margin:auto}#render{overflow:auto}</style></head><body><div id="render"></div><script>${runtime.replaceAll("</script", "<\\/script")}</script><script>(async()=>{const token=${scriptLiteral(token)},send=(type,data)=>parent.postMessage({type,token,...data},'*');try{mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'dark',fontFamily:'system-ui',themeVariables:{fontSize:'12px',primaryColor:'#292929',primaryTextColor:'#e7e7e7',primaryBorderColor:'#666',lineColor:'#aaa'},flowchart:{htmlLabels:false},maxTextSize:30000,suppressErrorRendering:true});const {svg}=await mermaid.render('diagram',${scriptLiteral(source)});document.getElementById('render').innerHTML=svg;const report=()=>send('djinn:visualization-height',{height:Math.min(4000,Math.max(120,Math.ceil(document.documentElement.scrollHeight)))});new ResizeObserver(report).observe(document.body);report()}catch(e){send('djinn:visualization-error',{message:'Mermaid ne peut pas rendre ce diagramme. Consultez la source.'})}})();</script></body></html>`;
+          const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${VISUALIZATION_POLICY}"><style>:root{color-scheme:dark}body{margin:12px;background:#191919;color:#e7e7e7;font:12px/1.6 system-ui}svg{max-width:100%;height:auto;display:block;margin:auto}#render{overflow:auto}</style></head><body><div id="render"></div><script>${runtime.replaceAll("</script", "<\\/script")}</script><script>(async()=>{const token=${scriptLiteral(token)},send=(type,data)=>parent.postMessage({type,token,...data},'*');try{mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'dark',fontFamily:'system-ui',themeVariables:{fontSize:'12px',primaryColor:'#292929',primaryTextColor:'#e7e7e7',primaryBorderColor:'#666',lineColor:'#aaa'},flowchart:{htmlLabels:false},maxTextSize:30000,suppressErrorRendering:true});const {svg}=await mermaid.render('diagram',${scriptLiteral(source)});document.getElementById('render').innerHTML=svg;const report=()=>send('djinn:visualization-height',{height:Math.min(4000,Math.max(120,Math.ceil(document.documentElement.scrollHeight)))});new ResizeObserver(report).observe(document.body);report()}catch(e){send('djinn:visualization-error',{message:${scriptLiteral(t("mermaid.render_failed"))}})}})();</script></body></html>`;
           blob = URL.createObjectURL(new Blob([html], { type: "text/html" }));
           setUrl(blob);
         })
-        .catch(
-          () =>
-            active &&
-            setError("Le moteur Mermaid local ne peut pas être chargé."),
-        );
+        .catch(() => active && setError(t("mermaid.engine_failed")));
     return () => {
       active = false;
       window.removeEventListener("message", receive);
@@ -62,12 +58,12 @@ function DiagramFrame({ source }: { source: string }) {
       {error ? (
         <p role="alert">{error}</p>
       ) : !url ? (
-        <p role="status">Préparation du diagramme…</p>
+        <p role="status">{t("mermaid.preparing")}</p>
       ) : null}
       {url && !error ? (
         <iframe
           ref={frame}
-          title="Diagramme Mermaid"
+          title={t("mermaid.diagram")}
           src={url}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
@@ -89,7 +85,7 @@ export function MermaidDiagram({ source }: { source: string }) {
     else dialog.current?.close();
   }, [expanded]);
   return (
-    <section className="mermaid-support" aria-label="Support Mermaid">
+    <section className="mermaid-support" aria-label={t("mermaid.artifact")}>
       <div className="mermaid-toolbar">
         <span>Mermaid</span>
         <button
@@ -98,10 +94,12 @@ export function MermaidDiagram({ source }: { source: string }) {
           aria-controls={id}
           onClick={() => setShowSource(!showSource)}
         >
-          {showSource ? "Voir le diagramme" : "Afficher la source"}
+          {showSource
+            ? t("mermaid.show_diagram")
+            : t("visualization.show_source")}
         </button>
         <button type="button" onClick={() => setExpanded(true)}>
-          Agrandir
+          {t("mermaid.expand")}
         </button>
       </div>
       <div hidden={showSource}>
@@ -115,12 +113,12 @@ export function MermaidDiagram({ source }: { source: string }) {
         className="mermaid-dialog"
         onCancel={() => setExpanded(false)}
         onClose={() => setExpanded(false)}
-        aria-label="Diagramme agrandi"
+        aria-label={t("mermaid.expanded")}
       >
         <div className="mermaid-toolbar">
-          <strong>Diagramme Mermaid</strong>
+          <strong>{t("mermaid.diagram")}</strong>
           <button type="button" onClick={() => setExpanded(false)}>
-            Fermer
+            {t("common.close")}
           </button>
         </div>
         {expanded ? <DiagramFrame source={source} /> : null}

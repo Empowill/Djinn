@@ -1,0 +1,456 @@
+// Package plan implements the services of plan.v1 on the store: projects, wishes and questions. Tasks, which run
+// workers, are served by the harness package.
+package plan
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"buf.build/go/protovalidate"
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/store"
+)
+
+// Entities are the messages of plan.v1 the store keeps.
+func Entities() []proto.Message {
+	return []proto.Message{
+		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
+	}
+}
+
+// actor is who sent a command, as the journal records it. Every caller is the local user until agents get an
+// identity of their own.
+const actor = "local"
+
+// Option sets what the plan services reach beyond the store.
+type Option func(*options)
+
+type options struct {
+	leads    Leads
+	answered []func(context.Context, *planv1.Question)
+}
+
+// WithLeads gives the wishes the terminals of their leads, for WishService.Resume.
+func WithLeads(l Leads) Option { return func(o *options) { o.leads = l } }
+
+// WithAnswered calls f with a question once its answer is stored: the harness starts again the worker a yes
+// allows to edit.
+func WithAnswered(f func(context.Context, *planv1.Question)) Option {
+	return func(o *options) { o.answered = append(o.answered, f) }
+}
+
+// Handlers returns the Connect handlers of the plan services, by path prefix.
+func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	out := map[string]http.Handler{}
+	opt := connect.WithInterceptors(Validate)
+	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s}, opt)
+	out[p] = h
+	wishes := &Wishes{Store: s, Leads: o.leads}
+	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
+	out[p] = h
+	p, h = planv1connect.NewQuestionServiceHandler(&Questions{Store: s, Answered: o.answered}, opt)
+	out[p] = h
+	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
+	out[p] = h
+	return out
+}
+
+// Validate checks every unary request against the rules of its proto, as the command line did before sending it.
+var Validate = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		if m, ok := req.Any().(proto.Message); ok {
+			if err := protovalidate.Validate(m); err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+		}
+		return next(ctx, req)
+	}
+})
+
+// write journals req, then runs fn, in one transaction. Store errors become Connect errors.
+func write(ctx context.Context, s *store.Store, spec connect.Spec, req proto.Message, fn func(*store.Tx) error) error {
+	return Status(s.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actor, spec.Procedure, req); err != nil {
+			return err
+		}
+		return fn(tx)
+	}))
+}
+
+// Status gives a Connect code to the errors of the store.
+func Status(err error) error {
+	var cerr *connect.Error
+	switch {
+	case err == nil, errors.As(err, &cerr):
+		return err
+	case errors.Is(err, store.ErrNotFound):
+		return connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, store.ErrDuplicate):
+		return connect.NewError(connect.CodeAlreadyExists, err)
+	}
+	return connect.NewError(connect.CodeInternal, err)
+}
+
+// Projects implements ProjectService.
+type Projects struct {
+	planv1connect.UnimplementedProjectServiceHandler
+	Store *store.Store
+}
+
+func (p *Projects) Add(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceAddRequest],
+) (*connect.Response[planv1.ProjectServiceAddResponse], error) {
+	dir, err := canonical(req.Msg.GetDirectory())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("directory: %w", err))
+	}
+	name := req.Msg.GetName()
+	if name == "" {
+		name = filepath.Base(dir)
+	}
+	remote := remoteOf(dir)
+	project := &planv1.Project{
+		Id: store.NewID(), Name: name, Directory: dir, Git: inGit(dir), Remote: remote, CreateTime: timestamppb.Now(),
+	}
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		same, err := store.List[*planv1.Project](ctx, tx, store.Where{"directory": dir})
+		if err != nil {
+			return err
+		}
+		if len(same) > 0 {
+			return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf(
+				"project %s already has this folder, case ignored: %s", same[0].GetName(), same[0].GetDirectory()))
+		}
+		// A project an imported wish named, still without a folder, is attached rather than added twice.
+		if waiting, err := unattached(ctx, tx, remote, name); err != nil || waiting != nil {
+			if err != nil {
+				return err
+			}
+			waiting.Directory, waiting.Git = dir, project.GetGit()
+			if waiting.GetRemote() == "" {
+				waiting.Remote = remote
+			}
+			project = waiting
+			return tx.Put(project)
+		}
+		// The unique index refuses a duplicate name anyway; checking first says which project has it.
+		if same, err = store.List[*planv1.Project](ctx, tx, store.Where{"name": name}); err != nil {
+			return err
+		}
+		if len(same) > 0 {
+			return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf(
+				"project %s already has this name, case ignored: %s", same[0].GetName(), same[0].GetDirectory()))
+		}
+		return tx.Put(project)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.ProjectServiceAddResponse{Project: project}), nil
+}
+
+func (p *Projects) List(
+	ctx context.Context, _ *connect.Request[planv1.ProjectServiceListRequest],
+) (*connect.Response[planv1.ProjectServiceListResponse], error) {
+	projects, err := store.List[*planv1.Project](ctx, p.Store, nil)
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: projects}), nil
+}
+
+// unattached returns the project without a folder that has this remote, or else this name, case ignored; nil
+// when there is none.
+func unattached(ctx context.Context, tx *store.Tx, remote, name string) (*planv1.Project, error) {
+	all, err := store.List[*planv1.Project](ctx, tx, store.Where{"directory": ""})
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range all {
+		if sameRemote(p.GetRemote(), remote) {
+			return p, nil
+		}
+	}
+	for _, p := range all {
+		if strings.EqualFold(p.GetName(), name) {
+			return p, nil
+		}
+	}
+	return nil, nil
+}
+
+// canonical returns the absolute path of the folder dir, with its symbolic links resolved.
+func canonical(dir string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("%q is not an absolute path", dir)
+	}
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s is not a folder", dir)
+	}
+	return filepath.Clean(dir), nil
+}
+
+// inGit tells whether dir is inside a Git repository: dir or a parent holds .git, a directory or, in a worktree
+// or a submodule, a file.
+func inGit(dir string) bool {
+	for {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+// Wishes implements WishService.
+type Wishes struct {
+	planv1connect.UnimplementedWishServiceHandler
+	Store *store.Store
+	// Leads runs the leads' terminals; nil where djinn up does not serve them, and Resume is then unavailable.
+	Leads Leads
+}
+
+func (w *Wishes) Make(
+	ctx context.Context, req *connect.Request[planv1.WishServiceMakeRequest],
+) (*connect.Response[planv1.WishServiceMakeResponse], error) {
+	wish := &planv1.Wish{Id: store.NewID(), Title: req.Msg.GetTitle(), CreateTime: timestamppb.Now()}
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		for _, id := range req.Msg.GetProjectIds() {
+			project, err := store.Get[*planv1.Project](ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			if !slices.Contains(wish.GetProjectIds(), project.GetId()) {
+				wish.ProjectIds = append(wish.ProjectIds, project.GetId())
+			}
+		}
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.WishServiceMakeResponse{Wish: wish}), nil
+}
+
+func (w *Wishes) List(
+	ctx context.Context, _ *connect.Request[planv1.WishServiceListRequest],
+) (*connect.Response[planv1.WishServiceListResponse], error) {
+	wishes, err := store.List[*planv1.Wish](ctx, w.Store, nil)
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceListResponse{Wishes: wishes}), nil
+}
+
+// Grant gives the wish's workers a right in one of its projects, or takes it back with GRANT_NONE.
+func (w *Wishes) Grant(
+	ctx context.Context, req *connect.Request[planv1.WishServiceGrantRequest],
+) (*connect.Response[planv1.WishServiceGrantResponse], error) {
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		id := req.Msg.GetProjectId()
+		ids := wish.GetProjectIds()
+		switch {
+		case id == "" && len(ids) != 1:
+			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"the wish has %d projects: name one with --project-id", len(ids)))
+		case id == "":
+			id = ids[0]
+		}
+		i := slices.IndexFunc(ids, func(p string) bool { return strings.EqualFold(p, id) })
+		if i < 0 {
+			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project %s is not one of the wish's projects", id))
+		}
+		id = ids[i]
+		wish.Grants = slices.DeleteFunc(wish.Grants, func(g *planv1.ProjectGrant) bool { return g.GetProjectId() == id })
+		if mode := req.Msg.GetMode(); mode != planv1.Grant_GRANT_NONE {
+			wish.Grants = append(wish.Grants, &planv1.ProjectGrant{ProjectId: id, Grant: mode})
+		}
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.WishServiceGrantResponse{Wish: wish}), nil
+}
+
+// GrantOf is the right wish gives its workers in the project projectID: GRANT_NONE when it gives none.
+func GrantOf(wish *planv1.Wish, projectID string) planv1.Grant {
+	for _, g := range wish.GetGrants() {
+		if strings.EqualFold(g.GetProjectId(), projectID) && g.GetGrant() != planv1.Grant_GRANT_UNSPECIFIED {
+			return g.GetGrant()
+		}
+	}
+	return planv1.Grant_GRANT_NONE
+}
+
+// Questions implements QuestionService.
+type Questions struct {
+	planv1connect.UnimplementedQuestionServiceHandler
+	Store *store.Store
+	// Answered are called with a question once its answer is stored.
+	Answered []func(context.Context, *planv1.Question)
+}
+
+// maxCode is the last code a wish can give: the codes follow ^Q[0-9]{2,3}$.
+const maxCode = 999
+
+func (q *Questions) Ask(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceAskRequest],
+) (*connect.Response[planv1.QuestionServiceAskResponse], error) {
+	question := &planv1.Question{
+		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
+		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
+	}
+	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		if _, err := store.Get[*planv1.Wish](ctx, tx, question.GetWishId()); err != nil {
+			return err
+		}
+		return Ask(ctx, tx, question)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.QuestionServiceAskResponse{Question: question}), nil
+}
+
+// Ask stores question, new, in tx with the next code of its wish. The caller journals the command that asks it.
+func Ask(ctx context.Context, tx *store.Tx, question *planv1.Question) error {
+	// The next code follows the highest one of the wish. Questions are never deleted, so a code is never given
+	// twice; transactions run one at a time, and the unique index guards it anyway.
+	asked, err := store.List[*planv1.Question](ctx, tx, store.Where{"wish_id": question.GetWishId()})
+	if err != nil {
+		return err
+	}
+	last := 0
+	for _, a := range asked {
+		var n int
+		if _, err := fmt.Sscanf(a.GetCode(), "Q%d", &n); err == nil && n > last {
+			last = n
+		}
+	}
+	if last >= maxCode {
+		return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("this wish has used its %d question codes", maxCode))
+	}
+	question.Code = fmt.Sprintf("Q%02d", last+1)
+	return tx.Put(question)
+}
+
+func (q *Questions) Answer(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceAnswerRequest],
+) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
+	var question *planv1.Question
+	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		if err := allowed(question, req.Msg.GetChoice()); err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		question.Answer = &planv1.Answer{Choice: req.Msg.GetChoice(), Note: req.Msg.GetNote(), CreateTime: timestamppb.Now()}
+		return tx.Put(question)
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range q.Answered {
+		f(ctx, proto.CloneOf(question))
+	}
+	return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
+}
+
+// find resolves a reference to a question: its id, or its code within wishID, or within every wish when the code
+// is used by one only.
+func find(ctx context.Context, tx *store.Tx, ref *planv1.QuestionRef, wishID string) (*planv1.Question, error) {
+	if id := ref.GetId(); id != "" {
+		return store.Get[*planv1.Question](ctx, tx, id)
+	}
+	where := store.Where{"code": ref.GetCode()}
+	if wishID != "" {
+		where["wish_id"] = wishID
+	}
+	found, err := store.List[*planv1.Question](ctx, tx, where)
+	if err != nil {
+		return nil, err
+	}
+	switch len(found) {
+	case 0:
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no question %s", ref.GetCode()))
+	case 1:
+		return found[0], nil
+	}
+	return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+		"%d wishes have a question %s: give its identifier, or the wish with --wish-id", len(found), ref.GetCode()))
+}
+
+// allowed checks that choice answers question: yes without options, or the letter of one of its options.
+func allowed(question *planv1.Question, choice planv1.Choice) error {
+	n := len(question.GetOptions())
+	if n == 0 {
+		if choice != planv1.Choice_CHOICE_YES {
+			return fmt.Errorf("question %s has no options: answer yes", question.GetCode())
+		}
+		return nil
+	}
+	if choice < planv1.Choice_CHOICE_A || int(choice-planv1.Choice_CHOICE_A) >= n {
+		return fmt.Errorf("question %s has %d options: answer with a letter from a to %c",
+			question.GetCode(), n, 'a'+n-1)
+	}
+	return nil
+}
+
+func (q *Questions) List(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceListRequest],
+) (*connect.Response[planv1.QuestionServiceListResponse], error) {
+	where := store.Where{}
+	if id := req.Msg.GetWishId(); id != "" {
+		where["wish_id"] = id
+	}
+	all, err := store.List[*planv1.Question](ctx, q.Store, where)
+	if err != nil {
+		return nil, Status(err)
+	}
+	since := req.Msg.GetSince()
+	res := &planv1.QuestionServiceListResponse{}
+	for _, question := range all {
+		if req.Msg.GetOpen() && question.GetAnswer() != nil {
+			continue
+		}
+		if since != nil && question.GetCreateTime().AsTime().Before(since.AsTime()) {
+			continue
+		}
+		res.Questions = append(res.Questions, question)
+	}
+	return connect.NewResponse(res), nil
+}

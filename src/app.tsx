@@ -88,13 +88,22 @@ import { useReducedMotion } from "./reduced-motion";
 import { MissionTestBoard } from "./mission-test-board";
 import { StageReport } from "./mission-progress";
 import { AgentAvatars, AgentPickerDrawer } from "./agent-avatars";
+import {
+  chosenLanguage,
+  language,
+  languageName,
+  languages,
+  setLanguage,
+  systemLanguage,
+  t,
+} from "./i18n";
 const tabs = [
-  { id: "overview", label: "Mission", icon: LayoutDashboard },
-  { id: "timeline", label: "Timeline", icon: Activity },
-  { id: "artifacts", label: "Restitution", icon: Shapes },
-  { id: "review", label: "Review", icon: MessageSquare },
-  { id: "delivery", label: "Livrables", icon: PackageCheck },
-  { id: "history", label: "Historique v1", icon: Activity },
+  { id: "overview", label: t("app.tab_wish"), icon: LayoutDashboard },
+  { id: "timeline", label: t("app.tab_timeline"), icon: Activity },
+  { id: "artifacts", label: t("app.tab_results"), icon: Shapes },
+  { id: "review", label: t("app.tab_review"), icon: MessageSquare },
+  { id: "delivery", label: t("app.tab_delivery"), icon: PackageCheck },
+  { id: "history", label: t("app.tab_history"), icon: Activity },
 ];
 type Modal =
   | "new"
@@ -116,16 +125,13 @@ const scheduling = (agent: Agent) => agent as AgentScheduling;
 const scopeSyntaxHint = (value: string) => {
   const path = value.trim().replaceAll("\\", "/");
   if (!path) return "";
-  if (path === "*")
-    return "* réserve tout le projet : vérifiez que c’est intentionnel.";
+  if (path === "*") return t("wish_settings.scope_hint_all");
   if (/^(?:[\\/]|[A-Za-z]:)/.test(path))
-    return "Utilisez un chemin relatif au dossier du projet.";
-  if (/[\0\r\n]/.test(path))
-    return "Retirez les retours à la ligne et caractères invisibles.";
-  if (/[?\[\]{}]/.test(path))
-    return "Les jokers de chemin ne sont pas interprétés ici.";
+    return t("wish_settings.scope_hint_absolute");
+  if (/[\0\r\n]/.test(path)) return t("wish_settings.scope_hint_invisible");
+  if (/[?\[\]{}]/.test(path)) return t("wish_settings.scope_hint_glob");
   if (path.split("/").some((part) => !part || part === "." || part === ".."))
-    return "Utilisez des segments relatifs sans . ni ..";
+    return t("wish_settings.scope_hint_dots");
   return "";
 };
 function Brand({ small = false }: { small?: boolean }) {
@@ -235,7 +241,7 @@ function ModalFrame({
           <button
             className="icon-button"
             onClick={onClose}
-            aria-label="Fermer la fenêtre"
+            aria-label={t("app.close_window")}
           >
             <X size={18} />
           </button>
@@ -341,7 +347,7 @@ export default function App() {
     answers?: Record<string, string>,
   ) => {
     if (!ui.respondPermission) {
-      d.notify("Cette demande nécessite l’application locale Djinn.");
+      d.notify(t("app.needs_local_app"));
       return false;
     }
     return ui.respondPermission(request, decision, answers);
@@ -352,7 +358,7 @@ export default function App() {
     detail?: string,
   ) => {
     if (!ui.recordTestResult) {
-      d.notify("Le résultat du test ne peut pas être enregistré ici.");
+      d.notify(t("app.test_result_unavailable"));
       return false;
     }
     return ui.recordTestResult(action, outcome, detail);
@@ -449,7 +455,8 @@ export default function App() {
       ).detail;
       setTab("overview");
       setAgentId(null);
-      if (target.taskId === mission.id && mission.activeStepId) d.selectStep(mission.activeStepId);
+      if (target.taskId === mission.id && mission.activeStepId)
+        d.selectStep(mission.activeStepId);
       setTimeout(
         () =>
           document
@@ -460,12 +467,17 @@ export default function App() {
     };
     window.addEventListener("djinn:question-focus", focus);
     const focusAction = (event: Event) => {
-      const target = (event as CustomEvent<{ taskId?: string; actionId?: string }>).detail;
-      if (target?.taskId === mission.id && mission.activeStepId) d.selectStep(mission.activeStepId);
+      const target = (
+        event as CustomEvent<{ taskId?: string; actionId?: string }>
+      ).detail;
+      if (target?.taskId === mission.id && mission.activeStepId)
+        d.selectStep(mission.activeStepId);
       setTab("overview");
       setAgentId(null);
       setTimeout(() => {
-        const card = document.getElementById(target?.actionId ? `action-${target.actionId}` : "actions-section");
+        const card = document.getElementById(
+          target?.actionId ? `action-${target.actionId}` : "actions-section",
+        );
         const group = card?.closest("details");
         if (group) group.open = true;
         card?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -479,7 +491,8 @@ export default function App() {
       setTab("overview");
       setAgentId(null);
       setAgentPickerOpen(false);
-      if (target.taskId === mission.id && mission.activeStepId) d.selectStep(mission.activeStepId);
+      if (target.taskId === mission.id && mission.activeStepId)
+        d.selectStep(mission.activeStepId);
       setTimeout(
         () =>
           document
@@ -536,7 +549,7 @@ export default function App() {
   };
   const runDemo = () => {
     if (blocking) {
-      d.notify("Répondez à la décision bloquante pour reprendre la démo.");
+      d.notify(t("demo.answer_blocking"));
       return;
     }
     if (demoRunning) return;
@@ -547,27 +560,34 @@ export default function App() {
       agentId: string,
       life: "started" | "completed" | "blocked",
     ) => ({
-      ...event(type, title, "Simulation de la mission d’exemple.", agentId),
+      ...event(type, title, t("demo.simulation_detail"), agentId),
       runId: demoRunId,
       lifecycle: life,
     });
     setDemoRunning(true);
-    d.updateTask(task.id, (t) => ({
-      ...t,
+    d.updateTask(task.id, (current) => ({
+      ...current,
       status: "running",
-      agents: t.agents.map((a) => ({
+      agents: current.agents.map((a) => ({
         ...a,
         status: a.id === "review" ? "queued" : "running",
-        summary:
-          a.id === "design"
-            ? "Applique vos choix au support de cadrage."
-            : a.summary,
+        summary: a.id === "design" ? t("demo.design_summary") : a.summary,
       })),
       events: [
-        ...t.events,
-        lifecycle("phase", "La simulation reprend", "lead", "started"),
-        lifecycle("agent", "Atlas démarre", "design", "started"),
-        lifecycle("agent", "Nova démarre", "build", "started"),
+        ...current.events,
+        lifecycle("phase", t("demo.resumes"), "lead", "started"),
+        lifecycle(
+          "agent",
+          t("demo.agent_starts", { name: "Atlas" }),
+          "design",
+          "started",
+        ),
+        lifecycle(
+          "agent",
+          t("demo.agent_starts", { name: "Nova" }),
+          "build",
+          "started",
+        ),
       ],
     }));
     const asksQuestion = !task.questions.some((q) => q.id === "Q03");
@@ -577,12 +597,12 @@ export default function App() {
       if ((step === 3 && asksQuestion) || step >= 4) {
         clearInterval(demoTimer.current);
         setDemoRunning(false);
-        if (step >= 4) d.notify("Démo terminée.");
+        if (step >= 4) d.notify(t("demo.done"));
       }
-      d.updateTask(task.id, (t) => {
+      d.updateTask(task.id, (current) => {
         const progressed = {
-          ...t,
-          agents: t.agents.map((a) => ({
+          ...current,
+          agents: current.agents.map((a) => ({
             ...a,
             progress: Math.min(95, a.progress + (a.id === "review" ? 5 : 9)),
           })),
@@ -591,11 +611,11 @@ export default function App() {
           return {
             ...progressed,
             events: [
-              ...t.events,
+              ...current.events,
               event(
                 "tool",
-                "Les choix sont intégrés au parcours",
-                "Simulation : le support projets reflète votre décision.",
+                t("demo.choices_integrated"),
+                t("demo.choices_detail"),
                 "design",
               ),
             ],
@@ -609,22 +629,22 @@ export default function App() {
                     ...a,
                     status: "done",
                     progress: 100,
-                    summary: "Navigation alignée avec vos décisions.",
+                    summary: t("demo.navigation_aligned"),
                   }
                 : a,
             ),
             events: [
-              ...t.events,
+              ...current.events,
               lifecycle(
                 "agent",
-                "Atlas termine son passage",
+                t("demo.agent_finishes", { name: "Atlas" }),
                 "design",
                 "completed",
               ),
               event(
                 "tool",
-                "Nova construit les états",
-                "Simulation de la construction des composants et des états.",
+                t("demo.agent_builds_states", { name: "Nova" }),
+                t("demo.build_states_detail"),
                 "build",
               ),
             ],
@@ -638,57 +658,52 @@ export default function App() {
                 ? {
                     ...a,
                     status: "blocked",
-                    summary: "Un choix d’interaction attend votre retour.",
+                    summary: t("demo.interaction_waiting"),
                   }
                 : a,
             ),
             questions: [
-              ...t.questions,
+              ...current.questions,
               {
                 id: "Q03",
-                title: "Comment signaler l’arrivée d’une question ?",
-                context:
-                  "Une nouvelle décision doit attirer l’attention, sans interrompre la lecture de la timeline.",
-                recommendation:
-                  "Une apparition douce avec un signal discret dans la mission.",
+                title: t("demo.q03_title"),
+                context: t("demo.q03_context"),
+                recommendation: t("demo.q03_recommendation"),
                 options: [
                   {
                     id: "a",
-                    label: "Transition douce",
-                    description:
-                      "La carte apparaît, le compteur s’anime. Le contexte reste visible.",
+                    label: t("demo.q03_option_a"),
+                    description: t("demo.q03_option_a_detail"),
                   },
                   {
                     id: "b",
-                    label: "Notification plus visible",
-                    description:
-                      "Un bandeau temporaire accompagne la nouvelle question.",
+                    label: t("demo.q03_option_b"),
+                    description: t("demo.q03_option_b_detail"),
                   },
                 ],
                 blocking: true,
-                unlocks:
-                  "Débloque les transitions et la vérification des interactions.",
+                unlocks: t("demo.q03_unlocks"),
                 agentId: "build",
-                theme: "Interaction",
+                theme: t("demo.q03_theme"),
               },
             ],
             events: [
-              ...t.events,
+              ...current.events,
               event(
                 "decision",
-                "Une nouvelle question arrive",
-                "Q03 · Choisir le signal d’arrivée des décisions.",
+                t("demo.new_question"),
+                t("demo.new_question_detail"),
                 "build",
               ),
               lifecycle(
                 "agent",
-                "Nova attend votre réponse",
+                t("demo.agent_waits", { name: "Nova" }),
                 "build",
                 "blocked",
               ),
               lifecycle(
                 "agent",
-                "Djinn attend votre réponse",
+                t("demo.agent_waits", { name: "Djinn" }),
                 "lead",
                 "blocked",
               ),
@@ -702,16 +717,16 @@ export default function App() {
               a.id === "review" ? { ...a, status: "running" } : a,
             ),
             events: [
-              ...t.events,
+              ...current.events,
               lifecycle(
                 "agent",
-                "Nova termine son passage",
+                t("demo.agent_finishes", { name: "Nova" }),
                 "build",
                 "completed",
               ),
               lifecycle(
                 "agent",
-                "Echo vérifie le parcours",
+                t("demo.agent_checks_flow", { name: "Echo" }),
                 "review",
                 "started",
               ),
@@ -719,53 +734,49 @@ export default function App() {
           };
         if (step >= 4) {
           return {
-            ...t,
+            ...current,
             status: "idle",
             phase: "review",
             actions: [
               {
                 id: "demo-review",
                 kind: "manual",
-                title: "Vérifier le résultat",
-                detail:
-                  "Ouvrez les supports dans Review et ajoutez vos retours.",
+                title: t("demo.check_result"),
+                detail: t("demo.check_result_detail"),
                 status: "pending",
                 createdAt: now(),
                 updatedAt: now(),
                 agentId: "review",
               },
             ],
-            agents: t.agents.map((a) => ({
+            agents: current.agents.map((a) => ({
               ...a,
               status: "done",
               progress: 100,
               summary:
-                a.id === "review"
-                  ? "Le parcours de la simulation est prêt pour votre review."
-                  : "Passage de démonstration terminé.",
+                a.id === "review" ? t("demo.flow_ready") : t("demo.pass_done"),
             })),
             artifacts: [
-              ...t.artifacts.filter((a) => a.id !== "demo-report"),
+              ...current.artifacts.filter((a) => a.id !== "demo-report"),
               {
                 id: "demo-report",
-                title: "Rapport de la simulation",
+                title: t("demo.report_title"),
                 type: "document",
-                content:
-                  "# Rapport de la mission d’exemple\n\nLes décisions ont été appliquées au support de cadrage. Les trois périmètres ont parcouru leurs états : attente, travail, décision et fin.\n\nCe rapport décrit une simulation de l’interface. Aucun code de projet, modèle payant ou test externe n’a été exécuté.\n\n## Votre prochaine étape\nAnnotez le support dans Review, puis validez le passage en livraison.",
+                content: t("demo.report_content"),
                 updatedAt: now(),
               },
             ],
             events: [
-              ...t.events,
+              ...current.events,
               lifecycle(
                 "review",
-                "Echo termine ses vérifications",
+                t("demo.agent_finishes_checks", { name: "Echo" }),
                 "review",
                 "completed",
               ),
               lifecycle(
                 "agent",
-                "Djinn intègre les contributions",
+                t("demo.agent_integrates", { name: "Djinn" }),
                 "lead",
                 "completed",
               ),
@@ -780,21 +791,21 @@ export default function App() {
     clearInterval(demoTimer.current);
     setDemoRunning(false);
     if (task.demo)
-      d.updateTask(task.id, (t) => ({
-        ...t,
+      d.updateTask(task.id, (current) => ({
+        ...current,
         events: [
-          ...t.events,
-          ...t.agents
+          ...current.events,
+          ...current.agents
             .filter((a) => a.status === "running")
             .map((a) => ({
               ...event(
                 "agent",
-                `${a.name} en pause`,
-                "Simulation interrompue par vous.",
+                t("app.agent_paused", { name: a.name }),
+                t("demo.interrupted"),
                 a.id,
               ),
               lifecycle: "blocked" as const,
-              runId: [...t.events]
+              runId: [...current.events]
                 .reverse()
                 .find((e) => e.agentId === a.id && e.lifecycle === "started")
                 ?.runId,
@@ -812,32 +823,30 @@ export default function App() {
   };
   const approveReview = () => {
     if (task.runId || demoRunning) {
-      d.notify("Attendez la fin du passage en cours avant de valider.");
+      d.notify(t("app.wait_for_run"));
       return;
     }
     if (task.feedback.some((f) => !f.resolved)) {
-      d.notify(
-        "Résolvez les retours de review avant de préparer la livraison.",
-      );
+      d.notify(t("app.resolve_feedback_first"));
       return;
     }
     if (blocking) {
-      d.notify("Répondez aux décisions bloquantes avant de valider la review.");
+      d.notify(t("app.answer_blocking_first"));
       return;
     }
     if (selectedStage?.type !== "review") {
-      d.notify("La validation appartient à l’étape de review active.");
+      d.notify(t("app.validation_belongs_review"));
       return;
     }
     d.validateStepResult(selectedStage.id);
   };
   const mainActionLabel = task.demo
-    ? "Lancer la démo"
+    ? t("app.run_demo")
     : getNextRunMode(task) === "plan"
-      ? "Cadrer"
+      ? t("app.action_plan")
       : getNextRunMode(task) === "review"
-        ? "Vérifier"
-        : "Exécuter";
+        ? t("app.action_review")
+        : t("app.action_run");
   const restitution = (
     <ActionsPanel
       key={`${mission.id}:${selectedStepId}`}
@@ -877,9 +886,7 @@ export default function App() {
         <div className="sidebar-brand">
           <button
             onClick={() => setCollapsed(!collapsed)}
-            title={
-              collapsed ? "Déplier la navigation" : "Réduire la navigation"
-            }
+            title={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
           >
             <Brand small={collapsed} />
           </button>
@@ -888,12 +895,12 @@ export default function App() {
         <button
           className="new-mission"
           onClick={() => setModal("new")}
-          title="Nouvelle mission"
+          title={t("app.new_wish")}
         >
           <Plus size={16} />
           {!collapsed && (
             <>
-              <span>Nouvelle mission</span>
+              <span>{t("app.new_wish")}</span>
               <kbd>⌘ N</kbd>
             </>
           )}
@@ -901,12 +908,12 @@ export default function App() {
         <button
           className="sidebar-search"
           onClick={() => setModal("palette")}
-          title="Recherche et commandes"
+          title={t("app.search_and_commands")}
         >
           <Search size={15} />
           {!collapsed && (
             <>
-              <span>Rechercher…</span>
+              <span>{t("app.search_ellipsis")}</span>
               <kbd>⌘ K</kbd>
             </>
           )}
@@ -939,24 +946,26 @@ export default function App() {
           onClick={() =>
             window.djinn ? d.importTask() : importRef.current?.click()
           }
-          title="Importer une mission"
+          title={t("app.import_wish")}
         >
           <Upload size={15} />
-          {!collapsed && <span>Importer une mission</span>}
+          {!collapsed && <span>{t("app.import_wish")}</span>}
         </button>
         <div className="sidebar-bottom">
           <button
             className="profile"
             onClick={() => setModal("settings")}
-            title="Connexions et préférences"
+            title={t("app.connections_preferences")}
           >
             <span className="profile-avatar">C</span>
             {!collapsed && (
               <>
                 <span>
-                  Espace personnel
+                  {t("app.personal_space")}
                   <small>
-                    {window.djinn ? "Application locale" : "Aperçu navigateur"}
+                    {window.djinn
+                      ? t("app.local_app")
+                      : t("app.browser_preview")}
                   </small>
                 </span>
                 <Settings2 size={15} />
@@ -993,7 +1002,7 @@ export default function App() {
               }
               d.addTask(title, brief, project, provider, model, options);
               setModal(null);
-              d.notify("Djinn prépare la timeline de votre mission.");
+              d.notify(t("app.preparing_timeline"));
             }}
             onToast={d.notify}
           />
@@ -1026,12 +1035,16 @@ export default function App() {
                   </span>
                 )}
                 <strong>{task.title.replace(/\n/g, " ")}</strong>
-                {task.demo && <span className="badge tiny muted">EXEMPLE</span>}
+                {task.demo && (
+                  <span className="badge tiny muted">
+                    {t("app.example_badge")}
+                  </span>
+                )}
               </div>
               <div className="topbar-actions">
                 <button
                   className="question-bell"
-                  aria-label="Questions et actions"
+                  aria-label={t("app.questions_and_actions")}
                   onClick={() => setNotificationsOpen(!notificationsOpen)}
                 >
                   <Bell size={15} />
@@ -1047,8 +1060,8 @@ export default function App() {
                     className={`status-dot ${d.environment.providers.some((p) => p.available) ? "green" : "neutral"}`}
                   />
                   {d.environment.providers.some((p) => p.available)
-                    ? "CLI disponible"
-                    : "Connexions"}
+                    ? t("app.cli_available")
+                    : t("app.connections")}
                   <ChevronDown size={12} />
                 </button>
                 <button
@@ -1056,7 +1069,7 @@ export default function App() {
                   onClick={d.exportTask}
                 >
                   <Download size={14} />
-                  <span>Partager</span>
+                  <span>{t("app.share")}</span>
                 </button>
               </div>
             </header>
@@ -1087,7 +1100,7 @@ export default function App() {
                 starting={d.starting}
               />
               <div className="mission-bar">
-                <nav className="tabbar" aria-label="Vues de la mission">
+                <nav className="tabbar" aria-label={t("app.wish_views")}>
                   {availableTabs.map((t) => (
                     <button
                       className={tab === t.id ? "active" : ""}
@@ -1096,11 +1109,17 @@ export default function App() {
                     >
                       <t.icon size={15} />
                       {t.label}
-                      {t.id === "overview" && openQuestions.length + permissions.filter((p) => p.status === "pending").length > 0 && (
-                        <span className="tab-count">
-                          {openQuestions.length + permissions.filter((p) => p.status === "pending").length}
-                        </span>
-                      )}
+                      {t.id === "overview" &&
+                        openQuestions.length +
+                          permissions.filter((p) => p.status === "pending")
+                            .length >
+                          0 && (
+                          <span className="tab-count">
+                            {openQuestions.length +
+                              permissions.filter((p) => p.status === "pending")
+                                .length}
+                          </span>
+                        )}
                       {t.id === "artifacts" &&
                         task.artifacts.length + (task.actions?.length || 0) >
                           0 && (
@@ -1142,20 +1161,16 @@ export default function App() {
                     selectedStage.id === mission.activeStepId && (
                       <button
                         className="text-button step-grill-action"
-                        onClick={() =>
-                          void d.indicate(
-                            "Approfondis cette réflexion avec la skill grill-me : vérifie sa disponibilité, puis pose une seule question à la fois. Reste en réflexion, conserve les supports et ne démarre aucune implémentation.",
-                          )
-                        }
+                        onClick={() => void d.indicate(t("app.grill_prompt"))}
                       >
                         <Sparkles size={13} />
-                        Préciser le besoin
+                        {t("app.refine_need")}
                       </button>
                     )}
                   {task.runId || demoRunning ? (
                     <button className="button secondary small" onClick={pause}>
                       <Pause size={13} />
-                      Mettre en pause
+                      {t("app.pause")}
                     </button>
                   ) : null}
                   {mission.agents.some((a) => a.id === "lead") && (
@@ -1168,14 +1183,14 @@ export default function App() {
                       }}
                     >
                       <MessageSquare size={13} />
-                      Parler au chef
+                      {t("app.talk_to_lead")}
                     </button>
                   )}
                   <div className="menu-wrap">
                     <button
                       className="icon-button"
                       onClick={() => setMenu(!menu)}
-                      aria-label="Options de la mission"
+                      aria-label={t("app.wish_options")}
                       aria-expanded={menu}
                     >
                       <Ellipsis size={18} />
@@ -1189,7 +1204,7 @@ export default function App() {
                           }}
                         >
                           <Settings2 size={14} />
-                          Configurer la mission
+                          {t("app.configure_wish")}
                         </button>
                         <button
                           onClick={() => {
@@ -1198,7 +1213,7 @@ export default function App() {
                           }}
                         >
                           <Download size={14} />
-                          Exporter le contexte
+                          {t("app.export_context")}
                         </button>
                         <button
                           className="danger"
@@ -1208,7 +1223,7 @@ export default function App() {
                           }}
                         >
                           <Trash2 size={14} />
-                          Supprimer la mission
+                          {t("app.delete_wish")}
                         </button>
                       </div>
                     )}
@@ -1232,15 +1247,19 @@ export default function App() {
                           selectedStage.status,
                         ) && (
                           <section className="step-result">
-                            <span>Résultat · {selectedStage.title}</span>
+                            <span>
+                              {t("app.result_of", {
+                                title: selectedStage.title,
+                              })}
+                            </span>
                             <h3>
                               {selectedStage.needsRevalidation
-                                ? "Résultat à revalider"
+                                ? t("app.result_revalidate")
                                 : selectedStage.status === "completed"
                                   ? selectedStage.validation === "automatic"
-                                    ? "Résultat terminé · review à suivre"
-                                    : "Résultat validé"
-                                  : "Le passage est terminé"}
+                                    ? t("app.result_done_review_next")
+                                    : t("app.result_validated")
+                                  : t("app.pass_finished")}
                             </h3>
                             <StageReport step={selectedStage} />
                             {selectedStage.status === "awaiting_human" && (
@@ -1259,16 +1278,17 @@ export default function App() {
                                   d.validateStepResult(selectedStage.id)
                                 }
                               >
-                                Valider ce résultat <Check size={14} />
+                                {t("app.validate_result")} <Check size={14} />
                               </button>
                             )}
                             {selectedStage.approvedAt && (
                               <small>
-                                Validé par vous le{" "}
-                                {new Date(
-                                  selectedStage.approvedAt,
-                                ).toLocaleDateString("fr-FR")}{" "}
-                                à {formatTime(selectedStage.approvedAt)}
+                                {t("app.validated_by_you", {
+                                  date: new Date(
+                                    selectedStage.approvedAt,
+                                  ).toLocaleDateString(language),
+                                  time: formatTime(selectedStage.approvedAt),
+                                })}
                               </small>
                             )}
                             {mission.workflowMode === "flexible" &&
@@ -1280,16 +1300,14 @@ export default function App() {
                                   selectedStage.id ? (
                                     <>
                                       <strong>
-                                        Suite proposée ·{" "}
-                                        {mission.nextStepProposal.title}
+                                        {t("app.proposed_next", {
+                                          title: mission.nextStepProposal.title,
+                                        })}
                                       </strong>
                                       <p>{mission.nextStepProposal.reason}</p>
                                     </>
                                   ) : (
-                                    <p>
-                                      Vous pouvez terminer ici ou prolonger la
-                                      discussion avec une nouvelle étape.
-                                    </p>
+                                    <p>{t("app.finish_or_extend")}</p>
                                   )}
                                   <button
                                     className="button secondary small"
@@ -1299,17 +1317,22 @@ export default function App() {
                                     }
                                     onClick={() => setModal("next-step")}
                                   >
-                                    Choisir la suite <Plus size={14} />
+                                    {t("app.choose_next")} <Plus size={14} />
                                   </button>
                                 </div>
                               )}
                           </section>
                         )}
-                      {tab === "overview" && selectedStage && (selectedStage.report || selectedStage.summary) && !["awaiting_human", "completed"].includes(selectedStage.status) && (
-                        <section className="step-result">
-                          <StageReport step={selectedStage} />
-                        </section>
-                      )}
+                      {tab === "overview" &&
+                        selectedStage &&
+                        (selectedStage.report || selectedStage.summary) &&
+                        !["awaiting_human", "completed"].includes(
+                          selectedStage.status,
+                        ) && (
+                          <section className="step-result">
+                            <StageReport step={selectedStage} />
+                          </section>
+                        )}
                       {tab === "overview" && (
                         <Overview
                           task={task}
@@ -1324,15 +1347,35 @@ export default function App() {
                           busyPermissionIds={ui.busyPermissionIds}
                           onSteer={d.indicate}
                           onResume={() => void d.start(undefined)}
-                          workSummary={!consulting ? (
-                            <MissionTestBoard task={mission} actions={mission.actions || []} onAction={(action) => {
-                          void d.startTest(action);
-                        }} renderActions={(action) => action.testStartedAt || (action.kind === "server" && ["pending", "stopped", "error"].includes(action.status)) ? (
-                          <button className="button secondary small" onClick={() => d.openAction(mission.id, action.id)}>
-                            {action.testStartedAt ? "Donner un retour" : "Préparer le test"}
-                          </button>
-                        ) : null} />
-                          ) : undefined}
+                          workSummary={
+                            !consulting ? (
+                              <MissionTestBoard
+                                task={mission}
+                                actions={mission.actions || []}
+                                onAction={(action) => {
+                                  void d.startTest(action);
+                                }}
+                                renderActions={(action) =>
+                                  action.testStartedAt ||
+                                  (action.kind === "server" &&
+                                    ["pending", "stopped", "error"].includes(
+                                      action.status,
+                                    )) ? (
+                                    <button
+                                      className="button secondary small"
+                                      onClick={() =>
+                                        d.openAction(mission.id, action.id)
+                                      }
+                                    >
+                                      {action.testStartedAt
+                                        ? t("app.give_feedback")
+                                        : t("app.prepare_test")}
+                                    </button>
+                                  ) : null
+                                }
+                              />
+                            ) : undefined
+                          }
                           actions={restitution}
                         />
                       )}
@@ -1352,7 +1395,9 @@ export default function App() {
                         <div className="artifact-wrapper">
                           <div className="panel-heading">
                             <h1>
-                              {tab === "review" ? "Review" : "Restitution"}
+                              {tab === "review"
+                                ? t("app.tab_review")
+                                : t("app.tab_results")}
                             </h1>
                             {tab === "review" && (
                               <div className="review-actions">
@@ -1360,9 +1405,7 @@ export default function App() {
                                   className="button secondary"
                                   onClick={() =>
                                     task.demo
-                                      ? d.notify(
-                                          "Les retours de la démo sont conservés dans la session partageable.",
-                                        )
+                                      ? d.notify(t("demo.feedback_kept"))
                                       : d.start("review")
                                   }
                                   disabled={
@@ -1373,7 +1416,7 @@ export default function App() {
                                   }
                                 >
                                   <RotateCcw size={14} />
-                                  Envoyer les retours
+                                  {t("app.send_feedback")}
                                 </button>
                                 <button
                                   className="button accent"
@@ -1386,7 +1429,7 @@ export default function App() {
                                   }
                                 >
                                   <Check size={15} />
-                                  Valider
+                                  {t("app.validate")}
                                   <ArrowRight size={14} />
                                 </button>
                               </div>
@@ -1405,8 +1448,7 @@ export default function App() {
                           )}
                           {tab === "artifacts" && !openedArtifactId && (
                             <p className="restitution-hint">
-                              Ouvrez un support depuis son tour pour le
-                              consulter ou l’éditer.
+                              {t("app.open_material_hint")}
                             </p>
                           )}
                         </div>
@@ -1458,19 +1500,20 @@ export default function App() {
               <span>
                 <span className="status-dot green" />
                 {!d.ready
-                  ? "Chargement…"
+                  ? t("common.loading")
                   : d.persistenceEnabled
-                    ? "Sauvegarde locale"
-                    : "Sauvegarde suspendue"}
+                    ? t("app.local_save")
+                    : t("app.save_suspended")}
               </span>
               <span>
                 {task.demo
-                  ? "MISSION D’EXEMPLE"
-                  : task.project || "Aucun dossier sélectionné"}
+                  ? t("app.example_wish")
+                  : task.project || t("app.no_folder")}
               </span>
               <button onClick={() => setModal("palette")}>
                 <Keyboard size={12} />
-                Raccourcis<span>⌘ K</span>
+                {t("app.shortcuts")}
+                <span>⌘ K</span>
               </button>
             </footer>
           </>
@@ -1509,9 +1552,7 @@ export default function App() {
               onSend={
                 consulting
                   ? async () => {
-                      d.notify(
-                        "Vous consultez une étape passée. Reprenez cette étape depuis la timeline avant d’envoyer un message.",
-                      );
+                      d.notify(t("app.past_step_send"));
                       return false;
                     }
                   : d.indicate
@@ -1523,8 +1564,12 @@ export default function App() {
       <AnimatePresence>
         {modal === "project" && (
           <ModalFrame
-            title={editingProjectId ? "Réglages du projet" : "Nouveau projet"}
-            eyebrow="PROJET"
+            title={
+              editingProjectId
+                ? t("app.project_settings")
+                : t("app.new_project")
+            }
+            eyebrow={t("app.project_eyebrow")}
             onClose={() => {
               setModal(returnToMissionStart ? "new" : null);
               setReturnToMissionStart(false);
@@ -1545,9 +1590,7 @@ export default function App() {
                 setSelectedProjectId(project.id);
                 setModal(returnToMissionStart ? "new" : null);
                 setReturnToMissionStart(false);
-                d.notify(
-                  "Projet enregistré. Les prochaines missions héritent de ses réglages.",
-                );
+                d.notify(t("app.project_saved"));
               }}
             />
           </ModalFrame>
@@ -1567,36 +1610,36 @@ export default function App() {
         {modal === "mission" && (
           <MissionSettings
             task={mission}
-            onUpdate={(t) =>
-              d.updateTask(t.id, (live) =>
+            onUpdate={(next) =>
+              d.updateTask(next.id, (live) =>
                 live.runId
                   ? live
                   : {
                       ...live,
-                      title: t.title,
-                      titleSource: t.titleSource,
-                      titleEditedAt: t.titleEditedAt,
-                      brief: t.brief,
-                      project: t.project,
-                      projectSnapshot: t.projectSnapshot,
+                      title: next.title,
+                      titleSource: next.titleSource,
+                      titleEditedAt: next.titleEditedAt,
+                      brief: next.brief,
+                      project: next.project,
+                      projectSnapshot: next.projectSnapshot,
                       providerSessions:
-                        live.project !== t.project ||
-                        live.provider !== t.provider ||
-                        live.model !== t.model
+                        live.project !== next.project ||
+                        live.provider !== next.provider ||
+                        live.model !== next.model
                           ? undefined
                           : live.providerSessions,
-                      provider: t.provider,
-                      model: t.model,
-                      agents: t.agents,
-                      configuration: t.configuration,
-                      steps: t.steps,
-                      activeStepId: t.activeStepId,
-                      selectedStepId: t.selectedStepId,
-                      reviewApprovedAt: t.reviewApprovedAt,
+                      provider: next.provider,
+                      model: next.model,
+                      agents: next.agents,
+                      configuration: next.configuration,
+                      steps: next.steps,
+                      activeStepId: next.activeStepId,
+                      selectedStepId: next.selectedStepId,
+                      reviewApprovedAt: next.reviewApprovedAt,
                       events: [
                         ...live.events,
                         {
-                          ...event("note", "Configuration mise à jour"),
+                          ...event("note", t("app.configuration_updated")),
                           stepId: live.activeStepId,
                           actor: "human",
                         },
@@ -1638,19 +1681,19 @@ export default function App() {
         )}
         {modal === "delete" && (
           <ModalFrame
-            title="Supprimer cette mission ?"
-            eyebrow="ESPACE LOCAL"
+            title={t("app.delete_wish_title")}
+            eyebrow={t("app.local_space_eyebrow")}
             onClose={() => setModal(null)}
           >
             <p className="modal-description">
-              Les décisions, la timeline et les supports de «{" "}
-              {task.title.replace(/\n/g, " ")} » seront retirés de cet espace.
-              Exportez la mission pour en garder une copie.
+              {t("app.delete_wish_detail", {
+                title: task.title.replace(/\n/g, " "),
+              })}
             </p>
             <div className="modal-footer">
               <button className="button secondary" onClick={d.exportTask}>
                 <Download size={14} />
-                Exporter d’abord
+                {t("app.export_first")}
               </button>
               <button
                 className="button danger-button"
@@ -1661,7 +1704,7 @@ export default function App() {
                 }}
               >
                 <Trash2 size={14} />
-                Supprimer
+                {t("common.delete")}
               </button>
             </div>
           </ModalFrame>
@@ -1673,7 +1716,7 @@ export default function App() {
           d.actionAlerts.length > 0) && (
           <motion.aside
             className="question-alerts"
-            aria-label="Nouvelles questions et actions"
+            aria-label={t("app.new_questions_actions")}
             role="region"
             initial={{ opacity: 0, y: -8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1682,10 +1725,10 @@ export default function App() {
             <div className="question-alert-heading">
               <span>
                 <Bell size={14} />
-                Questions & actions
+                {t("app.questions_actions_heading")}
               </span>
               <button
-                aria-label="Fermer les alertes"
+                aria-label={t("app.close_alerts")}
                 onClick={() => {
                   setNotificationsOpen(false);
                   d.questionAlerts.forEach((a) => d.dismissQuestionAlert(a.id));
@@ -1749,7 +1792,9 @@ export default function App() {
                     <small>{alert.title}</small>
                     <strong>{alert.body}</strong>
                     <span>
-                      {alert.kind === "question" ? "Répondre" : "Voir l’action"}
+                      {alert.kind === "question"
+                        ? t("app.answer")
+                        : t("app.see_action")}
                       <ArrowUpRight size={13} />
                     </span>
                   </button>
@@ -1758,7 +1803,7 @@ export default function App() {
                 !d.actionAlerts.length &&
                 !state.tasks.some((t) =>
                   t.actions?.some((a) => a.status === "ready"),
-                ) && <p>Rien en attente.</p>}
+                ) && <p>{t("app.nothing_pending")}</p>}
             </div>
           </motion.aside>
         )}
@@ -1776,7 +1821,7 @@ export default function App() {
             {d.toast}
             <button
               onClick={() => d.notify("")}
-              aria-label="Fermer la notification"
+              aria-label={t("app.close_notification")}
             >
               <X size={14} />
             </button>
@@ -1818,20 +1863,19 @@ export function NextStepModal({
   const [objective, setObjective] = useState(proposal?.objective || "");
   return (
     <ModalFrame
-      title="Ajouter une étape"
-      eyebrow="SUITE DE LA MISSION"
+      title={t("next_step.title")}
+      eyebrow={t("next_step.eyebrow")}
       onClose={onClose}
     >
-      <p className="modal-description">
-        La nouvelle étape est ajoutée à la timeline. Vous la lancerez quand vous
-        le souhaiterez.
-      </p>
+      <p className="modal-description">{t("next_step.description")}</p>
       {proposal && (
-        <p className="form-tip">Proposition de Djinn : {proposal.reason}</p>
+        <p className="form-tip">
+          {t("next_step.proposal", { reason: proposal.reason })}
+        </p>
       )}
       <div className="form-fields">
         <label>
-          Type de la prochaine étape
+          {t("next_step.type")}
           <select
             value={type}
             onChange={(e) => {
@@ -1848,7 +1892,7 @@ export function NextStepModal({
           </select>
         </label>
         <label>
-          Titre de la prochaine étape
+          {t("next_step.step_title")}
           <input
             value={title}
             maxLength={1000}
@@ -1856,7 +1900,7 @@ export function NextStepModal({
           />
         </label>
         <label>
-          Objectif de la prochaine étape
+          {t("next_step.objective")}
           <textarea
             value={objective}
             rows={3}
@@ -1864,22 +1908,19 @@ export function NextStepModal({
           />
         </label>
         {type === "specification" && (
-          <p className="form-tip">
-            Une spécification produit un document. Elle ne déclenche pas de code
-            ni de prototype.
-          </p>
+          <p className="form-tip">{t("next_step.spec_tip")}</p>
         )}
       </div>
       <div className="modal-footer">
         <button className="button secondary" onClick={onClose}>
-          Annuler
+          {t("common.cancel")}
         </button>
         <button
           className="button accent"
           disabled={!title.trim() || !!task.runId}
           onClick={() => onAdd(type, title, objective)}
         >
-          Ajouter à la timeline
+          {t("next_step.add")}
         </button>
       </div>
     </ModalFrame>
@@ -1895,16 +1936,13 @@ export function ProjectSourcesEditor({
 }) {
   return (
     <section className="project-sources-editor">
-      <h3>Sources de vérité du projet</h3>
-      <p className="form-tip">
-        Documents de référence à lire avant de décider. Les chemins sont
-        relatifs au projet ; la copie de chaque mission est conservée.
-      </p>
+      <h3>{t("sources.title")}</h3>
+      <p className="form-tip">{t("sources.tip")}</p>
       {sources.map((source, index) => (
         <fieldset key={source.id}>
-          <legend>Référence {index + 1}</legend>
+          <legend>{t("sources.reference", { number: index + 1 })}</legend>
           <label>
-            Nom de la référence
+            {t("sources.name")}
             <input
               value={source.title}
               maxLength={1000}
@@ -1918,7 +1956,7 @@ export function ProjectSourcesEditor({
             />
           </label>
           <label>
-            Chemin de la référence
+            {t("sources.path")}
             <input
               value={source.path}
               placeholder="docs/specification.md"
@@ -1932,10 +1970,10 @@ export function ProjectSourcesEditor({
             />
           </label>
           <label>
-            Rôle de la référence
+            {t("sources.role")}
             <input
               value={source.description}
-              placeholder="Décisions produit acceptées"
+              placeholder={t("sources.role_placeholder")}
               onChange={(e) =>
                 onChange(
                   sources.map((s) =>
@@ -1952,7 +1990,7 @@ export function ProjectSourcesEditor({
             className="text-button"
             onClick={() => onChange(sources.filter((s) => s.id !== source.id))}
           >
-            Retirer cette référence
+            {t("sources.remove")}
           </button>
         </fieldset>
       ))}
@@ -1967,7 +2005,7 @@ export function ProjectSourcesEditor({
           ])
         }
       >
-        <Plus size={13} /> Ajouter une référence
+        <Plus size={13} /> {t("sources.add")}
       </button>
     </section>
   );
@@ -2035,16 +2073,16 @@ export function NewMission({
     );
   };
   return (
-    <section className="mission-start-screen" aria-label="Nouvelle mission">
+    <section className="mission-start-screen" aria-label={t("app.new_wish")}>
       <header className="mission-start-header">
         <Brand />
         <button className="button secondary small" onClick={onClose}>
-          Retour
+          {t("common.back")}
         </button>
       </header>
       <div className="mission-start-content">
-        <span className="eyebrow">NOUVELLE MISSION</span>
-        <h1>Qu’allez-vous créer ?</h1>
+        <span className="eyebrow">{t("new_wish.eyebrow")}</span>
+        <h1>{t("new_wish.heading")}</h1>
         {chosen ? (
           <>
             <p className="mission-start-project">
@@ -2057,7 +2095,7 @@ export function NewMission({
               }}
             >
               <label className="mission-prompt-label" htmlFor="mission-prompt">
-                Votre intention
+                {t("new_wish.intent_label")}
               </label>
               <textarea
                 id="mission-prompt"
@@ -2067,7 +2105,7 @@ export function NewMission({
                 onChange={(event) => setBrief(event.target.value)}
                 rows={7}
                 maxLength={20000}
-                placeholder="Décrivez le résultat que vous souhaitez. Djinn construira la timeline adaptée à votre demande."
+                placeholder={t("new_wish.placeholder")}
                 onKeyDown={(event) => {
                   if (
                     (event.metaKey || event.ctrlKey) &&
@@ -2079,7 +2117,7 @@ export function NewMission({
                 }}
               />
               <div className="mission-model-selection">
-                <label htmlFor="mission-provider">Fournisseur</label>
+                <label htmlFor="mission-provider">{t("app.provider")}</label>
                 <select
                   id="mission-provider"
                   value={selectedProvider}
@@ -2093,7 +2131,7 @@ export function NewMission({
                   <option value="claude">Claude Code</option>
                 </select>
                 <div className="mission-model-picker">
-                  <span>Modèle</span>
+                  <span>{t("app.model")}</span>
                   <ModelPicker
                     provider={selectedProvider}
                     value={selectedModel}
@@ -2102,25 +2140,22 @@ export function NewMission({
                 </div>
               </div>
               <div className="mission-start-submit">
-                <p>Le modèle choisi prépare votre mission.</p>
+                <p>{t("new_wish.model_prepares")}</p>
                 <button
                   className="button accent"
                   type="submit"
                   disabled={!brief.trim()}
                 >
-                  Préparer la mission <ArrowRight size={16} />
+                  {t("new_wish.prepare")} <ArrowRight size={16} />
                 </button>
               </div>
             </form>
           </>
         ) : (
           <>
-            <p>
-              Créez un projet pour enregistrer son dossier et ses connaissances
-              une seule fois.
-            </p>
+            <p>{t("new_wish.create_project_tip")}</p>
             <button className="button accent" onClick={onManageProjects}>
-              Créer un projet <Plus size={16} />
+              {t("new_wish.create_project")} <Plus size={16} />
             </button>
           </>
         )}
@@ -2149,7 +2184,7 @@ export function MissionPreparation({
   return (
     <section
       className="mission-start-screen mission-preparation"
-      aria-label="Préparation de la mission"
+      aria-label={t("preparation.aria")}
     >
       <header className="mission-start-header">
         <Brand />
@@ -2158,15 +2193,15 @@ export function MissionPreparation({
         )}
       </header>
       <div className="mission-start-content">
-        <span className="eyebrow">VOTRE MISSION</span>
+        <span className="eyebrow">{t("preparation.eyebrow")}</span>
         <h1>
           {running
-            ? "Djinn prépare votre timeline"
+            ? t("preparation.running")
             : task.status === "error"
-              ? "La préparation a été interrompue"
+              ? t("preparation.error")
               : questions.length
-                ? "Une précision pour votre timeline"
-                : "Préparation en pause"}
+                ? t("preparation.question")
+                : t("preparation.paused")}
         </h1>
         <p className="mission-start-project">
           <FolderOpen size={16} /> {task.projectSnapshot?.name || task.project}
@@ -2174,14 +2209,13 @@ export function MissionPreparation({
         <blockquote className="mission-intent">{task.brief}</blockquote>
         <p role="status">
           {running
-            ? "L’agent choisit les étapes utiles à votre demande. La mission s’affichera lorsque le workflow sera défini."
-            : "Votre demande est conservée. Vous pouvez compléter vos indications et reprendre la préparation."}
+            ? t("preparation.running_detail")
+            : t("preparation.paused_detail")}
         </p>
         {task.status === "error" && (
           <p className="mission-preparation-error">
             {task.events.filter((event) => event.type === "error").at(-1)
-              ?.detail ||
-              "Consultez l’historique de ce passage si l’erreur persiste."}
+              ?.detail || t("preparation.error_hint")}
           </p>
         )}
         {questions.map((question) => (
@@ -2194,7 +2228,7 @@ export function MissionPreparation({
         ))}
         {running ? (
           <button className="button secondary" onClick={onPause}>
-            <Pause size={15} /> Mettre en pause
+            <Pause size={15} /> {t("app.pause")}
           </button>
         ) : (
           <button
@@ -2202,7 +2236,7 @@ export function MissionPreparation({
             disabled={questions.some((q) => q.blocking)}
             onClick={onRetry}
           >
-            <Play size={15} /> Reprendre la préparation
+            <Play size={15} /> {t("preparation.resume")}
           </button>
         )}
       </div>
@@ -2227,23 +2261,17 @@ function SettingsModal({
   ).loadDemo;
   const login = async (p: ProviderId) => {
     if (!window.djinn) {
-      d.notify(
-        "La connexion à votre abonnement nécessite l’application Electron.",
-      );
+      d.notify(t("settings.login_needs_app"));
       return;
     }
     setConnecting(p);
-    setLoginMessage(
-      "La connexion s’ouvre dans votre navigateur. Suivez les instructions du fournisseur.",
-    );
+    setLoginMessage(t("settings.login_opens"));
     try {
       const result = await window.djinn.loginProvider(p);
       if (result && typeof result === "object") {
         const r = result as Record<string, unknown>;
         if (r.url)
-          setLoginMessage(
-            `Ouvrez ${String(r.url)} pour terminer la connexion.`,
-          );
+          setLoginMessage(t("settings.login_open_url", { url: String(r.url) }));
       }
       await d.refreshEnvironment();
     } catch (err) {
@@ -2258,24 +2286,22 @@ function SettingsModal({
     setLoadingDemo(true);
     try {
       await demoLoader();
-      d.notify("La démo complète est chargée.");
+      d.notify(t("settings.demo_loaded"));
       onClose();
     } catch (error) {
-      d.notify((error as Error).message || "Impossible de charger la démo.");
+      d.notify((error as Error).message || t("settings.demo_failed"));
     } finally {
       setLoadingDemo(false);
     }
   };
   return (
     <ModalFrame
-      title="Connexions"
-      eyebrow="CONNEXIONS & PRÉFÉRENCES"
+      title={t("app.connections")}
+      eyebrow={t("settings.eyebrow")}
       onClose={onClose}
       wide
     >
-      <p className="modal-description">
-        Utilise les abonnements et connexions de vos CLI.
-      </p>
+      <p className="modal-description">{t("settings.description")}</p>
       <div className="provider-settings">
         {d.environment.providers.map((p) => (
           <div className="provider-setting" key={p.id}>
@@ -2286,12 +2312,12 @@ function SettingsModal({
               <h3>{p.name}</h3>
               <span className="muted-text">
                 {!p.available
-                  ? "CLI non détectée"
+                  ? t("settings.cli_missing")
                   : p.authenticated
-                    ? "Abonnement connecté"
+                    ? t("settings.subscription_connected")
                     : p.authenticated === null
-                      ? "CLI détectée · connexion à vérifier"
-                      : "Connexion nécessaire"}
+                      ? t("settings.cli_unverified")
+                      : t("settings.login_needed")}
               </span>
               {p.version && <small>{p.version}</small>}
             </div>
@@ -2304,10 +2330,10 @@ function SettingsModal({
               onClick={() => login(p.id)}
             >
               {connecting === p.id
-                ? "Connexion…"
+                ? t("settings.connecting")
                 : p.authenticated
-                  ? "Reconnecter"
-                  : "Connecter"}
+                  ? t("settings.reconnect")
+                  : t("settings.connect")}
               <ArrowUpRight size={13} />
             </button>
           </div>
@@ -2319,27 +2345,28 @@ function SettingsModal({
       <div className="cli-help">
         <Terminal size={16} />
         <div>
-          <strong>Installer une CLI</strong>
+          <strong>{t("settings.install_cli")}</strong>
           <p>
-            Codex : <code>npm install -g @openai/codex</code>
+            {t("settings.cli_codex")} <code>npm install -g @openai/codex</code>
             <br />
-            Claude Code : <code>npm install -g @anthropic-ai/claude-code</code>
+            {t("settings.cli_claude")}{" "}
+            <code>npm install -g @anthropic-ai/claude-code</code>
           </p>
           <span>
-            Authentifiez-vous ensuite avec <code>codex login</code> ou{" "}
-            <code>claude auth login</code>.
+            {t("settings.auth_then")} <code>codex login</code>{" "}
+            {t("settings.auth_or")} <code>claude auth login</code>.
           </span>
         </div>
       </div>
       <button className="text-button refresh" onClick={d.refreshEnvironment}>
         <RotateCcw size={14} />
-        Actualiser les connexions
+        {t("settings.refresh")}
       </button>
       <div className="settings-divider" />
       <div className="setting-row">
         <div>
-          <strong>Fournisseur par défaut</strong>
-          <p>Pour vos prochaines missions.</p>
+          <strong>{t("settings.default_provider")}</strong>
+          <p>{t("settings.default_provider_detail")}</p>
         </div>
         <select
           value={d.state.settings.provider}
@@ -2359,8 +2386,29 @@ function SettingsModal({
       </div>
       <div className="setting-row">
         <div>
-          <strong>Réduire les animations</strong>
-          <p>Conserver les transitions essentielles avec moins de mouvement.</p>
+          <strong>{t("settings.language")}</strong>
+          <p>{t("settings.language_detail")}</p>
+        </div>
+        <select
+          value={chosenLanguage()}
+          onChange={(e) => setLanguage(e.target.value)}
+        >
+          <option value="">
+            {t("settings.language_system", {
+              language: languageName(systemLanguage()),
+            })}
+          </option>
+          {languages.map((code) => (
+            <option key={code} value={code}>
+              {languageName(code)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="setting-row">
+        <div>
+          <strong>{t("settings.reduce_motion")}</strong>
+          <p>{t("settings.reduce_motion_detail")}</p>
         </div>
         <button
           role="switch"
@@ -2381,13 +2429,13 @@ function SettingsModal({
       </div>
       <div className="setting-row">
         <div>
-          <strong>Notifications</strong>
+          <strong>{t("settings.notifications")}</strong>
           <p>
             {window.djinn
-              ? "Nouvelles questions sur macOS"
+              ? t("settings.notifications_native")
               : d.browserPermission === "granted"
-                ? "Notifications activées"
-                : "Alertes dans Djinn ; notifications du navigateur en option."}
+                ? t("settings.notifications_on")
+                : t("settings.notifications_browser")}
           </p>
           {d.notificationStatus && (
             <p className="notification-status">{d.notificationStatus}</p>
@@ -2397,27 +2445,23 @@ function SettingsModal({
           className="button secondary small"
           onClick={d.enableNotifications}
         >
-          {window.djinn ? "Tester" : "Activer"}
+          {window.djinn ? t("settings.test") : t("settings.enable")}
         </button>
       </div>
       <div className="setting-row setting-row-demo">
         <div>
-          <strong>Démo complète</strong>
-          <p>
-            Ajouter les supports interactifs de démonstration à l’espace local.
-          </p>
+          <strong>{t("settings.full_demo")}</strong>
+          <p>{t("settings.full_demo_detail")}</p>
         </div>
         <button
           className="button secondary small"
           disabled={!demoLoader || loadingDemo}
           title={
-            demoLoader
-              ? "Charger la démo complète"
-              : "Disponible dans l’application locale"
+            demoLoader ? t("settings.load_demo") : t("settings.local_app_only")
           }
           onClick={() => void loadDemo()}
         >
-          {loadingDemo ? "Chargement…" : "Charger la démo complète"}
+          {loadingDemo ? t("common.loading") : t("settings.load_demo")}
         </button>
       </div>
       <div className="settings-foot">
@@ -2425,7 +2469,7 @@ function SettingsModal({
           className="button secondary small"
           onClick={() => void d.exportMissionJournal()}
         >
-          Exporter le journal de la mission
+          {t("settings.export_journal")}
         </button>
         <Brand small />
         <span>Djinn {d.environment.appVersion} · Dark mode · Local first</span>
@@ -2471,26 +2515,29 @@ function MissionSettings({
   const workerAgents = draft.agents.filter((agent) => agent.id !== "lead");
   return (
     <ModalFrame
-      title="Configuration"
-      eyebrow="CONFIGURATION DE LA MISSION"
+      title={t("wish_settings.title")}
+      eyebrow={t("wish_settings.eyebrow")}
       onClose={onClose}
     >
       {task.projectSnapshot && (
         <details className="project-context">
           <summary>
-            Conventions de {task.projectSnapshot.name} utilisées par cette
-            mission
+            {t("wish_settings.conventions", {
+              name: task.projectSnapshot.name,
+            })}
           </summary>
           <small>
-            Copie du{" "}
-            {new Date(task.projectSnapshot.capturedAt).toLocaleDateString(
-              "fr-FR",
-            )}{" "}
+            {t("wish_settings.copied_on", {
+              date: new Date(
+                task.projectSnapshot.capturedAt,
+              ).toLocaleDateString(language),
+            })}{" "}
             · {task.projectSnapshot.directory}
           </small>
           <MarkdownBody
             text={
-              task.projectSnapshot.conventions || "Aucune convention définie."
+              task.projectSnapshot.conventions ||
+              t("wish_settings.no_conventions")
             }
           />
           {Object.entries(task.projectSnapshot.locations).map(
@@ -2511,7 +2558,7 @@ function MissionSettings({
       )}
       <div className="form-fields">
         <label>
-          Nom
+          {t("wish_settings.name")}
           <input
             value={title}
             onChange={(e) => {
@@ -2521,7 +2568,7 @@ function MissionSettings({
           />
         </label>
         <label>
-          Intention
+          {t("wish_settings.intent")}
           <textarea
             rows={3}
             value={draft.brief}
@@ -2529,20 +2576,23 @@ function MissionSettings({
           />
         </label>
         <label>
-          Dossier de travail
+          {t("wish_settings.directory")}
           <div className="directory-field">
             <input
               value={draft.project}
               onChange={(e) => setDraft({ ...draft, project: e.target.value })}
             />
-            <button onClick={pick} aria-label="Choisir le dossier">
+            <button
+              onClick={pick}
+              aria-label={t("wish_settings.pick_directory")}
+            >
               <FolderOpen size={16} />
             </button>
           </div>
         </label>
         <div className="form-two">
           <label>
-            Prototypes
+            {t("wish_settings.prototypes")}
             <input
               value={draft.configuration.prototype}
               onChange={(e) =>
@@ -2557,7 +2607,7 @@ function MissionSettings({
             />
           </label>
           <label>
-            Process de review
+            {t("wish_settings.review_process")}
             <input
               value={draft.configuration.review}
               onChange={(e) =>
@@ -2574,7 +2624,7 @@ function MissionSettings({
         </div>
         <div className="form-two">
           <label>
-            Fournisseur
+            {t("app.provider")}
             <select
               value={draft.provider}
               onChange={(e) => {
@@ -2591,7 +2641,7 @@ function MissionSettings({
             </select>
           </label>
           <div className="model-picker-field">
-            <span className="model-picker-label">Modèle</span>
+            <span className="model-picker-label">{t("app.model")}</span>
             <ModelPicker
               provider={draft.provider}
               value={draft.model}
@@ -2611,18 +2661,13 @@ function MissionSettings({
           }
         />
         <section className="agent-scope-settings">
-          <h3>Périmètres des workers</h3>
+          <h3>{t("wish_settings.scopes_title")}</h3>
           <p className="form-tip scope-intro">
-            Les workers dont les périmètres sont explicitement disjoints peuvent
-            avancer ensemble jusqu’au plafond ci-dessus. Un périmètre absent ou
-            vide reste exclusif par prudence. Les dépendances sont des IDs de
-            workers et ne lancent aucune activité à elles seules.
+            {t("wish_settings.scopes_tip")}
           </p>
           <div className="scope-supervisor-note">
-            <strong>Djinn · lecture seule pendant le travail</strong>
-            <span>
-              Il supervise les workers puis intègre après leurs sorties.
-            </span>
+            <strong>{t("wish_settings.supervisor")}</strong>
+            <span>{t("wish_settings.supervisor_detail")}</span>
           </div>
           {workerAgents.length ? (
             workerAgents.map((agent) => {
@@ -2646,7 +2691,7 @@ function MissionSettings({
                     {agent.name} <span>{agent.id}</span>
                   </legend>
                   <label>
-                    Scopes proposés (un chemin relatif par ligne)
+                    {t("wish_settings.scopes_label")}
                     <textarea
                       rows={2}
                       value={scope.join("\n")}
@@ -2663,22 +2708,24 @@ function MissionSettings({
                     />
                     <small className="scope-help">
                       {isReadOnly
-                        ? "Lecture seule · aucune écriture attendue."
+                        ? t("wish_settings.read_only")
                         : scope.length
-                          ? `${scope.length} chemin${scope.length > 1 ? "s" : ""} déclaré${scope.length > 1 ? "s" : ""}.`
-                          : "Aucun scope déclaré → écriture réservée par prudence."}
+                          ? t("wish_settings.paths_declared", {
+                              count: scope.length,
+                            })
+                          : t("wish_settings.no_scope")}
                     </small>
                     {scopeIssues.map((issue, index) => (
                       <small
                         className="scope-validation"
                         key={`${agent.id}-scope-${index}`}
                       >
-                        Vérification informative : {issue}
+                        {t("wish_settings.check_info", { issue })}
                       </small>
                     ))}
                   </label>
                   <label>
-                    Dépend de (IDs, séparés par des virgules)
+                    {t("wish_settings.depends_on")}
                     <input
                       value={dependencies.join(", ")}
                       disabled={!!task.runId}
@@ -2694,8 +2741,9 @@ function MissionSettings({
                     />
                     {dependencyIssues.length > 0 && (
                       <small className="scope-validation">
-                        Vérification informative : ID inconnu ou auto-dépendance
-                        : {dependencyIssues.join(", ")}.
+                        {t("wish_settings.dependency_issue", {
+                          ids: dependencyIssues.join(", "),
+                        })}
                       </small>
                     )}
                   </label>
@@ -2704,13 +2752,12 @@ function MissionSettings({
             })
           ) : (
             <p className="scope-help">
-              Les workers apparaîtront après le cadrage.
+              {t("wish_settings.workers_after_planning")}
             </p>
           )}
           {task.runId && (
             <p className="form-tip scope-active-note">
-              Passage actif : ces propositions sont consultables ici et restent
-              verrouillées jusqu’à la fin du passage.
+              {t("wish_settings.active_run_locked")}
             </p>
           )}
         </section>
@@ -2727,17 +2774,13 @@ function MissionSettings({
           }
         />
         {task.projectSnapshot?.workflowPolicy === "enforced" && (
-          <p className="form-tip">
-            Cette mission conserve le workflow imposé par son projet.
-          </p>
+          <p className="form-tip">{t("wish_settings.enforced_workflow")}</p>
         )}
         {task.runId && (
-          <p className="form-tip">
-            La configuration pourra être enregistrée à la fin du passage actif.
-          </p>
+          <p className="form-tip">{t("wish_settings.save_after_run")}</p>
         )}
         <label>
-          Livrables souhaités
+          {t("wish_settings.deliverables")}
           <input
             value={draft.configuration.deliverables.join(", ")}
             onChange={(e) =>
@@ -2757,7 +2800,7 @@ function MissionSettings({
       </div>
       <div className="modal-footer">
         <button className="button secondary" onClick={onClose}>
-          Annuler
+          {t("common.cancel")}
         </button>
         <button
           className="button accent"
@@ -2843,14 +2886,14 @@ function MissionSettings({
               reviewApprovedAt: undefined,
               events: [
                 ...task.events,
-                event("note", "Configuration mise à jour"),
+                event("note", t("app.configuration_updated")),
               ],
             });
-            onToast("Configuration enregistrée.");
+            onToast(t("wish_settings.saved"));
             onClose();
           }}
         >
-          Enregistrer
+          {t("common.save")}
           <Check size={15} />
         </button>
       </div>
@@ -2870,45 +2913,58 @@ function Palette({
 }) {
   const [query, setQuery] = useState("");
   const actions = [
-    { id: "new", label: "Créer une nouvelle mission", icon: Plus, key: "⌘ N" },
+    { id: "new", label: t("palette.new_wish"), icon: Plus, key: "⌘ N" },
     {
       id: "compose",
-      label: "Donner une indication",
+      label: t("palette.give_instruction"),
       icon: MessageSquare,
       key: "⌘ J",
     },
     {
       id: "feedback",
-      label: "Faire un retour",
+      label: t("palette.give_feedback"),
       icon: MessageSquare,
       key: "⌘ ⇧ J",
     },
-    { id: "timeline", label: "Ouvrir la timeline", icon: Activity, key: "⌘ 2" },
+    {
+      id: "timeline",
+      label: t("palette.open_timeline"),
+      icon: Activity,
+      key: "⌘ 2",
+    },
     {
       id: "review",
-      label: "Ouvrir la review visuelle",
+      label: t("palette.open_review"),
       icon: MessageSquare,
       key: "⌘ 4",
     },
-    { id: "export", label: "Partager", icon: Download },
-    { id: "settings", label: "Connexions et préférences", icon: Settings2 },
+    { id: "export", label: t("app.share"), icon: Download },
+    {
+      id: "settings",
+      label: t("app.connections_preferences"),
+      icon: Settings2,
+    },
   ];
   const filtered = actions.filter((a) =>
     a.label.toLowerCase().includes(query.toLowerCase()),
   );
   return (
-    <ModalFrame title="Rechercher" eyebrow="COMMANDES / ⌘ K" onClose={onClose}>
+    <ModalFrame
+      title={t("palette.title")}
+      eyebrow={t("palette.eyebrow")}
+      onClose={onClose}
+    >
       <div className="palette-search">
         <Search size={18} />
         <input
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Une mission, une action…"
-          aria-label="Rechercher une commande"
+          placeholder={t("palette.placeholder")}
+          aria-label={t("palette.search_aria")}
         />
       </div>
-      <div className="palette-section">ACTIONS</div>
+      <div className="palette-section">{t("palette.actions")}</div>
       <div className="palette-list">
         {filtered.map((a) => (
           <button key={a.id} onClick={() => onAction(a.id)}>
@@ -2918,7 +2974,7 @@ function Palette({
           </button>
         ))}
       </div>
-      <div className="palette-section">MISSIONS</div>
+      <div className="palette-section">{t("palette.wishes")}</div>
       <div className="palette-list">
         {tasks
           .filter((t) => t.title.toLowerCase().includes(query.toLowerCase()))
@@ -2933,10 +2989,11 @@ function Palette({
       {!filtered.length &&
         !tasks.some((t) =>
           t.title.toLowerCase().includes(query.toLowerCase()),
-        ) && <p className="muted-text">Aucun résultat pour cette recherche.</p>}
+        ) && <p className="muted-text">{t("palette.no_result")}</p>}
       <div className="palette-footer">
-        <kbd>Tab</kbd> pour naviguer<kbd>Entrée</kbd> pour ouvrir<kbd>Esc</kbd>{" "}
-        pour fermer
+        <kbd>Tab</kbd> {t("palette.to_navigate")}
+        <kbd>{t("palette.enter_key")}</kbd> {t("palette.to_open")}
+        <kbd>Esc</kbd> {t("palette.to_close")}
       </div>
     </ModalFrame>
   );
@@ -2951,12 +3008,9 @@ function LegacyHistory({
   return (
     <div className="panel-content">
       <div className="panel-heading">
-        <h1>Historique v1 — étape inconnue</h1>
+        <h1>{t("history.title")}</h1>
       </div>
-      <p className="muted-text">
-        Ces éléments sont conservés tels qu’ils ont été enregistrés. Leur étape,
-        leur démarrage et leur validation ne peuvent pas être prouvés.
-      </p>
+      <p className="muted-text">{t("history.description")}</p>
       <Timeline task={task} onAgent={() => {}} />
       {task.questions.map((q) => (
         <article className="step-result-card" key={q.id}>
@@ -2973,15 +3027,15 @@ function LegacyHistory({
               }}
             >
               <label>
-                Réponse conservée dans l’historique
+                {t("history.answer_label")}
                 <textarea name="answer" required />
               </label>
               <button className="button secondary small" type="submit">
-                Répondre
+                {t("app.answer")}
               </button>
             </form>
           )}
-          <p>{q.answer || "Aucune réponse enregistrée."}</p>
+          <p>{q.answer || t("history.no_answer")}</p>
         </article>
       ))}
       {task.artifacts.map((a) => (
@@ -2995,10 +3049,10 @@ function LegacyHistory({
         </article>
       ))}
       {task.feedback.map((f) => (
-        <p key={f.id}>Retour conservé : {f.text}</p>
+        <p key={f.id}>{t("history.feedback_kept", { text: f.text })}</p>
       ))}
       {task.instructions?.map((i) => (
-        <p key={i.id}>Indication conservée : {i.text}</p>
+        <p key={i.id}>{t("history.instruction_kept", { text: i.text })}</p>
       ))}
     </div>
   );
@@ -3025,16 +3079,16 @@ function Delivery({
   const canValidate =
     current?.type === "delivery" && current.status === "awaiting_human";
   const decisions = task.questions.filter((q) => q.answer);
-  const summary = `# ${task.title.replace(/\n/g, " ")}\n\n${task.brief}\n\n## Décisions\n${decisions.map((q) => `- ${q.id} — ${q.title} : ${q.answer}`).join("\n") || "Aucune décision enregistrée."}\n\n## Contributions\n${task.agents.map((a) => `- ${a.name} (${a.role}) — ${a.summary}`).join("\n")}\n\n## Preuves et supports\n${task.artifacts.map((a) => `- ${a.title} (${a.type})`).join("\n")}\n\n## Review\n${task.feedback.map((f) => `- [${f.resolved ? "x" : " "}] ${f.text}`).join("\n") || "Aucun retour visuel."}\n\n## Validation\n${!reviewRequired ? "Mission sans code : validation humaine du résultat." : reviewed ? "Review validée par le pilote." : "Review à valider."}\n${task.demo ? "Mission d’exemple : simulation, aucun code de projet exécuté." : ""}\n\n## Chronologie\n${task.events.map((e) => `- ${e.time} — ${e.title}\n  ${e.detail.slice(0, 3000)}`).join("\n")}\n`;
+  const summary = `# ${task.title.replace(/\n/g, " ")}\n\n${task.brief}\n\n## ${t("delivery.md_decisions")}\n${decisions.map((q) => `- ${q.id} — ${q.title} : ${q.answer}`).join("\n") || t("delivery.md_no_decision")}\n\n## ${t("delivery.md_contributions")}\n${task.agents.map((a) => `- ${a.name} (${a.role}) — ${a.summary}`).join("\n")}\n\n## ${t("delivery.md_evidence")}\n${task.artifacts.map((a) => `- ${a.title} (${a.type})`).join("\n")}\n\n## ${t("delivery.md_review")}\n${task.feedback.map((f) => `- [${f.resolved ? "x" : " "}] ${f.text}`).join("\n") || t("delivery.md_no_feedback")}\n\n## ${t("delivery.md_validation")}\n${!reviewRequired ? t("delivery.md_no_code") : reviewed ? t("delivery.md_review_approved_pilot") : t("delivery.md_review_pending")}\n${task.demo ? t("delivery.md_example") : ""}\n\n## ${t("delivery.md_timeline")}\n${task.events.map((e) => `- ${e.time} — ${e.title}\n  ${e.detail.slice(0, 3000)}`).join("\n")}\n`;
   const save = async (name: string, content: string) => {
     setSaving(true);
     try {
       if (window.djinn) {
         const result = await window.djinn.saveArtifact({ name, content });
-        if (result) onToast("Livrable enregistré.");
+        if (result) onToast(t("delivery.saved"));
       } else {
         download(name, content, "text/markdown");
-        onToast("Livrable téléchargé.");
+        onToast(t("delivery.downloaded"));
       }
     } catch (e) {
       onToast((e as Error).message);
@@ -3046,64 +3100,64 @@ function Delivery({
     {
       id: "session",
       number: "01",
-      title: "Session",
-      description: "Décisions, agents, supports et timeline.",
-      label: "Exporter .djinn.json",
+      title: t("delivery.session"),
+      description: t("delivery.session_detail"),
+      label: t("delivery.export_session"),
       icon: PackageCheck,
       action: onExport,
     },
     {
       id: "summary",
       number: "02",
-      title: "Synthèse",
-      description: "Objectif, choix et preuves.",
-      label: "Enregistrer la synthèse",
+      title: t("delivery.summary"),
+      description: t("delivery.summary_detail"),
+      label: t("delivery.save_summary"),
       icon: FileText,
-      action: () => save("djinn-synthese.md", summary),
+      action: () => save(t("delivery.summary_file"), summary),
     },
     {
       id: "mr",
       number: "03",
-      title: "Brouillon de MR",
-      description: "Changements rapportés et validations.",
-      label: "Préparer le brouillon",
+      title: t("delivery.mr_draft"),
+      description: t("delivery.mr_draft_detail"),
+      label: t("delivery.prepare_draft"),
       icon: GitBranch,
       action: () =>
         save(
           "djinn-mr-draft.md",
-          `# ${task.title.replace(/\n/g, " ")}\n\n## Objectif\n${task.brief}\n\n## Décisions appliquées\n${decisions.map((q) => `- ${q.answer}`).join("\n")}\n\n## Implementation et preuves\n${
+          `# ${task.title.replace(/\n/g, " ")}\n\n## ${t("delivery.md_objective")}\n${task.brief}\n\n## ${t("delivery.md_applied_decisions")}\n${decisions.map((q) => `- ${q.answer}`).join("\n")}\n\n## ${t("delivery.md_implementation")}\n${
             task.events
               .filter((e) => e.type === "tool" || e.type === "review")
               .map((e) => `- ${e.title}\n${e.detail}`)
-              .join("\n") || "À compléter avec les preuves de l’agent."
-          }\n\n## Validation humaine\n${reviewed ? "Review validée." : "À effectuer."}\n\n${task.demo ? "Brouillon issu d’une démonstration, à ne pas publier comme compte rendu de code réel." : ""}`,
+              .join("\n") || t("delivery.md_evidence_todo")
+          }\n\n## ${t("delivery.md_human_validation")}\n${reviewed ? t("delivery.md_review_approved") : t("delivery.md_todo")}\n\n${task.demo ? t("delivery.md_demo_draft") : ""}`,
         ),
     },
   ];
   return (
     <div className="panel-content delivery-panel">
       <div className="panel-heading">
-        <h1>Livrables</h1>
+        <h1>{t("app.tab_delivery")}</h1>
       </div>
       <div className={`delivery-validation ${reviewed ? "ready" : ""}`}>
         <ShieldCheck size={23} />
         <div>
           <h3>
             {!reviewRequired
-              ? "Résultat à valider"
+              ? t("delivery.result_to_validate")
               : reviewed
-                ? "Review validée"
-                : "Review à valider"}
+                ? t("delivery.review_approved")
+                : t("delivery.review_pending")}
           </h3>
           <p>
             {reviewed
-              ? "Les livrables reprennent les décisions et preuves."
-              : "Résolvez les retours avant de terminer."}
+              ? t("delivery.ready_detail")
+              : t("delivery.resolve_first")}
           </p>
         </div>
         {!reviewed && (
           <button className="button secondary small" onClick={onReview}>
-            Ouvrir la review
+            {t("delivery.open_review")}
             <ArrowUpRight size={14} />
           </button>
         )}
@@ -3130,9 +3184,7 @@ function Delivery({
         ))}
       </div>
       <div className="delivery-footer">
-        <span className="muted-text">
-          Publication distante et création de MR restent des actions explicites.
-        </span>
+        <span className="muted-text">{t("delivery.explicit_actions")}</span>
         <button
           className="button accent"
           disabled={
@@ -3142,7 +3194,9 @@ function Delivery({
             onValidate();
           }}
         >
-          {task.status === "done" ? "Mission terminée" : "Terminer la mission"}
+          {task.status === "done"
+            ? t("delivery.wish_done")
+            : t("delivery.finish_wish")}
           <Check size={15} />
         </button>
       </div>
@@ -3218,7 +3272,11 @@ function MissionComposer({
     if (sending || !value.trim()) return;
     setSending(true);
     try {
-      if (await onSend(feedback ? `Retour de review : ${value}` : value)) {
+      if (
+        await onSend(
+          feedback ? t("composer.review_message", { text: value }) : value,
+        )
+      ) {
         setValue("");
         setHistory(false);
         collapse();
@@ -3259,10 +3317,10 @@ function MissionComposer({
               <MessageSquare size={14} />
               <span>
                 {value
-                  ? "Reprendre le brouillon"
+                  ? t("composer.resume_draft")
                   : review
-                    ? "Faire un retour"
-                    : "Donner une indication"}
+                    ? t("palette.give_feedback")
+                    : t("palette.give_instruction")}
               </span>
               {pending > 0 && (
                 <span className="composer-pending">{pending}</span>
@@ -3290,14 +3348,16 @@ function MissionComposer({
                       <p>{i.text}</p>
                       <span>
                         {i.status === "prevented"
-                          ? `Empêchée : ${i.reason || "reprise nécessaire"}`
+                          ? t("composer.prevented", {
+                              reason: i.reason || t("composer.resume_needed"),
+                            })
                           : i.status === "consumed"
-                            ? "Consommée par le destinataire"
+                            ? t("composer.consumed")
                             : i.status === "transmitted"
-                              ? "Transmise"
+                              ? t("composer.transmitted")
                               : i.appliedAt
-                                ? "Incluse dans le contexte du passage"
-                                : "En attente de transmission"}
+                                ? t("composer.included")
+                                : t("composer.waiting")}
                       </span>
                     </div>
                   ))}
@@ -3305,9 +3365,11 @@ function MissionComposer({
               <div className="composer-input">
                 <textarea
                   ref={inputRef}
-                  aria-label="Indications pour la mission"
+                  aria-label={t("composer.aria")}
                   placeholder={
-                    feedback ? "Votre retour…" : "Donner une indication…"
+                    feedback
+                      ? t("composer.feedback_placeholder")
+                      : t("composer.instruction_placeholder")
                   }
                   rows={1}
                   maxLength={12000}
@@ -3330,14 +3392,14 @@ function MissionComposer({
                   }}
                 />
                 <button
-                  aria-label="Replier la barre"
+                  aria-label={t("composer.collapse")}
                   className="composer-close"
                   onClick={collapse}
                 >
                   <ChevronDown size={15} />
                 </button>
                 <button
-                  aria-label="Envoyer l’indication"
+                  aria-label={t("composer.send")}
                   className="composer-send"
                   disabled={sending || !value.trim()}
                   onClick={() => void send()}
@@ -3348,12 +3410,12 @@ function MissionComposer({
               <div className="composer-meta">
                 <span>
                   {task.runId
-                    ? "Transmis immédiatement au chef"
+                    ? t("composer.sent_to_lead")
                     : feedback
-                      ? "Retour de review"
+                      ? t("composer.review_feedback")
                       : consulting
-                        ? "Indication pour l’étape active"
-                        : "Contexte de la mission"}
+                        ? t("composer.active_step")
+                        : t("composer.wish_context")}
                 </span>
                 {!!task.instructions?.length && (
                   <button
@@ -3361,8 +3423,10 @@ function MissionComposer({
                     aria-expanded={history}
                   >
                     {pending
-                      ? `${pending} en attente`
-                      : `${task.instructions.length} indication${task.instructions.length > 1 ? "s" : ""}`}
+                      ? t("composer.pending", { count: pending })
+                      : t("composer.instructions", {
+                          count: task.instructions.length,
+                        })}
                     <ChevronDown size={10} />
                   </button>
                 )}

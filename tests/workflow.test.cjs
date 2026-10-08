@@ -471,7 +471,7 @@ test("more than three agents are configurable while intentional root ownership r
 });
 
 test("Electron workflow and session validators stay identical to their TypeScript sources", () => {
-  for (const name of ["workflow", "session-validation"]) {
+  for (const name of ["workflow", "session-validation", "i18n"]) {
     const source = fs.readFileSync(
       path.resolve(__dirname, `../src/${name}.ts`),
       "utf8",
@@ -488,7 +488,8 @@ test("Electron workflow and session validators stay identical to their TypeScrip
         .outputText.replace(
           'require("./workflow")',
           'require("./workflow.cjs")',
-        );
+        )
+        .replace('require("./i18n")', 'require("./i18n.cjs")');
     assert.equal(
       fs.readFileSync(
         path.resolve(__dirname, `../electron/${name}.cjs`),

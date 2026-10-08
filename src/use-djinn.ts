@@ -1,5 +1,9 @@
-import { restoreMissionInteractions, restoreLegacyReports } from "./mission-interactions";
+import {
+  restoreMissionInteractions,
+  restoreLegacyReports,
+} from "./mission-interactions";
 import { useState, useEffect, useRef, useCallback } from "react";
+import type {} from "../shim/focus";
 import type {
   AppState,
   Task,
@@ -20,6 +24,8 @@ import type {
 } from "./types";
 import { initialState, event, now, uid, newTask } from "./data";
 import { enrichDemoState } from "./demo-supports";
+// Imported whole: `t` names a task in most callbacks of this file.
+import * as i18n from "./i18n";
 import { compactStateHistory } from "./state-history";
 import {
   buildMissionPrompt,
@@ -325,10 +331,20 @@ export function useDjinn() {
                   );
                   live.forEach((a) => {
                     const saved = merged.get(a.id);
-                    const sameVersion = !a.runId || !saved?.runId || a.runId === saved.runId;
-                    merged.set(a.id, { ...saved, ...a,
-                      testStartedAt: sameVersion && (a.status === "ready" || a.kind !== "server") ? saved?.testStartedAt : undefined,
-                      testResult: sameVersion && a.status !== "running" ? a.testResult || saved?.testResult : a.testResult,
+                    const sameVersion =
+                      !a.runId || !saved?.runId || a.runId === saved.runId;
+                    merged.set(a.id, {
+                      ...saved,
+                      ...a,
+                      testStartedAt:
+                        sameVersion &&
+                        (a.status === "ready" || a.kind !== "server")
+                          ? saved?.testStartedAt
+                          : undefined,
+                      testResult:
+                        sameVersion && a.status !== "running"
+                          ? a.testResult || saved?.testResult
+                          : a.testResult,
                     });
                   });
                   mission.actions = [...merged.values()];
@@ -344,9 +360,7 @@ export function useDjinn() {
               const mission = restored.tasks.find((t) => t.id === run.taskId);
               const reconnected = mission && reconnectNativeRun(mission, run);
               if (!mission || !reconnected) {
-                notify(
-                  "Un passage natif actif n’a pas d’étape sauvegardée correspondante ; aucune reprise concurrente n’est lancée.",
-                );
+                notify(i18n.t("djinn.native_run_without_step"));
                 continue;
               }
               Object.assign(mission, reconnected);
@@ -360,12 +374,22 @@ export function useDjinn() {
             // This never replays completion events or starts another provider.
             for (const mission of restored.tasks) {
               try {
-                const publications = typeof window.djinn?.getMissionInteractions === "function"
-                  ? (await window.djinn.getMissionInteractions(mission.id)).events
-                  : live?.runs.find((run) => run.taskId === mission.id)?.structuredEvents || [];
-                Object.assign(mission, restoreMissionInteractions(mission, publications));
+                const publications =
+                  typeof window.djinn?.getMissionInteractions === "function"
+                    ? (await window.djinn.getMissionInteractions(mission.id))
+                        .events
+                    : live?.runs.find((run) => run.taskId === mission.id)
+                        ?.structuredEvents || [];
+                Object.assign(
+                  mission,
+                  restoreMissionInteractions(mission, publications),
+                );
               } catch (error) {
-                notify(`Publications de la mission indisponibles : ${message(error)}`);
+                notify(
+                  i18n.t("djinn.publications_unavailable", {
+                    error: message(error),
+                  }),
+                );
               }
             }
             commit(() => restored);
@@ -382,9 +406,7 @@ export function useDjinn() {
         }
       } catch (error) {
         if (active)
-          notify(
-            `Restauration impossible : ${message(error)}. La sauvegarde automatique est suspendue pour préserver votre espace existant. Exportez vos modifications avant de relancer Djinn.`,
-          );
+          notify(i18n.t("djinn.restore_failed", { error: message(error) }));
       } finally {
         if (active) {
           runtimeReady.current = true;
@@ -396,7 +418,12 @@ export function useDjinn() {
           const env = await window.djinn.getEnvironment();
           if (active) setEnvironment(env);
         } catch (error) {
-          if (active) notify(`Connexions indisponibles : ${message(error)}`);
+          if (active)
+            notify(
+              i18n.t("djinn.connections_unavailable", {
+                error: message(error),
+              }),
+            );
         }
       }
     })();
@@ -411,13 +438,13 @@ export function useDjinn() {
         window.djinn
           .saveState(state)
           .catch((error) =>
-            notify(`Sauvegarde impossible : ${message(error)}`),
+            notify(i18n.t("djinn.save_failed", { error: message(error) })),
           );
       else
         try {
           localStorage.setItem(key, JSON.stringify(state));
         } catch {
-          notify("Le stockage local est plein. Exportez votre mission.");
+          notify(i18n.t("djinn.storage_full"));
         }
     }, 500);
     return () => clearTimeout(timer);
@@ -435,7 +462,7 @@ export function useDjinn() {
         const alert = {
           taskId: mission.id,
           questionId: `permission:${permission.id}`,
-          title: "Autorisation attendue",
+          title: i18n.t("djinn.permission_awaited"),
           body: `${permission.agentName || permission.agentId} — ${permission.title}`.slice(
             0,
             1000,
@@ -447,9 +474,8 @@ export function useDjinn() {
             .then((result) => {
               setNotificationStatus(
                 result.shown
-                  ? "Notification envoyée au système"
-                  : result.message ||
-                      "Autorisation disponible dans la mission.",
+                  ? i18n.t("djinn.notification_sent")
+                  : result.message || i18n.t("djinn.permission_in_wish"),
               );
             })
             .catch((error) => setNotificationStatus(message(error)));
@@ -488,10 +514,10 @@ export function useDjinn() {
           .then((result) =>
             setNotificationStatus(
               result.shown
-                ? "Notification envoyée au système"
+                ? i18n.t("djinn.notification_sent")
                 : result.message ||
                     result.error ||
-                    "Vérifiez l’autorisation de Djinn dans les notifications macOS.",
+                    i18n.t("djinn.check_macos_notifications"),
             ),
           )
           .catch((error) => setNotificationStatus(message(error)));
@@ -555,10 +581,10 @@ export function useDjinn() {
             .then((result) =>
               setNotificationStatus(
                 result.shown
-                  ? "Notification envoyée au système"
+                  ? i18n.t("djinn.notification_sent")
                   : result.message ||
                       result.error ||
-                      "Vérifiez l’autorisation de Djinn dans les notifications macOS.",
+                      i18n.t("djinn.check_macos_notifications"),
               ),
             )
             .catch((error) => setNotificationStatus(message(error)));
@@ -636,15 +662,14 @@ export function useDjinn() {
               title: mission.title,
               body:
                 action.status === "ready"
-                  ? `${action.title} — prêt`
+                  ? i18n.t("djinn.action_ready", { title: action.title })
                   : action.title,
             })
             .then((result) =>
               setNotificationStatus(
                 result.shown
-                  ? "Notification envoyée au système"
-                  : result.message ||
-                      "Vérifiez l’autorisation de Djinn dans les notifications macOS.",
+                  ? i18n.t("djinn.notification_sent")
+                  : result.message || i18n.t("djinn.check_macos_notifications"),
               ),
             )
             .catch((error) => setNotificationStatus(message(error)));
@@ -709,7 +734,12 @@ export function useDjinn() {
                 agentId:
                   action.agentId ||
                   t.actions?.find((a) => a.id === action.id)?.agentId,
-                testStartedAt: action.status === "running" || ["stopped", "error"].includes(action.status) ? undefined : action.testStartedAt || t.actions?.find((a) => a.id === action.id)?.testStartedAt,
+                testStartedAt:
+                  action.status === "running" ||
+                  ["stopped", "error"].includes(action.status)
+                    ? undefined
+                    : action.testStartedAt ||
+                      t.actions?.find((a) => a.id === action.id)?.testStartedAt,
                 testResult:
                   action.status === "running"
                     ? undefined
@@ -719,7 +749,7 @@ export function useDjinn() {
             ].slice(-100),
           }));
         } catch (error) {
-          notify(`Action indisponible : ${message(error)}`);
+          notify(i18n.t("djinn.action_unavailable", { error: message(error) }));
         }
         return;
       }
@@ -740,7 +770,9 @@ export function useDjinn() {
             ].slice(-200),
           }));
         } catch (error) {
-          notify(`Autorisation indisponible : ${message(error)}`);
+          notify(
+            i18n.t("djinn.permission_unavailable", { error: message(error) }),
+          );
         }
         return;
       }
@@ -755,7 +787,11 @@ export function useDjinn() {
           selectedId: s.tasks.some((t) => t.id === e.taskId)
             ? e.taskId
             : s.selectedId,
-          tasks: s.tasks.map((t) => t.id === e.taskId && t.activeStepId ? { ...t, selectedStepId: t.activeStepId } : t),
+          tasks: s.tasks.map((t) =>
+            t.id === e.taskId && t.activeStepId
+              ? { ...t, selectedStepId: t.activeStepId }
+              : t,
+          ),
         }));
         const questionId = text(d.questionId);
         window.dispatchEvent(
@@ -796,11 +832,15 @@ export function useDjinn() {
             ?.getEnvironment()
             .then(setEnvironment)
             .catch((error) =>
-              notify(`Connexions indisponibles : ${message(error)}`),
+              notify(
+                i18n.t("djinn.connections_unavailable", {
+                  error: message(error),
+                }),
+              ),
             );
         }
         if (e.type === "error" || d.status === "error")
-          notify(detail || "La connexion au fournisseur a échoué.");
+          notify(detail || i18n.t("djinn.provider_connection_failed"));
         return;
       }
       const agentId = text(d.agentId);
@@ -832,7 +872,8 @@ export function useDjinn() {
       }
       updateTask(e.taskId, (t) => {
         if (!child && t.runId && e.runId && e.runId !== t.runId) return t;
-        if (child && d.parentRunId && t.runId && d.parentRunId !== t.runId) return t;
+        if (child && d.parentRunId && t.runId && d.parentRunId !== t.runId)
+          return t;
         const scope = text(e.stepId, text(d.stepId));
         if (scope && !t.steps?.some((s) => s.id === scope)) return t;
         // Child passages are accepted only for the current stage; past events remain saved.
@@ -885,37 +926,85 @@ export function useDjinn() {
               reportedAt: e.timestamp,
             });
             next.stepResult = result;
-            next.steps = t.steps?.map((step) => step.id === result.stepId ? { ...step, report: result, summary: result.summary } : step);
+            next.steps = t.steps?.map((step) =>
+              step.id === result.stepId
+                ? { ...step, report: result, summary: result.summary }
+                : step,
+            );
             add(
               "note",
               result.status === "ready"
-                ? "Résultat prêt"
+                ? i18n.t("djinn.result_ready")
                 : result.status === "blocked"
-                  ? "Préparation bloquée"
-                  : "Une réponse est attendue",
+                  ? i18n.t("djinn.preparation_blocked")
+                  : i18n.t("djinn.answer_expected"),
               [result.summary, result.reason, result.nextAction]
                 .filter(Boolean)
                 .join("\n"),
               "lead",
             );
           } catch (error) {
-            add("error", "Résultat invalide", message(error), "lead");
+            add(
+              "error",
+              i18n.t("djinn.invalid_result"),
+              message(error),
+              "lead",
+            );
           }
         } else if (e.type === "work_item") {
           try {
-            const item = validateWorkItem({ ...d, agentId: text(d.assignedAgentId, text(d.agentId)) || undefined, stepId: scope || t.activeStepId, runId: e.runId, updatedAt: e.timestamp });
+            const item = validateWorkItem({
+              ...d,
+              agentId: text(d.assignedAgentId, text(d.agentId)) || undefined,
+              stepId: scope || t.activeStepId,
+              runId: e.runId,
+              updatedAt: e.timestamp,
+            });
             const existing = t.workItems?.find((work) => work.id === item.id);
-            next.workItems = [...(t.workItems || []).filter((work) => work.id !== item.id), { ...existing, ...item }].slice(-200);
+            next.workItems = [
+              ...(t.workItems || []).filter((work) => work.id !== item.id),
+              { ...existing, ...item },
+            ].slice(-200);
           } catch (error) {
-            add("error", "Tâche invalide", message(error), agentId);
+            add("error", i18n.t("djinn.invalid_task"), message(error), agentId);
           }
         } else if (e.type === "report") {
           try {
-            const report = validateMissionReport({ ...d, id: text(d.id, `${agentId || "lead"}:${scope || "mission"}`), agentId: agentId || undefined, stepId: scope || t.activeStepId, runId: e.runId, updatedAt: e.timestamp });
-            next.reports = [...(t.reports || []).filter((item) => item.id !== report.id), report].slice(-200);
-            add("note", "Compte rendu de contribution", [report.summary, report.remaining?.length ? `Reste à faire : ${report.remaining.join(" ; ")}` : "", report.nextAction].filter(Boolean).join("\n"), agentId);
+            const report = validateMissionReport({
+              ...d,
+              id: text(d.id, `${agentId || "lead"}:${scope || "mission"}`),
+              agentId: agentId || undefined,
+              stepId: scope || t.activeStepId,
+              runId: e.runId,
+              updatedAt: e.timestamp,
+            });
+            next.reports = [
+              ...(t.reports || []).filter((item) => item.id !== report.id),
+              report,
+            ].slice(-200);
+            add(
+              "note",
+              i18n.t("djinn.contribution_report"),
+              [
+                report.summary,
+                report.remaining?.length
+                  ? i18n.t("djinn.remaining", {
+                      items: report.remaining.join(" ; "),
+                    })
+                  : "",
+                report.nextAction,
+              ]
+                .filter(Boolean)
+                .join("\n"),
+              agentId,
+            );
           } catch (error) {
-            add("error", "Compte rendu invalide", message(error), agentId);
+            add(
+              "error",
+              i18n.t("djinn.invalid_report"),
+              message(error),
+              agentId,
+            );
           }
         } else if (e.type === "guidance") {
           const status = text(d.status);
@@ -939,10 +1028,10 @@ export function useDjinn() {
             add(
               "note",
               status === "consumed"
-                ? "Indication remise au runtime"
+                ? i18n.t("chat.event_instruction_delivered")
                 : status === "prevented"
-                  ? "Transmission empêchée"
-                  : "Indication transmise",
+                  ? i18n.t("chat.event_instruction_prevented")
+                  : i18n.t("chat.event_instruction_sent"),
               text(d.reason) || text(d.text),
               text(d.agentId, "lead"),
             );
@@ -954,7 +1043,7 @@ export function useDjinn() {
             d.id,
             `Q${String(t.questions.length + 1).padStart(2, "0")}`,
           );
-          const title = text(d.title, "Une décision est nécessaire");
+          const title = text(d.title, i18n.t("djinn.decision_needed"));
           let existing = t.questions.find((x) => x.id === id);
           if (existing?.answer && existing.title !== title) {
             const usedIds = new Set(t.questions.map((q) => q.id));
@@ -970,7 +1059,12 @@ export function useDjinn() {
           }
           let options = Array.isArray(d.options)
             ? d.options.map((o: unknown, i: number) => {
-                if (typeof o === "string") return { id: String.fromCharCode(97 + i), label: o, description: "" };
+                if (typeof o === "string")
+                  return {
+                    id: String.fromCharCode(97 + i),
+                    label: o,
+                    description: "",
+                  };
                 const v = record(o);
                 return {
                   id: text(v.id, String.fromCharCode(97 + i)),
@@ -988,11 +1082,14 @@ export function useDjinn() {
             recommendation: text(d.recommendation),
             options,
             blocking: d.blocking !== false,
-            blockingScope: d.blockingScope === "agent" || d.blockingScope === "mission" ? d.blockingScope : undefined,
+            blockingScope:
+              d.blockingScope === "agent" || d.blockingScope === "mission"
+                ? d.blockingScope
+                : undefined,
             workItemId: text(d.workItemId) || undefined,
             unlocks: text(d.unlocks),
             agentId: agentId || undefined,
-            theme: text(d.theme, "Mission"),
+            theme: text(d.theme, i18n.t("common.wish")),
           };
           next.questions = existing
             ? t.questions.map((x) =>
@@ -1082,7 +1179,7 @@ export function useDjinn() {
             : [...t.agents, a];
           add(
             "agent",
-            `${a.name} · ${a.status === "done" ? "terminé" : a.role}`,
+            `${a.name} · ${a.status === "done" ? i18n.t("djinn.agent_done") : a.role}`,
             a.summary,
             a.id,
           );
@@ -1100,7 +1197,7 @@ export function useDjinn() {
             revision: 1,
             editedBy: "agent",
             id,
-            title: text(d.title, "Support de mission"),
+            title: text(d.title, i18n.t("djinn.default_artifact_title")),
             type: [
               "diagram",
               "wireframe",
@@ -1123,11 +1220,13 @@ export function useDjinn() {
             d.baseRevision !== existing.revision
           ) {
             a.id = `${id}:proposal:${uid()}`;
-            a.title += " — proposition de révision";
+            a.title = i18n.t("djinn.revision_proposal_title", {
+              title: a.title,
+            });
             add(
               "note",
-              "Révision proposée",
-              "La version modifiée par vous est conservée.",
+              i18n.t("djinn.revision_proposed"),
+              i18n.t("djinn.your_version_kept"),
               agentId,
             );
             next.artifacts = [...t.artifacts, a];
@@ -1150,7 +1249,12 @@ export function useDjinn() {
               : [...t.artifacts, a];
           }
           next.reviewApprovedAt = undefined;
-          add("note", `Support disponible : ${a.title}`, "", agentId || "lead");
+          add(
+            "note",
+            i18n.t("chat.event_artifact_available", { title: a.title }),
+            "",
+            agentId || "lead",
+          );
         } else if (e.type === "workflow_amended") {
           if (
             t.workflowMode === "flexible" &&
@@ -1170,7 +1274,7 @@ export function useDjinn() {
               };
               add(
                 "note",
-                "Ajustement de timeline préparé",
+                i18n.t("djinn.timeline_adjustment_prepared"),
                 proposal.reason,
                 "lead",
               );
@@ -1198,7 +1302,7 @@ export function useDjinn() {
               next.initialWorkflowProposal = proposal;
               add(
                 "note",
-                "Timeline définie par Djinn",
+                i18n.t("djinn.timeline_defined"),
                 proposal.reason,
                 "lead",
               );
@@ -1234,7 +1338,12 @@ export function useDjinn() {
               reason: text(d.reason).slice(0, 100000),
               stepId: scope,
             };
-            add("note", "Discussion choisie par Djinn", text(d.reason), "lead");
+            add(
+              "note",
+              i18n.t("djinn.discussion_chosen"),
+              text(d.reason),
+              "lead",
+            );
           }
         } else if (e.type === "next_step") {
           if (
@@ -1253,13 +1362,18 @@ export function useDjinn() {
               reason: text(d.reason).slice(0, 100000),
               stepId: scope,
             };
-            add("note", "Suite proposée par Djinn", text(d.reason), "lead");
+            add(
+              "note",
+              i18n.t("djinn.next_step_proposed"),
+              text(d.reason),
+              "lead",
+            );
           }
         } else if (e.type === "phase") {
           // Provider progression is informational; only human actions change stages.
           add(
             "phase",
-            text(d.title, "Le plan avance"),
+            text(d.title, i18n.t("djinn.plan_progress")),
             detail,
             agentId || undefined,
           );
@@ -1307,7 +1421,7 @@ export function useDjinn() {
                           : a.progress,
                       summary:
                         d.supervisor === true && status === "completed"
-                          ? "Chef joignable · Attend les sous-agents"
+                          ? i18n.t("djinn.lead_waiting_subagents")
                           : a.summary,
                     }
                   : a,
@@ -1327,7 +1441,7 @@ export function useDjinn() {
                   ev.lifecycle === "started",
               )
             ) {
-              add("agent", "Djinn démarre", "", "lead");
+              add("agent", i18n.t("djinn.djinn_starts"), "", "lead");
               next.events[next.events.length - 1].lifecycle = "started";
             }
           } else if (status === "blocked") {
@@ -1340,11 +1454,17 @@ export function useDjinn() {
             const passageStartedAt = t.events.find(
               (ev) => ev.runId === e.runId && ev.lifecycle === "started",
             )?.time;
-            const awaitingBusinessInput = t.questions.some((question) => question.blocking && !question.answer && (!scope || !question.stepId || question.stepId === scope));
+            const awaitingBusinessInput = t.questions.some(
+              (question) =>
+                question.blocking &&
+                !question.answer &&
+                (!scope || !question.stepId || question.stepId === scope),
+            );
             const failedContribution = t.agents.some(
               (a) =>
                 a.id !== "lead" &&
-                (a.status === "error" || (a.status === "blocked" && !awaitingBusinessInput)) &&
+                (a.status === "error" ||
+                  (a.status === "blocked" && !awaitingBusinessInput)) &&
                 (!scope || !a.stepId || a.stepId === scope) &&
                 (a.runId === e.runId ||
                   (!!passageStartedAt &&
@@ -1392,8 +1512,8 @@ export function useDjinn() {
               };
             add(
               "note",
-              "Le passage de l’agent est terminé",
-              "Consultez ses preuves et les supports avant de poursuivre.",
+              i18n.t("chat.event_agent_done"),
+              i18n.t("djinn.check_evidence"),
               "lead",
             );
             if (
@@ -1431,7 +1551,7 @@ export function useDjinn() {
               } catch (error) {
                 add(
                   "note",
-                  "Ajustement de timeline refusé",
+                  i18n.t("djinn.timeline_adjustment_refused"),
                   message(error),
                   "lead",
                 );
@@ -1467,11 +1587,11 @@ export function useDjinn() {
                 ? {
                     ...a,
                     status: "queued",
-                    summary: "Exécution interrompue par vous.",
+                    summary: i18n.t("djinn.run_stopped_by_you"),
                   }
                 : a,
             );
-            add("note", "Mission mise en pause");
+            add("note", i18n.t("chat.event_wish_paused"));
             if (
               resumeRequested.current.has(t.id) &&
               !t.questions.some((q) => q.blocking && !q.answer?.trim())
@@ -1482,7 +1602,7 @@ export function useDjinn() {
           } else if (status === "error") {
             next = finishStepRun(next, scope || t.activeStepId || "", "error");
             next.runId = undefined;
-            add("error", "L’exécution a rencontré une erreur", detail);
+            add("error", i18n.t("djinn.run_error"), detail);
           }
         } else if (e.type === "error") {
           if (child)
@@ -1490,20 +1610,25 @@ export function useDjinn() {
               a.id === agentId ? { ...a, status: "error", summary: detail } : a,
             );
           else next.status = "error";
-          add(
-            "error",
-            "L’agent a rencontré une erreur",
-            detail,
-            agentId || "lead",
-          );
+          add("error", i18n.t("djinn.agent_error"), detail, agentId || "lead");
         } else if (e.type === "tool") {
           const evidence = [
             detail,
-            d.input !== undefined ? `Entrée : ${describe(d.input)}` : "",
-            d.command !== undefined ? `Commande : ${describe(d.command)}` : "",
-            d.output !== undefined ? `Sortie : ${describe(d.output)}` : "",
+            d.input !== undefined
+              ? i18n.t("djinn.tool_input_line", { value: describe(d.input) })
+              : "",
+            d.command !== undefined
+              ? i18n.t("djinn.tool_command_line", {
+                  value: describe(d.command),
+                })
+              : "",
+            d.output !== undefined
+              ? i18n.t("djinn.tool_output_line", { value: describe(d.output) })
+              : "",
             d.exitCode !== undefined
-              ? `Code de sortie : ${describe(d.exitCode)}`
+              ? i18n.t("djinn.tool_exit_code_line", {
+                  value: describe(d.exitCode),
+                })
               : "",
           ]
             .filter(Boolean)
@@ -1512,7 +1637,7 @@ export function useDjinn() {
           next.reviewApprovedAt = undefined;
           add(
             "tool",
-            text(d.title, text(d.name, "Action de l’agent")),
+            text(d.title, text(d.name, i18n.t("djinn.agent_action"))),
             evidence,
             agentId || "lead",
           );
@@ -1538,7 +1663,7 @@ export function useDjinn() {
             const entry = {
               ...event(
                 "note",
-                detail.split("\n")[0].slice(0, 140) || "Compte rendu",
+                detail.split("\n")[0].slice(0, 140) || i18n.t("djinn.report"),
                 detail.slice(0, 60000),
                 agentId || "lead",
               ),
@@ -1556,7 +1681,7 @@ export function useDjinn() {
               "note",
               text(
                 d.title,
-                detail.split("\n")[0].slice(0, 140) || "Compte rendu",
+                detail.split("\n")[0].slice(0, 140) || i18n.t("djinn.report"),
               ),
               detail.slice(0, 60000),
               agentId || "lead",
@@ -1693,7 +1818,7 @@ export function useDjinn() {
                 )
                   ? "blocked"
                   : "queued",
-                summary: `Décision reçue : ${value}`,
+                summary: i18n.t("djinn.decision_received", { value }),
               }
             : a,
         ),
@@ -1709,9 +1834,7 @@ export function useDjinn() {
         ],
       };
     });
-    notify(
-      "Décision enregistrée. Reprise dès que toutes les réponses bloquantes sont renseignées.",
-    );
+    notify(i18n.t("djinn.decision_saved"));
     const latest = ref.current.tasks.find((t) => t.id === task.id)!;
     if (
       !latest.questions.some(
@@ -1740,7 +1863,10 @@ export function useDjinn() {
       status: "waiting",
       events: [
         ...t.events,
-        { ...event("decision", `${id} · décision réouverte`), actor: "human" },
+        {
+          ...event("decision", i18n.t("djinn.decision_reopened", { id })),
+          actor: "human",
+        },
       ],
     }));
   const start = async (
@@ -1756,33 +1882,23 @@ export function useDjinn() {
       ? stepMode(stage.type)
       : requestedMode || getNextRunMode(task);
     if (!persistenceEnabled) {
-      notify(
-        "La sauvegarde est suspendue : exportez vos données avant de lancer un agent.",
-      );
+      notify(i18n.t("djinn.saving_suspended_agent"));
       return;
     }
     if (stage && !canStartStep(task, stage.id)) {
-      notify(
-        "Validez le résultat précédent et renseignez les décisions bloquantes avant de démarrer cette étape.",
-      );
+      notify(i18n.t("djinn.validate_previous_first"));
       return;
     }
     if (task.demo) {
-      notify(
-        "Cette mission est un exemple. Utilisez « Reprendre la démo » pour explorer, ou créez une mission pour lancer vos agents.",
-      );
+      notify(i18n.t("djinn.demo_wish"));
       return;
     }
     if (!window.djinn) {
-      notify(
-        "L’exécution des agents est disponible dans l’application Electron.",
-      );
+      notify(i18n.t("djinn.agents_need_electron"));
       return;
     }
     if (!task.project) {
-      notify(
-        "Choisissez un dossier de travail dans les paramètres de la mission.",
-      );
+      notify(i18n.t("djinn.choose_folder"));
       return;
     }
     if (
@@ -1790,20 +1906,20 @@ export function useDjinn() {
         (q) => q.blocking && !q.answer && (!q.stepId || q.stepId === stepId),
       )
     ) {
-      notify("Répondez aux décisions bloquantes avant de lancer la suite.");
+      notify(i18n.t("djinn.answer_blocking_first"));
       return;
     }
     const provider = environment.providers.find((p) => p.id === task.provider);
     if (!provider?.available) {
       notify(
-        `${task.provider === "codex" ? "Codex" : "Claude Code"} n’est pas installé. Ouvrez les connexions pour le configurer.`,
+        i18n.t("djinn.provider_not_installed", {
+          provider: task.provider === "codex" ? "Codex" : "Claude Code",
+        }),
       );
       return;
     }
     if (provider.authenticated === false) {
-      notify(
-        "Connectez votre abonnement dans les connexions avant de lancer la mission.",
-      );
+      notify(i18n.t("djinn.connect_subscription"));
       return;
     }
     startLock.current = true;
@@ -1865,7 +1981,7 @@ export function useDjinn() {
               role: "Orchestration",
               model: t.model || t.provider,
               status: "running",
-              summary: "Le passage est en cours.",
+              summary: i18n.t("djinn.run_in_progress"),
               progress: 0,
             },
             ...(t.activeStepId !== stepId
@@ -1894,11 +2010,11 @@ export function useDjinn() {
           ...event(
             "phase",
             mode === "plan"
-              ? "Cadrage lancé"
+              ? i18n.t("djinn.framing_started")
               : mode === "review"
-                ? "Review lancée"
-                : "Exécution lancée",
-            "Les événements apparaissent en direct.",
+                ? i18n.t("djinn.review_started")
+                : i18n.t("djinn.execution_started"),
+            i18n.t("djinn.events_live"),
             "lead",
           ),
           actor: "human",
@@ -2003,7 +2119,7 @@ export function useDjinn() {
                   model: task.model || task.provider,
                   status: "running",
                   progress: 0,
-                  summary: "Votre agent prépare la prochaine étape.",
+                  summary: i18n.t("djinn.agent_preparing"),
                 },
                 ...t.agents,
               ],
@@ -2022,7 +2138,7 @@ export function useDjinn() {
         ),
         events: [
           ...t.events,
-          event("error", "Lancement impossible", message(error)),
+          event("error", i18n.t("djinn.start_failed"), message(error)),
         ],
       }));
     } finally {
@@ -2043,22 +2159,16 @@ export function useDjinn() {
       latest.status === "running" ||
       startLock.current
     ) {
-      notify(
-        "Mettez la mission en pause et attendez l’arrêt des agents avant de changer de fournisseur.",
-      );
+      notify(i18n.t("djinn.pause_before_provider_switch"));
       return false;
     }
     if (!persistenceEnabled) {
-      notify(
-        "La sauvegarde est suspendue : exportez vos données avant de changer de fournisseur.",
-      );
+      notify(i18n.t("djinn.saving_suspended_provider"));
       return false;
     }
     const target = environment.providers.find((p) => p.id === provider);
     if (!target?.available || target.authenticated === false) {
-      notify(
-        "Connectez ce fournisseur dans les connexions avant de reprendre la mission.",
-      );
+      notify(i18n.t("djinn.connect_provider_first"));
       return false;
     }
     const changed = provider !== latest.provider || model !== latest.model;
@@ -2085,8 +2195,12 @@ export function useDjinn() {
           {
             ...event(
               "decision",
-              "Fournisseur changé",
-              `${t.provider === "claude" ? "Claude Code" : "Codex"} → ${provider === "claude" ? "Claude Code" : "Codex"}${model ? ` · ${model}` : " · modèle par défaut"}. Reprendre l’étape interrompue à partir des fichiers existants et des résultats conservés ; vérifier le travail déjà effectué avant de le poursuivre.`,
+              i18n.t("providers.changed"),
+              i18n.t("djinn.provider_changed_detail", {
+                from: t.provider === "claude" ? "Claude Code" : "Codex",
+                to: provider === "claude" ? "Claude Code" : "Codex",
+                model: ` · ${model || i18n.t("djinn.default_model")}`,
+              }),
               "lead",
             ),
             actor: "human",
@@ -2095,8 +2209,7 @@ export function useDjinn() {
         ],
       }));
     if (resume) await startRef.current(undefined, latest.id);
-    else if (changed)
-      notify("Fournisseur changé. Vous pouvez reprendre la mission.");
+    else if (changed) notify(i18n.t("djinn.provider_changed_toast"));
     return true;
   };
   useEffect(() => {
@@ -2181,14 +2294,14 @@ export function useDjinn() {
         {
           ...event(
             "note",
-            "Mission mise en pause",
-            "Le contexte reste disponible pour la reprise.",
+            i18n.t("chat.event_wish_paused"),
+            i18n.t("djinn.context_kept_for_resume"),
           ),
           actor: "human",
         },
       ],
     }));
-    notify("Mission en pause. Votre contexte est conservé.");
+    notify(i18n.t("djinn.wish_paused_toast"));
   };
   const exportTask = async () => {
     const payload = {
@@ -2205,17 +2318,14 @@ export function useDjinn() {
     try {
       if (window.djinn) {
         const result = await window.djinn.exportSession(payload);
-        if (result)
-          notify(
-            "Mission exportée. Le fichier peut être repris sur une autre machine.",
-          );
+        if (result) notify(i18n.t("djinn.wish_exported_file"));
       } else {
         download(
           `${task.title.replace(/\W+/g, "-")}.djinn.json`,
           JSON.stringify(payload, null, 2),
           "application/json",
         );
-        notify("Mission exportée avec ses décisions, supports et timeline.");
+        notify(i18n.t("djinn.wish_exported"));
       }
     } catch (error) {
       notify(message(error));
@@ -2235,19 +2345,19 @@ export function useDjinn() {
         serializeMissionJournal(events),
         "application/x-ndjson",
       );
-      notify(
-        "Journal exporté. Le contexte envoyé au modèle reste borné séparément.",
-      );
+      notify(i18n.t("djinn.journal_exported"));
     } catch (error) {
       notify(message(error));
     }
   };
-  const importTask = async (file?: File) => {
+  const importTask = async (file?: File, given?: unknown) => {
     try {
-      let payload: unknown;
-      if (file) {
+      let payload: unknown = given;
+      if (given !== undefined) {
+        // A wish djinn asks to show, already read.
+      } else if (file) {
         if (file.size > 20 * 1024 * 1024)
-          throw new Error("Le fichier dépasse 20 Mo.");
+          throw new Error(i18n.t("djinn.file_too_large"));
         payload = JSON.parse(await file.text());
       } else payload = await window.djinn?.importSession();
       if (!payload) return;
@@ -2257,7 +2367,7 @@ export function useDjinn() {
         p.format !== "djinn-session" ||
         !p.task
       )
-        throw new Error("Choisissez une session Djinn v1 ou v2.");
+        throw new Error(i18n.t("djinn.choose_session"));
       const restored = validateState({
         version: p.version,
         tasks: [p.task],
@@ -2274,8 +2384,8 @@ export function useDjinn() {
           ...imported.events,
           event(
             "note",
-            "Mission importée",
-            "Le contexte est conservé. Une reprise nécessite un lancement explicite.",
+            i18n.t("djinn.wish_imported"),
+            i18n.t("djinn.imported_detail"),
           ),
         ],
       };
@@ -2290,20 +2400,32 @@ export function useDjinn() {
         tasks: [...s.tasks, t],
         selectedId: t.id,
       }));
-      notify("Mission importée. Vérifiez le dossier avant de reprendre.");
+      notify(i18n.t("djinn.wish_imported_toast"));
     } catch (error) {
       notify(message(error));
     }
   };
+  // djinn wish resume shows a wish: select its mission, imported from the wish when the interface lacks it.
+  useEffect(() => {
+    if (!ready || !window.djinnFocus) return;
+    return window.djinnFocus.subscribe((focus) => {
+      if (!focus.wishId || !focus.title) return;
+      const existing = [...ref.current.tasks]
+        .reverse()
+        .find((t) => t.title === focus.title);
+      if (existing) commit((s) => ({ ...s, selectedId: existing.id }));
+      else if (focus.session) void importTask(undefined, focus.session);
+    });
+  }, [ready]);
   const removeTask = () => {
     if (task.runId) {
-      notify("Mettez la mission en pause avant de la supprimer.");
+      notify(i18n.t("djinn.pause_before_delete"));
       return;
     }
     setState((s) => {
       const tasks = s.tasks.filter((t) => t.id !== task.id);
       if (!tasks.length)
-        tasks.push(newTask("Nouvelle mission", "", "", "codex", ""));
+        tasks.push(newTask(i18n.t("djinn.new_wish"), "", "", "codex", ""));
       return { ...s, tasks, selectedId: tasks[0].id };
     });
   };
@@ -2331,7 +2453,7 @@ export function useDjinn() {
       events: [
         ...t.events,
         {
-          ...event("note", "Vous", value, agentId || "lead"),
+          ...event("note", i18n.t("chat.you"), value, agentId || "lead"),
           stepId: t.activeStepId,
           time: instruction.time,
           actor: "human",
@@ -2344,7 +2466,7 @@ export function useDjinn() {
               ? {
                   ...a,
                   status: "queued",
-                  summary: "Un message attend votre prochain passage.",
+                  summary: i18n.t("djinn.message_waiting"),
                 }
               : a,
           )
@@ -2376,7 +2498,9 @@ export function useDjinn() {
           resumeAfterStoppedRun(task.id, task.runId);
         if (receipt.status === "prevented")
           notify(
-            `Indication conservée : ${receipt.reason || "transmission empêchée"}`,
+            i18n.t("djinn.instruction_kept", {
+              reason: receipt.reason || i18n.t("djinn.transmission_prevented"),
+            }),
           );
       } catch (error) {
         const inactive =
@@ -2400,16 +2524,17 @@ export function useDjinn() {
           else if (canResumeAfterHumanInput(latest))
             void startRef.current(undefined, task.id);
         }
-        notify(`Indication conservée pour la reprise : ${message(error)}`);
+        notify(
+          i18n.t("djinn.instruction_kept_for_resume", {
+            error: message(error),
+          }),
+        );
       }
     } else if (!task.demo) {
       const latest = ref.current.tasks.find((t) => t.id === task.id)!;
       if (canResumeAfterHumanInput(latest))
         void startRef.current(undefined, latest.id);
-      else
-        notify(
-          "Indication enregistrée. Les décisions bloquantes doivent être renseignées pour reprendre.",
-        );
+      else notify(i18n.t("djinn.instruction_saved"));
     }
     return true;
   };
@@ -2422,9 +2547,7 @@ export function useDjinn() {
       const current = ref.current.tasks.find((t) => t.id === task.id);
       if (!current) return;
       if (current.runId || current.status === "running") {
-        notify(
-          "Mettez la mission en pause avant de changer d’étape. Le travail déjà réalisé sera conservé.",
-        );
+        notify(i18n.t("djinn.pause_before_step_change"));
         return;
       }
       const focused = focusWorkflowStep(current, id, { humanOverride: true });
@@ -2439,7 +2562,7 @@ export function useDjinn() {
           {
             ...event(
               "note",
-              "Priorité changée par vous",
+              i18n.t("djinn.priority_changed"),
               focused.steps?.find((s) => s.id === id)?.title,
             ),
             stepId: id,
@@ -2468,7 +2591,7 @@ export function useDjinn() {
         events: [
           ...t.events,
           {
-            ...event("phase", "Résultat validé par vous"),
+            ...event("phase", i18n.t("djinn.result_validated")),
             stepId: id,
             actor: "human",
           },
@@ -2493,7 +2616,7 @@ export function useDjinn() {
         events: [
           ...latest.events,
           {
-            ...event("phase", "Étape ajoutée par vous", step.title),
+            ...event("phase", i18n.t("djinn.step_added"), step.title),
             stepId: step.id,
             actor: "human",
           },
@@ -2542,7 +2665,7 @@ export function useDjinn() {
         window.open(safe.url, "_blank", "noopener,noreferrer");
         result = { ...action, status: "done", updatedAt: now() };
       } else {
-        notify("Ouvrez Djinn dans Electron pour lancer le serveur.");
+        notify(i18n.t("djinn.open_in_electron_server"));
         return false;
       }
       const time = now();
@@ -2556,7 +2679,14 @@ export function useDjinn() {
             stepId: result.stepId || action.stepId,
             runId: result.runId || action.runId,
             agentId: result.agentId || action.agentId,
-            testStartedAt: operation === "open" && result.kind === "server" && result.status === "ready" ? time : ["run", "stop"].includes(operation) ? undefined : t.actions?.find((a) => a.id === result.id)?.testStartedAt,
+            testStartedAt:
+              operation === "open" &&
+              result.kind === "server" &&
+              result.status === "ready"
+                ? time
+                : ["run", "stop"].includes(operation)
+                  ? undefined
+                  : t.actions?.find((a) => a.id === result.id)?.testStartedAt,
             testResult:
               operation === "run"
                 ? undefined
@@ -2570,12 +2700,12 @@ export function useDjinn() {
             ...event(
               "note",
               operation === "open"
-                ? "Aperçu ouvert"
+                ? i18n.t("djinn.preview_opened")
                 : operation === "stop"
-                  ? "Serveur arrêté"
+                  ? i18n.t("djinn.server_stopped")
                   : operation === "complete"
-                    ? "Action terminée"
-                    : "Serveur demandé",
+                    ? i18n.t("djinn.action_done")
+                    : i18n.t("djinn.server_requested"),
               action.title,
             ),
             actor: "human",
@@ -2586,7 +2716,7 @@ export function useDjinn() {
       dismissActionAlert(`${taskId}:${action.id}`);
       return result.status !== "error";
     } catch (error) {
-      notify(`Action impossible : ${message(error)}`);
+      notify(i18n.t("djinn.action_failed", { error: message(error) }));
       return false;
     } finally {
       actionLocks.current.delete(action.id);
@@ -2610,9 +2740,7 @@ export function useDjinn() {
     if (decision === "acceptForSession" && !current.canAcceptForSession)
       return false;
     if (!window.djinn?.respondPermission) {
-      notify(
-        "La réponse aux autorisations nécessite le fournisseur connecté dans Electron.",
-      );
+      notify(i18n.t("djinn.permission_needs_provider"));
       return false;
     }
     permissionLocks.current.add(request.id);
@@ -2624,10 +2752,7 @@ export function useDjinn() {
         decision,
         answers,
       });
-      if (!result.resolved)
-        throw new Error(
-          "Cette demande n’est plus active. Actualisez son état avant de réessayer.",
-        );
+      if (!result.resolved) throw new Error(i18n.t("djinn.request_inactive"));
       updateTask(request.taskId, (t) => ({
         ...t,
         permissions: t.permissions?.map((p) =>
@@ -2642,7 +2767,7 @@ export function useDjinn() {
       }));
       return true;
     } catch (error) {
-      notify(`Autorisation non transmise : ${message(error)}`);
+      notify(i18n.t("djinn.permission_not_sent", { error: message(error) }));
       try {
         const live = await window.djinn.getPendingPermissions?.();
         if (live && !live.some((p) => p.id === request.id)) {
@@ -2666,11 +2791,14 @@ export function useDjinn() {
   };
   const startTest = async (action: TaskAction) => {
     if (action.kind === "server") return performAction(action, "open");
-    if (action.kind === "link" && !(await performAction(action, "open"))) return false;
+    if (action.kind === "link" && !(await performAction(action, "open")))
+      return false;
     const time = now();
     updateTask(task.id, (t) => ({
       ...t,
-      actions: t.actions?.map((a) => a.id === action.id ? { ...a, testStartedAt: time } : a),
+      actions: t.actions?.map((a) =>
+        a.id === action.id ? { ...a, testStartedAt: time } : a,
+      ),
     }));
     openAction(task.id, action.id);
     return true;
@@ -2691,16 +2819,12 @@ export function useDjinn() {
         latest.kind === "server" &&
         latest.status !== "ready")
     ) {
-      notify(
-        "Préparez et ouvrez la version à tester avant de consigner ce résultat.",
-      );
+      notify(i18n.t("djinn.prepare_test_first"));
       return false;
     }
     const feedback = detail?.trim().slice(0, 12000);
     if (outcome === "problem" && !feedback) {
-      notify(
-        "Décrivez le problème observé pour que l’agent puisse le corriger.",
-      );
+      notify(i18n.t("djinn.describe_problem"));
       return false;
     }
     updateTask(missionId, (t) => ({
@@ -2724,10 +2848,10 @@ export function useDjinn() {
           ...event(
             "review",
             outcome === "passed"
-              ? "Test validé par vous"
+              ? i18n.t("djinn.test_validated")
               : outcome === "problem"
-                ? "Problème signalé"
-                : "Test reporté",
+                ? i18n.t("djinn.problem_reported")
+                : i18n.t("djinn.test_postponed"),
             `${action.title}${feedback ? `\n${feedback}` : ""}`,
             "lead",
           ),
@@ -2739,7 +2863,11 @@ export function useDjinn() {
     }));
     if (outcome === "problem") {
       await indicate(
-        `Retour de recette sur ${action.title} (${action.directory || action.url || action.id}) : ${feedback}. Corrigez la zone concernée puis recontrôlez-la ; conservez les autres résultats déjà validés.`,
+        i18n.t("djinn.test_feedback_prompt", {
+          title: action.title,
+          target: action.directory || action.url || action.id,
+          feedback: feedback || "",
+        }),
         "lead",
       );
     }
@@ -2761,14 +2889,14 @@ export function useDjinn() {
           taskId: task.id,
           questionId: task.questions.find((q) => !q.answer)?.id || "test",
           title: "Djinn",
-          body: "Les nouvelles questions vous seront signalées ici.",
+          body: i18n.t("djinn.test_notification_body"),
         });
         setNotificationStatus(
           result.shown
-            ? "Notification de test envoyée au système"
+            ? i18n.t("djinn.test_notification_sent")
             : result.message ||
                 result.error ||
-                "Vérifiez l’autorisation de Djinn dans les notifications macOS.",
+                i18n.t("djinn.check_macos_notifications"),
         );
       } catch (error) {
         setNotificationStatus(message(error));
@@ -2776,7 +2904,7 @@ export function useDjinn() {
       return;
     }
     if (typeof Notification === "undefined") {
-      setNotificationStatus("Les alertes restent disponibles dans Djinn.");
+      setNotificationStatus(i18n.t("djinn.alerts_in_djinn"));
       return;
     }
     try {
@@ -2784,10 +2912,10 @@ export function useDjinn() {
       setBrowserPermission(permission);
       setNotificationStatus(
         permission === "granted"
-          ? "Notifications activées"
+          ? i18n.t("djinn.notifications_enabled")
           : permission === "denied"
-            ? "Notifications refusées dans les réglages du navigateur"
-            : "Les alertes restent disponibles dans Djinn.",
+            ? i18n.t("djinn.notifications_denied")
+            : i18n.t("djinn.alerts_in_djinn"),
       );
     } catch (error) {
       setNotificationStatus(message(error));
@@ -2797,11 +2925,11 @@ export function useDjinn() {
     if (window.djinn)
       try {
         setEnvironment(await window.djinn.getEnvironment());
-        notify("Connexions actualisées.");
+        notify(i18n.t("djinn.connections_refreshed"));
       } catch (error) {
         notify(message(error));
       }
-    else notify("Ouvrez Djinn dans Electron pour détecter vos CLI.");
+    else notify(i18n.t("djinn.open_in_electron_cli"));
   };
   return {
     state,

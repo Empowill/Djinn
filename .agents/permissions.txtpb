@@ -1,0 +1,25 @@
+# proto-file: api/djinn/v1/agents.proto
+# proto-message: djinn.v1.Permissions
+#
+# What an agent may do in Djinn's repository, whichever agent runs: Djinn translates it for each agent at launch
+# (docs/providers.md). .claude/settings.json follows it for claude run here without Djinn; a test keeps the two
+# together (TestRepoPermissions).
+
+# Edit the files, in the agent's auto mode.
+edit: true
+mode: MODE_AUTO
+
+# The project's tasks, and reading Git.
+commands: "go tool task test-go"
+commands: "go tool task test"
+commands: "go tool task gen"
+commands: "go tool task lint"
+commands: "go tool task build"
+commands: "go tool task e2e"
+commands: "git status"
+commands: "git diff"
+commands: "git log"
+
+# Never push; no network.
+denied_commands: "git push"
+network: false

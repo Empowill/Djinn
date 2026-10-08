@@ -1,0 +1,119 @@
+# Djinn tasks. Run them with `go tool task <name>`: Task is a tool of the Go module, nothing to install.
+version: "3"
+
+vars:
+  # The native window is in every build by default. Tests and CI build headless: no CGO, no webview.
+  # Ubuntu 22.04 only ships WebKitGTK 4.1, which Wails v3 reaches through its gtk3 tag.
+  WINDOW_TAGS:
+    sh: '{{if eq OS "linux"}}pkg-config --exists webkitgtk-6.0 || echo gtk3{{end}}'
+
+tasks:
+  gen:
+    desc: Generate Go code, and the descriptors the command line embeds, from the protos in api/
+    cmds:
+      - go tool buf generate
+      - go tool buf build --exclude-imports --as-file-descriptor-set -o gen/djinn.binpb
+
+  ui:
+    desc: Build the interface into dist/, only when its sources changed (the djinn binary embeds it)
+    sources:
+      - src/**/*
+      - locales/*.json
+      - shim/**/*
+      - gen/ts/**/*
+      - index.html
+      - vite.config.ts
+      - package.json
+    generates:
+      - dist/index.html
+    cmds:
+      - npm run build
+
+  build:
+    desc: Build the interface then the djinn binary (bin/djinn)
+    deps: [ui]
+    cmds:
+      - go build -tags '{{.WINDOW_TAGS}}' -o bin/djinn{{exeExt}} ./cmd/djinn
+
+  install:
+    desc: Install the Djinn you use, apart from the one you build (Go's bin folder, no sudo)
+    deps: [ui]
+    vars:
+      INSTALL_DIR:
+        sh: go env GOBIN
+      GOPATH:
+        sh: go env GOPATH
+      COMMIT:
+        sh: git rev-parse --short HEAD
+    cmds:
+      - go build -tags '{{.WINDOW_TAGS}}' -ldflags "-X main.version=local-{{.COMMIT}}" -o {{if .INSTALL_DIR}}{{.INSTALL_DIR}}{{else}}{{.GOPATH}}/bin{{end}}/djinn{{exeExt}} ./cmd/djinn
+
+  test:
+    desc: "Run every test: Go, interface, end-to-end"
+    cmds:
+      - task: test-go
+      - task: test-ui
+      - task: e2e
+
+  test-ui:
+    desc: Run the interface tests (Node) and the shim tests
+    cmds:
+      - npm test
+      - node --test shim/*.test.mjs
+
+  test-go:
+    desc: Run the Go unit tests (builds the interface first if it changed)
+    deps: [ui]
+    cmds:
+      - go test -tags headless ./...
+
+  bench:
+    desc: "Run the transport benchmarks over a Unix socket (see docs/transport.md); pass go test flags after --, e.g. -- -bench Stream -count 5"
+    cmds:
+      - go test -tags headless -run '^$' -bench . -benchmem {{.CLI_ARGS}} ./internal/server
+
+  e2e:
+    desc: Build the interface and djinn, then run the browser-mode smoke tests headless (e2e/)
+    deps: [ui]
+    cmds:
+      - npx vite build --config e2e/vite.config.ts --logLevel warn
+      - go build -tags headless -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
+      - npx playwright test --config e2e/playwright.config.ts
+
+  check-window:
+    desc: "Open a native window for a few seconds and check that a Connect stream reaches it value by value, on this system's path (add -- -path wails or -- -path http to compare, -- -bench to time the formats)"
+    deps: [ui]
+    cmds:
+      - go run -tags '{{.WINDOW_TAGS}}' ./tools/windowcheck {{.CLI_ARGS}}
+
+  lint:
+    desc: "Check everything: protos, Go (gofmt, vet), TypeScript types, formatting"
+    deps: [ui]
+    cmds:
+      - go tool buf lint
+      - go run ./tools/gofmtcheck cmd internal tools locales
+      - go vet -tags headless ./...
+      - npx tsc -b --noEmit
+      - npx prettier --check --log-level warn "src/**/*.{ts,tsx,css}" "shim/**/*.ts" "e2e/**/*.ts"
+
+  format:
+    desc: Format the Go and TypeScript code in place
+    cmds:
+      - gofmt -w cmd internal tools locales
+      - npx prettier --write --log-level warn "src/**/*.{ts,tsx,css}" "shim/**/*.ts" "e2e/**/*.ts"
+
+  release:
+    desc: "Tag a release that carries the built interface: task release VERSION=v0.1.0 (pushing the tag stays a separate step)"
+    requires:
+      vars: [VERSION]
+    deps: [ui]
+    cmds:
+      # The release commit sits on top of HEAD, off any branch: main never holds dist/.
+      - git worktree add --detach .release HEAD
+      - defer: git worktree remove --force .release
+      - go run ./tools/copydir dist .release/dist
+      - git -C .release add --force dist
+      - 'git -C .release commit --quiet -m "Release {{.VERSION}}"'
+      - git -C .release tag {{.VERSION}}
+      - 'echo "Tagged {{.VERSION}}. Push it with: git push origin {{.VERSION}}"'
+

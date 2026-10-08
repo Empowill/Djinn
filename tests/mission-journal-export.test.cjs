@@ -109,7 +109,7 @@ test("journal pagination rejects invalid and non-progressive pages before comple
       nextCursor: 0,
       hasMore: true,
     })),
-    /progresser/,
+    /move forward/,
   );
   await assert.rejects(
     readAllMissionJournalPages("task", async () => ({
@@ -117,7 +117,7 @@ test("journal pagination rejects invalid and non-progressive pages before comple
       nextCursor: 1,
       hasMore: false,
     })),
-    /dernière page/,
+    /last page/,
   );
   await assert.rejects(
     readAllMissionJournalPages("task", async () => ({

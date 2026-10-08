@@ -1,0 +1,80 @@
+---
+id: 01a118b4-0310-7924-8cee-d87717ed4dcd
+code: T21
+phase: 2
+status: open
+---
+
+# T21 · The lead's terminal, inside the app, by voice
+
+**Goal.** Talk to the lead from inside Djinn exactly as in a terminal today, voice dictation
+included, so the session that builds Djinn can move into Djinn and keep going.
+
+## Decided
+- **A real terminal, pinned at the bottom of the window**: a pseudo-terminal on the Go side, a
+  terminal emulator in the interface. The lead runs in it as it would in any terminal
+  (`claude --resume <session>` for a wish that recorded one, see T13).
+- **Voice is the condition.** The move into Djinn happens only once dictation works in this
+  terminal. Claude Code's dictation (`/voice`) records the microphone itself, through its own
+  native module, and only needs the keys to arrive: hold mode needs the terminal to pass key
+  repeat, tap mode does not.
+- **One lead session, one place.** A session open in Djinn's terminal is not open in another
+  terminal at the same time.
+
+- **A restart reopens the leads.** When Djinn restarts (an update, a crash), it reopens the
+  window and the lead terminals that were open, on the same sessions (`claude --resume`).
+
+## Done when
+- [x] `djinn up` shows a terminal at the bottom of the window, running a shell or the lead,
+  with resize, colours, copy and paste. Checked in the native window on Linux and in Chromium.
+- [ ] `/voice` works in it on Linux and macOS: hold Space (or tap), speak, the text arrives.
+  What the terminal owes it is proved: a Space held in the native window on Linux reaches a program
+  in raw mode as the system's key repeat (2 s held, 500 ms delay, 33 a second: 50 spaces, exactly
+  the count expected), and `TestHeldSpaceArrivesAsRepeats` shows each space arriving on its own,
+  30 ms apart. Left: speak to Claude Code itself, on Linux and macOS.
+- [x] Closing and reopening the window finds the terminal and its session where they were, while
+  `djinn up` runs (e2e: a reopened page reads the same shell's output again). Closing the native
+  window stops `djinn up`, so it hangs the terminal up.
+- [ ] This flight plan's session resumes inside Djinn's terminal and goes on by voice.
+
+## Decided along the way
+- **`TerminalService`** (`api/terminal/v1`, all methods internal): `Open` (by name: a running
+  terminal of that name is returned, `attached`, else a program starts), `Write`, `Resize`, `Read`
+  (server stream of the output from an offset, then live, ending with the exit code), `Close`
+  (hang up). Served by `internal/terminal` in `djinn up`, next to the other services.
+- **Transport: Connect, no Wails stream.** The output is a server stream, which already reaches the
+  window message by message on `wails://` and the browser on loopback HTTP. The keys are small
+  unary `Write` requests, sent one at a time by the shim so they keep their order; above 16 waiting
+  they leave together. A write takes 1.9 to 2.2 ms round trip in headless Chromium over loopback
+  HTTP (e2e, 200 writes), under a millisecond on `wails://` (docs/transport.md): far below the key
+  repeat interval (30 ms). `app.HandleStream` would add a second protocol, outside Connect, the
+  command line and the browser mode, for a gain nobody can feel.
+- **Kept in memory only**: the last mebibyte of output per terminal (a quarter more before it is
+  trimmed), enough for a window that reattaches to redraw the screen. Nothing in the database: a
+  terminal lives as long as `djinn up`.
+- **The program**: the user's `$SHELL` in the home directory (a login shell on macOS, as Terminal
+  does; PowerShell, else `%COMSPEC%`, on Windows), or `djinn up --terminal "<command>"`
+  `--terminal-dir <dir>`, run through that shell. It gets Djinn's environment untouched, never
+  read, plus `TERM=xterm-256color` and `COLORTERM=truecolor`. On Unix it leads its own session
+  with the terminal as controlling terminal (job control works).
+- **Stopping**: closing a terminal or stopping `djinn up` sends SIGHUP to the program's group and to
+  the terminal's foreground group (a shell's job), and SIGKILL after 3 s. On Windows the
+  pseudo-console is closed (CTRL_CLOSE_EVENT), then the process is killed.
+- **Libraries**: [creack/pty](https://github.com/creack/pty) (MIT) on macOS and Linux, its master
+  side switched to non-blocking so a close ends a pending read;
+  [charmbracelet/x/conpty](https://github.com/charmbracelet/x) (MIT) on Windows (ConPTY, Windows
+  10 1809+); [xterm.js](https://github.com/xtermjs/xterm.js) 6 (MIT) with its fit and web-links
+  addons. All pure Go: `CGO_ENABLED=0` still builds.
+- **Interface**: `src/lead-terminal.tsx` wraps the app (`main.tsx`) only when the shim provides
+  `window.djinnTerminal`, i.e. when djinn serves the page: the Vite preview and Electron are
+  unchanged. Collapsible, height dragged from its top edge (both remembered in `localStorage`),
+  a restart button once the program ended. Keys typed in the terminal never reach the app's
+  shortcuts (Escape, Ctrl+K…). Copy and paste: Ctrl+Shift+C / Ctrl+Shift+V, Cmd+C / Cmd+V on macOS.
+
+## Open questions
+- macOS asks for microphone permission per app: the lead runs under Djinn, so Djinn needs the
+  permission (and `NSMicrophoneUsageDescription` when packaged). Not checked: no Mac at hand.
+- Windows: the terminal compiles and is vetted, but has not run on a Windows machine yet; a
+  program's exit is seen up to a second late there (the pseudo-console keeps its output open).
+- A window that reattaches redraws from the output kept; a long full-screen session that wrote
+  more than that may need a redraw nudge (a resize) to repaint cleanly.

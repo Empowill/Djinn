@@ -30,7 +30,10 @@ export function subscribeReducedMotion(
   let media: MediaQueryList | undefined;
   let modernMediaListener = false;
 
-  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+  if (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function"
+  ) {
     media = window.matchMedia(REDUCED_MOTION_QUERY);
     if (typeof media.addEventListener === "function") {
       media.addEventListener("change", update);
@@ -40,7 +43,8 @@ export function subscribeReducedMotion(
     }
   }
 
-  const root = typeof document !== "undefined" ? document.documentElement : null;
+  const root =
+    typeof document !== "undefined" ? document.documentElement : null;
   const observer =
     root && typeof MutationObserver !== "undefined"
       ? new MutationObserver(update)
@@ -67,4 +71,3 @@ export function useReducedMotion(): boolean {
   useEffect(() => subscribeReducedMotion(setReduced), []);
   return reduced;
 }
-

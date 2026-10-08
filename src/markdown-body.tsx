@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MermaidDiagram } from "./mermaid-diagram";
 import "./agent-chat.css";
+import { t } from "./i18n";
 function MarkdownCode({ children }: { children?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -18,11 +19,14 @@ function MarkdownCode({ children }: { children?: ReactNode }) {
     <div className="ac-code">
       <div className="ac-code-heading">
         <span>
-          {code?.props.className?.replace(/^language-/, "") || "Code"}
+          {code?.props.className?.replace(/^language-/, "") ||
+            t("markdown.code")}
         </span>
         <button
           type="button"
-          aria-label={failed ? "Copie impossible" : "Copier le code"}
+          aria-label={
+            failed ? t("markdown.copy_failed") : t("markdown.copy_code")
+          }
           className="ac-copy"
           onClick={() =>
             void navigator.clipboard
@@ -34,7 +38,11 @@ function MarkdownCode({ children }: { children?: ReactNode }) {
               .catch(() => setFailed(true))
           }
         >
-          {failed ? "Copie impossible" : copied ? "Copié" : "Copier"}
+          {failed
+            ? t("markdown.copy_failed")
+            : copied
+              ? t("markdown.copied")
+              : t("markdown.copy")}
         </button>
       </div>
       <pre>{children}</pre>

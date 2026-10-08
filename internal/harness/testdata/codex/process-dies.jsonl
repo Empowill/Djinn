@@ -1,0 +1,14 @@
+# Server side of a codex app-server session, one JSON-RPC message per line. Written by hand from the generated
+# TypeScript schema of the openai/codex repository (codex-rs/app-server-protocol, main, 2026-10-08) and from
+# the fake provider of the former Node runtime; not yet captured from a real codex. The replayer gives each
+# answer (id + result) the id of the client's next request, and waits for Djinn's reply after a request
+# (id + method). See docs/providers.md.
+# Case: the app-server dies in the middle of a turn (the fake exits 1).
+{"id":1,"result":{"userAgent":"codex_cli_rs/0.0.0 (fixture)"}}
+{"id":2,"result":{"thread":{"id":"0199d1e2-3f40-7a51-8b62-7c83d94ea5f6"},"model":"gpt-5.1-codex","modelProvider":"openai","cwd":"/work/project","approvalPolicy":"on-request","sandbox":{"type":"workspaceWrite"},"reasoningEffort":"medium"}}
+{"method":"thread/started","params":{"thread":{"id":"0199d1e2-3f40-7a51-8b62-7c83d94ea5f6"}}}
+{"id":3,"result":{"turn":{"id":"0199d1e2-4000-7000-8000-0000000000t1","items":[],"status":"inProgress","error":null}}}
+{"method":"turn/started","params":{"threadId":"0199d1e2-3f40-7a51-8b62-7c83d94ea5f6","turn":{"id":"0199d1e2-4000-7000-8000-0000000000t1","items":[],"status":"inProgress","error":null}}}
+{"method":"item/started","params":{"threadId":"0199d1e2-3f40-7a51-8b62-7c83d94ea5f6","turnId":"0199d1e2-4000-7000-8000-0000000000t1","startedAtMs":1760000000000,"item":{"type":"userMessage","id":"0199d1e2-4000-7000-8000-0000000000t1-u","clientId":null,"content":[{"type":"text","text":"Run the tests","text_elements":[]}]}}}
+{"method":"item/completed","params":{"threadId":"0199d1e2-3f40-7a51-8b62-7c83d94ea5f6","turnId":"0199d1e2-4000-7000-8000-0000000000t1","completedAtMs":1760000000001,"item":{"type":"userMessage","id":"0199d1e2-4000-7000-8000-0000000000t1-u","clientId":null,"content":[{"type":"text","text":"Run the tests","text_elements":[]}]}}}
+{"method":"item/started","params":{"threadId":"0199d1e2-3f40-7a51-8b62-7c83d94ea5f6","turnId":"0199d1e2-4000-7000-8000-0000000000t1","startedAtMs":1760000000100,"item":{"type":"commandExecution","id":"c1","pluginId":null,"scriptPath":null,"command":"go test ./...","cwd":"/work/project","processId":null,"source":"agent","status":"inProgress","commandActions":[],"aggregatedOutput":null,"exitCode":null,"durationMs":null}}}

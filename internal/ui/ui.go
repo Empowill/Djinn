@@ -1,0 +1,321 @@
+// Package ui implements UiService, the API the window calls. It writes nothing outside the data directory.
+package ui
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sync"
+	"time"
+
+	"connectrpc.com/connect"
+
+	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
+)
+
+const stateFile = "state.json"
+
+// Service implements uiv1connect.UiServiceHandler. Watch is not implemented here.
+type Service struct {
+	uiv1connect.UnimplementedUiServiceHandler
+
+	// Home is the data directory: $DJINN_HOME, by default ~/.config/djinn.
+	Home string
+	// Version of djinn, as GetEnvironment reports it.
+	Version string
+	// Open opens a link in the default browser. Tests replace it.
+	Open func(link string) error
+	// Raise brings the window to the front, or in browser mode prints the address of the page again. Nil does
+	// nothing.
+	Raise func()
+	// Window tells that Raise brings a native window to the front.
+	Window bool
+
+	mu sync.Mutex // Serializes the writes of the state.
+
+	shows    sync.Mutex
+	lastShow *uiv1.UiServiceWatchShowResponse
+	lastAt   time.Time
+	watchers map[chan *uiv1.UiServiceWatchShowResponse]struct{}
+}
+
+// replay is how long a request to show something waits for a window that opens after it: djinn wish resume may
+// start djinn, whose page loads after the request.
+const replay = time.Minute
+
+var _ uiv1connect.UiServiceHandler = (*Service)(nil)
+
+// New returns the service on the data directory of this machine.
+func New(version string) (*Service, error) {
+	home, err := Home()
+	if err != nil {
+		return nil, err
+	}
+	return &Service{Home: home, Version: version, Open: openBrowser}, nil
+}
+
+// Develop is set by a development build of djinn, one built from a checkout rather than installed at a version: its
+// data directory is then djinn-dev, so that the djinn being built never reaches the user's own djinn, its window,
+// its socket or its wishes. DJINN_HOME still decides when it is set.
+var Develop bool
+
+// Home is the data directory: $DJINN_HOME, by default ~/.config/djinn (djinn-dev for a development build).
+func Home() (string, error) {
+	if home := os.Getenv("DJINN_HOME"); home != "" {
+		return home, nil
+	}
+	// The system's place for user configuration: ~/.config on Linux, ~/Library/Application Support on macOS,
+	// %AppData% on Windows.
+	config, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("data directory: %w", err)
+	}
+	name := "djinn"
+	if Develop {
+		name = "djinn-dev"
+	}
+	return filepath.Join(config, name), nil
+}
+
+// providers are the agent command lines Djinn knows.
+var providers = []struct{ id, name string }{{"codex", "Codex"}, {"claude", "Claude"}}
+
+func (s *Service) GetEnvironment(
+	context.Context, *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
+) (*connect.Response[uiv1.UiServiceGetEnvironmentResponse], error) {
+	platform := runtime.GOOS
+	if platform == "windows" {
+		platform = "win32" // The name Node.js uses, which the window expects.
+	}
+	res := &uiv1.UiServiceGetEnvironmentResponse{Version: s.Version, Platform: platform}
+	for _, p := range providers {
+		command, err := exec.LookPath(p.id)
+		if err != nil {
+			command = p.id
+		}
+		res.Providers = append(res.Providers, &uiv1.Provider{
+			Id: p.id, Name: p.name, Available: err == nil, Command: command,
+		})
+	}
+	return connect.NewResponse(res), nil
+}
+
+func (s *Service) LoadState(
+	context.Context, *connect.Request[uiv1.UiServiceLoadStateRequest],
+) (*connect.Response[uiv1.UiServiceLoadStateResponse], error) {
+	data, err := os.ReadFile(filepath.Join(s.Home, stateFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return connect.NewResponse(&uiv1.UiServiceLoadStateResponse{}), nil
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("read the state: %w", err))
+	}
+	return connect.NewResponse(&uiv1.UiServiceLoadStateResponse{StateJson: string(data)}), nil
+}
+
+func (s *Service) SaveState(
+	_ context.Context, req *connect.Request[uiv1.UiServiceSaveStateRequest],
+) (*connect.Response[uiv1.UiServiceSaveStateResponse], error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(req.Msg.GetStateJson()), &object); err != nil || object == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("the state must be a JSON object"))
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := writeAtomic(filepath.Join(s.Home, stateFile), []byte(req.Msg.GetStateJson())); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("save the state: %w", err))
+	}
+	return connect.NewResponse(&uiv1.UiServiceSaveStateResponse{}), nil
+}
+
+// writeAtomic writes a temporary file next to path, readable by the owner only, then renames it over path: a
+// reader sees the old content or the new one, never a part of it.
+func writeAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // Fails harmlessly once renamed.
+	if err := tmp.Chmod(0o600); err != nil && runtime.GOOS != "windows" {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+func (s *Service) ValidateProject(
+	_ context.Context, req *connect.Request[uiv1.UiServiceValidateProjectRequest],
+) (*connect.Response[uiv1.UiServiceValidateProjectResponse], error) {
+	invalid := func(err error) error {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project directory: %w", err))
+	}
+	dir := req.Msg.GetDirectory()
+	if dir == "" {
+		return nil, invalid(errors.New("associate this project with a local directory first"))
+	}
+	if !filepath.IsAbs(dir) {
+		return nil, invalid(errors.New("the path must be absolute"))
+	}
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, invalid(err)
+	}
+	f, err := os.Open(root)
+	if err != nil {
+		return nil, invalid(err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, invalid(err)
+	}
+	if !info.IsDir() {
+		return nil, invalid(errors.New("not a directory"))
+	}
+	if _, err := f.Readdirnames(1); err != nil && !errors.Is(err, io.EOF) {
+		return nil, invalid(err)
+	}
+	return connect.NewResponse(&uiv1.UiServiceValidateProjectResponse{Directory: root, Git: inGit(root)}), nil
+}
+
+// inGit tells whether dir is inside a Git repository: dir or a parent holds .git, a directory or, in a worktree
+// or a submodule, a file.
+func inGit(dir string) bool {
+	for {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+func (s *Service) OpenExternal(
+	_ context.Context, req *connect.Request[uiv1.UiServiceOpenExternalRequest],
+) (*connect.Response[uiv1.UiServiceOpenExternalResponse], error) {
+	raw := req.Msg.GetUrl()
+	u, err := url.Parse(raw)
+	if len(raw) > 2048 || err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			errors.New("only a short http or https link without credentials may be opened"))
+	}
+	link := u.String()
+	if err := s.Open(link); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("open the link: %w", err))
+	}
+	return connect.NewResponse(&uiv1.UiServiceOpenExternalResponse{Url: link}), nil
+}
+
+// openBrowser opens link with the command of the operating system. link has been checked: http or https only.
+func openBrowser(link string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", link)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", link)
+	default:
+		cmd = exec.Command("xdg-open", link)
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go cmd.Wait() //nolint:errcheck // Only reaps the process; the browser reports its own errors.
+	return nil
+}
+
+// NotifyQuestion shows nothing yet: the native notifications come with the window.
+func (s *Service) NotifyQuestion(
+	context.Context, *connect.Request[uiv1.UiServiceNotifyQuestionRequest],
+) (*connect.Response[uiv1.UiServiceNotifyQuestionResponse], error) {
+	return connect.NewResponse(&uiv1.UiServiceNotifyQuestionResponse{}), nil
+}
+
+func (s *Service) Show(
+	_ context.Context, req *connect.Request[uiv1.UiServiceShowRequest],
+) (*connect.Response[uiv1.UiServiceShowResponse], error) {
+	if s.Raise != nil {
+		s.Raise()
+	}
+	if req.Msg.GetWishId() != "" || req.Msg.GetTerminal() != "" {
+		s.Present(req.Msg.GetWishId(), req.Msg.GetTerminal())
+	}
+	return connect.NewResponse(&uiv1.UiServiceShowResponse{Window: s.Window}), nil
+}
+
+// Present asks the windows to show a wish and a terminal: the ones watching now, and one that starts watching
+// within a minute.
+func (s *Service) Present(wishID, terminal string) {
+	msg := &uiv1.UiServiceWatchShowResponse{WishId: wishID, Terminal: terminal}
+	s.shows.Lock()
+	defer s.shows.Unlock()
+	s.lastShow, s.lastAt = msg, time.Now()
+	for ch := range s.watchers {
+		select {
+		case ch <- msg:
+		default: // A window that does not read keeps what it has: the next request matters more than this one.
+		}
+	}
+}
+
+func (s *Service) WatchShow(
+	ctx context.Context, _ *connect.Request[uiv1.UiServiceWatchShowRequest],
+	stream *connect.ServerStream[uiv1.UiServiceWatchShowResponse],
+) error {
+	ch := make(chan *uiv1.UiServiceWatchShowResponse, 8)
+	s.shows.Lock()
+	if s.watchers == nil {
+		s.watchers = map[chan *uiv1.UiServiceWatchShowResponse]struct{}{}
+	}
+	s.watchers[ch] = struct{}{}
+	if s.lastShow != nil && time.Since(s.lastAt) < replay {
+		ch <- s.lastShow
+	}
+	s.shows.Unlock()
+	defer func() {
+		s.shows.Lock()
+		delete(s.watchers, ch)
+		s.shows.Unlock()
+	}()
+	// The headers go out at once: the window knows it is watching before anything is asked.
+	if err := stream.Send(nil); err != nil {
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case msg := <-ch:
+			if err := stream.Send(msg); err != nil {
+				return err
+			}
+		}
+	}
+}

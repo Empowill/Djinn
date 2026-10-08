@@ -11,6 +11,7 @@ import type {
   MissionStep,
 } from "./types";
 import { demoArtifacts } from "./demo-supports";
+import { t } from "./i18n";
 export const uid = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();
 export const event = (
@@ -20,10 +21,10 @@ export const event = (
   agentId?: string,
 ): FlightEvent => ({ id: uid(), time: now(), type, title, detail, agentId });
 export const phaseLabels = {
-  brief: "Cadrage",
-  execution: "Exécution",
+  brief: t("data.phase_brief"),
+  execution: t("data.phase_execution"),
   review: "Review",
-  delivery: "Livraison",
+  delivery: t("data.phase_delivery"),
 };
 export function newTask(
   title: string,
@@ -71,7 +72,7 @@ export function newTask(
   }
   return {
     id,
-    title: title.trim() || "Nouvelle mission",
+    title: title.trim() || t("data.new_wish"),
     titleSource: title.trim() ? "human" : "placeholder",
     steps,
     activeStepId: steps[0].id,
@@ -107,13 +108,19 @@ export function newTask(
       : [],
     questions: [],
     agents: [],
-    events: [{ ...event("note", "Mission créée", brief), stepId: steps[0].id }],
+    events: [
+      { ...event("note", t("data.wish_created"), brief), stepId: steps[0].id },
+    ],
     artifacts: [],
     feedback: [],
     configuration: {
-      prototype: "Interface locale",
-      review: "Review visuelle + technique",
-      deliverables: ["Synthèse", "Journal", "Session partageable"],
+      prototype: t("data.config_prototype"),
+      review: t("data.config_review"),
+      deliverables: [
+        t("data.deliverable_summary"),
+        t("data.deliverable_journal"),
+        t("data.deliverable_session"),
+      ],
       concurrency: options?.concurrency || 3,
     },
   };
@@ -122,36 +129,36 @@ export const diagramContent = JSON.stringify({
   nodes: [
     {
       id: "brief",
-      label: "Votre intention",
-      sublabel: "Besoin & contraintes",
+      label: t("data.diagram_brief"),
+      sublabel: t("data.diagram_brief_detail"),
       x: 70,
       y: 130,
     },
     {
       id: "lead",
-      label: "Orchestrateur",
-      sublabel: "Plan · décisions · intégration",
+      label: t("data.diagram_lead"),
+      sublabel: t("data.diagram_lead_detail"),
       x: 340,
       y: 130,
     },
     {
       id: "design",
       label: "Design",
-      sublabel: "Parcours & composants",
+      sublabel: t("data.diagram_design_detail"),
       x: 610,
       y: 45,
     },
     {
       id: "build",
       label: "Implementation",
-      sublabel: "Code & preuves",
+      sublabel: t("data.diagram_build_detail"),
       x: 610,
       y: 215,
     },
     {
       id: "review",
       label: "Review",
-      sublabel: "Validation humaine",
+      sublabel: t("data.diagram_review_detail"),
       x: 875,
       y: 130,
     },
@@ -166,8 +173,8 @@ export const diagramContent = JSON.stringify({
 });
 export function initialState(): AppState {
   const task = newTask(
-    "Espace projets",
-    "Repenser l’espace projets : une vue claire des missions, un suivi partagé et une navigation qui laisse la place au travail.",
+    t("data.demo_title"),
+    t("data.demo_brief"),
     "",
     "codex",
     "",
@@ -178,48 +185,45 @@ export function initialState(): AppState {
   task.questions = [
     {
       id: "Q01",
-      title: "Comment organiser la vue des projets ?",
-      context:
-        "Les projets ont des rythmes différents. Une vue par statut facilite le suivi ; une vue par équipe facilite la répartition. Ce choix détermine la navigation et les filtres.",
-      recommendation: "Une vue par statut, avec un filtre par équipe.",
+      title: t("data.demo_q1_title"),
+      context: t("data.demo_q1_context"),
+      recommendation: t("data.demo_q1_recommendation"),
       options: [
         {
           id: "a",
-          label: "Par statut",
-          description:
-            "À faire, en cours, en review. La progression reste visible.",
+          label: t("data.demo_q1_option_a"),
+          description: t("data.demo_q1_option_a_detail"),
         },
         {
           id: "b",
-          label: "Par équipe",
-          description: "Chaque équipe retrouve son propre espace.",
+          label: t("data.demo_q1_option_b"),
+          description: t("data.demo_q1_option_b_detail"),
         },
       ],
       blocking: true,
-      unlocks: "Débloque la navigation et les composants de la vue projets.",
+      unlocks: t("data.demo_q1_unlocks"),
       agentId: "design",
-      theme: "Produit",
+      theme: t("data.demo_q1_theme"),
     },
     {
       id: "Q02",
-      title: "Quelle place pour les projets archivés ?",
-      context:
-        "Les archives doivent rester accessibles sans prendre de place dans le travail quotidien.",
-      recommendation: "Un accès dédié dans la navigation secondaire.",
+      title: t("data.demo_q2_title"),
+      context: t("data.demo_q2_context"),
+      recommendation: t("data.demo_q2_recommendation"),
       options: [
         {
           id: "a",
-          label: "Accès dédié",
-          description: "Une vue Archives, à l’écart des projets actifs.",
+          label: t("data.demo_q2_option_a"),
+          description: t("data.demo_q2_option_a_detail"),
         },
         {
           id: "b",
-          label: "Filtre dans la liste",
-          description: "Toutes les données dans une seule vue.",
+          label: t("data.demo_q2_option_b"),
+          description: t("data.demo_q2_option_b_detail"),
         },
       ],
       blocking: false,
-      unlocks: "Finalise les états de la liste.",
+      unlocks: t("data.demo_q2_unlocks"),
       agentId: "build",
       theme: "Interface",
     },
@@ -229,40 +233,40 @@ export function initialState(): AppState {
       id: "lead",
       name: "Djinn",
       role: "Orchestration",
-      model: "Chef de mission",
+      model: t("data.demo_lead_model"),
       status: "running",
-      summary: "Le plan est prêt. Deux décisions attendent votre retour.",
+      summary: t("data.demo_lead_summary"),
       progress: 48,
     },
     {
       id: "design",
       name: "Atlas",
-      role: "Design & parcours",
-      model: "Agent de design",
+      role: t("data.demo_design_role"),
+      model: t("data.demo_design_model"),
       status: "blocked",
-      summary: "Attend votre choix sur la structure des projets.",
+      summary: t("data.demo_design_summary"),
       progress: 65,
-      prompt: "Concevoir les parcours et les composants de la vue projets.",
+      prompt: t("data.demo_design_prompt"),
     },
     {
       id: "build",
       name: "Nova",
       role: "Implementation",
-      model: "Agent de code",
+      model: t("data.demo_build_model"),
       status: "queued",
-      summary: "Prépare les composants après validation du cadrage.",
+      summary: t("data.demo_build_summary"),
       progress: 32,
-      prompt: "Implémenter la vue projets selon les décisions prises.",
+      prompt: t("data.demo_build_prompt"),
     },
     {
       id: "review",
       name: "Echo",
-      role: "Qualité & review",
-      model: "Agent de vérification",
+      role: t("data.demo_review_role"),
+      model: t("data.demo_review_model"),
       status: "queued",
-      summary: "Vérifiera les parcours et leurs états limites.",
+      summary: t("data.demo_review_summary"),
       progress: 0,
-      prompt: "Vérifier les parcours des projets et produire des preuves.",
+      prompt: t("data.demo_review_prompt"),
     },
   ];
   const time = (minutes: number) =>
@@ -272,17 +276,16 @@ export function initialState(): AppState {
       id: uid(),
       time: time(14),
       type: "note",
-      title: "Cadrage terminé",
-      detail:
-        "Djinn a réparti la mission en trois périmètres : design, implementation et qualité.",
+      title: t("data.demo_event_scoped"),
+      detail: t("data.demo_event_scoped_detail"),
       agentId: "lead",
     },
     {
       id: uid(),
       time: time(11),
       type: "agent",
-      title: "Atlas rejoint la mission",
-      detail: "Simulation : analyse de la navigation et des parcours.",
+      title: t("data.demo_event_atlas_joins"),
+      detail: t("data.demo_event_atlas_joins_detail"),
       agentId: "design",
       lifecycle: "started",
       runId: "demo-initial",
@@ -291,9 +294,8 @@ export function initialState(): AppState {
       id: uid(),
       time: time(11),
       type: "agent",
-      title: "Nova prépare les composants",
-      detail:
-        "Simulation : préparation des états pendant le travail de design.",
+      title: t("data.demo_event_nova_prepares"),
+      detail: t("data.demo_event_nova_prepares_detail"),
       agentId: "build",
       lifecycle: "started",
       runId: "demo-initial",
@@ -302,16 +304,16 @@ export function initialState(): AppState {
       id: uid(),
       time: time(8),
       type: "tool",
-      title: "Architecture de la vue préparée",
-      detail: "Une première proposition est disponible dans les supports.",
+      title: t("data.demo_event_architecture"),
+      detail: t("data.demo_event_architecture_detail"),
       agentId: "design",
     },
     {
       id: uid(),
       time: time(7),
       type: "agent",
-      title: "Les états sont préparés",
-      detail: "Simulation : Nova attend la validation des choix de navigation.",
+      title: t("data.demo_event_states"),
+      detail: t("data.demo_event_states_detail"),
       agentId: "build",
       lifecycle: "completed",
       runId: "demo-initial",
@@ -320,8 +322,8 @@ export function initialState(): AppState {
       id: uid(),
       time: time(4),
       type: "agent",
-      title: "Atlas attend votre choix",
-      detail: "La structure de la vue attend votre décision.",
+      title: t("data.demo_event_atlas_waits"),
+      detail: t("data.demo_event_atlas_waits_detail"),
       agentId: "design",
       lifecycle: "blocked",
       runId: "demo-initial",
@@ -330,9 +332,8 @@ export function initialState(): AppState {
       id: uid(),
       time: time(4),
       type: "decision",
-      title: "Deux décisions en attente",
-      detail:
-        "La structure des projets et l’accès aux archives attendent votre réponse.",
+      title: t("data.demo_event_decisions"),
+      detail: t("data.demo_event_decisions_detail"),
       agentId: "lead",
     },
   ];
@@ -340,17 +341,17 @@ export function initialState(): AppState {
     ...demoArtifacts(time(6)),
     {
       id: "architecture",
-      title: "La mission, en un regard",
+      title: t("data.demo_architecture_title"),
       type: "diagram",
       content: diagramContent,
       updatedAt: time(8),
     },
     {
       id: "preview",
-      title: "Espace projets · proposition",
+      title: t("data.demo_preview_title"),
       type: "wireframe",
       content: JSON.stringify({
-        heading: "Vos projets",
+        heading: t("data.demo_preview_heading"),
         layout: "status",
         archive: "dedicated",
       }),
@@ -358,10 +359,9 @@ export function initialState(): AppState {
     },
     {
       id: "plan",
-      title: "Plan d’implementation",
+      title: t("data.demo_plan_title"),
       type: "document",
-      content:
-        "# Espace projets\n\n## Intention\nDonner une vue claire de l’avancement de chaque projet.\n\n## Périmètres\n1. Atlas — navigation, structure et interactions.\n2. Nova — composants, états vides et filtres.\n3. Echo — validation des parcours et accessibilité.\n\n## Critères de réussite\n- Retrouver un projet en moins de trois interactions.\n- Distinguer les projets actifs des archives.\n- Partager le contexte sans relire une conversation.\n\nCe document appartient à la mission d’exemple.",
+      content: t("data.demo_plan_content"),
       updatedAt: time(9),
     },
   ];
@@ -373,9 +373,8 @@ export function initialState(): AppState {
         id: `demo-support-event:${a.id}`,
         time: a.updatedAt,
         type: "note" as const,
-        title: `Support disponible : ${a.title}`,
-        detail:
-          "Exemple interactif sur données fictives, sans exécution de projet.",
+        title: t("chat.event_artifact_available", { title: a.title }),
+        detail: t("data.demo_support_detail"),
         agentId: "lead",
       })),
   );

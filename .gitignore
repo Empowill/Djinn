@@ -15,7 +15,9 @@ playwright-report/
 .env.*
 !.env.example
 .codex/
-.claude/
+.claude/*
+# The project settings follow .agents/permissions.txtpb (docs/providers.md).
+!.claude/settings.json
 .cursor/
 *.log
 *.backup
@@ -33,4 +35,9 @@ docs/*session*.djinn.json
 docs/demo.webm
 docs/screenshots/*
 !docs/screenshots/readme/
-!docs/screenshots/v0.2.1/
+
+# Go and Task
+/.task/
+/bin/
+/djinn
+/.release/

@@ -1,9 +1,9 @@
 import type { AppState, FlightEvent, Task } from "./types";
+import { t } from "./i18n";
 
 export const MAX_TOOL_EVENT_DETAIL_LENGTH = 4_000;
 export const MAX_TOOL_DETAIL_BUDGET = 1_000_000;
-export const ARCHIVE_MARKER =
-  "[Détail complet archivé dans le journal de mission.]";
+export const ARCHIVE_MARKER = t("history.archive_marker");
 
 type StateHistoryState = {
   tasks: Array<Pick<Task, "events">>;
@@ -38,12 +38,8 @@ export function archiveDetail(
   const available = Math.min(Math.max(0, budget), Math.max(0, maxDetailLength));
   if (available === 0) return "";
   const markerLength = ARCHIVE_MARKER.length + 1;
-  if (available < markerLength)
-    return ARCHIVE_MARKER.slice(0, available);
-  const excerptLength = Math.min(
-    detail.length,
-    available - markerLength,
-  );
+  if (available < markerLength) return ARCHIVE_MARKER.slice(0, available);
+  const excerptLength = Math.min(detail.length, available - markerLength);
   return `${detail.slice(0, excerptLength)} ${ARCHIVE_MARKER}`;
 }
 
@@ -96,13 +92,19 @@ export function compactStateHistory<T extends StateHistoryState | AppState>(
         throw new StateHistoryError(
           `state.tasks.${taskIndex}.events.${eventIndex}.detail must be a string`,
         );
-      candidates.push({ taskIndex, eventIndex, event, index: candidates.length });
+      candidates.push({
+        taskIndex,
+        eventIndex,
+        event,
+        index: candidates.length,
+      });
     }
   }
 
   candidates.sort(
     (left, right) =>
-      eventTime(right.event) - eventTime(left.event) || left.index - right.index,
+      eventTime(right.event) - eventTime(left.event) ||
+      left.index - right.index,
   );
   let remaining = detailBudget;
   const replacements = new Map<number, Map<number, string>>();

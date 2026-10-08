@@ -7,6 +7,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import type { Project, Task } from "./types";
+import { t } from "./i18n";
 
 function newestFirst<T>(items: T[], getDate: (item: T) => string) {
   return items
@@ -66,7 +67,7 @@ export function ProjectSidebar({
       {!collapsed && (
         <>
           <span>{task.title.replace(/\n/g, " ")}</span>
-          {task.demo && <small>DÉMO</small>}
+          {task.demo && <small>{t("sidebar.demo_badge")}</small>}
         </>
       )}
     </button>
@@ -75,11 +76,11 @@ export function ProjectSidebar({
   return (
     <>
       <div className="sidebar-section-label project-section-label">
-        {!collapsed && <span>PROJETS</span>}
+        {!collapsed && <span>{t("sidebar.projects")}</span>}
         <button
           onClick={onNewProject}
-          title="Créer un projet"
-          aria-label="Créer un projet"
+          title={t("sidebar.new_project")}
+          aria-label={t("sidebar.new_project")}
         >
           <Plus size={15} />
         </button>
@@ -123,15 +124,23 @@ export function ProjectSidebar({
                 {!collapsed && (
                   <>
                     <button
-                      title={`Nouvelle mission dans ${project.name}`}
-                      aria-label={`Nouvelle mission dans ${project.name}`}
+                      title={t("sidebar.new_wish_in", {
+                        project: project.name,
+                      })}
+                      aria-label={t("sidebar.new_wish_in", {
+                        project: project.name,
+                      })}
                       onClick={() => onNewMission(project.id)}
                     >
                       <Plus size={14} />
                     </button>
                     <button
-                      title={`Réglages de ${project.name}`}
-                      aria-label={`Réglages de ${project.name}`}
+                      title={t("sidebar.project_settings", {
+                        project: project.name,
+                      })}
+                      aria-label={t("sidebar.project_settings", {
+                        project: project.name,
+                      })}
                       onClick={() => onEditProject(project.id)}
                     >
                       <Settings2 size={14} />
@@ -147,7 +156,7 @@ export function ProjectSidebar({
                       className="project-empty"
                       onClick={() => onNewMission(project.id)}
                     >
-                      Créer une première mission
+                      {t("sidebar.first_wish")}
                     </button>
                   )}
                 </div>
@@ -158,7 +167,9 @@ export function ProjectSidebar({
         {tasks.some((t) => !owner(t)) && (
           <section className="sidebar-project">
             {!collapsed && (
-              <div className="sidebar-section-label">AUTRES MISSIONS</div>
+              <div className="sidebar-section-label">
+                {t("sidebar.other_wishes")}
+              </div>
             )}
             {newestFirst(
               tasks.filter((t) => !owner(t)),

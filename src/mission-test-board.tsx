@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { Agent, MissionWorkItem, Task, TaskAction } from "./types";
 import "./mission-test-board.css";
+import { t } from "./i18n";
 
 type TestAction = TaskAction & { testStartedAt?: string };
 
@@ -35,7 +36,11 @@ function testStartedAt(action?: TaskAction): string | undefined {
 }
 
 function manualRecipe(action?: TaskAction): boolean {
-  return !!action && action.kind !== "server" && !!(action.testInstructions?.length || action.expectedResult);
+  return (
+    !!action &&
+    action.kind !== "server" &&
+    !!(action.testInstructions?.length || action.expectedResult)
+  );
 }
 
 function timestamp(value?: string): number {
@@ -46,7 +51,11 @@ function timestamp(value?: string): number {
 function latestAction(actions: TaskAction[]): TaskAction | undefined {
   // Recipe creation defines the version; feedback on an older version must not
   // hide a newly published correction that is ready for another test.
-  return [...actions].reverse().sort((left, right) => timestamp(right.createdAt) - timestamp(left.createdAt))[0];
+  return [...actions]
+    .reverse()
+    .sort(
+      (left, right) => timestamp(right.createdAt) - timestamp(left.createdAt),
+    )[0];
 }
 
 function matchWorkItem(action: TaskAction, item: MissionWorkItem): boolean {
@@ -76,98 +85,182 @@ function statusForWorkItem(
   const action = latestAction(matchedActions);
   const outcomeAction = action;
   const outcome = action?.testResult?.status;
-  if ((action?.status === "ready" || manualRecipe(action)) && testStartedAt(action) && timestamp(testStartedAt(action)) > timestamp(action?.testResult?.recordedAt))
-    return { key: "testing", label: "En cours de test", tone: "running", action };
+  if (
+    (action?.status === "ready" || manualRecipe(action)) &&
+    testStartedAt(action) &&
+    timestamp(testStartedAt(action)) > timestamp(action?.testResult?.recordedAt)
+  )
+    return {
+      key: "testing",
+      label: t("test_board.state_testing"),
+      tone: "running",
+      action,
+    };
 
   if (outcome === "problem") {
     if (isCorrectionAfterFeedback(item, outcomeAction)) {
       return {
         key: "correction",
-        label: "Correction en cours",
+        label: t("test_board.state_correcting"),
         tone: "running",
         action,
       };
     }
     return {
       key: "problem",
-      label: "Retour à traiter",
+      label: t("test_board.state_problem"),
       tone: "blocked",
       action,
     };
   }
   if (outcome === "passed")
-    return { key: "passed", label: "Validé par vous", tone: "done", action };
+    return {
+      key: "passed",
+      label: t("test_board.state_passed"),
+      tone: "done",
+      action,
+    };
   if (outcome === "deferred")
-    return { key: "deferred", label: "Test reporté", tone: "pending", action };
+    return {
+      key: "deferred",
+      label: t("test_board.state_deferred"),
+      tone: "pending",
+      action,
+    };
 
   if (action?.status === "ready" || manualRecipe(action))
-    return { key: "ready", label: "Prête à tester", tone: "ready", action };
+    return {
+      key: "ready",
+      label: t("test_board.state_ready"),
+      tone: "ready",
+      action,
+    };
   if (action?.status === "running")
     return {
       key: "preparing",
-      label: "Préparation en cours",
+      label: t("test_board.state_preparing"),
       tone: "running",
       action,
     };
   if (action?.status === "error")
-    return { key: "error", label: "Erreur", tone: "blocked", action };
+    return {
+      key: "error",
+      label: t("test_board.state_error"),
+      tone: "blocked",
+      action,
+    };
   if (action && ["pending", "stopped"].includes(action.status))
-    return { key: "prepare", label: "À préparer", tone: "pending", action };
+    return {
+      key: "prepare",
+      label: t("test_board.state_prepare"),
+      tone: "pending",
+      action,
+    };
 
   if (item.status === "running")
-    return { key: "running", label: "En cours", tone: "running", action };
+    return {
+      key: "running",
+      label: t("test_board.state_running"),
+      tone: "running",
+      action,
+    };
   if (item.status === "blocked")
-    return { key: "blocked", label: "Bloquée", tone: "blocked", action };
+    return {
+      key: "blocked",
+      label: t("test_board.state_blocked"),
+      tone: "blocked",
+      action,
+    };
   if (item.status === "ready")
     return {
       key: "ready-work",
-      label: "Recette à préparer",
+      label: t("test_board.state_ready_work"),
       tone: "ready",
       action,
     };
   if (item.status === "done")
     return {
       key: "done-work",
-      label: "Terminée",
+      label: t("test_board.state_done"),
       tone: "done",
       action,
     };
-  return { key: "pending", label: "En attente", tone: "pending", action };
+  return {
+    key: "pending",
+    label: t("test_board.state_pending"),
+    tone: "pending",
+    action,
+  };
 }
 
 function statusForLegacyAction(action: TaskAction): TestState {
   const outcome = action.testResult?.status;
-  if ((action.status === "ready" || manualRecipe(action)) && testStartedAt(action) && timestamp(testStartedAt(action)) > timestamp(action.testResult?.recordedAt)) return { key: "testing", label: "En cours de test", tone: "running", action };
+  if (
+    (action.status === "ready" || manualRecipe(action)) &&
+    testStartedAt(action) &&
+    timestamp(testStartedAt(action)) > timestamp(action.testResult?.recordedAt)
+  )
+    return {
+      key: "testing",
+      label: t("test_board.state_testing"),
+      tone: "running",
+      action,
+    };
   if (outcome === "passed")
-    return { key: "passed", label: "Validé par vous", tone: "done", action };
+    return {
+      key: "passed",
+      label: t("test_board.state_passed"),
+      tone: "done",
+      action,
+    };
   if (outcome === "problem")
     return {
       key: "problem",
-      label: "Retour à traiter",
+      label: t("test_board.state_problem"),
       tone: "blocked",
       action,
     };
   if (outcome === "deferred")
-    return { key: "deferred", label: "Test reporté", tone: "pending", action };
+    return {
+      key: "deferred",
+      label: t("test_board.state_deferred"),
+      tone: "pending",
+      action,
+    };
   if (testStartedAt(action) && action.status === "ready")
     return {
       key: "testing",
-      label: "En cours de test",
+      label: t("test_board.state_testing"),
       tone: "running",
       action,
     };
   if (action.status === "ready" || manualRecipe(action))
-    return { key: "ready", label: "Prête à tester", tone: "ready", action };
+    return {
+      key: "ready",
+      label: t("test_board.state_ready"),
+      tone: "ready",
+      action,
+    };
   if (action.status === "running")
     return {
       key: "preparing",
-      label: "Préparation en cours",
+      label: t("test_board.state_preparing"),
       tone: "running",
       action,
     };
   if (action.status === "error")
-    return { key: "error", label: "Erreur", tone: "blocked", action };
-  return { key: "prepare", label: "À préparer", tone: "pending", action };
+    return {
+      key: "error",
+      label: t("test_board.state_error"),
+      tone: "blocked",
+      action,
+    };
+  return {
+    key: "prepare",
+    label: t("test_board.state_prepare"),
+    tone: "pending",
+    action,
+  };
 }
 
 function agentForItem(task: Task, item: MissionWorkItem): Agent | undefined {
@@ -186,17 +279,20 @@ function Details({
   const details = [
     item?.detail,
     action?.detail,
-    action?.testResult?.detail && `Retour · ${action.testResult.detail}`,
-    action?.expectedResult && `Attendu · ${action.expectedResult}`,
-    item?.worktree && `Worktree · ${item.worktree}`,
-    item?.branch && `Branche · ${item.branch}`,
-    action?.error && `Erreur · ${action.error}`,
+    action?.testResult?.detail &&
+      t("test_board.detail_feedback", { detail: action.testResult.detail }),
+    action?.expectedResult &&
+      t("test_board.detail_expected", { detail: action.expectedResult }),
+    item?.worktree &&
+      t("test_board.detail_worktree", { detail: item.worktree }),
+    item?.branch && t("test_board.detail_branch", { detail: item.branch }),
+    action?.error && t("test_board.detail_error", { detail: action.error }),
   ].filter((value): value is string => Boolean(value?.trim()));
   if (!details.length) return null;
   return (
     <details className="mission-test-details">
       <summary>
-        Détails
+        {t("test_board.details")}
         <ChevronDown size={12} />
       </summary>
       <div>
@@ -244,11 +340,15 @@ function WorkRow({
   const state = statusForWorkItem(item, matchedActions);
   const agent = agentForItem(task, item);
   const display = agent && agentDisplayState(task, agent);
-  if (display?.permission && ["pending", "running", "blocked"].includes(item.status) && state.action?.status !== "ready") {
-    state.label = "En attente d’autorisation";
+  if (
+    display?.permission &&
+    ["pending", "running", "blocked"].includes(item.status) &&
+    state.action?.status !== "ready"
+  ) {
+    state.label = t("test_board.state_awaiting_permission");
     state.tone = "blocked";
   } else if (display?.question && state.action?.status !== "ready") {
-    state.label = "En attente de réponse";
+    state.label = t("test_board.state_awaiting_answer");
     state.tone = "blocked";
   }
   const testable =
@@ -300,7 +400,7 @@ function WorkRow({
           onClick={() => onAction(state.action as TaskAction)}
           aria-controls={`action-${state.action?.id}`}
         >
-          Tester
+          {t("test_board.test")}
         </button>
       )}
       <ActionSlot action={state.action} renderActions={renderActions} />
@@ -330,7 +430,6 @@ function LegacyActionRow({
       <div className="mission-test-copy">
         <div className="mission-test-title-line">
           <strong>{action.title}</strong>
-
         </div>
         <span className="mission-test-status">{state.label}</span>
         <Details action={action} />
@@ -344,7 +443,7 @@ function LegacyActionRow({
             onClick={() => onAction(action)}
             aria-controls={`action-${action.id}`}
           >
-            Tester
+            {t("test_board.test")}
           </button>
         )}
       <ActionSlot action={action} renderActions={renderActions} />
@@ -368,15 +467,17 @@ export function MissionTestBoard({
     return item;
   });
   const legacyActions = actions.filter(
-    (action) => (action.kind === "server" || manualRecipe(action)) && !matched.has(action.id),
+    (action) =>
+      (action.kind === "server" || manualRecipe(action)) &&
+      !matched.has(action.id),
   );
   if (!rows.length && !legacyActions.length) return null;
   return (
-    <section className="mission-test-board" aria-label="Tâches et recette">
+    <section className="mission-test-board" aria-label={t("test_board.title")}>
       <div className="mission-test-board-heading">
         <div>
-          <span className="eyebrow">MISSION</span>
-          <h2>Tâches et recette</h2>
+          <span className="eyebrow">{t("test_board.eyebrow")}</span>
+          <h2>{t("test_board.title")}</h2>
         </div>
         <span className="mission-test-board-count">
           {rows.length + legacyActions.length}

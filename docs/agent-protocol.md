@@ -189,7 +189,10 @@ bounded reconnect cache. Prompt context remains bounded independently.
 Codex uses local JSON-RPC `app-server --listen stdio://`, with persistent
 threads per mission step and agent, and a separate supervisor thread. The
 client initializes once; subsequent passages use `turn/start` or saved
-`thread/resume`. `turn/steer` includes the expected active turn ID. No provider
+`thread/resume`. `thread/resume` passes `excludeTurns: true`: Codex keeps the history and resumes the
+same thread without sending all its turns back. Each JSON-RPC line is assembled on its own, even
+when it arrives in fragments, and a record is capped at 32 MiB of UTF-8; going over stops the
+process and keeps the cause. `turn/steer` includes the expected active turn ID. No provider
 or model is silently substituted. Unsupported client tools/permission expansion
 are declined. A missing app-server is an explicit runtime error.
 

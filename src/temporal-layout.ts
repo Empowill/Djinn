@@ -1,4 +1,12 @@
 import type { Agent, FlightEvent, Task } from "./types";
+import { language, t } from "./i18n";
+
+// Journal titles are written in the page's language; older journals hold French titles. These
+// matches read both, plus the English source.
+const isYou = (title: string) =>
+  title === "you" || title === "vous" || title === t("chat.you").toLowerCase();
+const mentions = (title: string, ...words: string[]) =>
+  words.some((word) => title.includes(word));
 
 /**
  * The timeline intentionally works from recorded timestamps only.  A missing
@@ -118,7 +126,10 @@ type TemporalFeedback = {
   resolved?: boolean;
 };
 
-type TemporalTask = Pick<Task, "status" | "agents" | "events" | "questions" | "feedback"> & {
+type TemporalTask = Pick<
+  Task,
+  "status" | "agents" | "events" | "questions" | "feedback"
+> & {
   instructions?: TemporalInstruction[];
   runId?: string;
 };
@@ -145,7 +156,8 @@ function recordedCurrentTime(
   if (value instanceof Date) {
     return Number.isFinite(value.getTime()) ? value.getTime() : undefined;
   }
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "number")
+    return Number.isFinite(value) ? value : undefined;
   return timestampMs(value);
 }
 
@@ -154,7 +166,8 @@ function elapsedStep(durationMs: number, target: number): number {
   const rough = durationMs / Math.max(1, target - 1);
   const magnitude = 10 ** Math.floor(Math.log10(rough));
   const normalized = rough / magnitude;
-  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const factor =
+    normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
   return factor * magnitude;
 }
 
@@ -175,8 +188,8 @@ export function formatClock(value: string | number | Date): string {
     value instanceof Date
       ? value
       : new Date(typeof value === "number" ? value : value);
-  if (!Number.isFinite(date.getTime())) return "Heure indisponible";
-  return date.toLocaleTimeString("fr-FR", {
+  if (!Number.isFinite(date.getTime())) return t("timeline.time_unavailable");
+  return date.toLocaleTimeString(language, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -225,11 +238,15 @@ function sortByTime<T extends { timeMs: number }>(items: T[]): T[] {
 
 function sortIntervals(items: TemporalInterval[]): TemporalInterval[] {
   return [...items].sort(
-    (a, b) => a.startMs - b.startMs || (a.endMs ?? a.startMs) - (b.endMs ?? b.startMs),
+    (a, b) =>
+      a.startMs - b.startMs || (a.endMs ?? a.startMs) - (b.endMs ?? b.startMs),
   );
 }
 
-function eventActivity(entry: FlightEvent, timeMs: number): TemporalActivityPoint {
+function eventActivity(
+  entry: FlightEvent,
+  timeMs: number,
+): TemporalActivityPoint {
   return {
     id: `activity:${entry.id}`,
     agentId: entry.agentId,
@@ -249,9 +266,10 @@ function isHumanJournalEvent(entry: FlightEvent): boolean {
   if (entry.actor === "human") return true;
   const title = entry.title.toLocaleLowerCase("fr-FR");
   return (
-    title === "vous" ||
+    isYou(title) ||
     title.startsWith("vous ") ||
-    title.includes("commentaire") ||
+    title.startsWith("you ") ||
+    mentions(title, "comment", "commentaire") ||
     (entry.type === "review" && !entry.agentId)
   );
 }
@@ -273,8 +291,13 @@ function isMirroredHumanEvent(
   const detail = entry.detail.trim();
   if (intervention.kind === "instruction") {
     return (
-      title === "vous" ||
-      title.includes("indication prise en compte") ||
+      isYou(title) ||
+      mentions(
+        title,
+        "instruction taken into account",
+        "indication prise en compte",
+        t("chat.event_instruction_applied").toLowerCase(),
+      ) ||
       detail === intervention.detail.trim()
     );
   }
@@ -282,11 +305,11 @@ function isMirroredHumanEvent(
     return (
       title.startsWith(`${intervention.id.replace(/^question:/, "")} ·`) ||
       detail === intervention.detail.trim() ||
-      entry.type === "decision" && title.includes("décision")
+      (entry.type === "decision" && mentions(title, "decision", "décision"))
     );
   }
   return (
-    title.includes("commentaire") ||
+    mentions(title, "comment", "commentaire") ||
     title.includes("feedback") ||
     detail === intervention.detail.trim()
   );
@@ -303,7 +326,9 @@ function matchesInterventionReference(
     return reference === intervention.id.replace(/^instruction:/, "");
   if (intervention.kind === "feedback")
     return reference === intervention.id.replace(/^feedback:/, "");
-  return reference.startsWith(`${intervention.id.replace(/^question:/, "answer:")}:`);
+  return reference.startsWith(
+    `${intervention.id.replace(/^question:/, "answer:")}:`,
+  );
 }
 
 /**
@@ -311,7 +336,9 @@ function matchesInterventionReference(
  * are recognizable as human authored. Journal mirrors are removed by time and
  * content so one action has one marker.
  */
-export function buildHumanInterventions(task: TemporalTask): HumanIntervention[] {
+export function buildHumanInterventions(
+  task: TemporalTask,
+): HumanIntervention[] {
   const explicit: HumanIntervention[] = [];
   for (const instruction of task.instructions || []) {
     const timeMs = timestampMs(instruction.time);
@@ -321,7 +348,7 @@ export function buildHumanInterventions(task: TemporalTask): HumanIntervention[]
       kind: "instruction",
       time: instruction.time as string,
       timeMs,
-      title: "Indication",
+      title: t("timeline.instruction"),
       detail: instruction.text,
       agentId: instruction.agentId,
     });
@@ -348,7 +375,7 @@ export function buildHumanInterventions(task: TemporalTask): HumanIntervention[]
       kind: "feedback",
       time: rawTime as string,
       timeMs,
-      title: "Retour de review",
+      title: t("timeline.review_feedback"),
       detail: feedback.text,
       resolved: feedback.resolved,
     });
@@ -357,7 +384,12 @@ export function buildHumanInterventions(task: TemporalTask): HumanIntervention[]
   const markers = [...explicit];
   const seen = new Set(
     explicit.map((item) =>
-      interventionFingerprint(item.kind, item.timeMs, item.detail, item.agentId),
+      interventionFingerprint(
+        item.kind,
+        item.timeMs,
+        item.detail,
+        item.agentId,
+      ),
     ),
   );
   for (const entry of task.events || []) {
@@ -366,18 +398,19 @@ export function buildHumanInterventions(task: TemporalTask): HumanIntervention[]
     const title = entry.title.toLocaleLowerCase("fr-FR");
     const humanLike =
       entry.actor === "human" ||
-      title === "vous" ||
+      isYou(title) ||
       title.startsWith("vous ") ||
-      title.includes("commentaire") ||
+      title.startsWith("you ") ||
+      mentions(title, "comment", "commentaire") ||
       (entry.type === "review" && !entry.agentId) ||
       entry.agentId === "human";
     if (!humanLike) continue;
     const kind: HumanInterventionKind =
-      title.includes("commentaire") ||
+      mentions(title, "comment", "commentaire") ||
       title.includes("feedback") ||
       entry.type === "review"
         ? "feedback"
-        : title.includes("décision") || entry.type === "decision"
+        : mentions(title, "decision", "décision") || entry.type === "decision"
           ? "decision"
           : "instruction";
     const detail = entry.detail || entry.title;
@@ -389,7 +422,12 @@ export function buildHumanInterventions(task: TemporalTask): HumanIntervention[]
       )
     )
       continue;
-    const fingerprint = interventionFingerprint(kind, timeMs, detail, entry.agentId);
+    const fingerprint = interventionFingerprint(
+      kind,
+      timeMs,
+      detail,
+      entry.agentId,
+    );
     if (seen.has(fingerprint)) continue;
     seen.add(fingerprint);
     markers.push({
@@ -409,10 +447,12 @@ function closeInterval(
   interval: TemporalInterval,
   terminal: EventWithIndex,
 ): boolean {
-  if (interval.endMs !== undefined || terminal.timeMs < interval.startMs) return false;
+  if (interval.endMs !== undefined || terminal.timeMs < interval.startMs)
+    return false;
   interval.end = terminal.event.time;
   interval.endMs = terminal.timeMs;
-  interval.endKind = terminal.event.lifecycle === "blocked" ? "blocked" : "completed";
+  interval.endKind =
+    terminal.event.lifecycle === "blocked" ? "blocked" : "completed";
   interval.lifecycle = terminal.event.lifecycle;
   interval.sourceEventIds.push(terminal.event.id);
   interval.worktree ||= terminal.event.worktree || undefined;
@@ -420,7 +460,11 @@ function closeInterval(
   return true;
 }
 
-function laneIds(task: TemporalTask, intervals: TemporalInterval[], activities: TemporalActivityPoint[]): string[] {
+function laneIds(
+  task: TemporalTask,
+  intervals: TemporalInterval[],
+  activities: TemporalActivityPoint[],
+): string[] {
   const ids = (task.agents || []).map((agent) => agent.id);
   for (const item of [...intervals, ...activities]) {
     const id = item.agentId || "__mission__";
@@ -465,14 +509,19 @@ export function buildTemporalLayout(
 
   const keyFor = (entry: FlightEvent) =>
     `${entry.runId || "legacy"}\u0000${entry.agentId || "mission"}`;
-  const addActivity = (item: EventWithIndex) => activities.push(eventActivity(item.event, item.timeMs));
+  const addActivity = (item: EventWithIndex) =>
+    activities.push(eventActivity(item.event, item.timeMs));
 
   for (const item of recordedEvents) {
     const entry = item.event;
     // Human journal entries have their own row. Keeping them in an agent lane
     // would show the same intervention twice beside its deduplicated marker.
     if (isHumanJournalEvent(entry)) continue;
-    if (!entry.lifecycle || !lifecycleValues.has(entry.lifecycle) || !entry.agentId) {
+    if (
+      !entry.lifecycle ||
+      !lifecycleValues.has(entry.lifecycle) ||
+      !entry.agentId
+    ) {
       addActivity(item);
       continue;
     }
@@ -507,7 +556,9 @@ export function buildTemporalLayout(
       lifecycleEventIds.add(entry.id);
       continue;
     }
-    const open = [...stack].reverse().find((interval) => interval.endMs === undefined);
+    const open = [...stack]
+      .reverse()
+      .find((interval) => interval.endMs === undefined);
     if (!open) {
       const duplicateTerminal = intervals.some(
         (interval) =>
@@ -522,7 +573,10 @@ export function buildTemporalLayout(
     }
     if (closeInterval(open, item)) {
       lifecycleEventIds.add(entry.id);
-      openByKey.set(key, stack.filter((interval) => interval.endMs === undefined));
+      openByKey.set(
+        key,
+        stack.filter((interval) => interval.endMs === undefined),
+      );
     } else {
       // Preserve an out-of-order terminal event as a point; never stretch a
       // bar backwards to make malformed input look like a valid run.
@@ -533,7 +587,8 @@ export function buildTemporalLayout(
   const currentTimeMs = currentTimeForTask(task, options);
   if (currentTimeMs !== undefined) {
     for (const interval of intervals) {
-      if (interval.endMs !== undefined || interval.startMs > currentTimeMs) continue;
+      if (interval.endMs !== undefined || interval.startMs > currentTimeMs)
+        continue;
       if (interval.endKind !== "open") continue;
       interval.endMs = currentTimeMs;
       interval.endKind = "running";
@@ -548,7 +603,8 @@ export function buildTemporalLayout(
   const laneById = new Map<string, TemporalLane>();
   for (const agentId of laneIds(task, intervals, activities))
     laneById.set(agentId, { agentId, intervals: [], activities: [] });
-  for (const interval of intervals) laneById.get(interval.agentId)?.intervals.push(interval);
+  for (const interval of intervals)
+    laneById.get(interval.agentId)?.intervals.push(interval);
   for (const activity of activities) {
     laneById.get(activity.agentId || "__mission__")?.activities.push(activity);
   }
@@ -563,11 +619,15 @@ export function buildTemporalLayout(
     ...intervals.flatMap((interval) => [interval.startMs, interval.endMs]),
     ...activities.map((activity) => activity.timeMs),
     ...humanInterventions.map((item) => item.timeMs),
-  ].filter((time): time is number => typeof time === "number" && Number.isFinite(time));
+  ].filter(
+    (time): time is number => typeof time === "number" && Number.isFinite(time),
+  );
   const startMs = allTimes.length ? Math.min(...allTimes) : undefined;
   const endMs = allTimes.length ? Math.max(...allTimes) : undefined;
   const durationMs =
-    startMs === undefined || endMs === undefined ? 0 : Math.max(0, endMs - startMs);
+    startMs === undefined || endMs === undefined
+      ? 0
+      : Math.max(0, endMs - startMs);
 
   return {
     axis: {
@@ -608,11 +668,16 @@ export function temporalCanvasWidth(
   minimum = 680,
   pixelsPerMinute = 7,
 ): number {
-  return Math.max(minimum, (Math.max(0, durationMs) / 60000) * pixelsPerMinute * scale);
+  return Math.max(
+    minimum,
+    (Math.max(0, durationMs) / 60000) * pixelsPerMinute * scale,
+  );
 }
 
 /** Greedy row allocation keeps concurrent intervals legible within an agent lane. */
-export function allocateIntervalRows(intervals: TemporalInterval[]): Map<string, number> {
+export function allocateIntervalRows(
+  intervals: TemporalInterval[],
+): Map<string, number> {
   const rows: number[] = [];
   const result = new Map<string, number>();
   for (const interval of sortIntervals(intervals)) {
@@ -630,6 +695,9 @@ export function allocateIntervalRows(intervals: TemporalInterval[]): Map<string,
   return result;
 }
 
-export function agentById(task: Pick<Task, "agents">, id: string): Agent | undefined {
+export function agentById(
+  task: Pick<Task, "agents">,
+  id: string,
+): Agent | undefined {
   return task.agents.find((agent) => agent.id === id);
 }

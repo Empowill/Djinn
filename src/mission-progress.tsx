@@ -12,11 +12,12 @@ import type { Agent, MissionStep, StepResult, Task } from "./types";
 import { MarkdownBody } from "./markdown-body";
 import { agentDisplayState } from "./agent-state";
 import "./mission-progress.css";
+import { t } from "./i18n";
 
 const resultStatusLabels: Record<StepResult["status"], string> = {
-  ready: "Prêt pour la suite",
-  blocked: "Bloqué",
-  needs_input: "Réponse attendue",
+  ready: t("progress.status_ready"),
+  blocked: t("progress.status_blocked"),
+  needs_input: t("progress.status_needs_input"),
 };
 
 const resultStatusIcons: Record<StepResult["status"], typeof CheckCircle2> = {
@@ -72,7 +73,7 @@ function Criteria({ criteria }: { criteria: StepResult["criteria"] }) {
       <summary>
         <span>
           <ListChecks size={14} />
-          Critères de sortie
+          {t("progress.exit_criteria")}
         </span>
         <ChevronDown size={14} />
       </summary>
@@ -120,26 +121,36 @@ export function StageReport({ step }: { step: MissionStep }) {
   return (
     <section
       className={`stage-report is-${report.status}`}
-      aria-label={`Compte rendu de l’étape ${step.title}`}
+      aria-label={t("progress.report_label", { step: step.title })}
     >
       <div className="stage-report-heading">
         <div className="stage-report-status" role="status">
           <StatusIcon size={16} />
           <span>{resultStatusLabels[report.status]}</span>
         </div>
-        <span className="stage-report-step">Compte rendu · {step.title}</span>
+        <span className="stage-report-step">
+          {t("progress.report_heading", { step: step.title })}
+        </span>
       </div>
       <MarkdownBody text={report.summary} />
       {report.reason && <p className="stage-report-reason">{report.reason}</p>}
       {(completed.length > 0 || remaining.length > 0) && (
         <div className="stage-report-columns">
-          <ReportList title="Fait" values={completed} kind="completed" />
-          <ReportList title="Reste" values={remaining} kind="remaining" />
+          <ReportList
+            title={t("progress.done")}
+            values={completed}
+            kind="completed"
+          />
+          <ReportList
+            title={t("progress.remaining")}
+            values={remaining}
+            kind="remaining"
+          />
         </div>
       )}
       {report.nextAction && (
         <div className="stage-report-next">
-          <span>Prochaine action</span>
+          <span>{t("progress.next_action")}</span>
           <p>{report.nextAction}</p>
         </div>
       )}
@@ -151,7 +162,7 @@ export function StageReport({ step }: { step: MissionStep }) {
               <summary>
                 <span>
                   <FileCheck2 size={14} />
-                  Éléments de preuve
+                  {t("progress.evidence")}
                 </span>
                 <ChevronDown size={14} />
               </summary>
@@ -178,8 +189,8 @@ export function agentAttentionLabel(
 ): string | undefined {
   if (!agent) return undefined;
   const state = agentDisplayState(task, agent);
-  if (state.permission) return "En attente d’autorisation";
-  if (state.question) return "Blocage · question à traiter";
+  if (state.permission) return t("agent_state.awaiting_permission");
+  if (state.question) return t("progress.blocked_question");
   return undefined;
 }
 
@@ -187,7 +198,7 @@ export function agentAttentionLabel(
 export function agentStatusLabel(task: Task, agent?: Agent): string {
   const attention = agentAttentionLabel(task, agent);
   if (attention) return attention;
-  if (!agent) return "Activité enregistrée";
+  if (!agent) return t("progress.activity_recorded");
   return agentDisplayState(task, agent).label;
 }
 

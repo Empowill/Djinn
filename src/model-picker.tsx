@@ -16,6 +16,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type { ProviderId, ProviderModel, ProviderModelCatalog } from "./types";
+import { t } from "./i18n";
 
 type ModelPickerOption = ProviderModel & {
   unavailable?: boolean;
@@ -23,8 +24,8 @@ type ModelPickerOption = ProviderModel & {
 
 const defaultOption: ProviderModel = {
   id: "",
-  name: "Défaut du fournisseur",
-  description: "La CLI choisit le modèle configuré pour ce fournisseur.",
+  name: t("models.provider_default"),
+  description: t("models.provider_default_description"),
   isDefault: true,
 };
 
@@ -122,8 +123,7 @@ export function ModelPicker({
             provider,
             models: [],
             source: "t3-manifest",
-            error:
-              "Le catalogue des modèles est disponible dans l’application Electron.",
+            error: t("models.catalog_needs_app"),
           };
           if (request === requestRef.current) {
             setCatalog(fallback);
@@ -138,9 +138,9 @@ export function ModelPicker({
             provider,
             models: [],
             source: result.source,
-            error: "Le catalogue reçu appartient à un autre fournisseur.",
+            error: t("models.catalog_wrong_provider"),
           });
-          setError("Le catalogue reçu appartient à un autre fournisseur.");
+          setError(t("models.catalog_wrong_provider"));
         } else {
           setCatalog(result);
           setError(result.error || "");
@@ -155,7 +155,7 @@ export function ModelPicker({
           source: "t3-manifest",
           error: message,
         });
-        setError(message || "Le catalogue des modèles n’a pas pu être chargé.");
+        setError(message || t("models.catalog_failed"));
       } finally {
         if (request === requestRef.current) {
           loadedProviderRef.current = provider;
@@ -201,7 +201,7 @@ export function ModelPicker({
             {
               id: value,
               name: value,
-              description: "Modèle sélectionné absent du catalogue actuel.",
+              description: t("models.selected_missing"),
               unavailable: true,
             },
           ]
@@ -290,7 +290,7 @@ export function ModelPicker({
         type="button"
         ref={triggerRef}
         className={`model-picker-trigger ${open ? "open" : ""}`}
-        aria-label="Choisir le modèle"
+        aria-label={t("models.choose")}
         aria-haspopup="listbox"
         aria-expanded={open}
         title={value || defaultOption.name}
@@ -309,7 +309,7 @@ export function ModelPicker({
             <input
               ref={searchRef}
               role="combobox"
-              aria-label="Rechercher un modèle"
+              aria-label={t("models.search")}
               aria-controls={`${pickerId}-options`}
               aria-activedescendant={
                 !loading && filteredOptions[highlighted]
@@ -319,13 +319,13 @@ export function ModelPicker({
               aria-expanded="true"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Rechercher un modèle…"
+              placeholder={t("models.search_placeholder")}
             />
           </div>
           {loading ? (
             <div className="model-picker-message" role="status">
               <Loader2 size={14} className="model-picker-spinner" />
-              Chargement des modèles…
+              {t("models.loading")}
             </div>
           ) : (
             <>
@@ -342,7 +342,7 @@ export function ModelPicker({
                   <button
                     type="button"
                     onClick={() => void load(true)}
-                    aria-label="Réessayer"
+                    aria-label={t("common.retry")}
                   >
                     <RefreshCw size={13} />
                   </button>
@@ -352,7 +352,7 @@ export function ModelPicker({
                 className="model-picker-list"
                 id={`${pickerId}-options`}
                 role="listbox"
-                aria-label="Modèles disponibles"
+                aria-label={t("models.available")}
               >
                 {filteredOptions.length ? (
                   filteredOptions.map((model, index) => (
@@ -374,9 +374,13 @@ export function ModelPicker({
                         )}
                       </span>
                       <span className="model-picker-badges">
-                        {model.isDefault && <em>Défaut</em>}
-                        {model.isLegacy && <em>Ancien</em>}
-                        {model.unavailable && <em>Hors catalogue</em>}
+                        {model.isDefault && (
+                          <em>{t("models.badge_default")}</em>
+                        )}
+                        {model.isLegacy && <em>{t("models.badge_legacy")}</em>}
+                        {model.unavailable && (
+                          <em>{t("models.badge_unavailable")}</em>
+                        )}
                         {model.id === value && (
                           <Check size={14} aria-hidden="true" />
                         )}
@@ -385,7 +389,7 @@ export function ModelPicker({
                   ))
                 ) : (
                   <div className="model-picker-message" role="status">
-                    Aucun modèle ne correspond à « {query} ».
+                    {t("models.no_match", { query })}
                   </div>
                 )}
               </div>

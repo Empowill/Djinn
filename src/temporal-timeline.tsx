@@ -29,6 +29,7 @@ import {
   type TemporalTimelineModel,
 } from "./temporal-layout";
 import "./temporal-timeline.css";
+import { t } from "./i18n";
 
 export interface TimelineProps {
   task: Task;
@@ -38,22 +39,22 @@ export interface TimelineProps {
 const zoomLevels = [0.7, 1, 1.5, 2, 3];
 
 function shortRunId(runId?: string): string {
-  if (!runId) return "Run non renseigné";
+  if (!runId) return t("timeline.run_unknown");
   return runId.length > 22 ? `${runId.slice(0, 10)}…${runId.slice(-8)}` : runId;
 }
 
 function humanKindLabel(kind: HumanIntervention["kind"]): string {
-  if (kind === "decision") return "Décision";
-  if (kind === "feedback") return "Review";
-  return "Indication";
+  if (kind === "decision") return t("timeline.kind_decision");
+  if (kind === "feedback") return t("timeline.kind_feedback");
+  return t("timeline.instruction");
 }
 
 const workStatusLabels: Record<MissionWorkItem["status"], string> = {
-  pending: "En attente",
-  running: "En cours",
-  blocked: "Bloqué",
-  ready: "Prêt à tester",
-  done: "Terminé",
+  pending: t("timeline.work_pending"),
+  running: t("timeline.running"),
+  blocked: t("timeline.blocked"),
+  ready: t("timeline.work_ready"),
+  done: t("timeline.work_done"),
 };
 
 function workItemStatusLabel(
@@ -62,8 +63,8 @@ function workItemStatusLabel(
   agent?: Agent,
 ): string {
   const attention = agent ? agentDisplayState(task, agent) : undefined;
-  if (attention?.permission) return "En attente d’autorisation";
-  if (attention?.question) return "Blocage · question à traiter";
+  if (attention?.permission) return t("timeline.awaiting_permission");
+  if (attention?.question) return t("timeline.blocked_question");
   if (agent && item.status === "running" && agent.status !== "running")
     return agentDisplayState(task, agent).label;
   return workStatusLabels[item.status];
@@ -121,28 +122,34 @@ function MissionWorkItemRow({
       <div className="mission-work-copy">
         <div className="mission-work-title-row">
           <strong>{item.title}</strong>
-          {item.ticket && <span className="mission-work-ticket">{item.ticket}</span>}
+          {item.ticket && (
+            <span className="mission-work-ticket">{item.ticket}</span>
+          )}
         </div>
         <span className="mission-work-state">{status}</span>
         {hasDetails && (
           <details className="mission-work-details">
             <summary>
-              Détails
+              {t("timeline.details")}
               <ChevronDown size={12} />
             </summary>
             <div>
               {item.detail && <p>{item.detail}</p>}
               {item.worktree && (
                 <span>
-                  Worktree <code>{item.worktree}</code>
+                  {t("timeline.worktree")} <code>{item.worktree}</code>
                 </span>
               )}
               {item.branch && (
                 <span>
-                  Branche <code>{item.branch}</code>
+                  {t("timeline.branch")} <code>{item.branch}</code>
                 </span>
               )}
-              {item.runId && <span>Run {shortRunId(item.runId)}</span>}
+              {item.runId && (
+                <span>
+                  {t("timeline.run")} {shortRunId(item.runId)}
+                </span>
+              )}
             </div>
           </details>
         )}
@@ -152,8 +159,8 @@ function MissionWorkItemRow({
           className="mission-work-agent"
           type="button"
           onClick={() => onAgent(agent)}
-          aria-label={`Ouvrir le chat de ${agent.name}`}
-          title={`Ouvrir le chat de ${agent.name}`}
+          aria-label={t("timeline.open_chat", { name: agent.name })}
+          title={t("timeline.open_chat", { name: agent.name })}
         >
           <Orb
             status={display?.status || agent.status}
@@ -180,11 +187,14 @@ function MissionWorkList({
   const items = workItemsForTask(task);
   if (!items.length) return null;
   return (
-    <section className="mission-work-list" aria-label="Tâches de la mission">
+    <section
+      className="mission-work-list"
+      aria-label={t("timeline.wish_tasks")}
+    >
       <div className="mission-work-heading">
         <div>
-          <span className="eyebrow">TRAVAIL</span>
-          <h2>Tâches de l’étape</h2>
+          <span className="eyebrow">{t("timeline.work_eyebrow")}</span>
+          <h2>{t("timeline.step_tasks")}</h2>
         </div>
         <span className="mission-work-count">{items.length}</span>
       </div>
@@ -203,10 +213,13 @@ function MissionWorkList({
 }
 
 function activityLabel(activity: TemporalActivityPoint): string {
-  if (activity.lifecycle === "started") return "Déclenchement";
-  if (activity.lifecycle === "completed") return "Fin enregistrée";
-  if (activity.lifecycle === "blocked") return "Blocage enregistré";
-  return activity.type === "tool" ? "Outil" : "Activité enregistrée";
+  if (activity.lifecycle === "started") return t("timeline.activity_started");
+  if (activity.lifecycle === "completed")
+    return t("timeline.activity_completed");
+  if (activity.lifecycle === "blocked") return t("timeline.activity_blocked");
+  return activity.type === "tool"
+    ? t("timeline.activity_tool")
+    : t("timeline.activity_recorded");
 }
 
 function AgentLabel({
@@ -248,11 +261,11 @@ function AgentLabel({
       <span className="temporal-agent-copy">
         <strong style={{ color }}>
           {agent?.name ||
-            (isMissionLane ? "Mission" : lane.agentId) ||
-            "Mission"}
+            (isMissionLane ? t("timeline.wish_lane") : lane.agentId) ||
+            t("timeline.wish_lane")}
         </strong>
         <small>
-          {agent?.role || "Activité enregistrée"}
+          {agent?.role || t("timeline.activity_recorded")}
           {display && ` · ${display.label}`}
         </small>
       </span>
@@ -264,8 +277,8 @@ function AgentLabel({
     <button
       className="temporal-agent-label"
       onClick={() => onAgent(agent)}
-      aria-label={`Ouvrir le chat de ${agent.name}`}
-      title={`Ouvrir le chat de ${agent.name}`}
+      aria-label={t("timeline.open_chat", { name: agent.name })}
+      title={t("timeline.open_chat", { name: agent.name })}
     >
       {content}
       <MessageSquare size={13} aria-hidden="true" />
@@ -284,16 +297,16 @@ function IntervalDetails({
     <div className="temporal-popover-body">
       <span className="temporal-popover-kind">
         {interval.endKind === "running"
-          ? "En cours"
+          ? t("timeline.running")
           : interval.endKind === "blocked"
-            ? "Bloqué"
-            : "Run"}
+            ? t("timeline.blocked")
+            : t("timeline.run")}
       </span>
       <strong>{interval.title}</strong>
-      <p>{interval.detail || "Aucun détail enregistré."}</p>
+      <p>{interval.detail || t("timeline.no_detail")}</p>
       <dl>
         <div>
-          <dt>Début</dt>
+          <dt>{t("timeline.start")}</dt>
           <dd>
             {formatClock(interval.start)}
             {interval.endMs !== undefined &&
@@ -302,31 +315,31 @@ function IntervalDetails({
         </div>
         {interval.end && interval.endMs !== undefined && (
           <div>
-            <dt>Fin</dt>
+            <dt>{t("timeline.end")}</dt>
             <dd>{formatClock(interval.end)}</dd>
           </div>
         )}
         {interval.runId && (
           <div>
-            <dt>Run</dt>
+            <dt>{t("timeline.run")}</dt>
             <dd>{shortRunId(interval.runId)}</dd>
           </div>
         )}
         {interval.worktree && (
           <div>
-            <dt>Worktree</dt>
+            <dt>{t("timeline.worktree")}</dt>
             <dd>{interval.worktree}</dd>
           </div>
         )}
         {interval.branch && (
           <div>
-            <dt>Branche</dt>
+            <dt>{t("timeline.branch")}</dt>
             <dd>{interval.branch}</dd>
           </div>
         )}
         {agent && (
           <div>
-            <dt>Agent</dt>
+            <dt>{t("timeline.agent")}</dt>
             <dd>{agent.name}</dd>
           </div>
         )}
@@ -340,21 +353,21 @@ function ActivityDetails({ activity }: { activity: TemporalActivityPoint }) {
     <div className="temporal-popover-body">
       <span className="temporal-popover-kind">{activityLabel(activity)}</span>
       <strong>{activity.title}</strong>
-      <p>{activity.detail || "Aucun détail enregistré."}</p>
+      <p>{activity.detail || t("timeline.no_detail")}</p>
       <dl>
         <div>
-          <dt>Heure</dt>
+          <dt>{t("timeline.time")}</dt>
           <dd>{formatClock(activity.time)}</dd>
         </div>
         {activity.runId && (
           <div>
-            <dt>Run</dt>
+            <dt>{t("timeline.run")}</dt>
             <dd>{shortRunId(activity.runId)}</dd>
           </div>
         )}
         {activity.worktree && (
           <div>
-            <dt>Worktree</dt>
+            <dt>{t("timeline.worktree")}</dt>
             <dd>{activity.worktree}</dd>
           </div>
         )}
@@ -371,13 +384,17 @@ function HumanDetails({ item }: { item: HumanIntervention }) {
       <p>{item.detail}</p>
       <dl>
         <div>
-          <dt>Heure exacte</dt>
+          <dt>{t("timeline.exact_time")}</dt>
           <dd>{formatClock(item.time)}</dd>
         </div>
         {item.resolved !== undefined && (
           <div>
-            <dt>État</dt>
-            <dd>{item.resolved ? "Résolu" : "À traiter"}</dd>
+            <dt>{t("timeline.state")}</dt>
+            <dd>
+              {item.resolved
+                ? t("timeline.resolved")
+                : t("timeline.to_address")}
+            </dd>
           </div>
         )}
       </dl>
@@ -429,7 +446,9 @@ function IntervalBar({
         aria-expanded={open}
         title={`${interval.title} · ${formatClock(interval.start)}`}
       >
-        {interval.endKind === "running" && <i aria-label="En cours" />}
+        {interval.endKind === "running" && (
+          <i aria-label={t("timeline.running")} />
+        )}
       </button>
       {open && (
         <div className="temporal-popover temporal-popover-interval">
@@ -533,7 +552,7 @@ function LaneRow({
         ))}
         {!lane.intervals.length && !lane.activities.length && (
           <span className="temporal-empty-lane">
-            Aucune activité enregistrée
+            {t("timeline.no_activity")}
           </span>
         )}
       </div>
@@ -557,8 +576,8 @@ function HumanRow({
           <UserRound size={14} />
         </span>
         <span className="temporal-agent-copy">
-          <strong>Vous</strong>
-          <small>Interventions enregistrées</small>
+          <strong>{t("timeline.you")}</strong>
+          <small>{t("timeline.interventions")}</small>
         </span>
       </div>
       <div className="temporal-track temporal-human-track">
@@ -579,7 +598,11 @@ function HumanRow({
             >
               <button
                 onClick={() => setOpenId(open ? null : item.id)}
-                aria-label={`${humanKindLabel(item.kind)} : ${item.title}, ${formatClock(item.time)}`}
+                aria-label={t("timeline.intervention_label", {
+                  kind: humanKindLabel(item.kind),
+                  title: item.title,
+                  time: formatClock(item.time),
+                })}
                 aria-expanded={open}
                 title={`${item.title} · ${formatClock(item.time)}`}
               >
@@ -595,7 +618,7 @@ function HumanRow({
         })}
         {!model.humanInterventions.length && (
           <span className="temporal-empty-lane">
-            Aucune intervention enregistrée
+            {t("timeline.no_intervention")}
           </span>
         )}
       </div>
@@ -652,17 +675,17 @@ export function TemporalTimeline({ task, onAgent }: TimelineProps) {
             <Clock3 size={13} />
             {model.hasRecordedTimes
               ? `${model.axis.startMs !== undefined ? formatClock(model.axis.startMs) : ""} → ${model.axis.endMs !== undefined ? formatClock(model.axis.endMs) : ""} · ${formatElapsed(model.axis.durationMs)}`
-              : "Pas encore d’activité"}
+              : t("timeline.no_activity_yet")}
           </span>
           {live && model.currentTimeMs !== undefined && (
             <span className="temporal-live-label">
-              <i /> En cours
+              <i /> {t("timeline.running")}
             </span>
           )}
         </div>
         <div
           className="temporal-toolbar-actions"
-          aria-label="Réglage de l’échelle"
+          aria-label={t("timeline.scale")}
         >
           <button
             className="temporal-tool-button"
@@ -670,8 +693,8 @@ export function TemporalTimeline({ task, onAgent }: TimelineProps) {
               setScale(zoomLevels[Math.max(0, currentZoomIndex - 1)])
             }
             disabled={currentZoomIndex === 0}
-            aria-label="Réduire l’échelle"
-            title="Réduire l’échelle"
+            aria-label={t("timeline.zoom_out")}
+            title={t("timeline.zoom_out")}
           >
             <Minus size={13} />
           </button>
@@ -688,17 +711,17 @@ export function TemporalTimeline({ task, onAgent }: TimelineProps) {
               )
             }
             disabled={currentZoomIndex === zoomLevels.length - 1}
-            aria-label="Augmenter l’échelle"
-            title="Augmenter l’échelle"
+            aria-label={t("timeline.zoom_in")}
+            title={t("timeline.zoom_in")}
           >
             <Plus size={13} />
           </button>
           <button
             className="temporal-fit-button"
             onClick={() => setScale(1)}
-            title="Ajuster l’échelle"
+            title={t("timeline.fit_scale")}
           >
-            <Maximize2 size={12} /> Ajuster
+            <Maximize2 size={12} /> {t("timeline.fit")}
           </button>
         </div>
       </div>
@@ -706,8 +729,8 @@ export function TemporalTimeline({ task, onAgent }: TimelineProps) {
       {!model.hasRecordedTimes ? (
         <div className="temporal-empty-state">
           <Activity size={22} />
-          <strong>Pas encore d’activité</strong>
-          <p>Les événements apparaîtront ici dès qu’ils seront enregistrés.</p>
+          <strong>{t("timeline.no_activity_yet")}</strong>
+          <p>{t("timeline.empty_hint")}</p>
         </div>
       ) : (
         <div
@@ -728,7 +751,7 @@ export function TemporalTimeline({ task, onAgent }: TimelineProps) {
           >
             <div className="temporal-axis">
               <div className="temporal-axis-label">
-                <span>Temps écoulé</span>
+                <span>{t("timeline.elapsed")}</span>
                 <small>
                   {model.axis.startMs !== undefined
                     ? formatClock(model.axis.startMs)
@@ -768,13 +791,13 @@ export function TemporalTimeline({ task, onAgent }: TimelineProps) {
       )}
       <div className="temporal-legend">
         <span>
-          <i className="legend-interval" /> Travail
+          <i className="legend-interval" /> {t("timeline.legend_work")}
         </span>
         <span>
-          <i className="legend-activity" /> Activité
+          <i className="legend-activity" /> {t("timeline.legend_activity")}
         </span>
         <span>
-          <i className="legend-human" /> Vous
+          <i className="legend-human" /> {t("timeline.you")}
         </span>
       </div>
     </div>
@@ -786,7 +809,7 @@ export function Timeline({ task, onAgent }: TimelineProps) {
   return (
     <div className="panel-content temporal-timeline">
       <div className="panel-heading">
-        <h1>Timeline</h1>
+        <h1>{t("timeline.title")}</h1>
       </div>
       <TemporalTimeline task={task} onAgent={onAgent} />
     </div>

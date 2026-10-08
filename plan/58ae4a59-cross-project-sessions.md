@@ -1,0 +1,127 @@
+---
+id: 01a11876-6480-7ec2-9833-abd058ae4a59
+code: T13
+phase: 2
+status: open
+---
+
+# T13 · Sessions across projects
+
+**Goal.** A piece of work often spans several projects: an application and its infrastructure,
+a library and its users. Monorepos are the exception. Djinn follows one session across all the
+projects it touches, and a project is not necessarily a Git repository.
+
+## Decided
+- **A session is a mission, and we call it a wish.** One concept, spanning projects from the
+  start: what you ask Djinn for, and what it works to grant. In code and in English, `Wish`
+  (`djinn wish "…"`; "Wish granted" when delivered); in French, « souhait ». "Wish" and "summon"
+  (T23) are the only djinn-themed words; the rest stays plain (task, worker, gate).
+- **Djinn proposes, you grant.** Djinn never closes a wish. When nothing is left (every task
+  finished, no open question, no action waiting for you, no failed task, no gate waiting), it
+  proposes: a big, friendly "My wish is granted" button. The wish is granted when you click it.
+- **Opening a wish is a moment, not a command.** You say it ("open a new wish: …"); the lead
+  recognizes it and opens the wish in Djinn (`djinn wish make`): a short title, the projects it
+  touches, the first questions. The new wish shows at once in the flight plan, below the others
+  by rank. A fourth active wish waits (three at most).
+- **Djinn is an orchestration layer, kept apart from the projects it works on.** One central
+  store for the machine (missions, tasks, questions, journal) and one folder per project for its
+  configuration and index, both in Djinn's data folder. Djinn writes nothing into a project and
+  commits nothing there, unless a mission explicitly does it as part of its work.
+- **Adding a project feels natural.** In the chat, "it is in ~/code/api" or "clone
+  github.com/acme/api" is enough: the lead calls `djinn project add <folder>` or
+  `djinn project clone <url>`, exactly as a person would. Both index the project in seconds, with
+  no model call, and the mission picks it up at once. A folder that is not a Git repository is
+  fine.
+- **An exported mission carries its plan, questions, decisions and journal**, never code and never
+  a secret: code travels through Git. Projects are referenced by name and remote URL, never by a
+  local path; on import, Djinn finds each project on the new machine or asks for it.
+- **Names are matched without regard to case** (project names, remote URLs, task codes): the
+  default macOS file system ignores case, so two names that differ only by case are one name.
+- **The interface keeps its "add a project" screen**, simplified: by default it indexes everything
+  at once, with nothing to choose. The indexing options open only for someone who asks for them.
+  This changes `src/`: reviewed by the interface maintainer.
+- **One command takes you back to a wish.** `djinn wish resume <wish>` starts the lead on that
+  wish where it stopped: it resumes the lead's own agent session when the wish recorded one (the
+  wish keeps the provider and the session ID, never a secret), and otherwise starts a new lead
+  from a brief built out of the store (plan, open questions, decisions, journal). The wish's
+  page shows this command at the top, so whoever has the page open is one command away.
+- **Several wishes at once, in one Djinn, in one flight plan.** The active wishes are ranked by
+  hand: drag a wish up or down, and the one on top has priority (the scheduler serves it first,
+  T07). Their flight plans merge into one: one list of questions, one list of workers, one
+  journal, sorted as usual (blocking first). Every item keeps the wish it comes from, shown on
+  it, so that an answer, a task or a block goes back to the right wish. The machine and the
+  gates are shared by all wishes; the rank decides who goes first.
+- **Three active wishes at most.** It protects the user's attention, not the machine: granting
+  every wish at once means the framework was misunderstood. A fourth waits until one is granted
+  or paused. How many workers run is a separate limit, set by the machine (T17), with one
+  orchestrator for all wishes.
+
+## What we want
+- **Projects are a registry**, set up once: point at a folder ("it is here"), or ask Djinn to
+  clone a repository, and it is indexed in seconds (what to read first, how to test).
+- **Sessions are independent of projects.** A session (today's "mission" and its flight plan)
+  lists the projects it works on, and can add one along the way.
+- **Each task names its project.** In a Git project it gets its own worktree; elsewhere, writers
+  are serialized by exclusive write scopes.
+- **Several sessions at once**, in the same project or not, each with its own flight plan.
+- **Export and import a session**, so a teammate opens it on another machine; projects are
+  matched by name or remote URL, and asked for when missing.
+
+## Done when
+- [ ] One session drives tasks in two projects, one of them not a Git repository.
+- [x] A session exported here imports on another machine and finds or asks for its projects.
+- [x] `djinn wish resume <wish>` takes the lead's own session back in the lead's terminal, starting Djinn if it
+  does not run, and attaches to it if it already runs.
+- [ ] Without a lead session, `djinn wish resume` starts a new lead from a brief built out of the store (plan, open
+  questions, decisions, journal). Today it opens a shell in the wish's first project and says there is no session.
+
+## Decided along the way
+- **The export format is a proto**, `WishExport` in `api/plan/v1`, version 1: the wish, its project
+  references (name, remote URL, Git or not), its tasks, their events, its questions, its blocks and
+  the commands of the journal that changed it. A `.djinn` file is the binary protobuf; a `.json`
+  file is the same in protobuf JSON, for a reader. Nothing of the Electron `djinn-session` format
+  is kept, and no converter reads it.
+- **What stays on the machine**: a task's worktree and agent session, an event's raw provider line,
+  the text of tool results and logs (often code), the input of a tool call (its name stays), and the
+  commands that added projects (they hold folders). The folders of the projects and the home folder
+  are replaced in every text by the project's name and `~`. A remote URL loses its credentials.
+- **Commands**: `djinn wish export <wish> [--file f]` (by default the Downloads folder) and
+  `djinn wish import <file> [--replace]`; the window imports through `ImportData`, which also
+  journals every import with its content. A wish already here is refused, unless `--replace`.
+- **Identifiers are kept** (UUIDv7); an import whose entity ids belong to another wish is refused.
+  A task whose worker was running is imported as interrupted.
+- **Projects are matched** by remote URL (its HTTPS and SSH forms are one), then by name, case
+  ignored; otherwise added without a folder. `djinn project add <folder>` then attaches it, found by
+  its remote or its name, instead of adding a second project.
+- **The journal follows the wish**: a re-export carries the commands of the first machine, not the
+  import itself, so files never nest.
+
+- **The lead is in the lamp**: `Wish.lead` (`Lead`: provider, session ID, folder), set by
+  `djinn wish set-lead <wish> <session> [--provider codex] [--directory <folder>]` (the folder defaults to the
+  wish's first project). Only Claude (`claude --resume <id>`) and Codex (`codex resume <id>`) can be resumed in a
+  terminal; the session ID is a word (`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`), so the line goes through the user's
+  shell as it is. Never a secret.
+- **The lead travels with the wish**: its provider and session ID go in the export; its folder only as a project's
+  name or `~` (an absolute folder outside both is left out), and the import puts this machine's folder back when it
+  has the project, or leaves it empty for `set-lead`.
+- **One Djinn per machine (per data directory), and the commands go through it.** A second `djinn up` asks the
+  running one to show its window (`UiService.Show`: restored, raised, focused; in browser mode it prints the page's
+  address again) and exits 0. An address file nothing answers is from a crash: `djinn up` starts over it. Our own
+  mechanism (the socket or the loopback address of `server.addr`), not the single instance of Wails.
+- **`djinn wish resume`** is marked `autostart`: without a djinn, the command line starts `djinn up` detached
+  (its own session, output in `djinn.log`), waits for it, then calls it. The server opens the terminal
+  `lead-<wish id>` running the resume line in the lead's folder, or attaches to it, and asks the window to show the
+  wish and that terminal (`UiService.WatchShow`, replayed for a minute to a window that opens later).
+- **A session never runs twice in Djinn**: a lead is not started while another terminal of Djinn runs a command
+  line naming its session ID (`--terminal "claude --resume <id>"` included). Djinn does not see a session running
+  outside it: close it there first.
+- **Closing the window does not quit Djinn**: it is minimised (hidden on macOS); "Quit Djinn" in the tray menu,
+  Ctrl+Q (Cmd+Q) in the window, or stopping `djinn up` quits.
+
+## Open questions
+- The window shows one terminal at a time: `wish resume` switches it to the lead's, and a reload goes back to the
+  main one. *Recommendation: a terminal per wish, shown with the wish, once the interface reads the wishes itself
+  (T03).*
+- `Harness.Recover` marks every pending task interrupted at start-up, so the planned items of an
+  imported wish (never started) turn interrupted after a restart. *Recommendation: recover only the
+  tasks whose worker started (a start time), in the harness task.*

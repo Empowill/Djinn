@@ -4,13 +4,14 @@ import { motion } from "motion/react";
 import type { Agent, Task } from "./types";
 import { agentColor } from "./visuals";
 import "./agent-avatars.css";
+import { t } from "./i18n";
 
 const statusLabels: Record<Agent["status"], string> = {
-  queued: "en attente",
-  running: "en cours",
-  blocked: "décision requise",
-  done: "terminé",
-  error: "en erreur",
+  queued: t("avatars.status_queued"),
+  running: t("avatars.status_running"),
+  blocked: t("avatars.status_blocked"),
+  done: t("avatars.status_done"),
+  error: t("avatars.status_error"),
 };
 
 function initials(name: string) {
@@ -36,7 +37,9 @@ function AgentAvatar({
   onClick: () => void;
   interactive?: boolean;
 }) {
-  const display = task ? agentDisplayState(task, agent) : { status: agent.status, label: statusLabels[agent.status] };
+  const display = task
+    ? agentDisplayState(task, agent)
+    : { status: agent.status, label: statusLabels[agent.status] };
   const label = `${agent.name} · ${display.label}`;
   const color = agentColor(agent.id, index);
   const content = (
@@ -58,7 +61,7 @@ function AgentAvatar({
       type="button"
       {...props}
       onClick={onClick}
-      aria-label={`Ouvrir la conversation avec ${label}`}
+      aria-label={t("avatars.open_conversation", { label })}
     >
       {content}
     </button>
@@ -84,8 +87,8 @@ export function AgentAvatars({
   const overflow = Math.max(0, agents.length - visible.length);
   if (!agents.length) return null;
   return (
-    <div className="agent-avatars" aria-label="Agents de la mission">
-      <span className="agent-avatars-label">Équipe</span>
+    <div className="agent-avatars" aria-label={t("avatars.wish_agents")}>
+      <span className="agent-avatars-label">{t("avatars.team")}</span>
       <div className="agent-avatar-list">
         {visible.map((agent, index) => (
           <AgentAvatar
@@ -101,8 +104,8 @@ export function AgentAvatars({
             type="button"
             className="agent-avatar-overflow"
             onClick={onOverflow}
-            aria-label={`Afficher les ${overflow} autres agents`}
-            title={`Afficher les ${overflow} autres agents`}
+            aria-label={t("avatars.show_more", { count: overflow })}
+            title={t("avatars.show_more", { count: overflow })}
           >
             +{overflow}
           </button>
@@ -132,7 +135,7 @@ export function AgentPickerDrawer({
     const focusFirst = () => {
       panel.current
         ?.querySelector<HTMLElement>(
-          'button:not([disabled]), [href], input, textarea, select',
+          "button:not([disabled]), [href], input, textarea, select",
         )
         ?.focus({ preventScroll: true });
     };
@@ -146,7 +149,7 @@ export function AgentPickerDrawer({
       if (event.key !== "Tab") return;
       const focusable = Array.from(
         panel.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input, textarea, select',
+          "button:not([disabled]), [href], input, textarea, select",
         ) || [],
       ).filter((element) => element.getClientRects().length > 0);
       if (!focusable.length) return;
@@ -190,22 +193,19 @@ export function AgentPickerDrawer({
       >
         <header className="agent-picker-header">
           <div>
-            <span className="eyebrow">ÉQUIPE</span>
-            <h2 id={headingId}>Choisir un agent</h2>
+            <span className="eyebrow">{t("avatars.team_eyebrow")}</span>
+            <h2 id={headingId}>{t("avatars.choose_agent")}</h2>
           </div>
           <button
             type="button"
             className="icon-button"
             onClick={onClose}
-            aria-label="Fermer la liste des agents"
+            aria-label={t("avatars.close_list")}
           >
             ×
           </button>
         </header>
-        <p className="agent-picker-intro">
-          Ouvrez une conversation pour voir le contexte et envoyer une
-          indication au bon agent.
-        </p>
+        <p className="agent-picker-intro">{t("avatars.picker_intro")}</p>
         <div className="agent-picker-list">
           {agents.map((agent, index) => (
             <button
@@ -228,8 +228,12 @@ export function AgentPickerDrawer({
                 <strong>{agent.name}</strong>
                 <small>{agent.role}</small>
               </span>
-              <span className={`agent-picker-status is-${task ? agentDisplayState(task, agent).status : agent.status}`}>
-                {task ? agentDisplayState(task, agent).label : statusLabels[agent.status]}
+              <span
+                className={`agent-picker-status is-${task ? agentDisplayState(task, agent).status : agent.status}`}
+              >
+                {task
+                  ? agentDisplayState(task, agent).label
+                  : statusLabels[agent.status]}
               </span>
             </button>
           ))}

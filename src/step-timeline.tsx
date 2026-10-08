@@ -3,24 +3,25 @@ import type { Task, MissionStep, StepType } from "./types";
 import { canStartStep, MAX_SUB_AGENTS, STEP_TYPES } from "./workflow";
 import { uid } from "./data";
 import "./step-timeline.css";
+import { t } from "./i18n";
 export const stepLabels: Record<StepType, string> = {
-  discussion: "Qualification",
-  exploration: "Exploration",
-  reflection: "Réflexion",
-  specification: "Spécification",
-  prototype: "Prototype",
-  implementation: "Implémentation",
-  review: "Review",
-  delivery: "Livraison",
+  discussion: t("steps.type_discussion"),
+  exploration: t("steps.type_exploration"),
+  reflection: t("steps.type_reflection"),
+  specification: t("steps.type_specification"),
+  prototype: t("steps.type_prototype"),
+  implementation: t("steps.type_implementation"),
+  review: t("steps.type_review"),
+  delivery: t("steps.type_delivery"),
 };
 const labels = {
-  pending: "À venir",
-  running: "En cours",
-  awaiting_human: "Résultat à valider",
-  completed: "Validée",
-  blocked: "Action nécessaire",
-  paused: "En pause",
-  error: "Erreur",
+  pending: t("steps.status_pending"),
+  running: t("steps.status_running"),
+  awaiting_human: t("steps.status_awaiting_human"),
+  completed: t("steps.status_completed"),
+  blocked: t("steps.status_blocked"),
+  paused: t("steps.status_paused"),
+  error: t("steps.status_error"),
 };
 export function StepTimeline({
   task,
@@ -52,7 +53,7 @@ export function StepTimeline({
   return (
     <div className="workflow-strip">
       <div className="workflow-timeline-row">
-        <nav className="step-timeline" aria-label="Étapes de la mission">
+        <nav className="step-timeline" aria-label={t("steps.nav_label")}>
           {steps.map((s, i) => (
             <button
               key={s.id}
@@ -73,13 +74,17 @@ export function StepTimeline({
                 <strong>{s.title}</strong>
                 <small>
                   {s.needsRevalidation
-                    ? "À revalider"
+                    ? t("steps.needs_revalidation")
                     : s.status === "completed" && s.validation === "automatic"
-                      ? "Terminée automatiquement"
+                      ? t("steps.completed_automatically")
                       : labels[s.status]}
                   {s.id === task.activeStepId &&
                     task.runId &&
-                    (task.permissions?.some((permission) => permission.status === "pending") ? " · Autorisation attendue" : " · Exécution active")}
+                    (task.permissions?.some(
+                      (permission) => permission.status === "pending",
+                    )
+                      ? t("steps.permission_awaited")
+                      : t("steps.run_active"))}
                 </small>
               </span>
               {i < steps.length - 1 && (
@@ -91,8 +96,8 @@ export function StepTimeline({
         <button
           type="button"
           className="icon-button workflow-config"
-          aria-label="Configurer le workflow"
-          title="Configurer le workflow"
+          aria-label={t("steps.configure")}
+          title={t("steps.configure")}
           onClick={onConfigure}
         >
           <Settings2 size={16} />
@@ -107,12 +112,12 @@ export function StepTimeline({
               disabled={!!task.runId || starting}
               title={
                 task.runId
-                  ? "Mettez la mission en pause pour changer la priorité"
-                  : "Conserver les résultats et changer la priorité"
+                  ? t("steps.focus_pause_first")
+                  : t("steps.focus_hint")
               }
               onClick={() => onFocus(selected!)}
             >
-              Travailler sur cette étape
+              {t("steps.focus")}
             </button>
           )}
         {task.workflowMode === "flexible" && !next && onAdd && (
@@ -121,7 +126,7 @@ export function StepTimeline({
             disabled={!!task.runId || starting}
             onClick={onAdd}
           >
-            <Plus size={13} /> Ajouter une étape
+            <Plus size={13} /> {t("steps.add")}
           </button>
         )}
         {next && next.status === "pending" && (
@@ -131,7 +136,7 @@ export function StepTimeline({
             onClick={() => onStart(next.id)}
           >
             <Play size={13} />
-            Lancer {next.title}
+            {t("steps.start", { title: next.title })}
           </button>
         )}
         {selected !== task.activeStepId && task.activeStepId && (
@@ -139,7 +144,7 @@ export function StepTimeline({
             className="button secondary small"
             onClick={() => onSelect(task.activeStepId!)}
           >
-            Revenir à l’étape active
+            {t("steps.back_to_active")}
           </button>
         )}
         {steps.find((s) => s.id === selected)?.status === "completed" && (
@@ -149,7 +154,7 @@ export function StepTimeline({
             onClick={() => onReopen(selected!)}
           >
             <RotateCcw size={12} />
-            Reprendre cette étape
+            {t("steps.reopen")}
           </button>
         )}
       </div>
@@ -186,20 +191,18 @@ export function WorkflowEditor({
   return (
     <section className="workflow-editor">
       <h3>Workflow</h3>
-      <p>
-        Les étapes commencées gardent leur historique. La recette et la
-        livraison attendent votre validation ; le travail courant avance
-        automatiquement.
-      </p>
+      <p>{t("steps.editor_intro")}</p>
       {steps.map((s, i) => (
         <fieldset key={s.id} disabled={disabled || s.status !== "pending"}>
           <legend>
             {i + 1}.{" "}
-            {s.status === "pending" ? "Étape future" : "Historique conservé"}
+            {s.status === "pending"
+              ? t("steps.future_step")
+              : t("steps.kept_history")}
           </legend>
           <div className="workflow-editor-row">
             <select
-              aria-label={`Type de l’étape ${i + 1}`}
+              aria-label={t("steps.step_type", { number: i + 1 })}
               value={s.type}
               onChange={(e) =>
                 update(s.id, {
@@ -218,13 +221,13 @@ export function WorkflowEditor({
               ))}
             </select>
             <input
-              aria-label={`Titre de l’étape ${i + 1}`}
+              aria-label={t("steps.step_title", { number: i + 1 })}
               value={s.title}
               onChange={(e) => update(s.id, { title: e.target.value })}
             />
             <button
               type="button"
-              aria-label={`Monter l’étape ${i + 1}`}
+              aria-label={t("steps.move_up", { number: i + 1 })}
               disabled={i === 0 || steps[i - 1].status !== "pending"}
               onClick={() => {
                 const next = [...steps];
@@ -236,7 +239,7 @@ export function WorkflowEditor({
             </button>
             <button
               type="button"
-              aria-label={`Descendre l’étape ${i + 1}`}
+              aria-label={t("steps.move_down", { number: i + 1 })}
               disabled={
                 i === steps.length - 1 || steps[i + 1].status !== "pending"
               }
@@ -250,7 +253,7 @@ export function WorkflowEditor({
             </button>
             <button
               type="button"
-              aria-label={`Dupliquer l’étape ${i + 1}`}
+              aria-label={t("steps.duplicate", { number: i + 1 })}
               disabled={steps.length >= 100}
               onClick={() => {
                 const next = [...steps];
@@ -262,7 +265,7 @@ export function WorkflowEditor({
             </button>
             <button
               type="button"
-              aria-label={`Retirer l’étape ${i + 1}`}
+              aria-label={t("steps.remove", { number: i + 1 })}
               disabled={steps.length === 1}
               onClick={() => onChange(steps.filter((item) => item.id !== s.id))}
             >
@@ -270,7 +273,7 @@ export function WorkflowEditor({
             </button>
           </div>
           <label>
-            Objectif
+            {t("steps.objective")}
             <textarea
               rows={2}
               value={s.objective}
@@ -278,7 +281,7 @@ export function WorkflowEditor({
             />
           </label>
           <label>
-            Critères de sortie (un par ligne)
+            {t("steps.exit_criteria")}
             <textarea
               rows={2}
               value={s.exitCriteria.join("\n")}
@@ -290,7 +293,7 @@ export function WorkflowEditor({
             />
           </label>
           <label>
-            Supports attendus
+            {t("steps.expected_artifacts")}
             <input
               value={s.expectedArtifacts.join(", ")}
               onChange={(e) =>
@@ -303,7 +306,7 @@ export function WorkflowEditor({
             />
           </label>
           <label>
-            Skills facultatives
+            {t("steps.optional_skills")}
             <input
               placeholder="grill-me"
               value={s.skills.join(", ")}
@@ -322,7 +325,7 @@ export function WorkflowEditor({
         disabled={disabled || !allowAdd || steps.length >= 100}
         onClick={() => add()}
       >
-        Ajouter une étape
+        {t("steps.add")}
       </button>
     </section>
   );
@@ -336,9 +339,9 @@ export function ConcurrencyField({
 }) {
   return (
     <label>
-      Limite de workers simultanés
+      {t("steps.concurrency")}
       <input
-        aria-label="Nombre maximal de sous-agents"
+        aria-label={t("steps.concurrency_max")}
         type="number"
         min={1}
         max={MAX_SUB_AGENTS}
@@ -352,12 +355,7 @@ export function ConcurrencyField({
           )
         }
       />
-      <small>
-        Jusqu’à cette limite, les workers aux périmètres d’écriture
-        explicitement disjoints peuvent avancer ensemble. Un périmètre absent ou
-        vide reste réservé par prudence ; les dépendances et conflits sont
-        signalés quand le runtime les rapporte.
-      </small>
+      <small>{t("steps.concurrency_hint")}</small>
     </label>
   );
 }

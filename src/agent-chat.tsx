@@ -32,6 +32,7 @@ import type { Agent, Artifact, FlightEvent, Task } from "./types";
 import { event as newEvent } from "./data";
 import { Orb, agentColor, agentOrbState } from "./visuals";
 import "./agent-chat.css";
+import { t } from "./i18n";
 
 export type AgentChatProps = {
   agent: Agent;
@@ -56,11 +57,11 @@ type Instruction = NonNullable<Task["instructions"]>[number] & {
   agentId?: string;
 };
 const statusLabels = {
-  queued: "En attente",
-  running: "En cours",
-  blocked: "Décision requise",
-  done: "Terminé",
-  error: "Erreur",
+  queued: t("chat.status_queued"),
+  running: t("chat.status_running"),
+  blocked: t("chat.status_blocked"),
+  done: t("chat.status_done"),
+  error: t("chat.status_error"),
 };
 const bookkeepingTitles = new Set([
   "Le passage de l’agent est terminé",
@@ -72,7 +73,43 @@ const bookkeepingTitles = new Set([
   "Périmètre mis à jour",
   "Indication prise en compte",
   "Vous",
+  // The same titles in the page's language: the French ones above stay for journals already stored.
+  t("chat.event_agent_done"),
+  t("chat.event_wish_paused"),
+  t("chat.event_provider_diagnostic"),
+  t("chat.event_codex_diagnostic"),
+  t("chat.event_scope_updated"),
+  t("chat.event_instruction_applied"),
+  t("chat.you"),
 ]);
+// Event titles that announce an artifact, a delivered instruction or a tool section, in French
+// (journals already stored) and in the page's language.
+const artifactEventPrefixes = [
+  "Support disponible :",
+  t("chat.event_artifact_available", { title: "" }).trim(),
+];
+function artifactEventTitle(title: string): string | undefined {
+  const prefix = artifactEventPrefixes.find((p) => title.startsWith(p));
+  return prefix === undefined ? undefined : title.slice(prefix.length).trim();
+}
+const instructionEventTitles = [
+  t("chat.event_instruction_sent"),
+  t("chat.event_instruction_delivered"),
+  t("chat.event_instruction_prevented"),
+];
+const escapeRegExp = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const toolSectionPattern = new RegExp(
+  `^(?:(Entrée|Commande|Sortie|Code de sortie) :|(${[
+    t("chat.tool_input"),
+    t("chat.tool_command"),
+    t("chat.tool_output"),
+    t("chat.tool_exit_code"),
+  ]
+    .map(escapeRegExp)
+    .join("|")}) ?:)\\s*`,
+  "gm",
+);
 const knownProviderNoise = [
   /^Reading additional input from stdin\.{0,3}$/i,
   /\bWARN\s+codex_[\w:.-]+:/i,
@@ -90,8 +127,9 @@ export function entriesFor(task: Task, agent: Agent): Entry[] {
   const entries: Entry[] = [];
   for (const event of task.events) {
     if (event.agentId !== agent.id) continue;
-    if (event.title.startsWith("Support disponible :")) {
-      const title = event.title.slice("Support disponible :".length).trim();
+    const artifactTitle = artifactEventTitle(event.title);
+    if (artifactTitle !== undefined) {
+      const title = artifactTitle;
       const artifact = (task.artifacts || []).find(
         (a) =>
           a.title === title &&
@@ -126,7 +164,8 @@ export function entriesFor(task: Task, agent: Agent): Entry[] {
       !/^Indication (transmise|remise|empêchée|adressée)|^Transmission empêchée/.test(
         event.title,
       ) &&
-      !event.title.startsWith("Support disponible :")
+      !instructionEventTitles.some((title) => event.title.startsWith(title)) &&
+      artifactEventTitle(event.title) === undefined
     ) {
       entries.push({
         id: `event-${event.id}`,
@@ -162,12 +201,14 @@ export function entriesFor(task: Task, agent: Agent): Entry[] {
         pending: !instruction.appliedAt,
         receipt:
           instruction.status === "prevented"
-            ? `Empêchée : ${instruction.reason || "destinataire indisponible"}`
+            ? t("chat.receipt_prevented", {
+                reason: instruction.reason || t("chat.receipt_no_recipient"),
+              })
             : instruction.status === "consumed" || instruction.appliedAt
-              ? "Remise au runtime · réponse non confirmée"
+              ? t("chat.receipt_delivered")
               : instruction.status === "transmitted"
-                ? "Transmise au runtime"
-                : "En attente",
+                ? t("chat.receipt_transmitted")
+                : t("chat.receipt_waiting"),
       });
   }
   for (const question of task.questions) {
@@ -191,7 +232,7 @@ export function entriesFor(task: Task, agent: Agent): Entry[] {
 
 function CopyButton({
   text,
-  label = "Copier",
+  label = t("chat.copy"),
 }: {
   text: string;
   label?: string;
@@ -216,11 +257,13 @@ function CopyButton({
       type="button"
       className={`ac-copy ${copied ? "is-copied" : ""}`}
       onClick={copy}
-      aria-label={copied ? "Copié" : failed ? "Copie impossible" : label}
-      title={copied ? "Copié" : failed ? "Copie impossible" : label}
+      aria-label={
+        copied ? t("chat.copied") : failed ? t("chat.copy_failed") : label
+      }
+      title={copied ? t("chat.copied") : failed ? t("chat.copy_failed") : label}
     >
       {copied ? <Check size={12} /> : <Copy size={12} />}
-      {failed && <span role="status">Copie impossible</span>}
+      {failed && <span role="status">{t("chat.copy_failed")}</span>}
     </button>
   );
 }
@@ -229,7 +272,7 @@ export function ArtifactChatCard({ artifact }: { artifact: Artifact }) {
   return (
     <section
       className="ac-artifact-card"
-      aria-label={`Support : ${artifact.title}`}
+      aria-label={t("chat.artifact_label", { title: artifact.title })}
     >
       <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
         <FileText size={18} />
@@ -237,11 +280,12 @@ export function ArtifactChatCard({ artifact }: { artifact: Artifact }) {
           <strong>{artifact.title}</strong>
           <small>
             {artifact.type === "visualization"
-              ? "Visualisation interactive"
+              ? t("chat.artifact_visualization")
               : artifact.type === "document"
-                ? "Document Markdown"
-                : "Support"}{" "}
-            · révision {artifact.revision || 1}
+                ? t("chat.artifact_document")
+                : t("chat.artifact_generic")}{" "}
+            ·{" "}
+            {t("chat.artifact_revision", { revision: artifact.revision || 1 })}
           </small>
         </span>
         <ChevronDown size={14} />
@@ -255,7 +299,7 @@ export function ArtifactChatCard({ artifact }: { artifact: Artifact }) {
           ) : (
             <pre>
               {artifact.type === "screenshot"
-                ? "Capture disponible dans les supports de l’étape."
+                ? t("chat.screenshot_in_step")
                 : artifact.content}
             </pre>
           )}
@@ -267,12 +311,11 @@ export function ArtifactChatCard({ artifact }: { artifact: Artifact }) {
 export { MarkdownBody };
 
 function ToolOutput({ text }: { text: string }) {
-  if (!text) return <p className="ac-tool-empty">Aucun détail rapporté.</p>;
-  const pattern = /^(Entrée|Commande|Sortie|Code de sortie) :\s*/gm;
-  const markers = [...text.matchAll(pattern)];
+  if (!text) return <p className="ac-tool-empty">{t("chat.tool_empty")}</p>;
+  const markers = [...text.matchAll(toolSectionPattern)];
   if (!markers.length) return <pre className="ac-tool-output">{text}</pre>;
   const sections = markers.map((marker, index) => ({
-    label: marker[1],
+    label: marker[1] ?? marker[2],
     text: text
       .slice(
         marker.index! + marker[0].length,
@@ -290,7 +333,7 @@ function ToolOutput({ text }: { text: string }) {
             <span>{section.label}</span>
             <CopyButton
               text={section.text}
-              label={`Copier : ${section.label}`}
+              label={t("chat.copy_section", { label: section.label })}
             />
           </div>
           <pre className="ac-tool-output">{section.text}</pre>
@@ -339,14 +382,17 @@ export function AgentChat({
   const branch = agent.branch || latestBranch?.branch;
   const worktree = agent.worktree || latestBranch?.worktree;
   const display = agentDisplayState(task, agent);
-  const capability = display.permission ? "Autorisation requise pour poursuivre" : display.question ? "Réponse attendue dans Mission" :
-    agent.readOnly === true
-      ? "Lecture seule"
-      : agent.id === "lead" && task.activity?.lead === "supervises"
-        ? "Supervise l’équipe"
-        : agent.origin === "codex"
-          ? "Suivi en lecture"
-          : "Peut recevoir des indications";
+  const capability = display.permission
+    ? t("chat.capability_permission")
+    : display.question
+      ? t("chat.capability_question")
+      : agent.readOnly === true
+        ? t("chat.capability_read_only")
+        : agent.id === "lead" && task.activity?.lead === "supervises"
+          ? t("chat.capability_supervises")
+          : agent.origin === "codex"
+            ? t("chat.capability_observed")
+            : t("chat.capability_instructions");
   const scrollToEnd = (smooth = true) => {
     const el = viewport.current;
     if (!el) return;
@@ -431,15 +477,10 @@ export function AgentChat({
       if (await onSend(text, agent.id)) {
         setDraft("");
         scrollToEnd(true);
-      } else
-        setSendError(
-          "Le message n’a pas été envoyé. Votre texte est conservé.",
-        );
+      } else setSendError(t("chat.send_failed_kept"));
     } catch (error) {
       setSendError(
-        error instanceof Error
-          ? error.message
-          : "Le message n’a pas été envoyé.",
+        error instanceof Error ? error.message : t("chat.send_failed"),
       );
     } finally {
       sendLock.current = false;
@@ -470,11 +511,22 @@ export function AgentChat({
         <div className="ac-heading">
           <h2 id={headingId}>{agent.name}</h2>
           <p>
-            <span>{agent.model || (agent.origin === "codex" ? "Modèle non communiqué" : task.model || task.provider)}</span>
-            {agent.origin === "codex" && <span>Agent Codex observé</span>}
+            <span>
+              {agent.model ||
+                (agent.origin === "codex"
+                  ? t("chat.model_unknown")
+                  : task.model || task.provider)}
+            </span>
+            {agent.origin === "codex" && (
+              <span>{t("chat.codex_observed")}</span>
+            )}
             <span className="ac-capability">{capability}</span>
             <span className={`ac-status is-${display.status}`}>
-              {agent.origin === "codex" && agent.live === false && !display.permission ? `Dernier état : ${statusLabels[agent.status]}` : display.label}
+              {agent.origin === "codex" &&
+              agent.live === false &&
+              !display.permission
+                ? t("chat.last_state", { state: statusLabels[agent.status] })
+                : display.label}
             </span>
           </p>
         </div>
@@ -482,7 +534,7 @@ export function AgentChat({
           <button
             className={`ac-icon-button ${contextOpen ? "is-active" : ""}`}
             onClick={() => setContextOpen(!contextOpen)}
-            aria-label="Périmètre de l’agent"
+            aria-label={t("chat.agent_scope")}
             aria-expanded={contextOpen}
           >
             <SlidersHorizontal size={16} />
@@ -490,15 +542,15 @@ export function AgentChat({
           <button
             className="ac-icon-button"
             onClick={onFilter}
-            aria-label="Ouvrir la timeline de la mission"
-            title="Timeline"
+            aria-label={t("chat.open_timeline")}
+            title={t("chat.timeline")}
           >
             <ArrowUpRight size={16} />
           </button>
           <button
             className="ac-icon-button"
             onClick={onClose}
-            aria-label="Fermer la conversation"
+            aria-label={t("chat.close")}
           >
             <X size={18} />
           </button>
@@ -525,11 +577,11 @@ export function AgentChat({
             <>
               <p className="ac-capability-note">
                 {agent.readOnly
-                  ? "Ce périmètre est disponible en lecture seule."
-                  : "Ce périmètre décrit les fichiers que l’agent peut toucher pendant son passage."}
+                  ? t("chat.scope_read_only")
+                  : t("chat.scope_hint")}
               </p>
               <label>
-                Périmètre
+                {t("chat.scope")}
                 <textarea
                   value={scope}
                   onChange={(e) => setScope(e.target.value)}
@@ -548,26 +600,51 @@ export function AgentChat({
                     ),
                     events: [
                       ...task.events,
-                      newEvent("note", "Périmètre mis à jour", "", agent.id),
+                      newEvent(
+                        "note",
+                        t("chat.event_scope_updated"),
+                        "",
+                        agent.id,
+                      ),
                     ],
                   })
                 }
               >
                 <Check size={12} />
-                Enregistrer
+                {t("common.save")}
               </button>
             </>
           )}
         </section>
       )}
       {display.permission && (
-        <button className="button secondary small" style={{ margin: "8px 18px" }} onClick={() => window.dispatchEvent(new CustomEvent("djinn:permission-focus", { detail: { taskId: task.id, requestId: display.permission!.id } }))}>
-          Autorisation attendue · {display.permission.title}
+        <button
+          className="button secondary small"
+          style={{ margin: "8px 18px" }}
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("djinn:permission-focus", {
+                detail: { taskId: task.id, requestId: display.permission!.id },
+              }),
+            )
+          }
+        >
+          {t("chat.permission_awaited", { title: display.permission.title })}
         </button>
       )}
       {display.question && !display.permission && (
-        <button className="button secondary small" style={{ margin: "8px 18px" }} onClick={() => window.dispatchEvent(new CustomEvent("djinn:question-focus", { detail: { taskId: task.id, questionId: display.question!.id } }))}>
-          Répondre · {display.question.title}
+        <button
+          className="button secondary small"
+          style={{ margin: "8px 18px" }}
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("djinn:question-focus", {
+                detail: { taskId: task.id, questionId: display.question!.id },
+              }),
+            )
+          }
+        >
+          {t("chat.answer_question", { title: display.question.title })}
         </button>
       )}
       <div className="ac-message-region">
@@ -602,13 +679,13 @@ export function AgentChat({
             ref={content}
             className="ac-message-list"
             role="log"
-            aria-label={`Conversation avec ${agent.name}`}
+            aria-label={t("chat.conversation_with", { name: agent.name })}
             aria-live="off"
           >
             {!entries.length && (
               <div className="ac-empty">
                 <MessageSquare size={22} />
-                <p>Aucun message de {agent.name}.</p>
+                <p>{t("chat.empty", { name: agent.name })}</p>
               </div>
             )}
             {entries.map((entry) =>
@@ -630,7 +707,7 @@ export function AgentChat({
                 >
                   <summary>
                     <Terminal size={13} />
-                    <span>{entry.title || "Action de l’agent"}</span>
+                    <span>{entry.title || t("chat.agent_action")}</span>
                     <ChevronDown size={12} />
                   </summary>
                   <div className="ac-tool-body">
@@ -651,20 +728,20 @@ export function AgentChat({
                   className={`ac-message ac-message-${entry.kind}`}
                   aria-label={
                     entry.kind === "user"
-                      ? "Message de vous"
-                      : `Message de ${agent.name}`
+                      ? t("chat.message_from_you")
+                      : t("chat.message_from", { name: agent.name })
                   }
                 >
                   {entry.kind === "user" ? (
                     <>
-                      <span className="ac-user-label">Vous</span>
+                      <span className="ac-user-label">{t("chat.you")}</span>
                       <div className="ac-user-bubble">{entry.text}</div>
                       {entry.pending !== undefined && (
                         <span className="ac-user-delivery">
                           {entry.receipt ||
                             (entry.pending
-                              ? "En attente"
-                              : "Remise au destinataire")}
+                              ? t("chat.receipt_waiting")
+                              : t("chat.receipt_received"))}
                         </span>
                       )}
                     </>
@@ -672,7 +749,10 @@ export function AgentChat({
                     <MarkdownBody text={entry.text} />
                   )}
                   <div className="ac-message-actions">
-                    <CopyButton text={entry.text} label="Copier le message" />
+                    <CopyButton
+                      text={entry.text}
+                      label={t("chat.copy_message")}
+                    />
                   </div>
                 </article>
               ),
@@ -683,77 +763,84 @@ export function AgentChat({
           <button
             className="ac-jump"
             onClick={() => scrollToEnd()}
-            aria-label="Revenir aux derniers messages"
+            aria-label={t("chat.jump_latest")}
           >
             <ArrowDown size={14} />
-            Derniers messages
+            {t("chat.latest")}
           </button>
         )}
       </div>
       {agent.origin === "codex" ? (
-        <p className="ac-composer">Conversation Codex observée. Adressez vos indications au chef.</p>
-      ) : <form
-        className="ac-composer"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
-        {sendError && (
-          <p className="ac-send-error" role="alert">
-            {sendError}
-          </p>
-        )}
-        <div className={`ac-composer-box ${pending ? "is-pending" : ""}`}>
-          <label htmlFor={composerId} className="ac-sr-only">
-            Message à {agent.name}
-          </label>
-          <textarea
-            id={composerId}
-            ref={composer}
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              setSendError("");
-            }}
-            placeholder={`Message à ${agent.name}…`}
-            rows={1}
-            maxLength={12000}
-            disabled={pending}
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.nativeEvent.isComposing
-              ) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-          />
-          <div className="ac-composer-footer">
-            <span>
-              Entrée pour envoyer<span> · </span>⇧ Entrée pour une nouvelle
-              ligne
-            </span>
-            <button
-              type="submit"
-              disabled={!draft.trim() || pending}
-              className="ac-send"
-              aria-label={
-                pending ? "Envoi en cours" : `Envoyer à ${agent.name}`
-              }
-              title="Envoyer"
-            >
-              {pending ? (
-                <span className="ac-send-spinner" />
-              ) : (
-                <ArrowUp size={16} />
-              )}
-            </button>
+        <p className="ac-composer">{t("chat.codex_observed_hint")}</p>
+      ) : (
+        <form
+          className="ac-composer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send();
+          }}
+        >
+          {sendError && (
+            <p className="ac-send-error" role="alert">
+              {sendError}
+            </p>
+          )}
+          <div className={`ac-composer-box ${pending ? "is-pending" : ""}`}>
+            <label htmlFor={composerId} className="ac-sr-only">
+              {t("chat.message_to", { name: agent.name })}
+            </label>
+            <textarea
+              id={composerId}
+              ref={composer}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setSendError("");
+              }}
+              placeholder={t("chat.message_to_placeholder", {
+                name: agent.name,
+              })}
+              rows={1}
+              maxLength={12000}
+              disabled={pending}
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+            />
+            <div className="ac-composer-footer">
+              <span>
+                {t("chat.hint_send")}
+                <span> · </span>
+                {t("chat.hint_newline")}
+              </span>
+              <button
+                type="submit"
+                disabled={!draft.trim() || pending}
+                className="ac-send"
+                aria-label={
+                  pending
+                    ? t("chat.sending")
+                    : t("chat.send_to", { name: agent.name })
+                }
+                title={t("common.send")}
+              >
+                {pending ? (
+                  <span className="ac-send-spinner" />
+                ) : (
+                  <ArrowUp size={16} />
+                )}
+              </button>
+            </div>
           </div>
-        </div>
-      </form>}
+        </form>
+      )}
     </motion.aside>
   );
 }

@@ -1,6 +1,7 @@
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import { useId, useState, useEffect } from "react";
 import type { AgentStatus } from "./types";
+import { t } from "./i18n";
 export const agentColor = (id: string, index = 0) =>
   id === "lead"
     ? "#bbc0c8"
@@ -76,7 +77,7 @@ export function Machine({ active = true }: { active?: boolean }) {
       className={`machine ${active ? "active" : ""}`}
       viewBox="0 0 560 340"
       fill="none"
-      aria-label="Illustration animée de l’équipe Djinn"
+      aria-label={t("visuals.team_illustration")}
     >
       <defs>
         <linearGradient

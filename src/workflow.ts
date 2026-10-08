@@ -12,6 +12,7 @@ import type {
   WorkflowProposal,
   WorkflowProposalStep,
 } from "./types";
+import { t } from "./i18n";
 
 export const MAX_SUB_AGENTS = 16;
 export const STEP_TYPES: StepType[] = [
@@ -54,7 +55,7 @@ function validationForTask(task: Task, step: MissionStep): StepValidation {
   return "human";
 }
 const fail = (field: string): never => {
-  throw new Error(`Le format de la mission est invalide (${field}).`);
+  throw new Error(t("workflow.invalid_format", { field }));
 };
 const object = (v: unknown, field: string): Record<string, any> => {
   if (!v || typeof v !== "object" || Array.isArray(v)) return fail(field);
@@ -147,45 +148,67 @@ export function validateProjectPreferences(
   }
   return result;
 }
-export function validateStepReport(value: unknown): NonNullable<Task["stepResult"]> {
-    const result = object(value, "stepResult");
-    const status = result.status;
-    if (!(status === "ready" || status === "blocked" || status === "needs_input"))
-      return fail("stepResult.status");
-    const normalized: Record<string, any> = {
-      status,
-      summary: text(result.summary, "stepResult.summary", 8000),
-    };
-    if (result.stepId !== undefined) {
-      normalized.stepId = identifier(result.stepId, "stepResult.stepId");
-    }
-    if (result.runId !== undefined)
-      normalized.runId = identifier(result.runId, "stepResult.runId");
-    if (result.reportedAt !== undefined)
-      normalized.reportedAt = timestamp(result.reportedAt, "stepResult.reportedAt");
-    if (result.reason !== undefined)
-      normalized.reason = text(result.reason, "stepResult.reason", 4000);
-    if (result.nextAction !== undefined)
-      normalized.nextAction = text(result.nextAction, "stepResult.nextAction", 4000);
-    if (result.criteria !== undefined) {
-      if (!Array.isArray(result.criteria) || result.criteria.length > 100)
-        return fail("stepResult.criteria");
-      normalized.criteria = result.criteria.map((criterion: unknown, index: number) => {
+export function validateStepReport(
+  value: unknown,
+): NonNullable<Task["stepResult"]> {
+  const result = object(value, "stepResult");
+  const status = result.status;
+  if (!(status === "ready" || status === "blocked" || status === "needs_input"))
+    return fail("stepResult.status");
+  const normalized: Record<string, any> = {
+    status,
+    summary: text(result.summary, "stepResult.summary", 8000),
+  };
+  if (result.stepId !== undefined) {
+    normalized.stepId = identifier(result.stepId, "stepResult.stepId");
+  }
+  if (result.runId !== undefined)
+    normalized.runId = identifier(result.runId, "stepResult.runId");
+  if (result.reportedAt !== undefined)
+    normalized.reportedAt = timestamp(
+      result.reportedAt,
+      "stepResult.reportedAt",
+    );
+  if (result.reason !== undefined)
+    normalized.reason = text(result.reason, "stepResult.reason", 4000);
+  if (result.nextAction !== undefined)
+    normalized.nextAction = text(
+      result.nextAction,
+      "stepResult.nextAction",
+      4000,
+    );
+  if (result.criteria !== undefined) {
+    if (!Array.isArray(result.criteria) || result.criteria.length > 100)
+      return fail("stepResult.criteria");
+    normalized.criteria = result.criteria.map(
+      (criterion: unknown, index: number) => {
         const value = object(criterion, `stepResult.criteria.${index}`);
         if (typeof value.met !== "boolean")
           return fail(`stepResult.criteria.${index}.met`);
         return {
-          criterion: text(value.criterion, `stepResult.criteria.${index}.criterion`, 4000),
+          criterion: text(
+            value.criterion,
+            `stepResult.criteria.${index}.criterion`,
+            4000,
+          ),
           met: value.met,
           ...(value.evidence === undefined
             ? {}
-            : { evidence: text(value.evidence, `stepResult.criteria.${index}.evidence`, 4000) }),
+            : {
+                evidence: text(
+                  value.evidence,
+                  `stepResult.criteria.${index}.evidence`,
+                  4000,
+                ),
+              }),
         };
-      });
-    }
-    for (const field of ["completed", "remaining", "evidence"] as const)
-      if (result[field] !== undefined) normalized[field] = strings(result[field], `stepResult.${field}`);
-    return normalized as NonNullable<Task["stepResult"]>;
+      },
+    );
+  }
+  for (const field of ["completed", "remaining", "evidence"] as const)
+    if (result[field] !== undefined)
+      normalized[field] = strings(result[field], `stepResult.${field}`);
+  return normalized as NonNullable<Task["stepResult"]>;
 }
 export function validateStep(value: unknown, restored = false): MissionStep {
   const s = object(value, "step");
@@ -219,7 +242,8 @@ export function validateStep(value: unknown, restored = false): MissionStep {
   if (s.summary !== undefined) result.summary = text(s.summary, "step.summary");
   if (s.report !== undefined) {
     result.report = validateStepReport(s.report);
-    if (result.report.stepId && result.report.stepId !== result.id) return fail("step.report.stepId");
+    if (result.report.stepId && result.report.stepId !== result.id)
+      return fail("step.report.stepId");
   }
   if (s.needsRevalidation !== undefined) {
     if (typeof s.needsRevalidation !== "boolean")
@@ -326,8 +350,10 @@ export function validateWorkflowProposal(
         ...(step.validation === undefined
           ? {}
           : VALIDATIONS.includes(step.validation) &&
-              !(step.validation === "automatic" &&
-                (step.type === "review" || step.type === "delivery"))
+              !(
+                step.validation === "automatic" &&
+                (step.type === "review" || step.type === "delivery")
+              )
             ? { validation: step.validation as StepValidation }
             : fail(`workflowProposal.steps.${index}.validation`)),
       };
@@ -461,14 +487,14 @@ export function stepPhase(type: StepType): Phase {
         : "brief";
 }
 const DISCUSSION_TITLES: Record<StepType, string> = {
-  discussion: "Discussion automatique",
-  exploration: "Exploration",
-  reflection: "Réflexion",
-  specification: "Spécification",
-  prototype: "Prototype",
-  implementation: "Implémentation",
-  review: "Review",
-  delivery: "Livraison",
+  discussion: t("workflow.step_discussion"),
+  exploration: t("workflow.step_exploration"),
+  reflection: t("workflow.step_reflection"),
+  specification: t("workflow.step_specification"),
+  prototype: t("workflow.step_prototype"),
+  implementation: t("workflow.step_implementation"),
+  review: t("workflow.step_review"),
+  delivery: t("workflow.step_delivery"),
 };
 export function createDiscussionStep(
   prefix: string,
@@ -491,10 +517,10 @@ export function createDiscussionStep(
 export function createDefaultSteps(prefix: string): MissionStep[] {
   return (
     [
-      ["reflection", "Réflexion"],
-      ["implementation", "Implémentation"],
-      ["review", "Review"],
-      ["delivery", "Livraison"],
+      ["reflection", t("workflow.step_reflection")],
+      ["implementation", t("workflow.step_implementation")],
+      ["review", t("workflow.step_review")],
+      ["delivery", t("workflow.step_delivery")],
     ] as [StepType, string][]
   ).map(([type, title], index) => ({
     id: `${prefix}:step:${index + 1}`,
@@ -556,7 +582,10 @@ export function validateTaskWorkflow<T extends Record<string, any>>(
   t.steps = validateSteps(t.steps, restored);
   if (t.stepResult !== undefined) {
     t.stepResult = validateStepReport(t.stepResult);
-    if (t.stepResult.stepId && !t.steps.some((step) => step.id === t.stepResult?.stepId))
+    if (
+      t.stepResult.stepId &&
+      !t.steps.some((step) => step.id === t.stepResult?.stepId)
+    )
       return fail("stepResult.stepId");
   }
   if (t.projectId !== undefined) identifier(t.projectId, "projectId");
@@ -661,8 +690,10 @@ export function validateTaskWorkflow<T extends Record<string, any>>(
       ...(proposal.validation === undefined
         ? {}
         : VALIDATIONS.includes(proposal.validation) &&
-            !(proposal.validation === "automatic" &&
-              (proposal.type === "review" || proposal.type === "delivery"))
+            !(
+              proposal.validation === "automatic" &&
+              (proposal.type === "review" || proposal.type === "delivery")
+            )
           ? { validation: proposal.validation as StepValidation }
           : fail(`${field}.validation`)),
     };
@@ -762,11 +793,7 @@ export function canStartStep(task: Task, stepId: string): boolean {
   // explicit override; the shared shape keeps the start path race-free.
   const bypassPredecessors = flexibleFocus || focused;
   const predecessorReady = (step: MissionStep): boolean => {
-    if (
-      step.status !== "completed" ||
-      step.needsRevalidation
-    )
-      return false;
+    if (step.status !== "completed" || step.needsRevalidation) return false;
     if (validationForTask(task, step) !== "automatic")
       return step.approvedBy === "human" && !!step.approvedAt;
     return !!step.completedAt && !step.approvedAt && !step.approvedBy;
@@ -842,8 +869,7 @@ export function focusStep(
         options.humanOverride === true ||
         options.force === true));
   if (!flexible && !override) return fail("step.focus.mode");
-  if (step.status === "completed")
-    return fail("step.focus.completed");
+  if (step.status === "completed") return fail("step.focus.completed");
   return {
     ...task,
     activeStepId: stepId,
@@ -905,22 +931,20 @@ type WorkflowAmendmentInput =
       stepId?: string;
     };
 
-function normalizeAmendmentInput(
-  value: WorkflowAmendmentInput,
-): {
+function normalizeAmendmentInput(value: WorkflowAmendmentInput): {
   steps: WorkflowAmendmentStep[];
   reason: string;
   currentStepId?: string;
 } {
   if (Array.isArray(value)) {
-    return { steps: value, reason: "Timeline ajustée par le chef." };
+    return { steps: value, reason: t("workflow.amended_reason") };
   }
   const input = object(value, "workflow.amendment");
   const steps = input.steps ?? input.pendingSteps ?? input.suffix;
   if (!Array.isArray(steps)) return fail("workflow.amendment.steps");
   const reason =
     input.reason === undefined
-      ? "Timeline ajustée par le chef."
+      ? t("workflow.amended_reason")
       : text(input.reason, "workflow.amendment.reason", 100000);
   if (!reason.trim()) return fail("workflow.amendment.reason");
   const currentStepId =
@@ -939,8 +963,7 @@ function normalizePendingAmendmentStep(
   fallbackId: string,
 ): MissionStep {
   const raw = object(value, field);
-  if (!WORKFLOW_PROPOSAL_TYPES.includes(raw.type))
-    return fail(`${field}.type`);
+  if (!WORKFLOW_PROPOSAL_TYPES.includes(raw.type)) return fail(`${field}.type`);
   if (raw.status !== undefined && raw.status !== "pending")
     return fail(`${field}.status`);
   for (const key of [
@@ -953,13 +976,9 @@ function normalizePendingAmendmentStep(
   ])
     if (raw[key] !== undefined) return fail(`${field}.${key}`);
   const validation =
-    raw.validation ??
-    (defaultValidationForType(raw.type) || "human");
+    raw.validation ?? (defaultValidationForType(raw.type) || "human");
   const candidate = {
-    id:
-      raw.id === undefined
-        ? fallbackId
-        : identifier(raw.id, `${field}.id`),
+    id: raw.id === undefined ? fallbackId : identifier(raw.id, `${field}.id`),
     type: raw.type,
     title: text(raw.title, `${field}.title`, 1000),
     objective: text(raw.objective, `${field}.objective`, 100000),
@@ -1034,7 +1053,8 @@ export function amendWorkflow(
   const amendedSteps = [...prefix, ...nextSteps];
   const firstPending = amendedSteps.find((step) => step.status === "pending");
   const activeStepId =
-    task.activeStepId && amendedSteps.some((step) => step.id === task.activeStepId)
+    task.activeStepId &&
+    amendedSteps.some((step) => step.id === task.activeStepId)
       ? task.activeStepId
       : firstPending?.id || prefix.at(-1)?.id;
   const normalizedProposal = task.workflowProposal
@@ -1072,7 +1092,7 @@ export function amendWorkflow(
         id: `${task.id}:workflow-amend:${now}`,
         time: now,
         type: "phase",
-        title: "Timeline ajustée par le chef",
+        title: t("workflow.amended_title"),
         detail: input.reason,
         stepId: prefix.at(-1)?.id,
         actor: "agent",
@@ -1099,13 +1119,15 @@ export function revisePendingSteps(
 export const reviseWorkflow = amendWorkflow;
 
 function hasHumanApprovalForStep(task: Task, stepId: string): boolean {
-  return task.events?.some(
-    (event) =>
-      event.stepId === stepId &&
-      event.actor === "human" &&
-      event.type === "phase" &&
-      /valid|approv|approuv/i.test(`${event.title} ${event.detail}`),
-  ) || false;
+  return (
+    task.events?.some(
+      (event) =>
+        event.stepId === stepId &&
+        event.actor === "human" &&
+        event.type === "phase" &&
+        /valid|approv|approuv/i.test(`${event.title} ${event.detail}`),
+    ) || false
+  );
 }
 
 function isAutomaticRoutingCompletion(task: Task, step: MissionStep): boolean {
@@ -1253,8 +1275,7 @@ export function applyWorkflowProposal(
     title: step.title,
     objective: step.objective,
     validation:
-      step.validation ??
-      (defaultValidationForType(step.type) || "human"),
+      step.validation ?? (defaultValidationForType(step.type) || "human"),
     status: "pending" as const,
     exitCriteria: step.exitCriteria || [],
     expectedArtifacts: step.expectedArtifacts || [],
@@ -1284,8 +1305,7 @@ export function applyWorkflowProposal(
         expectedArtifacts: step.expectedArtifacts,
         skills: step.skills,
         validation:
-          step.validation ??
-          (defaultValidationForType(step.type) || "human"),
+          step.validation ?? (defaultValidationForType(step.type) || "human"),
       })),
     },
     steps,
@@ -1348,7 +1368,9 @@ export function finishStepRun(
   const requiredCriteria = (step?.exitCriteria || [])
     .map((criterion) => criterion.trim())
     .filter(Boolean);
-  const criteriaUnmet = !!scopedResult?.criteria?.some((criterion) => !criterion.met);
+  const criteriaUnmet = !!scopedResult?.criteria?.some(
+    (criterion) => !criterion.met,
+  );
   const blocked = task.questions.some(
     (q) =>
       q.blocking && !q.answer?.trim() && (!q.stepId || q.stepId === stepId),
@@ -1388,15 +1410,15 @@ export function finishStepRun(
     scopedResult?.status !== "needs_input"
       ? {
           stepId,
-          ...(runId || task.runId
-            ? { runId: runId || task.runId }
-            : {}),
+          ...(runId || task.runId ? { runId: runId || task.runId } : {}),
           status: "blocked" as const,
-          summary: scopedResult ? "Les critères de sortie ne sont pas tous démontrés." : "Le compte rendu de cette étape est manquant.",
-          reason:
-            scopedResult ? "Le passage n’a pas fourni une preuve prête pour chaque critère de sortie." : "L’agent a terminé son passage sans publier son résultat structuré ni les preuves requises.",
-          nextAction:
-            "Fournissez les preuves manquantes ou relancez cette étape.",
+          summary: scopedResult
+            ? t("workflow.criteria_unproven")
+            : t("workflow.report_missing"),
+          reason: scopedResult
+            ? t("workflow.criteria_unproven_reason")
+            : t("workflow.report_missing_reason"),
+          nextAction: t("workflow.provide_evidence"),
           criteria: requiredCriteria.map((criterion) => {
             const evidence = scopedResult?.criteria?.find(
               (item) => item.criterion.trim() === criterion,
@@ -1414,30 +1436,59 @@ export function finishStepRun(
           }),
         }
       : undefined;
-  const pendingQuestions = task.questions.filter((question) => question.blocking && !question.answer?.trim() && (!question.stepId || question.stepId === stepId));
-  const contributions = (task.reports || []).filter((report) => report.stepId === stepId);
-  const interruptedReport = result === "completed" && pendingQuestions.length && !scopedResult ? {
-    stepId,
-    runId: runId || task.runId,
-    status: "needs_input" as const,
-    summary: "Une réponse est nécessaire pour poursuivre le travail concerné.",
-    completed: [...new Set(contributions.flatMap((report) => report.completed || []))],
-    remaining: [...new Set([...pendingQuestions.map((question) => question.title), ...contributions.flatMap((report) => report.remaining || [])])],
-    evidence: [...new Set(contributions.flatMap((report) => report.evidence || []))],
-    nextAction: "Répondez aux questions affichées dans Mission. Les recettes indépendantes restent disponibles.",
-    reportedAt: now,
-  } : undefined;
-  const finalReport = synthesizedStepResult || scopedResult || interruptedReport;
+  const pendingQuestions = task.questions.filter(
+    (question) =>
+      question.blocking &&
+      !question.answer?.trim() &&
+      (!question.stepId || question.stepId === stepId),
+  );
+  const contributions = (task.reports || []).filter(
+    (report) => report.stepId === stepId,
+  );
+  const interruptedReport =
+    result === "completed" && pendingQuestions.length && !scopedResult
+      ? {
+          stepId,
+          runId: runId || task.runId,
+          status: "needs_input" as const,
+          summary: t("workflow.answer_needed"),
+          completed: [
+            ...new Set(
+              contributions.flatMap((report) => report.completed || []),
+            ),
+          ],
+          remaining: [
+            ...new Set([
+              ...pendingQuestions.map((question) => question.title),
+              ...contributions.flatMap((report) => report.remaining || []),
+            ]),
+          ],
+          evidence: [
+            ...new Set(
+              contributions.flatMap((report) => report.evidence || []),
+            ),
+          ],
+          nextAction: t("workflow.answer_needed_next"),
+          reportedAt: now,
+        }
+      : undefined;
+  const finalReport =
+    synthesizedStepResult || scopedResult || interruptedReport;
   const automatic = automaticCandidate && !explicitBlocked;
   const completionSummary = finalReport?.summary || explicitSummary || summary;
   const nextStep = automatic
     ? task.steps
-        ?.slice((task.steps.findIndex((candidate) => candidate.id === stepId) || 0) + 1)
+        ?.slice(
+          (task.steps.findIndex((candidate) => candidate.id === stepId) || 0) +
+            1,
+        )
         .find((candidate) => candidate.status === "pending")
     : undefined;
   return {
     ...task,
-    ...(synthesizedStepResult || interruptedReport ? { stepResult: synthesizedStepResult || interruptedReport } : {}),
+    ...(synthesizedStepResult || interruptedReport
+      ? { stepResult: synthesizedStepResult || interruptedReport }
+      : {}),
     activeStepId: nextStep?.id || task.activeStepId,
     selectedStepId: nextStep?.id || task.selectedStepId,
     phase: nextStep ? stepPhase(nextStep.type) : task.phase,
@@ -1459,11 +1510,11 @@ export function finishStepRun(
                   ? "paused"
                   : explicitBlocked
                     ? "blocked"
-                  : automatic
-                    ? "completed"
-                  : blocked
-                    ? "blocked"
-                    : "awaiting_human",
+                    : automatic
+                      ? "completed"
+                      : blocked
+                        ? "blocked"
+                        : "awaiting_human",
             ...(s.validation === undefined && automatic
               ? { validation: "automatic" as const }
               : {}),

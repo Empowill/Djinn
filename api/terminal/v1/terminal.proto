@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+// Package terminal.v1 runs programs on pseudo-terminals for the window: a shell, or the lead agent, in a real
+// terminal the user types into.
+package terminal.v1;
+
+import "buf/validate/validate.proto";
+import "djinn/v1/options.proto";
+
+// TerminalService keeps terminals alive while djinn up runs: a window that closes and opens again finds them where
+// they were. Nothing is stored: the output is kept in memory, the last part only.
+service TerminalService {
+  // Open the terminal of a name, or return it if it already runs. Without a command, the terminal runs the command
+  // djinn up was given (--terminal), or the user's shell in their home directory.
+  rpc Open(TerminalServiceOpenRequest) returns (TerminalServiceOpenResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Send bytes to the terminal, as typed: keys, escape sequences, pasted text.
+  rpc Write(TerminalServiceWriteRequest) returns (TerminalServiceWriteResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Change the size of the terminal; the program is told (SIGWINCH on Unix).
+  rpc Resize(TerminalServiceResizeRequest) returns (TerminalServiceResizeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // The output of the terminal from an offset on, then as it comes, until the program ends. Resume a broken stream
+  // from the last offset received plus its length; an offset no longer kept starts at the oldest byte kept.
+  rpc Read(TerminalServiceReadRequest) returns (stream TerminalServiceReadResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Hang up the terminal: the program gets SIGHUP, and is killed if it is still there after a grace delay.
+  rpc Close(TerminalServiceCloseRequest) returns (TerminalServiceCloseResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+}
+
+// Terminal is a program running on a pseudo-terminal.
+message Terminal {
+  // Identifier, new for each program started.
+  string id = 1;
+  // The name it was opened with.
+  string name = 2;
+  // The command line, program first.
+  repeated string command = 3;
+  // Working directory of the program.
+  string directory = 4;
+  // Size in columns and rows.
+  uint32 cols = 5;
+  uint32 rows = 6;
+  // The program has ended.
+  bool exited = 7;
+  // Its exit code, once ended; -1 when it was killed by a signal.
+  int32 exit_code = 8;
+}
+
+message TerminalServiceOpenRequest {
+  // Name of the terminal; a running terminal of this name is returned as it is.
+  string name = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  // The command line, program first. Empty: the default of djinn up.
+  repeated string command = 2;
+  // Working directory, absolute. Empty: the default of djinn up, or the home directory.
+  string directory = 3;
+  // Initial size; zero takes 80 columns and 24 rows.
+  uint32 cols = 4 [(buf.validate.field).uint32.lte = 1000];
+  uint32 rows = 5 [(buf.validate.field).uint32.lte = 1000];
+}
+
+message TerminalServiceOpenResponse {
+  Terminal terminal = 1;
+  // The terminal was already running: its output so far can be read from offset 0.
+  bool attached = 2;
+}
+
+message TerminalServiceWriteRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The bytes to send.
+  bytes data = 2 [(buf.validate.field).bytes.max_len = 1048576];
+}
+
+message TerminalServiceWriteResponse {}
+
+message TerminalServiceResizeRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  uint32 cols = 2 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 1000
+  }];
+  uint32 rows = 3 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 1000
+  }];
+}
+
+message TerminalServiceResizeResponse {}
+
+message TerminalServiceReadRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // Offset of the first byte wanted, counted from the start of the program's output.
+  uint64 from_offset = 2;
+}
+
+message TerminalServiceReadResponse {
+  // Offset of the first byte of data. Higher than asked when the bytes in between are no longer kept.
+  uint64 offset = 1;
+  // Output of the program, as it wrote it.
+  bytes data = 2;
+  // Set on the last message: the program has ended, and all its output was sent.
+  bool exited = 3;
+  int32 exit_code = 4;
+}
+
+message TerminalServiceCloseRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message TerminalServiceCloseResponse {}

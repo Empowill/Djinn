@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+// Options that annotate the other protos of Djinn. The command line and the store read them at runtime.
+package djinn.v1;
+
+import "google/protobuf/descriptor.proto";
+
+// Visibility says who may call a method.
+enum Visibility {
+  // Not set: treated as INTERNAL, so a method is never exposed by accident.
+  VISIBILITY_UNSPECIFIED = 0;
+  // Exposed to agents through the command line.
+  VISIBILITY_PUBLIC = 1;
+  // Reserved to the native window.
+  VISIBILITY_INTERNAL = 2;
+}
+
+// Unique is one group of fields whose values, taken together, identify a stored message.
+message Unique {
+  // Names of the fields of the group, as written in the proto.
+  repeated string fields = 1;
+}
+
+extend google.protobuf.MethodOptions {
+  // Who may call the method. Only VISIBILITY_PUBLIC methods become commands.
+  Visibility visibility = 51001;
+  // The command line starts djinn up in the background first when no djinn answers, then calls the method: a
+  // command that only makes sense with the window open, such as taking a wish back.
+  bool autostart = 51003;
+}
+
+extend google.protobuf.MessageOptions {
+  // Groups of fields that must be unique among stored messages of this type.
+  repeated Unique unique = 51002;
+}

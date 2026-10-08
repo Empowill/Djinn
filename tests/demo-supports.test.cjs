@@ -6,6 +6,15 @@ function load(relative) {
   m._compile(ts.transpileModule(fs.readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
   return m.exports;
 }
+// Nested src/ modules (./i18n) are TypeScript too.
+Module._extensions[".ts"] = (m, file) =>
+  m._compile(
+    ts.transpileModule(fs.readFileSync(file, "utf8"), {
+      fileName: file,
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+    }).outputText,
+    file,
+  );
 const { demoArtifacts, demoVisualization, enrichDemoState } = load("src/demo-supports.ts");
 test("saved demo migration adds every missing capability and preserves human revisions idempotently", () => {
   const human = { id: "demo-visualization", content: "Human edit", revision: 4, editedBy: "human", sourceOfTruth: true };

@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Artifact, TaskAction } from "./types";
 import "./actions-panel.css";
+import { language, t } from "./i18n";
 
 /**
  * Actions and supports share the native run id. A missing run id stays in an
@@ -172,27 +173,29 @@ export function groupTurnItems(
 }
 
 function turnLabel(group: TurnGroup, index: number) {
-  if (group.key === LEGACY_TURN_KEY) return "Historique · tour non identifié";
-  if (group.active) return "Tour en cours";
+  if (group.key === LEGACY_TURN_KEY) return t("actions.turn_legacy");
+  if (group.active) return t("actions.turn_active");
   if (group.latestAt && Number.isFinite(Date.parse(group.latestAt))) {
-    return `Tour du ${new Date(group.latestAt).toLocaleString("fr-FR", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })}`;
+    return t("actions.turn_dated", {
+      date: new Date(group.latestAt).toLocaleString(language, {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    });
   }
-  return `Tour ${index + 1}`;
+  return t("actions.turn_numbered", { number: index + 1 });
 }
 
 function artifactTypeLabel(type: Artifact["type"]) {
   return {
-    diagram: "Diagramme",
-    wireframe: "Wireframe",
-    document: "Document",
-    code: "Code",
-    screenshot: "Capture",
-    visualization: "Visualisation",
+    diagram: t("actions.type_diagram"),
+    wireframe: t("actions.type_wireframe"),
+    document: t("actions.type_document"),
+    code: t("actions.type_code"),
+    screenshot: t("actions.type_screenshot"),
+    visualization: t("actions.type_visualization"),
   }[type];
 }
 
@@ -213,13 +216,16 @@ function actionStatusText(
   ready: boolean,
   running: boolean,
 ) {
-  if (running) return "Préparation en cours";
-  if (action.status === "error") return "La préparation a échoué";
-  if (action.status === "stopped") return "Arrêté";
-  if (ready) return action.url ? "Test prêt" : "Prêt · adresse non communiquée";
-  if (action.status === "pending") return "Test à préparer";
-  if (action.status === "done") return "Terminé";
-  return action.detail?.slice(0, 180) || "À préparer";
+  if (running) return t("actions.status_preparing");
+  if (action.status === "error") return t("actions.status_failed");
+  if (action.status === "stopped") return t("actions.status_stopped");
+  if (ready)
+    return action.url
+      ? t("actions.status_ready")
+      : t("actions.status_ready_no_url");
+  if (action.status === "pending") return t("actions.status_pending");
+  if (action.status === "done") return t("actions.status_done");
+  return action.detail?.slice(0, 180) || t("actions.status_to_prepare");
 }
 
 function TaskActionCard({
@@ -242,7 +248,9 @@ function TaskActionCard({
   const ready = action.status === "ready";
   const running = action.status === "running";
   const done = action.status === "done";
-  const isTest = action.kind === "server" || !!(action.testInstructions?.length || action.expectedResult);
+  const isTest =
+    action.kind === "server" ||
+    !!(action.testInstructions?.length || action.expectedResult);
   const testReady = action.kind === "server" ? ready : isTest;
   const outcome = action.testResult?.status;
   const testBusy = resultBusy || busy;
@@ -251,24 +259,21 @@ function TaskActionCard({
     detail?: string,
   ) => {
     if (!onRecordTestResult || testBusy) {
-      if (!onRecordTestResult)
-        setResultError("Le résultat ne peut pas être enregistré ici.");
+      if (!onRecordTestResult) setResultError(t("actions.result_unavailable"));
       return;
     }
     setResultBusy(true);
     setResultError("");
     try {
       const ok = await onRecordTestResult(action, status, detail);
-      if (!ok) setResultError("Le résultat n’a pas pu être enregistré.");
+      if (!ok) setResultError(t("actions.result_failed"));
       else {
         setFeedback("");
         setFeedbackOpen(false);
       }
     } catch (cause) {
       setResultError(
-        cause instanceof Error
-          ? cause.message
-          : "Le résultat n’a pas pu être enregistré.",
+        cause instanceof Error ? cause.message : t("actions.result_failed"),
       );
     } finally {
       setResultBusy(false);
@@ -314,14 +319,14 @@ function TaskActionCard({
               disabled={busy}
               onClick={() => void onAction(action, "open")}
             >
-              Ouvrir le test
+              {t("actions.open_test")}
               <ArrowUpRight size={13} />
             </button>
           )}
           {!readOnly && isTest && (ready || running) && (
             <button
               className="icon-button"
-              aria-label={`Arrêter ${action.title}`}
+              aria-label={t("actions.stop", { title: action.title })}
               disabled={busy}
               onClick={() => void onAction(action, "stop")}
             >
@@ -335,7 +340,9 @@ function TaskActionCard({
               onClick={() => void onAction(action, "run")}
             >
               <Play size={12} />
-              {action.status === "error" ? "Réessayer" : "Préparer le test"}
+              {action.status === "error"
+                ? t("common.retry")
+                : t("actions.prepare_test")}
             </button>
           )}
           {!readOnly && action.kind === "link" && action.url && !done && (
@@ -344,7 +351,7 @@ function TaskActionCard({
               disabled={busy}
               onClick={() => void onAction(action, "open")}
             >
-              Ouvrir
+              {t("actions.open")}
               <ArrowUpRight size={13} />
             </button>
           )}
@@ -355,7 +362,7 @@ function TaskActionCard({
               onClick={() => void onAction(action, "complete")}
             >
               <Check size={13} />
-              Fait
+              {t("actions.mark_done")}
             </button>
           )}
         </div>
@@ -363,13 +370,14 @@ function TaskActionCard({
       {isTest && testReady && (
         <div className="test-check-panel">
           <div className="test-origin">
-            <span>Ticket / titre</span>
+            <span>{t("actions.ticket_title")}</span>
             <strong>{action.title}</strong>
             {action.directory && <code>{action.directory}</code>}
           </div>
           {action.expectedResult && (
             <p className="test-expected">
-              <strong>Résultat attendu</strong> {action.expectedResult}
+              <strong>{t("actions.expected_result")}</strong>{" "}
+              {action.expectedResult}
             </p>
           )}
           {action.testInstructions?.length ? (
@@ -382,10 +390,10 @@ function TaskActionCard({
           {outcome && (
             <p className={`test-result is-${outcome}`}>
               {outcome === "passed"
-                ? "Ça fonctionne"
+                ? t("actions.result_passed")
                 : outcome === "problem"
-                  ? "Problème signalé"
-                  : "Test reporté"}
+                  ? t("actions.result_problem")
+                  : t("actions.result_deferred")}
               {action.testResult?.detail && ` · ${action.testResult.detail}`}
             </p>
           )}
@@ -396,28 +404,28 @@ function TaskActionCard({
                 disabled={testBusy}
                 onClick={() => void recordResult("passed")}
               >
-                <Check size={13} /> Ça fonctionne
+                <Check size={13} /> {t("actions.result_passed")}
               </button>
               <button
                 className="button secondary small"
                 disabled={testBusy}
                 onClick={() => setFeedbackOpen(true)}
               >
-                <MessageSquare size={13} /> Signaler un problème
+                <MessageSquare size={13} /> {t("actions.report_problem")}
               </button>
               <button
                 className="text-button"
                 disabled={testBusy}
                 onClick={() => void recordResult("deferred")}
               >
-                Tester plus tard
+                {t("actions.test_later")}
               </button>
             </div>
           )}
           {feedbackOpen && !readOnly && (
             <div className="test-feedback">
               <label htmlFor={`test-feedback-${action.id}`}>
-                Décrivez brièvement le problème
+                {t("actions.describe_problem")}
               </label>
               <textarea
                 id={`test-feedback-${action.id}`}
@@ -425,7 +433,7 @@ function TaskActionCard({
                 onChange={(event) => setFeedback(event.target.value)}
                 rows={2}
                 autoFocus
-                placeholder="Ce qui ne fonctionne pas…"
+                placeholder={t("actions.problem_placeholder")}
                 disabled={testBusy}
               />
               <div>
@@ -434,14 +442,14 @@ function TaskActionCard({
                   disabled={!feedback.trim() || testBusy}
                   onClick={() => void recordResult("problem", feedback.trim())}
                 >
-                  Envoyer le problème
+                  {t("actions.send_problem")}
                 </button>
                 <button
                   className="text-button"
                   disabled={testBusy}
                   onClick={() => setFeedbackOpen(false)}
                 >
-                  Annuler
+                  {t("common.cancel")}
                 </button>
               </div>
             </div>
@@ -458,7 +466,9 @@ function TaskActionCard({
           (ready || running || action.detail.length > 180))) && (
         <details className="action-detail" open={action.status === "error"}>
           <summary>
-            {action.status === "error" ? "Erreur concrète" : "Détails"}
+            {action.status === "error"
+              ? t("actions.error_detail")
+              : t("actions.details")}
             <ChevronDown size={12} />
           </summary>
           <p>{action.error || action.detail}</p>
@@ -488,7 +498,10 @@ export function ActionsPanel({
     () =>
       new Set(
         groups
-          .filter((group, index) => index === 0 || group.active || groupHasReadyTest(group))
+          .filter(
+            (group, index) =>
+              index === 0 || group.active || groupHasReadyTest(group),
+          )
           .map((group) => group.key),
       ),
   );
@@ -515,9 +528,7 @@ export function ActionsPanel({
       .map((group) => group.key);
     const activeKey = groups.find((group) => group.active)?.key;
     setOpenTurnKeys((current) => {
-      const next = new Set(
-        [...current].filter((key) => currentKeys.has(key)),
-      );
+      const next = new Set([...current].filter((key) => currentKeys.has(key)));
       for (const key of [...newTurnKeys, ...newlyReadyKeys]) next.add(key);
       if (activeKey) next.add(activeKey);
       if (activeKey && activeKey !== previousActiveKey.current) {
@@ -544,11 +555,11 @@ export function ActionsPanel({
     <section
       id="actions-section"
       className="actions-section"
-      aria-label="Tests et actions"
+      aria-label={t("actions.title")}
     >
       <div className="section-heading">
         <h2>
-          Tests et actions
+          {t("actions.title")}
           <span className="count">{pendingCount || totalCount}</span>
         </h2>
       </div>
@@ -573,17 +584,23 @@ export function ActionsPanel({
               <span className="action-turn-title">
                 <ChevronDown size={15} aria-hidden="true" />
                 <strong>{turnLabel(group, index)}</strong>
-                {group.active && <span className="turn-live">En cours</span>}
+                {group.active && (
+                  <span className="turn-live">{t("actions.turn_live")}</span>
+                )}
               </span>
               <span className="action-turn-count">
-                {group.actions.length + group.artifacts.length} élément
-                {group.actions.length + group.artifacts.length > 1 ? "s" : ""}
+                {t("actions.item_count", {
+                  count: group.actions.length + group.artifacts.length,
+                })}
               </span>
             </summary>
             <div className="action-turn-content">
               {group.artifacts.length > 0 && (
-                <div className="turn-artifacts" aria-label="Supports produits">
-                  <h3>Supports produits</h3>
+                <div
+                  className="turn-artifacts"
+                  aria-label={t("actions.artifacts")}
+                >
+                  <h3>{t("actions.artifacts")}</h3>
                   {group.artifacts.map((artifact) => (
                     <div className="artifact-result-card" key={artifact.id}>
                       <div className="artifact-result-copy">
@@ -596,7 +613,7 @@ export function ActionsPanel({
                           type="button"
                           onClick={() => onOpenArtifact(artifact.id)}
                         >
-                          Ouvrir le support
+                          {t("actions.open_artifact")}
                           <ArrowUpRight size={13} />
                         </button>
                       )}
@@ -618,9 +635,7 @@ export function ActionsPanel({
                 );
               })}
               {!group.actions.length && !group.artifacts.length && (
-                <p className="action-turn-empty">
-                  Aucune action ni support pour le moment.
-                </p>
+                <p className="action-turn-empty">{t("actions.empty")}</p>
               )}
             </div>
           </details>

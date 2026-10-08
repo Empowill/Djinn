@@ -119,12 +119,12 @@ test("mission creation inherits project context with a model choice and one inte
   };
   const markup = renderToStaticMarkup(React.createElement(NewMission, props));
   assert.match(markup, /Produit/);
-  assert.match(markup, /Le modèle choisi prépare votre mission/);
+  assert.match(markup, /Le modèle choisi prépare votre souhait/);
   assert.match(markup, /id="mission-provider"/);
   assert.match(markup, /Choisir le modèle/);
   assert.match(markup, /class="mission-start-screen"/);
   assert.match(markup, /id="mission-prompt"/);
-  assert.match(markup, /Préparer la mission/);
+  assert.match(markup, /Préparer le souhait/);
   assert.doesNotMatch(markup, /role="dialog"|aria-modal|Workflow à configurer/);
   assert.doesNotMatch(markup, /Indications complémentaires/);
   assert.doesNotMatch(
@@ -185,11 +185,11 @@ test("sidebar displays empty projects, nested missions and project actions", () 
   );
   assert.match(markup, /Créer un projet/);
   assert.match(markup, /Réglages de Produit/);
-  assert.match(markup, /Nouvelle mission dans Vide/);
-  assert.match(markup, /Créer une première mission/);
+  assert.match(markup, /Nouveau souhait dans Vide/);
+  assert.match(markup, /Créer un premier souhait/);
   assert.ok(markup.indexOf("Mission produit") < markup.indexOf("Vide"));
   assert.match(markup, /Mission héritée/);
-  assert.match(markup, /AUTRES MISSIONS/);
+  assert.match(markup, /AUTRES SOUHAITS/);
 });
 test("waiting cards show the native conflict and do not count the read-only chief as a queued worker", () => {
   const a = {
@@ -214,8 +214,8 @@ test("mission renders the global header, mission header, workflow, tabs and agen
     markup.indexOf('class="topbar"'),
     markup.indexOf('class="hero'),
     markup.indexOf("step-timeline"),
-    markup.indexOf('aria-label="Vues de la mission"'),
-    markup.indexOf('aria-label="Agents de la mission"'),
+    markup.indexOf('aria-label="Vues du souhait"'),
+    markup.indexOf('aria-label="Agents du souhait"'),
   ];
   assert.ok(
     sections.every((index) => index >= 0),
@@ -227,9 +227,9 @@ test("mission renders the global header, mission header, workflow, tabs and agen
   );
   assert.ok(
     markup.indexOf("step-timeline") <
-      markup.indexOf('aria-label="Vues de la mission"'),
+      markup.indexOf('aria-label="Vues du souhait"'),
   );
-  assert.match(markup, /aria-label="Étapes de la mission"/);
+  assert.match(markup, /aria-label="Étapes du souhait"/);
   assert.doesNotMatch(markup, /disabled=""[^>]*class="step-item[^\"]*pending/);
 });
 test("historical stage navigation retains the active stage and never starts a process during rendering", () => {
