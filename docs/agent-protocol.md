@@ -13,7 +13,14 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **The brief says how to lead.** `djinn wish brief <wish>` prints Djinn's rules, the projects' rules and where the
   wish stands. Djinn writes it from its store (`internal/plan/brief.go`), without a model.
 - **Questions.** `djinn question ask` offers up to four options, answered by letter, or none for a yes. An answered
-  question is a decision. On options that say yes and no, `yes` and `no` pick them too.
+  question is a decision. On options that say yes and no, `yes` and `no` pick them too. Start a recommendation with
+  its option's letter (`B: …`): the developer applies it in one click, "Rub the lamp".
+- **Investigations.** "Enlighten me" in the window (`djinn question enlighten <question> --note …`) asks the lead to
+  find out more before deciding: the question waits for the lead, and the brief lists it under "To investigate". The
+  lead answers with `djinn question revise <question> --context … --recommendation …`; the question keeps each round,
+  dated, and waits for the developer again. A decision may take several rounds.
+- **Marks.** What the developer read or approved as it is, from the window: `djinn mark list <wish>`, and the brief's
+  "Marked by the developer". An approved block or decision is a go.
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
 - **Blocks.** What Djinn does not compute (an analysis, a hand-off, a decision taken outside a question) is a block:

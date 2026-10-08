@@ -18,13 +18,14 @@ import {
   Terminal,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import {
   Allowance,
   type Block,
   Change,
   type Choice,
+  type MarkKind,
   type Project,
   type Task,
   TaskStatus,
@@ -33,20 +34,32 @@ import {
   WishState,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { useClients, useData, useStore, useWishDetail } from "./data/djinn";
-import { openQuestions, spent, waitingTasks } from "./data/flight";
+import { useClients, useData, useWishDetail } from "./data/djinn";
+import {
+  type OpenQuestion,
+  investigatingQuestions,
+  openQuestions,
+  spent,
+  waitingTasks,
+} from "./data/flight";
 import {
   allowanceOf,
   isActive,
   isOpen,
   projectsOf,
+  taskStatusText,
+  taskTone,
   when,
   wishStateText,
+  wishTone,
 } from "./data/format";
 import { type Entry, isLog, journal } from "./data/journal";
 import { t } from "./i18n";
+import { AttentionBar, attentionOf } from "./attention";
+import { MarkButtons, type OnMark, useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { useKeepPlace } from "./scroll-anchor";
+import { CountPill, StatusBadge } from "./status";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
@@ -59,57 +72,41 @@ export function WishView({
   wish: Wish;
   onToast: (text: string) => void;
 }) {
-  const clients = useClients();
-  const store = useStore();
   const allProjects = useData((s) => s.projects);
   const detail = useWishDetail(wish.id);
   const projects = projectsOf(wish, allProjects);
   const open = openQuestions(wish, detail);
+  const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
   const codes = new Map(detail.tasks.map((task) => [task.id, task.code]));
   const notes = detail.blocks.filter((b) => !isLog(b));
   const decided = detail.questions.filter((q) => !isOpen(q));
-  const running = detail.tasks.some(
+  const running = detail.tasks.filter(
     (task) => task.status === TaskStatus.RUNNING,
-  );
+  ).length;
+  const done = detail.tasks.filter(
+    (task) => task.status === TaskStatus.DONE,
+  ).length;
   const granted = wish.state === WishState.GRANTED;
   const [history, setHistory] = useState(false);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
-
-  // act runs a write; djinn's answer or its refusal shows as a toast, and what changed is read again.
-  const act = async (
-    run: () => Promise<unknown>,
-    changes: Change[],
-    done?: string,
-  ) => {
-    try {
-      await run();
-      if (done) onToast(done);
-    } catch (error) {
-      onToast(message(error));
-      throw error;
-    } finally {
-      void store.changed(wish.id, changes);
-    }
-  };
-  const quiet = (promise: Promise<unknown>) => void promise.catch(() => {});
-
-  const answer = (questionId: string, choice: Choice, note: string) =>
-    act(
-      () =>
-        clients.questions.answer({
-          question: { ref: { case: "id", value: questionId } },
-          choice,
-          note,
-          wishId: wish.id,
-        }),
-      [Change.QUESTION, Change.WISH],
-    );
+  const {
+    clients,
+    act: write,
+    quiet,
+    answer,
+    enlighten,
+    mark,
+  } = useWrites(onToast);
+  const act = (run: () => Promise<unknown>, changes: Change[], done?: string) =>
+    write(wish.id, run, changes, done);
+  const attention = attentionOf(open, waiting, wish.ready ? [wish] : []);
+  const tone = wishTone(wish, open.length, running);
 
   return (
-    <div className="wish-view">
+    <div className="wish-view review">
       <header className="topbar">
         <div className="breadcrumbs">
           {projects.map((project) => (
@@ -172,19 +169,58 @@ export function WishView({
         </div>
       </header>
       <div className="mission-scroll" ref={keepPlace}>
-        <div className="hero mission-header">
+        <AttentionBar items={attention} />
+        <div className="hero mission-header review-head">
           <div className="hero-copy">
+            <span className="eyebrow">
+              {projects.map((p) => p.name).join(" · ") || t("wish.no_project")}
+            </span>
             <h1>{wish.title}</h1>
+            <div className="review-pills">
+              <StatusBadge tone={tone} label={wishStateText(wish)} />
+              {open.length > 0 && (
+                <CountPill
+                  tone="waiting"
+                  count={open.length}
+                  label={t("wish.questions_wait", { count: open.length })}
+                >
+                  {t("pill.to_decide")}
+                </CountPill>
+              )}
+              {digging.length > 0 && (
+                <CountPill
+                  tone="investigating"
+                  count={digging.length}
+                  label={t("pill.investigating_detail", {
+                    count: digging.length,
+                  })}
+                >
+                  {t("pill.investigating")}
+                </CountPill>
+              )}
+              {running > 0 && (
+                <CountPill
+                  tone="running"
+                  count={running}
+                  label={t("plan.running", { count: running })}
+                >
+                  {t("pill.running")}
+                </CountPill>
+              )}
+              {detail.tasks.length > 0 && (
+                <CountPill
+                  tone="done"
+                  count={done}
+                  label={t("pill.done_detail", {
+                    done,
+                    count: detail.tasks.length,
+                  })}
+                >
+                  / {detail.tasks.length} {t("pill.done")}
+                </CountPill>
+              )}
+            </div>
             <div className="hero-meta">
-              <span className={`badge ${granted ? "" : "muted"}`}>
-                {wishStateText(wish)}
-              </span>
-              {projects.map((project) => (
-                <span key={project.id} title={project.directory}>
-                  <GitBranch size={13} />
-                  {project.name}
-                </span>
-              ))}
               <span>
                 <Clock3 size={13} />
                 {when(wish.createTime)}
@@ -238,7 +274,7 @@ export function WishView({
             </div>
           </div>
           <div className="hero-visual">
-            <Machine active={running} />
+            <Machine active={running > 0} />
           </div>
         </div>
 
@@ -249,18 +285,15 @@ export function WishView({
               id="action-center"
               aria-label={t("panels.your_move")}
             >
-              <div className="action-center-heading">
-                <div>
-                  <span className="eyebrow">{t("panels.next_action")}</span>
-                  <h2>{t("panels.your_move")}</h2>
-                  {(open.length > 0 || wish.ready) && (
-                    <p>
-                      {open.length
-                        ? t("wish.questions_wait", { count: open.length })
-                        : t("wish.ready_detail")}
-                    </p>
-                  )}
-                </div>
+              <div className="section-title">
+                <h2>{t("panels.your_move")}</h2>
+                <p>
+                  {open.length
+                    ? t("wish.questions_wait", { count: open.length })
+                    : wish.ready
+                      ? t("wish.ready_detail")
+                      : t("panels.your_move_detail")}
+                </p>
               </div>
               {open.length > 0 && (
                 <section className="decisions-section">
@@ -276,8 +309,13 @@ export function WishView({
                         key={q.id}
                         question={q}
                         blocking={blocking}
-                        expanded={open.length === 1}
-                        onAnswer={(choice, note) => answer(q.id, choice, note)}
+                        onAnswer={(choice, note) =>
+                          answer(wish.id, q.id, choice, note)
+                        }
+                        onMark={(kind, remove) =>
+                          mark(wish.id, q.id, kind, remove)
+                        }
+                        onEnlighten={(note) => enlighten(wish.id, q.id, note)}
                       />
                     ))}
                   </AnimatePresence>
@@ -285,40 +323,36 @@ export function WishView({
               )}
               {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
               {wish.ready && (
-                <article className="step-result-action wish-grant">
-                  <div>
-                    <span className="step-result-kicker">
-                      {t("wish.ready")}
-                    </span>
-                    <h3>{t("wish.ready_title")}</h3>
-                  </div>
-                  <button
-                    type="button"
-                    className="button accent"
-                    onClick={() =>
-                      quiet(
-                        act(
-                          () => clients.wishes.grant({ wishId: wish.id }),
-                          [Change.WISH],
-                          t("wish.granted_toast"),
-                        ),
-                      )
-                    }
-                  >
-                    <Sparkles size={14} />
-                    {t("wish.grant")}
-                  </button>
-                </article>
+                <GrantCard
+                  wish={wish}
+                  onGrant={() =>
+                    quiet(
+                      act(
+                        () => clients.wishes.grant({ wishId: wish.id }),
+                        [Change.WISH],
+                        t("wish.granted_toast"),
+                      ),
+                    )
+                  }
+                />
               )}
             </section>
           )}
 
+          {digging.length > 0 && (
+            <InvestigatingSection
+              questions={digging}
+              onAnswer={(q, choice, note) => answer(wish.id, q, choice, note)}
+              onMark={(q, kind, remove) => mark(wish.id, q, kind, remove)}
+            />
+          )}
+
           <section className="wish-section" aria-label={t("wish.tasks")}>
-            <div className="section-heading">
-              <h3>
+            <div className="section-title">
+              <h2>
                 {t("wish.tasks")}
                 <span className="count">{detail.tasks.length}</span>
-              </h3>
+              </h2>
               <SpentLine spent={spent(detail.tasks)} />
             </div>
             {detail.tasks.length === 0 ? (
@@ -348,11 +382,34 @@ export function WishView({
             )}
           </section>
 
+          {notes.length > 0 && (
+            <section className="wish-section" aria-label={t("wish.blocks")}>
+              <div className="section-title">
+                <h2>
+                  {t("wish.blocks")}
+                  <span className="count">{notes.length}</span>
+                </h2>
+                <p>{t("wish.blocks_detail")}</p>
+              </div>
+              {notes.map((block) => (
+                <WishBlock
+                  key={block.id}
+                  block={block}
+                  task={codes.get(block.taskId) ?? ""}
+                  onMark={(kind, remove) =>
+                    mark(wish.id, block.id, kind, remove)
+                  }
+                />
+              ))}
+            </section>
+          )}
+
           {decided.length > 0 && (
             <div className="decision-history">
               <button
                 className="text-button"
                 onClick={() => setHistory(!history)}
+                aria-expanded={history}
               >
                 <CheckCircle2 size={14} />
                 {t("panels.decisions_recorded", { count: decided.length })}
@@ -370,30 +427,15 @@ export function WishView({
                         key={q.id}
                         question={q}
                         onAnswer={async () => {}}
+                        onMark={(kind, remove) =>
+                          mark(wish.id, q.id, kind, remove)
+                        }
                       />
                     ))}
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
-          )}
-
-          {notes.length > 0 && (
-            <section className="wish-section" aria-label={t("wish.blocks")}>
-              <div className="section-heading">
-                <h3>
-                  {t("wish.blocks")}
-                  <span className="count">{notes.length}</span>
-                </h3>
-              </div>
-              {notes.map((block) => (
-                <WishBlock
-                  key={block.id}
-                  block={block}
-                  task={codes.get(block.taskId) ?? ""}
-                />
-              ))}
-            </section>
           )}
 
           <Journal wish={wish} blocks={detail.blocks} />
@@ -420,6 +462,72 @@ export function WishView({
         </div>
       </div>
     </div>
+  );
+}
+
+// GrantCard proposes to grant a wish: Djinn proposes, only you grant.
+export function GrantCard({
+  wish,
+  origin,
+  onGrant,
+}: {
+  wish: Wish;
+  origin?: ReactNode;
+  onGrant: () => void;
+}) {
+  return (
+    <article className="step-result-action wish-grant" id={`grant-${wish.id}`}>
+      <div>
+        <span className="step-result-kicker">
+          <StatusBadge tone="done" label={t("wish.ready")} />
+          {origin}
+        </span>
+        <h3>{t("wish.ready_title")}</h3>
+      </div>
+      <button type="button" className="button accent" onClick={onGrant}>
+        <Sparkles size={14} />
+        {t("wish.grant")}
+      </button>
+    </article>
+  );
+}
+
+// InvestigatingSection holds the questions you asked to investigate: they wait for the lead's revision, and can still
+// be answered.
+export function InvestigatingSection({
+  questions,
+  origin = false,
+  onAnswer,
+  onMark,
+}: {
+  questions: OpenQuestion[];
+  origin?: boolean;
+  onAnswer: (id: string, choice: Choice, note: string) => Promise<void>;
+  onMark: (id: string, kind: MarkKind, remove: boolean) => Promise<void>;
+}) {
+  return (
+    <section
+      className="wish-section investigating-section"
+      aria-label={t("question.investigating_title")}
+    >
+      <div className="section-title">
+        <h2>
+          {t("question.investigating_title")}
+          <span className="count">{questions.length}</span>
+        </h2>
+        <p>{t("question.investigating_section")}</p>
+      </div>
+      {questions.map(({ wish, item, blocking }) => (
+        <WishQuestion
+          key={item.id}
+          question={item}
+          blocking={blocking}
+          origin={origin ? <WishOrigin wish={wish} /> : undefined}
+          onAnswer={(choice, note) => onAnswer(item.id, choice, note)}
+          onMark={(kind, remove) => onMark(item.id, kind, remove)}
+        />
+      ))}
+    </section>
   );
 }
 
@@ -451,8 +559,11 @@ export function WaitingTasks({
         </h3>
       </div>
       {waiting.map(({ item, question, wish }) => (
-        <p className="plan-line" key={item.id}>
-          <Hourglass size={14} aria-hidden="true" />
+        <p className="plan-line" key={item.id} id={`waiting-${item.id}`}>
+          <StatusBadge
+            tone={taskTone(item.status)}
+            label={taskStatusText(item.status)}
+          />
           {origin && <WishOrigin wish={wish} />}
           <span>
             {item.status === TaskStatus.INTERRUPTED
@@ -485,7 +596,15 @@ const LONG_BLOCK_LINES = 16;
 
 // WishBlock shows a block as the lead wrote it: Markdown, or the text as it is for another media type. A long one
 // opens on a click.
-function WishBlock({ block, task }: { block: Block; task: string }) {
+function WishBlock({
+  block,
+  task,
+  onMark,
+}: {
+  block: Block;
+  task: string;
+  onMark: OnMark;
+}) {
   const markdown = !block.mediaType || block.mediaType === "text/markdown";
   const long =
     block.content.length > LONG_BLOCK ||
@@ -497,13 +616,18 @@ function WishBlock({ block, task }: { block: Block; task: string }) {
       className={`wish-block ${folded ? "folded" : ""}`}
       id={`block-${block.id}`}
     >
-      <span className="eyebrow">
-        {block.kind}
-        {task && ` · ${t("page.about_task", { task })}`}
-        {block.updateTime && ` · ${when(block.updateTime)}`}
-      </span>
-      {block.title && <h3>{block.title}</h3>}
-      <div className="wish-block-body">
+      <div className="wish-block-head">
+        <div>
+          <span className="eyebrow">
+            {block.kind}
+            {task && ` · ${t("page.about_task", { task })}`}
+            {block.updateTime && ` · ${when(block.updateTime)}`}
+          </span>
+          {block.title && <h3>{block.title}</h3>}
+        </div>
+        <MarkButtons item={block} approve onMark={onMark} />
+      </div>
+      <div className="wish-block-body prose">
         {markdown ? (
           <MarkdownBody text={block.content} />
         ) : (
@@ -528,13 +652,14 @@ function WishBlock({ block, task }: { block: Block; task: string }) {
 // WishService.Snapshot reads the whole wish, events included: it is read on a click, then again as the wish changes.
 function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
   const clients = useClients();
+  const [shown, setShown] = useState(false);
   const [commands, setCommands] = useState(false);
   const [exp, setExp] = useState<WishExport>();
   const [error, setError] = useState("");
   // What the store read of the wish: a new one means the wish changed.
   const detail = useData((s) => s.details[wish.id]);
   useEffect(() => {
-    if (!commands) return;
+    if (!commands || !shown) return;
     let current = true;
     clients.wishes
       .snapshot({ wishId: wish.id })
@@ -547,7 +672,7 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
     return () => {
       current = false;
     };
-  }, [clients, wish, commands, detail]);
+  }, [clients, wish, commands, shown, detail]);
   const entries = journal(commands ? exp : undefined, blocks);
   return (
     <section
@@ -555,28 +680,39 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
       aria-label={t("page.journal")}
     >
       <div className="section-heading">
-        <h3>
-          {t("page.journal")}
-          {entries.length > 0 && (
-            <span className="count">{entries.length}</span>
-          )}
-        </h3>
         <button
-          className="text-button"
-          onClick={() => setCommands(!commands)}
-          aria-pressed={commands}
+          className="fold-heading"
+          onClick={() => setShown(!shown)}
+          aria-expanded={shown}
         >
-          <ScrollText size={13} />
-          {commands ? t("wish.journal_hide") : t("wish.journal_show")}
+          <ChevronRight size={14} className={shown ? "rotated-90" : ""} />
+          <h3>
+            {t("page.journal")}
+            {entries.length > 0 && (
+              <span className="count">{entries.length}</span>
+            )}
+          </h3>
         </button>
+        {shown && (
+          <button
+            className="text-button"
+            onClick={() => setCommands(!commands)}
+            aria-pressed={commands}
+          >
+            <ScrollText size={13} />
+            {commands ? t("wish.journal_hide") : t("wish.journal_show")}
+          </button>
+        )}
       </div>
-      {error && <p className="muted-text">{error}</p>}
-      {entries.length > 0 && (
-        <ol className="journal-list">
-          {entries.map((entry) => (
-            <JournalEntry key={entry.id} entry={entry} />
-          ))}
-        </ol>
+      {shown && error && <p className="muted-text">{error}</p>}
+      {shown && entries.length > 0 && (
+        <table className="compact-table journal-list">
+          <tbody>
+            {entries.map((entry) => (
+              <JournalEntry key={entry.id} entry={entry} />
+            ))}
+          </tbody>
+        </table>
       )}
     </section>
   );
@@ -584,14 +720,16 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
 
 function JournalEntry({ entry }: { entry: Entry }) {
   return (
-    <li className={entry.command ? "command" : "log"}>
-      <time>{when(entry.at)}</time>
-      <div>
-        {entry.command && <code>{entry.command}</code>}
+    <tr className={entry.command ? "command" : "log"}>
+      <td>
+        <time>{when(entry.at)}</time>
+      </td>
+      <td>{entry.command && <code>{entry.command}</code>}</td>
+      <td>
         {entry.summary && <span>{entry.summary}</span>}
         {entry.note && <MarkdownBody text={entry.note} />}
-      </div>
-    </li>
+      </td>
+    </tr>
   );
 }
 

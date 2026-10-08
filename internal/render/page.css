@@ -22,6 +22,8 @@
   --idle-soft: #efefeb;
   --pause: #5146b8;
   --pause-soft: #eeecfb;
+  --dig: #8a2fa8;
+  --dig-soft: #f6eafb;
   --shadow: 0 6px 20px rgb(20 20 10 / 10%);
   --sans: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -49,6 +51,8 @@
     --idle-soft: #262624;
     --pause: #b3adff;
     --pause-soft: #222038;
+    --dig: #e0a3f5;
+    --dig-soft: #2c1834;
     --shadow: 0 6px 20px rgb(0 0 0 / 45%);
   }
 }
@@ -74,6 +78,8 @@
   --idle-soft: #262624;
   --pause: #b3adff;
   --pause-soft: #222038;
+  --dig: #e0a3f5;
+  --dig-soft: #2c1834;
   --shadow: 0 6px 20px rgb(0 0 0 / 45%);
 }
 
@@ -85,6 +91,9 @@
 .bad, .fail { --c: var(--bad); --c-soft: var(--bad-soft); }
 .idle, .stop, .later { --c: var(--idle); --c-soft: var(--idle-soft); }
 .pause { --c: var(--pause); --c-soft: var(--pause-soft); }
+.dig { --c: var(--dig); --c-soft: var(--dig-soft); }
+.rounds ol { margin: 0; padding-left: 18px; font-size: 13px; }
+.rounds time { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; color: var(--muted); }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }

@@ -670,3 +670,33 @@ func TestDiagram(t *testing.T) {
 		t.Error("the page runs no script")
 	}
 }
+
+// A question the developer asked to look into is the lead's move: it reads investigated, leaves the bar, and
+// keeps its rounds, folded.
+func TestRounds(t *testing.T) {
+	enlighten := &planv1.Round{Kind: planv1.RoundKind_ROUND_KIND_ENLIGHTEN, CreateTime: ts(-30), Note: "How long does it burn?"}
+	revise := &planv1.Round{Kind: planv1.RoundKind_ROUND_KIND_REVISE, CreateTime: ts(-20)}
+	exp := &planv1.WishExport{
+		Wish: &planv1.Wish{Id: "w", Title: "Light the lamp"},
+		Questions: []*planv1.Question{
+			{Id: "q1", Code: "Q01", Text: "Which oil?", Revision: 1, CreateTime: ts(-40),
+				Rounds: []*planv1.Round{enlighten, revise, {Kind: planv1.RoundKind_ROUND_KIND_ENLIGHTEN, CreateTime: ts(-10)}}},
+			{Id: "q2", Code: "Q02", Text: "Which wick?", Revision: 1, CreateTime: ts(-40),
+				Rounds: []*planv1.Round{enlighten, revise}},
+		},
+	}
+	html := page(t, Input{Export: exp, Language: "en"})
+	if n := strings.Count(html, `<i aria-hidden="true">⌕</i>Being investigated</span>`); n != 1 {
+		t.Errorf("%d questions shown investigated, want Q01 only", n)
+	}
+	for _, s := range []string{`class="q dig" id="q-Q01"`, "Revised ×1", `Rounds <span class="n">3</span>`,
+		"Asked to investigate: How long does it burn?", "Revised by the lead"} {
+		if !strings.Contains(html, s) {
+			t.Errorf("the page lacks %q", s)
+		}
+	}
+	bar := between(html, `<aside class="bar"`, "</aside>")
+	if strings.Contains(bar, "Q01") || !strings.Contains(bar, "Q02") {
+		t.Errorf("the bar should hold Q02, waiting for you, and not Q01, investigated:\n%s", bar)
+	}
+}

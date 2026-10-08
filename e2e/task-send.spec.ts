@@ -1,5 +1,6 @@
 // An instruction sent from the window to a running worker: an event of the task at once, then "received" once the
-// worker says something after it. The worker is the fake agent: no model is called.
+// worker says something after it. The worker is the fake agent: no model is called. It stays a while after, since a
+// finished task folds its events.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -35,7 +36,7 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
       "--provider",
       "fake",
       "--prompt",
-      "text working\nsleep 6s\ntext after",
+      "text working\nsleep 6s\ntext after\nsleep 8s",
     );
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();

@@ -17,6 +17,7 @@ import {
   systemLanguage,
   t,
 } from "./i18n";
+import { type Theme, chosenTheme, setTheme } from "./theme";
 
 // MakeWish makes a wish (WishService.Make): a sentence and the projects it works on. With three wishes active, it
 // is made paused, as the lamp would refuse a fourth.
@@ -325,6 +326,7 @@ export function ProjectPanel({
 export function Settings({ onClose }: { onClose: () => void }) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
+  const [theme, setThemeState] = useState<Theme>(chosenTheme);
   useEffect(() => {
     let live = true;
     clients.ui
@@ -392,6 +394,25 @@ export function Settings({ onClose }: { onClose: () => void }) {
               {languageName(code)}
             </option>
           ))}
+        </select>
+      </div>
+      <div className="setting-row">
+        <div>
+          <strong>{t("settings.theme")}</strong>
+          <p>{t("settings.theme_detail")}</p>
+        </div>
+        <select
+          value={theme}
+          aria-label={t("settings.theme")}
+          onChange={(e) => {
+            const next = e.target.value as Theme;
+            setThemeState(next);
+            setTheme(next);
+          }}
+        >
+          <option value="">{t("settings.theme_dark")}</option>
+          <option value="light">{t("settings.theme_light")}</option>
+          <option value="system">{t("settings.theme_system")}</option>
         </select>
       </div>
       <div className="settings-foot">

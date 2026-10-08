@@ -72,6 +72,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
 	out[p] = h
+	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered}, opt)
+	out[p] = h
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
 	out[p] = h
 	return out

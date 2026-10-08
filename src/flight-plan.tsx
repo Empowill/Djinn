@@ -1,27 +1,30 @@
-// The flight plan of the active wishes, merged (T13): what waits for you first (the open questions of every wish,
-// the blocking ones first, the workers that wait, the wishes Djinn proposes to grant), then what runs, then the
-// latest decisions. Every line shows the wish it comes from, and an answer, a stop or a grant goes back to it. Each
-// wish keeps its own view; an empty section is hidden.
-import { CheckCircle2, Sparkles } from "lucide-react";
-import { useRef } from "react";
+// The flight plan of the active wishes, merged (T13): a bar at the top while something waits for you, then each
+// wish at a glance, then what waits for you (the open questions of every wish, the blocking ones first, the workers
+// that wait, the wishes Djinn proposes to grant), the questions you asked to investigate, what runs, and the latest
+// decisions. Every line shows the wish it comes from, and an answer, a stop or a grant goes back to it. Each wish
+// keeps its own view; an empty section is hidden.
+import { CheckCircle2 } from "lucide-react";
+import { type CSSProperties, useRef } from "react";
 
-import {
-  Change,
-  type Choice,
-  TaskStatus,
-  type Wish,
-} from "../gen/ts/plan/v1/plan_pb";
-import { message } from "./data/client";
-import { useClients, useData, useStore, useWishDetails } from "./data/djinn";
+import { Change, TaskStatus, type Wish } from "../gen/ts/plan/v1/plan_pb";
+import { AttentionBar, attentionOf } from "./attention";
+import { useData, useWishDetails } from "./data/djinn";
 import { flightPlan, spent } from "./data/flight";
-import { isOpen } from "./data/format";
+import { investigating, waitsForYou, wishTone } from "./data/format";
 import { t } from "./i18n";
+import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
+import { CountPill, StatusBadge } from "./status";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
-import { WaitingTasks, WishOrigin } from "./wish-view";
+import {
+  GrantCard,
+  InvestigatingSection,
+  WaitingTasks,
+  WishOrigin,
+} from "./wish-view";
 
 export function FlightPlan({
   wishes,
@@ -33,61 +36,35 @@ export function FlightPlan({
   onOpen: (wishId: string) => void;
   onToast: (text: string) => void;
 }) {
-  const clients = useClients();
-  const store = useStore();
   const projects = useData((s) => s.projects);
   const details = useWishDetails(wishes.map((w) => w.id));
   const plan = flightPlan(wishes, details);
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
+  const { clients, act, quiet, answer, enlighten, mark } = useWrites(onToast);
   const waits = plan.questions.length + plan.waiting.length + plan.ready.length;
-
-  // act runs a write for a wish; djinn's refusal shows as a toast, and what changed in that wish is read again.
-  const act = async (
-    wishId: string,
-    run: () => Promise<unknown>,
-    changes: Change[],
-    done?: string,
-  ) => {
-    try {
-      await run();
-      if (done) onToast(done);
-    } catch (error) {
-      onToast(message(error));
-      throw error;
-    } finally {
-      void store.changed(wishId, changes);
-    }
-  };
-  const quiet = (promise: Promise<unknown>) => void promise.catch(() => {});
-  const answer = (
-    wishId: string,
-    questionId: string,
-    choice: Choice,
-    note: string,
-  ) =>
-    act(
-      wishId,
-      () =>
-        clients.questions.answer({
-          question: { ref: { case: "id", value: questionId } },
-          choice,
-          note,
-          wishId,
-        }),
-      [Change.QUESTION, Change.WISH],
-    );
+  const attention = attentionOf(
+    plan.questions,
+    plan.waiting,
+    plan.ready,
+    (wish) => <WishOrigin wish={wish} />,
+  );
+  const wishOf = new Map(
+    [...plan.decisions, ...plan.investigating].map((x) => [x.item.id, x.wish]),
+  );
 
   return (
-    <div className="wish-view flight-plan">
+    <div className="wish-view flight-plan review">
       <header className="topbar">
         <div className="breadcrumbs">
           <strong>{t("plan.title")}</strong>
         </div>
       </header>
       <div className="mission-scroll" ref={keepPlace}>
-        <div className="hero mission-header">
+        <AttentionBar items={attention} />
+        <div className="hero mission-header review-head">
           <div className="hero-copy">
+            <span className="eyebrow">{t("plan.eyebrow")}</span>
             <h1>{t("plan.title")}</h1>
             <p>
               {wishes.length
@@ -105,14 +82,26 @@ export function FlightPlan({
             <section className="plan-wishes" aria-label={t("sidebar.wishes")}>
               {wishes.map((wish) => {
                 const detail = details[wish.id];
-                const open = detail?.questions.filter(isOpen).length ?? 0;
+                const open = detail?.questions.filter(waitsForYou).length ?? 0;
+                const digging =
+                  detail?.questions.filter(investigating).length ?? 0;
                 const running =
                   detail?.tasks.filter((x) => x.status === TaskStatus.RUNNING)
                     .length ?? 0;
+                const done =
+                  detail?.tasks.filter((x) => x.status === TaskStatus.DONE)
+                    .length ?? 0;
+                const total = detail?.tasks.length ?? 0;
+                const failed =
+                  detail?.tasks.filter(
+                    (x) =>
+                      x.status === TaskStatus.FAILED ||
+                      x.status === TaskStatus.INTERRUPTED,
+                  ).length ?? 0;
                 return (
                   <button
                     key={wish.id}
-                    className="plan-wish"
+                    className={`plan-wish tone-${wishTone(wish, open, running)}`}
                     onClick={() => onOpen(wish.id)}
                     title={t("plan.open_wish")}
                   >
@@ -121,23 +110,62 @@ export function FlightPlan({
                       <strong>{wish.title}</strong>
                     </span>
                     <span className="plan-wish-counts">
-                      {open > 0 && (
-                        <span className="waiting">
-                          {t("plan.questions", { count: open })}
-                        </span>
+                      <StatusBadge
+                        tone={wishTone(wish, open, running)}
+                        label={
+                          open
+                            ? t("plan.questions", { count: open })
+                            : wish.ready
+                              ? t("wish.ready")
+                              : running
+                                ? t("plan.running", { count: running })
+                                : t("pill.calm")
+                        }
+                      />
+                      {digging > 0 && (
+                        <CountPill
+                          tone="investigating"
+                          count={digging}
+                          label={t("pill.investigating_detail", {
+                            count: digging,
+                          })}
+                        />
                       )}
-                      {running > 0 && (
-                        <span>{t("plan.running", { count: running })}</span>
+                      {open > 0 && running > 0 && (
+                        <CountPill
+                          tone="running"
+                          count={running}
+                          label={t("plan.running", { count: running })}
+                        />
                       )}
-                      {detail && detail.tasks.length > 0 && (
-                        <span>
-                          {t("plan.tasks", { count: detail.tasks.length })}
-                        </span>
+                      {failed > 0 && (
+                        <CountPill
+                          tone="failed"
+                          count={failed}
+                          label={t("pill.failed_detail", { count: failed })}
+                        />
                       )}
-                      {wish.ready && (
-                        <span className="waiting">{t("wish.ready")}</span>
+                      {total > 0 && (
+                        <CountPill
+                          tone="done"
+                          count={done}
+                          label={t("pill.done_detail", { done, count: total })}
+                        >
+                          / {total}
+                        </CountPill>
                       )}
                     </span>
+                    {total > 0 && (
+                      <span
+                        className="plan-wish-progress"
+                        style={
+                          {
+                            "--done": `${(100 * done) / total}%`,
+                          } as CSSProperties
+                        }
+                        aria-hidden="true"
+                      />
+                    )}
                     <SpentLine spent={spent(detail?.tasks ?? [])} />
                   </button>
                 );
@@ -151,18 +179,15 @@ export function FlightPlan({
               id="action-center"
               aria-label={t("panels.your_move")}
             >
-              <div className="action-center-heading">
-                <div>
-                  <span className="eyebrow">{t("panels.next_action")}</span>
-                  <h2>{t("panels.your_move")}</h2>
-                  {plan.questions.length > 0 && (
-                    <p>
-                      {t("wish.questions_wait", {
+              <div className="section-title">
+                <h2>{t("panels.your_move")}</h2>
+                <p>
+                  {plan.questions.length > 0
+                    ? t("wish.questions_wait", {
                         count: plan.questions.length,
-                      })}
-                    </p>
-                  )}
-                </div>
+                      })
+                    : t("panels.your_move_detail")}
+                </p>
               </div>
               {plan.questions.length > 0 && (
                 <section className="decisions-section">
@@ -178,10 +203,13 @@ export function FlightPlan({
                       question={item}
                       origin={<WishOrigin wish={wish} />}
                       blocking={blocking}
-                      expanded={plan.questions.length === 1}
                       onAnswer={(choice, note) =>
                         answer(wish.id, item.id, choice, note)
                       }
+                      onMark={(kind, remove) =>
+                        mark(wish.id, item.id, kind, remove)
+                      }
+                      onEnlighten={(note) => enlighten(wish.id, item.id, note)}
                     />
                   ))}
                 </section>
@@ -190,45 +218,45 @@ export function FlightPlan({
                 <WaitingTasks waiting={plan.waiting} origin />
               )}
               {plan.ready.map((wish) => (
-                <article
-                  className="step-result-action wish-grant"
+                <GrantCard
                   key={wish.id}
-                >
-                  <div>
-                    <span className="step-result-kicker">
-                      {t("wish.ready")} · <WishOrigin wish={wish} />
-                    </span>
-                    <h3>{t("wish.ready_title")}</h3>
-                  </div>
-                  <button
-                    type="button"
-                    className="button accent"
-                    onClick={() =>
-                      quiet(
-                        act(
-                          wish.id,
-                          () => clients.wishes.grant({ wishId: wish.id }),
-                          [Change.WISH],
-                          t("wish.granted_toast"),
-                        ),
-                      )
-                    }
-                  >
-                    <Sparkles size={14} />
-                    {t("wish.grant")}
-                  </button>
-                </article>
+                  wish={wish}
+                  origin={<WishOrigin wish={wish} />}
+                  onGrant={() =>
+                    quiet(
+                      act(
+                        wish.id,
+                        () => clients.wishes.grant({ wishId: wish.id }),
+                        [Change.WISH],
+                        t("wish.granted_toast"),
+                      ),
+                    )
+                  }
+                />
               ))}
             </section>
           )}
 
+          {plan.investigating.length > 0 && (
+            <InvestigatingSection
+              questions={plan.investigating}
+              origin
+              onAnswer={(id, choice, note) =>
+                answer(wishOf.get(id)!.id, id, choice, note)
+              }
+              onMark={(id, kind, remove) =>
+                mark(wishOf.get(id)!.id, id, kind, remove)
+              }
+            />
+          )}
+
           {plan.running.length > 0 && (
             <section className="wish-section" aria-label={t("page.running")}>
-              <div className="section-heading">
-                <h3>
+              <div className="section-title">
+                <h2>
                   {t("page.running")}
                   <span className="count">{plan.running.length}</span>
-                </h3>
+                </h2>
               </div>
               {plan.running.map(({ wish, item }) => (
                 <WishTask
@@ -262,11 +290,11 @@ export function FlightPlan({
               className="wish-section plan-decisions"
               aria-label={t("plan.recent_decisions")}
             >
-              <div className="section-heading">
-                <h3>
-                  <CheckCircle2 size={14} />
+              <div className="section-title">
+                <h2>
+                  <CheckCircle2 size={16} />
                   {t("plan.recent_decisions")}
-                </h3>
+                </h2>
               </div>
               {plan.decisions.map(({ wish, item }) => (
                 <WishQuestion
@@ -274,6 +302,9 @@ export function FlightPlan({
                   question={item}
                   origin={<WishOrigin wish={wish} />}
                   onAnswer={async () => {}}
+                  onMark={(kind, remove) =>
+                    mark(wish.id, item.id, kind, remove)
+                  }
                 />
               ))}
             </section>
@@ -281,9 +312,11 @@ export function FlightPlan({
 
           {plan.loaded &&
             wishes.length > 0 &&
-            waits + plan.running.length + plan.decisions.length === 0 && (
-              <p className="muted-text">{t("plan.calm")}</p>
-            )}
+            waits +
+              plan.running.length +
+              plan.decisions.length +
+              plan.investigating.length ===
+              0 && <p className="muted-text">{t("plan.calm")}</p>}
         </div>
       </div>
     </div>

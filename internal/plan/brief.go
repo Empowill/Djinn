@@ -32,6 +32,7 @@ const (
 	briefDecisions = 8
 	briefDone      = 5
 	briefBlocks    = 5
+	briefMarks     = 10
 	briefBlockText = 600
 	briefLineMax   = 300
 )
@@ -61,6 +62,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
 	"`djinn task stop <task>`.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\"`; `djinn block list <wish>`.\n" +
+	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for your " +
+	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, after you investigated.\n" +
+	"- `djinn mark list <wish>`: what the developer read or approved in the window, without a word. An approved " +
+	"block or decision is a go: act on it. Start a recommendation with its option's letter (`B: …`): the developer " +
+	"approves it in one click.\n" +
 	"- `djinn wish sync <wish>`: the wish's page, which Djinn keeps up to date in the file it prints. After the wish " +
 	"changes, republish that file as it is, in one call, to the same address: do not read it, rewrite it, or write " +
 	"HTML by hand. The first publish needs the developer's go. `djinn wish render <wish>` writes the page once.\n" +
@@ -168,9 +174,11 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		b.WriteString("- Djinn proposes to grant it: every task is finished and no question is open. Granting is the developer's word.\n")
 	}
 
-	var open, decided []*planv1.Question
+	var open, investigate, decided []*planv1.Question
 	for _, q := range exp.GetQuestions() {
-		if q.GetAnswer() == nil {
+		if Investigating(q) {
+			investigate = append(investigate, q)
+		} else if q.GetAnswer() == nil {
 			open = append(open, q)
 		} else {
 			decided = append(decided, q)
@@ -186,6 +194,22 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			if rec := q.GetRecommendation(); rec != "" {
 				fmt.Fprintf(&b, "  - Recommended: %s\n", clipLine(rec))
 			}
+			if n := q.GetRevision(); n > 0 {
+				fmt.Fprintf(&b, "  - Revised %d times\n", n)
+			}
+		}
+	}
+	if len(investigate) > 0 {
+		b.WriteString("\n## To investigate\n\n")
+		b.WriteString("The developer asked to find out more before deciding. Dig, then `djinn question revise <question> " +
+			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`).\n\n")
+		for _, q := range investigate {
+			last := q.GetRounds()[len(q.GetRounds())-1]
+			fmt.Fprintf(&b, "- **%s** %s (asked %s)", q.GetCode(), clipLine(q.GetText()), when(last.GetCreateTime().AsTime()))
+			if note := last.GetNote(); note != "" {
+				b.WriteString(": " + clipLine(note))
+			}
+			b.WriteString("\n")
 		}
 	}
 	if len(decided) > 0 {
@@ -199,6 +223,23 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 				b.WriteString(" (" + clipLine(note) + ")")
 			}
 			b.WriteString("\n")
+		}
+	}
+
+	if marks := marksOf(exp.GetQuestions(), exp.GetBlocks()); len(marks) > 0 {
+		slices.Reverse(marks)
+		b.WriteString("\n## Marked by the developer\n\n")
+		for _, m := range marks[:min(len(marks), briefMarks)] {
+			label := m.GetLabel()
+			if m.GetBlockId() != "" {
+				label = "block " + cmp.Or(m.GetTitle(), "(untitled)")
+				if kind := m.GetLabel(); kind != "" {
+					label += " (" + oneLine(kind) + ")"
+				}
+			} else if m.GetTitle() != "" {
+				label += " " + m.GetTitle()
+			}
+			fmt.Fprintf(&b, "- **%s** %s, %s\n", markWord(m.GetMark().GetKind()), label, when(m.GetMark().GetCreateTime().AsTime()))
 		}
 	}
 
@@ -281,6 +322,10 @@ func waitText(t *planv1.Task) string {
 		text += ", " + clipLine(t.GetError())
 	}
 	return text
+}
+
+func markWord(k planv1.MarkKind) string {
+	return strings.ToLower(strings.TrimPrefix(k.String(), "MARK_KIND_"))
 }
 
 func statusWord(s planv1.TaskStatus) string {

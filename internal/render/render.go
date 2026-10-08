@@ -79,7 +79,7 @@ const maxLastWord, maxEvent = 600, 280
 // icons give each class of the colour language its sign, so that no state is told by colour alone. A running one
 // shows a live dot, drawn by the style sheet.
 var icons = map[string]string{
-	"ok": "✓", "run": "", "wait": "?", "idle": "○", "bad": "!", "fail": "✕", "amber": "↺", "pause": "‖", "stop": "■",
+	"ok": "✓", "run": "", "wait": "?", "idle": "○", "bad": "!", "fail": "✕", "amber": "↺", "pause": "‖", "stop": "■", "dig": "⌕",
 	"later": "◷",
 }
 
@@ -178,7 +178,15 @@ type question struct {
 	Class, Level string
 	// Open questions are unfolded: a blocking one, or the only one.
 	Open bool
+	// Investigating says the developer asked to find out more: the lead is on it, it waits for no one else.
+	Investigating bool
+	// Revised says how many times the lead revised it, when it did.
+	Revised string
+	// Rounds are its requests to investigate and its revisions, oldest first.
+	Rounds []round
 }
+
+type round struct{ At, Label, Note string }
 
 type option struct{ Letter, Text string }
 
@@ -260,6 +268,7 @@ func build(in Input) (*view, error) {
 		"page.planned", "page.projects", "page.questions", "page.questions_sub", "page.recommendation",
 		"page.running", "page.running_sub", "page.spent", "page.status", "page.task", "page.tasks", "page.tasks_sub",
 		"page.took", "page.wait_col", "page.what", "page.when", "page.why", "page.yes_only",
+		"page.rounds",
 	} {
 		v.T[key] = tr(key)
 	}
@@ -313,6 +322,20 @@ func build(in Input) (*view, error) {
 		for i, o := range q.GetOptions() {
 			cq.Options = append(cq.Options, option{Letter: string(rune('A' + i)), Text: o})
 		}
+		if n := q.GetRevision(); n > 0 {
+			cq.Revised = tr("page.revised", "count", fmt.Sprint(n))
+		}
+		for _, r := range q.GetRounds() {
+			label := "page.round_revise"
+			if r.GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
+				label = "page.round_enlighten"
+			}
+			cq.Rounds = append(cq.Rounds, round{At: at(r.GetCreateTime()), Label: tr(label), Note: r.GetNote()})
+		}
+		if rounds := q.GetRounds(); len(rounds) > 0 && rounds[len(rounds)-1].GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
+			cq.Investigating = true
+			cq.Class, cq.Level = "dig", tr("page.investigating")
+		}
 		v.Questions = append(v.Questions, cq)
 	}
 	slices.SortStableFunc(v.Questions, func(a, b question) int {
@@ -340,7 +363,13 @@ func build(in Input) (*view, error) {
 	// The bar: each blocking question a line; the other questions too while they are few, else one line for them all.
 	waiting, blocked, later := tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
 	var others []string
+	var asked []question
 	for _, q := range v.Questions {
+		if !q.Investigating {
+			asked = append(asked, q)
+		}
+	}
+	for _, q := range asked {
 		if q.Blocking != "" {
 			v.Bar = append(v.Bar, barLine{
 				Class: q.Class, Level: blocked, Text: q.Code + " · " + cut(q.Text, 140) + " · " + q.Blocking, Href: "#q-" + q.Code,
@@ -353,7 +382,7 @@ func build(in Input) (*view, error) {
 		v.Bar = append(v.Bar, barLine{Class: "wait", Level: waiting, Href: "#questions",
 			Text: tr("page.bar_questions", "count", fmt.Sprint(len(others)), "codes", strings.Join(others, ", "))})
 	} else {
-		for _, q := range v.Questions[len(v.Questions)-len(others):] {
+		for _, q := range asked[len(asked)-len(others):] {
 			v.Bar = append(v.Bar, barLine{Class: q.Class, Level: waiting, Text: q.Code + " · " + cut(q.Text, 140), Href: "#q-" + q.Code})
 		}
 	}

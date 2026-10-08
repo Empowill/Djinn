@@ -8,7 +8,7 @@ import {
   type Usage,
   type Wish,
 } from "../../gen/ts/plan/v1/plan_pb";
-import { isOpen } from "./format";
+import { investigating, isOpen, waitsForYou } from "./format";
 import type { WishDetail } from "./store";
 
 // How many decisions the flight plan shows, the latest first.
@@ -31,7 +31,10 @@ export interface Waiting extends Item<Task> {
 }
 
 export interface FlightPlan {
+  // The questions that wait for your answer.
   questions: OpenQuestion[];
+  // The questions you asked to investigate: they wait for the lead.
+  investigating: OpenQuestion[];
   waiting: Waiting[];
   // The wishes Djinn proposes to grant.
   ready: Wish[];
@@ -57,11 +60,27 @@ export function blocking(tasks: readonly Task[]): Map<string, string[]> {
 const time = (ts?: { seconds: bigint; nanos: number }) =>
   ts ? Number(ts.seconds) * 1000 + ts.nanos / 1e6 : 0;
 
-// openQuestions are a wish's open questions, the blocking ones first, then in the order they were asked.
+// openQuestions are a wish's questions that wait for your answer, the blocking ones first, then in the order they were
+// asked. Those being investigated wait for the lead: investigatingQuestions.
 export function openQuestions(wish: Wish, detail: WishDetail): OpenQuestion[] {
+  return questionsWhere(wish, detail, waitsForYou);
+}
+
+export function investigatingQuestions(
+  wish: Wish,
+  detail: WishDetail,
+): OpenQuestion[] {
+  return questionsWhere(wish, detail, investigating);
+}
+
+function questionsWhere(
+  wish: Wish,
+  detail: WishDetail,
+  keep: (q: Question) => boolean,
+): OpenQuestion[] {
   const blocks = blocking(detail.tasks);
   return detail.questions
-    .filter(isOpen)
+    .filter(keep)
     .map((item) => ({ wish, item, blocking: blocks.get(item.id) ?? [] }))
     .sort((a, b) => Number(!a.blocking.length) - Number(!b.blocking.length));
 }
@@ -88,6 +107,7 @@ export function flightPlan(
 ): FlightPlan {
   const plan: FlightPlan = {
     questions: [],
+    investigating: [],
     waiting: [],
     ready: [],
     running: [],
@@ -100,6 +120,7 @@ export function flightPlan(
     if (wish.ready) plan.ready.push(wish);
     if (!detail) continue;
     plan.questions.push(...openQuestions(wish, detail));
+    plan.investigating.push(...investigatingQuestions(wish, detail));
     plan.waiting.push(...waitingTasks(wish, detail));
     for (const item of detail.tasks)
       if (item.status === TaskStatus.RUNNING) plan.running.push({ wish, item });

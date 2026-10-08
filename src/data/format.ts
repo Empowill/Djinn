@@ -4,8 +4,11 @@ import { type Timestamp, timestampDate } from "@bufbuild/protobuf/wkt";
 import {
   Allowance,
   Choice,
+  type Mark,
+  MarkKind,
   type Project,
   type Question,
+  RoundKind,
   TaskStatus,
   type Wish,
   WishState,
@@ -60,20 +63,34 @@ export function taskStatusText(status: TaskStatus): string {
   return t(taskStatusKeys[status]);
 }
 
-// taskTone is the class of a task's dot, as the sidebar's mission dots are styled.
-export function taskTone(status: TaskStatus): string {
+// Tone is a state in the window's status language: each has its colour, its icon and its word (src/status.tsx).
+export type Tone =
+  | "done"
+  | "running"
+  | "waiting"
+  | "investigating"
+  | "planned"
+  | "failed"
+  | "interrupted"
+  | "stopped"
+  | "paused";
+
+export function taskTone(status: TaskStatus): Tone {
   switch (status) {
     case TaskStatus.RUNNING:
       return "running";
     case TaskStatus.DONE:
       return "done";
     case TaskStatus.FAILED:
+      return "failed";
     case TaskStatus.INTERRUPTED:
-      return "error";
+      return "interrupted";
+    case TaskStatus.STOPPED:
+      return "stopped";
     case TaskStatus.WAITING:
       return "waiting";
     default:
-      return "idle";
+      return "planned";
   }
 }
 
@@ -130,4 +147,56 @@ export function usd(cost: number): string {
     currency: "USD",
     maximumFractionDigits: cost < 1 ? 3 : 2,
   }).format(cost);
+}
+
+// investigating tells an open question whose last round asks to investigate: it waits for the lead, not for you. The
+// lamp reads it the same way (plan.Investigating).
+export function investigating(question: Question): boolean {
+  const last = question.rounds?.at(-1);
+  return !question.answer && last?.kind === RoundKind.ENLIGHTEN;
+}
+
+// waitsForYou tells an open question that waits for your answer.
+export function waitsForYou(question: Question): boolean {
+  return isOpen(question) && !investigating(question);
+}
+
+// markOf is the mark of a kind on a question or a block, if it has one.
+export function markOf(
+  item: { marks?: Mark[] },
+  kind: MarkKind,
+): Mark | undefined {
+  return item.marks?.find((m) => m.kind === kind);
+}
+
+const firstWord = (text: string) => /^\s*(\p{L}*)/u.exec(text)?.[1] ?? "";
+
+// recommendedChoice is the option a question's recommendation names, for a one-click answer, as the lamp reads it
+// (plan.Recommended in internal/plan/marks.go): yes without options; else a letter first ("B: …", "**B**, because…"),
+// or the first word of one option only.
+export function recommendedChoice(question: Question): Choice | undefined {
+  const options = question.options;
+  if (!options.length) return Choice.YES;
+  let text = question.recommendation.replace(/^[\s*_#>`]+/, "");
+  text = text.replace(/^[Oo]ption /, "");
+  const index = text.charCodeAt(0) - 65;
+  if (index >= 0 && index < Math.min(options.length, 4)) {
+    const rest = text.slice(1).replace(/^ +/, "");
+    if (!rest || ":.)*,;—–-(".includes(rest[0])) return choiceOf(index);
+  }
+  const word = firstWord(text).toLowerCase();
+  if (!word) return undefined;
+  const found = options
+    .map((o, i) => (firstWord(o).toLowerCase() === word ? i : -1))
+    .filter((i) => i >= 0);
+  return found.length === 1 ? choiceOf(found[0]) : undefined;
+}
+
+// wishTone is a wish's state in the status language: what it needs first.
+export function wishTone(wish: Wish, questions: number, running: number): Tone {
+  if (wish.state === WishState.GRANTED) return "done";
+  if (wish.state === WishState.PAUSED) return "paused";
+  if (questions > 0 || wish.ready) return "waiting";
+  if (running > 0) return "running";
+  return "planned";
 }

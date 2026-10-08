@@ -10,10 +10,13 @@ import { DjinnProvider, createDjinn } from "./data/djinn";
 import { language } from "./i18n";
 import { LeadTerminalFrame } from "./lead-terminal";
 import "./styles.css";
+import { applyTheme, followSystem } from "./theme";
 import { UpdateBanner } from "./update-banner";
 import { WishApp } from "./wish-app";
 
 document.documentElement.lang = language;
+applyTheme();
+followSystem();
 // djinn serves the page and its API on the same origin, over http:// in a browser or wails:// in the window; fetch
 // sends the session cookie on its own.
 const djinn = createDjinn(djinnTransport(window.location.origin));

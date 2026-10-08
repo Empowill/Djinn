@@ -5,7 +5,7 @@ import { Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Change } from "../gen/ts/plan/v1/plan_pb";
+import { Change, TaskStatus } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import {
   useClients,
@@ -16,7 +16,7 @@ import {
   useWishDetails,
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
-import { isActive, isOpen } from "./data/format";
+import { isActive, waitsForYou } from "./data/format";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
@@ -24,6 +24,7 @@ import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { WishSidebar } from "./wish-sidebar";
 import { WishView } from "./wish-view";
 import "./wish.css";
+import "./review.css";
 
 type Modal = "make" | "project" | "settings" | null;
 
@@ -93,10 +94,15 @@ export function WishApp() {
   // The active wishes are always read: the flight plan and the side panel count what waits in each.
   const active = wishes.filter(isActive);
   const details = useWishDetails(active.map((w) => w.id));
-  const waiting = Object.fromEntries(
+  const counts = Object.fromEntries(
     active.map((w) => [
       w.id,
-      details[w.id]?.questions.filter(isOpen).length ?? 0,
+      {
+        questions: details[w.id]?.questions.filter(waitsForYou).length ?? 0,
+        running:
+          details[w.id]?.tasks.filter((x) => x.status === TaskStatus.RUNNING)
+            .length ?? 0,
+      },
     ]),
   );
   // What shows: the wish chosen, else the flight plan while a wish is active, else the first wish.
@@ -152,7 +158,7 @@ export function WishApp() {
         <WishSidebar
           wishes={wishes}
           projects={projects}
-          waiting={waiting}
+          counts={counts}
           planSelected={plan}
           onSelectPlan={() => setSelected(PLAN)}
           selectedWishId={wish?.id ?? ""}
