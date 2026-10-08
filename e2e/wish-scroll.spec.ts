@@ -60,6 +60,10 @@ for (const engine of ["native", "script"] as const)
       .click();
     await (await chooser).setFiles(file);
 
+    // The window shows the wish imported, not the flight plan it opened on: both list questions.
+    await expect(page.locator(".hero h1")).toHaveText(
+      `Keep my place ${wishId.slice(0, 8)}`,
+    );
     const scroller = page.locator(".mission-scroll");
     // The list's order is the interface's: the seventh card is read, the first one is answered.
     const cards = scroller.locator(".question-card");

@@ -1,6 +1,6 @@
-// The window, on the services: the side panel (the wishes by rank, the projects), the wish shown, and the status
-// bar (whether the page follows djinn, the machine). What stays on this page is how it shows: the wish shown and
-// the side panel folded.
+// The window, on the services: the side panel (the flight plan, the wishes by rank, the projects), the flight plan of
+// the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
+// this page is how it shows: what is shown and the side panel folded.
 import { Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,9 +13,11 @@ import {
   useDjinn,
   useMachine,
   useStore,
+  useWishDetails,
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
-import { isActive } from "./data/format";
+import { isActive, isOpen } from "./data/format";
+import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
@@ -24,6 +26,9 @@ import { WishView } from "./wish-view";
 import "./wish.css";
 
 type Modal = "make" | "project" | "settings" | null;
+
+// What the window shows instead of a wish: the flight plan of the active wishes. A wish's id is a UUID: never this.
+export const PLAN = "plan";
 
 function stored(key: string): string {
   try {
@@ -85,9 +90,19 @@ export function WishApp() {
     return () => window.removeEventListener("keydown", keys);
   }, []);
 
-  // The wish shown: the one chosen, else the first one by rank.
-  const wish =
-    wishes.find((w) => w.id === selected) ?? wishes.find(isActive) ?? wishes[0];
+  // The active wishes are always read: the flight plan and the side panel count what waits in each.
+  const active = wishes.filter(isActive);
+  const details = useWishDetails(active.map((w) => w.id));
+  const waiting = Object.fromEntries(
+    active.map((w) => [
+      w.id,
+      details[w.id]?.questions.filter(isOpen).length ?? 0,
+    ]),
+  );
+  // What shows: the wish chosen, else the flight plan while a wish is active, else the first wish.
+  const chosen = wishes.find((w) => w.id === selected);
+  const plan = !chosen && (selected === PLAN || active.length > 0);
+  const wish = plan ? undefined : (chosen ?? wishes[0]);
   const project = projects.find((p) => p.id === projectId);
 
   const move = (wishId: string, to: number) =>
@@ -137,6 +152,9 @@ export function WishApp() {
         <WishSidebar
           wishes={wishes}
           projects={projects}
+          waiting={waiting}
+          planSelected={plan}
+          onSelectPlan={() => setSelected(PLAN)}
           selectedWishId={wish?.id ?? ""}
           selectedProjectId={projectId}
           collapsed={collapsed}
@@ -174,7 +192,9 @@ export function WishApp() {
         </div>
       </aside>
       <main className="main-shell">
-        {wish ? (
+        {plan ? (
+          <FlightPlan wishes={active} onOpen={setSelected} onToast={setToast} />
+        ) : wish ? (
           <WishView key={wish.id} wish={wish} onToast={setToast} />
         ) : (
           <Welcome

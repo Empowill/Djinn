@@ -36,8 +36,11 @@ the context its task needs, no more.
 - [ ] Warm workers are on, bounded by the machine, and their idle cost is known. *Built, bounded and off by
   default (`djinn up --warm-workers`); their memory is supposed until the bench measures it.* (needs: the paid
   bench, `go tool task bench-workers`, with a person's go)
-- [ ] Every worker's tokens and cost show per wish in the interface. (needs: an agent; `src/wish-task.tsx` shows
-  each task's cost, not its tokens nor a total for the wish)
+- [x] Every worker's tokens and cost show per wish in the interface. (branch `w30-ui`: each task shows its tokens and
+  its cost, the detail on hover and opened (input, output, cache read, cache written); a wish shows its total, and the
+  flight plan each active wish's; Codex and Antigravity give tokens only, so their tasks show no cost and the total
+  says how many have none. `src/usage.tsx`, `tests/data-flight.test.mjs`, the token tests of
+  `tests/screens.test.mjs`, `e2e/flight-plan.spec.ts`)
 - [x] A lead starts from a brief built out of the store (`djinn wish brief`, T13).
 
 ## Decided along the way
@@ -84,6 +87,10 @@ the context its task needs, no more.
   the stable brief in `--append-system-prompt-file` and `--exclude-dynamic-system-prompt-sections`, which moves
   the folder and Git status out of the system prompt, for the cache). The in-process sub-agent is left out: Djinn
   does not launch it.
+
+- **What the window shows of a worker's spending** is `Task.usage`, as the harness sums it run after run: never a
+  figure of its own. A cost shows only above zero: Codex and Antigravity give none, and the page does not price their
+  tokens. A wish's total sums the tokens of all its tasks and the costs it has, and counts the tasks without one.
 
 ## The bench
 `go tool task bench-workers` (`tools/benchworkers`). Without the developer's go it prints its quote and refuses:

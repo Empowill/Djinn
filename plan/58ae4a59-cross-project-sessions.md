@@ -81,8 +81,12 @@ projects it touches, and a project is not necessarily a Git repository.
   order, for the scheduler (T07).
 - [x] Djinn proposes a ready wish and never grants it: only `djinn wish grant`, or "My wish is granted" in the
   window, does.
-- [ ] The window ranks the wishes by dragging them (done in `w27-ui-switch`, T03), and shows them in one flight plan
-  (not yet: one wish at a time). (needs: an agent, for the flight plan of several wishes)
+- [x] The window ranks the wishes by dragging them (done in `w27-ui-switch`, T03), and shows them in one flight plan:
+  the open questions of every active wish, blocking first, what waits, what runs, the latest decisions, each line
+  marked with its wish; a question answered there goes to its wish. (branch `w30-ui`: `src/flight-plan.tsx`,
+  `tests/data-flight.test.mjs`, the flight plan tests of `tests/screens.test.mjs`, `e2e/flight-plan.spec.ts`: two
+  wishes, a question each, one answered from the merged view and read answered by `djinn question list`)
+- [ ] Clément has reviewed the flight plan of several wishes: it changes `src/`. (needs: Clément's review)
 
 ## Decided along the way
 - **The export format is a proto**, `WishExport` in `api/plan/v1`, version 1: the wish, its project
@@ -157,7 +161,24 @@ projects it touches, and a project is not necessarily a Git repository.
   and recorded as the lead once the terminal runs; codex and agy with the whole brief as their first message. The
   details, and what is verified or supposed, are in T22.
 
+- **One flight plan, in the window** (`src/flight-plan.tsx`, branch `w30-ui`). An entry above the wishes, "Flight
+  plan", with the count of questions waiting. The window opens on it while a wish is active; a wish chosen, or shown
+  by `djinn wish resume`, opens its own view, which stays. It reads the tasks, questions and blocks of the active
+  wishes (three at most) all the time: the side panel counts the questions waiting in each. Sections, each hidden
+  when empty: a card per wish (rank, questions, tasks running, what it spent; a click opens it), "Your move" (the open
+  questions of every wish, blocking first, then by the wish's rank; the workers waiting for an answer or cut short;
+  the wishes Djinn proposes to grant, with their button), "Running now" (the workers, with Stop and their events),
+  "Latest decisions" (eight, the latest first). Every line carries its wish's rank and title; an answer, a stop or a
+  grant goes to that wish. A question blocks when a task waits for its answer (`edit_question_id`), as on the wish's
+  page.
+- **The journal stays per wish.** The merged plan has no merged journal: a wish's journal (its commands, from
+  `WishService.Snapshot`, and its log blocks) shows in its own view, the commands on a click, since Snapshot reads
+  the whole wish.
+
 ## Open questions
+- A journal of every active wish in the flight plan, merged by time? *Recommendation: not before someone asks;
+  Snapshot reads a whole wish, events included, and three of them on every change is heavy. A light read of the
+  journal (`WishService.Journal`, the entries only) would come first.*
 - The window shows one terminal at a time: `wish resume` switches it to the lead's, and a reload goes back to the
   main one. *Recommendation: a terminal per wish, shown with the wish, once the interface reads the wishes itself
   (T03).*

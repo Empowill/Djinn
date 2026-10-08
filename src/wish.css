@@ -5,6 +5,11 @@
   flex-direction: column;
   min-height: 0;
 }
+/* The content follows the header, even when the window is taller than both: the shared rule centers it. */
+.wish-view .overview-content {
+  margin: 0 auto auto;
+  padding-top: 24px;
+}
 .wish-welcome {
   justify-content: center;
 }
@@ -99,12 +104,31 @@
 .wish-task-note.error {
   color: #e0a0a0;
 }
-.wish-task-events {
+.wish-task-body {
   border-top: 1px solid var(--line);
   padding: var(--space-3) 14px;
+}
+.wish-task-events {
   max-height: 420px;
   overflow-y: auto;
   font: var(--font-size-body) var(--mono);
+}
+.wish-task-last-word {
+  border-left: 2px solid var(--line-strong);
+  padding: 2px 0 2px var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.wish-task-after {
+  margin-left: var(--space-2);
+  font: var(--font-size-body) var(--mono);
+  color: var(--muted-dim);
+}
+.task-usage {
+  color: var(--muted-dim);
+}
+.wish-event time {
+  flex-shrink: 0;
+  color: var(--muted-dim);
 }
 .wish-task-facts {
   display: flex;
@@ -171,6 +195,175 @@
   color: var(--muted);
 }
 .wish-project-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* What workers spent, summed for a wish. */
+.wish-spent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.wish-spent small {
+  color: var(--muted-dim);
+}
+
+/* The flight plan of the active wishes: each line shows its wish. */
+.plan-nav.selected,
+.plan-nav.selected:hover {
+  background: #272727;
+  color: #e7e7e7;
+}
+.wish-waiting {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--bg);
+  font: var(--font-size-body) var(--mono);
+  text-align: center;
+}
+.wish-waiting + .wish-rank {
+  margin-left: var(--space-1);
+}
+.wish-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  color: #cfcfcf;
+  font: var(--font-size-body) var(--font-sans);
+}
+.question-meta .wish-origin {
+  color: #cfcfcf;
+}
+.wish-origin b {
+  font: 600 var(--font-size-body) var(--mono);
+  color: var(--muted);
+}
+.question-blocking {
+  color: var(--accent);
+}
+.question-meta .question-blocking {
+  color: var(--accent);
+}
+.plan-wishes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: 28px;
+}
+.plan-wish {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  text-align: left;
+}
+.plan-wish:hover {
+  border-color: var(--line-strong);
+}
+.plan-wish strong {
+  font-weight: 500;
+  color: #e7e7e7;
+}
+.plan-wish-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.plan-wish-rank {
+  font: var(--font-size-body) var(--mono);
+  color: var(--muted-dim);
+}
+.plan-wish-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.plan-wish-counts .waiting {
+  color: var(--accent);
+}
+.plan-waiting {
+  margin-top: var(--space-4);
+}
+.plan-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: #cfcfcf;
+}
+.plan-line svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.plan-decisions .question-card {
+  margin-bottom: var(--space-2);
+}
+
+/* A long block, folded under its title. */
+.wish-block.folded .wish-block-body {
+  max-height: 180px;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.wish-block > .text-button {
+  margin-top: var(--space-2);
+}
+
+/* The journal: commands and log blocks, the latest first. */
+.journal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--line);
+}
+.journal-list li {
+  display: flex;
+  gap: var(--space-3);
+  padding: 6px 0 6px var(--space-3);
+}
+.journal-list time {
+  flex-shrink: 0;
+  min-width: 110px;
+  color: var(--muted-dim);
+  font: var(--font-size-body) var(--mono);
+}
+.journal-list li > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+  color: #cfcfcf;
+}
+.journal-list code {
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.journal-list li.log > div {
+  flex-direction: column;
+}
+.plan-decisions h3 {
   display: flex;
   align-items: center;
   gap: var(--space-2);
