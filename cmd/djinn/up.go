@@ -104,7 +104,10 @@ func runUp(args []string) error {
 		default: // Already asked.
 		}
 	}
-	svc := services(db, workers, terminals, uiSvc)
+	// The pages of the synced wishes follow every change, until djinn up stops.
+	pages := plan.NewPages(db, home, version)
+	go pages.Run(ctx)
+	svc := services(db, workers, terminals, uiSvc, pages)
 	h := server.Handler(djinn.UI(), svc)
 
 	var ln net.Listener
@@ -149,10 +152,12 @@ func runUp(args []string) error {
 
 // services returns the Connect services, by path prefix: the window's, the plan's on the database, the tasks' on
 // the harness, and the terminals'.
-func services(db *store.Store, h *harness.Harness, terminals *terminal.Manager, uiSvc *ui.Service) map[string]http.Handler {
+func services(
+	db *store.Store, h *harness.Harness, terminals *terminal.Manager, uiSvc *ui.Service, pages *plan.Pages,
+) map[string]http.Handler {
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
-	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}))
+	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}), plan.WithPages(pages))
 	out[demoPrefix] = demoHandler
 	out[uiPrefix] = uiHandler
 	taskPrefix, taskHandler := harness.Handler(h)

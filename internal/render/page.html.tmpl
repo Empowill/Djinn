@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Djinn">
+<title>{{.Title}}</title>
+<style>{{css}}</style>
+</head>
+<body>
+<main>
+<header class="head">
+  <h1>{{.Title}}</h1>
+  {{- if .Projects}}
+  <ul class="projects" aria-label="{{index .T "page.projects"}}">{{range .Projects}}<li>{{.}}</li>{{end}}</ul>
+  {{- end}}
+  <p class="meta">{{.Rendered}}</p>
+  {{- if or .Questions .Actions .Active}}
+  <nav class="counts">
+    {{- if .Questions}}<a class="count ask" href="#questions">{{index .T "page.questions"}} <b>{{len .Questions}}</b></a>{{end}}
+    {{- if .Actions}}<a class="count warn" href="#actions">{{index .T "page.actions"}} <b>{{len .Actions}}</b></a>{{end}}
+    {{- if .Active}}<a class="count" href="#tasks">{{index .T "page.tasks"}} <b>{{len .Active}}</b></a>{{end}}
+  </nav>
+  {{- end}}
+</header>
+{{- if .Questions}}
+<section id="questions">
+  <h2>{{index .T "page.questions"}} <span class="n">{{len .Questions}}</span></h2>
+  {{- range .Questions}}
+  <article class="card question">
+    <h3><span class="code">{{.Code}}</span> {{.Text}}</h3>
+    {{- if .Context}}
+    <div class="label">{{index $.T "page.context"}}</div>
+    <div class="md">{{.Context}}</div>
+    {{- end}}
+    {{- if .Recom}}
+    <div class="recom"><div class="label">{{index $.T "page.recommendation"}}</div><div class="md">{{.Recom}}</div></div>
+    {{- end}}
+    {{- if .Options}}
+    <ol class="options" aria-label="{{index $.T "page.options"}}">
+      {{- range .Options}}<li><span class="letter">{{.Letter}}</span><span>{{.Text}}</span></li>{{end}}
+    </ol>
+    {{- else}}
+    <p class="hint">{{index $.T "page.yes_only"}}</p>
+    {{- end}}
+  </article>
+  {{- end}}
+</section>
+{{- end}}
+{{- if .Actions}}
+<section id="actions">
+  <h2>{{index .T "page.actions"}} <span class="n">{{len .Actions}}</span></h2>
+  <ul class="actions">{{range .Actions}}<li>{{.}}</li>{{end}}</ul>
+</section>
+{{- end}}
+{{- if or .Active .Finished}}
+<section id="tasks">
+  <h2>{{index .T "page.tasks"}} <span class="n">{{len .Active}}</span></h2>
+  {{- range .Active}}{{template "task" (pair . $.T)}}{{end}}
+  {{- if .Finished}}
+  <details class="finished"{{if not .Active}} open{{end}}>
+    <summary>{{index .T "page.finished"}} <span class="n">{{len .Finished}}</span></summary>
+    {{- range .Finished}}{{template "task" (pair . $.T)}}{{end}}
+  </details>
+  {{- end}}
+</section>
+{{- end}}
+{{- if .Decisions}}
+<section id="decisions">
+  <h2>{{index .T "page.decisions"}} <span class="n">{{len .Decisions}}</span></h2>
+  <ul class="decisions">
+    {{- range .Decisions}}
+    <li>
+      <div class="line"><span class="code">{{.Code}}</span><span class="text">{{.Text}}</span><time>{{.At}}</time></div>
+      <div class="chosen">{{.Choice}}</div>
+      {{- if .Note}}<div class="md note">{{.Note}}</div>{{end}}
+    </li>
+    {{- end}}
+  </ul>
+</section>
+{{- end}}
+{{- if .Blocks}}
+<section id="notes">
+  <h2>{{index .T "page.notes"}}</h2>
+  {{- range .Blocks}}
+  <article class="block">
+    <div class="block-head">
+      {{- if .Kind}}<span class="kind">{{.Kind}}</span>{{end}}
+      {{- if .Title}}<h3>{{.Title}}</h3>{{end}}
+    </div>
+    <p class="meta">{{if .Task}}{{.Task}} · {{end}}<time>{{.Updated}}</time></p>
+    {{- if .Markdown}}<div class="md">{{.HTML}}</div>{{else if .Text}}<pre>{{.Text}}</pre>{{end}}
+  </article>
+  {{- end}}
+</section>
+{{- end}}
+{{- if .Journal}}
+<section id="journal">
+  <h2>{{index .T "page.journal"}}</h2>
+  <ol class="journal">
+    {{- range .Journal}}<li><time>{{.At}}</time><code>{{.Command}}</code><span>{{.Summary}}</span></li>{{end}}
+  </ol>
+  {{- if .JournalCut}}<p class="meta">{{.JournalCut}}</p>{{end}}
+</section>
+{{- end}}
+</main>
+</body>
+</html>
+{{- define "task"}}{{$t := index . 0}}{{$T := index . 1}}
+<article class="card task">
+  <div class="task-head"><span class="code">{{$t.Code}}</span><span class="title">{{$t.Title}}</span><span class="status {{$t.StatusClass}}">{{$t.Status}}</span></div>
+  <p class="meta">
+    {{- if $t.Project}}<span>{{$t.Project}}</span>{{end}}<span>{{$t.Agent}}</span>
+    {{- if $t.Time}}<span>{{$t.Time}}</span>{{end}}{{if $t.Spent}}<span>{{$t.Spent}}</span>{{end}}</p>
+  {{- if $t.Error}}<p class="error">{{$t.Error}}</p>{{end}}
+  {{- if $t.LastWord}}
+  <blockquote class="last"><div class="label">{{index $T "page.last_word"}}</div><p>{{$t.LastWord}}</p></blockquote>
+  {{- end}}
+</article>
+{{- end}}

@@ -38,6 +38,7 @@ type Option func(*options)
 
 type options struct {
 	leads    Leads
+	pages    *Pages
 	answered []func(context.Context, *planv1.Question)
 }
 
@@ -60,7 +61,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	opt := connect.WithInterceptors(Validate)
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s}, opt)
 	out[p] = h
-	wishes := &Wishes{Store: s, Leads: o.leads}
+	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages}
 	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
 	out[p] = h
 	p, h = planv1connect.NewQuestionServiceHandler(&Questions{Store: s, Answered: o.answered}, opt)
@@ -234,6 +235,9 @@ type Wishes struct {
 	Store *store.Store
 	// Leads runs the leads' terminals; nil where djinn up does not serve them, and Resume is then unavailable.
 	Leads Leads
+	// Pages renders the wishes' pages and keeps the synced ones up to date; nil where djinn up does not run them,
+	// and Sync is then unavailable.
+	Pages *Pages
 }
 
 func (w *Wishes) Make(

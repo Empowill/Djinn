@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +39,18 @@ var (
 type Store struct {
 	db     *sql.DB
 	tables map[protoreflect.FullName]*table
+
+	hooksMu sync.RWMutex
+	hooks   []func([]proto.Message)
+}
+
+// OnCommit calls f after each committed transaction that changed entities, with what it put and deleted, in
+// order; a deleted entity may hold its id only. f runs in the writer's goroutine, after the commit: it must be
+// quick, and must neither keep nor change the messages.
+func (s *Store) OnCommit(f func([]proto.Message)) {
+	s.hooksMu.Lock()
+	defer s.hooksMu.Unlock()
+	s.hooks = append(s.hooks, f)
 }
 
 // Open opens the database file at path, creating it and its directory if needed, in WAL mode. An empty path
@@ -217,12 +230,25 @@ type Tx struct {
 	tx      *sql.Tx
 	s       *Store
 	journal bool
+	changed []proto.Message
 }
 
 // Tx runs fn in a transaction, committed when fn returns nil and rolled back otherwise. A change must follow the
 // command that caused it: call Journal before Put.
 func (s *Store) Tx(ctx context.Context, fn func(*Tx) error) error {
-	return s.tx(ctx, func(tx *sql.Tx) error { return fn(&Tx{ctx: ctx, tx: tx, s: s}) })
+	t := &Tx{ctx: ctx, s: s}
+	if err := s.tx(ctx, func(tx *sql.Tx) error { t.tx = tx; return fn(t) }); err != nil {
+		return err
+	}
+	if len(t.changed) > 0 {
+		s.hooksMu.RLock()
+		hooks := s.hooks
+		s.hooksMu.RUnlock()
+		for _, f := range hooks {
+			f(t.changed)
+		}
+	}
+	return nil
 }
 
 func (s *Store) tx(ctx context.Context, fn func(*sql.Tx) error) error {
@@ -271,7 +297,11 @@ func (tx *Tx) Put(m proto.Message) error {
 	if err != nil {
 		return err
 	}
-	return t.put(tx.ctx, tx.tx, m)
+	if err := t.put(tx.ctx, tx.tx, m); err != nil {
+		return err
+	}
+	tx.changed = append(tx.changed, m)
+	return nil
 }
 
 // Delete removes an entity, found by the type and the id of m. Like Put, it follows the command that caused it.
@@ -283,7 +313,11 @@ func (tx *Tx) Delete(m proto.Message) error {
 	if err != nil {
 		return err
 	}
-	return t.remove(tx.ctx, tx.tx, m.ProtoReflect().Get(t.id).String())
+	if err := t.remove(tx.ctx, tx.tx, m.ProtoReflect().Get(t.id).String()); err != nil {
+		return err
+	}
+	tx.changed = append(tx.changed, m)
+	return nil
 }
 
 // Command is an entry of the journal.

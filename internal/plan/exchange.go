@@ -328,9 +328,16 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 // scrubber replaces the local paths found in text: a project's folder by its name, the home folder by ~.
 type scrubber struct{ r *strings.Replacer }
 
-func newScrubber(projects []*planv1.Project) *scrubber {
+// newScrubber replaces the folders of projects and the home folder, and each extra folder by the name that follows
+// it.
+func newScrubber(projects []*planv1.Project, extra ...string) *scrubber {
 	type pair struct{ from, to string }
 	var pairs []pair
+	for i := 0; i+1 < len(extra); i += 2 {
+		if extra[i] != "" {
+			pairs = append(pairs, pair{extra[i], extra[i+1]}, pair{filepath.ToSlash(extra[i]), extra[i+1]})
+		}
+	}
 	for _, p := range projects {
 		if dir := p.GetDirectory(); dir != "" {
 			pairs = append(pairs, pair{dir, p.GetName()}, pair{filepath.ToSlash(dir), p.GetName()})

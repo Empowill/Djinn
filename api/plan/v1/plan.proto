@@ -475,6 +475,49 @@ service WishService {
   rpc Grant(WishServiceGrantRequest) returns (WishServiceGrantResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+  // Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
+  // for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
+  // local path.
+  rpc Render(WishServiceRenderRequest) returns (WishServiceRenderResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Render the wish's page in Djinn's data folder, print where, and keep it up to date while djinn up runs: every
+  // change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
+  // republish it where you put it last time. Delete the file to stop.
+  rpc Sync(WishServiceSyncRequest) returns (WishServiceSyncResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+}
+
+message WishServiceRenderRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // File to write; a relative path starts from the current directory. By default, the wish's title with .html in
+  // the Downloads folder.
+  string file = 2 [(buf.validate.field).string.max_len = 4096];
+}
+
+message WishServiceRenderResponse {
+  // The file written.
+  string file = 1;
+  // Its size, in bytes.
+  int64 size = 2;
+}
+
+message WishServiceSyncRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message WishServiceSyncResponse {
+  // The page, kept up to date: always the same file for a wish.
+  string file = 1;
 }
 
 message WishServiceGrantRequest {

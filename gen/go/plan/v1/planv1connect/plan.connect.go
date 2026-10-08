@@ -71,6 +71,10 @@ const (
 	WishServiceSnapshotProcedure = "/plan.v1.WishService/Snapshot"
 	// WishServiceGrantProcedure is the fully-qualified name of the WishService's Grant RPC.
 	WishServiceGrantProcedure = "/plan.v1.WishService/Grant"
+	// WishServiceRenderProcedure is the fully-qualified name of the WishService's Render RPC.
+	WishServiceRenderProcedure = "/plan.v1.WishService/Render"
+	// WishServiceSyncProcedure is the fully-qualified name of the WishService's Sync RPC.
+	WishServiceSyncProcedure = "/plan.v1.WishService/Sync"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -347,6 +351,14 @@ type WishServiceClient interface {
 	// Give the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
+	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
+	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
+	// local path.
+	Render(context.Context, *connect.Request[v1.WishServiceRenderRequest]) (*connect.Response[v1.WishServiceRenderResponse], error)
+	// Render the wish's page in Djinn's data folder, print where, and keep it up to date while djinn up runs: every
+	// change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
+	// republish it where you put it last time. Delete the file to stop.
+	Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error)
 }
 
 // NewWishServiceClient constructs a client for the plan.v1.WishService service. By default, it uses
@@ -414,6 +426,18 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Grant")),
 			connect.WithClientOptions(opts...),
 		),
+		render: connect.NewClient[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse](
+			httpClient,
+			baseURL+WishServiceRenderProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Render")),
+			connect.WithClientOptions(opts...),
+		),
+		sync: connect.NewClient[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse](
+			httpClient,
+			baseURL+WishServiceSyncProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Sync")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -428,6 +452,8 @@ type wishServiceClient struct {
 	resume     *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
 	snapshot   *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
 	grant      *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
+	render     *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
+	sync       *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
 }
 
 // Make calls plan.v1.WishService.Make.
@@ -475,6 +501,16 @@ func (c *wishServiceClient) Grant(ctx context.Context, req *connect.Request[v1.W
 	return c.grant.CallUnary(ctx, req)
 }
 
+// Render calls plan.v1.WishService.Render.
+func (c *wishServiceClient) Render(ctx context.Context, req *connect.Request[v1.WishServiceRenderRequest]) (*connect.Response[v1.WishServiceRenderResponse], error) {
+	return c.render.CallUnary(ctx, req)
+}
+
+// Sync calls plan.v1.WishService.Sync.
+func (c *wishServiceClient) Sync(ctx context.Context, req *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error) {
+	return c.sync.CallUnary(ctx, req)
+}
+
 // WishServiceHandler is an implementation of the plan.v1.WishService service.
 type WishServiceHandler interface {
 	// Make a wish.
@@ -503,6 +539,14 @@ type WishServiceHandler interface {
 	// Give the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
+	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
+	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
+	// local path.
+	Render(context.Context, *connect.Request[v1.WishServiceRenderRequest]) (*connect.Response[v1.WishServiceRenderResponse], error)
+	// Render the wish's page in Djinn's data folder, print where, and keep it up to date while djinn up runs: every
+	// change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
+	// republish it where you put it last time. Delete the file to stop.
+	Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error)
 }
 
 // NewWishServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -566,6 +610,18 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Grant")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceRenderHandler := connect.NewUnaryHandler(
+		WishServiceRenderProcedure,
+		svc.Render,
+		connect.WithSchema(wishServiceMethods.ByName("Render")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceSyncHandler := connect.NewUnaryHandler(
+		WishServiceSyncProcedure,
+		svc.Sync,
+		connect.WithSchema(wishServiceMethods.ByName("Sync")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.WishService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WishServiceMakeProcedure:
@@ -586,6 +642,10 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceSnapshotHandler.ServeHTTP(w, r)
 		case WishServiceGrantProcedure:
 			wishServiceGrantHandler.ServeHTTP(w, r)
+		case WishServiceRenderProcedure:
+			wishServiceRenderHandler.ServeHTTP(w, r)
+		case WishServiceSyncProcedure:
+			wishServiceSyncHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -629,6 +689,14 @@ func (UnimplementedWishServiceHandler) Snapshot(context.Context, *connect.Reques
 
 func (UnimplementedWishServiceHandler) Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Grant is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Render(context.Context, *connect.Request[v1.WishServiceRenderRequest]) (*connect.Response[v1.WishServiceRenderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Render is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Sync is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.
