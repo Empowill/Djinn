@@ -253,7 +253,9 @@ type Wishes struct {
 func (w *Wishes) Make(
 	ctx context.Context, req *connect.Request[planv1.WishServiceMakeRequest],
 ) (*connect.Response[planv1.WishServiceMakeResponse], error) {
-	wish := &planv1.Wish{Id: store.NewID(), Title: req.Msg.GetTitle(), CreateTime: timestamppb.Now()}
+	wish := &planv1.Wish{
+		Id: store.NewID(), Title: req.Msg.GetTitle(), CreateTime: timestamppb.Now(), Provider: req.Msg.GetProvider(),
+	}
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		for _, id := range req.Msg.GetProjectIds() {
 			project, err := store.Get[*planv1.Project](ctx, tx, id)

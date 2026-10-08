@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -29,6 +30,12 @@ type Leads interface {
 // LeadTerminal is the name of the terminal of a wish's lead.
 func LeadTerminal(wishID string) string { return "lead-" + strings.ToLower(wishID) }
 
+// WishProvider is the kind of agent of a wish: its lead runs it, and every task that names no other. A wish made
+// before the choice runs Claude.
+func WishProvider(wish *planv1.Wish) planv1.Provider {
+	return cmp.Or(wish.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
+}
+
 // resumeLine is the command line that resumes the lead's session, as its agent's command line takes it. The session
 // identifier was checked against a pattern without spaces or quotes: the line goes through the user's shell as it is.
 func resumeLine(lead *planv1.Lead) (string, error) {
@@ -46,11 +53,10 @@ func (w *Wishes) SetLead(
 	ctx context.Context, req *connect.Request[planv1.WishServiceSetLeadRequest],
 ) (*connect.Response[planv1.WishServiceSetLeadResponse], error) {
 	lead := &planv1.Lead{Provider: req.Msg.GetProvider(), SessionId: req.Msg.GetSessionId()}
-	if lead.Provider == planv1.Provider_PROVIDER_UNSPECIFIED {
-		lead.Provider = planv1.Provider_PROVIDER_CLAUDE
-	}
-	if _, err := resumeLine(lead); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	if lead.Provider != planv1.Provider_PROVIDER_UNSPECIFIED {
+		if _, err := resumeLine(lead); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
 	}
 	if dir := req.Msg.GetDirectory(); dir != "" {
 		var err error
@@ -63,6 +69,13 @@ func (w *Wishes) SetLead(
 		var err error
 		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
 			return err
+		}
+		if lead.Provider == planv1.Provider_PROVIDER_UNSPECIFIED {
+			// Without a kind given, the session is of the wish's agent.
+			lead.Provider = WishProvider(wish)
+			if _, err := resumeLine(lead); err != nil {
+				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%w: give --provider", err))
+			}
 		}
 		if lead.Directory == "" {
 			if lead.Directory, err = firstFolder(ctx, tx, wish); err != nil {

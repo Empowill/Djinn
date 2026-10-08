@@ -3,7 +3,7 @@
 import { ArrowRight, FolderOpen, Terminal } from "lucide-react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 
-import type { Project, Skill } from "../gen/ts/plan/v1/plan_pb";
+import { type Project, Provider, type Skill } from "../gen/ts/plan/v1/plan_pb";
 import type { UiServiceGetEnvironmentResponse } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
@@ -17,6 +17,7 @@ import {
   systemLanguage,
   t,
 } from "./i18n";
+import { defaultProvider, setDefaultProvider, wishProviders } from "./provider";
 import { type Theme, chosenTheme, setTheme } from "./theme";
 
 // MakeWish makes a wish (WishService.Make): a sentence and the projects it works on. With three wishes active, it
@@ -36,6 +37,7 @@ export function MakeWish({
   const full = active >= MAX_ACTIVE;
   const [title, setTitle] = useState("");
   const [chosen, setChosen] = useState<string[]>([]);
+  const [provider, setProvider] = useState<Provider>(defaultProvider);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
@@ -46,6 +48,7 @@ export function MakeWish({
         title: title.trim(),
         projectIds: chosen,
         paused: full,
+        provider,
       });
       onMade(res.wish?.id ?? "");
     } catch (err) {
@@ -70,6 +73,19 @@ export function MakeWish({
             onChange={(e) => setTitle(e.target.value)}
             placeholder={t("make.what_placeholder")}
           />
+        </label>
+        <label>
+          <span>{t("make.provider")}</span>
+          <select
+            value={provider}
+            onChange={(e) => setProvider(Number(e.target.value) as Provider)}
+          >
+            {wishProviders.map((p) => (
+              <option key={p.provider} value={p.provider}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </label>
         {projects.length > 0 && (
           <fieldset className="wish-projects">
@@ -396,6 +412,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           ))}
         </select>
       </div>
+      <DefaultProviderSetting />
       <div className="setting-row">
         <div>
           <strong>{t("settings.theme")}</strong>
@@ -420,5 +437,33 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <span>Djinn {env?.version}</span>
       </div>
     </ModalFrame>
+  );
+}
+
+// DefaultProviderSetting chooses the agent a new wish is made with, ahead in MakeWish.
+function DefaultProviderSetting() {
+  const [provider, setProvider] = useState<Provider>(defaultProvider);
+  return (
+    <div className="setting-row">
+      <div>
+        <strong>{t("settings.provider")}</strong>
+        <p>{t("settings.provider_detail")}</p>
+      </div>
+      <select
+        value={provider}
+        aria-label={t("settings.provider")}
+        onChange={(e) => {
+          const next = Number(e.target.value) as Provider;
+          setProvider(next);
+          setDefaultProvider(next);
+        }}
+      >
+        {wishProviders.map((p) => (
+          <option key={p.provider} value={p.provider}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

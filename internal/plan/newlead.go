@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -37,9 +38,7 @@ func (w *Wishes) newLead(
 		return "", dir, nil, "This wish has no lead session to resume: the lead's terminal runs a shell. " +
 			"djinn wish set-lead records the session of the lead.", nil
 	}
-	if provider == planv1.Provider_PROVIDER_UNSPECIFIED {
-		provider = planv1.Provider_PROVIDER_CLAUDE
-	}
+	provider = cmp.Or(provider, WishProvider(wish))
 	brief, err := BuildBrief(ctx, w.Store, home, wish.GetId())
 	if err != nil {
 		return "", "", nil, "", Status(err)

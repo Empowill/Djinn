@@ -134,6 +134,9 @@ func (h *Harness) wantedWarm(ctx context.Context) []wantWarm {
 	}
 	var out []wantWarm
 	for _, wish := range wishes {
+		if plan.WishProvider(wish) != planv1.Provider_PROVIDER_CLAUDE {
+			continue // Its tasks run another agent by default: a warm claude would wait for nothing.
+		}
 		for _, id := range wish.GetProjectIds() {
 			project, err := store.Get[*planv1.Project](ctx, h.store, id)
 			if err != nil || project.GetDirectory() == "" {

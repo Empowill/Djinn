@@ -5,6 +5,7 @@
 import {
   CheckCircle2,
   ChevronDown,
+  Bot,
   ChevronRight,
   Clock3,
   Download,
@@ -58,6 +59,7 @@ import { t } from "./i18n";
 import { AttentionBar, attentionOf } from "./attention";
 import { MarkButtons, type OnMark, useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
+import { providerName } from "./provider";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
 import { SpentLine } from "./usage";
@@ -122,13 +124,24 @@ export function WishView({
           <strong>{wish.title}</strong>
         </div>
         <div className="topbar-actions">
+          <span
+            className="wish-provider muted-text"
+            title={t("wish.provider_detail")}
+          >
+            <Bot size={14} aria-hidden="true" />
+            {providerName(wish.provider)}
+          </span>
           <button
             className="button secondary small"
             title={t("wish.resume_detail")}
             onClick={() =>
               quiet(
                 act(
-                  () => clients.wishes.resume({ wishId: wish.id }),
+                  () =>
+                    clients.wishes.resume({
+                      wishId: wish.id,
+                      provider: wish.provider,
+                    }),
                   [Change.WISH],
                 ),
               )

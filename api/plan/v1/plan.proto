@@ -66,6 +66,9 @@ message Wish {
   // Djinn proposes to grant the wish: it has tasks, all finished, no question is open, and no task waits for an
   // answer or failed. Computed on every read, never stored. Only the user grants a wish.
   bool ready = 10;
+  // Kind of agent chosen when the wish was made: its lead runs it, and so does every task that names no other. Not
+  // set on a wish made before the choice: Claude.
+  Provider provider = 11;
 }
 
 // WishState is where a wish stands. A djinn grants three wishes at a time, never more: three are active at most.
@@ -930,6 +933,9 @@ message WishServiceMakeRequest {
   repeated string project_ids = 2 [(buf.validate.field).repeated.items.string.uuid = true];
   // Make it paused: it waits, out of the three active wishes.
   bool paused = 3;
+  // Kind of agent for the wish's lead and, unless a task names another, its tasks: claude (the default), codex or
+  // antigravity.
+  Provider provider = 4 [(buf.validate.field).enum.defined_only = true];
 }
 
 message WishServiceMakeResponse {
@@ -1011,7 +1017,7 @@ message WishServiceSetLeadRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
   ];
-  // Kind of agent: claude (the default) or codex.
+  // Kind of agent: claude or codex; by default the wish's, else claude.
   Provider provider = 3;
   // Folder the session runs in. By default, the folder of the wish's first project.
   string directory = 4 [(buf.validate.field).string.max_len = 4096];
@@ -1028,7 +1034,8 @@ message WishServiceResumeRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  // Kind of agent for a new lead, when the wish has none to resume: claude (the default), codex or antigravity.
+  // Kind of agent for a new lead, when the wish has none to resume: claude, codex or antigravity; by default the
+  // wish's, else claude.
   Provider provider = 2 [(buf.validate.field).enum.defined_only = true];
 }
 
@@ -1400,7 +1407,7 @@ message TaskServiceSpawnRequest {
   ];
   // What to ask the worker; by default the title.
   string prompt = 4 [(buf.validate.field).string.max_len = 200000];
-  // Kind of agent; by default claude.
+  // Kind of agent; by default the wish's, else claude.
   Provider provider = 5 [(buf.validate.field).enum.defined_only = true];
   // Model of the agent; by default the provider's.
   string model = 6 [(buf.validate.field).string.max_len = 200];

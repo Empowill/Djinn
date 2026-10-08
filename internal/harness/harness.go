@@ -224,7 +224,7 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	kind := cmp.Or(req.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
+	kind := cmp.Or(req.GetProvider(), plan.WishProvider(wish))
 	if src, err := forkSource(ctx, h.store, wish, req); err != nil {
 		return nil, plan.Status(err)
 	} else if src.session != "" {

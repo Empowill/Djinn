@@ -170,6 +170,8 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 		b.WriteString("- Projects: " + strings.Join(names, ", ") + ".\n")
 	}
+	fmt.Fprintf(&b, "- Agent: %s, chosen with the wish. You run it, and so does every task you spawn without "+
+		"`--provider`; give `--provider` for a task that needs another.\n", providerName(WishProvider(wish)))
 	if ready {
 		b.WriteString("- Djinn proposes to grant it: every task is finished and no question is open. Granting is the developer's word.\n")
 	}

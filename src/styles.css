@@ -469,6 +469,12 @@ button {
   align-items: center;
   gap: 17px;
 }
+.wish-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
 .connection-indicator {
   display: flex;
   align-items: center;

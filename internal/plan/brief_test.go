@@ -268,3 +268,53 @@ func TestBriefLine(t *testing.T) {
 		t.Errorf("quote = %q", q)
 	}
 }
+
+// TestWishProvider: the agent chosen when a wish is made is its lead's, said in its brief; a wish made before the
+// choice leads with Claude.
+func TestWishProvider(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the lines are checked for the shells of Unix; TestBriefLine checks cmd.exe")
+	}
+	ctx := t.Context()
+	home := t.TempDir()
+	c, leads := serveLeads(t, home)
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		chosen planv1.Provider
+		name   string
+		line   string
+	}{
+		{planv1.Provider_PROVIDER_UNSPECIFIED, "claude", "claude --session-id "},
+		{planv1.Provider_PROVIDER_CLAUDE, "claude", "claude --session-id "},
+		{planv1.Provider_PROVIDER_CODEX, "codex", "codex '# Leading a wish"},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "antigravity", "agy -i '# Leading a wish"},
+	} {
+		made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+			Title: "Lead with " + tc.name, ProjectIds: []string{project.Msg.GetProject().GetId()}, Provider: tc.chosen, Paused: true,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wish := made.Msg.GetWish()
+		if wish.GetProvider() != tc.chosen || WishProvider(wish).String() != "PROVIDER_"+strings.ToUpper(tc.name) {
+			t.Errorf("%s: made %v", tc.chosen, wish)
+		}
+		brief, err := BuildBrief(ctx, c.store, home, wish.GetId())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(brief.Moving, "- Agent: "+tc.name+", chosen with the wish") {
+			t.Errorf("%s: brief = %q", tc.chosen, brief.Moving)
+		}
+		// Resume without a kind of agent starts the wish's.
+		if _, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: wish.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+		if got := leads.opened[len(leads.opened)-1]; !strings.HasPrefix(got, tc.line) {
+			t.Errorf("%s: opened %q, want %q…", tc.chosen, got, tc.line)
+		}
+	}
+}

@@ -1609,7 +1609,7 @@
           },
           "provider": {
             "$ref": "#/components/schemas/plan.v1.Provider",
-            "description": "Kind of agent; by default claude."
+            "description": "Kind of agent; by default the wish's, else claude."
           },
           "title": {
             "description": "What the task does, in a sentence.",
@@ -1757,6 +1757,10 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/plan.v1.Provider",
+            "description": "Kind of agent chosen when the wish was made: its lead runs it, and so does every task that names no other. Not set on a wish made before the choice: Claude."
           },
           "rank": {
             "description": "Place among the active wishes, from 1: the first one has priority. 0 for a paused or granted wish.",
@@ -1976,6 +1980,10 @@
             },
             "type": "array"
           },
+          "provider": {
+            "$ref": "#/components/schemas/plan.v1.Provider",
+            "description": "Kind of agent for the wish's lead and, unless a task names another, its tasks: claude (the default), codex or antigravity."
+          },
           "title": {
             "description": "What you wish, in a sentence.",
             "maxLength": 500,
@@ -2087,7 +2095,7 @@
         "properties": {
           "provider": {
             "$ref": "#/components/schemas/plan.v1.Provider",
-            "description": "Kind of agent for a new lead, when the wish has none to resume: claude (the default), codex or antigravity."
+            "description": "Kind of agent for a new lead, when the wish has none to resume: claude, codex or antigravity; by default the wish's, else claude."
           },
           "wishId": {
             "description": "The wish.",
@@ -2141,7 +2149,7 @@
           },
           "provider": {
             "$ref": "#/components/schemas/plan.v1.Provider",
-            "description": "Kind of agent: claude (the default) or codex."
+            "description": "Kind of agent: claude or codex; by default the wish's, else claude."
           },
           "sessionId": {
             "description": "Identifier of the lead's session, as the agent names it.",

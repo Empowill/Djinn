@@ -107,6 +107,22 @@ func TestSetLead(t *testing.T) {
 			t.Errorf("%s: %v, want invalid_argument", name, err)
 		}
 	}
+	// Without --provider, the session is of the wish's agent; an antigravity wish has none to record.
+	for chosen, want := range map[planv1.Provider]connect.Code{
+		planv1.Provider_PROVIDER_CODEX: 0, planv1.Provider_PROVIDER_ANTIGRAVITY: connect.CodeInvalidArgument,
+	} {
+		made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+			Title: "Lead with " + chosen.String(), ProjectIds: []string{project.Msg.GetProject().GetId()}, Provider: chosen,
+			Paused: true,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wish, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: made.Msg.GetWish().GetId(), SessionId: session})
+		if code(err) != want || (err == nil && wish.GetLead().GetProvider() != chosen) {
+			t.Errorf("%s: lead %v, %v", chosen, wish.GetLead(), err)
+		}
+	}
 	// A wish without a project folder needs one.
 	bare := c.wish(t)
 	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: bare, SessionId: session}); code(err) != connect.CodeInvalidArgument ||

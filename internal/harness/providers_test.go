@@ -605,3 +605,46 @@ func TestSpawnOutsideProject(t *testing.T) {
 		t.Errorf("start = %q", events[1].GetText())
 	}
 }
+
+// TestSpawnWishProvider: a task without --provider runs the wish's agent, and one with --provider runs that one; a
+// wish made before the choice runs Claude.
+func TestSpawnWishProvider(t *testing.T) {
+	e := up(t, t.TempDir())
+	specs := map[planv1.Provider]chan Spec{}
+	for _, p := range []planv1.Provider{planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX} {
+		specs[p] = make(chan Spec, 2)
+		e.h.providers[p] = recorder{specs: specs[p]}
+	}
+	spawn := func(chosen, asked planv1.Provider) *planv1.Task {
+		t.Helper()
+		wish, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
+			Title: "Read with " + chosen.String(), Provider: chosen,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wish.Msg.GetWish().GetId(), Title: "Summarize the spec", Provider: asked,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		task := res.Msg.GetTask()
+		e.watch(t.Context(), t, task.GetId(), 0)
+		return task
+	}
+	for _, tc := range []struct{ chosen, asked, want planv1.Provider }{
+		{planv1.Provider_PROVIDER_UNSPECIFIED, planv1.Provider_PROVIDER_UNSPECIFIED, planv1.Provider_PROVIDER_CLAUDE},
+		{planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_UNSPECIFIED, planv1.Provider_PROVIDER_CODEX},
+		{planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CLAUDE},
+	} {
+		if task := spawn(tc.chosen, tc.asked); task.GetProvider() != tc.want {
+			t.Errorf("wish %s, --provider %s: task runs %s, want %s", tc.chosen, tc.asked, task.GetProvider(), tc.want)
+		}
+		select {
+		case <-specs[tc.want]:
+		default:
+			t.Errorf("wish %s, --provider %s: %s did not start", tc.chosen, tc.asked, tc.want)
+		}
+	}
+}
