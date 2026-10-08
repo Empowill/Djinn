@@ -111,6 +111,8 @@ To use Djinn, see the [README](README.md). To work on it:
 - `go tool task lint`: every check (protos, Go, types, formatting). `go tool task format` fixes.
 - `go tool task gen`: code from the protos.
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
+- `go tool task dev`: the page reloads as you edit React, djinn rebuilds and restarts as you edit Go; in the browser,
+  on its own data (`bin/dev-home`). Open the URL it prints.
 - `go tool task install`: the Djinn you use, apart from the one you build, with its icon and menu entry on Linux
   (`~/.local/share`). The running one keeps going and offers
   to restart on it ("Update" in the window, or `djinn update` from your terminal; `--yes` elsewhere), reopening the lead terminals.
@@ -158,7 +160,8 @@ their contributors.
   [pty](https://github.com/creack/pty) (the terminal's pseudo-terminal on macOS and Linux),
   [conpty](https://github.com/charmbracelet/x/tree/main/conpty) from Charm (the same on Windows),
   [goldmark](https://github.com/yuin/goldmark) (the Markdown of a wish's page),
-  [x/sys](https://github.com/golang/sys), [x/term](https://github.com/golang/term) (tests); as module tools,
+  [x/sys](https://github.com/golang/sys), [x/term](https://github.com/golang/term) (tests),
+  [x/mod](https://github.com/golang/mod) (release versions); as module tools,
   [Task](https://github.com/go-task/task) and [buf](https://github.com/bufbuild/buf).
 - Interface: [React](https://github.com/react/react),
   [Connect for the web](https://github.com/connectrpc/connect-es) and

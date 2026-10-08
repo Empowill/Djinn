@@ -34,6 +34,12 @@ tasks:
     cmds:
       - go build -tags '{{.WINDOW_TAGS}}' -o bin/djinn{{exeExt}} ./cmd/djinn
 
+  dev:
+    desc: "Develop with live reload: Vite reloads the interface as React changes, djinn (browser mode) rebuilds and restarts as Go changes, on its own data (bin/dev-home, never your Djinn's). Open the URL it prints; -- -port 4400 moves it"
+    deps: [ui]
+    cmds:
+      - go run ./tools/devloop {{.CLI_ARGS}}
+
   install:
     desc: "Install the Djinn you use, apart from the one you build (Go's bin folder, no sudo; TO=<folder> installs elsewhere), with its icon and menu entry on Linux. A running Djinn keeps going and offers to restart on it"
     deps: [ui]

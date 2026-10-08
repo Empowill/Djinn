@@ -41,8 +41,18 @@ interface, without Node or Electron at runtime.
 - [x] The interface starts, adds a project and finds it again after a restart. (08/10: `djinn project add`, stop
   `djinn up` by its PID, start it again, `djinn project list` finds it; the window adds through
   `ProjectService.Add` in `src/wish-dialogs.tsx`; `TestProjectAdd`)
-- [ ] Editing React or Go during `task dev` shows up without restarting by hand. (needs: a `dev` task, which
-  `Taskfile.yml` does not have yet: an agent can write it, a person checks the reload in the window)
+- [x] Editing React or Go during `task dev` shows up without restarting by hand. (08/10, in the browser: headless
+  Chromium on the page, `src/wish-app.tsx` edited, the title became "Make a wish · hot" with no reload (a value set
+  on `window` survived), status "Live"; `internal/ui/ui.go` edited, devloop printed "Go changed, rebuilding djinn"
+  and a new PID, `GetEnvironment` through the page answered the new name; `TestRelay`, `TestChanged`, `TestDevHome`
+  in `tools/devloop`)
+
+## Decided along the way
+- **`go tool task dev`** (`tools/devloop`): Vite serves the page with hot reload; djinn runs `up --browser`, built
+  headless (no CGO: a quick build), and is rebuilt and restarted by its PID when a Go file of the binary changes
+  (tests excepted). A relay adds djinn's token to the page's calls, reading djinn's address at each one, so a restart
+  needs no reload; like djinn, it refuses a call from another origin. The data lives in `bin/dev-home`, and the loop
+  refuses the data folder of the Djinn in use. No native window: the window serves the embedded `dist/`, not Vite.
 
 ## Open questions
 - Ubuntu 22.04 builds with the `gtk3` tag, which Wails drops in v3.1. When do we move to GTK 4? *Recommendation: before upgrading Wails past v3.0.x.*

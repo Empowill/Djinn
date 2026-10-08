@@ -50,8 +50,8 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
   tag; `release.yml` exists, never run)
 - [ ] A fresh account with no administrator rights installs a binary and opens the window on
   Linux (with the runtime libraries), macOS and Windows. (needs: a published release, a person on each system)
-- [ ] An update from inside the app replaces the binary in place (T12). (needs: the release check of T12, not
-  built)
+- [ ] An update from inside the app replaces the binary in place (T12). (needs: a published release; the release
+  check of T12 is built and tested against a fake release)
 
 ## Decided along the way
 - **The CI is GitHub Actions.** `.github/workflows/ci.yml`, on every pull request and every push to `main`: `go tool
