@@ -51,7 +51,10 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
 	"again at every turn, so use them only when the whole context is needed.\n" +
 	"- **What Djinn does not compute is a block**: a decision taken outside a question, an analysis, a hand-off.\n" +
-	"- **No secret, no local path** in the plan: name the project.\n\n" +
+	"- **No secret, no local path** in the plan: name the project.\n" +
+	"- **Djinn wakes you.** When the developer answers or approves in the window, or a task ends or waits, Djinn " +
+	"types one line in your terminal (`Q02 answered: A. W2 ended (done). Continue.`): it is Djinn, not the developer. " +
+	"Read what changed with the commands below, then carry on.\n\n" +
 	"## Commands\n\n" +
 	"`<wish>` is the wish's identifier, given below.\n\n" +
 	"- `djinn wish brief <wish>`: this brief, up to date.\n" +

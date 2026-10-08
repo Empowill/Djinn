@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -193,7 +194,21 @@ func runUp(args []string) (restart bool, err error) {
 	// The pages of the synced wishes follow every change, until djinn up stops.
 	pages := plan.NewPages(db, home, version)
 	go pages.Run(ctx)
-	svc := services(db, workers, terminals, uiSvc, pages)
+	// The lead of a wish hears in its terminal of each answer, approval and task that ends or waits, as if the
+	// developer typed it there: the wish moves on without anyone writing to it.
+	nudges := &plan.Nudges{Tell: func(wishID, text string) {
+		if t := terminals.Lookup(plan.LeadTerminal(wishID)); t != nil {
+			go func() {
+				if err := t.Tell(text); err != nil && !errors.Is(err, terminal.ErrExited) {
+					log.Printf("djinn: tell the lead of %s: %v", wishID, err)
+				}
+			}()
+		}
+	}}
+	if err := nudges.Follow(ctx, db); err != nil {
+		return false, err
+	}
+	svc := services(db, workers, terminals, uiSvc, pages, nudges)
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
@@ -249,13 +264,15 @@ func runUp(args []string) (restart bool, err error) {
 }
 
 // services returns the Connect services, by path prefix: the window's, the plan's on the database, the tasks' on
-// the harness, and the terminals'.
+// the harness, and the terminals'. The leads hear of answers and approvals through nudges.
 func services(
 	db *store.Store, h *harness.Harness, terminals *terminal.Manager, uiSvc *ui.Service, pages *plan.Pages,
+	nudges *plan.Nudges,
 ) map[string]http.Handler {
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
-	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}), plan.WithPages(pages))
+	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithNudges(nudges),
+		plan.WithLeads(leads{terminals, uiSvc}), plan.WithPages(pages))
 	out[demoPrefix] = demoHandler
 	out[uiPrefix] = uiHandler
 	taskPrefix, taskHandler := harness.Handler(h)

@@ -26,6 +26,8 @@ type Marks struct {
 	Store *store.Store
 	// Answered are called with a question once an approval has answered it.
 	Answered []func(context.Context, *planv1.Question)
+	// Approved are called with what an approval marked, once stored, when it answered nothing.
+	Approved []func(context.Context, *planv1.Marked)
 }
 
 func (m *Marks) Put(
@@ -62,9 +64,14 @@ func (m *Marks) Put(
 	if err != nil {
 		return nil, err
 	}
-	if answered != nil {
+	switch {
+	case answered != nil:
 		for _, f := range m.Answered {
 			f(ctx, proto.CloneOf(answered))
+		}
+	case msg.GetKind() == planv1.MarkKind_MARK_KIND_APPROVED && !msg.GetRemove():
+		for _, f := range m.Approved {
+			f(ctx, proto.CloneOf(marked))
 		}
 	}
 	return connect.NewResponse(&planv1.MarkServicePutResponse{Marked: marked}), nil
