@@ -52,7 +52,7 @@ func rich(t *testing.T) *planv1.WishExport {
 			},
 			{
 				Id: "t2", WishId: "w", Code: "W2", Title: "Edit notes", Status: planv1.TaskStatus_TASK_STATUS_WAITING,
-				EditQuestionId: "q3",
+				EditQuestionId: "q3", Error: "waiting for the answer to its edit question",
 			},
 			{Id: "t3", WishId: "w", Code: "W3", Title: "Old run", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
 			{
@@ -109,12 +109,12 @@ func TestRichPage(t *testing.T) {
 		"<title>Ship the wish page</title>", "Rendered by Djinn v1.2.3, 2026-10-08 14:30 UTC", "<li>djinn</li>",
 		// Open questions, with their context and recommendation in Markdown; Q02 is a decision.
 		"Which Markdown library?", "<strong>MIT</strong>", "A: maintained.", "<span>goldmark</span>",
-		"May W2 edit the folder?", "Answered with a yes.",
+		"May W2 edit the folder?", "To be answered with a yes.",
 		// What waits for the user.
 		"W2 waits for your answer to Q03 before it may edit.", "W3 was cut short when Djinn stopped",
 		"Project web is not on this machine yet",
 		// Tasks: status, agent, time, cost, last word; the failed one among the finished.
-		"Running", "claude · opus", "30m", "$1.50", "Tests pass: 12 of 12.", "exit code 2", "Finished",
+		"Running", "claude · opus", "started 2026-10-08 14:00", "5m", "$1.50", "Tests pass: 12 of 12.", "exit code 2", "Finished",
 		// Decisions, dated, with the option chosen.
 		"Keep the old page?", "B · No", "2026-10-08 13:10", "<p>Drop it.</p>",
 		// Blocks in order, Markdown rendered, another media type as text.
@@ -125,6 +125,9 @@ func TestRichPage(t *testing.T) {
 		if !strings.Contains(html, s) {
 			t.Errorf("the page lacks %q", s)
 		}
+	}
+	if strings.Contains(html, "waiting for the answer to its edit question") {
+		t.Error("a waiting task shows no error")
 	}
 	if strings.Contains(html, "Starting.") {
 		t.Error("only the worker's last word shows")

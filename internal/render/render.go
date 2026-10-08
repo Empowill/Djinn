@@ -233,16 +233,20 @@ func build(in Input) (*view, error) {
 		if c := t.GetUsage().GetCostUsd(); c > 0 {
 			ct.Spent = fmt.Sprintf("$%.2f", c)
 		}
-		if s := t.GetStartTime(); s != nil {
-			end := now
-			if e := t.GetEndTime(); e != nil && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
-				end = e.AsTime()
-			}
-			ct.Time = duration(end.Sub(s.AsTime()))
+		// A page is rendered on a change, not by the clock: a running task shows when it started, an ended one how
+		// long it ran.
+		if s, e := t.GetStartTime(), t.GetEndTime(); s != nil && e != nil && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+			ct.Time = duration(e.AsTime().Sub(s.AsTime()))
+		} else if s != nil {
+			ct.Time = tr("page.started", "time", at(s))
 		}
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
 			v.Finished = append(v.Finished, ct)
+		case planv1.TaskStatus_TASK_STATUS_WAITING:
+			// Its error only says it waits: the status and the actions say it better.
+			ct.Error = ""
+			v.Active = append(v.Active, ct)
 		default:
 			v.Active = append(v.Active, ct)
 		}

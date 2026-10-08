@@ -26,9 +26,24 @@ hand-offs: one person works, the other reads. Later, several people work on the 
   into the wish, through the lead, never by editing the page.
 - Not today: we hand off, we do not work at the same time.
 
+## Decided along the way
+- **One file, in the data folder.** `djinn wish sync` writes `<data>/wishes/<id>/page.html` and prints its path. A
+  page is synced while its file exists: `djinn up` takes back the pages it finds when it starts, and deleting the
+  file stops it. No new state in the store. `djinn wish render` writes the page once, to Downloads or `--file`.
+- **A commit hook, not a poll.** The store calls back after each commit with the entities it changed; the pages
+  mark the synced wishes they touch, and render them at most once a second.
+- **Order of the page:** header, to decide (open questions), waiting for you, tasks, decisions, notes (the blocks,
+  in their order), journal (the latest 200 commands). Empty sections are not rendered.
+- **"Waiting for you" comes from the lamp only:** a task waiting on its edit question, a task cut short by a stop,
+  a project not on this machine. No block kind is read as an action.
+- **Same scrubbing as the export,** plus the data folder (`djinn-data`). Tool calls and results stay out.
+- **Markdown by goldmark (MIT), raw HTML left out**, dangerous links emptied. A block of another media type shows
+  as text. No script, no external font: the page opens offline.
+- **The page's texts are translated** (`page.*` keys), in the language of the user's locale.
+
 ## Done when
-- [ ] `djinn wish sync` renders the page in Go, and the lead republishes it in one call.
-- [ ] A change in the wish updates the page without the model writing HTML.
+- [ ] `djinn wish sync` renders the page in Go (done), and the lead republishes it in one call (its instructions: next).
+- [x] A change in the wish updates the page without the model writing HTML.
 - [ ] A hand-off: the other person opens the link and sees the wish as it is.
 
 ## Open questions

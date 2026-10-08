@@ -114,6 +114,8 @@ To use Djinn, see the [README](README.md). To work on it:
   the window's terminal instead of your shell.
 - `djinn wish import plan.djinn` (or "Import a wish" in the window); `djinn project add <folder>`
   for each project it names; `djinn wish export <wish-id>` writes to your Downloads folder.
+- `djinn wish sync <wish-id>` renders the wish's page in Go and prints its file, kept up to date while
+  `djinn up` runs (delete it to stop); the lead republishes that file. `djinn wish render <wish-id>` writes it once.
 - `djinn wish set-lead <wish-id> <session-id> --directory <folder>` records a wish's lead session;
   `djinn wish resume <wish-id>` shows the wish and resumes its lead in the window's terminal,
   starting Djinn if needed. A second `djinn up` brings the window to the front.
@@ -138,6 +140,7 @@ their contributors.
   [protovalidate-go](https://github.com/bufbuild/protovalidate-go),
   [pty](https://github.com/creack/pty) (the terminal's pseudo-terminal on macOS and Linux),
   [conpty](https://github.com/charmbracelet/x/tree/main/conpty) from Charm (the same on Windows),
+  [goldmark](https://github.com/yuin/goldmark) (the Markdown of a wish's page),
   [x/sys](https://github.com/golang/sys), [x/term](https://github.com/golang/term) (tests); as module tools,
   [Task](https://github.com/go-task/task) and [buf](https://github.com/bufbuild/buf).
 - Interface: [React](https://github.com/react/react),

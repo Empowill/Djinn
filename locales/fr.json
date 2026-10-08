@@ -653,6 +653,7 @@
   "page.questions": "À décider",
   "page.recommendation": "Recommandation",
   "page.rendered": "Rendu par Djinn {version}, {time}",
+  "page.started": "démarrée {time}",
   "page.status_done": "Terminée",
   "page.status_failed": "En échec",
   "page.status_interrupted": "Interrompue",
