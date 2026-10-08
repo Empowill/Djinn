@@ -29,9 +29,7 @@ test("the interface loads from djinn", async ({ page }) => {
     page.locator(".sidebar").getByRole("button", { name: "New wish" }),
   ).toBeVisible();
   // The page follows djinn: the watch stream answers.
-  await expect(
-    page.locator(".app-statusbar").getByText("Live"),
-  ).toBeVisible();
+  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
   expect(errors).toEqual([]);
 });
 

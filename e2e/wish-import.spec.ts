@@ -27,9 +27,7 @@ const wishes = (): Wish[] =>
 async function open(page: Page) {
   await page.goto(process.env.DJINN_URL!);
   await expect(
-    page
-      .locator(".sidebar")
-      .getByRole("button", { name: "Import a wish" }),
+    page.locator(".sidebar").getByRole("button", { name: "Import a wish" }),
   ).toBeEnabled();
 }
 

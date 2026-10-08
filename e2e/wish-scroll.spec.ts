@@ -51,9 +51,7 @@ for (const engine of ["native", "script"] as const)
 
     await page.goto(process.env.DJINN_URL!);
     await expect(
-      page
-        .locator(".sidebar")
-        .getByRole("button", { name: "Import a wish" }),
+      page.locator(".sidebar").getByRole("button", { name: "Import a wish" }),
     ).toBeEnabled();
     const chooser = page.waitForEvent("filechooser");
     await page

@@ -23,9 +23,7 @@ test("a wish made by the command line shows live, and its question is answered f
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   await page.goto(process.env.DJINN_URL!);
-  await expect(
-    page.locator(".app-statusbar").getByText("Live"),
-  ).toBeVisible();
+  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
 
   // Made while the page is open: no reload.
   const title = `Light the way ${randomUUID().slice(0, 8)}`;
