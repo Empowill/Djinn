@@ -50,6 +50,8 @@ type Service struct {
 	// ChooseFolder opens the system's folder dialog over the window, titled title and open in directory, and returns
 	// the folder chosen, or empty when the user cancelled. Nil: the page has no folder dialog (the browser).
 	ChooseFolder func(title, directory string) (string, error)
+	// Notices shows the system notifications, and knows whether the system lets it. Nil: none (a test).
+	Notices *Notices
 
 	mu      sync.Mutex // Serializes the writes of the state.
 	dialogs sync.Mutex // One folder dialog at a time.
@@ -311,8 +313,11 @@ func (s *Service) Show(
 
 // Present asks the windows to show a wish and a terminal: the ones watching now, and one that starts watching
 // within a minute.
-func (s *Service) Present(wishID, terminal string) {
-	msg := &uiv1.UiServiceWatchShowResponse{WishId: wishID, Terminal: terminal}
+func (s *Service) Present(wishID, terminal string) { s.PresentAt(wishID, terminal, "") }
+
+// PresentAt is Present with an element of the wish in view (UiServiceWatchShowResponse.target).
+func (s *Service) PresentAt(wishID, terminal, target string) {
+	msg := &uiv1.UiServiceWatchShowResponse{WishId: wishID, Terminal: terminal, Target: target}
 	s.shows.Lock()
 	defer s.shows.Unlock()
 	s.lastShow, s.lastAt = msg, time.Now()
@@ -436,4 +441,47 @@ func (s *Service) WatchShow(
 			}
 		}
 	}
+}
+
+// notificationSettings is the pane of the system's settings for notifications, on macOS.
+const notificationSettings = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+
+func (s *Service) GetNotifications(
+	context.Context, *connect.Request[uiv1.UiServiceGetNotificationsRequest],
+) (*connect.Response[uiv1.UiServiceGetNotificationsResponse], error) {
+	access := s.Notices.Access()
+	return connect.NewResponse(&uiv1.UiServiceGetNotificationsResponse{Access: access, Settings: s.hasSettings(access)}), nil
+}
+
+func (s *Service) RequestNotifications(
+	context.Context, *connect.Request[uiv1.UiServiceRequestNotificationsRequest],
+) (*connect.Response[uiv1.UiServiceRequestNotificationsResponse], error) {
+	access := s.Notices.Request()
+	return connect.NewResponse(&uiv1.UiServiceRequestNotificationsResponse{Access: access, Settings: s.hasSettings(access)}), nil
+}
+
+// hasSettings tells that OpenNotificationSettings opens the system's settings: on macOS, where it decides.
+func (s *Service) hasSettings(access uiv1.NotificationAccess) bool {
+	return runtime.GOOS == "darwin" && access != uiv1.NotificationAccess_NOTIFICATION_ACCESS_UNAVAILABLE
+}
+
+func (s *Service) OpenNotificationSettings(
+	context.Context, *connect.Request[uiv1.UiServiceOpenNotificationSettingsRequest],
+) (*connect.Response[uiv1.UiServiceOpenNotificationSettingsResponse], error) {
+	if !s.hasSettings(s.Notices.Access()) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no notification settings to open here"))
+	}
+	if err := s.Open(notificationSettings); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("open the notification settings: %w", err))
+	}
+	return connect.NewResponse(&uiv1.UiServiceOpenNotificationSettingsResponse{}), nil
+}
+
+func (s *Service) View(
+	_ context.Context, req *connect.Request[uiv1.UiServiceViewRequest],
+) (*connect.Response[uiv1.UiServiceViewResponse], error) {
+	if s.Notices != nil {
+		s.Notices.View(req.Msg.GetWishId())
+	}
+	return connect.NewResponse(&uiv1.UiServiceViewResponse{}), nil
 }

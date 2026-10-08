@@ -17,6 +17,7 @@ import {
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
 import { isActive, waitsForYou } from "./data/format";
+import { jump } from "./attention";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
@@ -71,14 +72,26 @@ export function WishApp() {
     () => store("djinn.sidebar.collapsed", collapsed ? "1" : ""),
     [collapsed],
   );
-  // djinn wish resume asks the window to show a wish.
-  useEffect(
-    () =>
-      djinn.focus.subscribe((focus) => {
-        if (focus.wishId) setSelected(focus.wishId);
-      }),
-    [djinn],
-  );
+  // djinn wish resume, or a click on a notification, asks the window to show a wish, there.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const off = djinn.focus.subscribe((focus) => {
+      if (focus.wishId) setSelected(focus.wishId);
+      clearTimeout(timer);
+      if (!focus.target) return;
+      // The wish renders, then its details load: look for the element a few seconds.
+      const until = Date.now() + 5000;
+      const look = () => {
+        if (document.getElementById(focus.target)) jump(focus.target);
+        else if (Date.now() < until) timer = setTimeout(look, 100);
+      };
+      timer = setTimeout(look, 0);
+    });
+    return () => {
+      off();
+      clearTimeout(timer);
+    };
+  }, [djinn]);
   // Ctrl+N (Cmd+N) makes a wish.
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
@@ -109,6 +122,11 @@ export function WishApp() {
   const chosen = wishes.find((w) => w.id === selected);
   const plan = !chosen && (selected === PLAN || active.length > 0);
   const wish = plan ? undefined : (chosen ?? wishes[0]);
+  const shownId = wish?.id ?? "";
+  // djinn sends no notification for the wish shown while the window is in front.
+  useEffect(() => {
+    void clients.ui.view({ wishId: shownId }).catch(() => undefined);
+  }, [clients, shownId]);
   const project = projects.find((p) => p.id === projectId);
 
   const move = (wishId: string, to: number) =>

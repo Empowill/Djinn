@@ -117,6 +117,11 @@ func TestShow(t *testing.T) {
 	if got := next(); got.GetWishId() != "w2" || got.GetTerminal() != "lead-w2" {
 		t.Fatalf("next message = %v", got)
 	}
+	// A click on a notification: the wish, there.
+	s.PresentAt("w3", "", "question-q1")
+	if got := next(); got.GetWishId() != "w3" || got.GetTarget() != "question-q1" {
+		t.Fatalf("message with a target = %v", got)
+	}
 	// An old request is not replayed.
 	s.shows.Lock()
 	s.lastAt = s.lastAt.Add(-2 * replay)
@@ -398,5 +403,59 @@ func TestHandler(t *testing.T) {
 	stream.Receive()
 	if code(stream.Err()) != connect.CodeUnimplemented {
 		t.Fatalf("Watch = %v, want unimplemented", stream.Err())
+	}
+}
+
+// TestNotificationsService: the page reads whether the system shows notifications, asks for them, opens the
+// system's settings on macOS, and says which wish it shows.
+func TestNotificationsService(t *testing.T) {
+	ctx := context.Background()
+	s, opened := newService(t)
+	get := func() *uiv1.UiServiceGetNotificationsResponse {
+		t.Helper()
+		res, err := s.GetNotifications(ctx, connect.NewRequest(&uiv1.UiServiceGetNotificationsRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	// No window: none, and no settings to open.
+	if got := get(); got.GetAccess() != uiv1.NotificationAccess_NOTIFICATION_ACCESS_UNAVAILABLE || got.GetSettings() {
+		t.Errorf("without notices: %v", got)
+	}
+	if _, err := s.OpenNotificationSettings(ctx, connect.NewRequest(&uiv1.UiServiceOpenNotificationSettingsRequest{})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("open the settings without notices: %v", err)
+	}
+
+	p := &permitted{}
+	s.Notices = &Notices{}
+	s.Notices.Use(p)
+	if got := get().GetAccess(); got != uiv1.NotificationAccess_NOTIFICATION_ACCESS_DENIED {
+		t.Errorf("not allowed yet: %v", got)
+	}
+	res, err := s.RequestNotifications(ctx, connect.NewRequest(&uiv1.UiServiceRequestNotificationsRequest{}))
+	if err != nil || res.Msg.GetAccess() != uiv1.NotificationAccess_NOTIFICATION_ACCESS_ALLOWED || !p.asked {
+		t.Errorf("request: %v, %v", res, err)
+	}
+	mac := runtime.GOOS == "darwin"
+	if got := get().GetSettings(); got != mac {
+		t.Errorf("settings = %v on %s", got, runtime.GOOS)
+	}
+	_, err = s.OpenNotificationSettings(ctx, connect.NewRequest(&uiv1.UiServiceOpenNotificationSettingsRequest{}))
+	if mac && (err != nil || len(*opened) != 1 || (*opened)[0] != notificationSettings) {
+		t.Errorf("open the settings: %v, opened %v", err, *opened)
+	}
+	if !mac && connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("open the settings on %s: %v", runtime.GOOS, err)
+	}
+
+	if _, err := s.View(ctx, connect.NewRequest(&uiv1.UiServiceViewRequest{WishId: "w1"})); err != nil {
+		t.Fatal(err)
+	}
+	s.Notices.mu.Lock()
+	viewing := s.Notices.viewing
+	s.Notices.mu.Unlock()
+	if viewing != "w1" {
+		t.Errorf("viewing = %q, want w1", viewing)
 	}
 }

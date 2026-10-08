@@ -6,6 +6,7 @@ import { type FormEvent, useEffect, useId, useState } from "react";
 import { type Project, Provider, type Skill } from "../gen/ts/plan/v1/plan_pb";
 import {
   type Provider as AgentEnvironment,
+  NotificationAccess,
   ProviderState,
   type UiServiceGetEnvironmentResponse,
 } from "../gen/ts/ui/v1/ui_pb";
@@ -398,6 +399,93 @@ function AgentSetting({ agent }: { agent: AgentEnvironment }) {
   );
 }
 
+// NotificationSetting: whether the system shows Djinn's notifications, and the way to allow them. macOS asks once;
+// after a refusal only its settings change it.
+function NotificationSetting() {
+  const clients = useClients();
+  const [state, setState] = useState<{
+    access: NotificationAccess;
+    settings: boolean;
+  }>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    clients.ui
+      .getNotifications({})
+      .then((res) => live && setState(res))
+      .catch((err) => live && setError(message(err)));
+    return () => {
+      live = false;
+    };
+  }, [clients]);
+  const openSettings = () =>
+    void clients.ui
+      .openNotificationSettings({})
+      .catch((err) => setError(message(err)));
+  const request = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await clients.ui.requestNotifications({});
+      setState(res);
+      if (res.access === NotificationAccess.DENIED && res.settings)
+        openSettings();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const access = state?.access ?? NotificationAccess.UNSPECIFIED;
+  const status =
+    access === NotificationAccess.ALLOWED
+      ? t("settings.notifications_allowed")
+      : access === NotificationAccess.DENIED
+        ? t("settings.notifications_denied")
+        : access === NotificationAccess.UNAVAILABLE
+          ? t("settings.notifications_unavailable")
+          : "";
+  return (
+    <div className="setting-row notification-setting">
+      <div>
+        <strong>{t("settings.notifications")}</strong>
+        <p>{t("settings.notifications_detail")}</p>
+        {status && (
+          <p>
+            <span
+              className={`status-dot ${access === NotificationAccess.ALLOWED ? "green" : "neutral"}`}
+            />{" "}
+            {status}
+          </p>
+        )}
+        {error && <p role="alert">{error}</p>}
+      </div>
+      <div className="notification-actions">
+        {access === NotificationAccess.DENIED && (
+          <button
+            type="button"
+            className="button accent"
+            disabled={busy}
+            onClick={() => void request()}
+          >
+            {t("settings.notifications_request")}
+          </button>
+        )}
+        {state?.settings && (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={openSettings}
+          >
+            {t("settings.notifications_open")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Settings: the agents djinn finds on this machine, and the language of the page.
 export function Settings({ onClose }: { onClose: () => void }) {
   const clients = useClients();
@@ -432,6 +520,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="settings-divider" />
+      <NotificationSetting />
       <div className="setting-row">
         <div>
           <strong>{t("settings.language")}</strong>
