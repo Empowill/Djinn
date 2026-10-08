@@ -88,3 +88,15 @@ func T(language, key string, params map[string]string) string {
 		return match
 	})
 }
+
+// Means reports whether word is the text of key in one of Djinn's languages, case and spaces ignored: "Oui" means
+// "answer.yes".
+func Means(word, key string) bool {
+	word = strings.TrimSpace(word)
+	for _, texts := range catalogs {
+		if text, ok := texts[key]; ok && strings.EqualFold(word, text) {
+			return true
+		}
+	}
+	return false
+}

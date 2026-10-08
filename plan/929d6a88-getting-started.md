@@ -2,7 +2,7 @@
 id: 01a1184f-cf18-7776-a9d7-c82e929d6a88
 code: T04
 phase: 1
-status: open
+status: in-progress
 ---
 
 # T04 · Getting started
@@ -53,8 +53,9 @@ The top of the main README is for them; contributors come after.
   release, and the agent prompt, not written yet)
 - [ ] The time from `go install` to an open window on a real project is measured. (needs: a release tag, and a
   person to time it)
-- [ ] The README top is kept in sync by every change to the install. (needs: a test or a review rule that ties the
-  README lines to `scripts/install.*`; an agent can write the test)
+- [x] The README top is kept in sync by every change to the install. (b09fb6b: `TestReadmeInstallLines` in
+  `tools/releasepack`: each README line takes a script of `scripts/`, from the releases it defaults to, says what
+  its usage says, and `release.yml` ships it; a renamed script fails it)
 
 ## Open questions
 - What does the prompt for your agent say, word for word? *To write once `go install` works.*

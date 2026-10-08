@@ -23,9 +23,7 @@ test("a wish made by the command line shows live, and its question is answered f
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   await page.goto(process.env.DJINN_URL!);
-  await expect(
-    page.locator(".app-statusbar").getByText("En direct"),
-  ).toBeVisible();
+  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
 
   // Made while the page is open: no reload.
   const title = `Light the way ${randomUUID().slice(0, 8)}`;
@@ -57,10 +55,10 @@ test("a wish made by the command line shows live, and its question is answered f
 
   // Answered in the window: B, with a note.
   await card.getByRole("button", { name: /Glass — the new one/ }).click();
-  await card.getByLabel("Note jointe à la réponse").fill("Glass, then brass.");
-  await card.getByRole("button", { name: "Valider ce choix" }).click();
+  await card.getByLabel("Note with the answer").fill("Glass, then brass.");
+  await card.getByRole("button", { name: "Confirm this choice" }).click();
   await expect(page.locator(".decisions-section")).toHaveCount(0);
-  await expect(page.getByText("1 décision enregistrée")).toBeVisible();
+  await expect(page.getByText("1 decision recorded")).toBeVisible();
 
   // The command line reads it answered.
   const [question] = JSON.parse(

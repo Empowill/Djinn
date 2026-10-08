@@ -51,14 +51,12 @@ for (const engine of ["native", "script"] as const)
 
     await page.goto(process.env.DJINN_URL!);
     await expect(
-      page
-        .locator(".sidebar")
-        .getByRole("button", { name: "Importer un souhait" }),
+      page.locator(".sidebar").getByRole("button", { name: "Import a wish" }),
     ).toBeEnabled();
     const chooser = page.waitForEvent("filechooser");
     await page
       .locator(".sidebar")
-      .getByRole("button", { name: "Importer un souhait" })
+      .getByRole("button", { name: "Import a wish" })
       .click();
     await (await chooser).setFiles(file);
 
@@ -99,7 +97,7 @@ for (const engine of ["native", "script"] as const)
 
     // The first question opens, then is answered, from out of sight: no click scrolls to it.
     await above.locator(".question-heading").dispatchEvent("click");
-    const confirm = above.getByRole("button", { name: "Valider ce choix" });
+    const confirm = above.getByRole("button", { name: "Confirm this choice" });
     await expect(confirm).toBeAttached();
     await confirm.dispatchEvent("click");
     await expect(above).toHaveCount(0);

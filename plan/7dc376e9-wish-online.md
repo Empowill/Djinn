@@ -47,8 +47,10 @@ hand-offs: one person works, the other reads. Later, several people work on the 
 - **The page's texts are translated** (`page.*` keys), in the language of the user's locale.
 
 ## Done when
-- [ ] `djinn wish sync` renders the page in Go (done), and the lead republishes it in one call (its instructions: next).
-  (needs: an agent for the lead's instructions, none mention the page yet; a real lead session to see it publish)
+- [ ] `djinn wish sync` renders the page in Go (done), and the lead republishes it in one call.
+  - [x] The lead's instructions say so. (d3881ed: the stable brief, `internal/plan/brief.go`: republish the
+    printed file as it is, in one call, without reading or rewriting it, no HTML by hand; `TestBrief` checks it)
+  - [ ] Seen publishing. (needs: a real lead session)
 - [x] A change in the wish updates the page without the model writing HTML.
 - [ ] A hand-off: the other person opens the link and sees the wish as it is. (needs: two people)
 

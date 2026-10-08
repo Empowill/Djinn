@@ -308,8 +308,11 @@ message TaskEvent {
 enum Choice {
   // No choice.
   CHOICE_UNSPECIFIED = 0;
-  // Yes, for a question without options.
+  // Yes, for a question without options. On options that say yes and no, the one that says yes: the answer keeps its
+  // letter.
   CHOICE_YES = 1;
+  // No, on options that say yes and no: the one that says no. The answer keeps its letter.
+  CHOICE_NO = 6;
   // The first option.
   CHOICE_A = 2;
   // The second option.
@@ -411,7 +414,8 @@ message QuestionServiceAskResponse {
 message QuestionServiceAnswerRequest {
   // The question to answer: its code, like Q03, or its identifier.
   QuestionRef question = 1 [(buf.validate.field).required = true];
-  // The choice: yes, or the letter of an option.
+  // The choice: yes, or the letter of an option. On options that say yes and no, yes or no, in any language Djinn
+  // speaks.
   Choice choice = 2 [
     (buf.validate.field).required = true,
     (buf.validate.field).enum.defined_only = true

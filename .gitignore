@@ -1,8 +1,5 @@
 node_modules/
 dist/
-release/
-release-next/
-release-previous*/
 backups/
 test-results/
 playwright-report/
@@ -28,10 +25,6 @@ coverage/
 *.dmg
 *.zip
 
-# Historical mission exports contain verbose local execution journals.
-# Keep only the small, fictional demonstration used by renderer tests.
-docs/*session*.djinn.json
-!docs/v0.2.1-session-harmonisation.djinn.json
 docs/demo.webm
 docs/screenshots/*
 !docs/screenshots/readme/

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	"buf.build/go/protovalidate"
 	"connectrpc.com/connect"
@@ -20,6 +21,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/locales"
 )
 
 // Entities are the messages of plan.v1 the store keeps.
@@ -405,10 +407,11 @@ func (q *Questions) Answer(
 		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
 			return err
 		}
-		if err := allowed(question, req.Msg.GetChoice()); err != nil {
+		choice, err := resolve(question, req.Msg.GetChoice())
+		if err != nil {
 			return connect.NewError(connect.CodeInvalidArgument, err)
 		}
-		question.Answer = &planv1.Answer{Choice: req.Msg.GetChoice(), Note: req.Msg.GetNote(), CreateTime: timestamppb.Now()}
+		question.Answer = &planv1.Answer{Choice: choice, Note: req.Msg.GetNote(), CreateTime: timestamppb.Now()}
 		return tx.Put(question)
 	})
 	if err != nil {
@@ -444,20 +447,56 @@ func find(ctx context.Context, tx *store.Tx, ref *planv1.QuestionRef, wishID str
 		"%d wishes have a question %s: give its identifier, or the wish with --wish-id", len(found), ref.GetCode()))
 }
 
-// allowed checks that choice answers question: yes without options, or the letter of one of its options.
-func allowed(question *planv1.Question, choice planv1.Choice) error {
-	n := len(question.GetOptions())
+// resolve checks that choice answers question, and returns the choice to keep: yes without options, or the letter
+// of one of its options. On options that say yes and no, yes and no pick them, and the answer keeps the letter.
+func resolve(question *planv1.Question, choice planv1.Choice) (planv1.Choice, error) {
+	options := question.GetOptions()
+	n := len(options)
 	if n == 0 {
 		if choice != planv1.Choice_CHOICE_YES {
-			return fmt.Errorf("question %s has no options: answer yes", question.GetCode())
+			return 0, fmt.Errorf("question %s has no options: answer yes", question.GetCode())
 		}
-		return nil
+		return choice, nil
 	}
-	if choice < planv1.Choice_CHOICE_A || int(choice-planv1.Choice_CHOICE_A) >= n {
-		return fmt.Errorf("question %s has %d options: answer with a letter from a to %c",
-			question.GetCode(), n, 'a'+n-1)
+	letters := fmt.Sprintf("answer with a letter from a to %c", 'a'+n-1)
+	if choice == planv1.Choice_CHOICE_YES || choice == planv1.Choice_CHOICE_NO {
+		key, word := "answer.yes", "yes"
+		if choice == planv1.Choice_CHOICE_NO {
+			key, word = "answer.no", "no"
+		}
+		if letter, ok := saying(options, key); ok {
+			return letter, nil
+		}
+		return 0, fmt.Errorf("no option of question %s says %s: %s", question.GetCode(), word, letters)
 	}
-	return nil
+	if choice < planv1.Choice_CHOICE_A || choice > planv1.Choice_CHOICE_D || int(choice-planv1.Choice_CHOICE_A) >= n {
+		return 0, fmt.Errorf("question %s has %d options: %s", question.GetCode(), n, letters)
+	}
+	return choice, nil
+}
+
+// saying is the letter of the one option whose first word means key in a language of Djinn: "Yes: it starts
+// again" says yes, in English or in another catalog's word. None, or two, and there is no such option.
+func saying(options []string, key string) (planv1.Choice, bool) {
+	found := -1
+	for i, option := range options {
+		option = strings.TrimSpace(option)
+		word := option
+		if end := strings.IndexFunc(option, func(r rune) bool { return !unicode.IsLetter(r) }); end >= 0 {
+			word = option[:end]
+		}
+		if !locales.Means(word, key) {
+			continue
+		}
+		if found >= 0 {
+			return 0, false
+		}
+		found = i
+	}
+	if found < 0 {
+		return 0, false
+	}
+	return planv1.Choice_CHOICE_A + planv1.Choice(found), true
 }
 
 func (q *Questions) List(

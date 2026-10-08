@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
 // djinnURL is the URL printed by `djinn up --browser`, token included.
 function djinnURL(pathname = "/"): string {
@@ -24,13 +26,35 @@ test("the interface loads from djinn", async ({ page }) => {
   expect(new URL(page.url()).search).toBe("");
   await expect(page).toHaveTitle(/Djinn$/);
   await expect(
-    page.locator(".sidebar").getByRole("button", { name: "Nouveau souhait" }),
+    page.locator(".sidebar").getByRole("button", { name: "New wish" }),
   ).toBeVisible();
   // The page follows djinn: the watch stream answers.
-  await expect(
-    page.locator(".app-statusbar").getByText("En direct"),
-  ).toBeVisible();
+  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+// The other tests read the interface in English. This one checks the French catalog reaches the page: its texts
+// come from locales/fr.json, the only home of French in the repository.
+test.describe("in French", () => {
+  test.use({ locale: "fr-FR" });
+  const fr: Record<string, string> = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "../locales/fr.json"), "utf8"),
+  );
+
+  test("the interface follows the system's language", async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto(djinnURL());
+    await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+    await expect(
+      page
+        .locator(".sidebar")
+        .getByRole("button", { name: fr["app.new_wish"] }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".app-statusbar").getByText(fr["status.live"]),
+    ).toBeVisible();
+    expect(errors).toEqual([]);
+  });
 });
 
 test("the demo stream reaches the page value by value", async ({ page }) => {

@@ -47,9 +47,10 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
 - [ ] Native notifications and a global shortcut. (needs: an agent; `NotifyQuestion` shows nothing yet)
 - [ ] OpenAPI documentation of the public methods. (needs: an agent)
 - [ ] Analytics with DuckDB: who uses what, for how long. (needs: an agent, after a decision on what to collect)
-- [ ] Remove Electron and the code it no longer needs. (`electron/` is gone, be8f52c; needs: an agent, for
-  `ELECTRON_SKIP_BINARY_DOWNLOAD` in `.github/workflows/ci.yml` and the Electron passages of
-  `docs/agent-protocol.md`)
+- [x] Remove Electron and the code it no longer needs. (`electron/` is gone, be8f52c; 845461b: the CI no longer
+  sets `ELECTRON_SKIP_BINARY_DOWNLOAD`, `docs/agent-protocol.md` describes the command line and the task events,
+  the user guide launches `djinn up`; `git grep -i electron` finds only `plan/` history, the license's
+  "electronic" and `electron-to-chromium`, which `browserslist` needs to build)
 - [ ] CPU limits per worker on Linux (systemd delegation). (needs: an agent, on a systemd Linux)
 - [ ] Shared team settings versioned in the repository. (needs: an agent; only `.agents/permissions.txtpb` exists)
 - [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check)

@@ -70,6 +70,7 @@ func TestBrief(t *testing.T) {
 		"Read `AGENTS.md`, `contributing.md` at its root first", "**notes**, outside Git", "**api**, a Git repository",
 		wish.GetId(), "**Q01** Which store? → A: SQLite", "**W1** Write the store (claude", "**W2** Write the docs: failed",
 		"### No CGO (decision)", "In api/internal", "https://example.com/acme.git",
+		"`djinn wish sync <wish>`", "republish that file as it is, in one call",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the brief lacks %q:\n%s", want, text)

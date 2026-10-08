@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"html/template"
 	"regexp"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/locales"
 )
 
 var now = time.Date(2026, 10, 8, 14, 30, 0, 0, time.UTC)
@@ -184,9 +186,23 @@ func TestPageIsSafe(t *testing.T) {
 	}
 }
 
+// french is the text of key in French, as the page escapes it. The French itself stays in locales/fr.json.
+func french(t *testing.T, key string, params map[string]string) string {
+	t.Helper()
+	fr := locales.T("fr", key, params)
+	if fr == locales.T(locales.Source, key, params) {
+		t.Fatalf("%s is not translated into French", key)
+	}
+	return template.HTMLEscapeString(fr)
+}
+
 func TestFrench(t *testing.T) {
 	html := page(t, Input{Export: rich(t), Language: "fr"})
-	for _, s := range []string{`<html lang="fr">`, "À décider", "Décisions", "Vous attend"} {
+	want := []string{`<html lang="fr">`}
+	for _, key := range []string{"page.questions", "page.decisions", "page.actions"} {
+		want = append(want, french(t, key, nil))
+	}
+	for _, s := range want {
 		if !strings.Contains(html, s) {
 			t.Errorf("the French page lacks %q", s)
 		}
@@ -238,7 +254,8 @@ func TestWishState(t *testing.T) {
 		}
 	}
 	fr := page(t, Input{Export: &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "T", Rank: 1, Ready: true}}, Language: "fr"})
-	if !strings.Contains(fr, "Actif · rang 1") || !strings.Contains(fr, "Djinn propose d’exaucer ce souhait") {
+	if !strings.Contains(fr, french(t, "page.state_ranked", map[string]string{"rank": "1"})) ||
+		!strings.Contains(fr, french(t, "page.action_ready", map[string]string{"wish": "w"})) {
 		t.Error("the French page lacks the state or the proposal")
 	}
 }

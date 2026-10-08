@@ -9,15 +9,11 @@ The interface follows the system language (English or French); you can change it
 ## Launch
 
 ```sh
-npm install
-npm run desktop
+djinn up
 ```
 
-Built version: `npm run build`, then `npm start`.
-macOS app: `npm run package` (in `release/`).
-Separate local version: `npm run package:local` (in `release/v<version>/`). This path keeps the
-bundle of an app that is already open: quit it at the end of the current run, then open the new
-`Djinn.app`.
+Install Djinn first: see the [README](../README.md#install). To build it from this repository:
+[`CONTRIBUTING.md`](../CONTRIBUTING.md#getting-set-up).
 
 ## First steps
 
@@ -186,5 +182,5 @@ of their own for each agent.
 
 Agent protocol: [agent-protocol.md](agent-protocol.md).
 
-The sources and `dist/` do not update a Djinn app that is already installed. Running the built
-version from this repository uses its new sources; producing an installer is a separate step.
+A Djinn built from this repository (`bin/djinn`, version `dev`) keeps its own data, apart from the Djinn you
+use: building never touches the installed one ([`CONTRIBUTING.md`](../CONTRIBUTING.md#djinn-builds-djinn)).

@@ -33,13 +33,13 @@ read, install and contribute.
   folded into them or deleted.
 - [x] The interface texts go through `locales/` (1261 keys, English and French), with a test that
   fails on a missing or unused key.
-- [ ] No French left in the repository outside `locales/fr.json`: left are the legacy Electron app
-  (`electron/`, `scripts/`), the window check page (`tools/windowcheck/page/`), the test fixtures and
-  assertions (the Node tests render the interface in French), two Electron-era README
-  screenshots, and stored values the interface still reads (below). (08/10: `electron/` is gone; French is left in
-  `tools/windowcheck/page/`, `internal/server/transport_bench_test.go`, the e2e and Node assertions,
-  `docs/v0.2.1-session-harmonisation.djinn.json` and the two screenshots. needs: an agent for the text, a person
-  for the screenshots)
+- [ ] No French left in the repository outside `locales/fr.json`.
+  - [x] The text: code, tests, fixtures and docs. (6d3c599: the benchmark payloads of `tools/windowcheck/page/`
+    and `internal/server/transport_bench_test.go`, the e2e assertions and a recorded answer are in English;
+    `docs/v0.2.1-session-harmonisation.djinn.json` is deleted, nothing read it. French is tested from
+    `locales/fr.json` only: `TestFrench` and `TestWishState` in `internal/render`, e2e "in French › the interface
+    follows the system's language". `plan/` quotes the French words it decides on, « souhait », « invoquer »)
+  - [ ] The two README screenshots, taken in French on the Electron app. (needs: a person, on the new interface)
 - [ ] The interface maintainer has reviewed the keys and the English wording. (needs: the interface maintainer)
 
 ## Decided along the way
@@ -61,16 +61,11 @@ read, install and contribute.
   no key of `en.json` is unused (its quoted name must appear in `src/` or the Go code, so no key
   is built at run time). `tests/i18n.test.cjs` checks parity and the interface's keys for those
   who only run `npm test`.
-- **The Node tests render the interface in French**, the language their assertions were written
-  in: `npm test` preloads `tests/setup-language.cjs`. The Playwright configs already ask for
-  `fr-FR`.
+- **Tests read the interface in English** (superseded: they rendered it in French until 08/10). Node reports
+  English, the Playwright config asks for `en-US`. One e2e test asks for `fr-FR`, and the French it expects comes
+  from `locales/fr.json`: no French string in a test.
 - **"Mission" is "Wish" in English and « souhait » in French** in every text; code identifiers,
   CSS classes, stored data and protocol names (`mission_metadata`, …) keep "mission".
   "Support" (a document a wish produces) is "artifact" in English.
-- **Journals already stored hold French titles.** The interface recognises some events by their
-  title (`agent-chat.tsx`, `temporal-layout.ts`, `mission-context.ts`): it now matches the French
-  legacy title and the title in the page's language. Better later: an event kind, not a title.
-  The artifact workspace statuses (`Planifié`, `En cours`, `Archivé`, filter `Tous`) are stored
-  values and stay; only their labels are translated.
-- **The Electron copies** of `workflow.ts` and `session-validation.ts` are regenerated, with
-  `electron/i18n.cjs`, so the parity test holds until Electron is removed.
+- **Journals with French titles, the stored artifact statuses and the Electron copies** went with the mission
+  model and Electron (be8f52c, T03): the interface reads the Go services, whose events have a kind.

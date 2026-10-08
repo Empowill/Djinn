@@ -60,7 +60,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`--fork W1`, `--from-lead`); `djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
 	"`djinn task stop <task>`.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\"`; `djinn block list <wish>`.\n" +
-	"- `djinn wish render <wish>`: the wish's page, for the developer.\n" +
+	"- `djinn wish sync <wish>`: the wish's page, which Djinn keeps up to date in the file it prints. After the wish " +
+	"changes, republish that file as it is, in one call, to the same address: do not read it, rewrite it, or write " +
+	"HTML by hand. The first publish needs the developer's go. `djinn wish render <wish>` writes the page once.\n" +
 	"- `djinn wish grant <wish>` is the developer's word, never yours.\n"
 
 // BuildBrief writes the brief of a wish from what r holds. home is Djinn's data folder: like the projects' folders

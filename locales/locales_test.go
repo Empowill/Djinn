@@ -129,7 +129,7 @@ func TestKeysInCode(t *testing.T) {
 }
 
 func TestT(t *testing.T) {
-	if got := T("fr", "common.cancel", nil); got != "Annuler" {
+	if got := T("fr", "common.cancel", nil); got != catalogs["fr"]["common.cancel"] || got == "Cancel" {
 		t.Errorf("T(fr, common.cancel) = %q", got)
 	}
 	if got := T("xx", "common.cancel", nil); got != "Cancel" {
@@ -146,5 +146,16 @@ func TestT(t *testing.T) {
 	}
 	if got := Match("de"); got != Source {
 		t.Errorf("Match = %q, want the source language", got)
+	}
+}
+
+func TestMeans(t *testing.T) {
+	for language, texts := range catalogs {
+		if word := " " + strings.ToUpper(texts["answer.yes"]) + " "; !Means(word, "answer.yes") || Means(word, "answer.no") {
+			t.Errorf("%s: %q means yes, and only yes", language, word)
+		}
+	}
+	if Means("y", "answer.yes") || Means("", "answer.yes") || Means("yes", "no.such.key") {
+		t.Error("only a whole word of the catalogs means something")
 	}
 }

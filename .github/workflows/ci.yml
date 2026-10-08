@@ -14,10 +14,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # The Electron binary is for the old desktop app; no test needs it.
-  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-
 jobs:
   linux:
     name: Lint and test (Linux)

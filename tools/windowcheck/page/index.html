@@ -124,8 +124,8 @@ function statePayload(size) {
   let s = '{"version":3,"steps":[';
   for (let i = 0; s.length < size; i++) {
     if (i > 0) s += ",";
-    s += `{"id":"step-${String(i).padStart(5, "0")}","title":"Étape ${i} : vérifier le \\"flux\\" du serveur",` +
-      `"status":"done","body":"L'agent a lu internal/server/server.go\\npuis a lancé les tests : 42 passés.",` +
+    s += `{"id":"step-${String(i).padStart(5, "0")}","title":"Step ${i} — check the server's \\"stream\\" ✓",` +
+      `"status":"done","body":"The agent read internal/server/server.go\\nthen ran the tests → 42 passed.",` +
       `"at":${1760000000000 + i}}`;
   }
   return s + "]}";

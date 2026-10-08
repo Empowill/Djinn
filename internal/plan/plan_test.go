@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -13,6 +14,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/locales"
 )
 
 type clients struct {
@@ -148,6 +150,60 @@ func TestQuestionCodes(t *testing.T) {
 	// A code is never given twice, answered questions included.
 	if q3 := c.ask(t, w1); q3.GetCode() != "Q03" {
 		t.Errorf("third code = %s, want Q03", q3.GetCode())
+	}
+}
+
+// TestAnswerYesNo: on options that say yes and no, yes and no pick them, in English or in another catalog's word,
+// and the decision keeps the letter. Elsewhere they stay refused.
+func TestAnswerYesNo(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	w := c.wish(t)
+	answer := func(q *planv1.Question, choice planv1.Choice) (planv1.Choice, error) {
+		res, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+			Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}, Choice: choice,
+		}))
+		if err != nil {
+			return 0, err
+		}
+		return res.Msg.GetQuestion().GetAnswer().GetChoice(), nil
+	}
+	// The edit question of a task says it this way.
+	edit := []string{"Yes: it starts again, allowed to edit", "No: it only reads"}
+	title := func(s string) string { return strings.ToUpper(s[:1]) + s[1:] }
+	translated := []string{title(locales.T("fr", "answer.no", nil)) + ".", title(locales.T("fr", "answer.yes", nil))}
+	for _, tt := range []struct {
+		name    string
+		options []string
+		choice  planv1.Choice
+		want    planv1.Choice
+	}{
+		{"yes picks the option that says yes", edit, planv1.Choice_CHOICE_YES, planv1.Choice_CHOICE_A},
+		{"no picks the option that says no", edit, planv1.Choice_CHOICE_NO, planv1.Choice_CHOICE_B},
+		{"a letter still works", edit, planv1.Choice_CHOICE_B, planv1.Choice_CHOICE_B},
+		{"options in another language", translated, planv1.Choice_CHOICE_YES, planv1.Choice_CHOICE_B},
+		{"no in another language", translated, planv1.Choice_CHOICE_NO, planv1.Choice_CHOICE_A},
+		{"yes without options", nil, planv1.Choice_CHOICE_YES, planv1.Choice_CHOICE_YES},
+	} {
+		got, err := answer(c.ask(t, w, tt.options...), tt.choice)
+		if err != nil || got != tt.want {
+			t.Errorf("%s: %v, %v; want %v", tt.name, got, err, tt.want)
+		}
+	}
+	for _, tt := range []struct {
+		name    string
+		options []string
+		choice  planv1.Choice
+	}{
+		{"no without options", nil, planv1.Choice_CHOICE_NO},
+		{"no option says yes", []string{"sqlite", "files"}, planv1.Choice_CHOICE_YES},
+		{"a word must start the option", []string{"Say yes", "Say no"}, planv1.Choice_CHOICE_NO},
+		{"two options say yes", []string{"Yes, now", "Yes, later", "No"}, planv1.Choice_CHOICE_YES},
+		{"a letter beyond the options", edit, planv1.Choice_CHOICE_C},
+	} {
+		if _, err := answer(c.ask(t, w, tt.options...), tt.choice); code(err) != connect.CodeInvalidArgument {
+			t.Errorf("%s: %v, want invalid_argument", tt.name, err)
+		}
 	}
 }
 

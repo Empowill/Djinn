@@ -27,9 +27,7 @@ const wishes = (): Wish[] =>
 async function open(page: Page) {
   await page.goto(process.env.DJINN_URL!);
   await expect(
-    page
-      .locator(".sidebar")
-      .getByRole("button", { name: "Importer un souhait" }),
+    page.locator(".sidebar").getByRole("button", { name: "Import a wish" }),
   ).toBeEnabled();
 }
 
@@ -38,7 +36,7 @@ async function importFile(page: Page, file: string) {
   const chooser = page.waitForEvent("filechooser");
   await page
     .locator(".sidebar")
-    .getByRole("button", { name: "Importer un souhait" })
+    .getByRole("button", { name: "Import a wish" })
     .click();
   await (await chooser).setFiles(file);
 }
@@ -115,9 +113,8 @@ test("a wish file imports from the interface", async ({ page }) => {
   await expect(page.locator(".wish-block strong")).toHaveText("wick");
   // Its task, from the file.
   await expect(page.getByText("Polish the brass").first()).toBeVisible();
-  // A wish at work: no result to approve, nothing to grant.
-  await expect(page.getByText("Valider ce résultat")).toHaveCount(0);
-  await expect(page.getByText("Mon vœu est exaucé")).toHaveCount(0);
+  // A wish at work: nothing to grant.
+  await expect(page.getByText("My wish is granted")).toHaveCount(0);
   await page.screenshot({
     path: path.join(__dirname, "../test-results/e2e/wish-import.png"),
   });
@@ -174,13 +171,13 @@ test("a ready wish is granted by the user, from the interface", async ({
   await page.goto(process.env.DJINN_URL!);
   const button = page
     .locator(".sidebar")
-    .getByRole("button", { name: "Importer un souhait" });
+    .getByRole("button", { name: "Import a wish" });
   await expect(button).toBeDisabled();
   await expect(button).toBeEnabled();
   await importFile(page, file);
 
   await expect(page.getByText(title).first()).toBeVisible();
-  const grant = page.getByRole("button", { name: "Mon vœu est exaucé" });
+  const grant = page.getByRole("button", { name: "My wish is granted" });
   await expect(grant).toBeVisible();
   // Djinn proposes, and never grants by itself.
   const state = () => wishes().find((w) => w.id === readyId)!;
@@ -188,7 +185,7 @@ test("a ready wish is granted by the user, from the interface", async ({
   expect(state().state).toBe("WISH_STATE_ACTIVE");
 
   await grant.click();
-  await expect(page.getByText("Souhait exaucé").first()).toBeVisible();
+  await expect(page.getByText("Wish granted").first()).toBeVisible();
   await expect(grant).toHaveCount(0);
   expect(state().state).toBe("WISH_STATE_GRANTED");
   await page.screenshot({

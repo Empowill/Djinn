@@ -7,7 +7,7 @@ import "./mermaid-diagram.css";
 import { t } from "./i18n";
 
 // Load the locally bundled engine only when a Markdown Mermaid block is visible.
-// It executes in a scripts-only iframe, never in the Electron renderer.
+// It executes in a scripts-only iframe, never in the page itself.
 let engine: Promise<string> | undefined;
 const loadEngine = () =>
   (engine ||= import("./vendor/mermaid-11.16.1.min.js?raw").then(

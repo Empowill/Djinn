@@ -11,7 +11,7 @@ import (
 func TestBranchName(t *testing.T) {
 	for _, tt := range []struct{ code, title, want string }{
 		{"W1", "Fix the login page", "w1-fix-the-login-page-89abcdef"},
-		{"W12", "Déployer l'été — vite !", "w12-deployer-l-ete-vite-89abcdef"},
+		{"W12", "Café's naïve façade — über piñata!", "w12-cafe-s-naive-facade-uber-pinata-89abcdef"},
 		{"W2", "A very long title that goes well beyond forty characters", "w2-a-very-long-title-that-goes-well-beyond-89abcdef"},
 		{"W3", "!!!", "w3-89abcdef"},
 	} {

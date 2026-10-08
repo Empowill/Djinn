@@ -14,6 +14,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
+
+	"github.com/empowill/djinn/locales"
 )
 
 const timestampName = "google.protobuf.Timestamp"
@@ -285,6 +287,11 @@ func scalar(fd protoreflect.FieldDescriptor, s string) (protoreflect.Value, erro
 				return protoreflect.ValueOfEnum(ev.Number()), nil
 			}
 		}
+		for _, ev := range values(fd.Enum()) {
+			if key, ok := words[short(ev)]; ok && locales.Means(s, key) {
+				return protoreflect.ValueOfEnum(ev.Number()), nil
+			}
+		}
 		return protoreflect.Value{}, fmt.Errorf("%q is not %s", s, expect(fd))
 	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
 		n, err := strconv.ParseInt(s, 10, 32)
@@ -378,6 +385,9 @@ func expect(fd protoreflect.FieldDescriptor) string {
 	}
 	return ""
 }
+
+// words are the enum values a person may also type in their own language, by their key in locales/: yes and no.
+var words = map[string]string{"yes": "answer.yes", "no": "answer.no"}
 
 // values are the values of an enum a user can type: all but the zero one.
 func values(ed protoreflect.EnumDescriptor) []protoreflect.EnumValueDescriptor {

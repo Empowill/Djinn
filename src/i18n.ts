@@ -22,7 +22,7 @@ const catalogs: Record<string, Catalog> = { en, fr: catalog(frModule) };
 /** The languages the interface is translated into. */
 export const languages = Object.keys(catalogs);
 
-/** A language's name, written in that language ("Français"). */
+/** A language's name, written in that language: its catalog's `language.name`. */
 export function languageName(code: string): string {
   return catalogs[code]?.["language.name"] ?? code;
 }

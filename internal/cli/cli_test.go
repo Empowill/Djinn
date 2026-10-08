@@ -26,6 +26,7 @@ import (
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	_ "github.com/empowill/djinn/gen/go/terminal/v1"
 	_ "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/locales"
 )
 
 const (
@@ -109,6 +110,18 @@ func TestConvention(t *testing.T) {
 			parseOnly: true,
 		},
 		{
+			name:      "no answers a question whose options say yes and no",
+			args:      []string{"Q03", "no"},
+			want:      &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, Choice: planv1.Choice_CHOICE_NO},
+			parseOnly: true,
+		},
+		{
+			name:      "yes and no in another language Djinn speaks",
+			args:      []string{"Q03", strings.ToUpper(locales.T("fr", "answer.yes", nil))},
+			want:      &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, Choice: planv1.Choice_CHOICE_YES},
+			parseOnly: true,
+		},
+		{
 			name:      "bool with a value, time with an offset",
 			args:      []string{"--open=false", "--since", "2026-10-07T11:00:00+02:00"},
 			want:      &planv1.QuestionServiceListRequest{Since: timestamppb.New(since)},
@@ -159,7 +172,7 @@ func TestParseErrors(t *testing.T) {
 		{"unknown flag", answer, []string{"Q03", "b", "--force"}, "unknown flag --force"},
 		{"flag without value", answer, []string{"Q03", "b", "--note"}, "--note needs a value"},
 		{"too many arguments", answer, []string{"Q03", "b", "c"}, `unexpected argument "c"`},
-		{"unknown enum value", answer, []string{"Q03", "e"}, `<choice>: "e" is not one of yes, a, b, c, d`},
+		{"unknown enum value", answer, []string{"Q03", "e"}, `<choice>: "e" is not one of yes, no, a, b, c, d`},
 		{"zero enum value", answer, []string{"Q03", "unspecified"}, `"unspecified" is not one of`},
 		{
 			"oneof fits no member", answer, []string{"q3", "b"},
@@ -247,7 +260,7 @@ func TestRun(t *testing.T) {
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
 		{name: "list output", args: []string{"p", "l"}, wantOut: "- id: " + projectID + "\n  name: api\n", wantCalled: true},
 		{name: "server error", args: []string{"q", "answer", "Q99", "a"}, wantCode: 1, wantErr: "not_found: no question Q99", wantCalled: true},
-		{name: "validation before sending", args: []string{"q", "answer"}, wantCode: 2, wantErr: "<question>: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\n  <choice>: value is required; expected one of yes, a, b, c, d"},
+		{name: "validation before sending", args: []string{"q", "answer"}, wantCode: 2, wantErr: "<question>: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\n  <choice>: value is required; expected one of yes, no, a, b, c, d"},
 		{name: "rule on a positional", args: []string{"q", "ask", "Which?", "W1"}, wantCode: 2, wantErr: "<wish-id>: must be a valid UUID; expected a UUID"},
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
 		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},

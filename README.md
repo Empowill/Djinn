@@ -40,6 +40,12 @@ curl -fsSL https://github.com/Empowill/Djinn/releases/latest/download/install.sh
 irm https://github.com/Empowill/Djinn/releases/latest/download/install.ps1 | iex         # Windows
 ```
 
+**Antigravity, optional.** Workers run Claude Code or Codex. Google's Antigravity (`agy`) can run them too: install
+it, sign in with your Google Cloud project (`gcloud auth application-default login --project <project>`, then
+`AGY_ADC_AUTH=true` where `djinn up` runs) or with agy's own sign-in, then `djinn task spawn --provider antigravity`.
+Djinn runs the official `agy` as installed and never reads its credentials; the account you sign in with pays.
+Steps and rules: [`docs/providers.md`](docs/providers.md#antigravity).
+
 ## Roadmap to v1
 
 Djinn is tracked here, with no other tool: one box per task, one file per task in
@@ -50,7 +56,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [ ] [T01 · The native window: Wails, the embedded interface, dev and browser modes](plan/fe63ed30-native-window.md) (in progress)
 - [x] [T02 · Protos, API and command line: everything generated, a CLI by convention](plan/c30479be-api-and-cli.md)
 - [ ] [T03 · Keep the interface working: the `window.djinn` shim](plan/aef418cb-interface-shim.md) (in progress)
-- [ ] [T04 · Getting started: install in one line, or ask your agent](plan/929d6a88-getting-started.md)
+- [ ] [T04 · Getting started: install in one line, or ask your agent](plan/929d6a88-getting-started.md) (in progress)
 - [x] [T05 · Testing: unit tests in seconds, `task e2e` an agent can run](plan/b6a680bf-testing.md)
 - [ ] [T06 · End-to-end tests on the native window](plan/b81b5d99-native-e2e.md) (in progress)
 - [ ] [T10 · English everywhere](plan/4527d734-english-everywhere.md) (in progress)

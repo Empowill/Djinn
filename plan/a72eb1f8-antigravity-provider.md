@@ -81,5 +81,5 @@ Codex, within what Google's terms allow.
 - [ ] Checked on a real run: what plan mode and `--sandbox` really block in headless mode, and whether settings
   allow-rules apply headless (the documentation says granted tools run; the 1.3.0 binary says they do not).
   (needs: the same real run)
-- [ ] The README lists Antigravity as optional, with the rules above. (needs: an agent; the README names Codex
-  and Claude Code only)
+- [x] The README lists Antigravity as optional, with the rules above. (5f3a5b5: "Antigravity, optional" under
+  Install, how to sign in and spawn, what Djinn never reads, a link to `docs/providers.md#antigravity`)
