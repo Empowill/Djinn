@@ -28,12 +28,12 @@ Djinn decides when it spawns a task, and records the outcome in the task's `acce
 `api/plan/v1/plan.proto`). The first rule that applies wins:
 
 1. **Outside any project** (a wish without project): read-only, in an empty folder of its own (`READ_ONLY`).
-2. **The wish's grant** for that project (`djinn wish grant <wish> --project-id <p> --mode edit|auto|none`, stored
-   in `Wish.grants`): an explicit decision of the developer, for every task of that wish in that project and no
-   other wish. `edit` lets the worker edit (`WISH_EDIT`); `auto` lets it edit in its agent's auto mode
+2. **The wish's allowance** for that project (`djinn wish allow <wish> --project-id <p> --mode edit|auto|none`,
+   stored in `Wish.allowances`): an explicit decision of the developer, for every task of that wish in that project
+   and no other wish. `edit` lets the worker edit (`WISH_EDIT`); `auto` lets it edit in its agent's auto mode
    (`WISH_AUTO`). It weighs over the project's configuration: when the project has `.agents/permissions.txtpb`,
-   the grant decides editing and the mode, and the commands, denied commands and network stay the file's; a
-   grant never adds a command nor the network.
+   the allowance decides editing and the mode, and the commands, denied commands and network stay the file's;
+   an allowance never adds a command nor the network.
 3. **`.agents/permissions.txtpb`** in the project's folder: Djinn translates it for the agent (`AGENTS`). The
    agent's own configuration files still apply on top, as the agent applies them by itself; what Djinn passes
    never allows more than the file. Djinn reads the file in the project's folder, not in the task's worktree: a
@@ -127,7 +127,7 @@ What is verified and what is supposed:
 | Antigravity | refused: plan mode is not read-only and what `--sandbox` blocks is undocumented; allowed once a real capture proves it                          |
 
 The same applies to a worker of rule 5 before the answer. In a project without `.agents/permissions.txtpb` nor
-grant, nothing above is passed: Claude gets `--permission-prompts none` (anything that would prompt is denied),
+allowance, nothing above is passed: Claude gets `--permission-prompts none` (anything that would prompt is denied),
 codex a thread without `sandbox` nor `approvalPolicy` (an approval it asks for is declined), agy no `--mode` (a tool
 needing approval is soft-denied). Supposed, for Claude read-only: that `--restricted` with `--tools` leaves nothing
 able to write or run code. For agy: that plan mode writes nothing in headless mode, and the sandbox blocks every

@@ -37,8 +37,8 @@ status: open
   `--settings` inline and `--permission-mode dontAsk|auto`, Codex by its sandbox, approval policy and reviewer, and
   by answering its approvals; agy by `--mode accept-edits` and `--sandbox`. What a translation loses is listed in
   `docs/providers.md`. Auto mode is the default of Djinn's own file, trusted as each provider documents it.
-- **The order of decision**, recorded in `Task.access`: outside any project, read-only; the wish's grant for the
-  project (`djinn wish grant`, edit or auto, for that wish only); `.agents/permissions.txtpb`; the agent's own
+- **The order of decision**, recorded in `Task.access`: outside any project, read-only; the wish's allowance for
+  the project (`djinn wish allow`, edit or auto, for that wish only); `.agents/permissions.txtpb`; the agent's own
   configuration in Git or in a folder holding an agent configuration file; otherwise, in a folder outside Git, the
   worker starts read-only and the task asks the developer whether it may edit (`Task.edit_question_id`, status
   `waiting` once the read-only worker ended). Only an explicit yes starts the worker again, allowed to edit and to

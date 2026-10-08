@@ -50,7 +50,7 @@ func effectiveMode(p *djinnv1.Permissions) djinnv1.Mode {
 	return djinnv1.Mode_MODE_LISTED
 }
 
-// editOnly is what a yes to a task's edit question grants: editing the project's files, no command, no network.
+// editOnly is what a yes to a task's edit question gives: editing the project's files, no command, no network.
 func editOnly() *djinnv1.Permissions {
 	return &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_LISTED}
 }
@@ -111,11 +111,11 @@ func existsFold(dir, name string) bool {
 }
 
 // decideAccess says where the rights of a worker of kind come from in project (nil outside any project), under
-// the grant its wish gives in that project, and the permissions Djinn translates for it, if any. The order
-// (docs/providers.md): outside any project, read-only; the wish's grant; the project's .agents/permissions.txtpb
+// the allowance its wish gives in that project, and the permissions Djinn translates for it, if any. The order
+// (docs/providers.md): outside any project, read-only; the wish's allowance; the project's .agents/permissions.txtpb
 // when it has one; the agent's own configuration in a Git repository, or in a folder holding agent configuration
 // files; otherwise, read-only until the developer allows editing.
-func decideAccess(project *planv1.Project, kind planv1.Provider, grant planv1.Grant) (planv1.TaskAccess, *djinnv1.Permissions, error) {
+func decideAccess(project *planv1.Project, kind planv1.Provider, allowance planv1.Allowance) (planv1.TaskAccess, *djinnv1.Permissions, error) {
 	if project == nil {
 		return planv1.TaskAccess_TASK_ACCESS_READ_ONLY, nil, nil
 	}
@@ -123,8 +123,8 @@ func decideAccess(project *planv1.Project, kind planv1.Provider, grant planv1.Gr
 	switch {
 	case err != nil:
 		return planv1.TaskAccess_TASK_ACCESS_UNSPECIFIED, nil, err
-	case grant == planv1.Grant_GRANT_EDIT || grant == planv1.Grant_GRANT_AUTO:
-		access, perms := granted(p, grant)
+	case allowance == planv1.Allowance_ALLOWANCE_EDIT || allowance == planv1.Allowance_ALLOWANCE_AUTO:
+		access, perms := allowedBy(p, allowance)
 		return access, perms, nil
 	case p != nil:
 		return planv1.TaskAccess_TASK_ACCESS_AGENTS, p, nil
@@ -134,16 +134,16 @@ func decideAccess(project *planv1.Project, kind planv1.Provider, grant planv1.Gr
 	return planv1.TaskAccess_TASK_ACCESS_ASKING, nil, nil
 }
 
-// granted are the permissions a wish's grant gives, over the project's declared ones (nil when it declares none):
-// the grant decides editing and the mode; the commands, denied commands and network stay the project's. A grant
-// never adds a command nor the network.
-func granted(declared *djinnv1.Permissions, grant planv1.Grant) (planv1.TaskAccess, *djinnv1.Permissions) {
+// allowedBy are the permissions a wish's allowance gives, over the project's declared ones (nil when it declares
+// none): the allowance decides editing and the mode; the commands, denied commands and network stay the project's.
+// An allowance never adds a command nor the network.
+func allowedBy(declared *djinnv1.Permissions, allowance planv1.Allowance) (planv1.TaskAccess, *djinnv1.Permissions) {
 	p := &djinnv1.Permissions{}
 	if declared != nil {
 		p = proto.CloneOf(declared)
 	}
 	p.Edit = true
-	if grant == planv1.Grant_GRANT_AUTO {
+	if allowance == planv1.Allowance_ALLOWANCE_AUTO {
 		p.Mode = djinnv1.Mode_MODE_AUTO
 		return planv1.TaskAccess_TASK_ACCESS_WISH_AUTO, p
 	}
@@ -153,7 +153,7 @@ func granted(declared *djinnv1.Permissions, grant planv1.Grant) (planv1.TaskAcce
 
 // accessSpec is what a task's access gives its worker's spec: read-only, or the permissions to translate (nil
 // when the agent's own configuration decides). perms are the ones decideAccess gave, for AGENTS and the wish's
-// grants.
+// allowances.
 func accessSpec(access planv1.TaskAccess, perms *djinnv1.Permissions) (readOnly bool, out *djinnv1.Permissions) {
 	switch access {
 	case planv1.TaskAccess_TASK_ACCESS_AGENTS, planv1.TaskAccess_TASK_ACCESS_WISH_EDIT, planv1.TaskAccess_TASK_ACCESS_WISH_AUTO:

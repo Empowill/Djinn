@@ -69,8 +69,16 @@ const (
 	WishServiceResumeProcedure = "/plan.v1.WishService/Resume"
 	// WishServiceSnapshotProcedure is the fully-qualified name of the WishService's Snapshot RPC.
 	WishServiceSnapshotProcedure = "/plan.v1.WishService/Snapshot"
+	// WishServiceAllowProcedure is the fully-qualified name of the WishService's Allow RPC.
+	WishServiceAllowProcedure = "/plan.v1.WishService/Allow"
 	// WishServiceGrantProcedure is the fully-qualified name of the WishService's Grant RPC.
 	WishServiceGrantProcedure = "/plan.v1.WishService/Grant"
+	// WishServicePauseProcedure is the fully-qualified name of the WishService's Pause RPC.
+	WishServicePauseProcedure = "/plan.v1.WishService/Pause"
+	// WishServiceActivateProcedure is the fully-qualified name of the WishService's Activate RPC.
+	WishServiceActivateProcedure = "/plan.v1.WishService/Activate"
+	// WishServiceMoveProcedure is the fully-qualified name of the WishService's Move RPC.
+	WishServiceMoveProcedure = "/plan.v1.WishService/Move"
 	// WishServiceRenderProcedure is the fully-qualified name of the WishService's Render RPC.
 	WishServiceRenderProcedure = "/plan.v1.WishService/Render"
 	// WishServiceSyncProcedure is the fully-qualified name of the WishService's Sync RPC.
@@ -327,7 +335,8 @@ func (UnimplementedProjectServiceHandler) List(context.Context, *connect.Request
 type WishServiceClient interface {
 	// Make a wish.
 	Make(context.Context, *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error)
-	// List the wishes, the most recent last.
+	// List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
+	// the most recent last.
 	List(context.Context, *connect.Request[v1.WishServiceListRequest]) (*connect.Response[v1.WishServiceListResponse], error)
 	// Export a wish to a file, to open it on another machine: its plan, questions, decisions, blocks and journal.
 	// Never code, which travels through Git, never a secret, never a local path: projects are named by their name
@@ -348,9 +357,19 @@ type WishServiceClient interface {
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
-	// Give the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
+	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
+	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
+	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
+	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
+	// Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.
+	Pause(context.Context, *connect.Request[v1.WishServicePauseRequest]) (*connect.Response[v1.WishServicePauseResponse], error)
+	// Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one
+	// first.
+	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
+	// Move an active wish to another rank: --to 1 gives it priority over the others.
+	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
 	// local path.
@@ -420,10 +439,34 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Snapshot")),
 			connect.WithClientOptions(opts...),
 		),
+		allow: connect.NewClient[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse](
+			httpClient,
+			baseURL+WishServiceAllowProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Allow")),
+			connect.WithClientOptions(opts...),
+		),
 		grant: connect.NewClient[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse](
 			httpClient,
 			baseURL+WishServiceGrantProcedure,
 			connect.WithSchema(wishServiceMethods.ByName("Grant")),
+			connect.WithClientOptions(opts...),
+		),
+		pause: connect.NewClient[v1.WishServicePauseRequest, v1.WishServicePauseResponse](
+			httpClient,
+			baseURL+WishServicePauseProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Pause")),
+			connect.WithClientOptions(opts...),
+		),
+		activate: connect.NewClient[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse](
+			httpClient,
+			baseURL+WishServiceActivateProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Activate")),
+			connect.WithClientOptions(opts...),
+		),
+		move: connect.NewClient[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse](
+			httpClient,
+			baseURL+WishServiceMoveProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Move")),
 			connect.WithClientOptions(opts...),
 		),
 		render: connect.NewClient[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse](
@@ -451,7 +494,11 @@ type wishServiceClient struct {
 	setLead    *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
 	resume     *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
 	snapshot   *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
+	allow      *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
 	grant      *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
+	pause      *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
+	activate   *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
+	move       *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
 	render     *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
 	sync       *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
 }
@@ -496,9 +543,29 @@ func (c *wishServiceClient) Snapshot(ctx context.Context, req *connect.Request[v
 	return c.snapshot.CallUnary(ctx, req)
 }
 
+// Allow calls plan.v1.WishService.Allow.
+func (c *wishServiceClient) Allow(ctx context.Context, req *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error) {
+	return c.allow.CallUnary(ctx, req)
+}
+
 // Grant calls plan.v1.WishService.Grant.
 func (c *wishServiceClient) Grant(ctx context.Context, req *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error) {
 	return c.grant.CallUnary(ctx, req)
+}
+
+// Pause calls plan.v1.WishService.Pause.
+func (c *wishServiceClient) Pause(ctx context.Context, req *connect.Request[v1.WishServicePauseRequest]) (*connect.Response[v1.WishServicePauseResponse], error) {
+	return c.pause.CallUnary(ctx, req)
+}
+
+// Activate calls plan.v1.WishService.Activate.
+func (c *wishServiceClient) Activate(ctx context.Context, req *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error) {
+	return c.activate.CallUnary(ctx, req)
+}
+
+// Move calls plan.v1.WishService.Move.
+func (c *wishServiceClient) Move(ctx context.Context, req *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error) {
+	return c.move.CallUnary(ctx, req)
 }
 
 // Render calls plan.v1.WishService.Render.
@@ -515,7 +582,8 @@ func (c *wishServiceClient) Sync(ctx context.Context, req *connect.Request[v1.Wi
 type WishServiceHandler interface {
 	// Make a wish.
 	Make(context.Context, *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error)
-	// List the wishes, the most recent last.
+	// List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
+	// the most recent last.
 	List(context.Context, *connect.Request[v1.WishServiceListRequest]) (*connect.Response[v1.WishServiceListResponse], error)
 	// Export a wish to a file, to open it on another machine: its plan, questions, decisions, blocks and journal.
 	// Never code, which travels through Git, never a secret, never a local path: projects are named by their name
@@ -536,9 +604,19 @@ type WishServiceHandler interface {
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
-	// Give the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
+	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
+	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
+	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
+	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
+	// Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.
+	Pause(context.Context, *connect.Request[v1.WishServicePauseRequest]) (*connect.Response[v1.WishServicePauseResponse], error)
+	// Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one
+	// first.
+	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
+	// Move an active wish to another rank: --to 1 gives it priority over the others.
+	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
 	// local path.
@@ -604,10 +682,34 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Snapshot")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceAllowHandler := connect.NewUnaryHandler(
+		WishServiceAllowProcedure,
+		svc.Allow,
+		connect.WithSchema(wishServiceMethods.ByName("Allow")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceGrantHandler := connect.NewUnaryHandler(
 		WishServiceGrantProcedure,
 		svc.Grant,
 		connect.WithSchema(wishServiceMethods.ByName("Grant")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServicePauseHandler := connect.NewUnaryHandler(
+		WishServicePauseProcedure,
+		svc.Pause,
+		connect.WithSchema(wishServiceMethods.ByName("Pause")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceActivateHandler := connect.NewUnaryHandler(
+		WishServiceActivateProcedure,
+		svc.Activate,
+		connect.WithSchema(wishServiceMethods.ByName("Activate")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceMoveHandler := connect.NewUnaryHandler(
+		WishServiceMoveProcedure,
+		svc.Move,
+		connect.WithSchema(wishServiceMethods.ByName("Move")),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceRenderHandler := connect.NewUnaryHandler(
@@ -640,8 +742,16 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceResumeHandler.ServeHTTP(w, r)
 		case WishServiceSnapshotProcedure:
 			wishServiceSnapshotHandler.ServeHTTP(w, r)
+		case WishServiceAllowProcedure:
+			wishServiceAllowHandler.ServeHTTP(w, r)
 		case WishServiceGrantProcedure:
 			wishServiceGrantHandler.ServeHTTP(w, r)
+		case WishServicePauseProcedure:
+			wishServicePauseHandler.ServeHTTP(w, r)
+		case WishServiceActivateProcedure:
+			wishServiceActivateHandler.ServeHTTP(w, r)
+		case WishServiceMoveProcedure:
+			wishServiceMoveHandler.ServeHTTP(w, r)
 		case WishServiceRenderProcedure:
 			wishServiceRenderHandler.ServeHTTP(w, r)
 		case WishServiceSyncProcedure:
@@ -687,8 +797,24 @@ func (UnimplementedWishServiceHandler) Snapshot(context.Context, *connect.Reques
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Snapshot is not implemented"))
 }
 
+func (UnimplementedWishServiceHandler) Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Allow is not implemented"))
+}
+
 func (UnimplementedWishServiceHandler) Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Grant is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Pause(context.Context, *connect.Request[v1.WishServicePauseRequest]) (*connect.Response[v1.WishServicePauseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Pause is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Activate is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Move is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Render(context.Context, *connect.Request[v1.WishServiceRenderRequest]) (*connect.Response[v1.WishServiceRenderResponse], error) {

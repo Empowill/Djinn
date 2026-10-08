@@ -40,8 +40,8 @@ its flight plan with them, semi-automatically, project by project.
 
 ## Open questions, to answer later
 - **Rights to redefine.** On one machine, a worker's rights come from where it runs (the
-  project's agent config, the wish's grant, read-only outside a project). Sent to another
-  machine, who grants what? The wish's grant (edit, auto mode) was given by a person for their
+  project's agent config, the wish's allowance, read-only outside a project). Sent to another
+  machine, who allows what? The wish's allowance (edit, auto mode) was given by a person for their
   machine: does it travel, and does the other machine's owner have a say?
 - A coordinator with leases, or Raft from the start? Does a wish need to survive the loss of its
   home machine without a human?

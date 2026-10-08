@@ -196,7 +196,7 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
 			return err
 		}
-		if task.Access, declared, err = decideAccess(project, kind, plan.GrantOf(wish, project.GetId())); err != nil {
+		if task.Access, declared, err = decideAccess(project, kind, plan.AllowanceOf(wish, project.GetId())); err != nil {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
 		}
 		if task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING {

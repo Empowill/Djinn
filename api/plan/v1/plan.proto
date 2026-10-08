@@ -40,10 +40,31 @@ message Wish {
   repeated string project_ids = 3;
   // When the wish was made.
   google.protobuf.Timestamp create_time = 4;
-  // Rights the developer gives the wish's workers, per project, ahead of any task.
-  repeated ProjectGrant grants = 5;
+  // Rights the developer allows the wish's workers, per project, ahead of any task.
+  repeated ProjectAllowance allowances = 5;
   // The lead: the agent session that drives the wish, for djinn wish resume to take it back.
   Lead lead = 6;
+  // Where the wish stands: active, paused or granted. Three wishes are active at most.
+  WishState state = 7;
+  // Place among the active wishes, from 1: the first one has priority. 0 for a paused or granted wish.
+  int32 rank = 8;
+  // When the user granted the wish.
+  google.protobuf.Timestamp grant_time = 9;
+  // Djinn proposes to grant the wish: it has tasks, all finished, no question is open, and no task waits for an
+  // answer or failed. Computed on every read, never stored. Only the user grants a wish.
+  bool ready = 10;
+}
+
+// WishState is where a wish stands. A djinn grants three wishes at a time, never more: three are active at most.
+enum WishState {
+  // Not set: a wish made before Djinn recorded its state, taken as active.
+  WISH_STATE_UNSPECIFIED = 0;
+  // Djinn works on it, in the order of the ranks.
+  WISH_STATE_ACTIVE = 1;
+  // Set aside by the user: it keeps everything, and leaves its place to another wish.
+  WISH_STATE_PAUSED = 2;
+  // The user granted it: it is done.
+  WISH_STATE_GRANTED = 3;
 }
 
 // The lead of a wish: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and
@@ -58,25 +79,25 @@ message Lead {
   string directory = 3;
 }
 
-// Grant is a right the developer gives a wish's workers in one of its projects, an explicit decision that applies
-// to every task of the wish in that project, and to no other wish.
-enum Grant {
+// Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that
+// applies to every task of the wish in that project, and to no other wish.
+enum Allowance {
   // Not set.
-  GRANT_UNSPECIFIED = 0;
-  // No right granted: the project's configuration decides. Removes a grant.
-  GRANT_NONE = 1;
+  ALLOWANCE_UNSPECIFIED = 0;
+  // No right allowed: the project's configuration decides. Removes an allowance.
+  ALLOWANCE_NONE = 1;
   // The workers may edit the project's files.
-  GRANT_EDIT = 2;
+  ALLOWANCE_EDIT = 2;
   // The workers may edit the project's files, in their agent's auto mode.
-  GRANT_AUTO = 3;
+  ALLOWANCE_AUTO = 3;
 }
 
-// ProjectGrant is the right a wish gives its workers in one project.
-message ProjectGrant {
+// ProjectAllowance is the right a wish allows its workers in one project.
+message ProjectAllowance {
   // The project.
   string project_id = 1;
   // The right.
-  Grant grant = 2;
+  Allowance allowance = 2;
 }
 
 // TaskStatus is where a task stands.
@@ -118,10 +139,10 @@ enum TaskAccess {
   TASK_ACCESS_EDIT_GRANTED = 5;
   // The developer answered no: the worker only reads.
   TASK_ACCESS_EDIT_REFUSED = 6;
-  // The wish grants editing in the project (Wish.grants): the worker may edit, on top of the project's
+  // The wish allows editing in the project (Wish.allowances): the worker may edit, on top of the project's
   // .agents/permissions.txtpb when it has one.
   TASK_ACCESS_WISH_EDIT = 7;
-  // The wish grants the auto mode in the project: the worker may edit, in its agent's auto mode.
+  // The wish allows the auto mode in the project: the worker may edit, in its agent's auto mode.
   TASK_ACCESS_WISH_AUTO = 8;
 }
 
@@ -433,7 +454,8 @@ service WishService {
   rpc Make(WishServiceMakeRequest) returns (WishServiceMakeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
-  // List the wishes, the most recent last.
+  // List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
+  // the most recent last.
   rpc List(WishServiceListRequest) returns (WishServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
@@ -470,9 +492,27 @@ service WishService {
   rpc Snapshot(WishServiceSnapshotRequest) returns (WishServiceSnapshotResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
-  // Give the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
+  // Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
   // agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
+  rpc Allow(WishServiceAllowRequest) returns (WishServiceAllowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
+  // task finished, no question open), and you may grant it before.
   rpc Grant(WishServiceGrantRequest) returns (WishServiceGrantResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.
+  rpc Pause(WishServicePauseRequest) returns (WishServicePauseResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one
+  // first.
+  rpc Activate(WishServiceActivateRequest) returns (WishServiceActivateResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Move an active wish to another rank: --to 1 gives it priority over the others.
+  rpc Move(WishServiceMoveRequest) returns (WishServiceMoveResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
   // Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
@@ -520,7 +560,7 @@ message WishServiceSyncResponse {
   string file = 1;
 }
 
-message WishServiceGrantRequest {
+message WishServiceAllowRequest {
   // The wish.
   string wish_id = 1 [
     (buf.validate.field).required = true,
@@ -532,15 +572,73 @@ message WishServiceGrantRequest {
     (buf.validate.field).string.uuid = true
   ];
   // The right: edit, auto, or none to take it back.
-  Grant mode = 3 [(buf.validate.field).enum = {
+  Allowance mode = 3 [(buf.validate.field).enum = {
     defined_only: true
     not_in: [0]
   }];
 }
 
-message WishServiceGrantResponse {
-  // The wish, with its grants.
+message WishServiceAllowResponse {
+  // The wish, with its allowances.
   Wish wish = 1;
+}
+
+message WishServiceGrantRequest {
+  // Numbers 2 and 3 carried the project and the right when this method gave rights, now Allow.
+  reserved 2, 3;
+  reserved "project_id", "mode";
+
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message WishServiceGrantResponse {
+  // The wish, granted.
+  Wish wish = 1;
+}
+
+message WishServicePauseRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message WishServicePauseResponse {
+  // The wish, paused.
+  Wish wish = 1;
+}
+
+message WishServiceActivateRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message WishServiceActivateResponse {
+  // The wish, active.
+  Wish wish = 1;
+}
+
+message WishServiceMoveRequest {
+  // The wish, active.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Its new rank, from 1 for the first; beyond the last, it goes last.
+  int32 to = 2 [(buf.validate.field).int32.gte = 1];
+}
+
+message WishServiceMoveResponse {
+  // The active wishes, by rank.
+  repeated Wish wishes = 1;
 }
 
 message WishServiceMakeRequest {
@@ -551,6 +649,8 @@ message WishServiceMakeRequest {
   ];
   // A project the wish works on; repeat for each one.
   repeated string project_ids = 2 [(buf.validate.field).repeated.items.string.uuid = true];
+  // Make it paused: it waits, out of the three active wishes.
+  bool paused = 3;
 }
 
 message WishServiceMakeResponse {
@@ -598,6 +698,8 @@ message WishServiceImportResponse {
   Wish wish = 1;
   // How each of its projects was found on this machine.
   repeated ProjectMatch projects = 2;
+  // What to know, when there is something: an active wish imported paused, three being active here.
+  string note = 3;
 }
 
 message WishServiceImportDataRequest {
@@ -615,6 +717,8 @@ message WishServiceImportDataResponse {
   Wish wish = 1;
   // How each of its projects was found on this machine.
   repeated ProjectMatch projects = 2;
+  // What to know, when there is something: an active wish imported paused, three being active here.
+  string note = 3;
 }
 
 message WishServiceSetLeadRequest {

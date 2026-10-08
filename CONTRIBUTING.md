@@ -51,7 +51,7 @@ Each one is a decision. Changing one is a discussion first.
 - **Auto mode by default.** Agents run in their own auto mode, trusted as their providers
   document it.
 - **A worker's rights come from where it runs.** Outside any project: read only. In a project:
-  the wish's grant, then `.agents/`, then the agent's own config. In a folder outside Git with
+  the wish's allowance, then `.agents/`, then the agent's own config. In a folder outside Git with
   none, the worker reads until you say it may edit ([order](docs/providers.md#the-order-of-decision)).
 - **Three wishes at a time, never more.** A djinn grants three wishes. It guards your
   attention, not the machine: the machine sets how many workers run.

@@ -258,9 +258,9 @@ func TestSpawnAccess(t *testing.T) {
 	}
 }
 
-// TestWishGrant: a wish's grant applies to every task of that wish in that project, over the project's
+// TestWishAllow: a wish's allowance applies to every task of that wish in that project, over the project's
 // configuration, and to no other wish.
-func TestWishGrant(t *testing.T) {
+func TestWishAllow(t *testing.T) {
 	e := up(t, t.TempDir())
 	rec := recorder{specs: make(chan Spec, 1)}
 	e.h.providers[planv1.Provider_PROVIDER_CLAUDE] = rec
@@ -281,23 +281,23 @@ func TestWishGrant(t *testing.T) {
 		e.watch(t.Context(), t, res.Msg.GetTask().GetId(), 0)
 		return res.Msg.GetTask(), spec
 	}
-	grant := func(mode planv1.Grant) *planv1.Wish {
+	allow := func(mode planv1.Allowance) *planv1.Wish {
 		t.Helper()
-		res, err := e.wishes.Grant(t.Context(), connect.NewRequest(&planv1.WishServiceGrantRequest{WishId: wishID, Mode: mode}))
+		res, err := e.wishes.Allow(t.Context(), connect.NewRequest(&planv1.WishServiceAllowRequest{WishId: wishID, Mode: mode}))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return res.Msg.GetWish()
 	}
 
-	// No grant: the project's .agents decides.
+	// No allowance: the project's .agents decides.
 	task, spec := spawn(wishID)
 	if task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_AGENTS || spec.Permissions.GetEdit() {
-		t.Errorf("no grant: %v, %+v", task, spec)
+		t.Errorf("no allowance: %v, %+v", task, spec)
 	}
 	// Edit: the worker may edit, the project's commands stay, nothing more.
-	if w := grant(planv1.Grant_GRANT_EDIT); len(w.GetGrants()) != 1 || w.GetGrants()[0].GetProjectId() != projectID {
-		t.Errorf("granted wish = %v", w)
+	if w := allow(planv1.Allowance_ALLOWANCE_EDIT); len(w.GetAllowances()) != 1 || w.GetAllowances()[0].GetProjectId() != projectID {
+		t.Errorf("allowed wish = %v", w)
 	}
 	task, spec = spawn(wishID)
 	if p := spec.Permissions; task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_WISH_EDIT || spec.ReadOnly || !p.GetEdit() ||
@@ -305,8 +305,8 @@ func TestWishGrant(t *testing.T) {
 		t.Errorf("edit: %v, %+v", task, spec)
 	}
 	// Auto: the agent's auto mode, editing.
-	if w := grant(planv1.Grant_GRANT_AUTO); len(w.GetGrants()) != 1 {
-		t.Errorf("a second grant added a row: %v", w)
+	if w := allow(planv1.Allowance_ALLOWANCE_AUTO); len(w.GetAllowances()) != 1 {
+		t.Errorf("a second allowance added a row: %v", w)
 	}
 	task, spec = spawn(wishID)
 	if p := spec.Permissions; task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_WISH_AUTO || !p.GetEdit() || p.GetMode() != djinnv1.Mode_MODE_AUTO {
@@ -318,46 +318,46 @@ func TestWishGrant(t *testing.T) {
 		t.Errorf("another wish: %v, %+v", task, spec)
 	}
 	// None takes it back.
-	if w := grant(planv1.Grant_GRANT_NONE); len(w.GetGrants()) != 0 {
+	if w := allow(planv1.Allowance_ALLOWANCE_NONE); len(w.GetAllowances()) != 0 {
 		t.Errorf("after none: %v", w)
 	}
 	if task, _ = spawn(wishID); task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_AGENTS {
 		t.Errorf("after none: %v", task)
 	}
 
-	// A grant on a folder outside Git without configuration: no question, the fake edits.
+	// An allowance on a folder outside Git without configuration: no question, the fake edits.
 	e.h.providers[planv1.Provider_PROVIDER_CLAUDE] = Fake{}
 	plain := folder(t)
 	wishID, _ = e.wish(t, plain)
-	grant(planv1.Grant_GRANT_EDIT)
+	allow(planv1.Allowance_ALLOWANCE_EDIT)
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{WishId: wishID, Title: "Edit", Prompt: "write notes.md hi"}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.watch(t.Context(), t, res.Msg.GetTask().GetId(), 0)
 	if got := e.get(t, res.Msg.GetTask().GetId()); got.GetEditQuestionId() != "" || got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("granted folder: %v", got)
+		t.Errorf("allowed folder: %v", got)
 	}
 	if b, err := os.ReadFile(filepath.Join(plain, "notes.md")); err != nil || string(b) != "hi\n" {
 		t.Errorf("notes.md = %q, %v", b, err)
 	}
 
 	// Refused: a project not of the wish; a wish of two projects without one named.
-	if _, err := e.wishes.Grant(t.Context(), connect.NewRequest(&planv1.WishServiceGrantRequest{
-		WishId: wishID, ProjectId: projectID, Mode: planv1.Grant_GRANT_EDIT,
+	if _, err := e.wishes.Allow(t.Context(), connect.NewRequest(&planv1.WishServiceAllowRequest{
+		WishId: wishID, ProjectId: projectID, Mode: planv1.Allowance_ALLOWANCE_EDIT,
 	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("a project not of the wish: %v", err)
 	}
-	two, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Two", ProjectIds: []string{projectID, e.get(t, res.Msg.GetTask().GetId()).GetProjectId()}}))
+	two, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Two", Paused: true, ProjectIds: []string{projectID, e.get(t, res.Msg.GetTask().GetId()).GetProjectId()}}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.wishes.Grant(t.Context(), connect.NewRequest(&planv1.WishServiceGrantRequest{
-		WishId: two.Msg.GetWish().GetId(), Mode: planv1.Grant_GRANT_EDIT,
+	if _, err := e.wishes.Allow(t.Context(), connect.NewRequest(&planv1.WishServiceAllowRequest{
+		WishId: two.Msg.GetWish().GetId(), Mode: planv1.Allowance_ALLOWANCE_EDIT,
 	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("two projects, none named: %v", err)
 	}
-	if _, err := e.wishes.Grant(t.Context(), connect.NewRequest(&planv1.WishServiceGrantRequest{WishId: wishID})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := e.wishes.Allow(t.Context(), connect.NewRequest(&planv1.WishServiceAllowRequest{WishId: wishID})); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("no mode: %v", err)
 	}
 }

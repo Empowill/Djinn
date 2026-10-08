@@ -272,10 +272,10 @@ func (w *Wishes) List(
 	return connect.NewResponse(&planv1.WishServiceListResponse{Wishes: wishes}), nil
 }
 
-// Grant gives the wish's workers a right in one of its projects, or takes it back with GRANT_NONE.
-func (w *Wishes) Grant(
-	ctx context.Context, req *connect.Request[planv1.WishServiceGrantRequest],
-) (*connect.Response[planv1.WishServiceGrantResponse], error) {
+// Allow gives the wish's workers a right in one of its projects, or takes it back with ALLOWANCE_NONE.
+func (w *Wishes) Allow(
+	ctx context.Context, req *connect.Request[planv1.WishServiceAllowRequest],
+) (*connect.Response[planv1.WishServiceAllowResponse], error) {
 	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
@@ -296,26 +296,26 @@ func (w *Wishes) Grant(
 			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project %s is not one of the wish's projects", id))
 		}
 		id = ids[i]
-		wish.Grants = slices.DeleteFunc(wish.Grants, func(g *planv1.ProjectGrant) bool { return g.GetProjectId() == id })
-		if mode := req.Msg.GetMode(); mode != planv1.Grant_GRANT_NONE {
-			wish.Grants = append(wish.Grants, &planv1.ProjectGrant{ProjectId: id, Grant: mode})
+		wish.Allowances = slices.DeleteFunc(wish.Allowances, func(a *planv1.ProjectAllowance) bool { return a.GetProjectId() == id })
+		if mode := req.Msg.GetMode(); mode != planv1.Allowance_ALLOWANCE_NONE {
+			wish.Allowances = append(wish.Allowances, &planv1.ProjectAllowance{ProjectId: id, Allowance: mode})
 		}
 		return tx.Put(wish)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.WishServiceGrantResponse{Wish: wish}), nil
+	return connect.NewResponse(&planv1.WishServiceAllowResponse{Wish: wish}), nil
 }
 
-// GrantOf is the right wish gives its workers in the project projectID: GRANT_NONE when it gives none.
-func GrantOf(wish *planv1.Wish, projectID string) planv1.Grant {
-	for _, g := range wish.GetGrants() {
-		if strings.EqualFold(g.GetProjectId(), projectID) && g.GetGrant() != planv1.Grant_GRANT_UNSPECIFIED {
-			return g.GetGrant()
+// AllowanceOf is the right wish allows its workers in the project projectID: ALLOWANCE_NONE when it allows none.
+func AllowanceOf(wish *planv1.Wish, projectID string) planv1.Allowance {
+	for _, a := range wish.GetAllowances() {
+		if strings.EqualFold(a.GetProjectId(), projectID) && a.GetAllowance() != planv1.Allowance_ALLOWANCE_UNSPECIFIED {
+			return a.GetAllowance()
 		}
 	}
-	return planv1.Grant_GRANT_NONE
+	return planv1.Allowance_ALLOWANCE_NONE
 }
 
 // Questions implements QuestionService.

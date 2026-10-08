@@ -115,18 +115,18 @@ func TestDecideAccess(t *testing.T) {
 				}
 				writeFile(t, dir, f, content)
 			}
-			got, perms, err := decideAccess(&planv1.Project{Directory: dir, Git: tt.git}, tt.kind, planv1.Grant_GRANT_NONE)
+			got, perms, err := decideAccess(&planv1.Project{Directory: dir, Git: tt.git}, tt.kind, planv1.Allowance_ALLOWANCE_NONE)
 			if err != nil || got != tt.want || (got == agents) != (perms != nil) {
 				t.Errorf("access = %v, %v, %v; want %v", got, perms, err, tt.want)
 			}
 		})
 	}
-	if got, _, err := decideAccess(nil, claude, planv1.Grant_GRANT_AUTO); got != readOnly || err != nil {
+	if got, _, err := decideAccess(nil, claude, planv1.Allowance_ALLOWANCE_AUTO); got != readOnly || err != nil {
 		t.Errorf("outside any project: %v, %v", got, err)
 	}
 	dir := t.TempDir()
 	writeFile(t, dir, ".agents/permissions.txtpb", "edit: yes please\n")
-	if _, _, err := decideAccess(&planv1.Project{Directory: dir, Git: true}, claude, planv1.Grant_GRANT_EDIT); err == nil {
+	if _, _, err := decideAccess(&planv1.Project{Directory: dir, Git: true}, claude, planv1.Allowance_ALLOWANCE_EDIT); err == nil {
 		t.Error("an invalid permissions file: no error")
 	}
 }
