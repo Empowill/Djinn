@@ -205,3 +205,39 @@ func TestJournalCut(t *testing.T) {
 		t.Error("the page says how many entries it left out")
 	}
 }
+
+// TestWishState: the page says where the wish stands, and proposes a ready wish to the user, who grants it.
+func TestWishState(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		wish *planv1.Wish
+		want []string
+		not  []string
+	}{
+		{"ranked", &planv1.Wish{Id: "w", Title: "T", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 2},
+			[]string{`<span class="status run">Active · rank 2</span>`}, []string{"djinn wish grant"}},
+		{"stored before states", &planv1.Wish{Id: "w", Title: "T"}, []string{`<span class="status run">Active</span>`}, nil},
+		{"paused", &planv1.Wish{Id: "w", Title: "T", State: planv1.WishState_WISH_STATE_PAUSED},
+			[]string{`<span class="status idle">Paused</span>`}, nil},
+		{"granted", &planv1.Wish{Id: "w", Title: "T", State: planv1.WishState_WISH_STATE_GRANTED, GrantTime: ts(-5)},
+			[]string{`<span class="status ok">Granted 2026-10-08 14:25</span>`}, nil},
+		{"ready", &planv1.Wish{Id: "w1", Title: "T", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1, Ready: true},
+			[]string{`<section id="actions">`, "Djinn proposes to grant this wish", "djinn wish grant w1"}, nil},
+	} {
+		html := page(t, Input{Export: &planv1.WishExport{Wish: tt.wish}, Language: "en"})
+		for _, s := range tt.want {
+			if !strings.Contains(html, s) {
+				t.Errorf("%s: the page lacks %q", tt.name, s)
+			}
+		}
+		for _, s := range tt.not {
+			if strings.Contains(html, s) {
+				t.Errorf("%s: the page shows %q", tt.name, s)
+			}
+		}
+	}
+	fr := page(t, Input{Export: &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "T", Rank: 1, Ready: true}}, Language: "fr"})
+	if !strings.Contains(fr, "Actif · rang 1") || !strings.Contains(fr, "Djinn propose d’exaucer ce souhait") {
+		t.Error("the French page lacks the state or the proposal")
+	}
+}

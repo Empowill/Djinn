@@ -83,7 +83,13 @@ func (p *Pages) Page(ctx context.Context, wishID string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The page shows where the wish stands here, which an export leaves out: its rank, and whether Djinn proposes
+	// to grant it.
+	wish := exp.GetWish()
+	rank := wish.GetRank()
+	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
 	exp = portable(exp, newScrubber(all, p.Home, dataName))
+	exp.Wish.Rank, exp.Wish.Ready = rank, ready
 	var unattached []string
 	for _, project := range projects {
 		if project.GetDirectory() == "" {

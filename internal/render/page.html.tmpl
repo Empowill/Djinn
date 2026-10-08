@@ -14,7 +14,7 @@
   {{- if .Projects}}
   <ul class="projects" aria-label="{{index .T "page.projects"}}">{{range .Projects}}<li>{{.}}</li>{{end}}</ul>
   {{- end}}
-  <p class="meta">{{.Rendered}}</p>
+  <p class="meta"><span class="status {{.StateClass}}">{{.State}}</span> {{.Rendered}}</p>
   {{- if or .Questions .Actions .Active}}
   <nav class="counts">
     {{- if .Questions}}<a class="count ask" href="#questions">{{index .T "page.questions"}} <b>{{len .Questions}}</b></a>{{end}}

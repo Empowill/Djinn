@@ -144,6 +144,8 @@ projects it touches, and a project is not necessarily a Git repository.
   only when the wish is ready, with "My wish is granted", which calls `Grant`; a granted wish's step is approved.
   A wish's documents no longer make a "Your move" on their own. The bridge reads the readiness at import: the
   mission does not follow the wish afterwards.
+- **The wish's page** (`djinn wish render`, `sync`) shows where the wish stands here: active and its rank, paused,
+  or granted and when. A ready wish adds a line to "Waiting for you", with `djinn wish grant <wish>`.
 
 ## Open questions
 - The window shows one terminal at a time: `wish resume` switches it to the lead's, and a reload goes back to the

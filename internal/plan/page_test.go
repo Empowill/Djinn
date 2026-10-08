@@ -97,6 +97,9 @@ func TestRender(t *testing.T) {
 	if err != nil || int64(len(data)) != res.Msg.GetSize() || !strings.Contains(string(data), "<h1>Try Djinn on itself</h1>") {
 		t.Fatalf("render wrote %d bytes, said %d (%v)", len(data), res.Msg.GetSize(), err)
 	}
+	if !strings.Contains(string(data), "Active · rank 1") {
+		t.Error("the page lacks the wish's rank")
+	}
 	if _, err := c.wishes.Render(ctx, connect.NewRequest(&planv1.WishServiceRenderRequest{WishId: store.NewID(), File: file})); code(err) != connect.CodeNotFound {
 		t.Errorf("an unknown wish: %v, want not_found", err)
 	}

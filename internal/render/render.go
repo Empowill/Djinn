@@ -84,6 +84,8 @@ type view struct {
 	Title      string
 	Projects   []string
 	Rendered   string
+	State      string // where the wish stands: active and its rank, paused, granted
+	StateClass string
 	Questions  []question
 	Actions    []string
 	Active     []task
@@ -151,6 +153,7 @@ func build(in Input) (*view, error) {
 		v.T[key] = tr(key)
 	}
 	v.Rendered = tr("page.rendered", "version", cmp.Or(in.Version, "dev"), "time", now.In(loc).Format("2006-01-02 15:04 MST"))
+	v.State, v.StateClass = state(exp.GetWish(), at, tr)
 
 	projects := map[string]string{}
 	for _, p := range exp.GetProjects() {
@@ -209,6 +212,10 @@ func build(in Input) (*view, error) {
 	}
 	for _, name := range in.Unattached {
 		v.Actions = append(v.Actions, tr("page.action_attach", "project", name))
+	}
+	// Djinn proposes a ready wish; only the user grants it.
+	if exp.GetWish().GetReady() {
+		v.Actions = append(v.Actions, tr("page.action_ready", "wish", exp.GetWish().GetId()))
 	}
 
 	lastWord := map[string]string{}
@@ -312,6 +319,23 @@ func choice(q *planv1.Question, tr func(string, ...string) string) string {
 	return fmt.Sprintf("%c · %s", 'A'+i, q.GetOptions()[i])
 }
 
+// state says where a wish stands, with the class that colours it: active and its rank, paused, or granted and when.
+func state(w *planv1.Wish, at func(interface{ AsTime() time.Time }) string, tr func(string, ...string) string) (string, string) {
+	switch w.GetState() {
+	case planv1.WishState_WISH_STATE_PAUSED:
+		return tr("page.state_paused"), "idle"
+	case planv1.WishState_WISH_STATE_GRANTED:
+		if w.GetGrantTime() != nil {
+			return tr("page.state_granted_at", "time", at(w.GetGrantTime())), "ok"
+		}
+		return tr("page.state_granted"), "ok"
+	}
+	if w.GetRank() > 0 {
+		return tr("page.state_ranked", "rank", fmt.Sprint(w.GetRank())), "run"
+	}
+	return tr("page.state_active"), "run"
+}
+
 // status names a task's status, with the class that colours it.
 func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, string) {
 	keys := map[planv1.TaskStatus][2]string{
@@ -382,9 +406,11 @@ func summary(
 		return strings.TrimSpace(m.GetKind() + " " + m.GetTitle())
 	case *planv1.TaskServiceSpawnRequest:
 		return m.GetTitle()
-	case *planv1.WishServiceGrantRequest:
-		return strings.TrimSpace(strings.ToLower(strings.TrimPrefix(m.GetMode().String(), "GRANT_")) + " " +
+	case *planv1.WishServiceAllowRequest:
+		return strings.TrimSpace(strings.ToLower(strings.TrimPrefix(m.GetMode().String(), "ALLOWANCE_")) + " " +
 			projects[m.GetProjectId()])
+	case *planv1.WishServiceMoveRequest:
+		return fmt.Sprint(m.GetTo())
 	case interface{ GetTaskId() string }:
 		return taskCode(m.GetTaskId())
 	}
