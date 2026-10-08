@@ -133,6 +133,8 @@ To use Djinn, see the [README](README.md). To work on it:
 - Three wishes are active at most. `djinn wish pause <wish-id>` and `djinn wish activate <wish-id>` free and take a
   place; `djinn wish move <wish-id> --to 1` gives one priority; `djinn wish grant <wish-id>` says it is done.
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
+- `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
+  on; `djinn task stop` works on a paused one. Not on Windows yet.
 - `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
   `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`

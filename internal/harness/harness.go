@@ -35,6 +35,7 @@ const (
 	methodEnd     = "harness/end"     // the worker ended; the request is the task
 	methodRecover = "harness/recover" // djinn up found a task whose worker it had lost; the request is the task
 	methodAnswer  = "harness/answer"  // the task took the answer to its edit question; the request is the task
+	methodHold    = "harness/hold"    // the task's worker was paused or resumed; the request is the task
 )
 
 // maxText is the most of an event's text, and of its raw line, that is kept.
@@ -83,13 +84,15 @@ type Harness struct {
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
 type run struct {
 	id    string
-	done  chan struct{} // closed once the task has its final status
-	wake  chan struct{} // an answer waits in answers
-	notes chan Event    // events from outside the worker (a gate), for the pump to write
+	done  chan struct{}      // closed once the task has its final status
+	wake  chan struct{}      // an answer waits in answers
+	notes chan Event         // events from outside the worker (a gate), for the pump to write
+	holds chan chan struct{} // a pause or a resume for the pump to write; closed once written
 
 	// Guarded by Harness.mu.
 	worker   Worker
 	stopping bool
+	paused   bool               // the worker holds still: it takes no slot
 	final    bool               // the task is getting its final status: an answer waits for done instead
 	answers  []*planv1.Question // answers to the task's edit question, for the pump to apply
 	subs     map[chan *planv1.TaskEvent]struct{}
@@ -107,7 +110,7 @@ type run struct {
 func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 	r := &run{
 		id: task.GetId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
-		notes: make(chan Event, 64), subs: map[chan *planv1.TaskEvent]struct{}{},
+		notes: make(chan Event, 64), holds: make(chan chan struct{}), subs: map[chan *planv1.TaskEvent]struct{}{},
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -160,7 +163,9 @@ func (h *Harness) Recover(ctx context.Context) error {
 		return err
 	}
 	for _, t := range tasks {
-		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		switch t.GetStatus() {
+		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
+		default:
 			continue
 		}
 		// A task no worker ever started (planned, or imported with a wish) waits for one: nothing to interrupt.
@@ -541,6 +546,9 @@ func (h *Harness) drain(r *run) Result {
 			h.record(r, ev)
 		case ev := <-r.notes:
 			h.write(r, actorHarness, methodEvent, nil, ev)
+		case written := <-r.holds:
+			h.writeHold(r)
+			close(written)
 		case <-r.wake:
 			for _, q := range h.takeAnswers(r) {
 				if h.applyAnswer(r, q) && !r.restart {
@@ -595,7 +603,7 @@ func (h *Harness) settle(r *run, res Result) bool {
 			continue
 		}
 		restart := r.restart && !r.stopping && h.ctx.Err() == nil
-		r.restart = false
+		r.restart, r.paused = false, false // A worker started again starts unpaused.
 		if !restart {
 			r.final = true
 		}
@@ -793,6 +801,92 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 	h.sched.Unlock()
 	h.wake() // Its dependents fail in turn.
 	return store.Get[*planv1.Task](ctx, h.store, task.GetId())
+}
+
+// Pause holds the task's worker where it is, without killing it, until Resume: the task is paused, and its slot
+// of the machine is free meanwhile. A worker whose provider cannot pause, or Windows, refuses.
+func (h *Harness) Pause(ctx context.Context, procedure string, req *planv1.TaskServicePauseRequest) (*planv1.Task, error) {
+	return h.hold(ctx, procedure, req, req.GetTaskId(), true)
+}
+
+// Resume lets a paused worker go on. It does not wait for a slot: the developer asked for it.
+func (h *Harness) Resume(ctx context.Context, procedure string, req *planv1.TaskServiceResumeRequest) (*planv1.Task, error) {
+	return h.hold(ctx, procedure, req, req.GetTaskId(), false)
+}
+
+// hold pauses or resumes the task's worker, then waits until its pump has written the task so, or the task ended.
+func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message, id string, pause bool) (*planv1.Task, error) {
+	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.mu.Lock()
+	r := h.runs[id]
+	if r == nil || r.worker == nil || r.stopping || r.final {
+		h.mu.Unlock()
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
+	}
+	if r.paused == pause {
+		h.mu.Unlock()
+		if pause {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is paused already", task.GetCode()))
+		}
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not paused", task.GetCode()))
+	}
+	p, ok := r.worker.(Pauser)
+	if !ok {
+		h.mu.Unlock()
+		return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("task %s: a %s worker cannot be paused", task.GetCode(), short(task.GetProvider())))
+	}
+	if pause {
+		err = p.Pause()
+	} else {
+		err = p.Resume()
+	}
+	if err != nil {
+		h.mu.Unlock()
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
+	}
+	r.paused = pause
+	h.mu.Unlock()
+	if pause {
+		h.wake() // Its slot is free.
+	}
+	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
+		return nil, plan.Status(err)
+	}
+	written := make(chan struct{})
+	select {
+	case r.holds <- written:
+		select {
+		case <-written:
+		case <-r.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	case <-r.done: // The worker ended meanwhile: the task has its final status.
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	task, err = store.Get[*planv1.Task](ctx, h.store, id)
+	return task, plan.Status(err)
+}
+
+// writeHold writes the task paused or running again, as its worker is now. The pump calls it.
+func (h *Harness) writeHold(r *run) {
+	h.mu.Lock()
+	paused := r.paused
+	h.mu.Unlock()
+	t := r.task
+	switch {
+	case paused && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING:
+		t.Status = planv1.TaskStatus_TASK_STATUS_PAUSED
+		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+			Text: "paused: the worker holds still, and frees its slot"})
+	case !paused && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED:
+		t.Status = planv1.TaskStatus_TASK_STATUS_RUNNING
+		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "resumed"})
+	}
 }
 
 // Note adds an event that comes from outside the worker, such as a gate taken or given back, to the task's

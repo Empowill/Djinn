@@ -178,6 +178,9 @@ type codexWorker struct {
 
 func (w *codexWorker) Events() <-chan Event { return w.events }
 
+func (w *codexWorker) Pause() error  { return w.p.Pause() }
+func (w *codexWorker) Resume() error { return w.p.Resume() }
+
 func (w *codexWorker) Stop() {
 	w.stopped.Store(true)
 	w.p.Stop()

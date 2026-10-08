@@ -372,6 +372,7 @@
         "enum": [
           "CHOICE_UNSPECIFIED",
           "CHOICE_YES",
+          "CHOICE_NO",
           "CHOICE_A",
           "CHOICE_B",
           "CHOICE_C",
@@ -597,7 +598,7 @@
         "properties": {
           "choice": {
             "$ref": "#/components/schemas/plan.v1.Choice",
-            "description": "The choice: yes, or the letter of an option."
+            "description": "The choice: yes, or the letter of an option. On options that say yes and no, yes or no, in any language Djinn speaks."
           },
           "note": {
             "description": "Why this choice, or what to do with it.",
@@ -992,6 +993,28 @@
         },
         "type": "object"
       },
+      "plan.v1.TaskServiceDeleteRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDeleteResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, as it was."
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.TaskServiceGetRequest": {
         "properties": {
           "taskId": {
@@ -1037,6 +1060,50 @@
               "$ref": "#/components/schemas/plan.v1.Task"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServicePauseRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServicePauseResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, paused."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceResumeRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceResumeResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, running again."
           }
         },
         "type": "object"
@@ -1153,7 +1220,8 @@
           "TASK_STATUS_FAILED",
           "TASK_STATUS_STOPPED",
           "TASK_STATUS_INTERRUPTED",
-          "TASK_STATUS_WAITING"
+          "TASK_STATUS_WAITING",
+          "TASK_STATUS_PAUSED"
         ],
         "type": "string"
       },
@@ -2228,6 +2296,44 @@
         ]
       }
     },
+    "/plan.v1.TaskService/Delete": {
+      "post": {
+        "description": "Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its events. A task a worker of this Djinn ran stays, as the record of that work.",
+        "operationId": "TaskService_Delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceDeleteResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task delete",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
     "/plan.v1.TaskService/Get": {
       "post": {
         "description": "Show a task.",
@@ -2299,6 +2405,82 @@
           }
         },
         "summary": "djinn task list",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Pause": {
+      "post": {
+        "description": "Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine until it is resumed. Not possible on Windows yet.",
+        "operationId": "TaskService_Pause",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServicePauseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServicePauseResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task pause",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Resume": {
+      "post": {
+        "description": "Let a paused worker go on where it was.",
+        "operationId": "TaskService_Resume",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceResumeResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task resume",
         "tags": [
           "TaskService"
         ]

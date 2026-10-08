@@ -3,6 +3,7 @@
 package harness
 
 import (
+	"errors"
 	"os/exec"
 	"syscall"
 )
@@ -22,3 +23,14 @@ func kill(cmd *exec.Cmd) {
 		_ = cmd.Process.Kill()
 	}
 }
+
+// errNoPause says why a worker's process cannot be paused on Windows. Windows has no signal that stops a process:
+// it would take suspending each thread of each process of the tree, or a job object holding the tree (T17).
+var errNoPause = errors.New("pausing a worker is not possible on Windows yet: Windows has no signal that stops " +
+	"a process and what it started; stop the task instead, or let it run")
+
+// pause refuses: see errNoPause.
+func pause(*exec.Cmd) error { return errNoPause }
+
+// resume refuses: nothing was paused.
+func resume(*exec.Cmd) error { return errNoPause }

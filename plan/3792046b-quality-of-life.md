@@ -59,5 +59,6 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   "electronic" and `electron-to-chromium`, which `browserslist` needs to build)
 - [ ] CPU limits per worker on Linux (systemd delegation). (needs: an agent, on a systemd Linux)
 - [ ] Shared team settings versioned in the repository. (needs: an agent; only `.agents/permissions.txtpb` exists)
-- [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check)
+- [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check; pause by signal is built
+  for Linux and macOS alike in T07, `internal/harness/process_unix.go`, and tested on Linux only)
 - [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)

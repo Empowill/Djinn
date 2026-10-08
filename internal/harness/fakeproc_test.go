@@ -26,7 +26,8 @@ import (
 //	DJINN_FAKE_INPUT     a file each input line is written to, when set
 //	DJINN_FAKE_END       what it does once the fixture is played: eof (wait until its input is closed, exit 0),
 //	                     eof:N (the same, exit N), exit:N (exit N at once), hang (ignore SIGTERM, never end),
-//	                     wait (wait until it is stopped)
+//	                     wait (wait until it is stopped), tick (write "tick N" to the error output every 20 ms
+//	                     until it is stopped)
 //
 // claude and antigravity read one message before the first line and after each result line. codex answers
 // JSON-RPC: an answer line of the fixture (id and result or error) gets the id of the client's next request, and
@@ -119,6 +120,11 @@ func fakeProvider(provider string) int {
 		time.Sleep(time.Minute)
 	case "wait":
 		time.Sleep(time.Minute)
+	case "tick":
+		for i := 0; ; i++ {
+			fmt.Fprintf(os.Stderr, "tick %d\n", i)
+			time.Sleep(20 * time.Millisecond)
+		}
 	}
 	return 0
 }

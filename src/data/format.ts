@@ -53,6 +53,7 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
   [TaskStatus.STOPPED]: "task.status_stopped",
   [TaskStatus.INTERRUPTED]: "task.status_interrupted",
   [TaskStatus.WAITING]: "task.status_waiting",
+  [TaskStatus.PAUSED]: "task.status_paused",
 };
 
 export function taskStatusText(status: TaskStatus): string {

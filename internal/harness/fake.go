@@ -26,7 +26,8 @@ import (
 //	fail no tests         it fails with this reason
 //	exit 2                its process exits with this code
 //
-// Any other line is said back as text. It runs in Djinn's process: stopping it ends its script at once.
+// Any other line is said back as text. It runs in Djinn's process: stopping it ends its script at once, pausing it
+// holds its script before the next step until it is resumed.
 type Fake struct{}
 
 func (Fake) Start(ctx context.Context, spec Spec) (Worker, error) {
@@ -44,6 +45,7 @@ type fakeWorker struct {
 
 	mu    sync.Mutex
 	inbox []string
+	held  chan struct{} // while paused; closed when resumed
 }
 
 func (w *fakeWorker) Events() <-chan Event { return w.events }
@@ -63,11 +65,51 @@ func (w *fakeWorker) Send(text string) error {
 	return nil
 }
 
+// Pause holds the script before its next step, as a process stopped where it is.
+func (w *fakeWorker) Pause() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.held == nil {
+		w.held = make(chan struct{})
+	}
+	return nil
+}
+
+// Resume lets the script go on.
+func (w *fakeWorker) Resume() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.held != nil {
+		close(w.held)
+		w.held = nil
+	}
+	return nil
+}
+
+// hold waits while the worker is paused. It says false when the worker is stopped meanwhile.
+func (w *fakeWorker) hold(ctx context.Context) bool {
+	w.mu.Lock()
+	held := w.held
+	w.mu.Unlock()
+	if held == nil {
+		return true
+	}
+	select {
+	case <-held:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 	defer close(w.done)
 	defer close(w.events)
 	stopped := Result{ExitCode: -1, Err: context.Canceled}
 	emit := func(ev Event) bool {
+		if !w.hold(ctx) {
+			return false
+		}
 		select {
 		case w.events <- ev:
 			return true
@@ -87,6 +129,10 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
+		}
+		if !w.hold(ctx) {
+			w.res = stopped
+			return
 		}
 		verb, rest, _ := strings.Cut(raw, " ")
 		rest = strings.TrimSpace(rest)

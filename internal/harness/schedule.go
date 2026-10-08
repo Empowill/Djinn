@@ -93,11 +93,17 @@ func (h *Harness) generation() <-chan struct{} {
 	return h.changed
 }
 
-// Running is the number of workers that run now.
+// Running is the number of workers that run now. A paused worker does not count: it takes no slot.
 func (h *Harness) Running() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return len(h.runs)
+	n := 0
+	for _, r := range h.runs {
+		if !r.paused {
+			n++
+		}
+	}
+	return n
 }
 
 // planned tells whether Djinn starts the task by itself, once it is ready.
@@ -235,11 +241,11 @@ func (s *situation) git(projectID string) bool {
 	return p.GetGit()
 }
 
-// writing tells whether a task writes in its project now: its worker runs, it was just started, or it waits for
+// writing tells whether a task writes in its project now: its worker runs or is paused, it was just started, or it waits for
 // the answer to its edit question and may start again any time.
 func (s *situation) writing(t *planv1.Task) bool {
 	switch t.GetStatus() {
-	case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_WAITING:
+	case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_WAITING:
 		return true
 	}
 	return s.started[t.GetId()]
