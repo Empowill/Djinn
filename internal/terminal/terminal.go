@@ -89,6 +89,7 @@ type Terminal struct {
 
 	p    proc
 	wmu  sync.Mutex    // keeps the bytes of one write together
+	tell sync.Mutex    // lets one told line wait at a time
 	done chan struct{} // closed once the program ended and its output is read
 	hang sync.Once
 
@@ -100,6 +101,11 @@ type Terminal struct {
 	changed chan struct{} // closed and replaced at each change
 	exited  bool
 	code    int
+	// What the user types, and what the program asked of the terminal, for Tell.
+	composing int       // characters typed at the prompt since it was last sent or cleared
+	lastTyped byte      // the last byte of them
+	lastKey   time.Time // when the user last typed
+	paste     bool      // the program takes bracketed paste
 }
 
 // Open returns the running terminal of name, attached true, or starts one: command in dir at cols×rows, each
@@ -196,6 +202,16 @@ func (m *Manager) Get(id string) (*Terminal, error) {
 	return nil, ErrNotFound
 }
 
+// Lookup returns the terminal called name if its program runs, nil otherwise.
+func (m *Manager) Lookup(name string) *Terminal {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if t := m.byName[name]; t != nil && !t.Exited() {
+		return t
+	}
+	return nil
+}
+
 // Running returns the terminals whose program still runs, by name.
 func (m *Manager) Running() []*Terminal {
 	m.mu.Lock()
@@ -261,7 +277,9 @@ func (t *Terminal) pump() {
 func (t *Terminal) append(b []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	from := len(t.buf)
 	t.buf = append(t.buf, b...)
+	t.pasteMode(from)
 	if len(t.buf) > Scrollback+Scrollback/4 {
 		drop := len(t.buf) - Scrollback
 		t.base += uint64(drop)
@@ -300,6 +318,9 @@ func (t *Terminal) Write(b []byte) error {
 	}
 	t.wmu.Lock()
 	defer t.wmu.Unlock()
+	t.mu.Lock()
+	t.typed(b)
+	t.mu.Unlock()
 	_, err := t.p.Write(b)
 	return err
 }

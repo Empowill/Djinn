@@ -44,6 +44,7 @@ type options struct {
 	leads    Leads
 	pages    *Pages
 	answered []func(context.Context, *planv1.Question)
+	approved []func(context.Context, *planv1.Marked)
 }
 
 // WithLeads gives the wishes the terminals of their leads, for WishService.Resume.
@@ -53,6 +54,20 @@ func WithLeads(l Leads) Option { return func(o *options) { o.leads = l } }
 // allows to edit.
 func WithAnswered(f func(context.Context, *planv1.Question)) Option {
 	return func(o *options) { o.answered = append(o.answered, f) }
+}
+
+// WithApproved calls f with what an approval marked once it is stored, when it answered no question: a block, or a
+// question already answered.
+func WithApproved(f func(context.Context, *planv1.Marked)) Option {
+	return func(o *options) { o.approved = append(o.approved, f) }
+}
+
+// WithNudges tells the leads, through n, of the answers and approvals.
+func WithNudges(n *Nudges) Option {
+	return func(o *options) {
+		WithAnswered(n.Answered)(o)
+		WithApproved(n.Approved)(o)
+	}
 }
 
 // Handlers returns the Connect handlers of the plan services, by path prefix.
@@ -72,7 +87,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
 	out[p] = h
-	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered}, opt)
+	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Approved: o.approved}, opt)
 	out[p] = h
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
 	out[p] = h
