@@ -106,6 +106,7 @@ To use Djinn, see the [README](README.md). To work on it:
 
 **Everyday commands** (`go tool task --list` for all)
 - `go tool task test`: every test (Go, interface, end-to-end). Parts: `test-go`, `test-ui`, `e2e`.
+- `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
 - `go tool task lint`: every check (protos, Go, types, formatting). `go tool task format` fixes.
 - `go tool task gen`: code from the protos.
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.

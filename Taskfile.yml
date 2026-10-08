@@ -67,6 +67,12 @@ tasks:
     cmds:
       - go test -tags headless ./...
 
+  test-race:
+    desc: "Run the Go unit tests under the race detector (builds the interface first if it changed); pass go test arguments after --, e.g. -- -run TestCloseHangsUp ./internal/terminal"
+    deps: [ui]
+    cmds:
+      - go test -race -tags headless {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}
+
   bench:
     desc: "Run the transport benchmarks over a Unix socket (see docs/transport.md); pass go test flags after --, e.g. -- -bench Stream -count 5"
     cmds:
