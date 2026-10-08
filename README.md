@@ -26,8 +26,8 @@ Djinn is a local desktop app to work with **Codex** and **Claude Code**: a reada
 ## Install
 
 **Coming with the first release: no release exists yet, so these lines do not work today.** One line, no sudo:
-the binary for your system, checked against its SHA-256 sum, in your own folders. Without a binary that fits, it
-falls back on `go install`.
+the binary for your system, checked against its SHA-256 sum, in your own folders. On Linux without WebKitGTK, it
+takes the browser build (the same app, in your browser); with no binary that fits, `go install`.
 
 ```sh
 curl -fsSL https://github.com/Empowill/Djinn/releases/latest/download/install.sh | sh    # macOS, Linux
