@@ -55,6 +55,9 @@ Each one is a decision. Changing one is a discussion first.
   none, the worker reads until you say it may edit ([order](docs/providers.md#the-order-of-decision)).
 - **Three wishes at a time, never more.** A djinn grants three wishes. It guards your
   attention, not the machine: the machine sets how many workers run.
+- **Workers never commit.** A worker edits its worktree; `.agents/` gives it no `git commit` and no
+  `git push`. The lead reviews each diff, commits in batches and pushes once: fewer commits, one CI
+  run instead of one per worker.
 - **Two words from the theme, no more.** You make a *wish*; you *summon* a skill. Everything
   else is plain.
 - **Names ignore case.** Two names that differ only by case are one name.

@@ -15,6 +15,9 @@ limits, and they are the project's first rule:
   no wider access, and no secret it stores or reads.
 - **Three wishes at a time.** Never more: one Djinn holds three active wishes at most.
 
+**Workers never commit.** They edit their worktree; the lead reviews each diff, commits in batches and pushes
+once. Fewer, clearer commits, and one CI run instead of one per worker: the Git runners breathe.
+
 > **ALPHA — NOT USABLE AS IS.** Djinn is an experimental project under development. It is not ready to be used, neither for real work nor in production. The features described below show the project's goal and its state of development; they are no guarantee that it works.
 
 **Give an intent. Stay in control of your agents' work.**
