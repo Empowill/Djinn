@@ -10,6 +10,8 @@ export interface Focus {
   wishId: string;
   // The terminal to show at the bottom of the window; empty for none.
   terminal: string;
+  // The element of the wish to bring into view, by id (question-<id>, task-<id>, grant-<wish id>); empty for none.
+  target: string;
 }
 
 export interface DjinnFocus {
@@ -30,7 +32,11 @@ export function createFocus(transport: Transport, retry = 1000): DjinnFocus {
       try {
         for await (const res of ui.watchShow({})) {
           if (!res.wishId && !res.terminal) continue;
-          const focus = { wishId: res.wishId, terminal: res.terminal };
+          const focus = {
+            wishId: res.wishId,
+            terminal: res.terminal,
+            target: res.target,
+          };
           last = { focus, at: Date.now() };
           listeners.forEach((listener) => listener(focus));
         }

@@ -59,6 +59,24 @@ service UiService {
   rpc Watch(UiServiceWatchRequest) returns (stream UiServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // Whether the system lets Djinn show notifications.
+  rpc GetNotifications(UiServiceGetNotificationsRequest) returns (UiServiceGetNotificationsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Ask the system to let Djinn show notifications: on macOS, its dialog the first time; then the answer it keeps.
+  // Returns once the user answered.
+  rpc RequestNotifications(UiServiceRequestNotificationsRequest) returns (UiServiceRequestNotificationsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Open the system's notification settings, on Djinn where the system can: see
+  // UiServiceGetNotificationsResponse.settings.
+  rpc OpenNotificationSettings(UiServiceOpenNotificationSettingsRequest) returns (UiServiceOpenNotificationSettingsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Say which wish the page shows: no notification comes for it while the window is in front.
+  rpc View(UiServiceViewRequest) returns (UiServiceViewResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
 }
 
 message UiServiceGetEnvironmentRequest {}
@@ -153,6 +171,9 @@ message UiServiceWatchShowResponse {
   string wish_id = 1;
   // The terminal to show; empty for none.
   string terminal = 2;
+  // The element of the wish to bring into view, by its id in the page: question-<id>, task-<id>, grant-<wish id>;
+  // empty for the top of the wish.
+  string target = 3;
 }
 
 message UiServiceWatchUpdateRequest {}
@@ -191,3 +212,43 @@ message UiServiceWatchResponse {
     plan.v1.Question question = 3;
   }
 }
+
+// Whether the system lets Djinn show notifications.
+enum NotificationAccess {
+  // Not known yet: the window is starting.
+  NOTIFICATION_ACCESS_UNSPECIFIED = 0;
+  // This Djinn cannot show any: the browser, a build without a window, a system without notifications, or on macOS
+  // a Djinn that does not run from its app.
+  NOTIFICATION_ACCESS_UNAVAILABLE = 1;
+  // The system shows them.
+  NOTIFICATION_ACCESS_ALLOWED = 2;
+  // The system does not show them: not allowed yet, or turned off in its settings.
+  NOTIFICATION_ACCESS_DENIED = 3;
+}
+
+message UiServiceGetNotificationsRequest {}
+
+message UiServiceGetNotificationsResponse {
+  NotificationAccess access = 1;
+  // OpenNotificationSettings opens the system's settings (macOS).
+  bool settings = 2;
+}
+
+message UiServiceRequestNotificationsRequest {}
+
+message UiServiceRequestNotificationsResponse {
+  NotificationAccess access = 1;
+  // OpenNotificationSettings opens the system's settings (macOS).
+  bool settings = 2;
+}
+
+message UiServiceOpenNotificationSettingsRequest {}
+
+message UiServiceOpenNotificationSettingsResponse {}
+
+message UiServiceViewRequest {
+  // The wish the page shows; empty for none (the flight plan, a dialog of its own).
+  string wish_id = 1 [(buf.validate.field).string.max_len = 64];
+}
+
+message UiServiceViewResponse {}

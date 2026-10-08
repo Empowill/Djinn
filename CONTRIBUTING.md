@@ -154,8 +154,10 @@ To use Djinn, see the [README](README.md). To work on it:
   compares them ([T22](plan/1689571a-fast-workers.md)).
 - `djinn task send <task-id> "…"` gives a running worker an instruction (or the box under its events, in the window):
   an event of the task, then "received" once the worker says something after it.
-- With the window, a question asked in an active wish shows as a system notification: a click shows the wish, a
-  button answers it. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
+- With the window, what waits for you in an active wish shows as a system notification: a question (a button
+  answers it), a task that waits or failed, a wish ready to review; a click shows the wish there. None for the wish
+  the window shows while it is in front. On macOS it needs the `.app` bundle (T19) and your permission: Djinn asks
+  at its first start, and the settings show the state. A headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.
 - `go tool task e2e-native`: drive the real window end to end through the Wails MCP server (a test build, window

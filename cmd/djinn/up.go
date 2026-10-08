@@ -173,6 +173,21 @@ func runUp(args []string) (restart bool, err error) {
 		default: // Already asked.
 		}
 	}
+	// The window tells what waits for the developer in an active wish by system notifications: questions, tasks
+	// that wait or failed, wishes ready to review. An answer from one goes through the server, as the window's would.
+	var addr string
+	notices := &ui.Notices{
+		Store: db, Language: render.SystemLanguage(),
+		Show: func(wishID, target string) {
+			if uiSvc.Raise != nil {
+				uiSvc.Raise()
+			}
+			uiSvc.PresentAt(wishID, "", target)
+		},
+		Answer: func(ctx context.Context, id string, choice planv1.Choice) error { return answer(ctx, addr, id, choice) },
+	}
+	uiSvc.Notices = notices
+	go notices.Run(ctx)
 	// The pages of the synced wishes follow every change, until djinn up stops.
 	pages := plan.NewPages(db, home, version)
 	go pages.Run(ctx)
@@ -188,7 +203,6 @@ func runUp(args []string) (restart bool, err error) {
 	h := server.Handler(djinn.UI(), svc)
 
 	var ln net.Listener
-	var addr string
 	switch transport {
 	case server.Wails:
 		if ln, err = server.ListenUnix(filepath.Join(home, server.SocketFile)); err != nil {
@@ -213,14 +227,6 @@ func runUp(args []string) (restart bool, err error) {
 	defer remove()
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(ctx, ln, h) }()
-	// The window shows each question asked in an active wish as a system notification. An answer from one goes
-	// through the server, as the window's would.
-	notices := &ui.Notices{
-		Store: db, Language: render.SystemLanguage(),
-		Show:   func(wishID string) { leads{terminals, uiSvc}.Show(wishID, "") },
-		Answer: func(ctx context.Context, id string, choice planv1.Choice) error { return answer(ctx, addr, id, choice) },
-	}
-	go notices.Run(ctx)
 
 	switch {
 	case *browser:
