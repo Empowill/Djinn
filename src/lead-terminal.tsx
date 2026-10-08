@@ -50,21 +50,20 @@ export function LeadTerminalFrame({ children }: { children: ReactNode }) {
   );
 }
 
-type Status =
+export type TerminalStatus =
   | { kind: "connecting" }
   | { kind: "running"; info: TerminalInfo }
   | { kind: "exited"; info: TerminalInfo; code: number }
   | { kind: "error"; message: string };
 
 function LeadTerminal({ djinn }: { djinn: Djinn }) {
-  const api = djinn.terminal;
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.terminal.collapsed") === "1",
   );
   const [height, setHeight] = useState(() =>
     Math.max(MIN_HEIGHT, Number(stored("djinn.terminal.height")) || 300),
   );
-  const [status, setStatus] = useState<Status>({ kind: "connecting" });
+  const [status, setStatus] = useState<TerminalStatus>({ kind: "connecting" });
   const [generation, setGeneration] = useState(0); // A restart opens a new program.
   const [name, setName] = useState(NAME);
   // The program a restart starts again: the one that ended, not the default of djinn up.
@@ -94,129 +93,26 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
   useEffect(() => {
     const element = host.current;
     if (!element) return;
-    const term = new Terminal({
-      fontFamily: '"IBM Plex Mono", monospace',
-      fontSize: 13,
-      cursorBlink: true,
-      scrollback: 5000,
-      allowProposedApi: false,
-      theme: {
-        background: "#111111",
-        foreground: "#e7e7e7",
-        cursor: "#ebebeb",
+    const again = ended.current;
+    const mounted = mountTerminal(
+      element,
+      djinn,
+      again
+        ? { name, command: again.command, directory: again.directory }
+        : { name },
+      (next) => {
+        if (next.kind === "exited") ended.current = next.info;
+        setStatus(next);
       },
-    });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.loadAddon(
-      new WebLinksAddon((_event, uri) => {
-        void djinn.clients.ui
-          .openExternal({ url: uri })
-          .catch(() => window.open(uri, "_blank", "noopener"));
-      }),
     );
-    term.open(element);
-    termRef.current = term;
-    fitRef.current = fit;
-    fitSafely(fit);
-
-    // Copy and paste as in a terminal: Ctrl+Shift+C and Ctrl+Shift+V (Cmd+C and Cmd+V on macOS work as they are).
-    term.attachCustomKeyEventHandler((event) => {
-      if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey)
-        return true;
-      if (event.code === "KeyC") {
-        const text = term.getSelection();
-        if (text)
-          void navigator.clipboard
-            ?.writeText(text)
-            .catch(() => document.execCommand("copy"));
-        event.preventDefault();
-        return false;
-      }
-      // Leave Ctrl+Shift+V to the browser, which pastes into the emulator.
-      return event.code !== "KeyV";
-    });
-    // The app's own shortcuts (Escape, Ctrl+K…) must not take the keys typed into the terminal.
-    const keep = (event: KeyboardEvent) => event.stopPropagation();
-    element.addEventListener("keydown", keep);
-
-    const abort = new AbortController();
-    let id = "";
-    const inputs = [
-      term.onData(
-        (data) => id && void api.write(id, data).catch(() => undefined),
-      ),
-      term.onBinary((data) => {
-        if (!id) return;
-        const bytes = Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff);
-        void api.write(id, bytes).catch(() => undefined);
-      }),
-      term.onResize(
-        ({ cols, rows }) =>
-          id && void api.resize(id, cols, rows).catch(() => undefined),
-      ),
-    ];
-
-    (async () => {
-      try {
-        const again = ended.current;
-        const { terminal } = await api.open({
-          name,
-          cols: term.cols,
-          rows: term.rows,
-          ...(again
-            ? { command: again.command, directory: again.directory }
-            : {}),
-        });
-        if (abort.signal.aborted) return;
-        id = terminal.id;
-        setStatus({ kind: "running", info: terminal });
-        // From the start of what is kept; a broken stream resumes where it stopped.
-        let offset = 0n;
-        for (;;) {
-          try {
-            const end = await api.read(
-              id,
-              offset,
-              (at, data) => {
-                term.write(data);
-                offset = at + BigInt(data.length);
-              },
-              abort.signal,
-            );
-            if (abort.signal.aborted) return;
-            if (end.exited) {
-              term.write(
-                `\r\n\x1b[2m[exited with code ${end.exitCode}]\x1b[0m\r\n`,
-              );
-              ended.current = terminal;
-              setStatus({ kind: "exited", info: terminal, code: end.exitCode });
-              return;
-            }
-          } catch (error) {
-            if (abort.signal.aborted) return;
-            if ((error as { code?: number }).code === 5) throw error; // Not found: djinn up restarted.
-          }
-          await new Promise((r) => setTimeout(r, 500));
-        }
-      } catch (error) {
-        if (!abort.signal.aborted)
-          setStatus({
-            kind: "error",
-            message: error instanceof Error ? error.message : String(error),
-          });
-      }
-    })();
-
+    termRef.current = mounted.term;
+    fitRef.current = mounted.fit;
     return () => {
-      abort.abort();
-      inputs.forEach((d) => d.dispose());
-      element.removeEventListener("keydown", keep);
-      term.dispose();
+      mounted.dispose();
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [api, djinn, generation, name]);
+  }, [djinn, generation, name]);
 
   // Fit the emulator to its box whenever the box changes.
   useEffect(() => {
@@ -311,9 +207,142 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
   );
 }
 
+// mountTerminal runs an emulator in element on the terminal of djinn that request opens or attaches to, and tells
+// onStatus where its program stands, until dispose. The window's terminal and the agents' setup both use it.
+export function mountTerminal(
+  element: HTMLElement,
+  djinn: Djinn,
+  request: {
+    name: string;
+    command?: string[];
+    line?: string;
+    directory?: string;
+  },
+  onStatus: (status: TerminalStatus) => void,
+): { term: Terminal; fit: FitAddon; dispose: () => void } {
+  const api = djinn.terminal;
+  const term = new Terminal({
+    fontFamily: '"IBM Plex Mono", monospace',
+    fontSize: 13,
+    cursorBlink: true,
+    scrollback: 5000,
+    allowProposedApi: false,
+    theme: {
+      background: "#111111",
+      foreground: "#e7e7e7",
+      cursor: "#ebebeb",
+    },
+  });
+  const fit = new FitAddon();
+  term.loadAddon(fit);
+  term.loadAddon(
+    new WebLinksAddon((_event, uri) => {
+      void djinn.clients.ui
+        .openExternal({ url: uri })
+        .catch(() => window.open(uri, "_blank", "noopener"));
+    }),
+  );
+  term.open(element);
+  fitSafely(fit);
+
+  // Copy and paste as in a terminal: Ctrl+Shift+C and Ctrl+Shift+V (Cmd+C and Cmd+V on macOS work as they are).
+  term.attachCustomKeyEventHandler((event) => {
+    if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey)
+      return true;
+    if (event.code === "KeyC") {
+      const text = term.getSelection();
+      if (text)
+        void navigator.clipboard
+          ?.writeText(text)
+          .catch(() => document.execCommand("copy"));
+      event.preventDefault();
+      return false;
+    }
+    // Leave Ctrl+Shift+V to the browser, which pastes into the emulator.
+    return event.code !== "KeyV";
+  });
+  // The app's own shortcuts (Escape, Ctrl+K…) must not take the keys typed into the terminal.
+  const keep = (event: KeyboardEvent) => event.stopPropagation();
+  element.addEventListener("keydown", keep);
+
+  const abort = new AbortController();
+  let id = "";
+  const inputs = [
+    term.onData(
+      (data) => id && void api.write(id, data).catch(() => undefined),
+    ),
+    term.onBinary((data) => {
+      if (!id) return;
+      const bytes = Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff);
+      void api.write(id, bytes).catch(() => undefined);
+    }),
+    term.onResize(
+      ({ cols, rows }) =>
+        id && void api.resize(id, cols, rows).catch(() => undefined),
+    ),
+  ];
+
+  (async () => {
+    try {
+      const { terminal } = await api.open({
+        ...request,
+        cols: term.cols,
+        rows: term.rows,
+      });
+      if (abort.signal.aborted) return;
+      id = terminal.id;
+      onStatus({ kind: "running", info: terminal });
+      // From the start of what is kept; a broken stream resumes where it stopped.
+      let offset = 0n;
+      for (;;) {
+        try {
+          const end = await api.read(
+            id,
+            offset,
+            (at, data) => {
+              term.write(data);
+              offset = at + BigInt(data.length);
+            },
+            abort.signal,
+          );
+          if (abort.signal.aborted) return;
+          if (end.exited) {
+            term.write(
+              `\r\n\x1b[2m[exited with code ${end.exitCode}]\x1b[0m\r\n`,
+            );
+            onStatus({ kind: "exited", info: terminal, code: end.exitCode });
+            return;
+          }
+        } catch (error) {
+          if (abort.signal.aborted) return;
+          if ((error as { code?: number }).code === 5) throw error; // Not found: djinn up restarted.
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    } catch (error) {
+      if (!abort.signal.aborted)
+        onStatus({
+          kind: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+    }
+  })();
+
+  return {
+    term,
+    fit,
+    dispose: () => {
+      abort.abort();
+      inputs.forEach((d) => d.dispose());
+      element.removeEventListener("keydown", keep);
+      term.dispose();
+    },
+  };
+}
+
 // fitSafely fits the emulator to its box, unless the box is hidden (collapsed): a zero size would shrink the
 // program's terminal to nothing.
-function fitSafely(fit: FitAddon) {
+export function fitSafely(fit: FitAddon) {
   const size = fit.proposeDimensions();
   if (size && size.cols > 1 && size.rows > 1) fit.fit();
 }

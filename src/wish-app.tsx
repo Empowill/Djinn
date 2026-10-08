@@ -6,6 +6,7 @@ import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Change, TaskStatus } from "../gen/ts/plan/v1/plan_pb";
+import { ProviderState } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import {
   useClients,
@@ -17,6 +18,7 @@ import {
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
 import { isActive, waitsForYou } from "./data/format";
+import { AgentSetup } from "./agent-setup";
 import { jump } from "./attention";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
@@ -27,7 +29,7 @@ import { WishView } from "./wish-view";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | null;
+type Modal = "make" | "project" | "settings" | "agents" | null;
 
 // What the window shows instead of a wish: the flight plan of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -92,6 +94,24 @@ export function WishApp() {
       clearTimeout(timer);
     };
   }, [djinn]);
+  // At the first start, with no agent ready, the setup of the agents opens by itself; once checked, it waits in the
+  // settings.
+  useEffect(() => {
+    if (stored("djinn.agents.offered")) return;
+    let live = true;
+    clients.ui
+      .getEnvironment({ agents: true })
+      .then((res) => {
+        if (!live) return;
+        store("djinn.agents.offered", "1");
+        if (!res.providers.some((p) => p.state === ProviderState.READY))
+          setModal((m) => m ?? "agents");
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [clients]);
   // Ctrl+N (Cmd+N) makes a wish.
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
@@ -253,6 +273,7 @@ export function WishApp() {
           />
         )}
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
+        {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
         {project && (
           <ProjectPanel project={project} onClose={() => setProjectId("")} />
         )}

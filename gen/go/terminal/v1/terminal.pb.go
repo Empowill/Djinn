@@ -143,8 +143,11 @@ type TerminalServiceOpenRequest struct {
 	// Working directory, absolute. Empty: the default of djinn up, or the home directory.
 	Directory string `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
 	// Initial size; zero takes 80 columns and 24 rows.
-	Cols          uint32 `protobuf:"varint,4,opt,name=cols,proto3" json:"cols,omitempty"`
-	Rows          uint32 `protobuf:"varint,5,opt,name=rows,proto3" json:"rows,omitempty"`
+	Cols uint32 `protobuf:"varint,4,opt,name=cols,proto3" json:"cols,omitempty"`
+	Rows uint32 `protobuf:"varint,5,opt,name=rows,proto3" json:"rows,omitempty"`
+	// A command line run through the user's shell, as typed at its prompt, instead of command: an agent's install
+	// command, with its pipes. Set at most one of command and line.
+	Line          string `protobuf:"bytes,6,opt,name=line,proto3" json:"line,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -212,6 +215,13 @@ func (x *TerminalServiceOpenRequest) GetRows() uint32 {
 		return x.Rows
 	}
 	return 0
+}
+
+func (x *TerminalServiceOpenRequest) GetLine() string {
+	if x != nil {
+		return x.Line
+	}
+	return ""
 }
 
 type TerminalServiceOpenResponse struct {
@@ -669,13 +679,14 @@ const file_terminal_v1_terminal_proto_rawDesc = "" +
 	"\x04cols\x18\x05 \x01(\rR\x04cols\x12\x12\n" +
 	"\x04rows\x18\x06 \x01(\rR\x04rows\x12\x16\n" +
 	"\x06exited\x18\a \x01(\bR\x06exited\x12\x1b\n" +
-	"\texit_code\x18\b \x01(\x05R\bexitCode\"\xaf\x01\n" +
+	"\texit_code\x18\b \x01(\x05R\bexitCode\"\xcd\x01\n" +
 	"\x1aTerminalServiceOpenRequest\x12\x1d\n" +
 	"\x04name\x18\x01 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18@R\x04name\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x1c\n" +
 	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12\x1c\n" +
 	"\x04cols\x18\x04 \x01(\rB\b\xbaH\x05*\x03\x18\xe8\aR\x04cols\x12\x1c\n" +
-	"\x04rows\x18\x05 \x01(\rB\b\xbaH\x05*\x03\x18\xe8\aR\x04rows\"l\n" +
+	"\x04rows\x18\x05 \x01(\rB\b\xbaH\x05*\x03\x18\xe8\aR\x04rows\x12\x1c\n" +
+	"\x04line\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\x04line\"l\n" +
 	"\x1bTerminalServiceOpenResponse\x121\n" +
 	"\bterminal\x18\x01 \x01(\v2\x15.terminal.v1.TerminalR\bterminal\x12\x1a\n" +
 	"\battached\x18\x02 \x01(\bR\battached\"U\n" +
