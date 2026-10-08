@@ -112,7 +112,7 @@ To use Djinn, see the [README](README.md). To work on it:
 - `go tool task gen`: code from the protos.
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
 - `go tool task install`: the Djinn you use, apart from the one you build. The running one keeps going and offers
-  to restart on it ("Update" in the window, or `djinn update`), reopening the lead terminals.
+  to restart on it ("Update" in the window, or `djinn update` from your terminal; `--yes` elsewhere), reopening the lead terminals.
 - `djinn up --terminal "claude --resume <session>" --terminal-dir <project>`: run that command in
   the window's terminal instead of your shell.
 - `djinn wish import plan.djinn` (or "Import a wish" in the window); `djinn project add <folder>`

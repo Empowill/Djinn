@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"golang.org/x/term"
 
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
@@ -241,9 +242,19 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 
 // runUpdate is djinn update: it asks the running djinn to restart on the newer binary installed at its path, waits for
 // the new one, and says which terminals it could not run again.
+//
+// It restarts the Djinn its user works in, so it runs only from a person's terminal, or with --yes: an agent with a
+// shell must not restart it by accident.
 func runUpdate(args []string) error {
-	if len(args) > 0 {
-		return fmt.Errorf("unexpected argument %q", args[0])
+	yes := false
+	for _, a := range args {
+		if a != "--yes" {
+			return fmt.Errorf("unexpected argument %q", a)
+		}
+		yes = true
+	}
+	if !yes && !term.IsTerminal(int(os.Stdin.Fd())) {
+		return errors.New("djinn update restarts the Djinn in use: run it from your terminal, or pass --yes")
 	}
 	home, err := ui.Home()
 	if err != nil {

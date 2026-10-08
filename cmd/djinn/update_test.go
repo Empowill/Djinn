@@ -171,7 +171,7 @@ func TestUpdate(t *testing.T) {
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errs = runDjinn(t, env, "update")
+	code, out, errs = runDjinn(t, env, "update", "--yes")
 	select {
 	case <-exited:
 	case <-time.After(15 * time.Second):
@@ -220,11 +220,19 @@ const updatePollForTests = 100 * time.Millisecond
 // TestUpdateWithoutDjinn says that no djinn runs, and starts none.
 func TestUpdateWithoutDjinn(t *testing.T) {
 	home := t.TempDir()
-	code, out, errs := runDjinn(t, environ(home, t.TempDir()), "update")
+	code, out, errs := runDjinn(t, environ(home, t.TempDir()), "update", "--yes")
 	if code != 1 || !strings.Contains(errs, "no djinn runs") {
 		t.Fatalf("djinn update with no djinn: exit %d\n%s%s", code, out, errs)
 	}
 	if entries, _ := os.ReadDir(home); len(entries) != 0 {
 		t.Fatalf("djinn update wrote in the data directory: %v", entries)
+	}
+}
+
+// TestUpdateNeedsAPerson: from a shell that is not a terminal, as an agent's, djinn update refuses without --yes.
+func TestUpdateNeedsAPerson(t *testing.T) {
+	code, out, errs := runDjinn(t, environ(t.TempDir(), t.TempDir()), "update")
+	if code != 1 || !strings.Contains(errs, "--yes") {
+		t.Fatalf("djinn update without a terminal: exit %d\n%s%s", code, out, errs)
 	}
 }
