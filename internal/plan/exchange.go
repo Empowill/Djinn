@@ -295,7 +295,7 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 	exp = proto.Clone(exp).(*planv1.WishExport)
 	for _, t := range exp.GetTasks() {
 		// The worktree is a folder here, and the agent session lives in this machine's provider.
-		t.Worktree, t.SessionId = "", ""
+		t.Worktree, t.SessionId, t.ForkSession = "", "", ""
 	}
 	for _, e := range exp.GetEvents() {
 		e.Raw = ""
@@ -510,7 +510,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 		}
 		for _, t := range exp.GetTasks() {
 			t.ProjectId = local[t.GetProjectId()]
-			t.Worktree, t.SessionId = "", ""
+			t.Worktree, t.SessionId, t.ForkSession = "", "", ""
 			// Planned on the other machine: this one's scheduler never starts it by itself.
 			t.Scheduled = false
 			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
