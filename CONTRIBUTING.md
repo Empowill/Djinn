@@ -175,10 +175,7 @@ their contributors.
   [TypeScript](https://github.com/microsoft/TypeScript),
   [Playwright](https://github.com/microsoft/playwright),
   [Prettier](https://github.com/prettier/prettier),
-  [DefinitelyTyped](https://github.com/DefinitelyTyped/DefinitelyTyped);
-  [Electron](https://github.com/electron/electron) and
-  [electron-builder](https://github.com/electron-userland/electron-builder) until the move to
-  Wails is done.
+  [DefinitelyTyped](https://github.com/DefinitelyTyped/DefinitelyTyped).
 - Adapted code and assets are credited in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ## Licenses: follow them to the letter
