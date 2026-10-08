@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -165,7 +166,7 @@ func (u *updater) restart() (string, int, error) {
 	note := restartNote{Version: version}
 	note.ShowWish, note.ShowTerminal = u.ui.LastShow()
 	for _, t := range u.terms.Running() {
-		note.Terminals = append(note.Terminals, restartTerminal{Name: t.Name, Command: t.Command, Directory: t.Dir})
+		note.Terminals = append(note.Terminals, restartTerminal{Name: t.Name, Command: resumable(t.Command), Directory: t.Dir})
 	}
 	data, err := json.MarshalIndent(note, "", "  ")
 	if err != nil {
@@ -180,6 +181,25 @@ func (u *updater) restart() (string, int, error) {
 		u.stop()
 	}()
 	return version, len(note.Terminals), nil
+}
+
+// sessionID finds the session a lead was started with from a brief: claude --session-id <id> ….
+var sessionID = regexp.MustCompile(`(?:^|\s)claude\s.*--session-id[ =]([A-Za-z0-9][A-Za-z0-9._-]*)`)
+
+// resumable is the command that takes a terminal back after a restart. A lead started from a brief named its new
+// session with --session-id, which claude refuses a second time: it resumes that session instead.
+func resumable(cmd []string) []string {
+	if len(cmd) == 0 {
+		return cmd
+	}
+	last := cmd[len(cmd)-1]
+	m := sessionID.FindStringSubmatch(last)
+	if m == nil {
+		return cmd
+	}
+	out := append([]string(nil), cmd...)
+	out[len(out)-1] = "claude --resume " + m[1]
+	return out
 }
 
 // Restarting tells whether djinn up stops to restart on a newer binary.

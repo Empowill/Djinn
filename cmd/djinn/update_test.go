@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -234,5 +235,20 @@ func TestUpdateNeedsAPerson(t *testing.T) {
 	code, out, errs := runDjinn(t, environ(t.TempDir(), t.TempDir()), "update")
 	if code != 1 || !strings.Contains(errs, "--yes") {
 		t.Fatalf("djinn update without a terminal: exit %d\n%s%s", code, out, errs)
+	}
+}
+
+// TestResumable: a lead started from a brief resumes its session after a restart; other commands stay as they were.
+func TestResumable(t *testing.T) {
+	for _, c := range []struct{ in, want []string }{
+		{[]string{"/bin/zsh", "-lc", "claude --session-id 0a56-c9be --append-system-prompt-file rules.md 'go'"},
+			[]string{"/bin/zsh", "-lc", "claude --resume 0a56-c9be"}},
+		{[]string{"/bin/zsh", "-lc", "claude --resume 0a56"}, []string{"/bin/zsh", "-lc", "claude --resume 0a56"}},
+		{[]string{"/bin/zsh"}, []string{"/bin/zsh"}},
+		{nil, nil},
+	} {
+		if got := resumable(c.in); !slices.Equal(got, c.want) {
+			t.Errorf("resumable(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
