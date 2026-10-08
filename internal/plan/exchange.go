@@ -513,7 +513,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			t.Worktree, t.SessionId, t.ForkSession = "", "", ""
 			// Planned on the other machine: this one's scheduler never starts it by itself.
 			t.Scheduled = false
-			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
+			if s := t.GetStatus(); s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED {
 				// Its worker runs on the machine that exported it, not here.
 				t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "running when its wish was exported: no worker of this Djinn runs it"
 			}

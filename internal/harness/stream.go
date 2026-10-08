@@ -106,6 +106,9 @@ func (w *streamWorker) Done() <-chan struct{} { return w.done }
 // PID is the process of the agent.
 func (w *streamWorker) PID() int { return w.p.cmd.Process.Pid }
 
+func (w *streamWorker) Pause() error  { return w.p.Pause() }
+func (w *streamWorker) Resume() error { return w.p.Resume() }
+
 func (w *streamWorker) Stop() {
 	w.stopped.Store(true)
 	w.p.Stop()

@@ -81,6 +81,15 @@ type Worker interface {
 	Wait() Result
 }
 
+// Pauser is a worker that can hold still without losing anything: its agent stops where it is until it is resumed.
+// A worker that is not one cannot be paused.
+type Pauser interface {
+	// Pause stops the agent, and what it started, where they are.
+	Pause() error
+	// Resume lets them go on.
+	Resume() error
+}
+
 // ErrReadOnly is returned by Start when the provider cannot keep its agent from writing: it cannot run a
 // read-only worker.
 var ErrReadOnly = errors.New("it cannot be kept from writing")

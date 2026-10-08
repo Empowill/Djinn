@@ -109,11 +109,11 @@ func (s *Situation) Order() []*planv1.Task {
 // Start counts the task as started: it writes in its project, and takes a slot.
 func (s *Situation) Start(t *planv1.Task) { s.started[t.GetId()] = true }
 
-// writing tells whether a task writes in its project now: its worker runs, it was just started, or it waits for
+// writing tells whether a task writes in its project now: its worker runs or is paused, it was just started, or it waits for
 // the answer to its edit question and may start again any time.
 func (s *Situation) writing(t *planv1.Task) bool {
 	switch t.GetStatus() {
-	case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_WAITING:
+	case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_WAITING:
 		return true
 	}
 	return s.started[t.GetId()]

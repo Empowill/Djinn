@@ -72,6 +72,26 @@ func (s *Tasks) Stop(
 	return connect.NewResponse(&planv1.TaskServiceStopResponse{Task: task}), nil
 }
 
+func (s *Tasks) Pause(
+	ctx context.Context, req *connect.Request[planv1.TaskServicePauseRequest],
+) (*connect.Response[planv1.TaskServicePauseResponse], error) {
+	task, err := s.h.Pause(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServicePauseResponse{Task: task}), nil
+}
+
+func (s *Tasks) Resume(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceResumeRequest],
+) (*connect.Response[planv1.TaskServiceResumeResponse], error) {
+	task, err := s.h.Resume(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceResumeResponse{Task: task}), nil
+}
+
 func (s *Tasks) Watch(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceWatchRequest],
 	stream *connect.ServerStream[planv1.TaskServiceWatchResponse],

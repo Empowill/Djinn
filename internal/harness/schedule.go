@@ -97,11 +97,17 @@ func (h *Harness) generation() <-chan struct{} {
 	return h.changed
 }
 
-// Running is the number of workers that run now.
+// Running is the number of workers that run now. A paused worker does not count: it takes no slot.
 func (h *Harness) Running() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return len(h.runs)
+	n := 0
+	for _, r := range h.runs {
+		if !r.paused {
+			n++
+		}
+	}
+	return n
 }
 
 // planned tells whether Djinn starts the task by itself, once it is ready.

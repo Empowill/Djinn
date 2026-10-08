@@ -133,6 +133,9 @@ enum TaskStatus {
   // Its worker ended read-only, and the task waits for the developer's answer to its edit question
   // (Task.edit_question_id): a yes starts the worker again, allowed to edit the project's files.
   TASK_STATUS_WAITING = 7;
+  // Its worker holds still on request, without losing anything, until it is resumed. It takes no slot of the
+  // machine meanwhile.
+  TASK_STATUS_PAUSED = 8;
 }
 
 // TaskAccess says where the rights of a task's worker come from (docs/providers.md, "What a worker may do").
@@ -1164,6 +1167,15 @@ service TaskService {
   rpc Stop(TaskServiceStopRequest) returns (TaskServiceStopResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+  // Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
+  // until it is resumed. Not possible on Windows yet.
+  rpc Pause(TaskServicePauseRequest) returns (TaskServicePauseResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Let a paused worker go on where it was.
+  rpc Resume(TaskServiceResumeRequest) returns (TaskServiceResumeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
   // Follow a task's events as they come, from the first one or after a position; ends with the task.
   rpc Watch(TaskServiceWatchRequest) returns (stream TaskServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -1297,6 +1309,32 @@ message TaskServiceSendRequest {
 message TaskServiceSendResponse {
   // The message, as an event of the task.
   TaskEvent event = 1;
+}
+
+message TaskServicePauseRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServicePauseResponse {
+  // The task, paused.
+  Task task = 1;
+}
+
+message TaskServiceResumeRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServiceResumeResponse {
+  // The task, running again.
+  Task task = 1;
 }
 
 message TaskServiceWatchRequest {

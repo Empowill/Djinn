@@ -114,6 +114,12 @@ func (p *process) Stop() {
 	})
 }
 
+// Pause stops the process, and what it started, where they are.
+func (p *process) Pause() error { return pause(p.cmd) }
+
+// Resume lets them go on.
+func (p *process) Resume() error { return resume(p.cmd) }
+
 func exitResult(cmd *exec.Cmd, err error) Result {
 	if errors.Is(err, exec.ErrWaitDelay) {
 		err = nil // The process ended; a child kept its output open.

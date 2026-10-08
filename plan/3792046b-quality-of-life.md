@@ -50,7 +50,7 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     the one read does not move by more than 1 px, any frame. Twice: Chromium's anchoring, and the script.
   - [ ] Checked in the window, on Linux and macOS (by hand). (needs: a person, on Linux and on a Mac)
 - [x] MCP, as a thin layer over the command line. (`djinn mcp`, `internal/cli/mcp.go`: stdio, no library; one tool
-  per public unary method, 35, its input schema from the request, read and checked by the command line's code;
+  per public unary method, 37, its input schema from the request, read and checked by the command line's code;
   `TestMCPListTools`, `TestMCPCallTool`; tried by hand on a `djinn up --browser` in a temporary DJINN_HOME:
   `project_add` then `project_list`. The three streams stay on the command line; see
   [the convention](../docs/cli-convention.md#mcp))
@@ -87,5 +87,6 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   - [ ] Checked capping on a systemd that delegates the cpu controller to users. (needs: a machine where it does,
     or a person with root to add `Delegate=cpu cpuset io memory pids` to `user@.service` once)
 - [ ] Shared team settings versioned in the repository. (needs: an agent; only `.agents/permissions.txtpb` exists)
-- [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check)
+- [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check; pause by signal is built
+  for Linux and macOS alike in T07, `internal/harness/process_unix.go`, and tested on Linux only)
 - [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)

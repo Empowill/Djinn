@@ -205,7 +205,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	var running, waiting, done []*planv1.Task
 	for _, t := range exp.GetTasks() {
 		switch t.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_RUNNING:
+		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
 			running = append(running, t)
 		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
 			done = append(done, t)
@@ -217,6 +217,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		b.WriteString("\n## Running\n\n")
 		for _, t := range running {
 			fmt.Fprintf(&b, "- **%s** %s (%s", t.GetCode(), clipLine(t.GetTitle()), providerName(t.GetProvider()))
+			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
+				b.WriteString(", paused")
+			}
 			if s := t.GetStartTime(); s != nil {
 				b.WriteString(", since " + when(s.AsTime()))
 			}

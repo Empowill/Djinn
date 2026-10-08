@@ -92,7 +92,9 @@ export function WishTask({
 }) {
   const [open, setOpen] = useState(false);
   const stoppable =
-    task.status === TaskStatus.RUNNING || task.status === TaskStatus.PENDING;
+    task.status === TaskStatus.RUNNING ||
+    task.status === TaskStatus.PAUSED ||
+    task.status === TaskStatus.PENDING;
   const after = taskFinished(task.status)
     ? []
     : (task.dependsOn ?? [])

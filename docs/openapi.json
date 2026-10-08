@@ -1213,6 +1213,50 @@
         },
         "type": "object"
       },
+      "plan.v1.TaskServicePauseRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServicePauseResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, paused."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceResumeRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceResumeResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, running again."
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.TaskServiceSendRequest": {
         "properties": {
           "taskId": {
@@ -1353,7 +1397,8 @@
           "TASK_STATUS_FAILED",
           "TASK_STATUS_STOPPED",
           "TASK_STATUS_INTERRUPTED",
-          "TASK_STATUS_WAITING"
+          "TASK_STATUS_WAITING",
+          "TASK_STATUS_PAUSED"
         ],
         "type": "string"
       },
@@ -2575,6 +2620,82 @@
           }
         },
         "summary": "djinn task list",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Pause": {
+      "post": {
+        "description": "Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine until it is resumed. Not possible on Windows yet.",
+        "operationId": "TaskService_Pause",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServicePauseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServicePauseResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task pause",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Resume": {
+      "post": {
+        "description": "Let a paused worker go on where it was.",
+        "operationId": "TaskService_Resume",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceResumeResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task resume",
         "tags": [
           "TaskService"
         ]

@@ -109,6 +109,10 @@ const (
 	TaskServiceGetProcedure = "/plan.v1.TaskService/Get"
 	// TaskServiceStopProcedure is the fully-qualified name of the TaskService's Stop RPC.
 	TaskServiceStopProcedure = "/plan.v1.TaskService/Stop"
+	// TaskServicePauseProcedure is the fully-qualified name of the TaskService's Pause RPC.
+	TaskServicePauseProcedure = "/plan.v1.TaskService/Pause"
+	// TaskServiceResumeProcedure is the fully-qualified name of the TaskService's Resume RPC.
+	TaskServiceResumeProcedure = "/plan.v1.TaskService/Resume"
 	// TaskServiceWatchProcedure is the fully-qualified name of the TaskService's Watch RPC.
 	TaskServiceWatchProcedure = "/plan.v1.TaskService/Watch"
 	// TaskServiceCleanProcedure is the fully-qualified name of the TaskService's Clean RPC.
@@ -1178,6 +1182,11 @@ type TaskServiceClient interface {
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
+	// Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
+	// until it is resumed. Not possible on Windows yet.
+	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
+	// Let a paused worker go on where it was.
+	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
@@ -1225,6 +1234,18 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Stop")),
 			connect.WithClientOptions(opts...),
 		),
+		pause: connect.NewClient[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse](
+			httpClient,
+			baseURL+TaskServicePauseProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Pause")),
+			connect.WithClientOptions(opts...),
+		),
+		resume: connect.NewClient[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse](
+			httpClient,
+			baseURL+TaskServiceResumeProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Resume")),
+			connect.WithClientOptions(opts...),
+		),
 		watch: connect.NewClient[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse](
 			httpClient,
 			baseURL+TaskServiceWatchProcedure,
@@ -1258,6 +1279,8 @@ type taskServiceClient struct {
 	list   *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
 	get    *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
 	stop   *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
+	pause  *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
+	resume *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
 	watch  *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
 	clean  *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
 	delete *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
@@ -1282,6 +1305,16 @@ func (c *taskServiceClient) Get(ctx context.Context, req *connect.Request[v1.Tas
 // Stop calls plan.v1.TaskService.Stop.
 func (c *taskServiceClient) Stop(ctx context.Context, req *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error) {
 	return c.stop.CallUnary(ctx, req)
+}
+
+// Pause calls plan.v1.TaskService.Pause.
+func (c *taskServiceClient) Pause(ctx context.Context, req *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error) {
+	return c.pause.CallUnary(ctx, req)
+}
+
+// Resume calls plan.v1.TaskService.Resume.
+func (c *taskServiceClient) Resume(ctx context.Context, req *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error) {
+	return c.resume.CallUnary(ctx, req)
 }
 
 // Watch calls plan.v1.TaskService.Watch.
@@ -1317,6 +1350,11 @@ type TaskServiceHandler interface {
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
+	// Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
+	// until it is resumed. Not possible on Windows yet.
+	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
+	// Let a paused worker go on where it was.
+	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
@@ -1360,6 +1398,18 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Stop")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServicePauseHandler := connect.NewUnaryHandler(
+		TaskServicePauseProcedure,
+		svc.Pause,
+		connect.WithSchema(taskServiceMethods.ByName("Pause")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceResumeHandler := connect.NewUnaryHandler(
+		TaskServiceResumeProcedure,
+		svc.Resume,
+		connect.WithSchema(taskServiceMethods.ByName("Resume")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceWatchHandler := connect.NewServerStreamHandler(
 		TaskServiceWatchProcedure,
 		svc.Watch,
@@ -1394,6 +1444,10 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceGetHandler.ServeHTTP(w, r)
 		case TaskServiceStopProcedure:
 			taskServiceStopHandler.ServeHTTP(w, r)
+		case TaskServicePauseProcedure:
+			taskServicePauseHandler.ServeHTTP(w, r)
+		case TaskServiceResumeProcedure:
+			taskServiceResumeHandler.ServeHTTP(w, r)
 		case TaskServiceWatchProcedure:
 			taskServiceWatchHandler.ServeHTTP(w, r)
 		case TaskServiceCleanProcedure:
@@ -1425,6 +1479,14 @@ func (UnimplementedTaskServiceHandler) Get(context.Context, *connect.Request[v1.
 
 func (UnimplementedTaskServiceHandler) Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Stop is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Pause is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Resume is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error {

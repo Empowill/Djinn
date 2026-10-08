@@ -119,7 +119,16 @@ status: in-progress
   waiting: …`, `taken`, `given back after 3s` (kind `GATE`).
 - **What is not limited yet**: a worker started again by a yes to its edit question, and a gate held outside
   `djinn gate run`, bypass the slots.
-- **Not built yet**: per-worker measures (gopsutil), cgroups, pause (T17).
+- **Pause** (`djinn task pause <task>`, `djinn task resume <task>`, `TaskService.Pause` and `Resume`): on Linux and
+  macOS, SIGSTOP then SIGCONT to the worker's process group (`process_unix.go`); the fake holds its script before its
+  next step. The task is `paused` (`TASK_STATUS_PAUSED`, an event `paused: …` then `resumed`, journaled
+  `harness/hold`), and its worker takes no slot (`Harness.Running`): a planned task may start meanwhile. Resuming
+  does not wait for a slot: the developer asked for it. A paused task keeps its write scopes. Stop sends SIGTERM then
+  SIGCONT, so a paused worker stops at once; `djinn up` stopping or crashing interrupts it like a running one. What
+  the worker wrote just before the pause may still land after the `paused` event. On Windows the call refuses, saying
+  why: no signal stops a process tree there; it would take suspending each thread, or a job object (T17).
+- **Not built yet**: per-worker measures (gopsutil), cgroups (T17). A paused worker that holds a gate (`djinn gate
+  run` inside its process group) keeps it while paused.
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`.*

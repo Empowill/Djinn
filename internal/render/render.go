@@ -468,7 +468,7 @@ func build(in Input) (*view, error) {
 			v.Planned = append(v.Planned, ct)
 		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
 			v.Finished = append(v.Finished, ct)
-		case planv1.TaskStatus_TASK_STATUS_RUNNING:
+		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
 			v.Running = append(v.Running, ct)
 		case planv1.TaskStatus_TASK_STATUS_WAITING:
 			// Its error only says it waits: the status and the actions say it better.
@@ -685,6 +685,7 @@ func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, str
 		planv1.TaskStatus_TASK_STATUS_STOPPED:     {"page.status_stopped", "stop"},
 		planv1.TaskStatus_TASK_STATUS_INTERRUPTED: {"page.status_interrupted", "amber"},
 		planv1.TaskStatus_TASK_STATUS_WAITING:     {"page.status_waiting", "wait"},
+		planv1.TaskStatus_TASK_STATUS_PAUSED:      {"page.status_paused", "pause"},
 	}
 	if k, ok := keys[s]; ok {
 		return tr(k[0]), k[1]
