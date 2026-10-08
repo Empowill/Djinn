@@ -44,6 +44,9 @@ const (
 	// UiServiceValidateProjectProcedure is the fully-qualified name of the UiService's ValidateProject
 	// RPC.
 	UiServiceValidateProjectProcedure = "/ui.v1.UiService/ValidateProject"
+	// UiServiceChooseDirectoryProcedure is the fully-qualified name of the UiService's ChooseDirectory
+	// RPC.
+	UiServiceChooseDirectoryProcedure = "/ui.v1.UiService/ChooseDirectory"
 	// UiServiceOpenExternalProcedure is the fully-qualified name of the UiService's OpenExternal RPC.
 	UiServiceOpenExternalProcedure = "/ui.v1.UiService/OpenExternal"
 	// UiServiceNotifyQuestionProcedure is the fully-qualified name of the UiService's NotifyQuestion
@@ -71,6 +74,9 @@ type UiServiceClient interface {
 	SaveState(context.Context, *connect.Request[v1.UiServiceSaveStateRequest]) (*connect.Response[v1.UiServiceSaveStateResponse], error)
 	// Check that a project directory exists and can be read.
 	ValidateProject(context.Context, *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error)
+	// Ask the user for a folder with the system's dialog, over the window. Only the native window has one: see
+	// UiServiceGetEnvironmentResponse.folder_dialog. An empty directory says the user cancelled.
+	ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error)
 	// Open an HTTP or HTTPS link in the default browser.
 	OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error)
 	// Tell the user a question is waiting. Not shown yet.
@@ -127,6 +133,12 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(uiServiceMethods.ByName("ValidateProject")),
 			connect.WithClientOptions(opts...),
 		),
+		chooseDirectory: connect.NewClient[v1.UiServiceChooseDirectoryRequest, v1.UiServiceChooseDirectoryResponse](
+			httpClient,
+			baseURL+UiServiceChooseDirectoryProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("ChooseDirectory")),
+			connect.WithClientOptions(opts...),
+		),
 		openExternal: connect.NewClient[v1.UiServiceOpenExternalRequest, v1.UiServiceOpenExternalResponse](
 			httpClient,
 			baseURL+UiServiceOpenExternalProcedure,
@@ -178,6 +190,7 @@ type uiServiceClient struct {
 	loadState       *connect.Client[v1.UiServiceLoadStateRequest, v1.UiServiceLoadStateResponse]
 	saveState       *connect.Client[v1.UiServiceSaveStateRequest, v1.UiServiceSaveStateResponse]
 	validateProject *connect.Client[v1.UiServiceValidateProjectRequest, v1.UiServiceValidateProjectResponse]
+	chooseDirectory *connect.Client[v1.UiServiceChooseDirectoryRequest, v1.UiServiceChooseDirectoryResponse]
 	openExternal    *connect.Client[v1.UiServiceOpenExternalRequest, v1.UiServiceOpenExternalResponse]
 	notifyQuestion  *connect.Client[v1.UiServiceNotifyQuestionRequest, v1.UiServiceNotifyQuestionResponse]
 	show            *connect.Client[v1.UiServiceShowRequest, v1.UiServiceShowResponse]
@@ -205,6 +218,11 @@ func (c *uiServiceClient) SaveState(ctx context.Context, req *connect.Request[v1
 // ValidateProject calls ui.v1.UiService.ValidateProject.
 func (c *uiServiceClient) ValidateProject(ctx context.Context, req *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error) {
 	return c.validateProject.CallUnary(ctx, req)
+}
+
+// ChooseDirectory calls ui.v1.UiService.ChooseDirectory.
+func (c *uiServiceClient) ChooseDirectory(ctx context.Context, req *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error) {
+	return c.chooseDirectory.CallUnary(ctx, req)
 }
 
 // OpenExternal calls ui.v1.UiService.OpenExternal.
@@ -252,6 +270,9 @@ type UiServiceHandler interface {
 	SaveState(context.Context, *connect.Request[v1.UiServiceSaveStateRequest]) (*connect.Response[v1.UiServiceSaveStateResponse], error)
 	// Check that a project directory exists and can be read.
 	ValidateProject(context.Context, *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error)
+	// Ask the user for a folder with the system's dialog, over the window. Only the native window has one: see
+	// UiServiceGetEnvironmentResponse.folder_dialog. An empty directory says the user cancelled.
+	ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error)
 	// Open an HTTP or HTTPS link in the default browser.
 	OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error)
 	// Tell the user a question is waiting. Not shown yet.
@@ -302,6 +323,12 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 		UiServiceValidateProjectProcedure,
 		svc.ValidateProject,
 		connect.WithSchema(uiServiceMethods.ByName("ValidateProject")),
+		connect.WithHandlerOptions(opts...),
+	)
+	uiServiceChooseDirectoryHandler := connect.NewUnaryHandler(
+		UiServiceChooseDirectoryProcedure,
+		svc.ChooseDirectory,
+		connect.WithSchema(uiServiceMethods.ByName("ChooseDirectory")),
 		connect.WithHandlerOptions(opts...),
 	)
 	uiServiceOpenExternalHandler := connect.NewUnaryHandler(
@@ -356,6 +383,8 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 			uiServiceSaveStateHandler.ServeHTTP(w, r)
 		case UiServiceValidateProjectProcedure:
 			uiServiceValidateProjectHandler.ServeHTTP(w, r)
+		case UiServiceChooseDirectoryProcedure:
+			uiServiceChooseDirectoryHandler.ServeHTTP(w, r)
 		case UiServiceOpenExternalProcedure:
 			uiServiceOpenExternalHandler.ServeHTTP(w, r)
 		case UiServiceNotifyQuestionProcedure:
@@ -393,6 +422,10 @@ func (UnimplementedUiServiceHandler) SaveState(context.Context, *connect.Request
 
 func (UnimplementedUiServiceHandler) ValidateProject(context.Context, *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.ValidateProject is not implemented"))
+}
+
+func (UnimplementedUiServiceHandler) ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.ChooseDirectory is not implemented"))
 }
 
 func (UnimplementedUiServiceHandler) OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error) {

@@ -372,6 +372,7 @@
         "enum": [
           "CHOICE_UNSPECIFIED",
           "CHOICE_YES",
+          "CHOICE_NO",
           "CHOICE_A",
           "CHOICE_B",
           "CHOICE_C",
@@ -597,7 +598,7 @@
         "properties": {
           "choice": {
             "$ref": "#/components/schemas/plan.v1.Choice",
-            "description": "The choice: yes, or the letter of an option."
+            "description": "The choice: yes, or the letter of an option. On options that say yes and no, yes or no, in any language Djinn speaks."
           },
           "note": {
             "description": "Why this choice, or what to do with it.",
@@ -988,6 +989,28 @@
           "task": {
             "$ref": "#/components/schemas/plan.v1.Task",
             "description": "The task, without its worktree."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDeleteRequest": {
+        "properties": {
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDeleteResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, as it was."
           }
         },
         "type": "object"
@@ -2223,6 +2246,44 @@
           }
         },
         "summary": "djinn task clean",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Delete": {
+      "post": {
+        "description": "Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its events. A task a worker of this Djinn ran stays, as the record of that work.",
+        "operationId": "TaskService_Delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceDeleteResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task delete",
         "tags": [
           "TaskService"
         ]

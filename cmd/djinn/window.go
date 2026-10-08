@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"runtime"
 
@@ -91,6 +92,22 @@ func openWindow(ctx context.Context, url string, assets http.Handler, raise <-ch
 		}
 	}()
 	return app.Run()
+}
+
+// chooseFolder opens the system's folder dialog over the window, titled title and open in directory: one folder, a
+// new one may be made there. It returns the folder chosen, or empty when the user cancelled.
+func chooseFolder(title, directory string) (string, error) {
+	app := application.Get()
+	if app == nil {
+		return "", errors.New("the window is not open")
+	}
+	return app.Dialog.OpenFileWithOptions(&application.OpenFileDialogOptions{
+		CanChooseDirectories: true,
+		CanCreateDirectories: true,
+		Title:                title,
+		Directory:            directory,
+		Window:               app.Window.Current(), // The window the click came from; none leaves the dialog free.
+	}).PromptForSingleSelection()
 }
 
 // appIcon is the icon of the app, and on Linux of its window: there GTK 3 drops an icon of 512 px or more, so the

@@ -132,6 +132,9 @@ func runUp(args []string) (restart bool, err error) {
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
 	uiSvc.Window = !*browser
+	if !*browser {
+		uiSvc.ChooseFolder = chooseFolder
+	}
 	uiSvc.Raise = func() {
 		if *browser {
 			fmt.Println("djinn: open", url)
