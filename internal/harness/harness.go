@@ -187,18 +187,13 @@ func (h *Harness) Recover(ctx context.Context) error {
 // reason, and the scheduler starts it as soon as it can. What the worker may do is decided when it starts
 // (prepare).
 func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
-	kind := cmp.Or(req.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
-	provider, ok := h.providers[kind]
-	if !ok {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", kind))
-	}
 	scopes, err := cleanScopes(req.GetWriteScopes())
 	if err != nil {
 		return nil, err
 	}
 	task := &planv1.Task{
 		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
-		Provider: kind, CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
+		CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
 		WriteScopes: scopes, Scheduled: true,
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
@@ -209,6 +204,17 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, req.GetWishId())
 	if err != nil {
 		return nil, plan.Status(err)
+	}
+	kind := cmp.Or(req.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
+	if src, err := forkSource(ctx, h.store, wish, req); err != nil {
+		return nil, plan.Status(err)
+	} else if src.session != "" {
+		task.ForkSession, task.ForkOf, kind = src.session, src.of, src.provider
+	}
+	task.Provider = kind
+	provider, ok := h.providers[kind]
+	if !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", kind))
 	}
 	project, err := pickProject(ctx, h.store, wish, req.GetProjectId())
 	if err != nil {
@@ -349,7 +355,10 @@ func (h *Harness) launch(
 	readOnly, perms := accessSpec(task.GetAccess(), prep.declared)
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: task.GetModel(),
-		MaxBudgetUSD: task.GetMaxBudgetUsd(),
+		MaxBudgetUSD: task.GetMaxBudgetUsd(), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
+	}
+	if task.GetForkOf() != "" {
+		where += ", forked from " + forkText(task.GetForkOf())
 	}
 	err := h.start(r, provider, spec, "started "+short(task.GetProvider())+" "+where+", "+accessText(task, prep.question))
 	switch {

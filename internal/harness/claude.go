@@ -54,14 +54,15 @@ func (c Claude) args(spec Spec) []string {
 		b, _ := json.Marshal(settings) // Maps of strings and slices of strings: it cannot fail.
 		args = append(args, "--settings", string(b))
 	}
-	switch {
-	case spec.Resume != "":
+	if spec.Resume != "" {
 		args = append(args, "--resume", spec.Resume)
 		if spec.Fork {
 			args = append(args, "--fork-session")
 		}
-	case spec.TaskID != "":
-		// The session is named after the task, so it is known before the agent says it.
+	}
+	if spec.TaskID != "" && (spec.Resume == "" || spec.Fork) {
+		// The session is named after the task, so it is known before the agent says it; a fork names its new
+		// session so (claude takes --session-id with --resume only when it forks).
 		args = append(args, "--session-id", spec.TaskID)
 	}
 	if spec.Model != "" {

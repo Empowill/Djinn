@@ -37,9 +37,10 @@ type Spec struct {
 	Model string
 	// MaxBudgetUSD caps what the worker may spend, when the provider can enforce it; 0 for no cap.
 	MaxBudgetUSD float64
-	// Resume is a session to continue instead of starting a new one. Not used yet: warm workers.
+	// Resume is a session to continue instead of starting a new one: the task's own, when its worker starts again.
 	Resume string
-	// Fork starts a new session from Resume instead of continuing it. Not used yet: see Q28.
+	// Fork starts a new session from a copy of Resume instead of continuing it: a task spawned with --fork or
+	// --from-lead. Claude names the new session after the task; Codex forks the thread; Antigravity refuses.
 	Fork bool
 	// Env holds variables added to the environment Djinn passes on to the worker. Djinn never reads the
 	// environment it passes, nor records it.
