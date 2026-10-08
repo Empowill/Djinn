@@ -79,7 +79,7 @@ type Harness struct {
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
 type run struct {
-	id   string
+	id    string
 	done  chan struct{} // closed once the task has its final status
 	wake  chan struct{} // an answer waits in answers
 	notes chan Event    // events from outside the worker (a gate), for the pump to write
