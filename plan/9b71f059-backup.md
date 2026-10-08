@@ -36,15 +36,33 @@ central server finds the procedure written down, and later a command that does i
    may be private, even without secrets.
 
 ## Done when
-- [ ] `docs/backup.md` explains backup and restore to a remote server, step by step, without
+- [x] `docs/backup.md` explains backup and restore to a remote server, step by step, without
   sudo.
-- [ ] `djinn backup` and `djinn backup restore` round-trip a database while Djinn runs.
-- [ ] A restore on a new machine finds its projects or asks for them, as an import does (T13).
+- [x] `djinn backup` and `djinn backup restore` round-trip a database while Djinn runs.
+- [x] A restore on a new machine finds its projects or asks for them, as an import does (T13).
+
+## Decided along the way
+- **A raw copy, not an export.** A backup is the data folder, not a wish: an export (T13) carries one wish
+  between machines, a backup puts a whole machine back. One archive, `.tar.gz` or `.zip` (the default on
+  Windows), opened by a `Manifest` (`djinn-backup.json`, format 1). A restore refuses an archive without it.
+- **Snapshots, not replication.** `djinn backup` takes one; the user's scheduler takes it again. Litestream
+  would be a service to run, against "decentralized by default".
+- **The djinn that holds the database copies it.** `BackupService.Create` (internal: the command line is
+  written by hand, like `djinn up`) runs `VACUUM INTO` on its own connection. Without a running djinn, or with
+  one older than backups, the command copies the file itself: safe in WAL mode.
+- **What stays out.** The worktrees (`projects/*/worktrees`, Git holds them), `djinn.db-wal` and `-shm`, the
+  socket, `server.addr` (it may hold a token), the logs at the top of the folder, and any environment file
+  (`.env*`, `*.env`), anywhere. A restore skips them too.
+- **A restore never overwrites.** It refuses while a djinn answers on the folder, and says how to stop it. It
+  extracts next to the folder, checks the database (`integrity_check`), then swaps in two renames. The old
+  folder stays aside (`<folder>.before-restore-<date>`); its worktrees move into the restored folder, at the
+  same paths, so Git still finds them.
+- **Missing projects are detached.** A project whose folder this machine lacks loses it, journaled as
+  `backup/restore`; the restore lists it, and `djinn project add <folder>` attaches it, as after an import.
+- **Sending is the user's tool.** `docs/backup.md` shows restic (encrypted, deduplicated) and rsync over SSH
+  after `age` to the user's SSH key. Djinn holds none of their credentials.
 
 ## Open questions
-- Which tool to recommend for sending: `rsync` over SSH, `restic` (encrypted, deduplicated),
-  `rclone`, or continuous replication of SQLite (Litestream)?
-- Snapshots on a schedule, or continuous replication?
-- Is a backup a kind of export (T13), with the same format, or a raw copy of the folder?
+- Should Djinn take a backup itself on a schedule while it runs, for those who set no scheduler?
 - How does a backup relate to work spread over trusted machines (T15): a backup is a copy, not
   a sync.
