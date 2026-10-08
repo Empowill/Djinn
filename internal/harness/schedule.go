@@ -307,6 +307,9 @@ func (h *Harness) full() string {
 		return "the machine is under pressure: " + pressure
 	}
 	if running := h.Running(); running >= slots {
+		if running == 1 {
+			return "1 worker runs, the most this machine holds (" + rule + ")"
+		}
 		return fmt.Sprintf("%d workers run, the most this machine holds (%s)", running, rule)
 	}
 	return ""
