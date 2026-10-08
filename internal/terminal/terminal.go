@@ -288,10 +288,12 @@ func (t *Terminal) Resize(cols, rows int) error {
 func (t *Terminal) Hangup() {
 	t.hang.Do(func() {
 		t.p.hangup()
+		// Read the delay here, not in the goroutine: it may outlive the caller, and a test restores grace after.
+		wait := grace
 		go func() {
 			select {
 			case <-t.done:
-			case <-time.After(grace):
+			case <-time.After(wait):
 				t.p.kill()
 			}
 		}()

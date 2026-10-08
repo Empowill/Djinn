@@ -48,8 +48,8 @@ status: open
 
 ## Done when
 - [x] `djinn task spawn` creates the worktree and runs a worker with a fake provider.
-- [ ] Two workers with overlapping scopes never run together.
-- [ ] A gate waits while the machine is under pressure, and says why.
+- [x] Two workers with overlapping scopes never run together.
+- [x] A gate waits while the machine is under pressure, and says why.
 - [ ] Djinn runs its own phase 3 tasks.
 
 ## Decided along the way
@@ -90,6 +90,35 @@ status: open
 - **The journal** gets the user's commands as received (`spawn`, `stop`, `clean`), and the harness's own changes
   under the actors `harness` and `worker` with the names `harness/start`, `harness/event`, `harness/end` and
   `harness/recover`: an event is journaled as the event itself.
+
+- **Planned tasks** (`Task.depends_on`, `write_scopes`, `scheduled`, `wait_reason`): `djinn task spawn` takes
+  `--depends-on` (a code of the wish, any case, or an id), `--write-scopes` and `--later`. A task that cannot start
+  now is created `pending` with its reason, and an event `waiting: …` each time the reason changes; `djinn task
+  watch` follows a planned task until it ends. `--later` only plans: the call never starts a worker. Without it, a
+  task that can start starts in the call, as before, and a start error is the call's error.
+- **The scheduler** (`internal/harness/schedule.go`) runs in `djinn up` (`Harness.Schedule`): one pass when a worker
+  ends, a task is planned or stopped, and every 2 s for the pressure. It serves the tasks by the rank of their wish
+  (`plan.ActiveWishes`), then the oldest. In order, a task waits for: its wish being active (a paused or granted
+  wish keeps its tasks planned), its dependencies done, its write scopes free, the machine (no pressure, a slot
+  free). Spawn and the pass decide under one lock, so a slot is never given twice.
+- **A dependency that ends without being done** (failed, stopped, interrupted) fails its dependents, down the chain.
+  A spawn on such a dependency is refused. A planned task is stopped at once by `djinn task stop`.
+- **Access is decided when the worker starts**, not when the task is planned: an allowance given meanwhile counts.
+- **Write scopes**: paths in the project's folder, cleaned, case ignored; none is the whole folder. Outside Git a
+  task holds its scopes while it runs, and while it waits for the answer to its edit question (a yes restarts it
+  to edit). In Git scopes are kept but not checked.
+- **A task imported with a wish is not scheduled** on the importing machine (`scheduled` cleared on import).
+- **Gates** (`internal/gate`, `GateService` in `api/machine/v1`): any name (`codegen`, `stack`, `e2e`, `paid`…), case
+  ignored; one holder per gate, granted only when the machine is not under pressure, the first wish of the rank
+  first, then the first come. A holder holds as long as its `Hold` stream is open: the gate goes back when the
+  command ends, fails, is interrupted, or its process dies (the connection closes). `djinn gate run <name> --
+  <command>` is the one command written by hand (`cmd/djinn/gate.go`): it runs the command on the caller's side,
+  under the caller's own rights, never in Djinn's server. It returns the command's exit code. `djinn gate list`
+  shows holders and waiters. With `$DJINN_TASK_ID` (set for every worker), the task's events show `gate <name>:
+  waiting: …`, `taken`, `given back after 3s` (kind `GATE`).
+- **What is not limited yet**: a worker started again by a yes to its edit question, and a gate held outside
+  `djinn gate run`, bypass the slots.
+- **Not built yet**: per-worker measures (gopsutil), cgroups, pause (T17).
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`.*

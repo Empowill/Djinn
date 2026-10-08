@@ -39,6 +39,10 @@ func TestMain(m *testing.M) {
 }
 
 func fakeProvider(provider string) int {
+	if os.Getenv("DJINN_FAKE_END") == "hang" {
+		// From the start: a SIGTERM sent once the first line is read must not end it.
+		signal.Ignore(syscall.SIGTERM)
+	}
 	if f := os.Getenv("DJINN_FAKE_ARGS"); f != "" {
 		_ = os.WriteFile(f, []byte(strings.Join(os.Args[1:], "\n")), 0o600)
 	}

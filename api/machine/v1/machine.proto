@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+// Package machine.v1 is what Djinn knows of the machine it runs on, and the gates: shared resources it grants one
+// holder at a time.
+package machine.v1;
+
+import "buf/validate/validate.proto";
+import "djinn/v1/options.proto";
+import "google/protobuf/timestamp.proto";
+
+// MachineService says what the machine has, how loaded it is, and how many workers Djinn runs on it.
+service MachineService {
+  // Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.
+  rpc Show(MachineServiceShowRequest) returns (MachineServiceShowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+}
+
+// Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of
+// Linux.
+message Pressure {
+  // Percent of the last 10 seconds during which at least one task waited.
+  double some_avg10 = 1;
+  // Percent of the last 10 seconds during which every task waited.
+  double full_avg10 = 2;
+}
+
+// Machine is the machine Djinn runs on, as read now.
+message Machine {
+  // Operating system: linux, darwin, windows.
+  string os = 1;
+  // Processor architecture: amd64, arm64.
+  string arch = 2;
+  // Logical cores Djinn may use.
+  int32 cores = 3;
+  // Memory, in bytes.
+  uint64 memory_total_bytes = 4;
+  // Memory available to new programs, in bytes.
+  uint64 memory_available_bytes = 5;
+  // Load average over the last minute; absent where the system gives none (Windows).
+  optional double load1 = 6;
+  // CPU pressure; absent where the system gives none (Linux without PSI, macOS, Windows).
+  Pressure cpu_pressure = 7;
+  // Memory pressure; absent where the system gives none.
+  Pressure memory_pressure = 8;
+  // The most workers Djinn runs at once on this machine.
+  int32 workers = 9;
+  // How workers was decided.
+  string workers_rule = 10;
+  // Workers running now.
+  int32 running = 11;
+  // Why the machine is under pressure; empty when it is not. Under pressure, no worker starts and no gate is
+  // granted.
+  string pressure = 12;
+  // When the machine was read.
+  google.protobuf.Timestamp read_time = 13;
+}
+
+message MachineServiceShowRequest {}
+
+message MachineServiceShowResponse {
+  // The machine.
+  Machine machine = 1;
+}
+
+// GateService grants the gates: shared resources, such as code generation (codegen), the local stack (stack), an
+// end-to-end run (e2e) or a paid model run (paid), each held by one holder at a time, and granted only while the
+// machine is not under pressure. To run a command under a gate: djinn gate run <name> -- <command>.
+service GateService {
+  // Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
+  // that the gate is held. Interrupt it to give the gate back.
+  rpc Hold(GateServiceHoldRequest) returns (stream GateServiceHoldResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // List the gates held or waited for.
+  rpc List(GateServiceListRequest) returns (GateServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+}
+
+// GateState is where a holder stands with its gate.
+enum GateState {
+  // Not set.
+  GATE_STATE_UNSPECIFIED = 0;
+  // The gate is not granted yet; the reason says why.
+  GATE_STATE_WAITING = 1;
+  // The gate is held, until the call ends.
+  GATE_STATE_HELD = 2;
+}
+
+// Gate is a gate held or waited for.
+message Gate {
+  // Name of the gate, in lower case.
+  string name = 1;
+  // Who holds it, and what for; empty when nobody does.
+  string holder = 2;
+  // Task of the holder; empty for a holder outside any task.
+  string holder_task_id = 3;
+  // Since when it is held.
+  google.protobuf.Timestamp since = 4;
+  // Who waits for it, the next one first.
+  repeated string waiting = 5;
+}
+
+message GateServiceHoldRequest {
+  // Name of the gate: codegen, stack, e2e, paid, or any other name; case is ignored.
+  string name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // Task the gate is held for: its events say when it waits, takes and gives the gate. By default $DJINN_TASK_ID,
+  // with djinn gate run.
+  string task_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What the holder runs with the gate, shown to those who wait.
+  string what = 3 [(buf.validate.field).string.max_len = 200];
+}
+
+message GateServiceHoldResponse {
+  // Where the holder stands.
+  GateState state = 1;
+  // Why it waits, or what it holds.
+  string reason = 2;
+}
+
+message GateServiceListRequest {}
+
+message GateServiceListResponse {
+  // The gates held or waited for.
+  repeated Gate gates = 1;
+}

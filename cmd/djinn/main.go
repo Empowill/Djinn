@@ -26,6 +26,10 @@ func main() {
 		}
 		return
 	}
+	// `djinn gate run` runs a command here, under a gate the server grants.
+	if len(os.Args) > 2 && os.Args[1] == "gate" && os.Args[2] == "run" {
+		os.Exit(runGate(os.Args[3:]))
+	}
 	home, _ := ui.Home() // Only fails without a home directory; the command line then says it finds no server.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := cli.Run(ctx, os.Args[1:], cli.Config{

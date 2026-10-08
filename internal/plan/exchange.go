@@ -511,6 +511,8 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 		for _, t := range exp.GetTasks() {
 			t.ProjectId = local[t.GetProjectId()]
 			t.Worktree, t.SessionId = "", ""
+			// Planned on the other machine: this one's scheduler never starts it by itself.
+			t.Scheduled = false
 			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
 				// Its worker runs on the machine that exported it, not here.
 				t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "exported while its worker ran on another machine"

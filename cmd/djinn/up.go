@@ -22,7 +22,9 @@ import (
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/demo"
+	"github.com/empowill/djinn/internal/gate"
 	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
@@ -41,11 +43,21 @@ func runUp(args []string) error {
 	term := flags.String("terminal", "", "command the terminal of the window runs, through the user's shell, "+
 		"e.g. \"claude --resume <session>\"; empty runs the shell itself")
 	termDir := flags.String("terminal-dir", "", "working directory of the terminal; empty is the home directory")
+	maxWorkers := flags.Int("workers", 0, "most workers at once, 1 to 16; 0 decides from the machine "+
+		"(one per 2 cores and per 2 GiB of memory); default $DJINN_WORKERS")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() > 0 {
 		return fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	}
+	if *maxWorkers == 0 && os.Getenv("DJINN_WORKERS") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKERS"), maxWorkers); err != nil {
+			return fmt.Errorf("DJINN_WORKERS: %w", err)
+		}
+	}
+	if *maxWorkers < 0 || *maxWorkers > 16 {
+		return fmt.Errorf("--workers %d: expected 1 to 16, or 0 to decide from the machine", *maxWorkers)
 	}
 	home, err := ui.Home()
 	if err != nil {
@@ -66,11 +78,16 @@ func runUp(args []string) error {
 	}
 	defer db.Close()
 	// The workers stop before the database closes: deferred calls run last first.
-	workers := harness.New(db, home, harness.Providers())
+	policy := machine.DefaultPolicy()
+	policy.Workers = *maxWorkers
+	monitor := machine.NewMonitor(policy, nil)
+	workers := harness.New(db, home, harness.Providers(), harness.WithCapacity(monitor.Capacity))
 	defer workers.Close()
 	if err := workers.Recover(ctx); err != nil {
 		return err
 	}
+	workers.Schedule()
+	gates := gate.New(monitor.Pressure, workers)
 	if *termDir != "" {
 		if *termDir, err = filepath.Abs(*termDir); err != nil {
 			return err
@@ -108,6 +125,10 @@ func runUp(args []string) error {
 	pages := plan.NewPages(db, home, version)
 	go pages.Run(ctx)
 	svc := services(db, workers, terminals, uiSvc, pages)
+	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running)
+	svc[machinePrefix] = machineHandler
+	gatePrefix, gateHandler := gate.Handler(gates)
+	svc[gatePrefix] = gateHandler
 	h := server.Handler(djinn.UI(), svc)
 
 	var ln net.Listener

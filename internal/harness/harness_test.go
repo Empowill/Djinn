@@ -32,17 +32,18 @@ type env struct {
 	last    string // the wish e.wish made last
 }
 
-// up starts the services on the database in home, as djinn up does: recover, then serve.
-func up(t *testing.T, home string) *env {
+// up starts the services on the database in home, as djinn up does: recover, schedule, then serve.
+func up(t *testing.T, home string, opts ...Option) *env {
 	t.Helper()
 	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := New(db, home, Providers())
+	h := New(db, home, Providers(), opts...)
 	if err := h.Recover(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	h.Schedule()
 	mux := http.NewServeMux()
 	for prefix, handler := range plan.Handlers(db, plan.WithAnswered(h.Answered)) {
 		mux.Handle(prefix, handler)
