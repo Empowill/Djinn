@@ -37,6 +37,12 @@ curl -fsSL https://github.com/Empowill/Djinn/releases/latest/download/install.sh
 irm https://github.com/Empowill/Djinn/releases/latest/download/install.ps1 | iex         # Windows
 ```
 
+**Antigravity, optional.** Workers run Claude Code or Codex. Google's Antigravity (`agy`) can run them too: install
+it, sign in with your Google Cloud project (`gcloud auth application-default login --project <project>`, then
+`AGY_ADC_AUTH=true` where `djinn up` runs) or with agy's own sign-in, then `djinn task spawn --provider antigravity`.
+Djinn runs the official `agy` as installed and never reads its credentials; the account you sign in with pays.
+Steps and rules: [`docs/providers.md`](docs/providers.md#antigravity).
+
 ## Roadmap to v1
 
 Djinn is tracked here, with no other tool: one box per task, one file per task in
