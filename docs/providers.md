@@ -211,6 +211,19 @@ message on the input; the input stays open for more messages and is closed once 
 the process. A warm worker (`djinn up --warm-workers`) is the same command started before its task: it waits for
 its first message, which is the task's prompt.
 
+**Finding claude.** An app started from the Finder or a desktop menu gets a bare PATH: the shell's startup files
+that add `~/.local/bin` (where Claude Code's installer puts `claude`) are never read, not even by the login shell
+that runs a lead (`zsh -l -c` reads `.zprofile`, not `.zshrc`). `djinn up` appends to its own PATH the folders that
+exist among `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.npm-global/bin` and `~/.bun/bin`, after the
+inherited ones, which keep their place (`machine.ExtendPath`, `TestExtendPathFindsClaude`). Workers, leads and gates
+inherit it. Not on Windows, where installers set the user's PATH.
+
+**The lead.** A lead runs `claude` interactive in the window's terminal, not `-p`. Claude Code skips its workspace
+trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet (a
+wish without a project starts in its own folder of Djinn's data) first asks to trust it, there, in the window.
+Djinn never answers it: trusting a folder is the user's decision. A first run of interactive Claude Code on a
+machine also shows its onboarding (theme, sign-in) once.
+
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.
 

@@ -90,6 +90,8 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
 	}
+	// Started from the Finder or a desktop menu, Djinn has a bare PATH: its workers and leads would not find claude.
+	machine.ExtendPath()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
