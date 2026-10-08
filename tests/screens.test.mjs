@@ -314,7 +314,7 @@ test("the flight plan merges the active wishes: their questions, the blocking on
   );
   // What waits, what runs, the latest decisions.
   assert.match(html, /W2 waits for your answer to Q01 before it may edit\./);
-  assert.match(html, /Running now/);
+  assert.match(html, /Who runs now/);
   assert.match(html, /Taste the oils/);
   assert.match(html, /Latest decisions/);
   assert.match(html, /Tonight\?/);
@@ -351,6 +351,6 @@ test("the flight plan hides its empty sections", async () => {
       h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
     ),
   );
-  assert.doesNotMatch(html, /Your move|Running now|Latest decisions|Spent/);
+  assert.doesNotMatch(html, /Your move|Who runs now|Latest decisions|Spent/);
   assert.match(html, /Nothing waits for you, and nothing runs\./);
 });

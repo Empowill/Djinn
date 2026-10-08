@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"html/template"
+	"math"
 	"regexp"
 	"strings"
 	"testing"
@@ -104,7 +105,7 @@ func sections(html string) []string {
 
 func TestRichPage(t *testing.T) {
 	html := page(t, Input{Export: rich(t), Unattached: []string{"web"}, Version: "v1.2.3", Language: "en"})
-	want := []string{"questions", "actions", "running", "tasks", "decisions", "notes", "journal"}
+	want := []string{"questions", "actions", "running", "tasks", "decisions", "notes", "journal", "events"}
 	if got := sections(html); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("sections = %v, want %v", got, want)
 	}
@@ -132,8 +133,8 @@ func TestRichPage(t *testing.T) {
 	if strings.Contains(html, "waiting for the answer to its edit question") {
 		t.Error("a waiting task shows no error")
 	}
-	if strings.Contains(html, "Starting.") {
-		t.Error("only the worker's last word shows")
+	if running := between(html, `<section id="running">`, "</section>"); strings.Contains(running, "Starting.") {
+		t.Error("a worker's card shows its last event only")
 	}
 	if strings.Index(html, "question answer") > strings.Index(html, "wish make") {
 		t.Error("the journal shows the latest entry first")
@@ -141,7 +142,7 @@ func TestRichPage(t *testing.T) {
 	if strings.Index(html, "Approach") > strings.Index(html, "Data") {
 		t.Error("blocks keep their order")
 	}
-	if strings.Count(html, `<details class="card question`) != 2 {
+	if strings.Count(html, `<details class="q `) != 2 {
 		t.Error("answered questions are decisions, not open questions")
 	}
 }
@@ -151,7 +152,10 @@ func TestEmptyPage(t *testing.T) {
 	if got := sections(html); len(got) != 0 {
 		t.Errorf("an empty wish has no section, got %v", got)
 	}
-	for _, s := range []string{"To decide", "Waiting for you", "Decisions", "Journal", "Tasks", "Running now", `class="toc"`, "<details"} {
+	for _, s := range []string{
+		"To decide", "Waiting for you", "Decisions", "Journal", "Tasks", "Who runs now", "Worker events", `class="toc"`,
+		`class="bar"`, `class="counts"`, "<details",
+	} {
 		if strings.Contains(html, s) {
 			t.Errorf("an empty wish shows %q", s)
 		}
@@ -232,14 +236,18 @@ func TestWishState(t *testing.T) {
 		not  []string
 	}{
 		{"ranked", &planv1.Wish{Id: "w", Title: "T", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 2},
-			[]string{`<span class="status run">Active · rank 2</span>`}, []string{"djinn wish grant"}},
-		{"stored before states", &planv1.Wish{Id: "w", Title: "T"}, []string{`<span class="status run">Active</span>`}, nil},
+			[]string{`<span class="st run"><i aria-hidden="true"></i>Active · rank 2</span>`}, []string{"djinn wish grant", `class="bar"`}},
+		{"stored before states", &planv1.Wish{Id: "w", Title: "T"}, []string{`<span class="st run"><i aria-hidden="true"></i>Active</span>`}, nil},
 		{"paused", &planv1.Wish{Id: "w", Title: "T", State: planv1.WishState_WISH_STATE_PAUSED},
-			[]string{`<span class="status idle">Paused</span>`}, nil},
+			[]string{`<span class="st pause"><i aria-hidden="true">‖</i>Paused</span>`}, nil},
 		{"granted", &planv1.Wish{Id: "w", Title: "T", State: planv1.WishState_WISH_STATE_GRANTED, GrantTime: ts(-5)},
-			[]string{`<span class="status ok">Granted 2026-10-08 14:25</span>`}, nil},
+			[]string{`<span class="st ok"><i aria-hidden="true">✓</i>Granted 2026-10-08 14:25</span>`}, nil},
 		{"ready", &planv1.Wish{Id: "w1", Title: "T", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1, Ready: true},
-			[]string{`<section id="actions">`, "Djinn proposes to grant this wish", "djinn wish grant w1"}, nil},
+			[]string{
+				`<section id="actions">`, "Djinn proposes to grant this wish", "djinn wish grant w1",
+				// Granting can wait: the bar says so, in its neutral colour.
+				`<a class="line later" href="#actions"><span class="st later"><i aria-hidden="true">◷</i>Can wait</span>`,
+			}, nil},
 	} {
 		html := page(t, Input{Export: &planv1.WishExport{Wish: tt.wish}, Language: "en"})
 		for _, s := range tt.want {
@@ -266,7 +274,10 @@ var tocLink = regexp.MustCompile(`<a class="pill[^"]*" href="#([a-z]+)"`)
 func TestBusyPage(t *testing.T) {
 	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Busy"}}
 	exp.Questions = append(exp.Questions,
-		&planv1.Question{Id: "qa", Code: "Q90", Text: "A question nobody waits for", Recommendation: "**B**, because it is `simple`.\n\nMore."},
+		&planv1.Question{
+			Id: "qa", Code: "Q90", Text: "A question nobody waits for", Recommendation: "**B**, because it is `simple`.\n\nMore.",
+			Options: []string{"Keep it", "Change it"}, Context: "### What changes\n\nThe page.",
+		},
 		&planv1.Question{Id: "qb", Code: "Q91", Text: "May W5 edit?"},
 	)
 	for i := range 20 {
@@ -318,33 +329,44 @@ func TestBusyPage(t *testing.T) {
 		t.Error("a blocking question comes first")
 	}
 	for _, s := range []string{
-		`<details class="card question now" open>`, "Blocks W5", `<details class="card question">`, `→ B, because it is simple.`,
+		`<details class="q bad" id="q-Q91" open>`, `<span class="st bad"><i aria-hidden="true">!</i>Blocks W5</span>`,
+		`<details class="q wait" id="q-Q90">`, `<span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span>`,
+		`<span class="qreco">Recommended: B, because it is simple.</span>`,
 	} {
 		if !strings.Contains(html, s) {
 			t.Errorf("the page lacks %q", s)
 		}
 	}
-
-	// Running now: the running worker only. Tasks: running, waiting and failed in clear; planned and finished folded.
-	running := between(html, `<section id="running">`, "</section>")
-	if !strings.Contains(running, "W3") || strings.Count(running, `class="card task"`) != 1 {
-		t.Errorf("running now shows the running worker only:\n%s", running)
+	// In an open card, the recommendation comes first, then the options, then the context.
+	card := between(html, `id="q-Q90"`, "</details>")
+	if i, j, k := strings.Index(card, `class="recom"`), strings.Index(card, `class="options"`), strings.Index(card, `class="context"`); i < 0 || i > j || j > k {
+		t.Errorf("a card shows the recommendation, the options, then the context:\n%s", card)
 	}
+
+	// Who runs now: the running worker as a card, the finished work folded below.
+	running := between(html, `<section id="running">`, "</section>")
+	if !strings.Contains(running, "W3") || strings.Count(running, `<article class="worker">`) != 1 {
+		t.Errorf("who runs now shows the running worker only:\n%s", running)
+	}
+	if finished := between(running, `<details class="fold finished">`, "</details>"); !strings.Contains(finished, ">W1<") {
+		t.Error("the finished work is folded under the workers")
+	}
+	// Tasks: waiting and failed in clear; planned folded, with what they wait for.
 	tasks := between(html, `<section id="tasks">`, "</section>")
 	inClear := between(tasks, "", "<details")
-	for _, code := range []string{"W3", "W4", "W5"} {
+	for _, code := range []string{"W4", "W5"} {
 		if !strings.Contains(inClear, ">"+code+"<") {
 			t.Errorf("%s shows in clear", code)
 		}
 	}
-	for _, code := range []string{"W1", "W2"} {
+	for _, code := range []string{"W1", "W2", "W3"} {
 		if strings.Contains(inClear, ">"+code+"<") {
-			t.Errorf("%s is folded", code)
+			t.Errorf("%s is not among the tasks in clear", code)
 		}
 	}
 	for _, s := range []string{
-		`<details class="fold planned">`, `Planned <span class="n">1</span>`, `<details class="fold finished">`,
-		"after W1, W3", "waits for W3 to be done", "exit code 1",
+		`<details class="fold planned">`, `Planned <span class="n">1</span>`, "after W1, W3", "waits for W3 to be done",
+		"exit code 1",
 	} {
 		if !strings.Contains(tasks, s) {
 			t.Errorf("the tasks lack %q", s)
@@ -354,10 +376,10 @@ func TestBusyPage(t *testing.T) {
 	// Decisions: the 15 latest, the latest first, then the 5 before them folded.
 	decisions := between(html, `<section id="decisions">`, "</section>")
 	shown, older, _ := strings.Cut(decisions, `<details class="fold older">`)
-	if n := strings.Count(shown, "<tr>\n      <td>"); n != shownDecisions {
+	if n := strings.Count(shown, "<tr>\n      <td"); n != shownDecisions {
 		t.Errorf("%d decisions shown, want %d", n, shownDecisions)
 	}
-	if n := strings.Count(older, "<tr>\n      <td>"); n != 5 {
+	if n := strings.Count(older, "<tr>\n      <td"); n != 5 {
 		t.Errorf("%d decisions folded, want 5", n)
 	}
 	if strings.Index(shown, "Decision 19") > strings.Index(shown, "Decision 18") || strings.Contains(shown, "Decision 04") {
@@ -378,18 +400,22 @@ func TestBusyPage(t *testing.T) {
 	if n := strings.Count(notes, "<details"); n != 1+blockRun+1 {
 		t.Errorf("%d blocks folded, want the long one and the run of %d", n, blockRun+1)
 	}
+	if run := between(notes, `<article class="block series">`, "</article>"); !strings.Contains(run, "<h3>decision: 4 blocks</h3>") ||
+		strings.Count(run, "<li><details>") != blockRun+1 {
+		t.Errorf("a run of one kind is gathered in one card, a folded line each:\n%s", run)
+	}
 	if !strings.Contains(notes, `<div class="block-head"><span class="kind">section</span><h3>Short</h3>`) {
 		t.Error("a short block shows whole")
 	}
 
-	// Journal: the latest first, 30 in sight, the 10 others folded.
+	// Journal: the latest first, 10 in sight, the 30 others folded.
 	journal := between(html, `<section id="journal">`, "</section>")
 	inSight, earlier, _ := strings.Cut(journal, `<details class="fold earlier">`)
-	if n := strings.Count(inSight, "<li>"); n != shownJournal {
+	if n := strings.Count(inSight, `<tr><td class="at">`); n != shownJournal {
 		t.Errorf("%d journal entries in sight, want %d", n, shownJournal)
 	}
-	if n := strings.Count(earlier, "<li>"); n != 10 {
-		t.Errorf("%d journal entries folded, want 10", n)
+	if n := strings.Count(earlier, `<tr><td class="at">`); n != 40-shownJournal {
+		t.Errorf("%d journal entries folded, want %d", n, 40-shownJournal)
 	}
 	if !strings.Contains(inSight, "Log <strong>39</strong>") || strings.Index(inSight, "39") > strings.Index(inSight, "38") {
 		t.Error("the journal shows the latest log first, in Markdown")
@@ -409,4 +435,238 @@ func between(s, start, end string) string {
 		return s[:j]
 	}
 	return s
+}
+
+// TestBar: while something waits for the user, a bar holds it, the most urgent first: each blocking question a line,
+// the others too while they are few, the tasks cut short in one line. A task that waits on an open question is in the
+// bar by its question.
+func TestBar(t *testing.T) {
+	html := page(t, Input{Export: rich(t), Unattached: []string{"web"}, Language: "en"})
+	bar := between(html, `<aside class="bar"`, "</aside>")
+	want := []string{
+		`<a class="line bad" href="#q-Q03"><span class="st bad"><i aria-hidden="true">!</i>Blocking</span><span class="what">Q03 · May W2 edit the folder? · Blocks W2</span></a>`,
+		`<a class="line wait" href="#q-Q01"><span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span><span class="what">Q01 · Which Markdown library?</span></a>`,
+		`<a class="line wait" href="#actions"><span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span><span class="what">Cut short when Djinn stopped: W3. Start again, or let go.</span></a>`,
+		`<a class="line wait" href="#actions"><span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span><span class="what">Project web is not on this machine</span></a>`,
+	}
+	last := -1
+	for _, s := range want {
+		i := strings.Index(bar, s)
+		if i < 0 {
+			t.Errorf("the bar lacks %q", s)
+		} else if i < last {
+			t.Errorf("the bar shows %q out of order", s)
+		}
+		last = i
+	}
+	if n := strings.Count(bar, `<a class="line`); n != len(want) {
+		t.Errorf("the bar holds %d lines, want %d:\n%s", n, len(want), bar)
+	}
+	if strings.Index(html, `class="bar"`) > strings.Index(html, "<main>") {
+		t.Error("the bar comes before the page")
+	}
+
+	// Many questions and tasks cut short: the bar keeps to a few lines.
+	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Many"}}
+	for i := range barQuestions + 1 {
+		exp.Questions = append(exp.Questions, &planv1.Question{Id: fmt.Sprint(i), Code: fmt.Sprintf("Q%02d", i), Text: "Which?"})
+	}
+	for i := range 3 {
+		exp.Tasks = append(exp.Tasks, &planv1.Task{Id: fmt.Sprint("t", i), Code: fmt.Sprintf("W%d", i), Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED})
+	}
+	bar = between(page(t, Input{Export: exp, Language: "en"}), `<aside class="bar"`, "</aside>")
+	for _, s := range []string{
+		`<span class="what">3 questions wait for your answer: Q00, Q01, Q02</span>`,
+		`<span class="what">Cut short when Djinn stopped: W0, W1, W2. Start again, or let go.</span>`,
+	} {
+		if !strings.Contains(bar, s) {
+			t.Errorf("the bar lacks %q:\n%s", s, bar)
+		}
+	}
+	if n := strings.Count(bar, `<a class="line`); n != 2 {
+		t.Errorf("the bar holds %d lines, want 2", n)
+	}
+}
+
+var pill = regexp.MustCompile(`<(?:span|a) class="st ([a-z]+)"[^>]*><i aria-hidden="true">([^<]*)</i>([^<]*?)(?: <b>\d+</b>)?</(?:span|a)>`)
+
+// TestColourLanguage: every status shows its colour, its icon and its word, never its colour alone; the header
+// counts the tasks by status.
+func TestColourLanguage(t *testing.T) {
+	statuses := []planv1.TaskStatus{
+		planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_WAITING,
+		planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_FAILED,
+		planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_STOPPED,
+	}
+	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Every status", State: planv1.WishState_WISH_STATE_PAUSED}}
+	for i, s := range statuses {
+		exp.Tasks = append(exp.Tasks, &planv1.Task{Id: fmt.Sprint(i), Code: fmt.Sprintf("W%d", i+1), Title: "A task", Status: s})
+	}
+	html := page(t, Input{Export: exp, Language: "en"})
+	seen := map[string]string{}
+	for _, m := range pill.FindAllStringSubmatch(html, -1) {
+		class, icon, word := m[1], m[2], m[3]
+		if strings.TrimSpace(word) == "" {
+			t.Errorf("a %s pill has no word", class)
+		}
+		if icon != icons[class] {
+			t.Errorf("a %s pill shows %q, want its icon %q", class, icon, icons[class])
+		}
+		seen[class+" "+word] = icon
+	}
+	for _, s := range []string{
+		"ok Done", "run Running", "wait Waiting for you", "idle Planned", "fail Failed", "amber Interrupted",
+		"stop Stopped", "pause Paused",
+	} {
+		if _, ok := seen[s]; !ok {
+			t.Errorf("the page lacks the pill %q; it has %v", s, seen)
+		}
+	}
+	for class, icon := range icons {
+		if icon == "" && class != "run" {
+			t.Errorf("%s has no icon: only a running one shows a dot instead", class)
+		}
+	}
+	counts := between(html, `<ul class="counts"`, "</ul>")
+	for _, s := range []string{
+		`<a class="st wait" href="#tasks"><i aria-hidden="true">?</i>Waiting for you <b>1</b></a>`,
+		`<a class="st run" href="#running"><i aria-hidden="true"></i>Running <b>1</b></a>`,
+		`<a class="st ok" href="#running"><i aria-hidden="true">✓</i>Done <b>1</b></a>`,
+	} {
+		if !strings.Contains(counts, s) {
+			t.Errorf("the counts lack %q:\n%s", s, counts)
+		}
+	}
+	if strings.Index(counts, "Waiting for you") > strings.Index(counts, "Done") {
+		t.Error("the counts show what needs an eye first")
+	}
+	for _, class := range []string{"ok", "run", "wait", "amber", "bad", "fail", "idle", "stop", "pause", "later"} {
+		if !regexp.MustCompile(`(^|[ ,\n])\.` + class + `[ ,{]`).MatchString(pageCSS) {
+			t.Errorf("the style sheet gives no colour to %s", class)
+		}
+	}
+}
+
+var cssVar = regexp.MustCompile(`--([a-z-]+):\s*#([0-9a-f]{6});`)
+
+// TestContrast: each colour of the language reads on its soft colour and on a card, in light and in dark, at 4.5:1
+// at least; so do the text and the muted text.
+func TestContrast(t *testing.T) {
+	light := between(pageCSS, ":root {", "}")
+	dark := between(pageCSS, `:root[data-theme="dark"] {`, "}")
+	media := between(between(pageCSS, "@media (prefers-color-scheme: dark)", "}\n}"), `:root:not([data-theme="light"]) {`, "}")
+	if strings.Join(strings.Fields(strings.SplitN(dark, "{", 2)[1]), " ") != strings.Join(strings.Fields(strings.SplitN(media, "{", 2)[1]), " ") {
+		t.Error("the dark theme differs between the system's choice and data-theme")
+	}
+	for name, block := range map[string]string{"light": light, "dark": dark} {
+		colours := map[string]string{}
+		for _, m := range cssVar.FindAllStringSubmatch(block, -1) {
+			colours[m[1]] = m[2]
+		}
+		pairs := [][2]string{{"text", "bg"}, {"text", "surface"}, {"muted", "bg"}, {"muted", "surface"}, {"muted", "surface-soft"}}
+		for _, s := range []string{"ok", "run", "wait", "amber", "bad", "idle", "pause"} {
+			pairs = append(pairs, [2]string{s, s + "-soft"}, [2]string{s, "surface"}, [2]string{s, "bg"})
+		}
+		for _, p := range pairs {
+			fg, bg := colours[p[0]], colours[p[1]]
+			if fg == "" || bg == "" {
+				t.Errorf("%s: --%s or --%s is not a plain colour", name, p[0], p[1])
+				continue
+			}
+			if c := contrast(fg, bg); c < 4.5 {
+				t.Errorf("%s: --%s on --%s is %.2f:1, under 4.5:1", name, p[0], p[1], c)
+			}
+		}
+	}
+}
+
+// contrast is the WCAG contrast ratio of two colours, given as six hex digits.
+func contrast(a, b string) float64 {
+	lum := func(hex string) float64 {
+		var rgb [3]float64
+		for i := range rgb {
+			var v int
+			fmt.Sscanf(hex[2*i:2*i+2], "%02x", &v)
+			c := float64(v) / 255
+			if c <= 0.04045 {
+				rgb[i] = c / 12.92
+			} else {
+				rgb[i] = math.Pow((c+0.055)/1.055, 2.4)
+			}
+		}
+		return 0.2126*rgb[0] + 0.7152*rgb[1] + 0.0722*rgb[2]
+	}
+	la, lb := lum(a), lum(b)
+	return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+}
+
+// TestEvents: the workers' events a reader follows go to a compact table, the latest first, the older ones folded;
+// a worker's card shows its last one. Tool calls stay out.
+func TestEvents(t *testing.T) {
+	exp := rich(t)
+	exp.Events = nil
+	kinds := []planv1.TaskEventKind{
+		planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, planv1.TaskEventKind_TASK_EVENT_KIND_TEXT,
+		planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, planv1.TaskEventKind_TASK_EVENT_KIND_ERROR,
+	}
+	for i := range shownEvents + 6 {
+		exp.Events = append(exp.Events, &planv1.TaskEvent{
+			Id: fmt.Sprint(i), TaskId: "t1", Seq: int64(i + 1), Kind: kinds[i%len(kinds)], Text: fmt.Sprintf("event %02d", i),
+			CreateTime: ts(i - 30),
+		})
+	}
+	html := page(t, Input{Export: exp, Language: "en"})
+	events := between(html, `<section id="events">`, "</section>")
+	inSight, earlier, _ := strings.Cut(events, `<details class="fold earlier">`)
+	// 16 events, 4 of them tool calls: 12 shown, 10 in sight.
+	if n := strings.Count(inSight, `<tr><td class="at">`); n != shownEvents {
+		t.Errorf("%d events in sight, want %d", n, shownEvents)
+	}
+	if n := strings.Count(earlier, `<tr><td class="at">`); n != 2 {
+		t.Errorf("%d events folded, want 2", n)
+	}
+	for _, s := range []string{
+		`<span class="kind fail">error</span> event 15`, `<span class="kind idle">said</span> event 13`,
+		`<span class="kind run">status</span> event 12`, `<span class="code">W1</span>`, "2026-10-08 14:15",
+	} {
+		if !strings.Contains(inSight, s) {
+			t.Errorf("the events lack %q", s)
+		}
+	}
+	if strings.Contains(events, "event 14") || strings.Contains(events, "event 02") {
+		t.Error("tool calls stay out of the events")
+	}
+	if strings.Index(inSight, "event 15") > strings.Index(inSight, "event 13") {
+		t.Error("the latest event comes first")
+	}
+	// Events of several workers, in the order of their time.
+	exp.Events = []*planv1.TaskEvent{
+		{Id: "a", TaskId: "t1", Seq: 1, Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "W1 early", CreateTime: ts(-20)},
+		{Id: "b", TaskId: "t1", Seq: 2, Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "W1 late", CreateTime: ts(-2)},
+		{Id: "c", TaskId: "t2", Seq: 1, Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "W2 between", CreateTime: ts(-10)},
+	}
+	events = between(page(t, Input{Export: exp, Language: "en"}), `<section id="events">`, "</section>")
+	if i, j, k := strings.Index(events, "W1 late"), strings.Index(events, "W2 between"), strings.Index(events, "W1 early"); i > j || j > k {
+		t.Errorf("the events of several workers go by time, the latest first:\n%s", events)
+	}
+	running := between(html, `<section id="running">`, "</section>")
+	if !strings.Contains(running, `Last event · <time>2026-10-08 14:15</time></div><p>event 15</p>`) {
+		t.Errorf("a worker's card shows its last event:\n%s", running)
+	}
+}
+
+// TestDiagram: the page runs no script; a Mermaid diagram shows as its source, and the page says so.
+func TestDiagram(t *testing.T) {
+	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "D"}, Blocks: []*planv1.Block{
+		{Id: "b", Kind: "diagram", Title: "Flow", Content: "```mermaid\ngraph LR\n  A --> B\n```"},
+	}}
+	html := page(t, Input{Export: exp, Language: "en"})
+	for _, s := range []string{`<code class="language-mermaid">graph LR`, "A Mermaid diagram, shown as its source"} {
+		if !strings.Contains(html, s) {
+			t.Errorf("the page lacks %q", s)
+		}
+	}
+	if strings.Contains(strings.ToLower(html), "<script") {
+		t.Error("the page runs no script")
+	}
 }

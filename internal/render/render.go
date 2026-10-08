@@ -1,7 +1,11 @@
 // Package render writes the page of a wish: one HTML file standing alone, made by Djinn from its store, never by a
-// model. It shows first what matters now: the open questions, what waits for the user and the workers running. Then
-// the tasks (the planned and the finished ones folded), the decisions (the latest first), the free blocks and the
-// journal. An empty section is not rendered, and the contents at the top name only the sections present.
+// model. It shows first what matters now: a bar that stays in sight while something waits for the user, the open
+// questions, what waits for the user and the workers running. Then the tasks that need an eye (the planned ones
+// folded), the decisions (the latest first), the free blocks, the journal and the workers' events. An empty section
+// is not rendered, and the contents at the top name only the sections present.
+//
+// One colour language runs through the page, always with an icon and a word: done, running, waiting for you,
+// planned, failed, interrupted, paused, stopped; and for what waits, blocking, waiting for you, can wait.
 //
 // The page shows what it is given: the caller strips secrets and local paths first, as an export does.
 package render
@@ -12,6 +16,7 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -43,17 +48,24 @@ type Input struct {
 const maxJournal = 200
 
 // shownJournal is the most journal entries shown before the others are folded.
-const shownJournal = 30
+const shownJournal = 10
+
+// maxEvents is the most worker events a page shows, the latest ones; shownEvents are in sight, the others folded.
+const maxEvents, shownEvents = 200, 10
+
+// barQuestions is the most questions the bar at the top shows a line each, beside the blocking ones: more share
+// one line.
+const barQuestions = 2
 
 // shownDecisions is the most decisions shown before the older ones are folded.
 const shownDecisions = 15
 
 // longBlock is the size, in characters or lines, from which a block is folded under its title.
-const longBlock, longBlockLines = 800, 16
+const longBlock, longBlockLines = 1500, 30
 
-// blockRun is the most blocks of one kind in a row shown whole: a longer run is folded, block by block, to a list
-// of titles.
-const blockRun = 3
+// blockRun is the most blocks of one kind in a row shown whole: a longer run is gathered in one card, a folded line
+// per block, the first shownRun of them in sight.
+const blockRun, shownRun = 3, 8
 
 // longNote is the size, in characters, from which the note of a decision is folded.
 const longNote = 240
@@ -61,8 +73,15 @@ const longNote = 240
 // logKind is the kind of the blocks that tell the story of the wish: they go to the journal, not to the notes.
 const logKind = "log"
 
-// maxLastWord is the most of a worker's last text a page shows, in characters.
-const maxLastWord = 600
+// maxLastWord is the most of a worker's last event a page shows, in characters; maxEvent, of an event in the table.
+const maxLastWord, maxEvent = 600, 280
+
+// icons give each class of the colour language its sign, so that no state is told by colour alone. A running one
+// shows a live dot, drawn by the style sheet.
+var icons = map[string]string{
+	"ok": "✓", "run": "", "wait": "?", "idle": "○", "bad": "!", "fail": "✕", "amber": "↺", "pause": "‖", "stop": "■",
+	"later": "◷",
+}
 
 //go:embed page.html.tmpl
 var pageTemplate string
@@ -74,6 +93,7 @@ var tmpl = template.Must(template.New("page").Funcs(template.FuncMap{
 	"css": func() template.CSS { return template.CSS(pageCSS) },
 	// pair hands a nested template two values: {{template "task" (pair . $.T)}}.
 	"pair": func(a, b any) []any { return []any{a, b} },
+	"icon": func(class string) string { return icons[class] },
 }).Parse(pageTemplate))
 
 // markdown renders Markdown as GitHub does, without raw HTML: a tag in the source is left out, and a link to
@@ -106,20 +126,26 @@ type view struct {
 	Rendered   string
 	State      string // where the wish stands: active and its rank, paused, granted
 	StateClass string
-	Contents   []link // the sections present, in their order
-	Questions  []question
-	Actions    []string
-	Running    []task // the workers running now
-	Tasks      []task // what needs an eye: running, waiting, cut short, failed
-	Planned    []task
-	Finished   []task
-	TaskCount  int
-	Decisions  []decision // the latest ones
-	Older      []decision // the decisions before them, folded
-	Blocks     []block
-	Journal    []entry // the latest entries
-	Earlier    []entry // the entries before them, folded
+	// Bar holds what waits for the user, a line each, in sight as the page scrolls.
+	Bar       []barLine
+	Counts    []count // the tasks by status
+	Contents  []link  // the sections present, in their order
+	Questions []question
+	Actions   []action
+	Running   []task // the workers running now
+	Finished  []task // the work finished, folded under them
+	Tasks     []task // what needs an eye: waiting, cut short, failed
+	Planned   []task
+	Decisions []decision // the latest ones
+	Older     []decision // the decisions before them, folded
+	Blocks    []block
+	Notes     []notes // the blocks as shown: alone, or gathered in a run of one kind
+	Journal   []entry // the latest entries
+	Earlier   []entry // the entries before them, folded
+	// JournalCut says how many entries the page left out.
 	JournalCut string
+	Events     []event // the workers' latest events
+	EarlierEv  []event // the events before them, folded
 }
 
 // link is an entry of the contents: a section of the page and how many things it holds.
@@ -127,6 +153,18 @@ type link struct {
 	ID, Label, Class string
 	Count            int
 }
+
+// count is how many tasks have a status, with the section that shows them.
+type count struct {
+	Class, Label, Href string
+	Count              int
+}
+
+// barLine is a line of the bar at the top: how urgent, in a class and a word, and what, pointing to its place.
+type barLine struct{ Class, Level, Text, Href string }
+
+// action is what only the user can do, with how urgent it is.
+type action struct{ Class, Level, Text string }
 
 type question struct {
 	Code, Text     string
@@ -136,6 +174,10 @@ type question struct {
 	Options   []option
 	// Blocking names the tasks that wait for the answer: such a question is open, and comes first.
 	Blocking string
+	// Class and Level say how urgent it is: blocking, or waiting for the user.
+	Class, Level string
+	// Open questions are unfolded: a blocking one, or the only one.
+	Open bool
 }
 
 type option struct{ Letter, Text string }
@@ -143,12 +185,15 @@ type option struct{ Letter, Text string }
 type decision struct {
 	Code, Text, Choice, At string
 	Note                   template.HTML
-	// A long note is folded, to keep the table compact.
+	// A long note is folded under its first line, to keep the table compact.
 	LongNote bool
+	NoteLine string
 }
 
 type task struct {
-	Code, Title, Status, StatusClass, Project, Agent, Spent, Time, Error, LastWord string
+	Code, Title, Status, StatusClass, Project, Agent, Spent, Time, Error string
+	// LastWord is the worker's last event, at LastAt.
+	LastWord, LastAt string
 	// After names the tasks this one waits to be done; Wait says why a planned task has not started yet.
 	After, Wait string
 }
@@ -160,6 +205,15 @@ type block struct {
 	Text                       string
 	// Long blocks are folded under their title.
 	Long bool
+	// Diagram is set when the block holds a Mermaid diagram: the page, with no script, shows its source.
+	Diagram bool
+}
+
+// notes is a block shown alone, or a run of blocks of one kind gathered in one card, a folded line each.
+type notes struct {
+	Block       block
+	Title, Kind string
+	Run, More   []block // the blocks of a run in sight, and the others, folded
 }
 
 // entry is a line of the journal: a command, or a log block.
@@ -167,6 +221,12 @@ type entry struct {
 	at                   time.Time
 	At, Command, Summary string
 	Note                 template.HTML
+}
+
+// event is a line of the workers' events: what a worker said, a change of its status, an error.
+type event struct {
+	at                          time.Time
+	At, Task, Kind, Class, Text string
 }
 
 func build(in Input) (*view, error) {
@@ -193,10 +253,13 @@ func build(in Input) (*view, error) {
 	}
 	v := &view{Lang: lang, Title: exp.GetWish().GetTitle(), T: map[string]string{}}
 	for _, key := range []string{
-		"page.actions", "page.contents", "page.context", "page.decision", "page.decisions", "page.details", "page.earlier",
-		"page.finished", "page.journal", "page.last_word", "page.older", "page.options", "page.planned",
-		"page.projects", "page.questions", "page.recommendation", "page.running", "page.tasks", "page.notes",
-		"page.when", "page.yes_only",
+		"page.actions", "page.actions_sub", "page.after_col", "page.bar", "page.contents", "page.context",
+		"page.counts", "page.decision", "page.decisions", "page.decisions_sub", "page.diagram", "page.earlier",
+		"page.earlier_events", "page.events", "page.events_sub", "page.finished", "page.journal", "page.journal_sub",
+		"page.last_event", "page.more", "page.none_running", "page.notes", "page.notes_sub", "page.older", "page.options",
+		"page.planned", "page.projects", "page.questions", "page.questions_sub", "page.recommendation",
+		"page.running", "page.running_sub", "page.spent", "page.status", "page.task", "page.tasks", "page.tasks_sub",
+		"page.took", "page.wait_col", "page.what", "page.when", "page.why", "page.yes_only",
 	} {
 		v.T[key] = tr(key)
 	}
@@ -238,10 +301,14 @@ func build(in Input) (*view, error) {
 		}
 		cq := question{
 			Code: q.GetCode(), Text: q.GetText(), Context: md(q.GetContext()), Recom: md(q.GetRecommendation()),
-			RecomLine: firstLine(q.GetRecommendation(), 160),
+			Class: "wait", Level: tr("page.status_waiting"),
+		}
+		if line := firstLine(q.GetRecommendation(), 160); line != "" {
+			cq.RecomLine = tr("page.recommended", "text", line)
 		}
 		if codes := blocking[q.GetId()]; len(codes) > 0 {
 			cq.Blocking = tr("page.blocking", "tasks", strings.Join(codes, ", "))
+			cq.Class, cq.Level, cq.Open = "bad", cq.Blocking, true
 		}
 		for i, o := range q.GetOptions() {
 			cq.Options = append(cq.Options, option{Letter: string(rune('A' + i)), Text: o})
@@ -251,6 +318,9 @@ func build(in Input) (*view, error) {
 	slices.SortStableFunc(v.Questions, func(a, b question) int {
 		return cmp.Compare(b2i(a.Blocking == ""), b2i(b.Blocking == ""))
 	})
+	if len(v.Questions) == 1 {
+		v.Questions[0].Open = true
+	}
 	slices.SortStableFunc(answered, func(a, b *planv1.Question) int {
 		return b.GetAnswer().GetCreateTime().AsTime().Compare(a.GetAnswer().GetCreateTime().AsTime())
 	})
@@ -258,6 +328,7 @@ func build(in Input) (*view, error) {
 		d := decision{
 			Code: q.GetCode(), Text: q.GetText(), Choice: choice(q, tr), At: at(q.GetAnswer().GetCreateTime()),
 			Note: md(q.GetAnswer().GetNote()), LongNote: utf8.RuneCountInString(q.GetAnswer().GetNote()) > longNote,
+			NoteLine: cmp.Or(firstLine(q.GetAnswer().GetNote(), 140), tr("page.details")),
 		}
 		if i < shownDecisions {
 			v.Decisions = append(v.Decisions, d)
@@ -266,38 +337,102 @@ func build(in Input) (*view, error) {
 		}
 	}
 
+	// The bar: each blocking question a line; the other questions too while they are few, else one line for them all.
+	waiting, blocked, later := tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
+	var others []string
+	for _, q := range v.Questions {
+		if q.Blocking != "" {
+			v.Bar = append(v.Bar, barLine{
+				Class: q.Class, Level: blocked, Text: q.Code + " · " + cut(q.Text, 140) + " · " + q.Blocking, Href: "#q-" + q.Code,
+			})
+		} else {
+			others = append(others, q.Code)
+		}
+	}
+	if len(others) > barQuestions {
+		v.Bar = append(v.Bar, barLine{Class: "wait", Level: waiting, Href: "#questions",
+			Text: tr("page.bar_questions", "count", fmt.Sprint(len(others)), "codes", strings.Join(others, ", "))})
+	} else {
+		for _, q := range v.Questions[len(v.Questions)-len(others):] {
+			v.Bar = append(v.Bar, barLine{Class: q.Class, Level: waiting, Text: q.Code + " · " + cut(q.Text, 140), Href: "#q-" + q.Code})
+		}
+	}
+
 	// What waits for the user, as the lamp knows it: a worker that asks to edit, one that Djinn's stop cut
-	// short, a project to bring to this machine.
+	// short, a project to bring to this machine. A worker that waits on an open question is in the bar by its
+	// question already.
+	addAction := func(class, level, text, bar string) {
+		v.Actions = append(v.Actions, action{Class: class, Level: level, Text: text})
+		if bar != "" {
+			v.Bar = append(v.Bar, barLine{Class: class, Level: level, Text: bar, Href: "#actions"})
+		}
+	}
+	var cutShort []string
 	for _, t := range exp.GetTasks() {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_WAITING:
 			if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil {
-				v.Actions = append(v.Actions, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()))
+				addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
 			} else {
-				v.Actions = append(v.Actions, tr("page.action_waiting_unknown", "task", t.GetCode()))
+				addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
+					tr("page.bar_waiting", "task", t.GetCode()))
 			}
 		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
-			v.Actions = append(v.Actions, tr("page.action_interrupted", "task", t.GetCode()))
+			addAction("wait", waiting, tr("page.action_interrupted", "task", t.GetCode()), "")
+			cutShort = append(cutShort, t.GetCode())
 		}
 	}
+	if len(cutShort) > 0 {
+		v.Bar = append(v.Bar, barLine{Class: "wait", Level: waiting, Href: "#actions",
+			Text: tr("page.bar_interrupted", "tasks", strings.Join(cutShort, ", "))})
+	}
 	for _, name := range in.Unattached {
-		v.Actions = append(v.Actions, tr("page.action_attach", "project", name))
+		addAction("wait", waiting, tr("page.action_attach", "project", name), tr("page.bar_attach", "project", name))
 	}
 	// Djinn proposes a ready wish; only the user grants it.
 	if exp.GetWish().GetReady() {
-		v.Actions = append(v.Actions, tr("page.action_ready", "wish", exp.GetWish().GetId()))
+		addAction("later", later, tr("page.action_ready", "wish", exp.GetWish().GetId()), tr("page.bar_ready"))
 	}
+	// The most urgent lines first; the questions keep their order among them.
+	slices.SortStableFunc(v.Bar, func(a, b barLine) int { return cmp.Compare(urgency[a.Class], urgency[b.Class]) })
+	slices.SortStableFunc(v.Actions, func(a, b action) int { return cmp.Compare(urgency[a.Class], urgency[b.Class]) })
 
-	lastWord := map[string]string{}
+	// The workers' events a reader follows: what they said, a change of status, an error. Tool calls stay out.
+	var events []event
+	type last struct{ text, at string }
+	lastWord := map[string]last{}
 	for _, e := range exp.GetEvents() {
-		if e.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && strings.TrimSpace(e.GetText()) != "" {
-			lastWord[e.GetTaskId()] = e.GetText()
+		text := strings.TrimSpace(e.GetText())
+		kind, class := "", ""
+		switch e.GetKind() {
+		case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT:
+			kind, class = tr("page.event_text"), "idle"
+		case planv1.TaskEventKind_TASK_EVENT_KIND_STATUS:
+			kind, class = tr("page.event_status"), "run"
+		case planv1.TaskEventKind_TASK_EVENT_KIND_ERROR:
+			kind, class = tr("page.event_error"), "fail"
 		}
+		if kind == "" || text == "" {
+			continue
+		}
+		when := ""
+		if e.GetCreateTime() != nil {
+			when = at(e.GetCreateTime())
+		}
+		lastWord[e.GetTaskId()] = last{text, when}
+		events = append(events, event{at: e.GetCreateTime().AsTime(), At: when, Task: tasks[e.GetTaskId()].GetCode(), Kind: kind, Class: class, Text: cut(text, maxEvent)})
 	}
+	// The latest first; events of one time keep the order they came in.
+	slices.Reverse(events)
+	slices.SortStableFunc(events, func(a, b event) int { return b.at.Compare(a.at) })
+	events = events[:min(len(events), maxEvents)]
+	v.Events, v.EarlierEv = events[:min(len(events), shownEvents)], events[min(len(events), shownEvents):]
+
+	byStatus := map[planv1.TaskStatus]int{}
 	for _, t := range exp.GetTasks() {
 		ct := task{
 			Code: t.GetCode(), Title: t.GetTitle(), Project: projects[t.GetProjectId()], Error: t.GetError(),
-			LastWord: cut(strings.TrimSpace(lastWord[t.GetId()]), maxLastWord),
+			LastWord: cut(lastWord[t.GetId()].text, maxLastWord), LastAt: lastWord[t.GetId()].at,
 		}
 		ct.Status, ct.StatusClass = status(t.GetStatus(), tr)
 		var after []string
@@ -327,7 +462,7 @@ func build(in Input) (*view, error) {
 		} else if s != nil {
 			ct.Time = tr("page.started", "time", at(s))
 		}
-		v.TaskCount++
+		byStatus[t.GetStatus()]++
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING:
 			v.Planned = append(v.Planned, ct)
@@ -335,7 +470,6 @@ func build(in Input) (*view, error) {
 			v.Finished = append(v.Finished, ct)
 		case planv1.TaskStatus_TASK_STATUS_RUNNING:
 			v.Running = append(v.Running, ct)
-			v.Tasks = append(v.Tasks, ct)
 		case planv1.TaskStatus_TASK_STATUS_WAITING:
 			// Its error only says it waits: the status and the actions say it better.
 			ct.Error = ""
@@ -344,6 +478,28 @@ func build(in Input) (*view, error) {
 			// Failed, cut short, or a status this Djinn does not name yet: in clear.
 			v.Tasks = append(v.Tasks, ct)
 		}
+	}
+	// The tasks by status, what needs an eye first, each pointing to the section that shows it.
+	for _, s := range []planv1.TaskStatus{
+		planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_FAILED,
+		planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_RUNNING,
+		planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
+	} {
+		if n := byStatus[s]; n > 0 {
+			delete(byStatus, s)
+			label, class := status(s, tr)
+			href := "#tasks"
+			if s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_DONE ||
+				s == planv1.TaskStatus_TASK_STATUS_STOPPED {
+				href = "#running"
+			}
+			v.Counts = append(v.Counts, count{Class: class, Label: label, Href: href, Count: n})
+		}
+	}
+	// A status this Djinn does not name yet, last.
+	for _, s := range slices.Sorted(maps.Keys(byStatus)) {
+		label, class := status(s, tr)
+		v.Counts = append(v.Counts, count{Class: class, Label: label, Href: "#tasks", Count: byStatus[s]})
 	}
 
 	var journal []entry
@@ -367,6 +523,7 @@ func build(in Input) (*view, error) {
 		}
 		if isMarkdown(b.GetMediaType()) {
 			cb.Markdown, cb.HTML = true, md(b.GetContent())
+			cb.Diagram = strings.Contains(string(cb.HTML), `<code class="language-mermaid">`)
 		} else {
 			cb.Text = b.GetContent()
 		}
@@ -387,8 +544,14 @@ func build(in Input) (*view, error) {
 			end++
 		}
 		if kinds[start] != "" && end-start > blockRun {
-			for i := start; i < end; i++ {
-				v.Blocks[i].Long = true
+			run, n := v.Blocks[start:end], min(end-start, shownRun)
+			v.Notes = append(v.Notes, notes{
+				Title: tr("page.run", "kind", run[0].Kind, "count", fmt.Sprint(len(run))), Kind: run[0].Kind,
+				Run: run[:n], More: run[n:],
+			})
+		} else {
+			for _, b := range v.Blocks[start:end] {
+				v.Notes = append(v.Notes, notes{Block: b})
 			}
 		}
 		start = end
@@ -412,23 +575,38 @@ func build(in Input) (*view, error) {
 	return v, nil
 }
 
-// contents lists the sections the page holds, in their order, each with how many things it shows.
+// contents lists the sections the page holds, in their order, each with how many things it shows, coloured as the
+// most urgent of them.
 func contents(v *view, tr func(string, ...string) string) []link {
 	var links []link
-	add := func(id, key, class string, n int) {
-		if n > 0 {
+	add := func(id, key, class string, n int, present bool) {
+		if present {
 			links = append(links, link{ID: id, Label: tr(key), Class: class, Count: n})
 		}
 	}
-	add("questions", "page.questions", "ask", len(v.Questions))
-	add("actions", "page.actions", "warn", len(v.Actions))
-	add("running", "page.running", "run", len(v.Running))
-	add("tasks", "page.tasks", "", v.TaskCount)
-	add("decisions", "page.decisions", "", len(v.Decisions)+len(v.Older))
-	add("notes", "page.notes", "", len(v.Blocks))
-	add("journal", "page.journal", "", len(v.Journal)+len(v.Earlier))
+	first := func(class string, ok bool) string {
+		if ok {
+			return class
+		}
+		return ""
+	}
+	if len(v.Questions) > 0 {
+		add("questions", "page.questions", v.Questions[0].Class, len(v.Questions), true)
+	}
+	if len(v.Actions) > 0 {
+		add("actions", "page.actions", v.Actions[0].Class, len(v.Actions), true)
+	}
+	add("running", "page.running", first("run", len(v.Running) > 0), len(v.Running), len(v.Running)+len(v.Finished) > 0)
+	add("tasks", "page.tasks", "", len(v.Tasks)+len(v.Planned), len(v.Tasks)+len(v.Planned) > 0)
+	add("decisions", "page.decisions", "", len(v.Decisions)+len(v.Older), len(v.Decisions) > 0)
+	add("notes", "page.notes", "", len(v.Blocks), len(v.Blocks) > 0)
+	add("journal", "page.journal", "", len(v.Journal)+len(v.Earlier), len(v.Journal) > 0)
+	add("events", "page.events", "", len(v.Events)+len(v.EarlierEv), len(v.Events) > 0)
 	return links
 }
+
+// urgency orders what waits for the user: blocking first, then what waits, then what can wait.
+var urgency = map[string]int{"bad": 0, "wait": 1, "later": 2}
 
 // firstLine is the first line of Markdown text, as plain text, shortened to n characters.
 func firstLine(source string, n int) string {
@@ -484,7 +662,7 @@ func choice(q *planv1.Question, tr func(string, ...string) string) string {
 func state(w *planv1.Wish, at func(interface{ AsTime() time.Time }) string, tr func(string, ...string) string) (string, string) {
 	switch w.GetState() {
 	case planv1.WishState_WISH_STATE_PAUSED:
-		return tr("page.state_paused"), "idle"
+		return tr("page.state_paused"), "pause"
 	case planv1.WishState_WISH_STATE_GRANTED:
 		if w.GetGrantTime() != nil {
 			return tr("page.state_granted_at", "time", at(w.GetGrantTime())), "ok"
@@ -497,16 +675,16 @@ func state(w *planv1.Wish, at func(interface{ AsTime() time.Time }) string, tr f
 	return tr("page.state_active"), "run"
 }
 
-// status names a task's status, with the class that colours it.
+// status names a task's status, with the class that colours it and gives its icon.
 func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, string) {
 	keys := map[planv1.TaskStatus][2]string{
 		planv1.TaskStatus_TASK_STATUS_PENDING:     {"page.status_pending", "idle"},
 		planv1.TaskStatus_TASK_STATUS_RUNNING:     {"page.status_running", "run"},
 		planv1.TaskStatus_TASK_STATUS_DONE:        {"page.status_done", "ok"},
-		planv1.TaskStatus_TASK_STATUS_FAILED:      {"page.status_failed", "bad"},
-		planv1.TaskStatus_TASK_STATUS_STOPPED:     {"page.status_stopped", "idle"},
-		planv1.TaskStatus_TASK_STATUS_INTERRUPTED: {"page.status_interrupted", "warn"},
-		planv1.TaskStatus_TASK_STATUS_WAITING:     {"page.status_waiting", "warn"},
+		planv1.TaskStatus_TASK_STATUS_FAILED:      {"page.status_failed", "fail"},
+		planv1.TaskStatus_TASK_STATUS_STOPPED:     {"page.status_stopped", "stop"},
+		planv1.TaskStatus_TASK_STATUS_INTERRUPTED: {"page.status_interrupted", "amber"},
+		planv1.TaskStatus_TASK_STATUS_WAITING:     {"page.status_waiting", "wait"},
 	}
 	if k, ok := keys[s]; ok {
 		return tr(k[0]), k[1]
