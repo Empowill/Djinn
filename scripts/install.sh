@@ -1,14 +1,15 @@
 #!/bin/sh
 # Install Djinn on macOS or Linux, without sudo: the binary of the latest release for this system, checked against
-# the release's SHA-256 sums, in ~/.local/bin. When no binary fits (or WebKitGTK is missing on Linux), it falls
-# back on `go install` without CGO: Djinn then opens in your browser instead of its own window.
+# the release's SHA-256 sums, in ~/.local/bin. On Linux without WebKitGTK it takes the build without a window, which
+# opens Djinn in your browser. When no binary fits, it falls back on `go install` without CGO: the browser too.
 #
 #   curl -fsSL https://github.com/Empowill/Djinn/releases/latest/download/install.sh | sh
 #
 # Settings, all optional, as environment variables:
 #   DJINN_VERSION      a release tag, such as v0.1.0; the latest release by default
 #   DJINN_INSTALL_DIR  where djinn goes; ~/.local/bin by default
-#   DJINN_ASSET        the archive to take, without .tar.gz (djinn_linux_amd64_gtk4); picked for this system by default
+#   DJINN_ASSET        the archive to take, without .tar.gz (djinn_linux_amd64_gtk4, djinn_linux_amd64_browser); picked
+#                      for this system by default
 #   DJINN_RELEASES     where releases come from; https://github.com/Empowill/Djinn/releases by default
 set -eu
 
@@ -52,7 +53,8 @@ sha256() { # <file>: its SHA-256, in hexadecimal
 	fi
 }
 
-# The archives that may fit this machine, best first. On Linux the window needs the WebKitGTK of its build.
+# The archives that may fit this machine, best first. On Linux the window needs the WebKitGTK of its build; the
+# browser build needs nothing, and comes last.
 candidates() {
 	case $(uname -m) in
 	x86_64 | amd64) arch=amd64 ;;
@@ -65,13 +67,13 @@ candidates() {
 		libs=$({ /sbin/ldconfig -p || ldconfig -p; } 2>/dev/null || true)
 		if [ -z "$libs" ]; then
 			# No library cache to read: try both, and let the binary tell whether it starts.
-			echo "djinn_linux_$arch djinn_linux_${arch}_gtk4"
+			echo "djinn_linux_$arch djinn_linux_${arch}_gtk4 djinn_linux_${arch}_browser"
 			return 0
 		fi
 		found=""
 		case $libs in *libwebkit2gtk-4.1.so*) found="djinn_linux_$arch" ;; esac
 		case $libs in *libwebkitgtk-6.0.so*) found="$found djinn_linux_${arch}_gtk4" ;; esac
-		echo "$found"
+		echo "$found djinn_linux_${arch}_browser"
 		;;
 	esac
 }
@@ -126,6 +128,11 @@ if fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null; then
 		cp "$bin" "$dir/.djinn-new"
 		chmod 755 "$dir/.djinn-new"
 		mv -f "$dir/.djinn-new" "$dir/djinn"
+		case $installed in *_browser)
+			say "no WebKitGTK here: djinn up will open in your browser."
+			say "for its own window, install libwebkit2gtk-4.1 (or libwebkitgtk-6.0), then run this script again."
+			;;
+		esac
 	fi
 else
 	with_go "no release found at $base"
