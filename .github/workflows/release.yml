@@ -1,0 +1,173 @@
+# A tag vX.Y.Z made by `go tool task release VERSION=vX.Y.Z`, then pushed, builds the binaries of every target
+# (plan/71f9c331-releases.md) and opens a draft GitHub release with them, their checksums and the licence notices.
+# A maintainer reads the draft and publishes it: only then is it the latest, the one install.sh takes.
+#
+# The tag carries the built interface (dist/): no Node here, and `go install …@vX.Y.Z` builds the same Djinn.
+# Every step runs by hand too: `go tool task release-build`, `release-build-macos`, `release-sums`.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: The tag is a release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The tag carries the built interface
+        run: |
+          if [ ! -f dist/index.html ]; then
+            echo "::error::This tag has no dist/. Make release tags with: go tool task release VERSION=$GITHUB_REF_NAME"
+            exit 1
+          fi
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # The fallback of install.sh and install.ps1: go install, without CGO, works at this tag.
+      - name: go install works without CGO
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/djinn" ./cmd/djinn
+
+  linux:
+    name: Linux ${{ matrix.arch }} ${{ matrix.gtk }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # GTK 3 and WebKitGTK 4.1, built on the oldest supported Ubuntu: the binary needs glibc 2.34 or later.
+          - { arch: amd64, gtk: gtk3, runner: ubuntu-22.04, packages: libgtk-3-dev libwebkit2gtk-4.1-dev }
+          - { arch: arm64, gtk: gtk3, runner: ubuntu-22.04-arm, packages: libgtk-3-dev libwebkit2gtk-4.1-dev }
+          # GTK 4 and WebKitGTK 6.0, the only one left after Wails 3.1. Not built locally yet: it may fail without
+          # failing the release, which then ships without it.
+          - { arch: amd64, gtk: gtk4, runner: ubuntu-24.04, packages: libgtk-4-dev libwebkitgtk-6.0-dev, experimental: true }
+          - { arch: arm64, gtk: gtk4, runner: ubuntu-24.04-arm, packages: libgtk-4-dev libwebkitgtk-6.0-dev, experimental: true }
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.experimental == true }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install the build packages of the window
+        env:
+          PACKAGES: ${{ matrix.packages }}
+        # Word splitting is wanted: PACKAGES lists several packages.
+        run: |
+          sudo apt-get update
+          # shellcheck disable=SC2086
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config $PACKAGES
+      # The Taskfile picks gtk3 or GTK 4 from the WebKitGTK it finds, and names the archive after it.
+      - run: go tool task release-build VERSION="$GITHUB_REF_NAME"
+      - name: The binary starts and knows its version
+        run: |
+          for bin in bin/release/djinn_linux_*/djinn; do
+            DJINN_HOME="$RUNNER_TEMP/djinn-home" "$bin" version | grep -Fx "djinn $GITHUB_REF_NAME"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-${{ matrix.arch }}-${{ matrix.gtk }}
+          path: bin/release/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    needs: check
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Signing and notarization, once the project has an Apple Developer ID (plan/71f9c331-releases.md). The secrets
+      # live in this repository's settings, never in a file: APPLE_CERTIFICATE_P12 (base64 of the Developer ID
+      # Application certificate), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, and an App Store Connect API key
+      # for notarytool: APPLE_API_KEY_P8 (base64), APPLE_API_KEY_ID, APPLE_API_ISSUER_ID. Then uncomment the codesign
+      # line of the release-build-macos task, and:
+      #
+      # - name: Import the signing certificate into a throwaway keychain
+      #   env:
+      #     APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+      #     APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      #   run: |
+      #     keychain="$RUNNER_TEMP/signing.keychain-db"
+      #     security create-keychain -p "" "$keychain"
+      #     security set-keychain-settings -lut 3600 "$keychain"
+      #     security unlock-keychain -p "" "$keychain"
+      #     echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+      #     security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+      #     security set-key-partition-list -S apple-tool:,apple: -s -k "" "$keychain"
+      #     security list-keychains -d user -s "$keychain"
+      #     rm "$RUNNER_TEMP/cert.p12"
+      - run: go tool task release-build-macos VERSION="$GITHUB_REF_NAME"
+        # env:
+        #   APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      # - name: Notarize
+      #   env:
+      #     APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+      #     APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      #     APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+      #   run: |
+      #     echo "$APPLE_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
+      #     ditto -c -k bin/release/djinn_darwin_universal "$RUNNER_TEMP/notarize.zip"
+      #     xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --wait \
+      #       --key "$RUNNER_TEMP/key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID"
+      #     rm "$RUNNER_TEMP/key.p8"
+      - name: The binary is universal, starts and knows its version
+        run: |
+          lipo -info bin/release/djinn_darwin_universal/djinn | grep -q "x86_64 arm64"
+          DJINN_HOME="$RUNNER_TEMP/djinn-home" bin/release/djinn_darwin_universal/djinn version | grep -Fx "djinn $GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: darwin-universal
+          path: bin/release/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    needs: check
+    # The window needs no CGO on Windows (WebView2): Linux builds it.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=windows GOARCH=amd64
+      - run: go tool task release-build VERSION="$GITHUB_REF_NAME" GOOS=windows GOARCH=arm64
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows
+          path: bin/release/*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Draft the GitHub release
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: bin/release
+          merge-multiple: true
+      # The notices ship beside the archives too, and the install scripts of this very release.
+      - run: cp LICENSE NOTICE THIRD_PARTY_NOTICES.md scripts/install.sh scripts/install.ps1 bin/release/
+      - run: go tool task release-sums
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag $prerelease \
+            --title "Djinn $GITHUB_REF_NAME" --generate-notes bin/release/*
