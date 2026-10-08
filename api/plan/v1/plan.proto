@@ -901,6 +901,9 @@ message Task {
   Cancellation cancelled = 62;
   // Comments on lines or ranges of the task's diff (TaskService.Comment).
   repeated TaskComment comments = 63;
+  // The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
+  // start starts it anyway.
+  bool machine_wait = 64;
 }
 
 // TaskRun is a single run of a task's worker.
@@ -3271,6 +3274,12 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Start a planned task that waits for the machine (no slot free, or the machine under pressure) now, anyway. A
+  // task that waits for anything else (its wish, a dependency, a write scope) keeps waiting.
+  rpc Start(TaskServiceStartRequest) returns (TaskServiceStartResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Follow a task's events as they come, from the first one or after a position; ends with the task.
   rpc Watch(TaskServiceWatchRequest) returns (stream TaskServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -3714,6 +3723,19 @@ message TaskServiceResumeRequest {
 
 message TaskServiceResumeResponse {
   // The task, running again.
+  Task task = 1;
+}
+
+message TaskServiceStartRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServiceStartResponse {
+  // The task, its worker started.
   Task task = 1;
 }
 

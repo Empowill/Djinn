@@ -128,6 +128,8 @@ type Decision struct {
 	// It waits for a dependency's work to be committed into the wish's integration branch: the integration commits
 	// that work at once.
 	Commit bool
+	// It waits for the machine alone: no slot free, or the machine under pressure. Forced, it may start.
+	Machine bool
 }
 
 // Planned tells whether Djinn starts the task by itself, once it is ready: a task planned on this machine, or one
@@ -166,11 +168,16 @@ func Resuming(t *planv1.Task) bool { return t.GetStatus() == planv1.TaskStatus_T
 func (s *Situation) Pass() []Decision {
 	var out []Decision
 	for _, t := range s.Order() {
-		why, failed := s.Blocker(t)
+		why, failed := s.Held(t)
+		machine := false
 		if why == "" && failed == "" {
-			s.Start(t)
+			if why = s.full(t); why == "" {
+				s.Start(t)
+			}
+			machine = why != ""
 		}
-		out = append(out, Decision{Task: t, Why: why, Failed: failed, Commit: why != "" && s.awaitsCommit(t)})
+		out = append(out, Decision{Task: t, Why: why, Failed: failed, Commit: why != "" && s.awaitsCommit(t),
+			Machine: machine})
 	}
 	return out
 }
@@ -314,6 +321,15 @@ func (s *Situation) writing(t *planv1.Task) bool {
 // pressure and memory too.
 // A wish the situation does not know does not hold the task.
 func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
+	if why, failed = s.Held(t); why != "" || failed != "" {
+		return why, failed
+	}
+	return s.full(t), ""
+}
+
+// Held is Blocker without the machine: what holds the task whatever the machine allows. A task forced to start
+// (djinn task start) needs Held empty.
+func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 	if wish, ok := s.wishes[t.GetWishId()]; ok && !plan.Active(wish) {
 		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), ""
 	}
@@ -389,7 +405,7 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 			}
 		}
 	}
-	return s.full(t), ""
+	return "", ""
 }
 
 // awaitsCommit tells whether a dependency of t is done, its work waiting to be committed.
@@ -581,7 +597,7 @@ func provider(t *planv1.Task) string { return Provider(t) }
 // and the memory holds a worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
 func (s *Situation) full(t *planv1.Task) string {
 	m := s.machine
-	if m == nil {
+	if m == nil || Watcher(t) { // A watcher sleeps until its command prints: no slot.
 		return ""
 	}
 	if m.Pressure != "" {
