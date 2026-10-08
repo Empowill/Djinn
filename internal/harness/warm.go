@@ -169,7 +169,7 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 	}
 	w.spec = Spec{
 		TaskID: id, Dir: dir, ReadOnly: ww.readOnly, Permissions: ww.perms,
-		Env: []string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID},
+		Env: []string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID}, Prefix: h.prefix,
 	}
 	worker, err := h.warmer().Warm(h.ctx, w.spec)
 	if err != nil {

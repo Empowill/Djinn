@@ -27,6 +27,8 @@ const (
 	MachineServiceName = "machine.v1.MachineService"
 	// GateServiceName is the fully-qualified name of the GateService service.
 	GateServiceName = "machine.v1.GateService"
+	// CommandServiceName is the fully-qualified name of the CommandService service.
+	CommandServiceName = "machine.v1.CommandService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -43,6 +45,10 @@ const (
 	GateServiceHoldProcedure = "/machine.v1.GateService/Hold"
 	// GateServiceListProcedure is the fully-qualified name of the GateService's List RPC.
 	GateServiceListProcedure = "/machine.v1.GateService/List"
+	// CommandServiceListProcedure is the fully-qualified name of the CommandService's List RPC.
+	CommandServiceListProcedure = "/machine.v1.CommandService/List"
+	// CommandServiceRecordProcedure is the fully-qualified name of the CommandService's Record RPC.
+	CommandServiceRecordProcedure = "/machine.v1.CommandService/Record"
 )
 
 // MachineServiceClient is a client for the machine.v1.MachineService service.
@@ -217,4 +223,106 @@ func (UnimplementedGateServiceHandler) Hold(context.Context, *connect.Request[v1
 
 func (UnimplementedGateServiceHandler) List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.GateService.List is not implemented"))
+}
+
+// CommandServiceClient is a client for the machine.v1.CommandService service.
+type CommandServiceClient interface {
+	// List what the commands of the projects cost, the most run first.
+	List(context.Context, *connect.Request[v1.CommandServiceListRequest]) (*connect.Response[v1.CommandServiceListResponse], error)
+	// Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
+	// task's, or the one whose folder holds the directory; a command outside any project is not recorded.
+	Record(context.Context, *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error)
+}
+
+// NewCommandServiceClient constructs a client for the machine.v1.CommandService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewCommandServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) CommandServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	commandServiceMethods := v1.File_machine_v1_machine_proto.Services().ByName("CommandService").Methods()
+	return &commandServiceClient{
+		list: connect.NewClient[v1.CommandServiceListRequest, v1.CommandServiceListResponse](
+			httpClient,
+			baseURL+CommandServiceListProcedure,
+			connect.WithSchema(commandServiceMethods.ByName("List")),
+			connect.WithClientOptions(opts...),
+		),
+		record: connect.NewClient[v1.CommandServiceRecordRequest, v1.CommandServiceRecordResponse](
+			httpClient,
+			baseURL+CommandServiceRecordProcedure,
+			connect.WithSchema(commandServiceMethods.ByName("Record")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// commandServiceClient implements CommandServiceClient.
+type commandServiceClient struct {
+	list   *connect.Client[v1.CommandServiceListRequest, v1.CommandServiceListResponse]
+	record *connect.Client[v1.CommandServiceRecordRequest, v1.CommandServiceRecordResponse]
+}
+
+// List calls machine.v1.CommandService.List.
+func (c *commandServiceClient) List(ctx context.Context, req *connect.Request[v1.CommandServiceListRequest]) (*connect.Response[v1.CommandServiceListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
+// Record calls machine.v1.CommandService.Record.
+func (c *commandServiceClient) Record(ctx context.Context, req *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error) {
+	return c.record.CallUnary(ctx, req)
+}
+
+// CommandServiceHandler is an implementation of the machine.v1.CommandService service.
+type CommandServiceHandler interface {
+	// List what the commands of the projects cost, the most run first.
+	List(context.Context, *connect.Request[v1.CommandServiceListRequest]) (*connect.Response[v1.CommandServiceListResponse], error)
+	// Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
+	// task's, or the one whose folder holds the directory; a command outside any project is not recorded.
+	Record(context.Context, *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error)
+}
+
+// NewCommandServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewCommandServiceHandler(svc CommandServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	commandServiceMethods := v1.File_machine_v1_machine_proto.Services().ByName("CommandService").Methods()
+	commandServiceListHandler := connect.NewUnaryHandler(
+		CommandServiceListProcedure,
+		svc.List,
+		connect.WithSchema(commandServiceMethods.ByName("List")),
+		connect.WithHandlerOptions(opts...),
+	)
+	commandServiceRecordHandler := connect.NewUnaryHandler(
+		CommandServiceRecordProcedure,
+		svc.Record,
+		connect.WithSchema(commandServiceMethods.ByName("Record")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/machine.v1.CommandService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case CommandServiceListProcedure:
+			commandServiceListHandler.ServeHTTP(w, r)
+		case CommandServiceRecordProcedure:
+			commandServiceRecordHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedCommandServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedCommandServiceHandler struct{}
+
+func (UnimplementedCommandServiceHandler) List(context.Context, *connect.Request[v1.CommandServiceListRequest]) (*connect.Response[v1.CommandServiceListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.CommandService.List is not implemented"))
+}
+
+func (UnimplementedCommandServiceHandler) Record(context.Context, *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.CommandService.Record is not implemented"))
 }

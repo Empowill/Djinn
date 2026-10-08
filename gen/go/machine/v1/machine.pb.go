@@ -653,6 +653,387 @@ func (x *GateServiceListResponse) GetGates() []*Gate {
 	return nil
 }
 
+// CommandCost is what a command of a project costs, over the runs Djinn measured. The peak memory is the resident
+// memory of the command's largest process, children included once they ended; 0 where the system does not give it
+// (Windows).
+type CommandCost struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Identifier, a UUIDv7.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Project the command runs in.
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The command and its arguments, as run, up to 200 characters; case is ignored.
+	Command string `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
+	// How many runs were measured.
+	Runs int32 `protobuf:"varint,4,opt,name=runs,proto3" json:"runs,omitempty"`
+	// Mean CPU time of a run, user and system, in seconds: the command and the children it waited for.
+	CpuSeconds float64 `protobuf:"fixed64,5,opt,name=cpu_seconds,json=cpuSeconds,proto3" json:"cpu_seconds,omitempty"`
+	// Mean duration of a run, in seconds.
+	Seconds float64 `protobuf:"fixed64,6,opt,name=seconds,proto3" json:"seconds,omitempty"`
+	// Highest peak memory of a run, in bytes.
+	PeakMemoryBytes uint64 `protobuf:"varint,7,opt,name=peak_memory_bytes,json=peakMemoryBytes,proto3" json:"peak_memory_bytes,omitempty"`
+	// CPU time of the last run, in seconds.
+	LastCpuSeconds float64 `protobuf:"fixed64,8,opt,name=last_cpu_seconds,json=lastCpuSeconds,proto3" json:"last_cpu_seconds,omitempty"`
+	// Duration of the last run, in seconds.
+	LastSeconds float64 `protobuf:"fixed64,9,opt,name=last_seconds,json=lastSeconds,proto3" json:"last_seconds,omitempty"`
+	// Peak memory of the last run, in bytes.
+	LastPeakMemoryBytes uint64 `protobuf:"varint,10,opt,name=last_peak_memory_bytes,json=lastPeakMemoryBytes,proto3" json:"last_peak_memory_bytes,omitempty"`
+	// Exit code of the last run.
+	LastExitCode int32 `protobuf:"varint,11,opt,name=last_exit_code,json=lastExitCode,proto3" json:"last_exit_code,omitempty"`
+	// When the last run ended.
+	LastTime      *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=last_time,json=lastTime,proto3" json:"last_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandCost) Reset() {
+	*x = CommandCost{}
+	mi := &file_machine_v1_machine_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandCost) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandCost) ProtoMessage() {}
+
+func (x *CommandCost) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandCost.ProtoReflect.Descriptor instead.
+func (*CommandCost) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CommandCost) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CommandCost) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *CommandCost) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *CommandCost) GetRuns() int32 {
+	if x != nil {
+		return x.Runs
+	}
+	return 0
+}
+
+func (x *CommandCost) GetCpuSeconds() float64 {
+	if x != nil {
+		return x.CpuSeconds
+	}
+	return 0
+}
+
+func (x *CommandCost) GetSeconds() float64 {
+	if x != nil {
+		return x.Seconds
+	}
+	return 0
+}
+
+func (x *CommandCost) GetPeakMemoryBytes() uint64 {
+	if x != nil {
+		return x.PeakMemoryBytes
+	}
+	return 0
+}
+
+func (x *CommandCost) GetLastCpuSeconds() float64 {
+	if x != nil {
+		return x.LastCpuSeconds
+	}
+	return 0
+}
+
+func (x *CommandCost) GetLastSeconds() float64 {
+	if x != nil {
+		return x.LastSeconds
+	}
+	return 0
+}
+
+func (x *CommandCost) GetLastPeakMemoryBytes() uint64 {
+	if x != nil {
+		return x.LastPeakMemoryBytes
+	}
+	return 0
+}
+
+func (x *CommandCost) GetLastExitCode() int32 {
+	if x != nil {
+		return x.LastExitCode
+	}
+	return 0
+}
+
+func (x *CommandCost) GetLastTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastTime
+	}
+	return nil
+}
+
+type CommandServiceListRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Only the commands of this project, by name or identifier.
+	Project       string `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandServiceListRequest) Reset() {
+	*x = CommandServiceListRequest{}
+	mi := &file_machine_v1_machine_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandServiceListRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandServiceListRequest) ProtoMessage() {}
+
+func (x *CommandServiceListRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandServiceListRequest.ProtoReflect.Descriptor instead.
+func (*CommandServiceListRequest) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CommandServiceListRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+type CommandServiceListResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The commands, by project, the most run first.
+	Costs         []*CommandCost `protobuf:"bytes,1,rep,name=costs,proto3" json:"costs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandServiceListResponse) Reset() {
+	*x = CommandServiceListResponse{}
+	mi := &file_machine_v1_machine_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandServiceListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandServiceListResponse) ProtoMessage() {}
+
+func (x *CommandServiceListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandServiceListResponse.ProtoReflect.Descriptor instead.
+func (*CommandServiceListResponse) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CommandServiceListResponse) GetCosts() []*CommandCost {
+	if x != nil {
+		return x.Costs
+	}
+	return nil
+}
+
+type CommandServiceRecordRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Task that ran the command; its project is the command's.
+	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// Folder the command ran in, absolute: it finds the project when no task is given.
+	Directory string `protobuf:"bytes,2,opt,name=directory,proto3" json:"directory,omitempty"`
+	// The command and its arguments, as run.
+	Command string `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
+	// CPU time, user and system, in seconds.
+	CpuSeconds float64 `protobuf:"fixed64,4,opt,name=cpu_seconds,json=cpuSeconds,proto3" json:"cpu_seconds,omitempty"`
+	// Duration, in seconds.
+	Seconds float64 `protobuf:"fixed64,5,opt,name=seconds,proto3" json:"seconds,omitempty"`
+	// Peak memory, in bytes; 0 when unknown.
+	PeakMemoryBytes uint64 `protobuf:"varint,6,opt,name=peak_memory_bytes,json=peakMemoryBytes,proto3" json:"peak_memory_bytes,omitempty"`
+	// Exit code of the command.
+	ExitCode      int32 `protobuf:"varint,7,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandServiceRecordRequest) Reset() {
+	*x = CommandServiceRecordRequest{}
+	mi := &file_machine_v1_machine_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandServiceRecordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandServiceRecordRequest) ProtoMessage() {}
+
+func (x *CommandServiceRecordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandServiceRecordRequest.ProtoReflect.Descriptor instead.
+func (*CommandServiceRecordRequest) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *CommandServiceRecordRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *CommandServiceRecordRequest) GetDirectory() string {
+	if x != nil {
+		return x.Directory
+	}
+	return ""
+}
+
+func (x *CommandServiceRecordRequest) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *CommandServiceRecordRequest) GetCpuSeconds() float64 {
+	if x != nil {
+		return x.CpuSeconds
+	}
+	return 0
+}
+
+func (x *CommandServiceRecordRequest) GetSeconds() float64 {
+	if x != nil {
+		return x.Seconds
+	}
+	return 0
+}
+
+func (x *CommandServiceRecordRequest) GetPeakMemoryBytes() uint64 {
+	if x != nil {
+		return x.PeakMemoryBytes
+	}
+	return 0
+}
+
+func (x *CommandServiceRecordRequest) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+type CommandServiceRecordResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What the command costs now; absent when it ran outside any project.
+	Cost          *CommandCost `protobuf:"bytes,1,opt,name=cost,proto3" json:"cost,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandServiceRecordResponse) Reset() {
+	*x = CommandServiceRecordResponse{}
+	mi := &file_machine_v1_machine_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandServiceRecordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandServiceRecordResponse) ProtoMessage() {}
+
+func (x *CommandServiceRecordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandServiceRecordResponse.ProtoReflect.Descriptor instead.
+func (*CommandServiceRecordResponse) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CommandServiceRecordResponse) GetCost() *CommandCost {
+	if x != nil {
+		return x.Cost
+	}
+	return nil
+}
+
 var File_machine_v1_machine_proto protoreflect.FileDescriptor
 
 const file_machine_v1_machine_proto_rawDesc = "" +
@@ -698,7 +1079,41 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x18\n" +
 	"\x16GateServiceListRequest\"A\n" +
 	"\x17GateServiceListResponse\x12&\n" +
-	"\x05gates\x18\x01 \x03(\v2\x10.machine.v1.GateR\x05gates*T\n" +
+	"\x05gates\x18\x01 \x03(\v2\x10.machine.v1.GateR\x05gates\"\xd7\x03\n" +
+	"\vCommandCost\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x18\n" +
+	"\acommand\x18\x03 \x01(\tR\acommand\x12\x12\n" +
+	"\x04runs\x18\x04 \x01(\x05R\x04runs\x12\x1f\n" +
+	"\vcpu_seconds\x18\x05 \x01(\x01R\n" +
+	"cpuSeconds\x12\x18\n" +
+	"\aseconds\x18\x06 \x01(\x01R\aseconds\x12*\n" +
+	"\x11peak_memory_bytes\x18\a \x01(\x04R\x0fpeakMemoryBytes\x12(\n" +
+	"\x10last_cpu_seconds\x18\b \x01(\x01R\x0elastCpuSeconds\x12!\n" +
+	"\flast_seconds\x18\t \x01(\x01R\vlastSeconds\x123\n" +
+	"\x16last_peak_memory_bytes\x18\n" +
+	" \x01(\x04R\x13lastPeakMemoryBytes\x12$\n" +
+	"\x0elast_exit_code\x18\v \x01(\x05R\flastExitCode\x127\n" +
+	"\tlast_time\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\blastTime:\x19\xd2\xf3\x18\x15\n" +
+	"\n" +
+	"project_id\n" +
+	"\acommand\">\n" +
+	"\x19CommandServiceListRequest\x12!\n" +
+	"\aproject\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18dR\aproject\"K\n" +
+	"\x1aCommandServiceListResponse\x12-\n" +
+	"\x05costs\x18\x01 \x03(\v2\x17.machine.v1.CommandCostR\x05costs\"\xb6\x02\n" +
+	"\x1bCommandServiceRecordRequest\x12$\n" +
+	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12&\n" +
+	"\tdirectory\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\tdirectory\x12%\n" +
+	"\acommand\x18\x03 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xc8\x01R\acommand\x12/\n" +
+	"\vcpu_seconds\x18\x04 \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00R\n" +
+	"cpuSeconds\x12(\n" +
+	"\aseconds\x18\x05 \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00R\aseconds\x12*\n" +
+	"\x11peak_memory_bytes\x18\x06 \x01(\x04R\x0fpeakMemoryBytes\x12\x1b\n" +
+	"\texit_code\x18\a \x01(\x05R\bexitCode\"K\n" +
+	"\x1cCommandServiceRecordResponse\x12+\n" +
+	"\x04cost\x18\x01 \x01(\v2\x17.machine.v1.CommandCostR\x04cost*T\n" +
 	"\tGateState\x12\x1a\n" +
 	"\x16GATE_STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12GATE_STATE_WAITING\x10\x01\x12\x13\n" +
@@ -707,7 +1122,10 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x04Show\x12%.machine.v1.MachineServiceShowRequest\x1a&.machine.v1.MachineServiceShowResponse\"\x04\xc8\xf3\x18\x012\xbd\x01\n" +
 	"\vGateService\x12W\n" +
 	"\x04Hold\x12\".machine.v1.GateServiceHoldRequest\x1a#.machine.v1.GateServiceHoldResponse\"\x04\xc8\xf3\x18\x010\x01\x12U\n" +
-	"\x04List\x12\".machine.v1.GateServiceListRequest\x1a#.machine.v1.GateServiceListResponse\"\x04\xc8\xf3\x18\x01B\x9e\x01\n" +
+	"\x04List\x12\".machine.v1.GateServiceListRequest\x1a#.machine.v1.GateServiceListResponse\"\x04\xc8\xf3\x18\x012\xd0\x01\n" +
+	"\x0eCommandService\x12[\n" +
+	"\x04List\x12%.machine.v1.CommandServiceListRequest\x1a&.machine.v1.CommandServiceListResponse\"\x04\xc8\xf3\x18\x01\x12a\n" +
+	"\x06Record\x12'.machine.v1.CommandServiceRecordRequest\x1a(.machine.v1.CommandServiceRecordResponse\"\x04\xc8\xf3\x18\x02B\x9e\x01\n" +
 	"\x0ecom.machine.v1B\fMachineProtoP\x01Z5github.com/empowill/djinn/gen/go/machine/v1;machinev1\xa2\x02\x03MXX\xaa\x02\n" +
 	"Machine.V1\xca\x02\n" +
 	"Machine\\V1\xe2\x02\x16Machine\\V1\\GPBMetadata\xea\x02\vMachine::V1b\x06proto3"
@@ -725,39 +1143,51 @@ func file_machine_v1_machine_proto_rawDescGZIP() []byte {
 }
 
 var file_machine_v1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_machine_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_machine_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_machine_v1_machine_proto_goTypes = []any{
-	(GateState)(0),                     // 0: machine.v1.GateState
-	(*Pressure)(nil),                   // 1: machine.v1.Pressure
-	(*Machine)(nil),                    // 2: machine.v1.Machine
-	(*MachineServiceShowRequest)(nil),  // 3: machine.v1.MachineServiceShowRequest
-	(*MachineServiceShowResponse)(nil), // 4: machine.v1.MachineServiceShowResponse
-	(*Gate)(nil),                       // 5: machine.v1.Gate
-	(*GateServiceHoldRequest)(nil),     // 6: machine.v1.GateServiceHoldRequest
-	(*GateServiceHoldResponse)(nil),    // 7: machine.v1.GateServiceHoldResponse
-	(*GateServiceListRequest)(nil),     // 8: machine.v1.GateServiceListRequest
-	(*GateServiceListResponse)(nil),    // 9: machine.v1.GateServiceListResponse
-	(*timestamppb.Timestamp)(nil),      // 10: google.protobuf.Timestamp
+	(GateState)(0),                       // 0: machine.v1.GateState
+	(*Pressure)(nil),                     // 1: machine.v1.Pressure
+	(*Machine)(nil),                      // 2: machine.v1.Machine
+	(*MachineServiceShowRequest)(nil),    // 3: machine.v1.MachineServiceShowRequest
+	(*MachineServiceShowResponse)(nil),   // 4: machine.v1.MachineServiceShowResponse
+	(*Gate)(nil),                         // 5: machine.v1.Gate
+	(*GateServiceHoldRequest)(nil),       // 6: machine.v1.GateServiceHoldRequest
+	(*GateServiceHoldResponse)(nil),      // 7: machine.v1.GateServiceHoldResponse
+	(*GateServiceListRequest)(nil),       // 8: machine.v1.GateServiceListRequest
+	(*GateServiceListResponse)(nil),      // 9: machine.v1.GateServiceListResponse
+	(*CommandCost)(nil),                  // 10: machine.v1.CommandCost
+	(*CommandServiceListRequest)(nil),    // 11: machine.v1.CommandServiceListRequest
+	(*CommandServiceListResponse)(nil),   // 12: machine.v1.CommandServiceListResponse
+	(*CommandServiceRecordRequest)(nil),  // 13: machine.v1.CommandServiceRecordRequest
+	(*CommandServiceRecordResponse)(nil), // 14: machine.v1.CommandServiceRecordResponse
+	(*timestamppb.Timestamp)(nil),        // 15: google.protobuf.Timestamp
 }
 var file_machine_v1_machine_proto_depIdxs = []int32{
 	1,  // 0: machine.v1.Machine.cpu_pressure:type_name -> machine.v1.Pressure
 	1,  // 1: machine.v1.Machine.memory_pressure:type_name -> machine.v1.Pressure
-	10, // 2: machine.v1.Machine.read_time:type_name -> google.protobuf.Timestamp
+	15, // 2: machine.v1.Machine.read_time:type_name -> google.protobuf.Timestamp
 	2,  // 3: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
-	10, // 4: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
+	15, // 4: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
 	0,  // 5: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
 	5,  // 6: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
-	3,  // 7: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
-	6,  // 8: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
-	8,  // 9: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
-	4,  // 10: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
-	7,  // 11: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
-	9,  // 12: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
-	10, // [10:13] is the sub-list for method output_type
-	7,  // [7:10] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	15, // 7: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
+	10, // 8: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
+	10, // 9: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
+	3,  // 10: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
+	6,  // 11: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
+	8,  // 12: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
+	11, // 13: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
+	13, // 14: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
+	4,  // 15: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
+	7,  // 16: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
+	9,  // 17: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
+	12, // 18: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
+	14, // 19: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
+	15, // [15:20] is the sub-list for method output_type
+	10, // [10:15] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_machine_v1_machine_proto_init() }
@@ -772,9 +1202,9 @@ func file_machine_v1_machine_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_machine_v1_machine_proto_rawDesc), len(file_machine_v1_machine_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   14,
 			NumExtensions: 0,
-			NumServices:   2,
+			NumServices:   3,
 		},
 		GoTypes:           file_machine_v1_machine_proto_goTypes,
 		DependencyIndexes: file_machine_v1_machine_proto_depIdxs,

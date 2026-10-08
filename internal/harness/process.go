@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -32,9 +33,18 @@ type line struct {
 	stderr bool
 }
 
-// startProcess starts name in dir with args. The process gets Djinn's environment plus env, which Djinn passes
-// on without reading. On Unix it leads a process group of its own, so that stopping it stops what it started.
-func startProcess(dir, name string, args, env []string, grace time.Duration) (*process, error) {
+// startProcess starts name in dir with args, under prefix when not empty. The process gets Djinn's environment
+// plus env, which Djinn passes on without reading. On Unix it leads a process group of its own, so that stopping it
+// stops what it started.
+func startProcess(dir, name string, args, env, prefix []string, grace time.Duration) (*process, error) {
+	if len(prefix) > 0 {
+		// The prefix runs the program found here, and a missing one fails here, as without a prefix.
+		path, err := exec.LookPath(name)
+		if err != nil {
+			return nil, fmt.Errorf("%s not found in PATH", name)
+		}
+		name, args = prefix[0], append(append(slices.Clone(prefix[1:]), path), args...)
+	}
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	if len(env) > 0 {

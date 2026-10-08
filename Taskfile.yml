@@ -95,6 +95,11 @@ tasks:
     cmds:
       - go run ./tools/benchworkers
 
+  bench-dispatch:
+    desc: "Run the dispatch bench: the plain Go scheduler on hand-written dispatch cases (internal/dispatch/bench/cases.json), as a table of its decisions and the time per pass. No model (see plan/263f074f-dispatch-bench.md)"
+    cmds:
+      - go run -tags headless ./tools/benchdispatch
+
   e2e:
     desc: Build the interface and djinn, then run the browser-mode smoke tests headless (e2e/)
     deps: [ui]

@@ -51,6 +51,9 @@ func runUp(args []string) (restart bool, err error) {
 	warmWorkers := flags.Bool("warm-workers", false, "keep a claude loaded and waiting for the next task of each "+
 		"project of the active wishes, in the slots the running workers leave: it starts at once, and costs memory "+
 		"while it waits (about 300 MB each, supposed), no token")
+	workerCPU := flags.Int("worker-cpu", 0, "cap each worker's CPU at this percent of one core (150 is a core and a "+
+		"half), in a systemd user scope of its own; Linux with systemd only, and only where systemd gives your user the "+
+		"cpu controller, else workers run uncapped and djinn says why; 0 caps nothing; default $DJINN_WORKER_CPU")
 	if err := flags.Parse(args); err != nil {
 		return false, err
 	}
@@ -64,6 +67,14 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	if *maxWorkers < 0 || *maxWorkers > 16 {
 		return false, fmt.Errorf("--workers %d: expected 1 to 16, or 0 to decide from the machine", *maxWorkers)
+	}
+	if *workerCPU == 0 && os.Getenv("DJINN_WORKER_CPU") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_CPU"), workerCPU); err != nil {
+			return false, fmt.Errorf("DJINN_WORKER_CPU: %w", err)
+		}
+	}
+	if most := 100 * runtime.NumCPU(); *workerCPU < 0 || *workerCPU > most {
+		return false, fmt.Errorf("--worker-cpu %d: expected 1 to %d (percent of one core), or 0 for no cap", *workerCPU, most)
 	}
 	home, err := ui.Home()
 	if err != nil {
@@ -90,6 +101,14 @@ func runUp(args []string) (restart bool, err error) {
 	opts := []harness.Option{harness.WithCapacity(monitor.Capacity)}
 	if *warmWorkers {
 		opts = append(opts, harness.WithWarm())
+	}
+	if *workerCPU > 0 {
+		if prefix, err := machine.CPULimit(ctx, *workerCPU); err != nil {
+			fmt.Fprintf(os.Stderr, "djinn: %v; workers run uncapped\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "djinn: each worker runs in a systemd scope, its CPU capped at %d%% of a core\n", *workerCPU)
+			opts = append(opts, harness.WithPrefix(prefix))
+		}
 	}
 	workers := harness.New(db, home, harness.Providers(), opts...)
 	defer workers.Close()
@@ -150,6 +169,8 @@ func runUp(args []string) (restart bool, err error) {
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
 	svc[gatePrefix] = gateHandler
+	costsPrefix, costsHandler := machine.CostsHandler(db)
+	svc[costsPrefix] = costsHandler
 	backupPrefix, backupHandler := backup.Handler(db, home, version)
 	svc[backupPrefix] = backupHandler
 	h := server.Handler(djinn.UI(), svc)

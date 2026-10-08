@@ -36,12 +36,12 @@ func ActiveWishes(ctx context.Context, r store.Reader) ([]*planv1.Wish, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ranked(all), nil
+	return Ranked(all), nil
 }
 
-// ranked returns the active wishes of all by rank. A wish without a rank, made before ranks, comes after the ranked
+// Ranked returns the active wishes of all by rank. A wish without a rank, made before ranks, comes after the ranked
 // ones, the oldest first.
-func ranked(all []*planv1.Wish) []*planv1.Wish {
+func Ranked(all []*planv1.Wish) []*planv1.Wish {
 	out := slices.DeleteFunc(slices.Clone(all), func(w *planv1.Wish) bool { return !Active(w) })
 	rank := func(w *planv1.Wish) int32 {
 		if w.GetRank() <= 0 {
@@ -266,7 +266,7 @@ func rerank(ctx context.Context, tx *store.Tx) error {
 // sorted orders wishes as List gives them: the active ones by rank, then the paused ones, then the granted ones,
 // each the oldest first.
 func sorted(all []*planv1.Wish) []*planv1.Wish {
-	out := ranked(all)
+	out := Ranked(all)
 	for _, state := range []planv1.WishState{planv1.WishState_WISH_STATE_PAUSED, planv1.WishState_WISH_STATE_GRANTED} {
 		for _, w := range all {
 			if w.GetState() == state {

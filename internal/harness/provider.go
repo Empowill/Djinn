@@ -51,6 +51,9 @@ type Spec struct {
 	// SkillsDir is a folder of Djinn's own holding .claude/skills/<name> and .agents/skills/<name>, a link to each
 	// skill's folder in its source project; empty without skills, or when the links could not be made.
 	SkillsDir string
+	// Prefix is a command the worker's process runs under, its own command appended: a systemd scope that caps
+	// its CPU (djinn up --worker-cpu). Empty: the process runs as is.
+	Prefix []string
 }
 
 // Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.

@@ -17,15 +17,17 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
 )
 
-// Entities are the messages of plan.v1 the store keeps.
+// Entities are the messages the store keeps: those of plan.v1, and what each command of a project costs.
 func Entities() []proto.Message {
 	return []proto.Message{
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
+		&machinev1.CommandCost{},
 	}
 }
 
