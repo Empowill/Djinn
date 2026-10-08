@@ -5,7 +5,8 @@ package main
 // also looks for a newer release (release.go) and offers it the same way, downloading nothing yet. Only the window's
 // update button or `djinn update` restarts it: a release is first downloaded, verified and renamed over the running
 // binary; then Djinn notes its open terminals in the data directory, stops as when it quits (workers interrupted,
-// nothing lost), and starts the new binary, which runs those terminals again on the same sessions.
+// nothing lost), and starts the new binary, which runs those terminals again on the same sessions. The same note,
+// with the leads only, is kept while Djinn runs, for a crash (crash.go).
 
 import (
 	"context"
@@ -34,8 +35,8 @@ import (
 	"github.com/empowill/djinn/internal/ui"
 )
 
-// RestartFile holds, in the data directory, the terminals a restart runs again. The new djinn removes it once it
-// has run them; one that could not start finds it at the next djinn up.
+// RestartFile holds, in the data directory, the terminals a restart runs again: those of an update, or the leads
+// that ran when djinn up crashed (crash.go). The next djinn up removes it as it reads it, then runs them.
 const RestartFile = "restart.json"
 
 var (
@@ -47,7 +48,7 @@ var (
 
 // restartNote is what a restart remembers, in RestartFile.
 type restartNote struct {
-	// Version the restart goes to.
+	// Version the restart goes to; empty in the note of the leads, kept for a crash.
 	Version string `json:"version"`
 	// Terminals are the terminals that ran, in order.
 	Terminals []restartTerminal `json:"terminals"`
@@ -67,11 +68,11 @@ type restartTerminal struct {
 type updater struct {
 	exe      string // path of the running binary, as it started
 	version  string // version of the running binary
-	home     string
 	ui       *ui.Service
 	terms    *terminal.Manager
-	stop     func() // stops djinn up
-	releases source // where a newer release comes from; nil for a build from a checkout
+	leads    *leadNote // where the note of the restart goes
+	stop     func()    // stops djinn up
+	releases source    // where a newer release comes from; nil for a build from a checkout
 
 	mu         sync.Mutex
 	started    os.FileInfo // the file this djinn started from
@@ -84,7 +85,7 @@ type updater struct {
 
 // newUpdater returns the updater of a djinn of version. A development build never updates: workers rebuild it all the
 // time, and it is not the Djinn in use.
-func newUpdater(version, home string, svc *ui.Service, terms *terminal.Manager, stop func()) (*updater, error) {
+func newUpdater(version string, svc *ui.Service, terms *terminal.Manager, leads *leadNote, stop func()) (*updater, error) {
 	if version == "dev" {
 		return nil, nil
 	}
@@ -101,7 +102,7 @@ func newUpdater(version, home string, svc *ui.Service, terms *terminal.Manager, 
 		return nil, err
 	}
 	return &updater{
-		exe: exe, version: version, home: home, ui: svc, terms: terms, stop: stop, releases: releases,
+		exe: exe, version: version, ui: svc, terms: terms, leads: leads, stop: stop, releases: releases,
 		started: info, seen: info,
 	}, nil
 }
@@ -258,11 +259,7 @@ func (u *updater) restart() (string, int, error) {
 	for _, t := range u.terms.Running() {
 		note.Terminals = append(note.Terminals, restartTerminal{Name: t.Name, Command: resumable(t.Command), Directory: t.Dir})
 	}
-	data, err := json.MarshalIndent(note, "", "  ")
-	if err != nil {
-		return "", 0, err
-	}
-	if err := ui.WriteAtomic(filepath.Join(u.home, RestartFile), data); err != nil {
+	if err := u.leads.restart(note); err != nil {
 		return "", 0, fmt.Errorf("note the terminals: %w", err)
 	}
 	u.restarting = true
@@ -309,9 +306,10 @@ func (u *updater) Restarting() bool {
 	return u.restarting
 }
 
-// resumeTerminals runs again the terminals a restart noted in home, shows the window what it showed, and returns the
-// terminals that did not start, one line each. The note is removed once read: a lead that did not start keeps its
-// session in its wish, for djinn wish resume.
+// resumeTerminals runs again the terminals a restart noted in home, or the leads a crash left, shows the window what
+// it showed, and returns the terminals that did not start, one line each. The note is removed once read, before the
+// terminals start and the note of the leads follows them: a lead that did not start keeps its session in its wish,
+// for djinn wish resume.
 func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say io.Writer) []string {
 	path := filepath.Join(home, RestartFile)
 	data, err := os.ReadFile(path)
@@ -325,6 +323,9 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 	if err != nil {
 		fmt.Fprintln(say, "djinn: cannot read", path+":", err)
 		return []string{fmt.Sprintf("%s: %v", path, err)}
+	}
+	if err := os.Remove(path); err != nil {
+		fmt.Fprintln(say, "djinn:", err)
 	}
 	var failed []string
 	shown := ""
@@ -349,8 +350,10 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 	case shown != "":
 		svc.Present(strings.TrimPrefix(shown, "lead-"), shown)
 	}
-	if err := os.Remove(path); err != nil {
-		fmt.Fprintln(say, "djinn:", err)
+	if note.Version == "" {
+		fmt.Fprintf(say, "djinn: the last djinn up crashed, %d of %d leads reopened\n",
+			len(note.Terminals)-len(failed), len(note.Terminals))
+		return failed
 	}
 	fmt.Fprintf(say, "djinn: restarted on %s, %d of %d terminals resumed\n",
 		note.Version, len(note.Terminals)-len(failed), len(note.Terminals))

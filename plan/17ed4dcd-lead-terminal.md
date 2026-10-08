@@ -37,7 +37,11 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   `djinn up` runs (e2e: a reopened page reads the same shell's output again). Closing the native
   window stops `djinn up`, so it hangs the terminal up.
 - [x] An update restarts Djinn and reopens the terminals that ran, on the same sessions, in the same folders;
-  one that cannot start is reported (`TestUpdate`, T12). After a crash nothing is noted yet: `djinn wish resume`.
+  one that cannot start is reported (`TestUpdate`, T12).
+- [x] A crash reopens the leads that ran, on their sessions, in their folders; a deliberate Quit reopens nothing
+  (`TestCrashReopensTheLeads`: a test djinn killed by its PID with SIGKILL, then started again, runs the fake
+  `claude --resume <session>` in its folder and shows it; stopped with SIGTERM, the note is gone and the next one starts
+  no claude; `TestChangedFollowsWhatRuns`).
 - [ ] This flight plan's session resumes inside Djinn's terminal and goes on by voice. (needs: a person, by voice)
 
 ## Decided along the way
@@ -77,10 +81,16 @@ included, so the session that builds Djinn can move into Djinn and keep going.
 - **Restart**: the running terminals are noted in `restart.json` (name, the exact command line, folder) and run
   again by the new Djinn with that same command: `claude --resume <id>` for a lead, the shell for `main`.
   `terminal.Manager.Running` lists them.
+- **After a crash**: the same `restart.json`, with no version and the lead terminals only (named `lead-…`), is kept
+  current while `djinn up` runs: `terminal.Config.Changed` rewrites it, atomically, each time a program starts or ends,
+  and removes it when no lead runs (`cmd/djinn/crash.go`). A stop as asked removes it: Quit in the tray or the window
+  menu, Ctrl+Q, SIGINT or SIGTERM, all of which end `djinn up` the normal way. An update writes its own note in its
+  place, which then stays. A crash (SIGKILL, a panic, a power cut) leaves it; so does `djinn up` stopping on an error,
+  whose note stops following the terminals before they hang up. The next `djinn up` removes it as it reads it, then
+  reopens the leads as after an update; one that does not start is in the banner, its wish keeps the session.
+  SIGTERM counts as a deliberate stop, so a session that ends (logout, shutdown) does not reopen the leads.
 
 ## Open questions
-- Reopen the leads after a crash too, not after a deliberate Quit: keep the note of open terminals
-  current, and read it at start-up.
 - macOS asks for microphone permission per app: the lead runs under Djinn, so Djinn needs the
   permission (and `NSMicrophoneUsageDescription` when packaged). Not checked: no Mac at hand.
 - Windows: the terminal compiles and is vetted, but has not run on a Windows machine yet; a

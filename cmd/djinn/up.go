@@ -125,9 +125,15 @@ func runUp(args []string) (restart bool, err error) {
 			return false, err
 		}
 	}
-	// The terminals hang up before the workers stop: the lead may be driving them.
-	terminals := terminal.NewManager(terminal.Config{Command: terminal.ShellCommand(*term), Dir: *termDir})
+	// The terminals hang up before the workers stop: the lead may be driving them. The note of the leads follows
+	// them until djinn up stops, and is left as it is before they hang up: a crash, or an error, keeps it.
+	leadNotes := newLeadNote(home, os.Stderr)
+	terminals := terminal.NewManager(terminal.Config{
+		Command: terminal.ShellCommand(*term), Dir: *termDir, Changed: leadNotes.update,
+	})
+	leadNotes.terms = terminals
 	defer terminals.Close()
+	defer leadNotes.freeze()
 	if !hasWindow && !*browser {
 		fmt.Fprintln(os.Stderr, "djinn: this build has no native window, serving the browser instead")
 		*browser = true
@@ -140,9 +146,9 @@ func runUp(args []string) (restart bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	// After an update, the terminals that ran before it run again.
+	// After an update, the terminals that ran before it run again; after a crash, the leads.
 	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
-	updates, err := newUpdater(version, home, uiSvc, terminals, stop)
+	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
 	}
@@ -216,14 +222,19 @@ func runUp(args []string) (restart bool, err error) {
 	switch {
 	case *browser:
 		fmt.Println("djinn: open", url)
-		return false, <-served
-	case transport == server.Wails:
-		err = openWindow(ctx, "", h, raise, notices)
+		err = <-served
 	default:
-		err = openWindow(ctx, url, nil, raise, notices)
+		if transport == server.Wails {
+			err = openWindow(ctx, "", h, raise, notices)
+		} else {
+			err = openWindow(ctx, url, nil, raise, notices)
+		}
+		stop() // The window is closed: stop the server too.
+		err = errors.Join(err, <-served)
 	}
-	stop() // The window is closed: stop the server too.
-	return false, errors.Join(err, <-served)
+	// Stopped as asked (Quit, Ctrl+Q, a signal): the leads are not reopened at the next start, unless it restarts.
+	leadNotes.quit()
+	return false, err
 }
 
 // services returns the Connect services, by path prefix: the window's, the plan's on the database, the tasks' on
