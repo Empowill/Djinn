@@ -72,8 +72,8 @@ projects it touches, and a project is not necessarily a Git repository.
 - [x] A session exported here imports on another machine and finds or asks for its projects.
 - [x] `djinn wish resume <wish>` takes the lead's own session back in the lead's terminal, starting Djinn if it
   does not run, and attaches to it if it already runs.
-- [ ] Without a lead session, `djinn wish resume` starts a new lead from a brief built out of the store (plan, open
-  questions, decisions, journal). Today it opens a shell in the wish's first project and says there is no session.
+- [x] Without a lead session, `djinn wish resume` starts a new lead from a brief built out of the store (plan, open
+  questions, decisions, journal): `djinn wish brief`, T22.
 - [x] Three active wishes at most: a fourth is refused by the lamp, with the ways out (pause, grant, `--paused`).
 - [x] The active wishes are ranked by hand (`djinn wish move <wish> --to 1`); `plan.ActiveWishes` gives them in
   order, for the scheduler (T07).
@@ -146,6 +146,13 @@ projects it touches, and a project is not necessarily a Git repository.
   mission does not follow the wish afterwards.
 - **The wish's page** (`djinn wish render`, `sync`) shows where the wish stands here: active and its rank, paused,
   or granted and when. A ready wish adds a line to "Waiting for you", with `djinn wish grant <wish>`.
+
+- **A new lead from the brief**: `djinn wish brief <wish>` prints it (Djinn's rules and the projects' rules, then
+  where the wish stands; no model, no local path). `djinn wish resume <wish> [--provider codex|antigravity]` without a
+  lead session starts the agent on it in the wish's first project (the wish's own data folder without one): claude
+  with the stable part appended to its system prompt and the rest as its first message, its session chosen by Djinn
+  and recorded as the lead once the terminal runs; codex and agy with the whole brief as their first message. The
+  details, and what is verified or supposed, are in T22.
 
 ## Open questions
 - The window shows one terminal at a time: `wish resume` switches it to the lead's, and a reload goes back to the

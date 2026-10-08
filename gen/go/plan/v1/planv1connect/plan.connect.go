@@ -75,6 +75,8 @@ const (
 	WishServiceSetLeadProcedure = "/plan.v1.WishService/SetLead"
 	// WishServiceResumeProcedure is the fully-qualified name of the WishService's Resume RPC.
 	WishServiceResumeProcedure = "/plan.v1.WishService/Resume"
+	// WishServiceBriefProcedure is the fully-qualified name of the WishService's Brief RPC.
+	WishServiceBriefProcedure = "/plan.v1.WishService/Brief"
 	// WishServiceSnapshotProcedure is the fully-qualified name of the WishService's Snapshot RPC.
 	WishServiceSnapshotProcedure = "/plan.v1.WishService/Snapshot"
 	// WishServiceAllowProcedure is the fully-qualified name of the WishService's Allow RPC.
@@ -490,9 +492,14 @@ type WishServiceClient interface {
 	// djinn if it is not running.
 	SetLead(context.Context, *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error)
 	// Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-	// to it if it runs. Without a lead session, the terminal runs a shell in the wish's first project. Starts djinn
-	// if it is not running.
+	// to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
+	// (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
+	// The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
+	// what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
+	// decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
+	// No local path, no secret.
+	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
@@ -571,6 +578,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Resume")),
 			connect.WithClientOptions(opts...),
 		),
+		brief: connect.NewClient[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse](
+			httpClient,
+			baseURL+WishServiceBriefProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Brief")),
+			connect.WithClientOptions(opts...),
+		),
 		snapshot: connect.NewClient[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse](
 			httpClient,
 			baseURL+WishServiceSnapshotProcedure,
@@ -631,6 +644,7 @@ type wishServiceClient struct {
 	importData *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
 	setLead    *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
 	resume     *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
+	brief      *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
 	snapshot   *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
 	allow      *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
 	grant      *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
@@ -674,6 +688,11 @@ func (c *wishServiceClient) SetLead(ctx context.Context, req *connect.Request[v1
 // Resume calls plan.v1.WishService.Resume.
 func (c *wishServiceClient) Resume(ctx context.Context, req *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error) {
 	return c.resume.CallUnary(ctx, req)
+}
+
+// Brief calls plan.v1.WishService.Brief.
+func (c *wishServiceClient) Brief(ctx context.Context, req *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {
+	return c.brief.CallUnary(ctx, req)
 }
 
 // Snapshot calls plan.v1.WishService.Snapshot.
@@ -737,9 +756,14 @@ type WishServiceHandler interface {
 	// djinn if it is not running.
 	SetLead(context.Context, *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error)
 	// Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-	// to it if it runs. Without a lead session, the terminal runs a shell in the wish's first project. Starts djinn
-	// if it is not running.
+	// to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
+	// (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
+	// The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
+	// what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
+	// decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
+	// No local path, no secret.
+	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
@@ -814,6 +838,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Resume")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceBriefHandler := connect.NewUnaryHandler(
+		WishServiceBriefProcedure,
+		svc.Brief,
+		connect.WithSchema(wishServiceMethods.ByName("Brief")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceSnapshotHandler := connect.NewUnaryHandler(
 		WishServiceSnapshotProcedure,
 		svc.Snapshot,
@@ -878,6 +908,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceSetLeadHandler.ServeHTTP(w, r)
 		case WishServiceResumeProcedure:
 			wishServiceResumeHandler.ServeHTTP(w, r)
+		case WishServiceBriefProcedure:
+			wishServiceBriefHandler.ServeHTTP(w, r)
 		case WishServiceSnapshotProcedure:
 			wishServiceSnapshotHandler.ServeHTTP(w, r)
 		case WishServiceAllowProcedure:
@@ -929,6 +961,10 @@ func (UnimplementedWishServiceHandler) SetLead(context.Context, *connect.Request
 
 func (UnimplementedWishServiceHandler) Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Resume is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Brief is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error) {

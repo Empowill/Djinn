@@ -106,8 +106,10 @@ func TestClaudeArgs(t *testing.T) {
 	}{
 		{"in a project", Spec{TaskID: "t1", Model: "opus", MaxBudgetUSD: 1.5},
 			append(slices.Clone(base), "--settings", native, "--session-id", "t1", "--model", "opus", "--max-budget-usd", "1.5")},
-		{"resumed and forked", Spec{TaskID: "t1", Resume: "s0", Fork: true},
-			append(slices.Clone(base), "--settings", native, "--resume", "s0", "--fork-session")},
+		{"forked: the new session is named after the task", Spec{TaskID: "t1", Resume: "s0", Fork: true},
+			append(slices.Clone(base), "--settings", native, "--resume", "s0", "--fork-session", "--session-id", "t1")},
+		{"resumed: the session keeps its name", Spec{TaskID: "t1", Resume: "t1"},
+			append(slices.Clone(base), "--settings", native, "--resume", "t1")},
 		{"outside any project", Spec{TaskID: "t1", ReadOnly: true},
 			append(slices.Clone(base), "--restricted", "--tools", "Read,Glob,Grep", "--permission-mode", "plan",
 				"--strict-mcp-config", "--session-id", "t1")},

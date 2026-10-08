@@ -248,6 +248,12 @@ message Task {
   bool scheduled = 23;
   // Why a planned task has not started yet; empty once it has.
   string wait_reason = 24;
+  // The session the worker started from, forked: a copy of another task's or of the lead's conversation, with a
+  // new session of its own. Empty for a worker that starts from its prompt alone, the default. Stays on this
+  // machine: an export leaves it out.
+  string fork_session = 25;
+  // Where the fork comes from, for a reader: the code of the task (W1), or "lead".
+  string fork_of = 26;
 }
 
 // TaskEventKind says what a worker event is. Its content stays free text.
@@ -592,11 +598,18 @@ service WishService {
     option (djinn.v1.autostart) = true;
   }
   // Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-  // to it if it runs. Without a lead session, the terminal runs a shell in the wish's first project. Starts djinn
-  // if it is not running.
+  // to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
+  // (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
   rpc Resume(WishServiceResumeRequest) returns (WishServiceResumeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.autostart) = true;
+  }
+  // The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
+  // what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
+  // decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
+  // No local path, no secret.
+  rpc Brief(WishServiceBriefRequest) returns (WishServiceBriefResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
   // Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
   rpc Snapshot(WishServiceSnapshotRequest) returns (WishServiceSnapshotResponse) {
@@ -859,6 +872,8 @@ message WishServiceResumeRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
+  // Kind of agent for a new lead, when the wish has none to resume: claude (the default), codex or antigravity.
+  Provider provider = 2 [(buf.validate.field).enum.defined_only = true];
 }
 
 message WishServiceResumeResponse {
@@ -874,6 +889,19 @@ message WishServiceResumeResponse {
   bool attached = 5;
   // What to know, when there is something: no session to resume, a terminal that runs something else.
   string note = 6;
+}
+
+message WishServiceBriefRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message WishServiceBriefResponse {
+  // The brief, in Markdown: the stable part, then the part that moves.
+  string text = 1;
 }
 
 message WishServiceSnapshotRequest {
@@ -1140,6 +1168,12 @@ message TaskServiceSpawnRequest {
   ];
   // Only plan the task: the call returns at once, and djinn up starts the worker when the task is ready.
   bool later = 10;
+  // Start the worker from a copy of this task's conversation (its code, W1, or its identifier), with a session of
+  // its own, instead of from the prompt alone. The inherited context is read again at every turn: prefer a short
+  // prompt, the default. Claude and Codex fork; Antigravity cannot.
+  string fork = 11 [(buf.validate.field).string.max_len = 64];
+  // Start the worker from a copy of the lead's conversation, as --fork does from a task.
+  bool from_lead = 12;
 }
 
 message TaskServiceSpawnResponse {

@@ -75,7 +75,11 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 			return false
 		}
 	}
-	if !emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "fake session " + spec.TaskID, SessionID: spec.TaskID}) {
+	session := "fake session " + spec.TaskID
+	if spec.Fork {
+		session += ", forked from " + spec.Resume
+	}
+	if !emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: session, SessionID: spec.TaskID}) {
 		w.res = stopped
 		return
 	}

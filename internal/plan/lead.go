@@ -100,6 +100,7 @@ func (w *Wishes) Resume(
 	}
 	res := &planv1.WishServiceResumeResponse{Wish: wish, Terminal: LeadTerminal(wish.GetId())}
 	var line, dir, exclusive string
+	var started *planv1.Lead // the lead a brief starts, recorded once its terminal runs
 	if lead := wish.GetLead(); lead.GetSessionId() != "" {
 		if line, err = resumeLine(lead); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
@@ -114,16 +115,29 @@ func (w *Wishes) Resume(
 		if dir, err = firstFolder(ctx, w.Store, wish); err != nil {
 			return nil, Status(err)
 		}
-		res.Note = "This wish has no lead session to resume: the lead's terminal runs a shell. " +
-			"djinn wish set-lead records the session of the lead."
+		var note string
+		if line, dir, started, note, err = w.newLead(ctx, wish, req.Msg.GetProvider(), dir); err != nil {
+			return nil, err
+		}
+		res.Note, exclusive = note, started.GetSessionId()
 	}
 	res.Command, res.Directory, res.Attached, err = w.Leads.Open(res.GetTerminal(), line, dir, exclusive)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
-	if res.GetAttached() && line != "" && !strings.Contains(strings.Join(res.GetCommand(), " "), line) {
+	running := strings.Join(res.GetCommand(), " ")
+	switch {
+	case res.GetAttached() && started != nil:
+		res.Note = fmt.Sprintf("The lead's terminal already runs %s: exit it there, then resume again to start a lead "+
+			"from the wish's brief.", running)
+	case res.GetAttached() && line != "" && !strings.Contains(running, line) && !strings.Contains(running, exclusive):
 		res.Note = fmt.Sprintf("The lead's terminal already runs %s, not %s: exit it there, then resume again.",
-			strings.Join(res.GetCommand(), " "), line)
+			running, line)
+	case !res.GetAttached() && started.GetSessionId() != "":
+		// The new lead runs: its session is the wish's lead from now on, for the next resume.
+		if res.Wish, err = w.recordLead(ctx, wish.GetId(), started); err != nil {
+			return nil, err
+		}
 	}
 	w.Leads.Show(wish.GetId(), res.GetTerminal())
 	return connect.NewResponse(res), nil

@@ -70,6 +70,10 @@ type Harness struct {
 	scheduling sync.Once
 	loopDone   chan struct{} // closed when the scheduler has stopped; nil until Schedule
 
+	// Warm workers (warm.go), guarded by sched.
+	warmOn bool
+	warm   map[string]*warm // by wish/project
+
 	mu      sync.Mutex
 	closed  bool
 	runs    map[string]*run // by task id
@@ -95,6 +99,7 @@ type run struct {
 	seq     int64         // last event written
 	base    *planv1.Usage // what the task had spent before this worker
 	restart bool          // the worker stops to start again, allowed to edit
+	warm    *warm         // the warm worker the task takes, until launch
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
@@ -124,7 +129,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
-		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
+		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}), warm: map[string]*warm{},
 	}
 	for _, o := range opts {
 		o(h)
@@ -142,12 +147,14 @@ func (h *Harness) Close() {
 	if h.loopDone != nil {
 		<-h.loopDone
 	}
+	h.closeWarm()
 	h.wg.Wait()
 }
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
 // what resuming them needs (provider, session, worktree); nothing restarts them.
 func (h *Harness) Recover(ctx context.Context) error {
+	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		return err
@@ -187,18 +194,13 @@ func (h *Harness) Recover(ctx context.Context) error {
 // reason, and the scheduler starts it as soon as it can. What the worker may do is decided when it starts
 // (prepare).
 func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
-	kind := cmp.Or(req.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
-	provider, ok := h.providers[kind]
-	if !ok {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", kind))
-	}
 	scopes, err := cleanScopes(req.GetWriteScopes())
 	if err != nil {
 		return nil, err
 	}
 	task := &planv1.Task{
 		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
-		Provider: kind, CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
+		CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
 		WriteScopes: scopes, Scheduled: true,
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
@@ -209,6 +211,17 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, req.GetWishId())
 	if err != nil {
 		return nil, plan.Status(err)
+	}
+	kind := cmp.Or(req.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
+	if src, err := forkSource(ctx, h.store, wish, req); err != nil {
+		return nil, plan.Status(err)
+	} else if src.session != "" {
+		task.ForkSession, task.ForkOf, kind = src.session, src.of, src.provider
+	}
+	task.Provider = kind
+	provider, ok := h.providers[kind]
+	if !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", kind))
 	}
 	project, err := pickProject(ctx, h.store, wish, req.GetProjectId())
 	if err != nil {
@@ -233,10 +246,21 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		return h.plan(ctx, procedure, req, task, prompt, why)
 	}
 
+	// A warm worker of the wish in the project, when the task asks for nothing it was not started with.
+	var wk *warm
+	if task.GetForkSession() == "" && task.GetModel() == "" && task.GetMaxBudgetUsd() == 0 {
+		if wk = h.claimWarm(ctx, wish, project, kind); wk != nil {
+			task.Id = wk.id
+		}
+	}
 	r, err := h.newRun(task, 1)
 	if err != nil {
+		if wk != nil {
+			h.dropWarm(wk, "the task did not start")
+		}
 		return nil, err
 	}
+	r.warm = wk
 	var prep prepared
 	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -255,6 +279,9 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		return tx.Put(prompted)
 	})
 	if err != nil {
+		if wk != nil {
+			h.dropWarm(wk, "the task did not start")
+		}
 		h.forget(r)
 		return nil, plan.Status(err)
 	}
@@ -323,6 +350,20 @@ func (h *Harness) launch(
 	ctx context.Context, r *run, provider Provider, project *planv1.Project, prep prepared, prompt string,
 ) (*planv1.Task, error) {
 	task := r.task
+	readOnly, perms := accessSpec(task.GetAccess(), prep.declared)
+	wk := r.warm
+	r.warm = nil
+	if wk != nil && !wk.fits(readOnly, perms) {
+		// Decided otherwise in the meantime: its worktree is the task's, so it goes first.
+		h.stopWarm(wk)
+		wk = nil
+	}
+	skills, skillsDir := h.summon(ctx, r, project)
+	if wk != nil && len(skills) > 0 {
+		// A warm worker started without the project's summoned skills: the task starts cold, with them.
+		h.stopWarm(wk)
+		wk = nil
+	}
 	dir := project.GetDirectory()
 	if project == nil {
 		// Outside any project the worker only reads, in an empty folder of its own.
@@ -336,7 +377,12 @@ func (h *Harness) launch(
 		task.Branch = branchName(task.GetCode(), task.GetTitle(), task.GetId())
 		task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
 		var err error
-		if dir, err = addWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch()); err != nil {
+		if wk != nil {
+			dir = wk.spec.Dir
+		} else {
+			dir, err = addWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch())
+		}
+		if err != nil {
 			task.Branch, task.Worktree = "", ""
 			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("create the worktree: %w", err)})
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: create the worktree: %w", task.GetCode(), err))
@@ -346,14 +392,22 @@ func (h *Harness) launch(
 	if task.GetBranch() != "" {
 		where += ", on branch " + task.GetBranch()
 	}
-	readOnly, perms := accessSpec(task.GetAccess(), prep.declared)
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: task.GetModel(),
-		MaxBudgetUSD: task.GetMaxBudgetUsd(),
+		MaxBudgetUSD: task.GetMaxBudgetUsd(), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
+		Skills: skills, SkillsDir: skillsDir,
 	}
-	spec.Skills, spec.SkillsDir = h.summon(ctx, r, project)
-	err := h.start(r, provider, spec, "started "+short(task.GetProvider())+" "+where+", "+accessText(task, prep.question)+
-		skillsText(spec.Skills))
+	if task.GetForkOf() != "" {
+		where += ", forked from " + forkText(task.GetForkOf())
+	}
+	text := "started " + short(task.GetProvider()) + " " + where + ", " + accessText(task, prep.question) +
+		skillsText(spec.Skills)
+	var err error
+	if wk != nil {
+		err = h.adoptWarm(ctx, r, provider, wk, spec, text)
+	} else {
+		err = h.start(r, provider, spec, text)
+	}
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrReadOnly) && task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:

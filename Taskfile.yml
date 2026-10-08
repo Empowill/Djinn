@@ -88,6 +88,11 @@ tasks:
     cmds:
       - go test -tags headless -run '^$' -bench . -benchmem {{.CLI_ARGS}} ./internal/server
 
+  bench-workers:
+    desc: "PAID: compare five ways Djinn starts a worker (cold, --bare, fork, warm, brief) on one small task with a real model. Prints its quote; runs only with BENCH_PAID=yes and BENCH_MAX_USD (see plan/1689571a-fast-workers.md)"
+    cmds:
+      - go run ./tools/benchworkers
+
   e2e:
     desc: Build the interface and djinn, then run the browser-mode smoke tests headless (e2e/)
     deps: [ui]

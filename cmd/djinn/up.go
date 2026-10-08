@@ -48,6 +48,9 @@ func runUp(args []string) (restart bool, err error) {
 	termDir := flags.String("terminal-dir", "", "working directory of the terminal; empty is the home directory")
 	maxWorkers := flags.Int("workers", 0, "most workers at once, 1 to 16; 0 decides from the machine "+
 		"(one per 2 cores and per 2 GiB of memory); default $DJINN_WORKERS")
+	warmWorkers := flags.Bool("warm-workers", false, "keep a claude loaded and waiting for the next task of each "+
+		"project of the active wishes, in the slots the running workers leave: it starts at once, and costs memory "+
+		"while it waits (about 300 MB each, supposed), no token")
 	if err := flags.Parse(args); err != nil {
 		return false, err
 	}
@@ -84,7 +87,11 @@ func runUp(args []string) (restart bool, err error) {
 	policy := machine.DefaultPolicy()
 	policy.Workers = *maxWorkers
 	monitor := machine.NewMonitor(policy, nil)
-	workers := harness.New(db, home, harness.Providers(), harness.WithCapacity(monitor.Capacity))
+	opts := []harness.Option{harness.WithCapacity(monitor.Capacity)}
+	if *warmWorkers {
+		opts = append(opts, harness.WithWarm())
+	}
+	workers := harness.New(db, home, harness.Providers(), opts...)
 	defer workers.Close()
 	if err := workers.Recover(ctx); err != nil {
 		return false, err

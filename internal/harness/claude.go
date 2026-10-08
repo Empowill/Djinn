@@ -22,6 +22,8 @@ type Claude struct {
 	Command string
 	// Grace is how long a worker asked to stop has before it is killed; Grace by default.
 	Grace time.Duration
+	// Extra are arguments passed after Djinn's own: the workers' bench tries --bare and a system prompt file.
+	Extra []string
 }
 
 // claudeReadTools are the only tools of a read-only worker: reading files, finding them, searching them.
@@ -68,14 +70,15 @@ func (c Claude) args(spec Spec) []string {
 		// Claude loads the skills of .claude/skills in a folder given with --add-dir (code.claude.com/docs/en/skills).
 		args = append(args, "--add-dir", spec.SkillsDir)
 	}
-	switch {
-	case spec.Resume != "":
+	if spec.Resume != "" {
 		args = append(args, "--resume", spec.Resume)
 		if spec.Fork {
 			args = append(args, "--fork-session")
 		}
-	case spec.TaskID != "":
-		// The session is named after the task, so it is known before the agent says it.
+	}
+	if spec.TaskID != "" && (spec.Resume == "" || spec.Fork) {
+		// The session is named after the task, so it is known before the agent says it; a fork names its new
+		// session so (claude takes --session-id with --resume only when it forks).
 		args = append(args, "--session-id", spec.TaskID)
 	}
 	if spec.Model != "" {
@@ -84,7 +87,7 @@ func (c Claude) args(spec Spec) []string {
 	if spec.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(spec.MaxBudgetUSD, 'f', -1, 64))
 	}
-	return args
+	return append(args, c.Extra...)
 }
 
 // claudePermissions are the permissions of Claude's settings for p: allow and deny rules, and the mode. Edit
@@ -149,6 +152,18 @@ func (c Claude) Start(ctx context.Context, spec Spec) (Worker, error) {
 		grace = Grace
 	}
 	return startStream(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine})
+}
+
+// Warm starts claude without a message: it loads, then waits on its input. The first Send is its first message.
+func (c Claude) Warm(ctx context.Context, spec Spec) (Worker, error) {
+	command, grace := c.Command, c.Grace
+	if command == "" {
+		command = "claude"
+	}
+	if grace == 0 {
+		grace = Grace
+	}
+	return startStreamIdle(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: claudeParser{}, encode: claudeMessageLine})
 }
 
 // claudeMessageLine is a user message as claude reads it in stream-json.
