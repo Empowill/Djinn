@@ -1,8 +1,10 @@
 package main
 
 // The update of the Djinn in use. `go tool task install` puts a newer djinn at the path of the running one without
-// disturbing it; the running one notices, says so, and waits. Only the window's update button or `djinn update`
-// restarts it: it notes its open terminals in the data directory, stops as when it quits (workers interrupted,
+// disturbing it; the running one notices, says so, and waits. A Djinn installed from a release, or with go install,
+// also looks for a newer release (release.go) and offers it the same way, downloading nothing yet. Only the window's
+// update button or `djinn update` restarts it: a release is first downloaded, verified and renamed over the running
+// binary; then Djinn notes its open terminals in the data directory, stops as when it quits (workers interrupted,
 // nothing lost), and starts the new binary, which runs those terminals again on the same sessions.
 
 import (
@@ -27,6 +29,7 @@ import (
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/server"
+	"github.com/empowill/djinn/internal/swapexe"
 	"github.com/empowill/djinn/internal/terminal"
 	"github.com/empowill/djinn/internal/ui"
 )
@@ -59,18 +62,23 @@ type restartTerminal struct {
 	Directory string   `json:"directory"`
 }
 
-// updater watches the path of the running djinn for a newer binary, and restarts on it when asked.
+// updater watches the path of the running djinn for a newer binary, and its releases for a newer one, and restarts on
+// it when asked.
 type updater struct {
-	exe     string // path of the running binary, as it started
-	version string // version of the running binary
-	home    string
-	ui      *ui.Service
-	terms   *terminal.Manager
-	stop    func() // stops djinn up
+	exe      string // path of the running binary, as it started
+	version  string // version of the running binary
+	home     string
+	ui       *ui.Service
+	terms    *terminal.Manager
+	stop     func() // stops djinn up
+	releases source // where a newer release comes from; nil for a build from a checkout
 
 	mu         sync.Mutex
 	started    os.FileInfo // the file this djinn started from
 	seen       os.FileInfo // the file last looked at
+	local      string      // version of the newer binary at the path; empty for none
+	offer      *release    // newer release offered, not downloaded yet
+	installing bool
 	restarting bool
 }
 
@@ -88,13 +96,22 @@ func newUpdater(version, home string, svc *ui.Service, terms *terminal.Manager, 
 	if err != nil {
 		return nil, err
 	}
+	releases, err := releaseSource(version)
+	if err != nil {
+		return nil, err
+	}
 	return &updater{
-		exe: exe, version: version, home: home, ui: svc, terms: terms, stop: stop, started: info, seen: info,
+		exe: exe, version: version, home: home, ui: svc, terms: terms, stop: stop, releases: releases,
+		started: info, seen: info,
 	}, nil
 }
 
-// run looks for a newer binary at once, then every updatePoll, until ctx is done.
+// run looks for a newer binary at once, then every updatePoll, and for a newer release at once, then every
+// releaseCheck, until ctx is done.
 func (u *updater) run(ctx context.Context) {
+	if u.releases != nil {
+		go u.watchReleases(ctx)
+	}
 	tick := time.NewTicker(updatePoll)
 	defer tick.Stop()
 	for {
@@ -115,23 +132,89 @@ func (u *updater) check(ctx context.Context) string {
 	info, err := os.Stat(u.exe)
 	if err != nil { // Between the two renames of an install on Windows, or removed: nothing to offer now.
 		u.seen = nil
-		u.ui.SetReady("")
+		u.local = ""
+		u.publish()
 		return ""
 	}
 	if u.seen != nil && os.SameFile(info, u.seen) && info.ModTime().Equal(u.seen.ModTime()) {
-		return u.ui.Ready()
+		return u.local
 	}
 	u.seen = info
-	ready := ""
+	u.local = ""
 	if !os.SameFile(info, u.started) || !info.ModTime().Equal(u.started.ModTime()) {
 		if v, err := binaryVersion(ctx, u.exe); err != nil {
 			fmt.Fprintln(os.Stderr, "djinn: the binary at", u.exe, "does not run:", err)
 		} else if v != u.version {
-			ready = v
+			u.local = v
 		}
 	}
+	u.publish()
+	return u.local
+}
+
+// publish tells the window what it may offer: the newer binary at the path, else the newer release. u.mu is held.
+func (u *updater) publish() {
+	ready := u.local
+	if ready == "" && u.offer != nil {
+		ready = u.offer.Version
+	}
 	u.ui.SetReady(ready)
-	return ready
+}
+
+// watchReleases asks the source for a newer release at once, then every releaseCheck, until ctx is done. It only
+// reads a version: nothing downloads before the click.
+func (u *updater) watchReleases(ctx context.Context) {
+	tick := time.NewTicker(releaseCheck)
+	defer tick.Stop()
+	for {
+		check, cancel := context.WithTimeout(ctx, time.Minute)
+		r, err := u.releases.latest(check)
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			fmt.Fprintln(os.Stderr, "djinn: looking for a newer release:", err)
+		}
+		if err == nil {
+			u.mu.Lock()
+			u.offer = r
+			u.publish()
+			u.mu.Unlock()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+// install downloads the newer release, checks that it runs and says the version it promises, and renames it over the
+// running binary, which keeps going on its old file: check then finds it at the path.
+func (u *updater) install(ctx context.Context) error {
+	u.mu.Lock()
+	if u.installing || u.restarting {
+		u.mu.Unlock()
+		return errors.New("djinn is already updating")
+	}
+	u.installing = true
+	u.mu.Unlock()
+	defer func() {
+		u.mu.Lock()
+		u.installing = false
+		u.mu.Unlock()
+	}()
+	path, version, err := u.releases.fetch(ctx, filepath.Dir(u.exe))
+	if err != nil {
+		return err
+	}
+	defer os.Remove(path) // Gone once renamed; left only when something failed.
+	got, err := binaryVersion(ctx, path)
+	if err != nil {
+		return fmt.Errorf("the downloaded djinn does not run: %w", err)
+	}
+	if got != version {
+		return fmt.Errorf("the downloaded djinn says it is %s, not %s", got, version)
+	}
+	return swapexe.Install(path, u.exe)
 }
 
 // binaryVersion runs exe version, and returns the version it prints.
@@ -154,7 +237,14 @@ func binaryVersion(ctx context.Context, exe string) (string, error) {
 // restart notes the running terminals, then stops djinn up, which starts the newer binary once everything is closed.
 // It is ui.Service.Restart.
 func (u *updater) restart() (string, int, error) {
-	version := u.check(context.Background())
+	ctx := context.Background()
+	version := u.check(ctx)
+	if version == "" && u.offered() {
+		if err := u.install(ctx); err != nil {
+			return "", 0, fmt.Errorf("install the new release: %w", err)
+		}
+		version = u.check(ctx)
+	}
 	if version == "" {
 		return "", 0, fmt.Errorf("no newer djinn waits at %s: install one first (go tool task install)", u.exe)
 	}
@@ -181,6 +271,13 @@ func (u *updater) restart() (string, int, error) {
 		u.stop()
 	}()
 	return version, len(note.Terminals), nil
+}
+
+// offered tells whether a newer release is offered.
+func (u *updater) offered() bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.offer != nil
 }
 
 // sessionID finds the session a lead was started with from a brief: claude --session-id <id> ….
@@ -294,7 +391,8 @@ func runUpdate(args []string) error {
 		return err
 	}
 	uiClient := uiv1connect.NewUiServiceClient(client, base)
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	// The time to download a release, then for the new djinn to answer.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	res, err := uiClient.Update(ctx, connect.NewRequest(&uiv1.UiServiceUpdateRequest{}))
 	if err != nil {

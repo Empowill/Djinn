@@ -44,13 +44,24 @@ func TestMain(m *testing.M) {
 		if v := os.Getenv("DJINN_TEST_VERSION"); v != "" {
 			version = v
 		}
-		// A copy of this binary "installed" by a test carries its version in a file next to it.
+		// A copy of this binary "installed" by a test carries its version in a file next to it, or, when it comes from
+		// a fake release, at its end.
 		if exe, err := os.Executable(); err == nil {
 			if v, err := os.ReadFile(exe + ".version"); err == nil {
 				version = strings.TrimSpace(string(v))
 			}
+			if v := trailerVersion(exe); v != "" {
+				version = v
+			}
 		}
 		updatePoll = updatePollForTests
+		// No test reaches the network: only a fake release, served by the test, is looked for.
+		checkReleases = os.Getenv("DJINN_TEST_RELEASE_API") != ""
+		if checkReleases {
+			releaseAPI = os.Getenv("DJINN_TEST_RELEASE_API")
+			releaseAsset = os.Getenv("DJINN_TEST_RELEASE_ASSET")
+			releaseCheck = releaseCheckForTests
+		}
 		main()
 		os.Exit(0)
 	}
