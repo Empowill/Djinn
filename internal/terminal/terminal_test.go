@@ -430,3 +430,50 @@ func TestService(t *testing.T) {
 		t.Fatalf("write to an unknown terminal: %v, want not found", err)
 	}
 }
+
+// TestServiceRunsALine runs a command line through the user's shell, pipes and all, as the agents' setup does; a
+// line and a command together are refused.
+func TestServiceRunsALine(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	m := NewManager(Config{Dir: t.TempDir()})
+	t.Cleanup(m.Close)
+	srv := httptest.NewServer(func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.Handle(Handler(m))
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	if _, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: "both", Command: []string{"/bin/sh"}, Line: "true",
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("a command and a line: %v, want invalid argument", err)
+	}
+	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: "setup", Line: "echo set''up | tr s S; exit 3",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := open.Msg.GetTerminal().GetCommand(); got[0] != "/bin/sh" || got[len(got)-1] != "echo set''up | tr s S; exit 3" {
+		t.Fatalf("command %q", got)
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	stream, err := c.Read(readCtx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: open.Msg.GetTerminal().GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	code := int32(0)
+	for stream.Receive() {
+		out.Write(stream.Msg().GetData())
+		if stream.Msg().GetExited() {
+			code = stream.Msg().GetExitCode()
+		}
+	}
+	if !strings.Contains(out.String(), "Setup") || code != 3 {
+		t.Fatalf("output %q, exit %d: %v", out.String(), code, stream.Err())
+	}
+}

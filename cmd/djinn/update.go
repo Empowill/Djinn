@@ -257,6 +257,9 @@ func (u *updater) restart() (string, int, error) {
 	note := restartNote{Version: version}
 	note.ShowWish, note.ShowTerminal = u.ui.LastShow()
 	for _, t := range u.terms.Running() {
+		if strings.HasPrefix(t.Name, "setup-") {
+			continue // An agent's install or sign-in, which the window started: never run again by itself.
+		}
 		note.Terminals = append(note.Terminals, restartTerminal{Name: t.Name, Command: resumable(t.Command), Directory: t.Dir})
 	}
 	if err := u.leads.restart(note); err != nil {

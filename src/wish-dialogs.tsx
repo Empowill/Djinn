@@ -4,12 +4,8 @@ import { ArrowRight, FolderOpen } from "lucide-react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 
 import { type Project, Provider, type Skill } from "../gen/ts/plan/v1/plan_pb";
-import {
-  type Provider as AgentEnvironment,
-  NotificationAccess,
-  ProviderState,
-  type UiServiceGetEnvironmentResponse,
-} from "../gen/ts/ui/v1/ui_pb";
+import { NotificationAccess, ProviderState } from "../gen/ts/ui/v1/ui_pb";
+import { AgentSetupPanel, agentOf, needsSetup, useAgents } from "./agent-setup";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
 import { MAX_ACTIVE } from "./data/format";
@@ -20,7 +16,6 @@ import {
   languages,
   setLanguage,
   systemLanguage,
-  type TextKey,
   t,
 } from "./i18n";
 import { defaultProvider, setDefaultProvider, wishProviders } from "./provider";
@@ -46,6 +41,11 @@ export function MakeWish({
   const [provider, setProvider] = useState<Provider>(defaultProvider);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Whether the chosen agent can run the wish; the setup of the agents shows in place of the form, which keeps what
+  // was typed.
+  const agents = useAgents();
+  const [setup, setSetup] = useState(false);
+  const agent = agents.env?.providers.find((p) => p.id === agentOf[provider]);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -63,6 +63,26 @@ export function MakeWish({
       setBusy(false);
     }
   };
+  if (setup)
+    return (
+      <ModalFrame
+        title={t("agents.title")}
+        eyebrow={t("make.eyebrow")}
+        onClose={onClose}
+        wide
+      >
+        <AgentSetupPanel agents={agents} />
+        <div className="modal-footer">
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => setSetup(false)}
+          >
+            {t("agents.back")}
+          </button>
+        </div>
+      </ModalFrame>
+    );
   return (
     <ModalFrame
       title={t("make.title")}
@@ -93,6 +113,22 @@ export function MakeWish({
             ))}
           </select>
         </label>
+        {agent && needsSetup(agent) && (
+          <div className="agent-warning" role="status">
+            <span>
+              {agent.state === ProviderState.MISSING
+                ? t("agents.make_missing", { agent: agent.name })
+                : t("agents.make_signed_out", { agent: agent.name })}
+            </span>
+            <button
+              type="button"
+              className="button secondary small"
+              onClick={() => setSetup(true)}
+            >
+              {t("agents.set_up")}
+            </button>
+          </div>
+        )}
         {projects.length > 0 && (
           <fieldset className="wish-projects">
             <legend>{t("make.projects")}</legend>
@@ -344,61 +380,6 @@ export function ProjectPanel({
   );
 }
 
-// agentStates names where an agent stands, and the dot that shows it.
-const agentStates: Record<ProviderState, { label: TextKey; dot: string }> = {
-  [ProviderState.UNSPECIFIED]: {
-    label: "settings.agent_unknown",
-    dot: "neutral",
-  },
-  [ProviderState.MISSING]: { label: "settings.agent_missing", dot: "neutral" },
-  [ProviderState.SIGNED_OUT]: {
-    label: "settings.agent_signed_out",
-    dot: "blocked",
-  },
-  [ProviderState.READY]: { label: "settings.agent_ready", dot: "green" },
-  [ProviderState.UNKNOWN]: { label: "settings.agent_unknown", dot: "blocked" },
-};
-
-// AgentSetting is one agent: installed or not, its version, signed in or not, and the command that takes it further.
-function AgentSetting({ agent }: { agent: AgentEnvironment }) {
-  const state = agentStates[agent.state] ?? agentStates[ProviderState.UNKNOWN];
-  const next =
-    agent.state === ProviderState.MISSING
-      ? { label: t("settings.agent_install"), command: agent.installCommand }
-      : agent.state === ProviderState.SIGNED_OUT
-        ? { label: t("settings.agent_login"), command: agent.loginCommand }
-        : agent.state === ProviderState.UNKNOWN && agent.loginCommand
-          ? {
-              label: t("settings.agent_login_unknown"),
-              command: agent.loginCommand,
-            }
-          : undefined;
-  return (
-    <div className="provider-setting">
-      <span className="provider-glyph">
-        {agent.id === "codex" ? "⬡" : agent.id === "agy" ? "◆" : "✳"}
-      </span>
-      <div>
-        <h3>{agent.name}</h3>
-        <span className="muted-text">
-          {agent.available
-            ? [agent.version, agent.command].filter(Boolean).join(" · ")
-            : t("settings.agent_missing")}
-        </span>
-        {next?.command && (
-          <small>
-            {next.label} <code>{next.command}</code>
-          </small>
-        )}
-      </div>
-      <span className="status-text">
-        <span className={`status-dot ${state.dot}`} />
-        {t(state.label)}
-      </span>
-    </div>
-  );
-}
-
 // NotificationSetting: whether the system shows Djinn's notifications, and the way to allow them. macOS asks once;
 // after a refusal only its settings change it.
 function NotificationSetting() {
@@ -486,22 +467,11 @@ function NotificationSetting() {
   );
 }
 
-// Settings: the agents djinn finds on this machine, and the language of the page.
+// Settings: the agents djinn finds on this machine, and how to set them up; the language of the page.
 export function Settings({ onClose }: { onClose: () => void }) {
-  const clients = useClients();
-  const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
+  const agents = useAgents();
+  const env = agents.env;
   const [theme, setThemeState] = useState<Theme>(chosenTheme);
-  useEffect(() => {
-    let live = true;
-    // Checking the agents runs each one's status command: it takes up to a few seconds.
-    clients.ui
-      .getEnvironment({ agents: true })
-      .then((res) => live && setEnv(res))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [clients]);
   return (
     <ModalFrame
       title={t("app.connections")}
@@ -509,16 +479,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       wide
     >
-      <div className="provider-settings">
-        {env === undefined && (
-          <div className="provider-setting">
-            <span className="muted-text">{t("settings.agent_checking")}</span>
-          </div>
-        )}
-        {env?.providers.map((p) => (
-          <AgentSetting agent={p} key={p.id} />
-        ))}
-      </div>
+      <AgentSetupPanel agents={agents} />
       <div className="settings-divider" />
       <NotificationSetting />
       <div className="setting-row">
