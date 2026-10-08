@@ -1,4 +1,4 @@
-package main
+package swapexe
 
 import (
 	"bufio"
@@ -71,7 +71,7 @@ func TestSwapWhileRunning(t *testing.T) {
 			if err := os.WriteFile(fresh, []byte("the new build"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := swap(fresh, installed, aside); err != nil {
+			if err := Swap(fresh, installed, aside); err != nil {
 				t.Fatal(err)
 			}
 			if b, err := os.ReadFile(installed); err != nil || string(b) != "the new build" {
@@ -85,7 +85,7 @@ func TestSwapWhileRunning(t *testing.T) {
 			entries, _ := os.ReadDir(dir)
 			var moved []string
 			for _, e := range entries {
-				if strings.HasPrefix(e.Name(), asidePrefix) {
+				if strings.HasPrefix(e.Name(), AsidePrefix) {
 					moved = append(moved, e.Name())
 				}
 			}
@@ -99,7 +99,7 @@ func TestSwapWhileRunning(t *testing.T) {
 			if err := os.WriteFile(fresh, []byte("again"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := swap(fresh, installed, true); err != nil {
+			if err := Swap(fresh, installed, true); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(filepath.Join(dir, moved[0])); !os.IsNotExist(err) {
@@ -114,7 +114,7 @@ func TestSwapRefusesAnotherFolder(t *testing.T) {
 	if err := os.WriteFile(src, nil, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := swap(src, filepath.Join(t.TempDir(), "prog"), false); err == nil {
+	if err := Swap(src, filepath.Join(t.TempDir(), "prog"), false); err == nil {
 		t.Fatal("swap across folders: no error")
 	}
 }
