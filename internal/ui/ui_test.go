@@ -277,6 +277,98 @@ func TestOpenExternal(t *testing.T) {
 	}
 }
 
+// The browser has no folder dialog: the page hides its button, and the method says so.
+func TestChooseDirectoryWithoutADialog(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newService(t)
+	env, err := s.GetEnvironment(ctx, connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{}))
+	if err != nil || env.Msg.GetFolderDialog() {
+		t.Fatalf("GetEnvironment = %v, %v; want no folder dialog", env, err)
+	}
+	_, err = s.ChooseDirectory(ctx, connect.NewRequest(&uiv1.UiServiceChooseDirectoryRequest{}))
+	if code(err) != connect.CodeUnimplemented {
+		t.Fatalf("ChooseDirectory = %v, want unimplemented", err)
+	}
+}
+
+// The window's dialog, faked: it opens where the field points, or at home, and its answer comes back as it is.
+func TestChooseDirectory(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newService(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	project := t.TempDir()
+	var title, start string
+	answer, fail := "/chosen/folder", error(nil)
+	s.ChooseFolder = func(named, dir string) (string, error) {
+		title, start = named, dir
+		return answer, fail
+	}
+	env, err := s.GetEnvironment(ctx, connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{}))
+	if err != nil || !env.Msg.GetFolderDialog() {
+		t.Fatalf("GetEnvironment = %v, %v; want a folder dialog", env, err)
+	}
+	choose := func(dir string) (string, error) {
+		res, err := s.ChooseDirectory(ctx, connect.NewRequest(&uiv1.UiServiceChooseDirectoryRequest{
+			Title: "Choose a folder", Directory: dir,
+		}))
+		if err != nil {
+			return "", err
+		}
+		return res.Msg.GetDirectory(), nil
+	}
+
+	if got, err := choose(project); err != nil || got != answer || title != "Choose a folder" || start != project {
+		t.Fatalf("ChooseDirectory(%q) = %q, %v; dialog %q in %q", project, got, err, title, start)
+	}
+	// Empty, relative, missing or a file: the dialog opens at home.
+	file := filepath.Join(project, "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{"", "code/app", filepath.Join(project, "missing"), file} {
+		if _, err := choose(dir); err != nil || start != home {
+			t.Errorf("ChooseDirectory(%q): dialog in %q, %v; want home %q", dir, start, err, home)
+		}
+	}
+	// Cancelled: an empty folder, no error.
+	answer = ""
+	if got, err := choose(project); err != nil || got != "" {
+		t.Errorf("cancelled: ChooseDirectory = %q, %v; want empty", got, err)
+	}
+	fail = errors.New("no display")
+	if _, err := choose(project); code(err) != connect.CodeInternal {
+		t.Errorf("failed dialog: ChooseDirectory = %v, want internal", err)
+	}
+}
+
+// A second dialog waits for none: while one is open, another request is refused at once.
+func TestChooseDirectoryOneAtATime(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newService(t)
+	opened, release := make(chan struct{}), make(chan struct{})
+	s.ChooseFolder = func(string, string) (string, error) {
+		close(opened)
+		<-release
+		return "/first", nil
+	}
+	first := make(chan error, 1)
+	go func() {
+		_, err := s.ChooseDirectory(ctx, connect.NewRequest(&uiv1.UiServiceChooseDirectoryRequest{}))
+		first <- err
+	}()
+	<-opened
+	_, err := s.ChooseDirectory(ctx, connect.NewRequest(&uiv1.UiServiceChooseDirectoryRequest{}))
+	if code(err) != connect.CodeAborted {
+		t.Errorf("second ChooseDirectory = %v, want aborted", err)
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatalf("first ChooseDirectory = %v", err)
+	}
+}
+
 // The handler the server mounts answers over HTTP, and Watch is left to the server.
 func TestHandler(t *testing.T) {
 	s, _ := newService(t)

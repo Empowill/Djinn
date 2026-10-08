@@ -1,7 +1,7 @@
 // The window's dialogs on the services: make a wish, add a project, look at a project and its skills, and the
 // settings that stay on this page (the language).
 import { ArrowRight, FolderOpen, Terminal } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useId, useState } from "react";
 
 import type { Project, Skill } from "../gen/ts/plan/v1/plan_pb";
 import type { UiServiceGetEnvironmentResponse } from "../gen/ts/ui/v1/ui_pb";
@@ -129,6 +129,29 @@ export function AddProject({
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Only the native window has a folder dialog; the browser types the path.
+  const [folderDialog, setFolderDialog] = useState(false);
+  useEffect(() => {
+    let live = true;
+    clients.ui
+      .getEnvironment({})
+      .then((res) => live && setFolderDialog(res.folderDialog))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [clients]);
+  const choose = async () => {
+    try {
+      const res = await clients.ui.chooseDirectory({
+        title: t("project.choose_title"),
+        directory: directory.trim(),
+      });
+      if (res.directory) setDirectory(res.directory);
+    } catch (err) {
+      setError(message(err));
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -151,16 +174,11 @@ export function AddProject({
       onClose={onClose}
     >
       <form className="form-fields" onSubmit={(e) => void submit(e)}>
-        <label>
-          <span>{t("project.folder")}</span>
-          <input
-            autoFocus
-            value={directory}
-            onChange={(e) => setDirectory(e.target.value)}
-            placeholder={t("project.folder_placeholder")}
-            spellCheck={false}
-          />
-        </label>
+        <FolderField
+          value={directory}
+          onChange={setDirectory}
+          onChoose={folderDialog ? () => void choose() : undefined}
+        />
         <label>
           <span>
             {t("project.name")}{" "}
@@ -191,6 +209,44 @@ export function AddProject({
         </div>
       </form>
     </ModalFrame>
+  );
+}
+
+// FolderField is the folder of a new project, typed in; with onChoose, a button next to it opens the system's
+// folder dialog (the native window only).
+export function FolderField({
+  value,
+  onChange,
+  onChoose,
+}: {
+  value: string;
+  onChange: (directory: string) => void;
+  onChoose?: () => void;
+}) {
+  // The button stays out of the label: the field's name is the folder's alone.
+  const id = useId();
+  return (
+    <div>
+      <label htmlFor={id}>
+        <span>{t("project.folder")}</span>
+      </label>
+      <div className="folder-field">
+        <input
+          id={id}
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={t("project.folder_placeholder")}
+          spellCheck={false}
+        />
+        {onChoose && (
+          <button type="button" className="button secondary" onClick={onChoose}>
+            <FolderOpen size={14} />
+            {t("project.choose")}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

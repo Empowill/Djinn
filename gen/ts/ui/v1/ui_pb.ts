@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0ImgKH1VpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIQCghwbGF0Zm9ybRgCIAEoCRIiCglwcm92aWRlcnMYAyADKAsyDy51aS52MS5Qcm92aWRlciJICghQcm92aWRlchIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCWF2YWlsYWJsZRgDIAEoCBIPCgdjb21tYW5kGAQgASgJIhsKGVVpU2VydmljZUxvYWRTdGF0ZVJlcXVlc3QiMAoaVWlTZXJ2aWNlTG9hZFN0YXRlUmVzcG9uc2USEgoKc3RhdGVfanNvbhgBIAEoCSIvChlVaVNlcnZpY2VTYXZlU3RhdGVSZXF1ZXN0EhIKCnN0YXRlX2pzb24YASABKAkiHAoaVWlTZXJ2aWNlU2F2ZVN0YXRlUmVzcG9uc2UiNAofVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVxdWVzdBIRCglkaXJlY3RvcnkYASABKAkiQgogVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVzcG9uc2USEQoJZGlyZWN0b3J5GAEgASgJEgsKA2dpdBgCIAEoCCIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiQgoUVWlTZXJ2aWNlU2hvd1JlcXVlc3QSDwoHd2lzaF9pZBgBIAEoCRIZCgh0ZXJtaW5hbBgCIAEoCUIHukgEcgIYQCInChVVaVNlcnZpY2VTaG93UmVzcG9uc2USDgoGd2luZG93GAEgASgIIhsKGVVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QiPwoaVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2USDwoHd2lzaF9pZBgBIAEoCRIQCgh0ZXJtaW5hbBgCIAEoCSIdChtVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlcXVlc3QiUwocVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZRIPCgdjdXJyZW50GAEgASgJEg0KBXJlYWR5GAIgASgJEhMKC25vdF9yZXN1bWVkGAMgAygJIhgKFlVpU2VydmljZVVwZGF0ZVJlcXVlc3QiPQoXVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIRCgl0ZXJtaW5hbHMYAiABKAUiKQoVVWlTZXJ2aWNlV2F0Y2hSZXF1ZXN0EhAKCGZyb21fc2VxGAEgASgEInsKFlVpU2VydmljZVdhdGNoUmVzcG9uc2USCwoDc2VxGAEgASgEEiMKB3Byb2plY3QYAiABKAsyEC5wbGFuLnYxLlByb2plY3RIABIlCghxdWVzdGlvbhgDIAEoCzIRLnBsYW4udjEuUXVlc3Rpb25IAEIICgZlbnRpdHkyjQcKCVVpU2VydmljZRJlCg5HZXRFbnZpcm9ubWVudBIlLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVxdWVzdBomLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2UiBMjzGAISVgoJTG9hZFN0YXRlEiAudWkudjEuVWlTZXJ2aWNlTG9hZFN0YXRlUmVxdWVzdBohLnVpLnYxLlVpU2VydmljZUxvYWRTdGF0ZVJlc3BvbnNlIgTI8xgCElYKCVNhdmVTdGF0ZRIgLnVpLnYxLlVpU2VydmljZVNhdmVTdGF0ZVJlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VTYXZlU3RhdGVSZXNwb25zZSIEyPMYAhJoCg9WYWxpZGF0ZVByb2plY3QSJi51aS52MS5VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJYCglXYXRjaFNob3cSIC51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2UiBMjzGAIwARJeCgtXYXRjaFVwZGF0ZRIiLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2UiBMjzGAIwARJNCgZVcGRhdGUSHS51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Gh4udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2UiBMjzGAISTAoFV2F0Y2gSHC51aS52MS5VaVNlcnZpY2VXYXRjaFJlcXVlc3QaHS51aS52MS5VaVNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgCMAFCdgoJY29tLnVpLnYxQgdVaVByb3RvUAFaK2dpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3VpL3YxO3VpdjGiAgNVWFiqAgVVaS5WMcoCBVVpXFYx4gIRVWlcVjFcR1BCTWV0YWRhdGHqAgZVaTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0In8KH1VpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIQCghwbGF0Zm9ybRgCIAEoCRIiCglwcm92aWRlcnMYAyADKAsyDy51aS52MS5Qcm92aWRlchIVCg1mb2xkZXJfZGlhbG9nGAQgASgIIkgKCFByb3ZpZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB2NvbW1hbmQYBCABKAkiGwoZVWlTZXJ2aWNlTG9hZFN0YXRlUmVxdWVzdCIwChpVaVNlcnZpY2VMb2FkU3RhdGVSZXNwb25zZRISCgpzdGF0ZV9qc29uGAEgASgJIi8KGVVpU2VydmljZVNhdmVTdGF0ZVJlcXVlc3QSEgoKc3RhdGVfanNvbhgBIAEoCSIcChpVaVNlcnZpY2VTYXZlU3RhdGVSZXNwb25zZSI0Ch9VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXF1ZXN0EhEKCWRpcmVjdG9yeRgBIAEoCSJCCiBVaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXNwb25zZRIRCglkaXJlY3RvcnkYASABKAkSCwoDZ2l0GAIgASgIIlcKH1VpU2VydmljZUNob29zZURpcmVjdG9yeVJlcXVlc3QSFwoFdGl0bGUYASABKAlCCLpIBXIDGMgBEhsKCWRpcmVjdG9yeRgCIAEoCUIIukgFcgMYgCAiNQogVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2USEQoJZGlyZWN0b3J5GAEgASgJIisKHFVpU2VydmljZU9wZW5FeHRlcm5hbFJlcXVlc3QSCwoDdXJsGAEgASgJIiwKHVVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlEgsKA3VybBgBIAEoCSJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCI/ChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJIh0KG1VpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdCJTChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkiGAoWVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdCI9ChdVaVNlcnZpY2VVcGRhdGVSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhEKCXRlcm1pbmFscxgCIAEoBSIpChVVaVNlcnZpY2VXYXRjaFJlcXVlc3QSEAoIZnJvbV9zZXEYASABKAQiewoWVWlTZXJ2aWNlV2F0Y2hSZXNwb25zZRILCgNzZXEYASABKAQSIwoHcHJvamVjdBgCIAEoCzIQLnBsYW4udjEuUHJvamVjdEgAEiUKCHF1ZXN0aW9uGAMgASgLMhEucGxhbi52MS5RdWVzdGlvbkgAQggKBmVudGl0eTL3BwoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJWCglMb2FkU3RhdGUSIC51aS52MS5VaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlTG9hZFN0YXRlUmVzcG9uc2UiBMjzGAISVgoJU2F2ZVN0YXRlEiAudWkudjEuVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIgTI8xgCEmgKD1ZhbGlkYXRlUHJvamVjdBImLnVpLnYxLlVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJYCglXYXRjaFNob3cSIC51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2UiBMjzGAIwARJeCgtXYXRjaFVwZGF0ZRIiLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2UiBMjzGAIwARJNCgZVcGRhdGUSHS51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Gh4udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2UiBMjzGAISTAoFV2F0Y2gSHC51aS52MS5VaVNlcnZpY2VXYXRjaFJlcXVlc3QaHS51aS52MS5VaVNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgCMAFCdgoJY29tLnVpLnYxQgdVaVByb3RvUAFaK2dpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3VpL3YxO3VpdjGiAgNVWFiqAgVVaS5WMcoCBVVpXFYx4gIRVWlcVjFcR1BCTWV0YWRhdGHqAgZVaTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -55,6 +55,13 @@ export type UiServiceGetEnvironmentResponse = Message<"ui.v1.UiServiceGetEnviron
    * @generated from field: repeated ui.v1.Provider providers = 3;
    */
   providers: Provider[];
+
+  /**
+   * The window can open the system's folder dialog: ChooseDirectory works. False in the browser.
+   *
+   * @generated from field: bool folder_dialog = 4;
+   */
+  folderDialog: boolean;
 };
 
 /**
@@ -216,6 +223,51 @@ export const UiServiceValidateProjectResponseSchema: GenMessage<UiServiceValidat
   messageDesc(file_ui_v1_ui, 8);
 
 /**
+ * @generated from message ui.v1.UiServiceChooseDirectoryRequest
+ */
+export type UiServiceChooseDirectoryRequest = Message<"ui.v1.UiServiceChooseDirectoryRequest"> & {
+  /**
+   * Title of the dialog.
+   *
+   * @generated from field: string title = 1;
+   */
+  title: string;
+
+  /**
+   * Folder the dialog opens in; the home folder when empty or not a folder.
+   *
+   * @generated from field: string directory = 2;
+   */
+  directory: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceChooseDirectoryRequest.
+ * Use `create(UiServiceChooseDirectoryRequestSchema)` to create a new message.
+ */
+export const UiServiceChooseDirectoryRequestSchema: GenMessage<UiServiceChooseDirectoryRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 9);
+
+/**
+ * @generated from message ui.v1.UiServiceChooseDirectoryResponse
+ */
+export type UiServiceChooseDirectoryResponse = Message<"ui.v1.UiServiceChooseDirectoryResponse"> & {
+  /**
+   * Absolute path of the folder chosen; empty when the user cancelled.
+   *
+   * @generated from field: string directory = 1;
+   */
+  directory: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceChooseDirectoryResponse.
+ * Use `create(UiServiceChooseDirectoryResponseSchema)` to create a new message.
+ */
+export const UiServiceChooseDirectoryResponseSchema: GenMessage<UiServiceChooseDirectoryResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 10);
+
+/**
  * @generated from message ui.v1.UiServiceOpenExternalRequest
  */
 export type UiServiceOpenExternalRequest = Message<"ui.v1.UiServiceOpenExternalRequest"> & {
@@ -232,7 +284,7 @@ export type UiServiceOpenExternalRequest = Message<"ui.v1.UiServiceOpenExternalR
  * Use `create(UiServiceOpenExternalRequestSchema)` to create a new message.
  */
 export const UiServiceOpenExternalRequestSchema: GenMessage<UiServiceOpenExternalRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 9);
+  messageDesc(file_ui_v1_ui, 11);
 
 /**
  * @generated from message ui.v1.UiServiceOpenExternalResponse
@@ -251,7 +303,7 @@ export type UiServiceOpenExternalResponse = Message<"ui.v1.UiServiceOpenExternal
  * Use `create(UiServiceOpenExternalResponseSchema)` to create a new message.
  */
 export const UiServiceOpenExternalResponseSchema: GenMessage<UiServiceOpenExternalResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 10);
+  messageDesc(file_ui_v1_ui, 12);
 
 /**
  * @generated from message ui.v1.UiServiceShowRequest
@@ -277,7 +329,7 @@ export type UiServiceShowRequest = Message<"ui.v1.UiServiceShowRequest"> & {
  * Use `create(UiServiceShowRequestSchema)` to create a new message.
  */
 export const UiServiceShowRequestSchema: GenMessage<UiServiceShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 11);
+  messageDesc(file_ui_v1_ui, 13);
 
 /**
  * @generated from message ui.v1.UiServiceShowResponse
@@ -296,7 +348,7 @@ export type UiServiceShowResponse = Message<"ui.v1.UiServiceShowResponse"> & {
  * Use `create(UiServiceShowResponseSchema)` to create a new message.
  */
 export const UiServiceShowResponseSchema: GenMessage<UiServiceShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 12);
+  messageDesc(file_ui_v1_ui, 14);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowRequest
@@ -309,7 +361,7 @@ export type UiServiceWatchShowRequest = Message<"ui.v1.UiServiceWatchShowRequest
  * Use `create(UiServiceWatchShowRequestSchema)` to create a new message.
  */
 export const UiServiceWatchShowRequestSchema: GenMessage<UiServiceWatchShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 13);
+  messageDesc(file_ui_v1_ui, 15);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowResponse
@@ -335,7 +387,7 @@ export type UiServiceWatchShowResponse = Message<"ui.v1.UiServiceWatchShowRespon
  * Use `create(UiServiceWatchShowResponseSchema)` to create a new message.
  */
 export const UiServiceWatchShowResponseSchema: GenMessage<UiServiceWatchShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 14);
+  messageDesc(file_ui_v1_ui, 16);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateRequest
@@ -348,7 +400,7 @@ export type UiServiceWatchUpdateRequest = Message<"ui.v1.UiServiceWatchUpdateReq
  * Use `create(UiServiceWatchUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateRequestSchema: GenMessage<UiServiceWatchUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 15);
+  messageDesc(file_ui_v1_ui, 17);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateResponse
@@ -381,7 +433,7 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
  * Use `create(UiServiceWatchUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 16);
+  messageDesc(file_ui_v1_ui, 18);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateRequest
@@ -394,7 +446,7 @@ export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
  * Use `create(UiServiceUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceUpdateRequestSchema: GenMessage<UiServiceUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 17);
+  messageDesc(file_ui_v1_ui, 19);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateResponse
@@ -420,7 +472,7 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
  * Use `create(UiServiceUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 18);
+  messageDesc(file_ui_v1_ui, 20);
 
 /**
  * @generated from message ui.v1.UiServiceWatchRequest
@@ -439,7 +491,7 @@ export type UiServiceWatchRequest = Message<"ui.v1.UiServiceWatchRequest"> & {
  * Use `create(UiServiceWatchRequestSchema)` to create a new message.
  */
 export const UiServiceWatchRequestSchema: GenMessage<UiServiceWatchRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 19);
+  messageDesc(file_ui_v1_ui, 21);
 
 /**
  * @generated from message ui.v1.UiServiceWatchResponse
@@ -481,7 +533,7 @@ export type UiServiceWatchResponse = Message<"ui.v1.UiServiceWatchResponse"> & {
  * Use `create(UiServiceWatchResponseSchema)` to create a new message.
  */
 export const UiServiceWatchResponseSchema: GenMessage<UiServiceWatchResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 20);
+  messageDesc(file_ui_v1_ui, 22);
 
 /**
  * What the window needs to show and follow the plan.
@@ -528,6 +580,17 @@ export const UiService: GenService<{
     methodKind: "unary";
     input: typeof UiServiceValidateProjectRequestSchema;
     output: typeof UiServiceValidateProjectResponseSchema;
+  },
+  /**
+   * Ask the user for a folder with the system's dialog, over the window. Only the native window has one: see
+   * UiServiceGetEnvironmentResponse.folder_dialog. An empty directory says the user cancelled.
+   *
+   * @generated from rpc ui.v1.UiService.ChooseDirectory
+   */
+  chooseDirectory: {
+    methodKind: "unary";
+    input: typeof UiServiceChooseDirectoryRequestSchema;
+    output: typeof UiServiceChooseDirectoryResponseSchema;
   },
   /**
    * Open an HTTP or HTTPS link in the default browser.

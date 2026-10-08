@@ -19,3 +19,8 @@ const hasWindow = false
 func openWindow(context.Context, string, http.Handler, <-chan struct{}, *ui.Notices) error {
 	return errors.New("this build has no native window: use --browser, or rebuild with CGO and the system libraries of the window (see the README)")
 }
+
+// chooseFolder is unavailable in a build without a native window: the browser has no folder dialog.
+func chooseFolder(string, string) (string, error) {
+	return "", errors.New("this build has no native window, so no folder dialog")
+}

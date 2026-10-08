@@ -25,6 +25,11 @@ service UiService {
   rpc ValidateProject(UiServiceValidateProjectRequest) returns (UiServiceValidateProjectResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // Ask the user for a folder with the system's dialog, over the window. Only the native window has one: see
+  // UiServiceGetEnvironmentResponse.folder_dialog. An empty directory says the user cancelled.
+  rpc ChooseDirectory(UiServiceChooseDirectoryRequest) returns (UiServiceChooseDirectoryResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
   // Open an HTTP or HTTPS link in the default browser.
   rpc OpenExternal(UiServiceOpenExternalRequest) returns (UiServiceOpenExternalResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
@@ -65,6 +70,8 @@ message UiServiceGetEnvironmentResponse {
   string platform = 2;
   // The agent command lines Djinn knows, and whether they are installed.
   repeated Provider providers = 3;
+  // The window can open the system's folder dialog: ChooseDirectory works. False in the browser.
+  bool folder_dialog = 4;
 }
 
 // An agent command line.
@@ -103,6 +110,18 @@ message UiServiceValidateProjectResponse {
   string directory = 1;
   // The directory is inside a Git repository.
   bool git = 2;
+}
+
+message UiServiceChooseDirectoryRequest {
+  // Title of the dialog.
+  string title = 1 [(buf.validate.field).string.max_len = 200];
+  // Folder the dialog opens in; the home folder when empty or not a folder.
+  string directory = 2 [(buf.validate.field).string.max_len = 4096];
+}
+
+message UiServiceChooseDirectoryResponse {
+  // Absolute path of the folder chosen; empty when the user cancelled.
+  string directory = 1;
 }
 
 message UiServiceOpenExternalRequest {

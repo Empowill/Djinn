@@ -87,6 +87,11 @@ projects it touches, and a project is not necessarily a Git repository.
   `tests/data-flight.test.mjs`, the flight plan tests of `tests/screens.test.mjs`, `e2e/flight-plan.spec.ts`: two
   wishes, a question each, one answered from the merged view and read answered by `djinn question list`)
 - [ ] Clément has reviewed the flight plan of several wishes: it changes `src/`. (needs: Clément's review)
+- [x] Adding a project in the native window, "Choose a folder…" opens the system's folder dialog and fills the field;
+  in the browser the button is hidden and the path is typed. (`UiService.ChooseDirectory` on the Wails dialog:
+  `TestChooseDirectory`, `TestChooseDirectoryWithoutADialog`, `TestChooseDirectoryOneAtATime` in `internal/ui`; the
+  folder field test of `tests/screens.test.mjs`; `e2e/smoke.spec.ts` "adding a project in the browser types the
+  folder". The native dialog itself is not opened by a test.)
 
 ## Decided along the way
 - **The export format is a proto**, `WishExport` in `api/plan/v1`, version 1: the wish, its project

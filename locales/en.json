@@ -150,6 +150,8 @@
   "project.add": "Add the project",
   "project.add_title": "Add a project",
   "project.added": "Project {name} added.",
+  "project.choose": "Choose a folder…",
+  "project.choose_title": "Choose the project's folder",
   "project.eyebrow": "PROJECT",
   "project.folder": "Folder",
   "project.folder_placeholder": "/home/you/code/app",

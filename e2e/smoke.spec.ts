@@ -33,6 +33,24 @@ test("the interface loads from djinn", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+// The browser has no folder dialog: the path is typed, and the button of the native window is not there.
+test("adding a project in the browser types the folder", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto(djinnURL());
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Create a project" })
+    .click();
+  const folder = page.getByRole("textbox", { name: "Folder" });
+  await expect(folder).toBeVisible();
+  await folder.fill("/tmp/lamp");
+  await expect(folder).toHaveValue("/tmp/lamp");
+  await expect(
+    page.getByRole("button", { name: "Choose a folder…" }),
+  ).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 // The other tests read the interface in English. This one checks the French catalog reaches the page: its texts
 // come from locales/fr.json, the only home of French in the repository.
 test.describe("in French", () => {

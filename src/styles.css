@@ -2130,6 +2130,22 @@ button {
   color: #dedede;
   font-size: var(--font-size-body, 12px);
 }
+.folder-field {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.form-fields .folder-field > input {
+  flex: 1;
+  min-width: 0;
+  background: #171717;
+  border-color: #464646;
+  color: #dedede;
+  font-size: var(--font-size-body, 12px);
+}
+.folder-field > .button {
+  flex: none;
+}
 .label-optional {
   font-size: var(--font-size-body, 12px);
   color: #777777;

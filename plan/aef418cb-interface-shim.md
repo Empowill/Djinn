@@ -89,8 +89,8 @@ Not switched yet, screen by screen:
 - **One flight plan for all wishes** (T13): the questions and workers of every active wish in one list. Today, one
   wish at a time.
 - **Search and shortcuts** (Ctrl+K palette): gone with the mission model; only Ctrl+N stays.
-- **A project's setup**: a folder typed in, no folder picker (`selectDirectory` was never served), no indexing
-  options. Summoning a skill stays on the command line.
+- **A project's setup**: no indexing options. Summoning a skill stays on the command line. The folder is typed in,
+  or chosen with "Choose a folder…" in the native window (`UiService.ChooseDirectory`, T13).
 - **Notifications** of a new question: shown by the server itself, not by the page (T09).
 - **A terminal per wish** (T13's open question): still one terminal, switched by `djinn wish resume`.
 - **Visualizations** (HTML artifacts in a frame): gone with the artifact workspace. Mermaid in a block shows an

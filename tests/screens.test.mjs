@@ -16,6 +16,7 @@ export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
 export { FlightPlan } from "@/src/flight-plan.tsx";
+export { FolderField } from "@/src/wish-dialogs.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -353,4 +354,22 @@ test("the flight plan hides its empty sections", async () => {
   );
   assert.doesNotMatch(html, /Your move|Who runs now|Latest decisions|Spent/);
   assert.match(html, /Nothing waits for you, and nothing runs\./);
+});
+
+test("the folder of a new project has a folder dialog's button only when the window has one", () => {
+  const typed = s.renderToStaticMarkup(
+    h(s.FolderField, { value: "/tmp/lamp", onChange() {} }),
+  );
+  assert.match(typed, /value="\/tmp\/lamp"/);
+  assert.doesNotMatch(typed, /<button/);
+  assert.doesNotMatch(typed, /Choose a folder…/);
+
+  const native = s.renderToStaticMarkup(
+    h(s.FolderField, { value: "", onChange() {}, onChoose() {} }),
+  );
+  assert.match(native, /<input/);
+  assert.match(
+    native,
+    /<button type="button"[^>]*>.*Choose a folder…<\/button>/,
+  );
 });

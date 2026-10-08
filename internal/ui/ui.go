@@ -43,8 +43,12 @@ type Service struct {
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
 	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
 	Restart func() (version string, terminals int, err error)
+	// ChooseFolder opens the system's folder dialog over the window, titled title and open in directory, and returns
+	// the folder chosen, or empty when the user cancelled. Nil: the page has no folder dialog (the browser).
+	ChooseFolder func(title, directory string) (string, error)
 
-	mu sync.Mutex // Serializes the writes of the state.
+	mu      sync.Mutex // Serializes the writes of the state.
+	dialogs sync.Mutex // One folder dialog at a time.
 
 	shows    sync.Mutex
 	lastShow *uiv1.UiServiceWatchShowResponse
@@ -105,7 +109,9 @@ func (s *Service) GetEnvironment(
 	if platform == "windows" {
 		platform = "win32" // The name Node.js uses, which the window expects.
 	}
-	res := &uiv1.UiServiceGetEnvironmentResponse{Version: s.Version, Platform: platform}
+	res := &uiv1.UiServiceGetEnvironmentResponse{
+		Version: s.Version, Platform: platform, FolderDialog: s.ChooseFolder != nil,
+	}
 	for _, p := range providers {
 		command, err := exec.LookPath(p.id)
 		if err != nil {
@@ -224,6 +230,38 @@ func inGit(dir string) bool {
 		}
 		dir = parent
 	}
+}
+
+func (s *Service) ChooseDirectory(
+	_ context.Context, req *connect.Request[uiv1.UiServiceChooseDirectoryRequest],
+) (*connect.Response[uiv1.UiServiceChooseDirectoryResponse], error) {
+	if s.ChooseFolder == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("only the native window has a folder dialog"))
+	}
+	if !s.dialogs.TryLock() {
+		return nil, connect.NewError(connect.CodeAborted, errors.New("a folder dialog is already open"))
+	}
+	defer s.dialogs.Unlock()
+	chosen, err := s.ChooseFolder(req.Msg.GetTitle(), startFolder(req.Msg.GetDirectory()))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("folder dialog: %w", err))
+	}
+	return connect.NewResponse(&uiv1.UiServiceChooseDirectoryResponse{Directory: chosen}), nil
+}
+
+// startFolder is where the folder dialog opens: dir when it is an absolute path to a folder, otherwise the home
+// folder, or empty for the dialog's own choice.
+func startFolder(dir string) string {
+	if filepath.IsAbs(dir) {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
 }
 
 func (s *Service) OpenExternal(
