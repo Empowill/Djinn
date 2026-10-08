@@ -385,21 +385,24 @@ const (
 	TaskEventKind_TASK_EVENT_KIND_LOG TaskEventKind = 8
 	// Anything else the provider sent, kept in raw.
 	TaskEventKind_TASK_EVENT_KIND_OTHER TaskEventKind = 9
+	// The task waits for a gate, takes it or gives it back (djinn gate run).
+	TaskEventKind_TASK_EVENT_KIND_GATE TaskEventKind = 10
 )
 
 // Enum value maps for TaskEventKind.
 var (
 	TaskEventKind_name = map[int32]string{
-		0: "TASK_EVENT_KIND_UNSPECIFIED",
-		1: "TASK_EVENT_KIND_PROMPT",
-		2: "TASK_EVENT_KIND_TEXT",
-		3: "TASK_EVENT_KIND_TOOL_CALL",
-		4: "TASK_EVENT_KIND_TOOL_RESULT",
-		5: "TASK_EVENT_KIND_USAGE",
-		6: "TASK_EVENT_KIND_STATUS",
-		7: "TASK_EVENT_KIND_ERROR",
-		8: "TASK_EVENT_KIND_LOG",
-		9: "TASK_EVENT_KIND_OTHER",
+		0:  "TASK_EVENT_KIND_UNSPECIFIED",
+		1:  "TASK_EVENT_KIND_PROMPT",
+		2:  "TASK_EVENT_KIND_TEXT",
+		3:  "TASK_EVENT_KIND_TOOL_CALL",
+		4:  "TASK_EVENT_KIND_TOOL_RESULT",
+		5:  "TASK_EVENT_KIND_USAGE",
+		6:  "TASK_EVENT_KIND_STATUS",
+		7:  "TASK_EVENT_KIND_ERROR",
+		8:  "TASK_EVENT_KIND_LOG",
+		9:  "TASK_EVENT_KIND_OTHER",
+		10: "TASK_EVENT_KIND_GATE",
 	}
 	TaskEventKind_value = map[string]int32{
 		"TASK_EVENT_KIND_UNSPECIFIED": 0,
@@ -412,6 +415,7 @@ var (
 		"TASK_EVENT_KIND_ERROR":       7,
 		"TASK_EVENT_KIND_LOG":         8,
 		"TASK_EVENT_KIND_OTHER":       9,
+		"TASK_EVENT_KIND_GATE":        10,
 	}
 )
 
@@ -1032,7 +1036,19 @@ type Task struct {
 	// Model of the agent, as spawned; empty for the provider's default. A worker started again keeps it.
 	Model string `protobuf:"bytes,19,opt,name=model,proto3" json:"model,omitempty"`
 	// Most the task may spend, in US dollars, over all its runs; 0 for no cap.
-	MaxBudgetUsd  float64 `protobuf:"fixed64,20,opt,name=max_budget_usd,json=maxBudgetUsd,proto3" json:"max_budget_usd,omitempty"`
+	MaxBudgetUsd float64 `protobuf:"fixed64,20,opt,name=max_budget_usd,json=maxBudgetUsd,proto3" json:"max_budget_usd,omitempty"`
+	// Tasks that must be done before this one starts, by identifier. A task whose dependency ends without being done
+	// fails too.
+	DependsOn []string `protobuf:"bytes,21,rep,name=depends_on,json=dependsOn,proto3" json:"depends_on,omitempty"`
+	// What the task writes, as paths in the project's folder ("src", "docs/api.md"); empty for the whole folder.
+	// Outside Git, two tasks whose scopes overlap never run together. In Git, each task has its own worktree, and
+	// scopes are not checked.
+	WriteScopes []string `protobuf:"bytes,22,rep,name=write_scopes,json=writeScopes,proto3" json:"write_scopes,omitempty"`
+	// Djinn starts the task's worker by itself, once its dependencies are done, its scopes free and a slot free:
+	// the task was spawned or planned on this machine. A task imported with a wish is not.
+	Scheduled bool `protobuf:"varint,23,opt,name=scheduled,proto3" json:"scheduled,omitempty"`
+	// Why a planned task has not started yet; empty once it has.
+	WaitReason    string `protobuf:"bytes,24,opt,name=wait_reason,json=waitReason,proto3" json:"wait_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1205,6 +1221,34 @@ func (x *Task) GetMaxBudgetUsd() float64 {
 		return x.MaxBudgetUsd
 	}
 	return 0
+}
+
+func (x *Task) GetDependsOn() []string {
+	if x != nil {
+		return x.DependsOn
+	}
+	return nil
+}
+
+func (x *Task) GetWriteScopes() []string {
+	if x != nil {
+		return x.WriteScopes
+	}
+	return nil
+}
+
+func (x *Task) GetScheduled() bool {
+	if x != nil {
+		return x.Scheduled
+	}
+	return false
+}
+
+func (x *Task) GetWaitReason() string {
+	if x != nil {
+		return x.WaitReason
+	}
+	return ""
 }
 
 // An event of a task's worker: what it said, the tools it called, what it spent.
@@ -4500,7 +4544,14 @@ type TaskServiceSpawnRequest struct {
 	// Model of the agent; by default the provider's.
 	Model string `protobuf:"bytes,6,opt,name=model,proto3" json:"model,omitempty"`
 	// Most the worker may spend, in US dollars, when the provider can enforce it.
-	MaxBudgetUsd  float64 `protobuf:"fixed64,7,opt,name=max_budget_usd,json=maxBudgetUsd,proto3" json:"max_budget_usd,omitempty"`
+	MaxBudgetUsd float64 `protobuf:"fixed64,7,opt,name=max_budget_usd,json=maxBudgetUsd,proto3" json:"max_budget_usd,omitempty"`
+	// A task of the same wish that must be done first: its code (W1) or its identifier.
+	DependsOn []string `protobuf:"bytes,8,rep,name=depends_on,json=dependsOn,proto3" json:"depends_on,omitempty"`
+	// A path the task writes, in the project's folder; none for the whole folder. Outside Git, tasks whose scopes
+	// overlap never run together.
+	WriteScopes []string `protobuf:"bytes,9,rep,name=write_scopes,json=writeScopes,proto3" json:"write_scopes,omitempty"`
+	// Only plan the task: the call returns at once, and djinn up starts the worker when the task is ready.
+	Later         bool `protobuf:"varint,10,opt,name=later,proto3" json:"later,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4584,9 +4635,30 @@ func (x *TaskServiceSpawnRequest) GetMaxBudgetUsd() float64 {
 	return 0
 }
 
+func (x *TaskServiceSpawnRequest) GetDependsOn() []string {
+	if x != nil {
+		return x.DependsOn
+	}
+	return nil
+}
+
+func (x *TaskServiceSpawnRequest) GetWriteScopes() []string {
+	if x != nil {
+		return x.WriteScopes
+	}
+	return nil
+}
+
+func (x *TaskServiceSpawnRequest) GetLater() bool {
+	if x != nil {
+		return x.Later
+	}
+	return false
+}
+
 type TaskServiceSpawnResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The task, its worker started.
+	// The task: running, or waiting with its reason.
 	Task          *Task `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5161,7 +5233,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\routput_tokens\x18\x02 \x01(\x03R\foutputTokens\x12*\n" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
-	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xe1\x05\n" +
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xe2\x06\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -5187,7 +5259,13 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06access\x18\x11 \x01(\x0e2\x13.plan.v1.TaskAccessR\x06access\x12(\n" +
 	"\x10edit_question_id\x18\x12 \x01(\tR\x0eeditQuestionId\x12\x14\n" +
 	"\x05model\x18\x13 \x01(\tR\x05model\x12$\n" +
-	"\x0emax_budget_usd\x18\x14 \x01(\x01R\fmaxBudgetUsd:\x13\xd2\xf3\x18\x0f\n" +
+	"\x0emax_budget_usd\x18\x14 \x01(\x01R\fmaxBudgetUsd\x12\x1d\n" +
+	"\n" +
+	"depends_on\x18\x15 \x03(\tR\tdependsOn\x12!\n" +
+	"\fwrite_scopes\x18\x16 \x03(\tR\vwriteScopes\x12\x1c\n" +
+	"\tscheduled\x18\x17 \x01(\bR\tscheduled\x12\x1f\n" +
+	"\vwait_reason\x18\x18 \x01(\tR\n" +
+	"waitReason:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\x99\x02\n" +
 	"\tTaskEvent\x12\x18\n" +
@@ -5406,7 +5484,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06blocks\x18\x01 \x03(\v2\x0e.plan.v1.BlockR\x06blocks\"8\n" +
 	"\x19BlockServiceDeleteRequest\x12\x1b\n" +
 	"\x02id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x02id\"\x1c\n" +
-	"\x1aBlockServiceDeleteResponse\"\xbf\x02\n" +
+	"\x1aBlockServiceDeleteResponse\"\xbc\x03\n" +
 	"\x17TaskServiceSpawnRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12 \n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -5416,7 +5494,13 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06prompt\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xc0\x9a\fR\x06prompt\x127\n" +
 	"\bprovider\x18\x05 \x01(\x0e2\x11.plan.v1.ProviderB\b\xbaH\x05\x82\x01\x02\x10\x01R\bprovider\x12\x1e\n" +
 	"\x05model\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x05model\x124\n" +
-	"\x0emax_budget_usd\x18\a \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00R\fmaxBudgetUsd\"=\n" +
+	"\x0emax_budget_usd\x18\a \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00R\fmaxBudgetUsd\x12/\n" +
+	"\n" +
+	"depends_on\x18\b \x03(\tB\x10\xbaH\r\x92\x01\n" +
+	"\x10d\"\x06r\x04\x10\x01\x18@R\tdependsOn\x124\n" +
+	"\fwrite_scopes\x18\t \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\vwriteScopes\x12\x14\n" +
+	"\x05later\x18\n" +
+	" \x01(\bR\x05later\"=\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"j\n" +
 	"\x16TaskServiceListRequest\x12$\n" +
@@ -5480,7 +5564,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0fPROVIDER_CLAUDE\x10\x01\x12\x11\n" +
 	"\rPROVIDER_FAKE\x10\x02\x12\x12\n" +
 	"\x0ePROVIDER_CODEX\x10\x03\x12\x18\n" +
-	"\x14PROVIDER_ANTIGRAVITY\x10\x04*\xac\x02\n" +
+	"\x14PROVIDER_ANTIGRAVITY\x10\x04*\xc6\x02\n" +
 	"\rTaskEventKind\x12\x1f\n" +
 	"\x1bTASK_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16TASK_EVENT_KIND_PROMPT\x10\x01\x12\x18\n" +
@@ -5491,7 +5575,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16TASK_EVENT_KIND_STATUS\x10\x06\x12\x19\n" +
 	"\x15TASK_EVENT_KIND_ERROR\x10\a\x12\x17\n" +
 	"\x13TASK_EVENT_KIND_LOG\x10\b\x12\x19\n" +
-	"\x15TASK_EVENT_KIND_OTHER\x10\t*h\n" +
+	"\x15TASK_EVENT_KIND_OTHER\x10\t\x12\x18\n" +
+	"\x14TASK_EVENT_KIND_GATE\x10\n" +
+	"*h\n" +
 	"\x06Choice\x12\x16\n" +
 	"\x12CHOICE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +

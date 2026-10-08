@@ -955,13 +955,16 @@ func (UnimplementedBlockServiceHandler) Delete(context.Context, *connect.Request
 
 // TaskServiceClient is a client for the plan.v1.TaskService service.
 type TaskServiceClient interface {
-	// Start a worker on a new task: in a Git project, in a new worktree on its own branch.
+	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
+	// yet (a dependency not done, its write scope taken, no slot free, the machine under pressure) waits, and says
+	// why; djinn up starts it as soon as it can.
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
-	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds.
+	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
+	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
@@ -1061,13 +1064,16 @@ func (c *taskServiceClient) Clean(ctx context.Context, req *connect.Request[v1.T
 
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
-	// Start a worker on a new task: in a Git project, in a new worktree on its own branch.
+	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
+	// yet (a dependency not done, its write scope taken, no slot free, the machine under pressure) waits, and says
+	// why; djinn up starts it as soon as it can.
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
-	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds.
+	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
+	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
 	// Follow a task's events as they come, from the first one or after a position; ends with the task.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error

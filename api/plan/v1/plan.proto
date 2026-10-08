@@ -223,6 +223,18 @@ message Task {
   string model = 19;
   // Most the task may spend, in US dollars, over all its runs; 0 for no cap.
   double max_budget_usd = 20;
+  // Tasks that must be done before this one starts, by identifier. A task whose dependency ends without being done
+  // fails too.
+  repeated string depends_on = 21;
+  // What the task writes, as paths in the project's folder ("src", "docs/api.md"); empty for the whole folder.
+  // Outside Git, two tasks whose scopes overlap never run together. In Git, each task has its own worktree, and
+  // scopes are not checked.
+  repeated string write_scopes = 22;
+  // Djinn starts the task's worker by itself, once its dependencies are done, its scopes free and a slot free:
+  // the task was spawned or planned on this machine. A task imported with a wish is not.
+  bool scheduled = 23;
+  // Why a planned task has not started yet; empty once it has.
+  string wait_reason = 24;
 }
 
 // TaskEventKind says what a worker event is. Its content stays free text.
@@ -247,6 +259,8 @@ enum TaskEventKind {
   TASK_EVENT_KIND_LOG = 8;
   // Anything else the provider sent, kept in raw.
   TASK_EVENT_KIND_OTHER = 9;
+  // The task waits for a gate, takes it or gives it back (djinn gate run).
+  TASK_EVENT_KIND_GATE = 10;
 }
 
 // An event of a task's worker: what it said, the tools it called, what it spent.
@@ -961,7 +975,9 @@ message BlockServiceDeleteResponse {}
 
 // Tasks: one worker each, an agent process in the task's own worktree.
 service TaskService {
-  // Start a worker on a new task: in a Git project, in a new worktree on its own branch.
+  // Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
+  // yet (a dependency not done, its write scope taken, no slot free, the machine under pressure) waits, and says
+  // why; djinn up starts it as soon as it can.
   rpc Spawn(TaskServiceSpawnRequest) returns (TaskServiceSpawnResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
@@ -973,7 +989,8 @@ service TaskService {
   rpc Get(TaskServiceGetRequest) returns (TaskServiceGetResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
-  // Stop a task's worker: asked to stop, then killed if it has not after a few seconds.
+  // Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
+  // started is stopped at once.
   rpc Stop(TaskServiceStopRequest) returns (TaskServiceStopResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
@@ -1012,10 +1029,25 @@ message TaskServiceSpawnRequest {
   string model = 6 [(buf.validate.field).string.max_len = 200];
   // Most the worker may spend, in US dollars, when the provider can enforce it.
   double max_budget_usd = 7 [(buf.validate.field).double.gte = 0];
+  // A task of the same wish that must be done first: its code (W1) or its identifier.
+  repeated string depends_on = 8 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 64
+  ];
+  // A path the task writes, in the project's folder; none for the whole folder. Outside Git, tasks whose scopes
+  // overlap never run together.
+  repeated string write_scopes = 9 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // Only plan the task: the call returns at once, and djinn up starts the worker when the task is ready.
+  bool later = 10;
 }
 
 message TaskServiceSpawnResponse {
-  // The task, its worker started.
+  // The task: running, or waiting with its reason.
   Task task = 1;
 }
 
