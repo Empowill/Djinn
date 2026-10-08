@@ -133,9 +133,9 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await page.setViewportSize({ width: 1440, height: 1900 });
   await page.goto(process.env.DJINN_URL!);
   // With wishes active, the window opens on their flight plan.
-  await expect(page.locator(".hero h1")).toHaveText("Plan de vol");
+  await expect(page.locator(".hero h1")).toHaveText("Flight plan");
   await expect(
-    page.locator(".plan-nav").filter({ hasText: "Plan de vol" }),
+    page.locator(".plan-nav").filter({ hasText: "Flight plan" }),
   ).toHaveClass(/selected/);
 
   // Both questions, each marked with its wish.
@@ -152,10 +152,10 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     .locator(".plan-wish")
     .filter({ hasText: lampTitle })
     .locator(".wish-spent");
-  await expect(lampSpent).toContainText("cache lu");
-  await expect(lampSpent).toContainText("0,42");
+  await expect(lampSpent).toContainText("cache read");
+  await expect(lampSpent).toContainText("0.42");
   await expect(lampSpent).toContainText(
-    "1 tâche sans coût : son agent ne donne que les tokens",
+    "1 task without a cost: its agent gives tokens only",
   );
   await page.screenshot({
     path: path.join(__dirname, "../test-results/e2e/flight-plan.png"),
@@ -164,8 +164,8 @@ test("the flight plan merges two wishes, and a question is answered from it", as
 
   // Answered from the merged view: the answer goes to its own wish.
   await oilCard.locator(".question-heading").click();
-  await oilCard.getByLabel("Note jointe à la réponse").fill("Pour it.");
-  await oilCard.getByRole("button", { name: "Valider la réponse" }).click();
+  await oilCard.getByLabel("Note with the answer").fill("Pour it.");
+  await oilCard.getByRole("button", { name: "Confirm the answer" }).click();
   await expect(oilCard).toHaveCount(0);
   await expect(
     page
@@ -192,8 +192,8 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
-  await expect(w2.locator(".task-usage")).toHaveText(/^6,5\s?k tokens$/);
-  await expect(page.locator(".wish-block")).toContainText("À propos de W1");
+  await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
+  await expect(page.locator(".wish-block")).toContainText("About W1");
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
   await page
     .locator(".wish-task")
@@ -208,7 +208,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // The journal of the other wish: the commands that changed it, once asked for.
   await page.locator(".wish-nav").filter({ hasText: oilTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(oilTitle);
-  await page.getByRole("button", { name: "Afficher les commandes" }).click();
+  await page.getByRole("button", { name: "Show the commands" }).click();
   const journal = page.locator(".journal-list");
   await expect(journal).toContainText("wish make");
   await expect(journal).toContainText("question answer");
