@@ -380,3 +380,13 @@ func lineOf(out, want string) bool {
 	}
 	return false
 }
+
+// TestModuleVersion: a stamped version wins; without one, a test binary (built from the checkout) stays "dev".
+func TestModuleVersion(t *testing.T) {
+	if got := moduleVersion("local-abc"); got != "local-abc" {
+		t.Errorf("moduleVersion(local-abc) = %q", got)
+	}
+	if got := moduleVersion("dev"); got != "dev" {
+		t.Errorf("moduleVersion(dev) from a checkout = %q, want dev", got)
+	}
+}

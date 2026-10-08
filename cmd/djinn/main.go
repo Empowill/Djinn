@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/ui"
@@ -16,7 +17,20 @@ import (
 // in a directory of its own (see ui.Develop).
 var version = "dev"
 
+// moduleVersion is the version go install recorded, such as v0.1.0, when the build stamped none: a binary installed
+// with go install is a release, not a development build. A build from a checkout reports (devel), and stays "dev".
+func moduleVersion(v string) string {
+	if v != "dev" {
+		return v
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return v
+}
+
 func main() {
+	version = moduleVersion(version)
 	ui.Develop = version == "dev"
 	// `djinn up` opens the app; every other command is generated from the protos by the cli package.
 	if len(os.Args) > 1 && os.Args[1] == "up" {

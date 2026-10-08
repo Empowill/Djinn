@@ -55,5 +55,5 @@ The top of the main README is for them; contributors come after.
 
 ## Open questions
 - What does the prompt for your agent say, word for word? *To write once `go install` works.*
-- A `go install` build has the version `dev`: it keeps its data in `djinn-dev` and never offers an update. It should
-  read its module version (`debug.ReadBuildInfo`) when no `-X main.version` is given; a change in `cmd/djinn`.
+- *Answered:* a `go install` build now reads its module version (`debug.ReadBuildInfo`), so it is a release, not
+  `dev`: it keeps its data in `djinn` and can be offered updates.
