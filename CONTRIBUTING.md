@@ -122,6 +122,8 @@ To use Djinn, see the [README](README.md). To work on it:
 - Three wishes are active at most. `djinn wish pause <wish-id>` and `djinn wish activate <wish-id>` free and take a
   place; `djinn wish move <wish-id> --to 1` gives one priority; `djinn wish grant <wish-id>` says it is done.
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
+- `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`
+  puts it back, Djinn stopped ([`docs/backup.md`](docs/backup.md)).
 - `djinn wish set-lead <wish-id> <session-id> --directory <folder>` records a wish's lead session;
   `djinn wish resume <wish-id>` shows the wish and resumes its lead in the window's terminal,
   starting Djinn if needed. A second `djinn up` brings the window to the front.
