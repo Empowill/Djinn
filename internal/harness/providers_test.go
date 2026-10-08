@@ -126,6 +126,8 @@ func catalog() []catalogCase {
 					t.Errorf("usage = %v", u)
 				}
 			}},
+		{provider: "claude", fixture: "max-turns", want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "ERROR", "USAGE"},
+			err: "error_max_turns"},
 		{provider: "claude", fixture: "success-haiku", want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
 			check: func(t *testing.T, events []Event, _, _ string) {
 				u := event(t, events, "USAGE").Usage
@@ -194,16 +196,26 @@ func catalog() []catalogCase {
 					t.Errorf("errors = %q", texts(events, "ERROR"))
 				}
 			}},
+		// A denied command ends agy's turn with SUCCESS: the worker fails, naming the command (real runs).
 		{provider: "antigravity", fixture: "permission-denied",
-			want: []string{"STATUS", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT",
+				"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "ERROR", "USAGE"},
+			err: "agy stopped: it cannot run commands headless (go tool task --list). Run this task with claude or codex.",
 			check: func(t *testing.T, events []Event, _, _ string) {
 				statuses := texts(events, "STATUS")
 				if !slices.ContainsFunc(statuses, func(s string) bool {
-					return strings.HasPrefix(s, "permission denied: the run_command tool(s)")
+					return strings.HasPrefix(s, `permission denied: jetski: no output produced — a tool required the "command" permission`)
 				}) {
 					t.Errorf("statuses = %q", statuses)
 				}
 			}},
+		{provider: "antigravity", fixture: "permission-denied-first",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "ERROR", "USAGE"},
+			err:  `agy stopped: it cannot run commands headless (git grep -n "RestartFile"). Run this task with claude or codex.`},
+		// The same run, the denial said on the error output only: it may come after the result, the worker fails all the same.
+		{provider: "antigravity", fixture: "permission-denied-notice",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "USAGE", "ERROR"},
+			err:  `agy stopped: it cannot run commands headless (git grep -n "RestartFile"). Run this task with claude or codex.`},
 		{provider: "antigravity", fixture: "resume", spec: Spec{Resume: "055a398f-db14-4c5f-abbb-1bf03f8120a7"},
 			want: []string{"STATUS", "TEXT", "USAGE"},
 			check: func(t *testing.T, events []Event, args, _ string) {
@@ -280,6 +292,9 @@ func catalog() []catalogCase {
 			}},
 		{provider: "codex", fixture: "limit", want: []string{"STATUS", "ERROR", "STATUS"},
 			err: "usageLimitExceeded: You've hit your usage limit."},
+		{provider: "codex", fixture: "error-completed", want: []string{"STATUS", "ERROR", "STATUS"},
+			err: "internalServerError: the model returned an error"},
+		{provider: "codex", fixture: "unknown-status", want: []string{"STATUS", "ERROR", "STATUS"}, err: "codex turn cancelled"},
 		{provider: "codex", fixture: "permission-denied",
 			want: []string{"STATUS", "TOOL_CALL", "STATUS", "TOOL_RESULT", "TEXT", "STATUS"},
 			check: func(t *testing.T, events []Event, _, input string) {

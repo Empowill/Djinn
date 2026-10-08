@@ -141,21 +141,26 @@ func (w *streamWorker) Send(text string) error {
 }
 
 // read turns the process's lines into events. Once every message sent has its result, the input is closed and
-// the agent exits.
+// the agent exits. A worker that said an error fails with it, even when every turn ended and the process exited 0.
 func (w *streamWorker) read() {
 	defer close(w.done)
 	defer close(w.events)
+	var lastError string
+	send := func(events []Event) {
+		for _, ev := range events {
+			if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
+				lastError = ev.Text
+			}
+			w.events <- ev
+		}
+	}
 	for l := range w.p.lines {
 		if l.stderr {
-			for _, ev := range w.a.parser.stderr(l.text) {
-				w.events <- ev
-			}
+			send(w.a.parser.stderr(l.text))
 			continue
 		}
 		events, end := w.a.parser.stdout(l.text)
-		for _, ev := range events {
-			w.events <- ev
-		}
+		send(events)
 		if end == nil {
 			continue
 		}
@@ -169,11 +174,12 @@ func (w *streamWorker) read() {
 		}
 		w.mu.Unlock()
 	}
-	for _, ev := range w.a.parser.flush() {
-		w.events <- ev
-	}
+	send(w.a.parser.flush())
 	<-w.p.done
 	w.mu.Lock()
+	if w.failure == "" {
+		w.failure = lastError
+	}
 	cut := w.pending > 0 && w.failure == "" && !w.stopped.Load()
 	if cut {
 		// The process ended in the middle of a turn: whatever its exit code, the turn did not finish.

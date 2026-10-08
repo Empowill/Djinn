@@ -17,6 +17,21 @@ it, and the test checks the events and how the worker ended. A fixture whose fil
 the JSON-RPC session: the replayer gives each answer the id of Djinn's next request, and waits for Djinn's reply
 after a request of the app-server.
 
+## How a worker ends
+
+A task is `DONE` only when its agent finished its turn normally. Any stop on an error ends `FAILED`, with the
+reason in the task's error, whatever the provider. Two places decide:
+
+- **The provider** turns how its agent ended into a result: an error the agent reports (a result with `is_error` or
+  an error subtype, a failed or unknown turn status, a JSON-RPC error, a denial that ends the turn), the process's
+  exit code, a stream that ends before the turn's result ("… ended before the end of its turn").
+- **The harness** gives the final status (`end` in `harness.go`): stopped on request, interrupted by `djinn up`
+  stopping, then failed on the result's error, on an exit code other than 0, or on any `ERROR` event the worker
+  said on the way, even when its process then exited 0. Only then is it done.
+
+A refused permission is not an error in itself: Claude and Codex tell the agent, which goes on and ends its turn
+(`permission denied: …` is a `STATUS`). Antigravity's denial ends its turn: the task fails (below).
+
 ## What a worker may do
 
 **Cross-agent first: a project says once, in `.agents/permissions.txtpb`, what any agent may do in it, and Djinn
@@ -108,7 +123,8 @@ What is verified and what is supposed:
 - **Antigravity**, from `agy --help` (1.3.0) and the documentation in its binary: `--mode` takes `accept-edits` or
   `plan`; `--sandbox` restricts the terminal. **Supposed:** that `--sandbox` blocks the network; that agy 1.3.0 has
   no auto mode reachable from its command line (its binary mentions one, without a flag). **Lost:** commands (its
-  headless runs do not apply allow rules: "Settings allow-rules do not apply"), denied commands, AUTO.
+  headless runs do not apply allow rules: "Settings allow-rules do not apply"; on real runs a denied command ends
+  the turn, and the task fails, see [Antigravity](#antigravity)), denied commands, AUTO.
 
 ### Instructions: every agent reads `AGENTS.md`
 
@@ -203,7 +219,8 @@ blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per tur
 checked after a model call. Djinn drops on purpose: `rate_limit_event` while its status is `allowed` (another
 status becomes a `STATUS`), `system/thinking_tokens` (an estimate the result counts), and an assistant message
 holding only thinking whose text is withheld. A thinking block with text is kept as `OTHER`.
-**Supposed:** the exit code after an error result (1), the text of a refused tool, the hand-written cases below.
+**Supposed:** the exit code after an error result (1), the text of a refused tool, the hand-written cases below. An
+error subtype (`error_max_turns`, `error_during_execution`…) fails the turn even when `is_error` is false.
 
 | Case                                          | Fixture                          | Source                                      | What Djinn records                                                                                                  |
 | --------------------------------------------- | -------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -218,6 +235,7 @@ holding only thinking whose text is withheld. A thinking block with text is kept
 | Session resumed                               | `claude/resume.jsonl`            | by hand                                     | `--resume`, the resumed session                                                                                     |
 | Unknown lines                                 | `claude/unknown-line.jsonl`      | by hand                                     | each kept as `OTHER`, raw                                                                                           |
 | Process dies mid-turn                         | `claude/process-dies.jsonl`      | by hand                                     | error "claude ended before the end of its turn"; task failed                                                        |
+| Max turns reached, `is_error` false           | `claude/max-turns.jsonl`         | by hand                                     | error `error_max_turns` from the subtype; task failed, though claude exits 0                                        |
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
 
 ## Codex
@@ -230,7 +248,8 @@ still running after the grace delay is stopped, and that is no failure.
 
 **Stream.** Answers to Djinn's requests; notifications `item/started` and `item/completed` (items
 `agentMessage`, `commandExecution`, `fileChange`, `mcpToolCall`, `reasoning`…), `thread/tokenUsage/updated`,
-`error` (with `willRetry`), `turn/completed` (status `completed`, `failed`, `interrupted`); and requests of the
+`error` (with `willRetry`), `turn/completed` (status `completed`, `failed`, `interrupted`; any other fails the
+turn, and so does an `error` not retried before a `completed`); and requests of the
 app-server. Djinn answers `item/commandExecution/requestApproval` and `item/fileChange/requestApproval` from the
 worker's permissions (`accept` what they cover, `permission granted: …`), and declines them otherwise
 (`{"decision":"decline"}`, `permission denied: …`); it refuses any other request (JSON-RPC error -32601). Dropped on purpose: deltas
@@ -258,6 +277,8 @@ too. Nothing has been captured from a real codex yet: see "Codex: to check" belo
 | Thread to resume unknown   | `codex/resume-missing.jsonl`    | by hand | the request's error; task failed                                                       |
 | Unknown lines and requests | `codex/unknown-line.jsonl`      | by hand | kept as `OTHER`; an unknown request refused                                            |
 | Process dies mid-turn      | `codex/process-dies.jsonl`      | by hand | error "codex ended before the end of its turn"                                         |
+| Error, then turn completed | `codex/error-completed.jsonl`   | by hand | the error not retried; task failed, though the turn says `completed`                   |
+| Unknown turn status        | `codex/unknown-status.jsonl`    | by hand | "codex turn cancelled": only `completed` is done; task failed                          |
 | Second message             | `codex/two-turns.jsonl`         | by hand | a second `turn/start` once the first completed                                         |
 
 ### Codex: to check
@@ -291,19 +312,35 @@ the input is closed once every message has its result. agy cannot fork a convers
 **Stream.** `{"event":"init","conversation_id":…}`, then `step_update` lines (`step_type` `user_input`,
 `agent_response` with `text_delta`, `tool` with `tool_info` {name, parameters, output}, `checkpoint`), and one
 `result` per turn (`status` `SUCCESS`, `ERROR`, `CANCELED`, `INTERRUPTED`, `INVALID`, `WAITING`; `usage` with
-`input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens`, cumulative over the conversation). On a
+`input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens`, cumulative over the conversation;
+`denied_actions` when it refused a permission). On a
 model or agent failure, agy writes `AGY_ERROR: {…}` on its error output and exits with code 3. Djinn gathers the
 text deltas of a step and says them once the step is done (a response cut by the end of the process is said
-with `[cut]`), counts thinking tokens as written ones, reads `AGY_ERROR` as an error and the soft-denial notice
-as `permission denied: …`. Tokens only, no cost.
+with `[cut]`), counts thinking tokens as written ones, reads `AGY_ERROR` as an error and the denial notice
+as `permission denied: …`. Tokens only, no cost. A turn with `denied_actions`, or a run whose error output gave the
+denial notice, fails: "agy stopped: it cannot run commands headless (<the command>). Run this task with claude or
+codex."
+
+**Real case, 2026-10-08, agy 1.3.0 headless.** Three workers (W35, W36, W38) ran in a project with
+`.agents/permissions.txtpb` (so `--mode accept-edits`). Each read a few files, then stopped at a shell command:
+`git grep`, `go tool task --list`, `find`. agy denied the command ("jetski: no output produced — a tool required
+the "command" permission that headless mode cannot prompt for, so it was auto-denied…" on its error output), and
+ended its turn at once: the denied step without output, a result with status `SUCCESS`, an empty `response`,
+`denied_actions: [{"action":"command","display_name":"RunCommand"}]`, exit code 0. Djinn marked the three tasks
+done with no change in their worktrees. Such a run now fails. In W36, `git status` and `cat .git` ran before
+`go tool task --list` was denied: which commands agy lets through is its own decision, listed in `.agents/` or not.
+
+**So today an agy worker can read and edit files, but cannot run a command:** it suits only edit-only tasks, with
+no test, build nor search by shell to run. Give any other task to claude or codex. Whether Djinn should pass
+`--dangerously-skip-permissions` is an open question (Q43).
 
 **Verified:** the command line, from `agy --help` (1.3.0); the stream's shapes, from the official headless
 documentation (`antigravity.google/docs/cli/headless`, read 2026-10-08); the field names `event`, `step_update`,
-`text_delta`, `tool_info`, `subagent_info`, `short_error`, `retryable`, `http_status`, and the soft-denial notice,
-found in the agy 1.3.0 binary; exit code 3 and `AGY_ERROR`, from `agy changelog`. **Supposed:** every fixture
-(none is captured), the order of the steps, whether a tool step is seen `ACTIVE` before `DONE`, how a soft-denied
-tool looks in the stream, the other fields of `AGY_ERROR`, and whether `cache_read_tokens` is part of
-`input_tokens`.
+`text_delta`, `tool_info`, `subagent_info`, `short_error`, `retryable`, `http_status`, and the denial notice,
+found in the agy 1.3.0 binary; exit code 3 and `AGY_ERROR`, from `agy changelog`. On real runs (2026-10-08): the
+`init`, tool steps seen `ACTIVE` then `DONE`, the `result` of a turn ended by a denial, and the denial notice.
+**Supposed:** the fixtures written by hand, the other fields of `AGY_ERROR`, and whether `cache_read_tokens` is
+part of `input_tokens`.
 
 ### Signing in
 
@@ -341,7 +378,9 @@ use a personal or licensed account.
 | Tool calls              | `antigravity/tool-call.jsonl`                     | by hand, **supposed** | a call per tool step, its output as the result                     |
 | Model error             | `antigravity/error.jsonl` + `.stderr`             | by hand, **supposed** | the cut text, `AGY_ERROR`, the result's error; exit 3, task failed |
 | Quota exhausted         | `antigravity/limit.jsonl` + `.stderr`             | by hand, **supposed** | `… (HTTP 429), retryable`; task failed                             |
-| Permission soft-denied  | `antigravity/permission-denied.jsonl` + `.stderr` | by hand, **supposed** | `permission denied: the run_command tool(s) …`; the task goes on   |
+| Command denied          | `antigravity/permission-denied.jsonl` + `.stderr` | **real**, W36         | two commands run, the third denied: "agy stopped: … (go tool task --list) …"; task failed |
+| First command denied    | `antigravity/permission-denied-first.jsonl` + `.stderr` | **real**, W35   | the denied step never ends: "agy stopped: … (git grep …) …"; task failed |
+| Denial on stderr only   | `antigravity/permission-denied-notice.jsonl` + `.stderr` | by hand, from W35 | no `denied_actions`: the notice alone fails the task, even read after the result |
 | Conversation resumed    | `antigravity/resume.jsonl`                        | by hand, **supposed** | `--conversation`, the resumed conversation                         |
 | Unknown lines           | `antigravity/unknown-line.jsonl`                  | by hand, **supposed** | each kept as `OTHER`, raw                                          |
 | Process dies mid-answer | `antigravity/process-dies.jsonl`                  | by hand, **supposed** | the cut text, error "agy ended before the end of its turn"         |
