@@ -9,13 +9,11 @@
 edit: true
 mode: MODE_AUTO
 
-# The project's tasks, and reading Git.
-commands: "go tool task test-go"
-commands: "go tool task test"
-commands: "go tool task gen"
+# Heavy runs (tests, e2e, code generation, builds) only through a gate of the running Djinn: one at a time on
+# the machine, held back under pressure (CONTRIBUTING.md, "Djinn builds Djinn"). Light ones run directly.
+commands: "djinn gate run"
 commands: "go tool task lint"
-commands: "go tool task build"
-commands: "go tool task e2e"
+commands: "go tool task test-pkg"
 commands: "git status"
 commands: "git diff"
 commands: "git log"

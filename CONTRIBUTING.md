@@ -55,6 +55,9 @@ Each one is a decision. Changing one is a discussion first.
   none, the worker reads until you say it may edit ([order](docs/providers.md#the-order-of-decision)).
 - **Three wishes at a time, never more.** A djinn grants three wishes. It guards your
   attention, not the machine: the machine sets how many workers run.
+- **Heavy runs take a gate.** Workers share one machine: tests, e2e, code generation and builds run
+  through the running Djinn, one at a time: `djinn gate run <name> -- go tool task test`. `.agents/`
+  allows no heavy command directly; light ones (`lint`, `test-pkg` on a package) run as they are.
 - **Workers never commit.** A worker edits its worktree; `.agents/` gives it no `git commit` and no
   `git push`. The lead reviews each diff, commits in batches and pushes once: fewer commits, one CI
   run instead of one per worker.
