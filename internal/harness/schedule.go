@@ -31,27 +31,11 @@ const (
 // pressure ("" when it is not). djinn up gives the machine's (internal/machine); without one, nothing limits.
 type Capacity func() (slots int, rule, pressure string)
 
-// Rank orders the active wishes, the first served first: when slots or gates are scarce, the tasks of the first
-// wish start first. ByCreation is the default; the wish's own rank plugs in here.
-type Rank func(ctx context.Context, wishes []*planv1.Wish) []*planv1.Wish
-
-// ByCreation is the default Rank: the oldest wish first.
-func ByCreation(_ context.Context, wishes []*planv1.Wish) []*planv1.Wish {
-	out := slices.Clone(wishes)
-	slices.SortStableFunc(out, func(a, b *planv1.Wish) int {
-		return cmp.Or(a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime()), strings.Compare(a.GetId(), b.GetId()))
-	})
-	return out
-}
-
 // Option sets how the harness schedules its tasks.
 type Option func(*Harness)
 
 // WithCapacity limits the workers that run at once, and stops new ones while the machine is under pressure.
 func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c } }
-
-// WithRank orders the wishes whose tasks wait.
-func WithRank(r Rank) Option { return func(h *Harness) { h.rank = r } }
 
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
 // machine falls without telling anyone.
@@ -163,9 +147,10 @@ func (h *Harness) schedule(ctx context.Context) {
 	}
 }
 
-// order sorts tasks by the rank of their wish, then the oldest first.
+// order sorts tasks by the rank of their wish (plan.ActiveWishes), then the oldest first. The tasks of a wish that
+// is not active come last; blocker keeps them waiting.
 func (h *Harness) order(ctx context.Context, tasks []*planv1.Task) []*planv1.Task {
-	pos := h.wishRanks(ctx, tasks)
+	pos := h.wishRanks(ctx)
 	out := slices.Clone(tasks)
 	slices.SortStableFunc(out, func(a, b *planv1.Task) int {
 		return cmp.Or(cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())),
@@ -174,20 +159,14 @@ func (h *Harness) order(ctx context.Context, tasks []*planv1.Task) []*planv1.Tas
 	return out
 }
 
-// wishRanks gives the position of each wish of tasks in the rank, an unknown wish last.
-func (h *Harness) wishRanks(ctx context.Context, tasks []*planv1.Task) func(wishID string) int {
-	var wishes []*planv1.Wish
-	seen := map[string]bool{}
-	for _, t := range tasks {
-		if id := t.GetWishId(); !seen[id] {
-			seen[id] = true
-			if w, err := store.Get[*planv1.Wish](ctx, h.store, id); err == nil {
-				wishes = append(wishes, w)
-			}
-		}
+// wishRanks gives the position of a wish among the active ones, by rank; a wish that is not active comes last.
+func (h *Harness) wishRanks(ctx context.Context) func(wishID string) int {
+	active, err := plan.ActiveWishes(ctx, h.store)
+	if err != nil && ctx.Err() == nil {
+		log.Printf("djinn: rank the wishes: %v", err)
 	}
-	pos := map[string]int{}
-	for i, w := range h.rank(ctx, wishes) {
+	pos := make(map[string]int, len(active))
+	for i, w := range active {
 		pos[w.GetId()] = i
 	}
 	return func(id string) int {
@@ -198,19 +177,22 @@ func (h *Harness) wishRanks(ctx context.Context, tasks []*planv1.Task) func(wish
 	}
 }
 
-// Ranks gives the position of each task's wish in the rank, the first served first; a task without a wish, or
-// unknown, is not in the map. The gates serve their waiters in this order.
+// Ranks gives the position of each task's wish among the active wishes, the first served first; the task of a wish
+// that is not active, or unknown, is not in the map. The gates serve their waiters in this order.
 func (h *Harness) Ranks(ctx context.Context, taskIDs []string) map[string]int {
-	var tasks []*planv1.Task
-	for _, id := range taskIDs {
-		if t, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil {
-			tasks = append(tasks, t)
-		}
+	active, err := plan.ActiveWishes(ctx, h.store)
+	if err != nil {
+		return nil
 	}
-	pos := h.wishRanks(ctx, tasks)
 	out := map[string]int{}
-	for _, t := range tasks {
-		out[t.GetId()] = pos(t.GetWishId())
+	for _, id := range taskIDs {
+		t, err := store.Get[*planv1.Task](ctx, h.store, id)
+		if err != nil {
+			continue
+		}
+		if i := slices.IndexFunc(active, func(w *planv1.Wish) bool { return w.GetId() == t.GetWishId() }); i >= 0 {
+			out[id] = i
+		}
 	}
 	return out
 }
@@ -263,8 +245,11 @@ func (s *situation) writing(t *planv1.Task) bool {
 }
 
 // blocker says why the task cannot start now (why), or why it never will (failed); both empty when it can start.
-// Dependencies come first, then the write scopes, then the machine.
+// Its wish must be active (not paused nor granted); then come the dependencies, the write scopes, and the machine.
 func (h *Harness) blocker(s *situation, t *planv1.Task) (why, failed string) {
+	if wish, err := store.Get[*planv1.Wish](s.ctx, s.store, t.GetWishId()); err == nil && !plan.Active(wish) {
+		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), ""
+	}
 	for _, id := range t.GetDependsOn() {
 		d, ok := s.byID[id]
 		if !ok {

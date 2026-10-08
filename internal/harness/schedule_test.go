@@ -305,14 +305,10 @@ func TestScopes(t *testing.T) {
 	}
 }
 
-// TestRank: when a slot frees, the first wish of the rank is served first, whatever was planned first.
+// TestRank: when a slot frees, the first wish of the rank is served first, whatever was planned first; the
+// tasks of a paused wish wait until it is active again.
 func TestRank(t *testing.T) {
-	newestFirst := func(ctx context.Context, wishes []*planv1.Wish) []*planv1.Wish {
-		out := ByCreation(ctx, wishes)
-		slices.Reverse(out)
-		return out
-	}
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithRank(newestFirst), WithTick(time.Hour))
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(50*time.Millisecond))
 	repo := gitRepo(t)
 	older, _ := e.wish(t, repo)
 	busy := e.mustSpawn(t, older, "Busy", "sleep 300ms", nil)
@@ -321,10 +317,33 @@ func TestRank(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	newerNext := e.mustSpawn(t, w.Msg.GetWish().GetId(), "Newer", "sleep 200ms", nil)
+	newer := w.Msg.GetWish().GetId()
+	if _, err := e.wishes.Move(t.Context(), connect.NewRequest(&planv1.WishServiceMoveRequest{WishId: newer, To: 1})); err != nil {
+		t.Fatal(err)
+	}
+	newerNext := e.mustSpawn(t, newer, "Newer", "sleep 200ms", nil)
 	a, b := e.ended(t, olderNext.GetId()), e.ended(t, newerNext.GetId())
 	if !b.GetStartTime().AsTime().Before(a.GetStartTime().AsTime()) {
 		t.Errorf("the newer wish, ranked first, started at %v, after the older one at %v", b.GetStartTime().AsTime(), a.GetStartTime().AsTime())
+	}
+
+	// A paused wish keeps its planned tasks waiting, and says why.
+	if _, err := e.wishes.Pause(t.Context(), connect.NewRequest(&planv1.WishServicePauseRequest{WishId: newer})); err != nil {
+		t.Fatal(err)
+	}
+	paused := e.mustSpawn(t, newer, "Paused", "text later", nil)
+	if paused.GetWaitReason() != "its wish is paused" {
+		t.Fatalf("on a paused wish: %v", paused)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if got := e.get(t, paused.GetId()); got.GetStartTime() != nil {
+		t.Fatalf("started on a paused wish: %v", got)
+	}
+	if _, err := e.wishes.Activate(t.Context(), connect.NewRequest(&planv1.WishServiceActivateRequest{WishId: newer})); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.ended(t, paused.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("once active again: %v", got)
 	}
 }
 

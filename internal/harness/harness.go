@@ -64,7 +64,6 @@ type Harness struct {
 
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
-	rank       Rank          // the order of the wishes
 	tick       time.Duration // a pass at least this often
 	sched      sync.Mutex    // one scheduling decision at a time: a spawn, a pass, a planned task stopped
 	kick       chan struct{} // wakes the scheduler
@@ -120,12 +119,12 @@ func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 }
 
 // New returns a harness on the store s. Worktrees go under home, Djinn's data folder. Without options, nothing limits
-// the workers and the wishes are served oldest first; Schedule starts the planned tasks.
+// the workers and the wishes are served by rank; Schedule starts the planned tasks.
 func New(s *store.Store, home string, providers map[planv1.Provider]Provider, opts ...Option) *Harness {
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
-		rank: ByCreation, tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
+		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
 	}
 	for _, o := range opts {
 		o(h)
