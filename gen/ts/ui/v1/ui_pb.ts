@@ -4,8 +4,8 @@
 
 // The interface reserved to the native window. Agents never call it.
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
 import { file_djinn_v1_options } from "../../djinn/v1/options_pb";
 import type { Project, Question } from "../../plan/v1/plan_pb";
@@ -16,12 +16,19 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0In8KH1VpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIQCghwbGF0Zm9ybRgCIAEoCRIiCglwcm92aWRlcnMYAyADKAsyDy51aS52MS5Qcm92aWRlchIVCg1mb2xkZXJfZGlhbG9nGAQgASgIIkgKCFByb3ZpZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB2NvbW1hbmQYBCABKAkiGwoZVWlTZXJ2aWNlTG9hZFN0YXRlUmVxdWVzdCIwChpVaVNlcnZpY2VMb2FkU3RhdGVSZXNwb25zZRISCgpzdGF0ZV9qc29uGAEgASgJIi8KGVVpU2VydmljZVNhdmVTdGF0ZVJlcXVlc3QSEgoKc3RhdGVfanNvbhgBIAEoCSIcChpVaVNlcnZpY2VTYXZlU3RhdGVSZXNwb25zZSI0Ch9VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXF1ZXN0EhEKCWRpcmVjdG9yeRgBIAEoCSJCCiBVaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXNwb25zZRIRCglkaXJlY3RvcnkYASABKAkSCwoDZ2l0GAIgASgIIlcKH1VpU2VydmljZUNob29zZURpcmVjdG9yeVJlcXVlc3QSFwoFdGl0bGUYASABKAlCCLpIBXIDGMgBEhsKCWRpcmVjdG9yeRgCIAEoCUIIukgFcgMYgCAiNQogVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2USEQoJZGlyZWN0b3J5GAEgASgJIisKHFVpU2VydmljZU9wZW5FeHRlcm5hbFJlcXVlc3QSCwoDdXJsGAEgASgJIiwKHVVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlEgsKA3VybBgBIAEoCSJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCI/ChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJIh0KG1VpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdCJTChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkiGAoWVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdCI9ChdVaVNlcnZpY2VVcGRhdGVSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhEKCXRlcm1pbmFscxgCIAEoBSIpChVVaVNlcnZpY2VXYXRjaFJlcXVlc3QSEAoIZnJvbV9zZXEYASABKAQiewoWVWlTZXJ2aWNlV2F0Y2hSZXNwb25zZRILCgNzZXEYASABKAQSIwoHcHJvamVjdBgCIAEoCzIQLnBsYW4udjEuUHJvamVjdEgAEiUKCHF1ZXN0aW9uGAMgASgLMhEucGxhbi52MS5RdWVzdGlvbkgAQggKBmVudGl0eTL3BwoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJWCglMb2FkU3RhdGUSIC51aS52MS5VaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlTG9hZFN0YXRlUmVzcG9uc2UiBMjzGAISVgoJU2F2ZVN0YXRlEiAudWkudjEuVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIgTI8xgCEmgKD1ZhbGlkYXRlUHJvamVjdBImLnVpLnYxLlVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJYCglXYXRjaFNob3cSIC51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2UiBMjzGAIwARJeCgtXYXRjaFVwZGF0ZRIiLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2UiBMjzGAIwARJNCgZVcGRhdGUSHS51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Gh4udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2UiBMjzGAISTAoFV2F0Y2gSHC51aS52MS5VaVNlcnZpY2VXYXRjaFJlcXVlc3QaHS51aS52MS5VaVNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgCMAFCdgoJY29tLnVpLnYxQgdVaVByb3RvUAFaK2dpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3VpL3YxO3VpdjGiAgNVWFiqAgVVaS5WMcoCBVVpXFYx4gIRVWlcVjFcR1BCTWV0YWRhdGHqAgZVaTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiMAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0Eg4KBmFnZW50cxgBIAEoCCJ/Ch9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCCKuAQoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCRIjCgVzdGF0ZRgFIAEoDjIULnVpLnYxLlByb3ZpZGVyU3RhdGUSDwoHdmVyc2lvbhgGIAEoCRIXCg9pbnN0YWxsX2NvbW1hbmQYByABKAkSFQoNbG9naW5fY29tbWFuZBgIIAEoCSIbChlVaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0IjAKGlVpU2VydmljZUxvYWRTdGF0ZVJlc3BvbnNlEhIKCnN0YXRlX2pzb24YASABKAkiLwoZVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBISCgpzdGF0ZV9qc29uGAEgASgJIhwKGlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIjQKH1VpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QSEQoJZGlyZWN0b3J5GAEgASgJIkIKIFVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCRILCgNnaXQYAiABKAgiVwofVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVxdWVzdBIXCgV0aXRsZRgBIAEoCUIIukgFcgMYyAESGwoJZGlyZWN0b3J5GAIgASgJQgi6SAVyAxiAICI1CiBVaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZRIRCglkaXJlY3RvcnkYASABKAkiKwocVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBILCgN1cmwYASABKAkiLAodVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2USCwoDdXJsGAEgASgJIkIKFFVpU2VydmljZVNob3dSZXF1ZXN0Eg8KB3dpc2hfaWQYASABKAkSGQoIdGVybWluYWwYAiABKAlCB7pIBHICGEAiJwoVVWlTZXJ2aWNlU2hvd1Jlc3BvbnNlEg4KBndpbmRvdxgBIAEoCCIbChlVaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0Ij8KGlVpU2VydmljZVdhdGNoU2hvd1Jlc3BvbnNlEg8KB3dpc2hfaWQYASABKAkSEAoIdGVybWluYWwYAiABKAkiHQobVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0IlMKHFVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2USDwoHY3VycmVudBgBIAEoCRINCgVyZWFkeRgCIAEoCRITCgtub3RfcmVzdW1lZBgDIAMoCSIYChZVaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Ij0KF1VpU2VydmljZVVwZGF0ZVJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEQoJdGVybWluYWxzGAIgASgFIikKFVVpU2VydmljZVdhdGNoUmVxdWVzdBIQCghmcm9tX3NlcRgBIAEoBCJ7ChZVaVNlcnZpY2VXYXRjaFJlc3BvbnNlEgsKA3NlcRgBIAEoBBIjCgdwcm9qZWN0GAIgASgLMhAucGxhbi52MS5Qcm9qZWN0SAASJQoIcXVlc3Rpb24YAyABKAsyES5wbGFuLnYxLlF1ZXN0aW9uSABCCAoGZW50aXR5KqABCg1Qcm92aWRlclN0YXRlEh4KGlBST1ZJREVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWUFJPVklERVJfU1RBVEVfTUlTU0lORxABEh0KGVBST1ZJREVSX1NUQVRFX1NJR05FRF9PVVQQAhIYChRQUk9WSURFUl9TVEFURV9SRUFEWRADEhoKFlBST1ZJREVSX1NUQVRFX1VOS05PV04QBDL3BwoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJWCglMb2FkU3RhdGUSIC51aS52MS5VaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlTG9hZFN0YXRlUmVzcG9uc2UiBMjzGAISVgoJU2F2ZVN0YXRlEiAudWkudjEuVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIgTI8xgCEmgKD1ZhbGlkYXRlUHJvamVjdBImLnVpLnYxLlVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJYCglXYXRjaFNob3cSIC51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2UiBMjzGAIwARJeCgtXYXRjaFVwZGF0ZRIiLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2UiBMjzGAIwARJNCgZVcGRhdGUSHS51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Gh4udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2UiBMjzGAISTAoFV2F0Y2gSHC51aS52MS5VaVNlcnZpY2VXYXRjaFJlcXVlc3QaHS51aS52MS5VaVNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgCMAFCdgoJY29tLnVpLnYxQgdVaVByb3RvUAFaK2dpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3VpL3YxO3VpdjGiAgNVWFiqAgVVaS5WMcoCBVVpXFYx4gIRVWlcVjFcR1BCTWV0YWRhdGHqAgZVaTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
  */
 export type UiServiceGetEnvironmentRequest = Message<"ui.v1.UiServiceGetEnvironmentRequest"> & {
+  /**
+   * Check the agent command lines too: whether each is installed, its version, and whether it is signed in. Takes up
+   * to a few seconds; without it, providers is empty.
+   *
+   * @generated from field: bool agents = 1;
+   */
+  agents: boolean;
 };
 
 /**
@@ -50,7 +57,7 @@ export type UiServiceGetEnvironmentResponse = Message<"ui.v1.UiServiceGetEnviron
   platform: string;
 
   /**
-   * The agent command lines Djinn knows, and whether they are installed.
+   * The agent command lines Djinn knows, and where each stands; empty unless the request asks for the agents.
    *
    * @generated from field: repeated ui.v1.Provider providers = 3;
    */
@@ -72,13 +79,14 @@ export const UiServiceGetEnvironmentResponseSchema: GenMessage<UiServiceGetEnvir
   messageDesc(file_ui_v1_ui, 1);
 
 /**
- * An agent command line.
+ * An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
+ * installers use, so that a window started from the Finder finds it too.
  *
  * @generated from message ui.v1.Provider
  */
 export type Provider = Message<"ui.v1.Provider"> & {
   /**
-   * Identifier: codex or claude.
+   * Identifier: claude, codex or agy.
    *
    * @generated from field: string id = 1;
    */
@@ -99,11 +107,39 @@ export type Provider = Message<"ui.v1.Provider"> & {
   available: boolean;
 
   /**
-   * The command, as resolved on the PATH when available.
+   * The command, as resolved when available.
    *
    * @generated from field: string command = 4;
    */
   command: string;
+
+  /**
+   * Where the agent stands.
+   *
+   * @generated from field: ui.v1.ProviderState state = 5;
+   */
+  state: ProviderState;
+
+  /**
+   * The version the command reports; empty when it is not installed, or when Djinn does not know how to ask.
+   *
+   * @generated from field: string version = 6;
+   */
+  version: string;
+
+  /**
+   * The command line that installs the agent, from its official documentation, for this platform.
+   *
+   * @generated from field: string install_command = 7;
+   */
+  installCommand: string;
+
+  /**
+   * The command line that signs the agent in, from its official documentation.
+   *
+   * @generated from field: string login_command = 8;
+   */
+  loginCommand: string;
 };
 
 /**
@@ -534,6 +570,54 @@ export type UiServiceWatchResponse = Message<"ui.v1.UiServiceWatchResponse"> & {
  */
 export const UiServiceWatchResponseSchema: GenMessage<UiServiceWatchResponse> = /*@__PURE__*/
   messageDesc(file_ui_v1_ui, 22);
+
+/**
+ * ProviderState is whether an agent command line is installed and signed in.
+ *
+ * @generated from enum ui.v1.ProviderState
+ */
+export enum ProviderState {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: PROVIDER_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The command is not found.
+   *
+   * @generated from enum value: PROVIDER_STATE_MISSING = 1;
+   */
+  MISSING = 1,
+
+  /**
+   * Installed, not signed in: its status command says so.
+   *
+   * @generated from enum value: PROVIDER_STATE_SIGNED_OUT = 2;
+   */
+  SIGNED_OUT = 2,
+
+  /**
+   * Installed and signed in: its status command says so.
+   *
+   * @generated from enum value: PROVIDER_STATE_READY = 3;
+   */
+  READY = 3,
+
+  /**
+   * Installed; whether it is signed in is unknown: the agent has no status command, or it failed or took too long.
+   *
+   * @generated from enum value: PROVIDER_STATE_UNKNOWN = 4;
+   */
+  UNKNOWN = 4,
+}
+
+/**
+ * Describes the enum ui.v1.ProviderState.
+ */
+export const ProviderStateSchema: GenEnum<ProviderState> = /*@__PURE__*/
+  enumDesc(file_ui_v1_ui, 0);
 
 /**
  * What the window needs to show and follow the plan.

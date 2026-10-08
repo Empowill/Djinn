@@ -43,6 +43,10 @@ type Service struct {
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
 	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
 	Restart func() (version string, terminals int, err error)
+	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: searchPath, which adds
+	// the login shell's PATH and the installers' folders to Djinn's own, then the applications that ship an agent.
+	// Tests replace it.
+	AgentPath func() string
 	// ChooseFolder opens the system's folder dialog over the window, titled title and open in directory, and returns
 	// the folder chosen, or empty when the user cancelled. Nil: the page has no folder dialog (the browser).
 	ChooseFolder func(title, directory string) (string, error)
@@ -99,11 +103,8 @@ func Home() (string, error) {
 	return filepath.Join(config, name), nil
 }
 
-// providers are the agent command lines Djinn knows.
-var providers = []struct{ id, name string }{{"codex", "Codex"}, {"claude", "Claude"}}
-
 func (s *Service) GetEnvironment(
-	context.Context, *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
+	ctx context.Context, req *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
 ) (*connect.Response[uiv1.UiServiceGetEnvironmentResponse], error) {
 	platform := runtime.GOOS
 	if platform == "windows" {
@@ -112,14 +113,12 @@ func (s *Service) GetEnvironment(
 	res := &uiv1.UiServiceGetEnvironmentResponse{
 		Version: s.Version, Platform: platform, FolderDialog: s.ChooseFolder != nil,
 	}
-	for _, p := range providers {
-		command, err := exec.LookPath(p.id)
-		if err != nil {
-			command = p.id
+	if req.Msg.GetAgents() {
+		if s.AgentPath != nil {
+			res.Providers = checkAgents(ctx, s.AgentPath(), false)
+		} else {
+			res.Providers = checkAgents(ctx, searchPath(), true)
 		}
-		res.Providers = append(res.Providers, &uiv1.Provider{
-			Id: p.id, Name: p.name, Available: err == nil, Command: command,
-		})
 	}
 	return connect.NewResponse(res), nil
 }

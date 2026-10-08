@@ -61,29 +61,56 @@ service UiService {
   }
 }
 
-message UiServiceGetEnvironmentRequest {}
+message UiServiceGetEnvironmentRequest {
+  // Check the agent command lines too: whether each is installed, its version, and whether it is signed in. Takes up
+  // to a few seconds; without it, providers is empty.
+  bool agents = 1;
+}
 
 message UiServiceGetEnvironmentResponse {
   // Version of djinn.
   string version = 1;
   // Operating system, with the names Node.js uses: linux, darwin, win32.
   string platform = 2;
-  // The agent command lines Djinn knows, and whether they are installed.
+  // The agent command lines Djinn knows, and where each stands; empty unless the request asks for the agents.
   repeated Provider providers = 3;
   // The window can open the system's folder dialog: ChooseDirectory works. False in the browser.
   bool folder_dialog = 4;
 }
 
-// An agent command line.
+// An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
+// installers use, so that a window started from the Finder finds it too.
 message Provider {
-  // Identifier: codex or claude.
+  // Identifier: claude, codex or agy.
   string id = 1;
   // Name shown in the window.
   string name = 2;
   // The command is found on this machine.
   bool available = 3;
-  // The command, as resolved on the PATH when available.
+  // The command, as resolved when available.
   string command = 4;
+  // Where the agent stands.
+  ProviderState state = 5;
+  // The version the command reports; empty when it is not installed, or when Djinn does not know how to ask.
+  string version = 6;
+  // The command line that installs the agent, from its official documentation, for this platform.
+  string install_command = 7;
+  // The command line that signs the agent in, from its official documentation.
+  string login_command = 8;
+}
+
+// ProviderState is whether an agent command line is installed and signed in.
+enum ProviderState {
+  // Not set.
+  PROVIDER_STATE_UNSPECIFIED = 0;
+  // The command is not found.
+  PROVIDER_STATE_MISSING = 1;
+  // Installed, not signed in: its status command says so.
+  PROVIDER_STATE_SIGNED_OUT = 2;
+  // Installed and signed in: its status command says so.
+  PROVIDER_STATE_READY = 3;
+  // Installed; whether it is signed in is unknown: the agent has no status command, or it failed or took too long.
+  PROVIDER_STATE_UNKNOWN = 4;
 }
 
 message UiServiceLoadStateRequest {}
