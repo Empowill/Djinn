@@ -85,7 +85,7 @@ func calmMachine() (machine.Snapshot, error) {
 }
 
 // environ is the environment of a djinn of the test: its data directory (none when home is empty), a plain POSIX
-// shell, and the fake agents of bin first on the PATH.
+// shell, the fake agents of bin first on the PATH, and no question worker: an answer would start a real agent.
 func environ(home, bin string, extra ...string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
@@ -93,7 +93,7 @@ func environ(home, bin string, extra ...string) []string {
 			env = append(env, kv)
 		}
 	}
-	env = append(env, "DJINN_TEST_MAIN=1", "SHELL=/bin/sh", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	env = append(env, "DJINN_TEST_MAIN=1", "DJINN_QUESTION_WORKERS=off", "SHELL=/bin/sh", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if home != "" {
 		env = append(env, "DJINN_HOME="+home)
 	}
@@ -506,5 +506,18 @@ func TestWorkerScopesFallback(t *testing.T) {
 	workerScopes(t.Context(), &out, 0, 0)
 	if got := out.String(); strings.Contains(got, "uncapped") || !strings.HasSuffix(got, "workers run in their process group\n") {
 		t.Errorf("without caps, djinn up said %q", got)
+	}
+}
+
+// TestOnOff: $DJINN_QUESTION_WORKERS reads on or off, in any case, and what strconv.ParseBool reads; anything else is
+// an error that says what it expects.
+func TestOnOff(t *testing.T) {
+	for v, want := range map[string]bool{"on": true, "OFF": false, " off ": false, "true": true, "0": false} {
+		if got, err := onOff(v); err != nil || got != want {
+			t.Errorf("onOff(%q) = %v, %v; want %v", v, got, err, want)
+		}
+	}
+	if _, err := onOff("maybe"); err == nil || !strings.Contains(err.Error(), "expected on or off") {
+		t.Errorf("onOff(maybe): %v", err)
 	}
 }

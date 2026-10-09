@@ -59,6 +59,11 @@ The arguments are the fields of the request.
 A pair is how `djinn task depend --also` sets several tasks in one call: `TaskAfter` has `task` (required) then
 `after`, so `W6=W5,W3` fills both. In MCP it is a string read the same way.
 
+A field marked `(djinn.v1.env) = "DJINN_TASK_ID"` takes that environment variable when the command line, or a tool
+call of `djinn mcp`, leaves it empty: Djinn sets `$DJINN_TASK_ID` for every worker, so `djinn block put`, `djinn
+question ask` and `djinn question revise` name the worker's task by themselves. A value given wins. The help says it,
+from the field's comment.
+
 The `oneof` rule is how a question is named by its code or its identifier: `QuestionRef` has `code` (pattern
 `^Q[0-9]{2,3}$`) then `id` (a UUID), so `Q03` lands in `code` and a UUID in `id`. An input no member accepts
 is an error that gives each member's reason.

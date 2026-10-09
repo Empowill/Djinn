@@ -50,14 +50,8 @@ func putBlock(ctx context.Context, tx *store.Tx, m *planv1.BlockServicePutReques
 	if _, err := store.Get[*planv1.Wish](ctx, tx, m.GetWishId()); err != nil {
 		return nil, err
 	}
-	if id := m.GetTaskId(); id != "" {
-		task, err := store.Get[*planv1.Task](ctx, tx, id)
-		if err != nil {
-			return nil, err
-		}
-		if task.GetWishId() != m.GetWishId() {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("task %s belongs to another wish", task.GetCode()))
-		}
+	if err := taskOfWish(ctx, tx, m.GetWishId(), m.GetTaskId()); err != nil {
+		return nil, err
 	}
 	now := timestamppb.Now()
 	if id := m.GetId(); id != "" {
@@ -93,6 +87,22 @@ func putBlock(ctx context.Context, tx *store.Tx, m *planv1.BlockServicePutReques
 	}
 	block.UpdateTime = now
 	return block, tx.Put(block)
+}
+
+// taskOfWish checks that the task id, when given, is one of the wish wishID: the worker that writes a block, asks or
+// revises a question.
+func taskOfWish(ctx context.Context, r store.Reader, wishID, id string) error {
+	if id == "" {
+		return nil
+	}
+	task, err := store.Get[*planv1.Task](ctx, r, id)
+	if err != nil {
+		return err
+	}
+	if task.GetWishId() != wishID {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("task %s belongs to another wish", task.GetCode()))
+	}
+	return nil
 }
 
 func lastPosition(ctx context.Context, r store.Reader, wishID string) (int64, error) {

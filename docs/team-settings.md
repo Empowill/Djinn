@@ -42,6 +42,19 @@ install: "go tool task install"
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
+Three more set the *question workers*, the small tasks Djinn starts by itself on a question of a wish: after an
+answer, `Q03 → tasks` turns the decision into tasks; after "Enlighten me", `Q03: enlighten` investigates and revises
+the question ([agent protocol](agent-protocol.md)). They run the `provider` above, read only, and take no slot.
+
+| Setting               | What it sets                                                          | Not set                    |
+| --------------------- | --------------------------------------------------------------------- | -------------------------- |
+| `question_workers`    | `false`: none starts, the lead is told to act on each answer itself.  | on                         |
+| `question_model`      | Their model. `""`: the provider's default.                            | `sonnet` for claude, else the provider's default |
+| `question_budget_usd` | The most one may spend, when its provider can enforce it. `0`: no limit. | 2                       |
+
+A file that sets `provider` resets `question_model` to its default too. `djinn up --question-workers=false` (or
+`DJINN_QUESTION_WORKERS=off`) turns them off for every project.
+
 ## Branch names
 
 In a Git repository each worker edits its own worktree, on a new branch from the tip of its wish's

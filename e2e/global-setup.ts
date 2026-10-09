@@ -33,6 +33,8 @@ export default async function globalSetup() {
     env: {
       ...process.env,
       DJINN_HOME: home,
+      // No question worker: an answer here only tells the lead. question-workers.spec.ts runs a djinn with them.
+      DJINN_QUESTION_WORKERS: "off",
       PATH: bin + path.delimiter + process.env.PATH,
       ...(process.platform === "win32" ? {} : { SHELL: "/bin/sh" }),
     },

@@ -105,7 +105,7 @@ func (h *Harness) spawnCorrection(
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: correctionTitle(group, f, in.GetBranch()),
 		Prompt:   correctionPrompt(group, f, in.GetBranch(), settings, attempt),
 		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: from.GetPartOf(),
-	}, &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt})
+	}, &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}})
 }
 
 // failedTask is the task of group whose work failed: the one whose merge conflicted, or the first one not a
@@ -313,16 +313,16 @@ func (h *Harness) integrationOf(ctx context.Context, t *planv1.Task) (*planv1.Wi
 
 // answerIntegration takes the person's answer to a question Djinn asked once a failed integration's attempts were
 // spent: A starts a new correction worker, its attempts counted again from one; B leaves the work out; C leaves it to
-// the person.
-func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) {
+// the person. It tells whether q was such a question.
+func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) bool {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
 	if err != nil {
 		log.Printf("djinn: question %s: %v", q.GetCode(), err)
-		return
+		return false
 	}
 	group := slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return t.GetIntegration().GetQuestionId() != q.GetId() })
 	if len(group) == 0 {
-		return
+		return false
 	}
 	slices.SortFunc(group, func(a, b *planv1.Task) int { return a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime()) })
 	in := proto.CloneOf(group[0].GetIntegration())
@@ -331,7 +331,7 @@ func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) {
 		wish, project, settings, err := h.integrationOf(ctx, group[0])
 		if err != nil {
 			log.Printf("djinn: question %s: %v", q.GetCode(), err)
-			return
+			return true
 		}
 		settings.CorrectionAttempts = max(settings.CorrectionAttempts, 1) // Asked for, even where none starts by itself.
 		h.correct(ctx, wish, project, settings, group, in, "integration: you said to try again ("+q.GetCode()+")", 0, true)
@@ -343,6 +343,7 @@ func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) {
 		h.settleIntegration(ctx, group, in, "integration: you take it ("+q.GetCode()+"); it stays out of "+in.GetBranch()+
 			" until you bring it in", nil)
 	}
+	return true
 }
 
 // unique is ids without repeats, in the order they first come.

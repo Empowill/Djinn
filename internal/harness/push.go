@@ -347,15 +347,15 @@ func editPush(ctx context.Context, tx *store.Tx, wishID, projectID string, edit 
 }
 
 // answerPush takes the person's answer to a question Djinn asked about a push: A pushes at the integration's next
-// pass, B waits for the next push due.
-func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) {
+// pass, B waits for the next push due. It tells whether q was such a question.
+func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) bool {
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
 	if err != nil {
-		return
+		return false
 	}
 	i := slices.IndexFunc(wish.GetPushes(), func(p *planv1.WishPush) bool { return p.GetQuestionId() == q.GetId() })
 	if i < 0 {
-		return
+		return false
 	}
 	push := q.GetAnswer().GetChoice() == planv1.Choice_CHOICE_A
 	ctx = context.WithoutCancel(ctx)
@@ -366,12 +366,13 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) {
 	})
 	if err != nil {
 		log.Printf("djinn: question %s: %v", q.GetCode(), err)
-		return
+		return true
 	}
 	h.notify()
 	if push {
 		h.kickIntegrate()
 	}
+	return true
 }
 
 // pushTarget is the remote the integration branch goes to, and its name there: the branch's upstream when it has one,

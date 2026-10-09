@@ -77,6 +77,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
 	"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
 	"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
+	"- **Djinn acts on the developer's answers.** An answer starts a question worker, \"Q03 → tasks\": it turns " +
+	"the decision into tasks (`--decision Q03`), or asks what the answer leaves open. \"Enlighten me\" starts " +
+	"\"Q03: enlighten\": it reads, then revises the question. You are told when each one starts and ends, and what it " +
+	"spawned, asked or revised: check it, do not do it again. When the line says \"Act on it\" or \"Investigate\", " +
+	"question workers are off and the move is yours.\n" +
 	"- **What Djinn does not compute is a block**: a decision taken outside a question, an analysis, a hand-off.\n" +
 	"- **To explain a concept, make a tilasm** (the developer may say talisman): a folder with an `index.html` and its " +
 	"sources (a diagram, a data model walked through, a comparison), kept by Djinn outside the projects. " +
@@ -122,8 +127,8 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn tilasm put <folder> --wish <wish> --cites T07 --code L01`; `djinn tilasm list --wish <wish> --search " +
 	"\"…\"`; `djinn tilasm get <code>` (its text, the folder of its files); `djinn tilasm history <code>`, " +
 	"`djinn tilasm restore <code> <version>`.\n" +
-	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for your " +
-	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, after you investigated.\n" +
+	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
+	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you.\n" +
 	"- `djinn mark list <wish>`: what the developer read or approved in the window, without a word. An approved " +
 	"block or decision is a go: act on it. Start a recommendation with its option's letter (`B: …`): the developer " +
 	"approves it in one click.\n" +

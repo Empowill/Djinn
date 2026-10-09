@@ -243,6 +243,11 @@ To use Djinn, see the [README](README.md). To work on it:
   … --icon 🧱` give it its subject's emoji (one emoji); `djinn task spawn … --decision Q43` (a question's code, or a
   decision block's id) says which decision a task comes from. The window lists them in a "Decisions" tab, read only:
   who took each one (you, the lead, a worker) and the tasks it led to; the page and the brief follow.
+- An answer starts a question worker, "Q43 → tasks", that turns the decision into tasks (`--decision Q43`); "Enlighten
+  me" starts "Q43: enlighten", which revises the question. They read, take no slot (only memory), and tell the lead what they did.
+  `question_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md)) or `djinn up
+  --question-workers=false` turns them off. A worker's `djinn block put`, `question ask` and `revise` name its task from
+  `$DJINN_TASK_ID`: the decision log says "By W12".
 - With the window, a question asked in an active wish shows as a system notification: a click shows the wish, a
   button answers it. A new inbox item shows as one too, and the side panel counts the new ones on the flight plan. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
