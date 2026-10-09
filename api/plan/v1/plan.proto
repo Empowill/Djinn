@@ -8,6 +8,7 @@ import "buf/validate/validate.proto";
 import "djinn/v1/options.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
+import "plan/v1/tilasm.proto";
 
 // A project is a folder Djinn works in, a Git repository or not.
 message Project {
@@ -1649,6 +1650,8 @@ message WishExport {
   repeated Block blocks = 8;
   // The commands of the journal that changed the wish, oldest first.
   repeated Command commands = 9;
+  // The tilasms of the wish. An export to a file carries the files of every version; a snapshot, only the manifests.
+  repeated TilasmExport tilasms = 10;
 }
 
 // ProjectRef names a project without its folder, so that another machine finds its own copy.

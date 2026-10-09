@@ -43,6 +43,12 @@ extend google.protobuf.MethodOptions {
   Writes writes = 51004;
 }
 
+extend google.protobuf.ServiceOptions {
+  // Another name of the service's command: djinn talisman answers as djinn tilasm. Typed in full, or by a prefix no
+  // command's own name takes.
+  repeated string alias = 51005;
+}
+
 extend google.protobuf.MessageOptions {
   // Groups of fields that must be unique among stored messages of this type.
   repeated Unique unique = 51002;
