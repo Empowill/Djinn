@@ -1,0 +1,153 @@
+/* The theme's tokens, dark and light: every surface of the window takes its colours from here, or from the tokens of
+   styles.css (:root) and review.css (the light one). The test "the theme's tokens keep their contrast…"
+   (tests/styles.test.cjs) checks the text, the terminal's colours and the light ramp.
+
+   The neutral ramp: --n-XX is #XXXXXX in the dark theme, Clément's greys; the light theme reads each one again on a
+   light ground. The grounds (11 to 22) stay near white, the lines (25 to 5e) darken, the texts (65 and up) reach
+   4.5:1 at least on the page and on a card. */
+:root {
+  --n-11: #111111;
+  --n-14: #141414;
+  --n-17: #171717;
+  --n-19: #191919;
+  --n-1c: #1c1c1c;
+  --n-1e: #1e1e1e;
+  --n-20: #202020;
+  --n-22: #222222;
+  --n-25: #252525;
+  --n-28: #282828;
+  --n-2a: #2a2a2a;
+  --n-2c: #2c2c2c;
+  --n-30: #303030;
+  --n-33: #333333;
+  --n-38: #383838;
+  --n-3d: #3d3d3d;
+  --n-42: #424242;
+  --n-47: #474747;
+  --n-4c: #4c4c4c;
+  --n-51: #515151;
+  --n-57: #575757;
+  --n-5e: #5e5e5e;
+  --n-65: #656565;
+  --n-6f: #6f6f6f;
+  --n-79: #797979;
+  --n-83: #838383;
+  --n-88: #888888;
+  --n-8f: #8f8f8f;
+  --n-9c: #9c9c9c;
+  --n-a9: #a9a9a9;
+  --n-b6: #b6b6b6;
+  --n-c4: #c4c4c4;
+  --n-d1: #d1d1d1;
+  --n-de: #dedede;
+  --n-e7: #e7e7e7;
+  --n-eb: #ebebeb;
+  --n-f6: #f6f6f6;
+  --n-ff: #ffffff;
+  /* Shadows and the dim behind a dialog: black, at the strength each rule mixes. */
+  --shadow: #000000;
+  --backdrop: #000000;
+  /* The warm family of what waits for the developer. */
+  --sand: #cbbb87;
+  --sand-ink: #e0d9c4;
+  --sand-text: #aaa28d;
+  --sand-line: #423f35;
+  --sand-edge: #5a4d38;
+  --sand-bg: #23231f;
+  --sand-raised: #28251d;
+  --danger: #e0a0a0;
+  /* The terminal: xterm's own colours in the dark theme. */
+  --term-bg: #111111;
+  --term-fg: #e7e7e7;
+  --term-cursor: #ebebeb;
+  --term-cursor-accent: #111111;
+  --term-selection: #ffffff4d;
+  --term-black: #2e3436;
+  --term-red: #cc0000;
+  --term-green: #4e9a06;
+  --term-yellow: #c4a000;
+  --term-blue: #3465a4;
+  --term-magenta: #75507b;
+  --term-cyan: #06989a;
+  --term-white: #d3d7cf;
+  --term-bright-black: #555753;
+  --term-bright-red: #ef2929;
+  --term-bright-green: #8ae234;
+  --term-bright-yellow: #fce94f;
+  --term-bright-blue: #729fcf;
+  --term-bright-magenta: #ad7fa8;
+  --term-bright-cyan: #34e2e2;
+  --term-bright-white: #eeeeec;
+}
+html[data-theme="light"] {
+  --n-11: #f6f6f4;
+  --n-14: #f9f9f8;
+  --n-17: #fdfdfd;
+  --n-19: #ffffff;
+  --n-1c: #fdfdfd;
+  --n-1e: #fbfbfa;
+  --n-20: #fafaf9;
+  --n-22: #f0f0ed;
+  --n-25: #ecece8;
+  --n-28: #e8e8e3;
+  --n-2a: #e5e5e0;
+  --n-2c: #e2e2dc;
+  --n-30: #deded7;
+  --n-33: #dcdcd5;
+  --n-38: #d7d7d0;
+  --n-3d: #d2d2cb;
+  --n-42: #cecec7;
+  --n-47: #c9c9c2;
+  --n-4c: #babab3;
+  --n-51: #ababa4;
+  --n-57: #999992;
+  --n-5e: #84847d;
+  --n-65: #6f6f68;
+  --n-6f: #6d6d66;
+  --n-79: #6b6b64;
+  --n-83: #696962;
+  --n-88: #686861;
+  --n-8f: #66665f;
+  --n-9c: #5b5b54;
+  --n-a9: #50504a;
+  --n-b6: #454540;
+  --n-c4: #393935;
+  --n-d1: #2f2f2c;
+  --n-de: #242421;
+  --n-e7: #1c1c1a;
+  --n-eb: #1c1c1a;
+  --n-f6: #121211;
+  --n-ff: #0a0a09;
+  --shadow: #3c3c3240;
+  --backdrop: #1c1c1a66;
+  --sand: #7d6420;
+  --sand-ink: #3a3220;
+  --sand-text: #6e6550;
+  --sand-line: #e6dfc9;
+  --sand-edge: #d3c39e;
+  --sand-bg: #fbf8ef;
+  --sand-raised: #f8f2e2;
+  --danger: #a3261b;
+  /* Every colour reads at 4.5:1 at least on the terminal's ground: white and bright white are dark greys. */
+  --term-bg: #f6f6f4;
+  --term-fg: #1c1c1a;
+  --term-cursor: #1c1c1a;
+  --term-cursor-accent: #f6f6f4;
+  --term-selection: #c9d7f5;
+  --term-black: #1c1c1a;
+  --term-red: #b3261e;
+  --term-green: #116b33;
+  --term-yellow: #7a5300;
+  --term-blue: #1d4ed8;
+  --term-magenta: #8e24aa;
+  --term-cyan: #0b6e7a;
+  --term-white: #5c5c55;
+  --term-bright-black: #4a4a44;
+  --term-bright-red: #c0362c;
+  --term-bright-green: #1a7f37;
+  --term-bright-yellow: #6b5a00;
+  --term-bright-blue: #2f5fd0;
+  --term-bright-magenta: #a1309b;
+  --term-bright-cyan: #0f7c86;
+  --term-bright-white: #2e2e2a;
+}

@@ -102,7 +102,7 @@
   color: var(--muted);
 }
 .wish-task-note.error {
-  color: #e0a0a0;
+  color: var(--danger);
 }
 .wish-task-body {
   border-top: 1px solid var(--line);
@@ -141,7 +141,7 @@
   display: flex;
   gap: var(--space-2);
   padding: 3px 0;
-  color: #cfcfcf;
+  color: var(--n-d1);
 }
 .wish-event svg {
   flex-shrink: 0;
@@ -158,7 +158,7 @@
   color: var(--muted);
 }
 .wish-event.kind-7 {
-  color: #e0a0a0;
+  color: var(--danger);
 }
 .wish-event.kind-11 {
   color: var(--accent);
@@ -234,8 +234,8 @@
 /* The flight plan of the active wishes: each line shows its wish. */
 .plan-nav.selected,
 .plan-nav.selected:hover {
-  background: #272727;
-  color: #e7e7e7;
+  background: var(--n-28);
+  color: var(--n-e7);
 }
 .wish-waiting {
   margin-left: auto;
@@ -261,11 +261,11 @@
   padding: 1px 7px;
   border: 1px solid var(--line-strong);
   border-radius: 9px;
-  color: #cfcfcf;
+  color: var(--n-d1);
   font: var(--font-size-body) var(--font-sans);
 }
 .question-meta .wish-origin {
-  color: #cfcfcf;
+  color: var(--n-d1);
 }
 .wish-origin b {
   font: 600 var(--font-size-body) var(--mono);
@@ -299,7 +299,7 @@
 }
 .plan-wish strong {
   font-weight: 500;
-  color: #e7e7e7;
+  color: var(--n-e7);
 }
 .plan-wish-title {
   display: flex;
@@ -328,7 +328,7 @@
   align-items: center;
   gap: var(--space-2);
   margin: 0 0 var(--space-2);
-  color: #cfcfcf;
+  color: var(--n-d1);
 }
 .plan-line svg {
   flex-shrink: 0;
@@ -371,7 +371,7 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   min-width: 0;
-  color: #cfcfcf;
+  color: var(--n-d1);
 }
 .journal-list code {
   color: var(--muted);

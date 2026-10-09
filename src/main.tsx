@@ -9,6 +9,7 @@ import { djinnTransport } from "./data/client";
 import { DjinnProvider, createDjinn } from "./data/djinn";
 import { language } from "./i18n";
 import { LeadTerminalFrame } from "./lead-terminal";
+import "./theme.css";
 import "./styles.css";
 import { applyTheme, followSystem } from "./theme";
 import { UpdateBanner } from "./update-banner";

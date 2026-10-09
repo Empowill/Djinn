@@ -410,9 +410,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
             setTheme(next);
           }}
         >
-          <option value="">{t("settings.theme_dark")}</option>
+          <option value="">{t("settings.theme_system")}</option>
+          <option value="dark">{t("settings.theme_dark")}</option>
           <option value="light">{t("settings.theme_light")}</option>
-          <option value="system">{t("settings.theme_system")}</option>
         </select>
       </div>
       <div className="settings-foot">

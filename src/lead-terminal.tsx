@@ -3,7 +3,7 @@
 // when djinn serves the page (a DjinnProvider); elsewhere the app renders alone.
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { Terminal } from "@xterm/xterm";
+import { type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import {
   ChevronDown,
@@ -17,11 +17,45 @@ import { type Djinn, useDjinn } from "./data/djinn";
 import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
 import { t } from "./i18n";
+import { onTheme, token } from "./theme";
 
 // The terminal of the window: opening it again attaches to it while djinn up runs. djinn wish resume switches it
 // to the terminal of a wish's lead.
 const NAME = "main";
 const MIN_HEIGHT = 120;
+
+// The emulator's colours, from the --term-* tokens of theme.css: the theme on the page now.
+const COLOURS = {
+  background: "bg",
+  foreground: "fg",
+  cursor: "cursor",
+  cursorAccent: "cursor-accent",
+  selectionBackground: "selection",
+  black: "black",
+  red: "red",
+  green: "green",
+  yellow: "yellow",
+  blue: "blue",
+  magenta: "magenta",
+  cyan: "cyan",
+  white: "white",
+  brightBlack: "bright-black",
+  brightRed: "bright-red",
+  brightGreen: "bright-green",
+  brightYellow: "bright-yellow",
+  brightBlue: "bright-blue",
+  brightMagenta: "bright-magenta",
+  brightCyan: "bright-cyan",
+  brightWhite: "bright-white",
+} as const;
+function terminalTheme(): ITheme {
+  const theme: ITheme = {};
+  for (const [key, name] of Object.entries(COLOURS)) {
+    const value = token(`term-${name}`);
+    if (value) theme[key as keyof typeof COLOURS] = value;
+  }
+  return theme;
+}
 
 function stored(key: string): string | null {
   try {
@@ -100,12 +134,9 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
       cursorBlink: true,
       scrollback: 5000,
       allowProposedApi: false,
-      theme: {
-        background: "#111111",
-        foreground: "#e7e7e7",
-        cursor: "#ebebeb",
-      },
+      theme: terminalTheme(),
     });
+    const stopTheme = onTheme(() => (term.options.theme = terminalTheme()));
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(
@@ -210,6 +241,7 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
 
     return () => {
       abort.abort();
+      stopTheme();
       inputs.forEach((d) => d.dispose());
       element.removeEventListener("keydown", keep);
       term.dispose();

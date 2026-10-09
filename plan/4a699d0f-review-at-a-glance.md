@@ -20,8 +20,9 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   question (11), the revision bumps `revision` (12). A question whose last round is a request is *being
   investigated*: computed (`plan.Investigating`), not stored, and not counted as waiting for the developer. The
   revision keeps the former context, options and recommendation. The brief lists "To investigate", with the note.
-- **Theme**: dark by default, light or the system's in the settings. The light theme covers the window's frame and
-  the screens of a wish; dialogs and the terminal keep their dark values for now.
+- **Theme**: the system's by default, dark or light in the settings. Every surface takes its colours from the tokens
+  of `src/theme.css`: Clément's greys became a neutral ramp (`--n-XX` is `#XXXXXX` in the dark theme), read again on
+  a light ground; the terminal's colours (`--term-*`) and Mermaid read the same tokens.
 
 ## Done when
 
@@ -43,4 +44,6 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
 - [x] Titles, subtitles, a readable measure; the blocks in Markdown typography; logs, events and rounds as compact
   tables, folded. (screenshots `test-results/e2e/review-*.png`)
 - [ ] Clément has reviewed the layout and the visual language. (needs: Clément's review)
-- [ ] The light theme on the dialogs, the agent chat and the terminal. (needs: a decision, see the report of W41)
+- [x] The light theme on the dialogs, the agent chat and the terminal, then the system's theme by default. (tokens
+  in `src/theme.css`; tests "the theme's tokens keep their contrast in the dark and the light theme" and "the
+  stylesheets take their greys from the tokens"; e2e `theme.spec.ts`, screens `test-results/e2e/theme-*.png`)
