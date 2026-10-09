@@ -41,11 +41,14 @@ lead spends its tokens on mechanical work.
 
 ## Done when
 
-- [ ] A task done integrates by itself: merged in its own worktree, generated files made again, tests through a gate,
+- [x] A task done integrates by itself: merged in its own worktree, generated files made again, tests through a gate,
   the branch moved on, the person's clean checkout fast-forwarded; each step in the task's events and status.
-  (needs: the tests)
-- [ ] The commit cadence: at an azima's end, or after an hour and three tasks done since the last commit; at once for a
-  task another waits for. (needs: a test with a fake clock)
+  (TestIntegrateADoneWorker, TestIntegrateACleanBatch, TestIntegrateGeneratedConflict, TestIntegrateCodeConflict,
+  TestIntegrateRedTests, TestIntegrateLeavesADirtyCheckout, TestIntegrateFollowsACleanedCheckout,
+  TestIntegrateABranchNoCheckoutHolds, TestRecoverAnIntegration)
+- [x] The commit cadence: at an azima's end, or after an hour and three tasks done since the last commit; at once for a
+  task another waits for. (TestDue, TestLastCommit, with a fake clock: TestIntegrateACleanBatch,
+  TestIntegrateABranchNoCheckoutHolds, TestIntegrateADoneWorker)
 - [ ] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
 - [ ] A task waits for its dependencies to be integrated, and starts from the integration branch.
 - [ ] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
