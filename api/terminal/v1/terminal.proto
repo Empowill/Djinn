@@ -28,6 +28,10 @@ service TerminalService {
   rpc Read(TerminalServiceReadRequest) returns (stream TerminalServiceReadResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // The terminals whose program runs, by name: the window shows a wish's lead (lead-<wish id>) only when it runs.
+  rpc List(TerminalServiceListRequest) returns (TerminalServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
   // Hang up the terminal: the program gets SIGHUP, and is killed if it is still there after a grace delay.
   rpc Close(TerminalServiceCloseRequest) returns (TerminalServiceCloseResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
@@ -110,6 +114,12 @@ message TerminalServiceReadResponse {
   // Set on the last message: the program has ended, and all its output was sent.
   bool exited = 3;
   int32 exit_code = 4;
+}
+
+message TerminalServiceListRequest {}
+
+message TerminalServiceListResponse {
+  repeated Terminal terminals = 1;
 }
 
 message TerminalServiceCloseRequest {

@@ -78,6 +78,16 @@ func (s *Service) Read(
 	})
 }
 
+func (s *Service) List(
+	_ context.Context, _ *connect.Request[terminalv1.TerminalServiceListRequest],
+) (*connect.Response[terminalv1.TerminalServiceListResponse], error) {
+	res := &terminalv1.TerminalServiceListResponse{}
+	for _, t := range s.m.Running() {
+		res.Terminals = append(res.Terminals, describe(t))
+	}
+	return connect.NewResponse(res), nil
+}
+
 func (s *Service) Close(
 	_ context.Context, req *connect.Request[terminalv1.TerminalServiceCloseRequest],
 ) (*connect.Response[terminalv1.TerminalServiceCloseResponse], error) {

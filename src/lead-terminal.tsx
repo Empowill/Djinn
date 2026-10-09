@@ -1,6 +1,7 @@
 // The terminal pinned at the bottom of the window: a real terminal (xterm.js) on a pseudo-terminal of djinn up,
 // running the user's shell or the command djinn up was given (--terminal), such as the lead agent. It shows only
-// when djinn serves the page (a DjinnProvider); elsewhere the app renders alone.
+// when djinn serves the page (a DjinnProvider); elsewhere the app renders alone. One terminal shows at a time: the
+// lead of the wish the app shows while it runs, else the window's own.
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { type ITheme, Terminal } from "@xterm/xterm";
@@ -12,7 +13,14 @@ import {
   RotateCcw,
   SquareTerminal,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { type Djinn, useData, useDjinn, useStore } from "./data/djinn";
@@ -22,9 +30,11 @@ import { t } from "./i18n";
 import { onTheme, token } from "./theme";
 import { AddProject } from "./wish-dialogs";
 
-// The terminal of the window: opening it again attaches to it while djinn up runs. djinn wish resume switches it
-// to the terminal of a wish's lead.
+// The terminal of the window: opening it again attaches to it while djinn up runs. The wish shown, or djinn wish
+// resume, switches it to the terminal of a wish's lead.
 const NAME = "main";
+// The terminal of a wish's lead, as djinn up names it.
+const lead = (wishId: string) => `lead-${wishId}`;
 const MIN_HEIGHT = 120;
 // The Connect code of a terminal that has no folder to open in: djinn up opens the window's terminal in the first
 // project's folder, never in the home folder, and refuses with failed_precondition while no project has one.
@@ -78,14 +88,21 @@ function store(key: string, value: string) {
   }
 }
 
+// The app tells the terminal which wish it shows: empty for none, such as the flight plan.
+const ShowWish = createContext<(wishId: string) => void>(() => undefined);
+export const useShowWish = () => useContext(ShowWish);
+
 // LeadTerminalFrame lays the app out above the terminal, when there is one.
 export function LeadTerminalFrame({ children }: { children: ReactNode }) {
   const djinn = useDjinn();
+  const [wishId, setWishId] = useState<string>();
   if (!djinn) return <>{children}</>;
   return (
     <div className="lead-frame">
-      <div className="lead-frame-app">{children}</div>
-      <LeadTerminal djinn={djinn} />
+      <ShowWish.Provider value={setWishId}>
+        <div className="lead-frame-app">{children}</div>
+      </ShowWish.Provider>
+      <LeadTerminal djinn={djinn} wishId={wishId} />
     </div>
   );
 }
@@ -96,7 +113,13 @@ type Status =
   | { kind: "exited"; info: TerminalInfo; code: number }
   | { kind: "error"; message: string; code?: number };
 
-function LeadTerminal({ djinn }: { djinn: Djinn }) {
+function LeadTerminal({
+  djinn,
+  wishId,
+}: {
+  djinn: Djinn;
+  wishId: string | undefined;
+}) {
   const api = djinn.terminal;
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.terminal.collapsed") === "1",
@@ -133,6 +156,23 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
       }),
     [djinn],
   );
+  // Show the lead of the wish shown while it runs, else the window's terminal: never start a lead from here.
+  useEffect(() => {
+    if (wishId === undefined) return;
+    if (!wishId) {
+      setName(NAME);
+      return;
+    }
+    let current = true;
+    api.running().then(
+      (names) =>
+        current && setName(names.includes(lead(wishId)) ? lead(wishId) : NAME),
+      () => undefined, // djinn up restarts: the terminal shown stays, and says so.
+    );
+    return () => {
+      current = false;
+    };
+  }, [api, wishId]);
 
   // The emulator, the program, and the links between them.
   useEffect(() => {
@@ -200,7 +240,8 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
 
     (async () => {
       try {
-        const again = ended.current;
+        // A restart runs again the program that ended here, not one of another terminal.
+        const again = ended.current?.name === name ? ended.current : undefined;
         const { terminal } = await api.open({
           name,
           cols: term.cols,

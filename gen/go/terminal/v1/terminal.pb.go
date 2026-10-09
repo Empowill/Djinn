@@ -576,6 +576,86 @@ func (x *TerminalServiceReadResponse) GetExitCode() int32 {
 	return 0
 }
 
+type TerminalServiceListRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalServiceListRequest) Reset() {
+	*x = TerminalServiceListRequest{}
+	mi := &file_terminal_v1_terminal_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalServiceListRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalServiceListRequest) ProtoMessage() {}
+
+func (x *TerminalServiceListRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_terminal_v1_terminal_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalServiceListRequest.ProtoReflect.Descriptor instead.
+func (*TerminalServiceListRequest) Descriptor() ([]byte, []int) {
+	return file_terminal_v1_terminal_proto_rawDescGZIP(), []int{9}
+}
+
+type TerminalServiceListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Terminals     []*Terminal            `protobuf:"bytes,1,rep,name=terminals,proto3" json:"terminals,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalServiceListResponse) Reset() {
+	*x = TerminalServiceListResponse{}
+	mi := &file_terminal_v1_terminal_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalServiceListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalServiceListResponse) ProtoMessage() {}
+
+func (x *TerminalServiceListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_terminal_v1_terminal_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalServiceListResponse.ProtoReflect.Descriptor instead.
+func (*TerminalServiceListResponse) Descriptor() ([]byte, []int) {
+	return file_terminal_v1_terminal_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *TerminalServiceListResponse) GetTerminals() []*Terminal {
+	if x != nil {
+		return x.Terminals
+	}
+	return nil
+}
+
 type TerminalServiceCloseRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -585,7 +665,7 @@ type TerminalServiceCloseRequest struct {
 
 func (x *TerminalServiceCloseRequest) Reset() {
 	*x = TerminalServiceCloseRequest{}
-	mi := &file_terminal_v1_terminal_proto_msgTypes[9]
+	mi := &file_terminal_v1_terminal_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +677,7 @@ func (x *TerminalServiceCloseRequest) String() string {
 func (*TerminalServiceCloseRequest) ProtoMessage() {}
 
 func (x *TerminalServiceCloseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_terminal_v1_terminal_proto_msgTypes[9]
+	mi := &file_terminal_v1_terminal_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +690,7 @@ func (x *TerminalServiceCloseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalServiceCloseRequest.ProtoReflect.Descriptor instead.
 func (*TerminalServiceCloseRequest) Descriptor() ([]byte, []int) {
-	return file_terminal_v1_terminal_proto_rawDescGZIP(), []int{9}
+	return file_terminal_v1_terminal_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TerminalServiceCloseRequest) GetId() string {
@@ -628,7 +708,7 @@ type TerminalServiceCloseResponse struct {
 
 func (x *TerminalServiceCloseResponse) Reset() {
 	*x = TerminalServiceCloseResponse{}
-	mi := &file_terminal_v1_terminal_proto_msgTypes[10]
+	mi := &file_terminal_v1_terminal_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -640,7 +720,7 @@ func (x *TerminalServiceCloseResponse) String() string {
 func (*TerminalServiceCloseResponse) ProtoMessage() {}
 
 func (x *TerminalServiceCloseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_terminal_v1_terminal_proto_msgTypes[10]
+	mi := &file_terminal_v1_terminal_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -653,7 +733,7 @@ func (x *TerminalServiceCloseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalServiceCloseResponse.ProtoReflect.Descriptor instead.
 func (*TerminalServiceCloseResponse) Descriptor() ([]byte, []int) {
-	return file_terminal_v1_terminal_proto_rawDescGZIP(), []int{10}
+	return file_terminal_v1_terminal_proto_rawDescGZIP(), []int{12}
 }
 
 var File_terminal_v1_terminal_proto protoreflect.FileDescriptor
@@ -698,15 +778,19 @@ const file_terminal_v1_terminal_proto_rawDesc = "" +
 	"\x06offset\x18\x01 \x01(\x04R\x06offset\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12\x16\n" +
 	"\x06exited\x18\x03 \x01(\bR\x06exited\x12\x1b\n" +
-	"\texit_code\x18\x04 \x01(\x05R\bexitCode\"6\n" +
+	"\texit_code\x18\x04 \x01(\x05R\bexitCode\"\x1c\n" +
+	"\x1aTerminalServiceListRequest\"R\n" +
+	"\x1bTerminalServiceListResponse\x123\n" +
+	"\tterminals\x18\x01 \x03(\v2\x15.terminal.v1.TerminalR\tterminals\"6\n" +
 	"\x1bTerminalServiceCloseRequest\x12\x17\n" +
 	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\"\x1e\n" +
-	"\x1cTerminalServiceCloseResponse2\x84\x04\n" +
+	"\x1cTerminalServiceCloseResponse2\xe5\x04\n" +
 	"\x0fTerminalService\x12_\n" +
 	"\x04Open\x12'.terminal.v1.TerminalServiceOpenRequest\x1a(.terminal.v1.TerminalServiceOpenResponse\"\x04\xc8\xf3\x18\x02\x12b\n" +
 	"\x05Write\x12(.terminal.v1.TerminalServiceWriteRequest\x1a).terminal.v1.TerminalServiceWriteResponse\"\x04\xc8\xf3\x18\x02\x12e\n" +
 	"\x06Resize\x12).terminal.v1.TerminalServiceResizeRequest\x1a*.terminal.v1.TerminalServiceResizeResponse\"\x04\xc8\xf3\x18\x02\x12a\n" +
-	"\x04Read\x12'.terminal.v1.TerminalServiceReadRequest\x1a(.terminal.v1.TerminalServiceReadResponse\"\x04\xc8\xf3\x18\x020\x01\x12b\n" +
+	"\x04Read\x12'.terminal.v1.TerminalServiceReadRequest\x1a(.terminal.v1.TerminalServiceReadResponse\"\x04\xc8\xf3\x18\x020\x01\x12_\n" +
+	"\x04List\x12'.terminal.v1.TerminalServiceListRequest\x1a(.terminal.v1.TerminalServiceListResponse\"\x04\xc8\xf3\x18\x02\x12b\n" +
 	"\x05Close\x12(.terminal.v1.TerminalServiceCloseRequest\x1a).terminal.v1.TerminalServiceCloseResponse\"\x04\xc8\xf3\x18\x02B\xa6\x01\n" +
 	"\x0fcom.terminal.v1B\rTerminalProtoP\x01Z7github.com/empowill/djinn/gen/go/terminal/v1;terminalv1\xa2\x02\x03TXX\xaa\x02\vTerminal.V1\xca\x02\vTerminal\\V1\xe2\x02\x17Terminal\\V1\\GPBMetadata\xea\x02\fTerminal::V1b\x06proto3"
 
@@ -722,7 +806,7 @@ func file_terminal_v1_terminal_proto_rawDescGZIP() []byte {
 	return file_terminal_v1_terminal_proto_rawDescData
 }
 
-var file_terminal_v1_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_terminal_v1_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_terminal_v1_terminal_proto_goTypes = []any{
 	(*Terminal)(nil),                      // 0: terminal.v1.Terminal
 	(*TerminalServiceOpenRequest)(nil),    // 1: terminal.v1.TerminalServiceOpenRequest
@@ -733,26 +817,31 @@ var file_terminal_v1_terminal_proto_goTypes = []any{
 	(*TerminalServiceResizeResponse)(nil), // 6: terminal.v1.TerminalServiceResizeResponse
 	(*TerminalServiceReadRequest)(nil),    // 7: terminal.v1.TerminalServiceReadRequest
 	(*TerminalServiceReadResponse)(nil),   // 8: terminal.v1.TerminalServiceReadResponse
-	(*TerminalServiceCloseRequest)(nil),   // 9: terminal.v1.TerminalServiceCloseRequest
-	(*TerminalServiceCloseResponse)(nil),  // 10: terminal.v1.TerminalServiceCloseResponse
+	(*TerminalServiceListRequest)(nil),    // 9: terminal.v1.TerminalServiceListRequest
+	(*TerminalServiceListResponse)(nil),   // 10: terminal.v1.TerminalServiceListResponse
+	(*TerminalServiceCloseRequest)(nil),   // 11: terminal.v1.TerminalServiceCloseRequest
+	(*TerminalServiceCloseResponse)(nil),  // 12: terminal.v1.TerminalServiceCloseResponse
 }
 var file_terminal_v1_terminal_proto_depIdxs = []int32{
 	0,  // 0: terminal.v1.TerminalServiceOpenResponse.terminal:type_name -> terminal.v1.Terminal
-	1,  // 1: terminal.v1.TerminalService.Open:input_type -> terminal.v1.TerminalServiceOpenRequest
-	3,  // 2: terminal.v1.TerminalService.Write:input_type -> terminal.v1.TerminalServiceWriteRequest
-	5,  // 3: terminal.v1.TerminalService.Resize:input_type -> terminal.v1.TerminalServiceResizeRequest
-	7,  // 4: terminal.v1.TerminalService.Read:input_type -> terminal.v1.TerminalServiceReadRequest
-	9,  // 5: terminal.v1.TerminalService.Close:input_type -> terminal.v1.TerminalServiceCloseRequest
-	2,  // 6: terminal.v1.TerminalService.Open:output_type -> terminal.v1.TerminalServiceOpenResponse
-	4,  // 7: terminal.v1.TerminalService.Write:output_type -> terminal.v1.TerminalServiceWriteResponse
-	6,  // 8: terminal.v1.TerminalService.Resize:output_type -> terminal.v1.TerminalServiceResizeResponse
-	8,  // 9: terminal.v1.TerminalService.Read:output_type -> terminal.v1.TerminalServiceReadResponse
-	10, // 10: terminal.v1.TerminalService.Close:output_type -> terminal.v1.TerminalServiceCloseResponse
-	6,  // [6:11] is the sub-list for method output_type
-	1,  // [1:6] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	0,  // 1: terminal.v1.TerminalServiceListResponse.terminals:type_name -> terminal.v1.Terminal
+	1,  // 2: terminal.v1.TerminalService.Open:input_type -> terminal.v1.TerminalServiceOpenRequest
+	3,  // 3: terminal.v1.TerminalService.Write:input_type -> terminal.v1.TerminalServiceWriteRequest
+	5,  // 4: terminal.v1.TerminalService.Resize:input_type -> terminal.v1.TerminalServiceResizeRequest
+	7,  // 5: terminal.v1.TerminalService.Read:input_type -> terminal.v1.TerminalServiceReadRequest
+	9,  // 6: terminal.v1.TerminalService.List:input_type -> terminal.v1.TerminalServiceListRequest
+	11, // 7: terminal.v1.TerminalService.Close:input_type -> terminal.v1.TerminalServiceCloseRequest
+	2,  // 8: terminal.v1.TerminalService.Open:output_type -> terminal.v1.TerminalServiceOpenResponse
+	4,  // 9: terminal.v1.TerminalService.Write:output_type -> terminal.v1.TerminalServiceWriteResponse
+	6,  // 10: terminal.v1.TerminalService.Resize:output_type -> terminal.v1.TerminalServiceResizeResponse
+	8,  // 11: terminal.v1.TerminalService.Read:output_type -> terminal.v1.TerminalServiceReadResponse
+	10, // 12: terminal.v1.TerminalService.List:output_type -> terminal.v1.TerminalServiceListResponse
+	12, // 13: terminal.v1.TerminalService.Close:output_type -> terminal.v1.TerminalServiceCloseResponse
+	8,  // [8:14] is the sub-list for method output_type
+	2,  // [2:8] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_terminal_v1_terminal_proto_init() }
@@ -766,7 +855,7 @@ func file_terminal_v1_terminal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_terminal_v1_terminal_proto_rawDesc), len(file_terminal_v1_terminal_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

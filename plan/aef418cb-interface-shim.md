@@ -33,6 +33,8 @@ status: in-progress
   the legacy bridge are gone (branch `w27-ui-switch`).
 - [x] A wish made by the command line shows in the window without a reload; a question answered in the window
   reads as answered by the command line (`e2e/wish-live.spec.ts`).
+- [x] The terminal follows the wish shown: its lead while it runs, else the window's terminal (T13; e2e
+  `lead-switch.spec.ts`).
 - [ ] Clément has reviewed the switch. (needs: Clément's review)
 
 ## The switch
@@ -54,7 +56,7 @@ Q23: B. The interface reads the Go services itself, in the protos' shapes, throu
 | Wish: rights | `Wish.allowances` | `WishService.Allow` | `WishService.Watch` (wish) |
 | Project: skills | `SkillService.List` | | read on open |
 | Status bar: machine, gates | `MachineService.Show`, `GateService.List` | | read every few seconds |
-| Lead terminal | `TerminalService` | `Write`, `Resize` | `Read`, `UiService.WatchShow` |
+| Lead terminal: the wish shown's lead, else the window's | `TerminalService.List` | `Write`, `Resize` | `Read`, `UiService.WatchShow` |
 | Update banner | `UiService.WatchUpdate` | `UiService.Update` | the stream itself |
 
 **What stays local.** Display preferences only, in the page's storage: the wish shown, the sidebar folded, the
@@ -92,7 +94,6 @@ Not switched yet, screen by screen:
 - **A project's setup**: no indexing options. Summoning a skill stays on the command line. The folder is typed in,
   or chosen with "Choose a folder…" in the native window (`UiService.ChooseDirectory`, T13).
 - **Notifications** of a new question: shown by the server itself, not by the page (T09).
-- **A terminal per wish** (T13's open question): still one terminal, switched by `djinn wish resume`.
 - **Visualizations** (HTML artifacts in a frame): gone with the artifact workspace.
 - **Clean-up**: the styles of the removed panels are still in `styles.css`; `UiService.LoadState`, `SaveState`,
   `ValidateProject` and the never implemented `UiService.Watch` have no caller left.
