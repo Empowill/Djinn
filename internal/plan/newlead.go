@@ -27,12 +27,15 @@ const (
 const maxBriefArg = 64 << 10
 
 // newLead prepares a new lead for a wish that has none to resume: the command line that starts provider's agent in
-// dir (the wish's first project; the wish's own folder without one) on the wish's brief, and the lead it starts.
+// dir (startFolder: a project's folder, never the home folder) on the wish's brief, and the lead it starts.
 // first, when set, comes before where the wish stands: the request a routed wish was made for.
 // The lead holds a session only when Djinn chooses it ahead: claude's. A server without data folder keeps the shell.
 func (w *Wishes) newLead(
 	ctx context.Context, wish *planv1.Wish, provider planv1.Provider, dir, first string,
 ) (line, folder string, lead *planv1.Lead, note string, err error) {
+	if dir == "" || HoldsHome(dir) {
+		return "", "", nil, "", Status(ErrNoProject)
+	}
 	home := w.home()
 	if home == "" {
 		return "", dir, nil, "This wish has no lead session to resume: the lead's terminal runs a shell. " +
@@ -54,9 +57,6 @@ func (w *Wishes) newLead(
 		if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
 			return "", "", nil, "", connect.NewError(connect.CodeInternal, fmt.Errorf("write the brief: %w", err))
 		}
-	}
-	if dir == "" {
-		dir = own
 	}
 	lead = &planv1.Lead{Provider: provider, Directory: dir}
 	if provider == planv1.Provider_PROVIDER_CLAUDE {

@@ -88,3 +88,21 @@
 .lead-terminal.collapsed .lead-terminal-screen {
   display: none;
 }
+/* No project has a folder yet: the terminal does not open in the home folder, it asks for a project. */
+.lead-terminal-empty {
+  position: absolute;
+  inset: 28px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg);
+  color: var(--muted);
+  text-align: center;
+}
+.lead-terminal-empty p {
+  margin: 0;
+  max-width: 52ch;
+}

@@ -274,7 +274,8 @@ func start(t *testing.T, binary string) *djinn {
 	t.Cleanup(func() { _ = os.RemoveAll(home) })
 	token := randomHex(t)
 
-	cmd := exec.Command(binary, "up")
+	// The window's terminal opens in the data folder: without a project, djinn would ask for one instead.
+	cmd := exec.Command(binary, "up", "--terminal-dir", home)
 	cmd.Dir = home
 	cmd.Env = append(os.Environ(),
 		"DJINN_HOME="+home,

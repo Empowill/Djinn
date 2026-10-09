@@ -116,7 +116,7 @@ projects it touches, and a project is not necessarily a Git repository.
 
 - **The lead is in the lamp**: `Wish.lead` (`Lead`: provider, session ID, folder), set by
   `djinn wish set-lead <wish> <session> [--provider codex] [--directory <folder>]` (the folder defaults to the
-  wish's first project). Only Claude (`claude --resume <id>`) and Codex (`codex resume <id>`) can be resumed in a
+  wish's first project; never the home folder, nor a folder above it). Only Claude (`claude --resume <id>`) and Codex (`codex resume <id>`) can be resumed in a
   terminal; the session ID is a word (`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`), so the line goes through the user's
   shell as it is. Never a secret.
 - **The lead travels with the wish**: its provider and session ID go in the export; its folder only as a project's
@@ -161,8 +161,10 @@ projects it touches, and a project is not necessarily a Git repository.
 
 - **A new lead from the brief**: `djinn wish brief <wish>` prints it (Djinn's rules and the projects' rules, then
   where the wish stands; no model, no local path). `djinn wish resume <wish> [--provider codex|antigravity]` without a
-  lead session starts the agent on it in the wish's first project (the wish's own data folder without one): claude
-  with the stable part appended to its system prompt and the rest as its first message, its session chosen by Djinn
+  lead session starts the agent on it in the wish's first project, else the first of Djinn's projects, never in the
+  home folder; with no project nothing starts, and the error says to create one. A session recorded in the home
+  folder is not resumed there (claude finds a session only from its folder): a new lead starts the same way. It runs
+  claude with the stable part appended to its system prompt and the rest as its first message, its session chosen by Djinn
   and recorded as the lead once the terminal runs; codex and agy with the whole brief as their first message. The
   details, and what is verified or supposed, are in T22.
 

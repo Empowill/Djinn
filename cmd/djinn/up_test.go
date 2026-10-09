@@ -455,3 +455,36 @@ func TestReadOnlyMethodsAnswerAGet(t *testing.T) {
 		t.Errorf("GET Add: %d %s, want 405", code, body)
 	}
 }
+
+// TestWindowTerminalOpensInAProject: started without --terminal-dir, as from a menu, the window's terminal opens in
+// the first project's folder, never in the home folder; with no project, it does not start, and says to create one.
+func TestWindowTerminalOpensInAProject(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	user, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := environ(home, t.TempDir(), "HOME="+user)
+	_, addr := startUp(t, home, env)
+	_, terminals := clients(t, addr)
+
+	_, err = terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main"}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "create a project first") {
+		t.Fatalf("the terminal without a project: %v, want failed_precondition asking for a project", err)
+	}
+	folder := filepath.Join(user, "code", "lamp")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errs := runDjinn(t, env, "project", "add", folder); code != 0 {
+		t.Fatalf("project add: exit %d\n%s%s", code, out, errs)
+	}
+	opened, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir := opened.Msg.GetTerminal().GetDirectory(); dir != folder {
+		t.Errorf("the terminal opened in %q, want the project's folder %q", dir, folder)
+	}
+}

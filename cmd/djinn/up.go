@@ -51,7 +51,8 @@ func runUp(args []string) (restart bool, err error) {
 	port := flags.Int("port", 0, "port of the loopback HTTP server (with --browser, and on Windows); 0 picks a free one")
 	term := flags.String("terminal", "", "command the terminal of the window runs, through the user's shell, "+
 		"e.g. \"claude --resume <session>\"; empty runs the shell itself")
-	termDir := flags.String("terminal-dir", "", "working directory of the terminal; empty is the home directory")
+	termDir := flags.String("terminal-dir", "", "working directory of the terminal; empty is the folder of the first "+
+		"project, as the window lists them (never the home folder: with no project, the window asks to create one)")
 	maxWorkers := flags.Int("workers", 0, "most workers at once, 1 to 16; 0 decides from the machine "+
 		"(one per 2 cores and per 2 GiB of memory); default $DJINN_WORKERS")
 	warmWorkers := flags.Bool("warm-workers", false, "keep a claude loaded and waiting for the next task of each "+
@@ -132,8 +133,10 @@ func runUp(args []string) (restart bool, err error) {
 	// The terminals hang up before the workers stop: the lead may be driving them. The note of the leads follows
 	// them until djinn up stops, and is left as it is before they hang up: a crash, or an error, keeps it.
 	leadNotes := newLeadNote(home, os.Stderr)
+	// The window's terminal opens in the first project, never in the home folder, where djinn starts from a menu.
 	terminals := terminal.NewManager(terminal.Config{
 		Command: terminal.ShellCommand(*term), Dir: *termDir, Changed: leadNotes.update,
+		Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) },
 	})
 	leadNotes.terms = terminals
 	defer terminals.Close()

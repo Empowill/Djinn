@@ -6106,7 +6106,8 @@ type WishServiceSetLeadRequest struct {
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// Kind of agent: claude (the default) or codex.
 	Provider Provider `protobuf:"varint,3,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
-	// Folder the session runs in. By default, the folder of the wish's first project.
+	// Folder the session runs in. By default, the folder of the wish's first project. Never the home folder, nor
+	// a folder above it.
 	Directory     string `protobuf:"bytes,4,opt,name=directory,proto3" json:"directory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

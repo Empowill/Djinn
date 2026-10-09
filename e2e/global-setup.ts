@@ -22,7 +22,10 @@ export default async function globalSetup() {
       '#!/bin/sh\necho "fake-claude $* in $(pwd)"\nexec cat\n',
       { mode: 0o755 },
     );
-  const djinn = spawn(binary, ["up", "--browser"], {
+  // The window's terminal opens in a folder of its own: without a project, djinn would ask for one instead.
+  const shell = path.join(home, "shell");
+  fs.mkdirSync(shell);
+  const djinn = spawn(binary, ["up", "--browser", "--terminal-dir", shell], {
     stdio: ["ignore", "pipe", "inherit"],
     // The terminal of the window runs a plain POSIX shell, whatever the developer's own shell is.
     env: {

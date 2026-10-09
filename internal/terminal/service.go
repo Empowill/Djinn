@@ -102,7 +102,7 @@ func status(err error, code connect.Code) error {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, err)
-	case errors.Is(err, ErrExited), errors.Is(err, ErrClosed), errors.Is(err, ErrBusy):
+	case errors.Is(err, ErrExited), errors.Is(err, ErrClosed), errors.Is(err, ErrBusy), errors.Is(err, ErrNoFolder):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewError(code, err)

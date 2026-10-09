@@ -8,21 +8,27 @@ import "@xterm/xterm/css/xterm.css";
 import {
   ChevronDown,
   ChevronUp,
+  FolderPlus,
   RotateCcw,
   SquareTerminal,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { type Djinn, useDjinn } from "./data/djinn";
+import { Change } from "../gen/ts/plan/v1/plan_pb";
+import { type Djinn, useData, useDjinn, useStore } from "./data/djinn";
 import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
 import { t } from "./i18n";
 import { onTheme, token } from "./theme";
+import { AddProject } from "./wish-dialogs";
 
 // The terminal of the window: opening it again attaches to it while djinn up runs. djinn wish resume switches it
 // to the terminal of a wish's lead.
 const NAME = "main";
 const MIN_HEIGHT = 120;
+// The Connect code of a terminal that has no folder to open in: djinn up opens the window's terminal in the first
+// project's folder, never in the home folder, and refuses with failed_precondition while no project has one.
+const FAILED_PRECONDITION = 9;
 
 // The emulator's colours, from the --term-* tokens of theme.css: the theme on the page now.
 const COLOURS = {
@@ -88,7 +94,7 @@ type Status =
   | { kind: "connecting" }
   | { kind: "running"; info: TerminalInfo }
   | { kind: "exited"; info: TerminalInfo; code: number }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; code?: number };
 
 function LeadTerminal({ djinn }: { djinn: Djinn }) {
   const api = djinn.terminal;
@@ -101,6 +107,10 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
   const [status, setStatus] = useState<Status>({ kind: "connecting" });
   const [generation, setGeneration] = useState(0); // A restart opens a new program.
   const [name, setName] = useState(NAME);
+  const [adding, setAdding] = useState(false);
+  const data = useStore();
+  // Whether a project has a folder here: the terminal opens in the first one.
+  const hasFolder = useData((s) => s.projects.some((p) => p.directory !== ""));
   // The program a restart starts again: the one that ended, not the default of djinn up.
   const ended = useRef<TerminalInfo | undefined>(undefined);
   const host = useRef<HTMLDivElement>(null);
@@ -235,6 +245,7 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
           setStatus({
             kind: "error",
             message: error instanceof Error ? error.message : String(error),
+            code: (error as { code?: number }).code,
           });
       }
     })();
@@ -249,6 +260,16 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
       fitRef.current = null;
     };
   }, [api, djinn, generation, name]);
+
+  // A terminal with no folder to open in starts once a project has one, made here or from the command line.
+  const noFolder =
+    status.kind === "error" && status.code === FAILED_PRECONDITION;
+  const waiting = useRef(false);
+  waiting.current = noFolder;
+  useEffect(() => {
+    if (hasFolder && waiting.current) setGeneration((g) => g + 1);
+  }, [hasFolder]);
+  const noProject = noFolder && !hasFolder;
 
   // Fit the emulator to its box whenever the box changes.
   useEffect(() => {
@@ -320,10 +341,11 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
             {t("terminal.exited", { code: status.code })}
           </span>
         )}
-        {status.kind === "error" && (
+        {status.kind === "error" && !noProject && (
           <span className="lead-terminal-state error">{status.message}</span>
         )}
-        {(status.kind === "exited" || status.kind === "error") && (
+        {(status.kind === "exited" ||
+          (status.kind === "error" && !noProject)) && (
           <button
             onClick={() => setGeneration((g) => g + 1)}
             title={t("terminal.restart")}
@@ -339,6 +361,24 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
         </button>
       </header>
       <div className="lead-terminal-screen" ref={host} />
+      {noProject && !collapsed && (
+        <div className="lead-terminal-empty">
+          <p>{t("terminal.no_project")}</p>
+          <button className="button accent" onClick={() => setAdding(true)}>
+            <FolderPlus size={14} />
+            {t("sidebar.new_project")}
+          </button>
+        </div>
+      )}
+      {adding && (
+        <AddProject
+          onClose={() => setAdding(false)}
+          onAdded={() => {
+            setAdding(false);
+            void data.changed("", [Change.PROJECT]);
+          }}
+        />
+      )}
     </section>
   );
 }
