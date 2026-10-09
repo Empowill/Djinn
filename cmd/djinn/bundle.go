@@ -75,9 +75,11 @@ func loginShell(shell string) string {
 	return "/bin/zsh"
 }
 
-// loginPath gives the PATH that shell sets as a login shell, reading the user's profiles.
+// loginPath gives the PATH that shell sets as an interactive login shell, reading the user's profiles. Interactive
+// too, as VS Code asks: a login shell alone skips ~/.zshrc and ~/.bashrc, where nvm and many agent installers add
+// to PATH. What an interactive profile prints is left out by the mark, and one that waits for input is cut by ctx.
 func loginPath(ctx context.Context, shell string) (string, error) {
-	cmd := exec.CommandContext(ctx, shell, "-l", "-c", `printf '\n%s%s\n' "$1" "$PATH"`, "djinn", pathMark)
+	cmd := exec.CommandContext(ctx, shell, "-i", "-l", "-c", `printf '\n%s%s\n' "$1" "$PATH"`, "djinn", pathMark)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.WaitDelay = time.Second // A child of the profile may keep the output open.
