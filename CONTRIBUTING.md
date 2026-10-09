@@ -155,8 +155,8 @@ To use Djinn, see the [README](README.md). To work on it:
   closes its lead's terminal and removes the worktrees with no work of their own (branches all stay).
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
 - `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
-  on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. Not on Windows
-  yet.
+  on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. The buttons on its
+  card in the window do the same. Not on Windows yet.
 - In a project whose settings name a test command ([`docs/team-settings.md`](docs/team-settings.md#integration)), Djinn
   integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own,
   makes the generated files again on a conflict only in them, runs the tests through a gate, moves the wish's branch

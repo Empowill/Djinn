@@ -51,6 +51,11 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   quiet, in order; a lead that does not run is reopened on its session (`TestSayTypesOneLineAndEnter`,
   `TestSayWaitsWhileThePersonTypes`, `TestSayWaitsForAProgramJustStarted`, `TestAnswerReachesTheLead`, e2e
   `lead-tell.spec.ts`).
+- [x] A wish without a lead session says so where you answer: the open question says "no lead to tell: your answer
+  goes to the workers and waits in the wish's brief" (a converter still takes it, T07), the answered one and its row in
+  the Decisions tab say the answer waits in the brief (W52's question, A; `wish.lead.sessionId` empty, as
+  `plan.ErrNoLead`). (`a question of a wish without a lead session…` in `tests/screens.test.mjs`, `an answer in a wish
+  without a lead session…` in `tests/data-decisions.test.mjs`)
 - [x] The window's terminal and every lead open in a project, never in the home folder, where Djinn starts from a
   menu or the Dock: with no project, the terminal asks for one, and a lead does not start (`TestLeadStartsInAProject`,
   `TestWindowTerminalOpensInAProject`, `TestOpenStartsInAFolderGiven`, e2e `terminal-project.spec.ts`).

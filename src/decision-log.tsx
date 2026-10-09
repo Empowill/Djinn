@@ -2,7 +2,7 @@
 // read only. No button: an answered question was answered, a decision block was written; nothing asks to be read or
 // approved again. Each row opens with its subject's emoji; who took it follows, in the status language: the developer
 // in the human tone, with an icon and a word, an agent in plain words. A row links to the tasks it led to, and a task
-// links back to its decision (Task.decision).
+// links back to its decision (Task.decision). An answer in a wish without a lead session says no lead was told.
 import { Bot, CornerDownRight } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 
@@ -21,12 +21,15 @@ const LONG_NOTE_LINES = 6;
 export function DecisionLog<T extends { item: Decision }>({
   items,
   origin,
+  noLead,
   focus = "",
   onTask,
 }: {
   items: readonly T[];
   // Where a decision comes from, in the flight plan of several wishes: its wish.
   origin?: (item: T) => ReactNode;
+  // The decision's wish has no lead session: its answer told no lead.
+  noLead?: (item: T) => boolean;
   // The decision to bring into sight: its id.
   focus?: string;
   // Opens a task in the Tasks tab.
@@ -58,6 +61,7 @@ export function DecisionLog<T extends { item: Decision }>({
           key={item.item.id}
           decision={item.item}
           origin={origin?.(item)}
+          noLead={!!noLead?.(item)}
           focused={item.item.id === focus}
           onTask={onTask}
         />
@@ -88,11 +92,13 @@ export function Who({ decision: d }: { decision: Decision }) {
 function DecisionRow({
   decision: d,
   origin,
+  noLead,
   focused,
   onTask,
 }: {
   decision: Decision;
   origin?: ReactNode;
+  noLead: boolean;
   focused: boolean;
   onTask: (taskId: string) => void;
 }) {
@@ -118,6 +124,9 @@ function DecisionRow({
         </div>
         <h3>{title}</h3>
         {q && <p className="answer-value">→ {answerText(q)}</p>}
+        {q && noLead && (
+          <p className="no-lead">{t("question.no_lead_answered")}</p>
+        )}
         {note &&
           (long ? (
             <details className="decision-note">

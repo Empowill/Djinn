@@ -148,6 +148,8 @@ work stands, and its events as they come.
 
 - **Send** an instruction to a running worker, in the box under its events. "Received" shows once the worker said
   something after it.
+- **Pause the worker** holds a running worker where it is and frees its slot; **Resume the worker** lets it go on.
+  None on Windows yet.
 - **Stop the worker** ends it.
 - **Mark done** closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done,
   with why, in a few words.
@@ -212,7 +214,8 @@ The cards, the bar of what waits for you and the brief list them in that order.
 - **Enlighten me**, on its left, asks the lead to dig first, with what to dig into if you like. The question shows
   **Being investigated** until the lead revises it; you may still decide now. Its rounds fold below the card.
 
-Your answer goes to the lead and the workers. An answered question is a decision.
+Your answer goes to the lead and the workers. An answered question is a decision. A wish without a lead session has no
+lead to tell: the card says so, and the answer waits in the wish's brief for the next lead.
 
 **From anywhere.** In the window, a question asked in an active wish also shows as a system notification: a click
 shows the wish, a button answers it (one per option, or **Yes**). The browser shows none; on macOS, notifications need
@@ -252,8 +255,8 @@ stop).
 ## Watchers and wish templates
 
 A *watcher* is a task that runs a command, with no agent and no model: a pipeline, a merge request, a queue. Each
-new paragraph it prints wakes the lead. Its card shows the first line of its last paragraph; **Pause the watcher**
-holds it, **Let the watcher go on** lets it go on. The project must allow the command.
+new paragraph it prints wakes the lead. Its card shows the first line of its last paragraph; **Pause the worker**
+holds it, **Resume the worker** lets it go on. The project must allow the command.
 
 A *wish template* turns a request that comes back (babysit a pull request, a QA run) into a wish that already knows
 how to work: a skill declares it in its `SKILL.md`. When a routed request matches it, the new wish starts its watcher

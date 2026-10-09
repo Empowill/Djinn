@@ -299,6 +299,95 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.match(answered, /Decision recorded/);
 });
 
+test("a question of a wish without a lead session says no lead is told: open, then answered", () => {
+  const props = (noLead, extra) =>
+    s.renderToStaticMarkup(
+      h(s.WishQuestion, {
+        question: {
+          id: "q1",
+          code: "Q01",
+          text: "Which oil?",
+          options: ["Olive", "Paraffin"],
+          recommendation: "A: it smells good.",
+          ...extra,
+        },
+        expanded: true,
+        noLead,
+        onAnswer: async () => {},
+      }),
+    );
+  const told = props(false, {});
+  assert.match(told, /Your answer goes to the lead and the workers\./);
+  assert.doesNotMatch(told, /No lead to tell/);
+  const open = props(true, {});
+  assert.match(
+    open,
+    /No lead to tell: your answer goes to the workers and waits in the wish&#x27;s brief\./,
+  );
+  assert.doesNotMatch(open, /goes to the lead/);
+  const answer = { answer: { choice: s.Choice.A, note: "" } };
+  assert.doesNotMatch(props(false, answer), /No lead to tell/);
+  assert.match(
+    props(true, answer),
+    /<p class="no-lead">No lead to tell: the answer waits in the wish&#x27;s brief\.<\/p>/,
+  );
+});
+
+test("a running worker pauses from its card, a paused one resumes; none where djinn cannot pause", () => {
+  const card = (status, provider, onHold) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Trim the wick",
+          status,
+          provider,
+        },
+        onStop() {},
+        async onSend() {},
+        onHold,
+      }),
+    );
+  const hold = () => {};
+  for (const provider of [
+    s.Provider.CLAUDE,
+    s.Provider.FAKE,
+    s.Provider.WATCH,
+  ]) {
+    const running = card(s.TaskStatus.RUNNING, provider, hold);
+    assert.match(
+      running,
+      /title="Pause the worker: it holds where it is and frees its slot" aria-label="Pause the worker"/,
+      s.Provider[provider],
+    );
+    assert.doesNotMatch(running, /Resume the worker/);
+    const paused = card(s.TaskStatus.PAUSED, provider, hold);
+    assert.match(
+      paused,
+      /title="Resume the worker where it was" aria-label="Resume the worker"/,
+    );
+    assert.doesNotMatch(paused, /aria-label="Pause the worker"/);
+  }
+  // Nothing to pause in a task no worker runs.
+  for (const status of [
+    s.TaskStatus.PENDING,
+    s.TaskStatus.WAITING,
+    s.TaskStatus.RESUMING,
+    s.TaskStatus.DONE,
+    s.TaskStatus.FAILED,
+  ])
+    assert.doesNotMatch(
+      card(status, s.Provider.CLAUDE, hold),
+      /Pause the worker|Resume the worker/,
+      s.TaskStatus[status],
+    );
+  // Without onHold (Windows): no button, stop stays.
+  const windows = card(s.TaskStatus.RUNNING, s.Provider.CLAUDE, undefined);
+  assert.doesNotMatch(windows, /Pause the worker|Resume the worker/);
+  assert.match(windows, /aria-label="Stop the worker"/);
+});
+
 test("a wish's screen puts its questions first, proposes to grant it when ready, and shows tasks and blocks", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const ready = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1, {

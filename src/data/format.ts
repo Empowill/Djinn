@@ -86,6 +86,12 @@ export function isActive(wish: Wish): boolean {
   );
 }
 
+// noLead tells a wish with no lead session: djinn tells no lead its answers, they wait in the wish's brief
+// (plan.ErrNoLead).
+export function noLead(wish: Pick<Wish, "lead">): boolean {
+  return !wish.lead?.sessionId;
+}
+
 export function wishStateText(wish: Wish): string {
   if (wish.state === WishState.GRANTED) return t("wish.state_granted");
   if (wish.state === WishState.PAUSED) return t("wish.state_paused");

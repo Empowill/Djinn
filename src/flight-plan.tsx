@@ -15,9 +15,9 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { AttentionBar, attentionOf } from "./attention";
 import { decisionOf } from "./data/decisions";
-import { useData, useWishDetails } from "./data/djinn";
+import { useData, usePausable, useWishDetails } from "./data/djinn";
 import { flightPlan, spent } from "./data/flight";
-import { investigating, waitsForYou, wishTone } from "./data/format";
+import { investigating, noLead, waitsForYou, wishTone } from "./data/format";
 import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { Inbox } from "./inbox";
@@ -48,6 +48,7 @@ export function FlightPlan({
   onToast: (text: string) => void;
 }) {
   const projects = useData((s) => s.projects);
+  const pausable = usePausable();
   const details = useWishDetails(wishes.map((w) => w.id));
   const plan = flightPlan(wishes, details);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -95,17 +96,20 @@ export function FlightPlan({
       onSend={(text) =>
         act(wish.id, () => clients.tasks.send({ taskId: item.id, text }), [])
       }
-      onHold={(pause) =>
-        quiet(
-          act(
-            wish.id,
-            () =>
-              pause
-                ? clients.tasks.pause({ taskId: item.id })
-                : clients.tasks.resume({ taskId: item.id }),
-            [Change.TASK],
-          ),
-        )
+      onHold={
+        pausable
+          ? (pause) =>
+              quiet(
+                act(
+                  wish.id,
+                  () =>
+                    pause
+                      ? clients.tasks.pause({ taskId: item.id })
+                      : clients.tasks.resume({ taskId: item.id }),
+                  [Change.TASK],
+                ),
+              )
+          : undefined
       }
       onDone={(note) =>
         act(
@@ -166,6 +170,7 @@ export function FlightPlan({
             <DecisionLog
               items={plan.decisions}
               origin={({ wish }) => <WishOrigin wish={wish} />}
+              noLead={({ wish }) => noLead(wish)}
               focus={focus}
               onTask={(id) => show("tasks", id)}
             />
@@ -335,6 +340,7 @@ export function FlightPlan({
                           question={item}
                           origin={<WishOrigin wish={wish} />}
                           blocking={blocking}
+                          noLead={noLead(wish)}
                           onAnswer={(choice, note) =>
                             answer(wish.id, item.id, choice, note)
                           }

@@ -35,7 +35,7 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
-import { useClients, useData, useWishDetail } from "./data/djinn";
+import { useClients, useData, usePausable, useWishDetail } from "./data/djinn";
 import {
   type OpenQuestion,
   azimaGroups,
@@ -55,6 +55,7 @@ import {
   deletedText,
   MAX_ACTIVE,
   isActive,
+  noLead,
   projectsOf,
   taskStatusText,
   taskTone,
@@ -102,6 +103,7 @@ export function WishView({
   onToast: (text: string) => void;
 }) {
   const allProjects = useData((s) => s.projects);
+  const pausable = usePausable();
   const detail = useWishDetail(wish.id);
   const projects = projectsOf(wish, allProjects);
   const open = openQuestions(wish, detail);
@@ -168,16 +170,19 @@ export function WishView({
       onSend={(text) =>
         act(() => clients.tasks.send({ taskId: task.id, text }), [])
       }
-      onHold={(pause) =>
-        quiet(
-          act(
-            () =>
-              pause
-                ? clients.tasks.pause({ taskId: task.id })
-                : clients.tasks.resume({ taskId: task.id }),
-            [Change.TASK],
-          ),
-        )
+      onHold={
+        pausable
+          ? (pause) =>
+              quiet(
+                act(
+                  () =>
+                    pause
+                      ? clients.tasks.pause({ taskId: task.id })
+                      : clients.tasks.resume({ taskId: task.id }),
+                  [Change.TASK],
+                ),
+              )
+          : undefined
       }
       onDone={(note) =>
         act(
@@ -457,6 +462,7 @@ export function WishView({
           {view === "decisions" && (
             <DecisionLog
               items={decisions.map((item) => ({ item }))}
+              noLead={() => noLead(wish)}
               focus={focus}
               onTask={(id) => show("tasks", id)}
             />
@@ -530,6 +536,7 @@ export function WishView({
                             key={q.id}
                             question={q}
                             blocking={blocking}
+                            noLead={noLead(wish)}
                             onAnswer={(choice, note) =>
                               answer(wish.id, q.id, choice, note)
                             }
@@ -680,6 +687,7 @@ export function InvestigatingSection({
           key={item.id}
           question={item}
           blocking={blocking}
+          noLead={noLead(wish)}
           origin={origin ? <WishOrigin wish={wish} /> : undefined}
           onAnswer={(choice, note) => onAnswer(item.id, choice, note)}
           onMark={(kind, remove) => onMark(item.id, kind, remove)}
