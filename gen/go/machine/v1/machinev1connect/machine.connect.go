@@ -72,6 +72,7 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+MachineServiceShowProcedure,
 			connect.WithSchema(machineServiceMethods.ByName("Show")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -104,6 +105,7 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		MachineServiceShowProcedure,
 		svc.Show,
 		connect.WithSchema(machineServiceMethods.ByName("Show")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/machine.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -153,6 +155,7 @@ func NewGateServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+GateServiceListProcedure,
 			connect.WithSchema(gateServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -200,6 +203,7 @@ func NewGateServiceHandler(svc GateServiceHandler, opts ...connect.HandlerOption
 		GateServiceListProcedure,
 		svc.List,
 		connect.WithSchema(gateServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/machine.v1.GateService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +253,7 @@ func NewCommandServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+CommandServiceListProcedure,
 			connect.WithSchema(commandServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		record: connect.NewClient[v1.CommandServiceRecordRequest, v1.CommandServiceRecordResponse](
@@ -296,6 +301,7 @@ func NewCommandServiceHandler(svc CommandServiceHandler, opts ...connect.Handler
 		CommandServiceListProcedure,
 		svc.List,
 		connect.WithSchema(commandServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	commandServiceRecordHandler := connect.NewUnaryHandler(

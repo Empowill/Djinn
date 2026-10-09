@@ -351,6 +351,17 @@ func public(sd protoreflect.ServiceDescriptor) []protoreflect.MethodDescriptor {
 	return out
 }
 
+// readOnly tells whether md only reads: it says option idempotency_level = NO_SIDE_EFFECTS.
+func readOnly(md protoreflect.MethodDescriptor) bool {
+	opts, _ := md.Options().(*descriptorpb.MethodOptions)
+	return opts.GetIdempotencyLevel() == descriptorpb.MethodOptions_NO_SIDE_EFFECTS
+}
+
+// writes is what md changes, when it does not only read.
+func writes(md protoreflect.MethodDescriptor) djinnv1.Writes {
+	return proto.GetExtension(md.Options(), djinnv1.E_Writes).(djinnv1.Writes)
+}
+
 // command is the name of the command of a service: QuestionService is question.
 func command(sd protoreflect.ServiceDescriptor) string {
 	return kebab(strings.TrimSuffix(string(sd.Name()), "Service"))

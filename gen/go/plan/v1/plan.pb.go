@@ -7825,57 +7825,57 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x1ePROJECT_MATCH_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19PROJECT_MATCH_KIND_REMOTE\x10\x01\x12\x1b\n" +
 	"\x17PROJECT_MATCH_KIND_NAME\x10\x02\x12\x1a\n" +
-	"\x16PROJECT_MATCH_KIND_NEW\x10\x032\xe6\x03\n" +
-	"\x0fQuestionService\x12T\n" +
-	"\x03Ask\x12\".plan.v1.QuestionServiceAskRequest\x1a#.plan.v1.QuestionServiceAskResponse\"\x04\xc8\xf3\x18\x01\x12]\n" +
-	"\x06Answer\x12%.plan.v1.QuestionServiceAnswerRequest\x1a&.plan.v1.QuestionServiceAnswerResponse\"\x04\xc8\xf3\x18\x01\x12W\n" +
-	"\x04List\x12#.plan.v1.QuestionServiceListRequest\x1a$.plan.v1.QuestionServiceListResponse\"\x04\xc8\xf3\x18\x01\x12f\n" +
-	"\tEnlighten\x12(.plan.v1.QuestionServiceEnlightenRequest\x1a).plan.v1.QuestionServiceEnlightenResponse\"\x04\xc8\xf3\x18\x01\x12]\n" +
-	"\x06Revise\x12%.plan.v1.QuestionServiceReviseRequest\x1a&.plan.v1.QuestionServiceReviseResponse\"\x04\xc8\xf3\x18\x012\xbb\x01\n" +
-	"\x0eProjectService\x12R\n" +
-	"\x03Add\x12!.plan.v1.ProjectServiceAddRequest\x1a\".plan.v1.ProjectServiceAddResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x04List\x12\".plan.v1.ProjectServiceListRequest\x1a#.plan.v1.ProjectServiceListResponse\"\x04\xc8\xf3\x18\x012\x99\x02\n" +
-	"\fSkillService\x12W\n" +
-	"\x06Summon\x12\".plan.v1.SkillServiceSummonRequest\x1a#.plan.v1.SkillServiceSummonResponse\"\x04\xc8\xf3\x18\x01\x12Q\n" +
-	"\x04List\x12 .plan.v1.SkillServiceListRequest\x1a!.plan.v1.SkillServiceListResponse\"\x04\xc8\xf3\x18\x01\x12]\n" +
-	"\bUnsummon\x12$.plan.v1.SkillServiceUnsummonRequest\x1a%.plan.v1.SkillServiceUnsummonResponse\"\x04\xc8\xf3\x18\x012\xd2\v\n" +
-	"\vWishService\x12O\n" +
-	"\x04Make\x12\x1f.plan.v1.WishServiceMakeRequest\x1a .plan.v1.WishServiceMakeResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04List\x12\x1f.plan.v1.WishServiceListRequest\x1a .plan.v1.WishServiceListResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Export\x12!.plan.v1.WishServiceExportRequest\x1a\".plan.v1.WishServiceExportResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Import\x12!.plan.v1.WishServiceImportRequest\x1a\".plan.v1.WishServiceImportResponse\"\x04\xc8\xf3\x18\x01\x12a\n" +
+	"\x16PROJECT_MATCH_KIND_NEW\x10\x032\xf9\x03\n" +
+	"\x0fQuestionService\x12X\n" +
+	"\x03Ask\x12\".plan.v1.QuestionServiceAskRequest\x1a#.plan.v1.QuestionServiceAskResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12a\n" +
+	"\x06Answer\x12%.plan.v1.QuestionServiceAnswerRequest\x1a&.plan.v1.QuestionServiceAnswerResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Z\n" +
+	"\x04List\x12#.plan.v1.QuestionServiceListRequest\x1a$.plan.v1.QuestionServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12j\n" +
+	"\tEnlighten\x12(.plan.v1.QuestionServiceEnlightenRequest\x1a).plan.v1.QuestionServiceEnlightenResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12a\n" +
+	"\x06Revise\x12%.plan.v1.QuestionServiceReviseRequest\x1a&.plan.v1.QuestionServiceReviseResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x012\xc2\x01\n" +
+	"\x0eProjectService\x12V\n" +
+	"\x03Add\x12!.plan.v1.ProjectServiceAddRequest\x1a\".plan.v1.ProjectServiceAddResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12X\n" +
+	"\x04List\x12\".plan.v1.ProjectServiceListRequest\x1a#.plan.v1.ProjectServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\xa4\x02\n" +
+	"\fSkillService\x12[\n" +
+	"\x06Summon\x12\".plan.v1.SkillServiceSummonRequest\x1a#.plan.v1.SkillServiceSummonResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
+	"\x04List\x12 .plan.v1.SkillServiceListRequest\x1a!.plan.v1.SkillServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12a\n" +
+	"\bUnsummon\x12$.plan.v1.SkillServiceUnsummonRequest\x1a%.plan.v1.SkillServiceUnsummonResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x022\x88\f\n" +
+	"\vWishService\x12S\n" +
+	"\x04Make\x12\x1f.plan.v1.WishServiceMakeRequest\x1a .plan.v1.WishServiceMakeResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
+	"\x04List\x12\x1f.plan.v1.WishServiceListRequest\x1a .plan.v1.WishServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12Y\n" +
+	"\x06Export\x12!.plan.v1.WishServiceExportRequest\x1a\".plan.v1.WishServiceExportResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12Y\n" +
+	"\x06Import\x12!.plan.v1.WishServiceImportRequest\x1a\".plan.v1.WishServiceImportResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12a\n" +
 	"\n" +
-	"ImportData\x12%.plan.v1.WishServiceImportDataRequest\x1a&.plan.v1.WishServiceImportDataResponse\"\x04\xc8\xf3\x18\x02\x12\\\n" +
-	"\aSetLead\x12\".plan.v1.WishServiceSetLeadRequest\x1a#.plan.v1.WishServiceSetLeadResponse\"\b\xc8\xf3\x18\x01\xd8\xf3\x18\x01\x12Y\n" +
-	"\x06Resume\x12!.plan.v1.WishServiceResumeRequest\x1a\".plan.v1.WishServiceResumeResponse\"\b\xc8\xf3\x18\x01\xd8\xf3\x18\x01\x12R\n" +
-	"\x05Brief\x12 .plan.v1.WishServiceBriefRequest\x1a!.plan.v1.WishServiceBriefResponse\"\x04\xc8\xf3\x18\x01\x12[\n" +
-	"\bSnapshot\x12#.plan.v1.WishServiceSnapshotRequest\x1a$.plan.v1.WishServiceSnapshotResponse\"\x04\xc8\xf3\x18\x02\x12R\n" +
-	"\x05Allow\x12 .plan.v1.WishServiceAllowRequest\x1a!.plan.v1.WishServiceAllowResponse\"\x04\xc8\xf3\x18\x01\x12R\n" +
-	"\x05Grant\x12 .plan.v1.WishServiceGrantRequest\x1a!.plan.v1.WishServiceGrantResponse\"\x04\xc8\xf3\x18\x01\x12R\n" +
-	"\x05Pause\x12 .plan.v1.WishServicePauseRequest\x1a!.plan.v1.WishServicePauseResponse\"\x04\xc8\xf3\x18\x01\x12[\n" +
-	"\bActivate\x12#.plan.v1.WishServiceActivateRequest\x1a$.plan.v1.WishServiceActivateResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04Move\x12\x1f.plan.v1.WishServiceMoveRequest\x1a .plan.v1.WishServiceMoveResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Render\x12!.plan.v1.WishServiceRenderRequest\x1a\".plan.v1.WishServiceRenderResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04Sync\x12\x1f.plan.v1.WishServiceSyncRequest\x1a .plan.v1.WishServiceSyncResponse\"\x04\xc8\xf3\x18\x01\x12T\n" +
-	"\x05Watch\x12 .plan.v1.WishServiceWatchRequest\x1a!.plan.v1.WishServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x012\x8a\x02\n" +
-	"\fBlockService\x12N\n" +
-	"\x03Put\x12\x1f.plan.v1.BlockServicePutRequest\x1a .plan.v1.BlockServicePutResponse\"\x04\xc8\xf3\x18\x01\x12Q\n" +
-	"\x04List\x12 .plan.v1.BlockServiceListRequest\x1a!.plan.v1.BlockServiceListResponse\"\x04\xc8\xf3\x18\x01\x12W\n" +
-	"\x06Delete\x12\".plan.v1.BlockServiceDeleteRequest\x1a#.plan.v1.BlockServiceDeleteResponse\"\x04\xc8\xf3\x18\x012\xac\x01\n" +
-	"\vMarkService\x12L\n" +
-	"\x03Put\x12\x1e.plan.v1.MarkServicePutRequest\x1a\x1f.plan.v1.MarkServicePutResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04List\x12\x1f.plan.v1.MarkServiceListRequest\x1a .plan.v1.MarkServiceListResponse\"\x04\xc8\xf3\x18\x012\xce\x06\n" +
-	"\vTaskService\x12R\n" +
-	"\x05Spawn\x12 .plan.v1.TaskServiceSpawnRequest\x1a!.plan.v1.TaskServiceSpawnResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04List\x12\x1f.plan.v1.TaskServiceListRequest\x1a .plan.v1.TaskServiceListResponse\"\x04\xc8\xf3\x18\x01\x12L\n" +
-	"\x03Get\x12\x1e.plan.v1.TaskServiceGetRequest\x1a\x1f.plan.v1.TaskServiceGetResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04Stop\x12\x1f.plan.v1.TaskServiceStopRequest\x1a .plan.v1.TaskServiceStopResponse\"\x04\xc8\xf3\x18\x01\x12R\n" +
-	"\x05Pause\x12 .plan.v1.TaskServicePauseRequest\x1a!.plan.v1.TaskServicePauseResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Resume\x12!.plan.v1.TaskServiceResumeRequest\x1a\".plan.v1.TaskServiceResumeResponse\"\x04\xc8\xf3\x18\x01\x12T\n" +
-	"\x05Watch\x12 .plan.v1.TaskServiceWatchRequest\x1a!.plan.v1.TaskServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x01\x12R\n" +
-	"\x05Clean\x12 .plan.v1.TaskServiceCleanRequest\x1a!.plan.v1.TaskServiceCleanResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Delete\x12!.plan.v1.TaskServiceDeleteRequest\x1a\".plan.v1.TaskServiceDeleteResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04Send\x12\x1f.plan.v1.TaskServiceSendRequest\x1a .plan.v1.TaskServiceSendResponse\"\x04\xc8\xf3\x18\x01B\x86\x01\n" +
+	"ImportData\x12%.plan.v1.WishServiceImportDataRequest\x1a&.plan.v1.WishServiceImportDataResponse\"\x04\xc8\xf3\x18\x02\x12`\n" +
+	"\aSetLead\x12\".plan.v1.WishServiceSetLeadRequest\x1a#.plan.v1.WishServiceSetLeadResponse\"\f\xc8\xf3\x18\x01\xd8\xf3\x18\x01\xe0\xf3\x18\x01\x12]\n" +
+	"\x06Resume\x12!.plan.v1.WishServiceResumeRequest\x1a\".plan.v1.WishServiceResumeResponse\"\f\xc8\xf3\x18\x01\xd8\xf3\x18\x01\xe0\xf3\x18\x01\x12U\n" +
+	"\x05Brief\x12 .plan.v1.WishServiceBriefRequest\x1a!.plan.v1.WishServiceBriefResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12[\n" +
+	"\bSnapshot\x12#.plan.v1.WishServiceSnapshotRequest\x1a$.plan.v1.WishServiceSnapshotResponse\"\x04\xc8\xf3\x18\x02\x12V\n" +
+	"\x05Allow\x12 .plan.v1.WishServiceAllowRequest\x1a!.plan.v1.WishServiceAllowResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Grant\x12 .plan.v1.WishServiceGrantRequest\x1a!.plan.v1.WishServiceGrantResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Pause\x12 .plan.v1.WishServicePauseRequest\x1a!.plan.v1.WishServicePauseResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12_\n" +
+	"\bActivate\x12#.plan.v1.WishServiceActivateRequest\x1a$.plan.v1.WishServiceActivateResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12S\n" +
+	"\x04Move\x12\x1f.plan.v1.WishServiceMoveRequest\x1a .plan.v1.WishServiceMoveResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Y\n" +
+	"\x06Render\x12!.plan.v1.WishServiceRenderRequest\x1a\".plan.v1.WishServiceRenderResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12S\n" +
+	"\x04Sync\x12\x1f.plan.v1.WishServiceSyncRequest\x1a .plan.v1.WishServiceSyncResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
+	"\x05Watch\x12 .plan.v1.WishServiceWatchRequest\x1a!.plan.v1.WishServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x012\x95\x02\n" +
+	"\fBlockService\x12R\n" +
+	"\x03Put\x12\x1f.plan.v1.BlockServicePutRequest\x1a .plan.v1.BlockServicePutResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
+	"\x04List\x12 .plan.v1.BlockServiceListRequest\x1a!.plan.v1.BlockServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12[\n" +
+	"\x06Delete\x12\".plan.v1.BlockServiceDeleteRequest\x1a#.plan.v1.BlockServiceDeleteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x022\xb3\x01\n" +
+	"\vMarkService\x12P\n" +
+	"\x03Put\x12\x1e.plan.v1.MarkServicePutRequest\x1a\x1f.plan.v1.MarkServicePutResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
+	"\x04List\x12\x1f.plan.v1.MarkServiceListRequest\x1a .plan.v1.MarkServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\xf0\x06\n" +
+	"\vTaskService\x12V\n" +
+	"\x05Spawn\x12 .plan.v1.TaskServiceSpawnRequest\x1a!.plan.v1.TaskServiceSpawnResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
+	"\x04List\x12\x1f.plan.v1.TaskServiceListRequest\x1a .plan.v1.TaskServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12O\n" +
+	"\x03Get\x12\x1e.plan.v1.TaskServiceGetRequest\x1a\x1f.plan.v1.TaskServiceGetResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12S\n" +
+	"\x04Stop\x12\x1f.plan.v1.TaskServiceStopRequest\x1a .plan.v1.TaskServiceStopResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Pause\x12 .plan.v1.TaskServicePauseRequest\x1a!.plan.v1.TaskServicePauseResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Y\n" +
+	"\x06Resume\x12!.plan.v1.TaskServiceResumeRequest\x1a\".plan.v1.TaskServiceResumeResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
+	"\x05Watch\x12 .plan.v1.TaskServiceWatchRequest\x1a!.plan.v1.TaskServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x01\x12V\n" +
+	"\x05Clean\x12 .plan.v1.TaskServiceCleanRequest\x1a!.plan.v1.TaskServiceCleanResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12Y\n" +
+	"\x06Delete\x12!.plan.v1.TaskServiceDeleteRequest\x1a\".plan.v1.TaskServiceDeleteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12S\n" +
+	"\x04Send\x12\x1f.plan.v1.TaskServiceSendRequest\x1a .plan.v1.TaskServiceSendResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01B\x86\x01\n" +
 	"\vcom.plan.v1B\tPlanProtoP\x01Z/github.com/empowill/djinn/gen/go/plan/v1;planv1\xa2\x02\x03PXX\xaa\x02\aPlan.V1\xca\x02\aPlan\\V1\xe2\x02\x13Plan\\V1\\GPBMetadata\xea\x02\bPlan::V1b\x06proto3"
 
 var (

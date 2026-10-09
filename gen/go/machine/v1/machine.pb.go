@@ -1117,14 +1117,14 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\tGateState\x12\x1a\n" +
 	"\x16GATE_STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12GATE_STATE_WAITING\x10\x01\x12\x13\n" +
-	"\x0fGATE_STATE_HELD\x10\x022m\n" +
-	"\x0eMachineService\x12[\n" +
-	"\x04Show\x12%.machine.v1.MachineServiceShowRequest\x1a&.machine.v1.MachineServiceShowResponse\"\x04\xc8\xf3\x18\x012\xbd\x01\n" +
+	"\x0fGATE_STATE_HELD\x10\x022p\n" +
+	"\x0eMachineService\x12^\n" +
+	"\x04Show\x12%.machine.v1.MachineServiceShowRequest\x1a&.machine.v1.MachineServiceShowResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\xc0\x01\n" +
 	"\vGateService\x12W\n" +
-	"\x04Hold\x12\".machine.v1.GateServiceHoldRequest\x1a#.machine.v1.GateServiceHoldResponse\"\x04\xc8\xf3\x18\x010\x01\x12U\n" +
-	"\x04List\x12\".machine.v1.GateServiceListRequest\x1a#.machine.v1.GateServiceListResponse\"\x04\xc8\xf3\x18\x012\xd0\x01\n" +
-	"\x0eCommandService\x12[\n" +
-	"\x04List\x12%.machine.v1.CommandServiceListRequest\x1a&.machine.v1.CommandServiceListResponse\"\x04\xc8\xf3\x18\x01\x12a\n" +
+	"\x04Hold\x12\".machine.v1.GateServiceHoldRequest\x1a#.machine.v1.GateServiceHoldResponse\"\x04\xc8\xf3\x18\x010\x01\x12X\n" +
+	"\x04List\x12\".machine.v1.GateServiceListRequest\x1a#.machine.v1.GateServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\xd3\x01\n" +
+	"\x0eCommandService\x12^\n" +
+	"\x04List\x12%.machine.v1.CommandServiceListRequest\x1a&.machine.v1.CommandServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12a\n" +
 	"\x06Record\x12'.machine.v1.CommandServiceRecordRequest\x1a(.machine.v1.CommandServiceRecordResponse\"\x04\xc8\xf3\x18\x02B\x9e\x01\n" +
 	"\x0ecom.machine.v1B\fMachineProtoP\x01Z5github.com/empowill/djinn/gen/go/machine/v1;machinev1\xa2\x02\x03MXX\xaa\x02\n" +
 	"Machine.V1\xca\x02\n" +

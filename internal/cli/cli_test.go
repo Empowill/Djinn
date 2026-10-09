@@ -22,6 +22,7 @@ import (
 
 	_ "github.com/empowill/djinn/gen/go/backup/v1"
 	_ "github.com/empowill/djinn/gen/go/demo/v1"
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	_ "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -342,4 +343,40 @@ func TestEmbeddedDescriptorsAreFresh(t *testing.T) {
 		}
 		return true
 	})
+}
+
+// TestEveryMethodSaysWhatItChanges fails on a public method that answers once and says neither that it only reads
+// (option idempotency_level = NO_SIDE_EFFECTS) nor what it changes (option (djinn.v1.writes)), or says both: the
+// next method is classified when it is added.
+func TestEveryMethodSaysWhatItChanges(t *testing.T) {
+	var reads, deletes []string
+	for _, sd := range commands() {
+		for _, md := range public(sd) {
+			if md.IsStreamingClient() || md.IsStreamingServer() {
+				continue
+			}
+			name := string(md.FullName())
+			switch r, w := readOnly(md), writes(md); {
+			case r && w != djinnv1.Writes_WRITES_UNSPECIFIED:
+				t.Errorf("%s says it only reads, and that it writes: keep one", name)
+			case !r && w == djinnv1.Writes_WRITES_UNSPECIFIED:
+				t.Errorf("%s says nothing of what it changes: add option idempotency_level = NO_SIDE_EFFECTS if it "+
+					"only reads, else option (djinn.v1.writes) = WRITES_CHANGE or WRITES_DELETE", name)
+			case r:
+				reads = append(reads, name)
+			case w == djinnv1.Writes_WRITES_DELETE:
+				deletes = append(deletes, name)
+			}
+		}
+	}
+	for _, want := range []string{"plan.v1.ProjectService.List", "plan.v1.TaskService.Get", "machine.v1.MachineService.Show"} {
+		if !slices.Contains(reads, want) {
+			t.Errorf("%s is not read-only: %v", want, reads)
+		}
+	}
+	for _, want := range []string{"plan.v1.TaskService.Delete", "plan.v1.BlockService.Delete", "plan.v1.SkillService.Unsummon"} {
+		if !slices.Contains(deletes, want) {
+			t.Errorf("%s does not delete: %v", want, deletes)
+		}
+	}
 }

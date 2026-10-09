@@ -16,6 +16,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
+
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 )
 
 // The Model Context Protocol, served on stdio by `djinn mcp`: newline-delimited JSON-RPC 2.0, with only the tools
@@ -51,7 +53,15 @@ type mcpTool struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	InputSchema map[string]any `json:"inputSchema"`
+	Annotations mcpAnnotations `json:"annotations"`
 	method      protoreflect.MethodDescriptor
+}
+
+// mcpAnnotations tell the client what a tool changes, so that it may run a read without asking. Both are said:
+// MCP takes a tool that says nothing for one that may delete.
+type mcpAnnotations struct {
+	ReadOnlyHint    bool `json:"readOnlyHint"`
+	DestructiveHint bool `json:"destructiveHint"`
 }
 
 type mcpContent struct {
@@ -65,7 +75,8 @@ type mcpCallResult struct {
 }
 
 // tools are the public unary methods as MCP tools, in the order of the command line. A stream does not fit a tool
-// call, which answers once: the streaming methods stay on the command line.
+// call, which answers once: the streaming methods stay on the command line. A method that only reads is a read-only
+// tool; one that deletes, a destructive one.
 func tools() []mcpTool {
 	var out []mcpTool
 	for _, sd := range commands() {
@@ -77,7 +88,11 @@ func tools() []mcpTool {
 				Name:        toolName(md),
 				Description: comment(md),
 				InputSchema: inputSchema(md.Input()),
-				method:      md,
+				Annotations: mcpAnnotations{
+					ReadOnlyHint:    readOnly(md),
+					DestructiveHint: writes(md) == djinnv1.Writes_WRITES_DELETE,
+				},
+				method: md,
 			})
 		}
 	}

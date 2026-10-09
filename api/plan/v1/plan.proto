@@ -447,23 +447,28 @@ service QuestionService {
   // Ask the developer a question. Offer up to four options to answer by letter, or none for a yes/no question.
   rpc Ask(QuestionServiceAskRequest) returns (QuestionServiceAskResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Answer a question, which turns it into a decision.
   rpc Answer(QuestionServiceAnswerRequest) returns (QuestionServiceAnswerResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List questions, the most recent last.
   rpc List(QuestionServiceListRequest) returns (QuestionServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
   rpc Enlighten(QuestionServiceEnlightenRequest) returns (QuestionServiceEnlightenResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
   // rounds, and the question waits for the developer again.
   rpc Revise(QuestionServiceReviseRequest) returns (QuestionServiceReviseResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
 }
 
@@ -580,10 +585,12 @@ service ProjectService {
   // Add a folder as a project. It need not be a Git repository.
   rpc Add(ProjectServiceAddRequest) returns (ProjectServiceAddResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List the projects.
   rpc List(ProjectServiceListRequest) returns (ProjectServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
 
@@ -617,14 +624,17 @@ service SkillService {
   // it from their next launch on; nothing is written in either project.
   rpc Summon(SkillServiceSummonRequest) returns (SkillServiceSummonResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List the skills of the projects: their own, and those they summon, with the ones whose source is missing.
   rpc List(SkillServiceListRequest) returns (SkillServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Unsummon a skill: the project's next workers no longer get it. The project stays as it was.
   rpc Unsummon(SkillServiceUnsummonRequest) returns (SkillServiceUnsummonResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
   }
 }
 
@@ -697,22 +707,26 @@ service WishService {
   // Make a wish.
   rpc Make(WishServiceMakeRequest) returns (WishServiceMakeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
   // the most recent last.
   rpc List(WishServiceListRequest) returns (WishServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Export a wish to a file, to open it on another machine: its plan, questions, decisions, blocks and journal.
   // Never code, which travels through Git, never a secret, never a local path: projects are named by their name
   // and remote.
   rpc Export(WishServiceExportRequest) returns (WishServiceExportResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
   }
   // Import a wish from a file written by export. Each project is found on this machine by its remote, then by
   // its name; one not found is added without a folder, for djinn project add <folder> to attach.
   rpc Import(WishServiceImportRequest) returns (WishServiceImportResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Import a wish from the content of a file, as the window reads it. The journal records every import this
   // way, with the content, whatever way it came.
@@ -723,6 +737,7 @@ service WishService {
   // djinn if it is not running.
   rpc SetLead(WishServiceSetLeadRequest) returns (WishServiceSetLeadResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
     option (djinn.v1.autostart) = true;
   }
   // Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
@@ -730,6 +745,7 @@ service WishService {
   // (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
   rpc Resume(WishServiceResumeRequest) returns (WishServiceResumeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
     option (djinn.v1.autostart) = true;
   }
   // The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
@@ -738,6 +754,7 @@ service WishService {
   // No local path, no secret.
   rpc Brief(WishServiceBriefRequest) returns (WishServiceBriefResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
   rpc Snapshot(WishServiceSnapshotRequest) returns (WishServiceSnapshotResponse) {
@@ -747,36 +764,43 @@ service WishService {
   // agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
   rpc Allow(WishServiceAllowRequest) returns (WishServiceAllowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
   // task finished, no question open), and you may grant it before.
   rpc Grant(WishServiceGrantRequest) returns (WishServiceGrantResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.
   rpc Pause(WishServicePauseRequest) returns (WishServicePauseResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one
   // first.
   rpc Activate(WishServiceActivateRequest) returns (WishServiceActivateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Move an active wish to another rank: --to 1 gives it priority over the others.
   rpc Move(WishServiceMoveRequest) returns (WishServiceMoveResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
   // for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
   // local path.
   rpc Render(WishServiceRenderRequest) returns (WishServiceRenderResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
   }
   // Render the wish's page in Djinn's data folder, print where, and keep it up to date while djinn up runs: every
   // change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
   // republish it where you put it last time. Delete the file to stop.
   rpc Sync(WishServiceSyncRequest) returns (WishServiceSyncResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
   // itself: the first message names everything, then each change follows; changes close together come as one. A
@@ -1191,14 +1215,17 @@ service BlockService {
   // Add a block to a wish, or change one: given its id, the fields set replace those of the block.
   rpc Put(BlockServicePutRequest) returns (BlockServicePutResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List the blocks of a wish, in order.
   rpc List(BlockServiceListRequest) returns (BlockServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Delete a block.
   rpc Delete(BlockServiceDeleteRequest) returns (BlockServiceDeleteResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
   }
 }
 
@@ -1272,10 +1299,12 @@ service MarkService {
   // the option its recommendation names, as djinn question answer does.
   rpc Put(MarkServicePutRequest) returns (MarkServicePutResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List the marks of a wish, the latest last.
   rpc List(MarkServiceListRequest) returns (MarkServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
 
@@ -1348,28 +1377,34 @@ service TaskService {
   // why; djinn up starts it as soon as it can.
   rpc Spawn(TaskServiceSpawnRequest) returns (TaskServiceSpawnResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List the tasks, the oldest first.
   rpc List(TaskServiceListRequest) returns (TaskServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Show a task.
   rpc Get(TaskServiceGetRequest) returns (TaskServiceGetResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
   // started is stopped at once.
   rpc Stop(TaskServiceStopRequest) returns (TaskServiceStopResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
   // until it is resumed. A worker that holds a gate is not paused: wait, or stop it. Not possible on Windows yet.
   rpc Pause(TaskServicePauseRequest) returns (TaskServicePauseResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Let a paused worker go on where it was.
   rpc Resume(TaskServiceResumeRequest) returns (TaskServiceResumeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Follow a task's events as they come, from the first one or after a position; ends with the task.
   rpc Watch(TaskServiceWatchRequest) returns (stream TaskServiceWatchResponse) {
@@ -1378,16 +1413,19 @@ service TaskService {
   // Remove the worktree of a finished task. Its branch stays.
   rpc Clean(TaskServiceCleanRequest) returns (TaskServiceCleanResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
   }
   // Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
   // events. A task a worker of this Djinn ran stays, as the record of that work.
   rpc Delete(TaskServiceDeleteRequest) returns (TaskServiceDeleteResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
   }
   // Send a message to a running worker: an instruction added while it works. The message is an event of the task,
   // and a "received" event follows once the worker says something after it.
   rpc Send(TaskServiceSendRequest) returns (TaskServiceSendResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
 }
 

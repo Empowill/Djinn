@@ -2221,7 +2221,7 @@
     }
   },
   "info": {
-    "description": "The public methods of Djinn, generated from the protos in api/ (go tool task gen). They are the commands of the djinn command line and the tools of djinn mcp.\n\nEach method is a POST of the [Connect protocol](https://connectrpc.com/docs/protocol): `Content-Type: application/json`, the request in protobuf JSON as the body. djinn up writes its address in `server.addr` of the data directory: on macOS and Linux a Unix socket, `curl --unix-socket <data>/djinn.sock http://localhost/plan.v1.ProjectService/List -H 'Content-Type: application/json' -d '{}'`; on Windows or with `djinn up --browser`, `http://127.0.0.1:PORT/?token=…`, whose token goes in an `Authorization: Bearer` header.\n\nThe streaming methods use Connect's streaming protocol and are not described here: `/machine.v1.GateService/Hold`, `/plan.v1.TaskService/Watch`, `/plan.v1.WishService/Watch`.",
+    "description": "The public methods of Djinn, generated from the protos in api/ (go tool task gen). They are the commands of the djinn command line and the tools of djinn mcp.\n\nEach method is a POST of the [Connect protocol](https://connectrpc.com/docs/protocol): `Content-Type: application/json`, the request in protobuf JSON as the body. djinn up writes its address in `server.addr` of the data directory: on macOS and Linux a Unix socket, `curl --unix-socket <data>/djinn.sock http://localhost/plan.v1.ProjectService/List -H 'Content-Type: application/json' -d '{}'`; on Windows or with `djinn up --browser`, `http://127.0.0.1:PORT/?token=…`, whose token goes in an `Authorization: Bearer` header.\n\nA method marked `x-read-only` changes nothing. Connect serves it as a GET too, the request in the query: `GET /plan.v1.ProjectService/List?encoding=json&message=%7B%7D`.\n\nThe streaming methods use Connect's streaming protocol and are not described here: `/machine.v1.GateService/Hold`, `/plan.v1.TaskService/Watch`, `/plan.v1.WishService/Watch`.",
     "license": {
       "identifier": "Apache-2.0",
       "name": "Apache-2.0"
@@ -2266,7 +2266,8 @@
         "summary": "djinn command list",
         "tags": [
           "CommandService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/machine.v1.GateService/List": {
@@ -2304,7 +2305,8 @@
         "summary": "djinn gate list",
         "tags": [
           "GateService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/machine.v1.MachineService/Show": {
@@ -2342,7 +2344,8 @@
         "summary": "djinn machine show",
         "tags": [
           "MachineService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.BlockService/Delete": {
@@ -2418,7 +2421,8 @@
         "summary": "djinn block list",
         "tags": [
           "BlockService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.BlockService/Put": {
@@ -2494,7 +2498,8 @@
         "summary": "djinn mark list",
         "tags": [
           "MarkService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.MarkService/Put": {
@@ -2608,7 +2613,8 @@
         "summary": "djinn project list",
         "tags": [
           "ProjectService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.QuestionService/Answer": {
@@ -2760,7 +2766,8 @@
         "summary": "djinn question list",
         "tags": [
           "QuestionService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.QuestionService/Revise": {
@@ -2836,7 +2843,8 @@
         "summary": "djinn skill list",
         "tags": [
           "SkillService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.SkillService/Summon": {
@@ -3026,7 +3034,8 @@
         "summary": "djinn task get",
         "tags": [
           "TaskService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.TaskService/List": {
@@ -3064,7 +3073,8 @@
         "summary": "djinn task list",
         "tags": [
           "TaskService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.TaskService/Pause": {
@@ -3368,7 +3378,8 @@
         "summary": "djinn wish brief",
         "tags": [
           "WishService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.WishService/Export": {
@@ -3520,7 +3531,8 @@
         "summary": "djinn wish list",
         "tags": [
           "WishService"
-        ]
+        ],
+        "x-read-only": true
       }
     },
     "/plan.v1.WishService/Make": {

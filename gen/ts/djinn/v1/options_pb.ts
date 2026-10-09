@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/options.proto.
  */
 export const file_djinn_v1_options: GenFile = /*@__PURE__*/
-  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SwoGdW5pcXVlEh8uZ29vZ2xlLnByb3RvYnVmLk1lc3NhZ2VPcHRpb25zGLqOAyADKAsyEC5kamlubi52MS5VbmlxdWVSBnVuaXF1ZUKQAQoMY29tLmRqaW5uLnYxQgxPcHRpb25zUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_google_protobuf_descriptor]);
+  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACKkYKBldyaXRlcxIWChJXUklURVNfVU5TUEVDSUZJRUQQABIRCg1XUklURVNfQ0hBTkdFEAESEQoNV1JJVEVTX0RFTEVURRACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SgoGd3JpdGVzEh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYvI4DIAEoDjIQLmRqaW5uLnYxLldyaXRlc1IGd3JpdGVzOksKBnVuaXF1ZRIfLmdvb2dsZS5wcm90b2J1Zi5NZXNzYWdlT3B0aW9ucxi6jgMgAygLMhAuZGppbm4udjEuVW5pcXVlUgZ1bmlxdWVCkAEKDGNvbS5kamlubi52MUIMT3B0aW9uc1Byb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL2RqaW5uL3YxO2RqaW5udjGiAgNEWFiqAghEamlubi5WMcoCCERqaW5uXFYx4gIURGppbm5cVjFcR1BCTWV0YWRhdGHqAglEamlubjo6VjFiBnByb3RvMw", [file_google_protobuf_descriptor]);
 
 /**
  * Unique is one group of fields whose values, taken together, identify a stored message.
@@ -72,6 +72,42 @@ export const VisibilitySchema: GenEnum<Visibility> = /*@__PURE__*/
   enumDesc(file_djinn_v1_options, 0);
 
 /**
+ * Writes says what a public method that answers once changes. A method that only reads says option
+ * idempotency_level = NO_SIDE_EFFECTS instead: djinn mcp tells an agent's client it may run it without asking, and
+ * Connect serves it as a GET too. Every public method that answers once says one or the other; a test checks it.
+ *
+ * @generated from enum djinn.v1.Writes
+ */
+export enum Writes {
+  /**
+   * Not set: the method must say option idempotency_level = NO_SIDE_EFFECTS.
+   *
+   * @generated from enum value: WRITES_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * It adds or changes something, in Djinn or on the machine.
+   *
+   * @generated from enum value: WRITES_CHANGE = 1;
+   */
+  CHANGE = 1,
+
+  /**
+   * It deletes something, or may overwrite a file it is given: what it removes does not come back by itself.
+   *
+   * @generated from enum value: WRITES_DELETE = 2;
+   */
+  DELETE = 2,
+}
+
+/**
+ * Describes the enum djinn.v1.Writes.
+ */
+export const WritesSchema: GenEnum<Writes> = /*@__PURE__*/
+  enumDesc(file_djinn_v1_options, 1);
+
+/**
  * Who may call the method. Only VISIBILITY_PUBLIC methods become commands.
  *
  * @generated from extension: djinn.v1.Visibility visibility = 51001;
@@ -89,10 +125,18 @@ export const autostart: GenExtension<MethodOptions, boolean> = /*@__PURE__*/
   extDesc(file_djinn_v1_options, 1);
 
 /**
+ * What the method changes, when it does not only read.
+ *
+ * @generated from extension: djinn.v1.Writes writes = 51004;
+ */
+export const writes: GenExtension<MethodOptions, Writes> = /*@__PURE__*/
+  extDesc(file_djinn_v1_options, 2);
+
+/**
  * Groups of fields that must be unique among stored messages of this type.
  *
  * @generated from extension: repeated djinn.v1.Unique unique = 51002;
  */
 export const unique: GenExtension<MessageOptions, Unique[]> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 2);
+  extDesc(file_djinn_v1_options, 3);
 

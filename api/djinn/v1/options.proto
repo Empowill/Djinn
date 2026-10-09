@@ -15,6 +15,18 @@ enum Visibility {
   VISIBILITY_INTERNAL = 2;
 }
 
+// Writes says what a public method that answers once changes. A method that only reads says option
+// idempotency_level = NO_SIDE_EFFECTS instead: djinn mcp tells an agent's client it may run it without asking, and
+// Connect serves it as a GET too. Every public method that answers once says one or the other; a test checks it.
+enum Writes {
+  // Not set: the method must say option idempotency_level = NO_SIDE_EFFECTS.
+  WRITES_UNSPECIFIED = 0;
+  // It adds or changes something, in Djinn or on the machine.
+  WRITES_CHANGE = 1;
+  // It deletes something, or may overwrite a file it is given: what it removes does not come back by itself.
+  WRITES_DELETE = 2;
+}
+
 // Unique is one group of fields whose values, taken together, identify a stored message.
 message Unique {
   // Names of the fields of the group, as written in the proto.
@@ -27,6 +39,8 @@ extend google.protobuf.MethodOptions {
   // The command line starts djinn up in the background first when no djinn answers, then calls the method: a
   // command that only makes sense with the window open, such as taking a wish back.
   bool autostart = 51003;
+  // What the method changes, when it does not only read.
+  Writes writes = 51004;
 }
 
 extend google.protobuf.MessageOptions {

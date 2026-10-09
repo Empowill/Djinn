@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -89,6 +90,7 @@ func TestMCPListTools(t *testing.T) {
 					Items       *struct{ Type string }
 				}
 			}
+			Annotations map[string]bool
 		}
 	}](t, answers["2"])
 	var names []string
@@ -107,6 +109,18 @@ func TestMCPListTools(t *testing.T) {
 	for _, unwanted := range []string{"wish_watch", "gate_hold", "ui_get_environment"} {
 		if slices.Contains(names, unwanted) {
 			t.Errorf("tool %s should not be served", unwanted)
+		}
+	}
+	// A read says so, and a write says whether it deletes: MCP takes a tool that says nothing for one that may.
+	for name, want := range map[string]map[string]bool{
+		"project_list":    {"readOnlyHint": true, "destructiveHint": false},
+		"wish_brief":      {"readOnlyHint": true, "destructiveHint": false},
+		"question_answer": {"readOnlyHint": false, "destructiveHint": false},
+		"task_delete":     {"readOnlyHint": false, "destructiveHint": true},
+		"skill_unsummon":  {"readOnlyHint": false, "destructiveHint": true},
+	} {
+		if got := list.Tools[slices.Index(names, name)].Annotations; !maps.Equal(got, want) {
+			t.Errorf("%s: annotations %v, want %v", name, got, want)
 		}
 	}
 	tool := list.Tools[slices.Index(names, "question_answer")]
