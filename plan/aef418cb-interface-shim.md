@@ -116,6 +116,12 @@ Not switched yet, screen by screen:
   handler). Its own policy runs its two scripts by their SHA-256 hashes; the page allows `frame-src 'self'` and keeps
   no `unsafe-inline` for scripts. Sandboxed with scripts only, the frame has an opaque origin and takes the source
   and the theme by message. E2e `theme.spec.ts`: an SVG with its three nodes, dark and light.
+- **The Mermaid frame, checked in the window and cached** (W79). `go tool task e2e-native` puts a Mermaid block on a
+  wish and waits for "Preparing the diagram…" to go with no error: the frame posts its height only once drawn, so
+  WebKit is checked too. The server gives each file of the interface an ETag, the hash of its content, with
+  `Cache-Control: no-cache`: a second diagram gets a 304, not the 3.6 MB again (`TestAssetsCached`). The frame's
+  policy is unchanged. `visualizationDocument`, its policy, its theme (`visualization-theme.json`) and its texts
+  served only tests: gone.
 - **Electron goes in the same branch** (its own commit): its renderer was `src/`. With it go its runtime, its tests,
   its packaging scripts, `electron` and `electron-builder`, and the texts only it used. The visualization theme
   moves into `src/`.

@@ -72,6 +72,7 @@ func TestNativeWindow(t *testing.T) {
 
 	// The window reads the wishes itself and follows them (WishService.Watch through wails://): a wish made from the
 	// command line shows without a reload.
+	var wishID, wishTitle string
 	t.Run("a wish made by the command line shows in the window", func(t *testing.T) {
 		addr, err := server.ReadAddr(d.home)
 		if err != nil {
@@ -85,7 +86,8 @@ func TestNativeWindow(t *testing.T) {
 		defer cancel()
 		wishes := planv1connect.NewWishServiceClient(client, base)
 		title := "Native " + d.token[:8]
-		if _, err := wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: title, Paused: true})); err != nil {
+		made, err := wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: title, Paused: true}))
+		if err != nil {
 			t.Fatal(err)
 		}
 		eventually(t, 10*time.Second, func() error {
@@ -102,6 +104,58 @@ func TestNativeWindow(t *testing.T) {
 				}
 			}
 			return fmt.Errorf("no wish %q in the side panel: %q", title, page.Titles)
+		})
+		wishID, wishTitle = made.Msg.GetWish().GetId(), title
+	})
+
+	// The window is WebKit on Linux and macOS, where the browser e2e never runs. The frame posts its height only once
+	// Mermaid has drawn (src/mermaid-frame.ts): "Preparing the diagram…" going away with no error proves a drawing.
+	t.Run("a Mermaid block draws in the window", func(t *testing.T) {
+		if wishID == "" {
+			t.Skip("no wish to put the block on")
+		}
+		addr, err := server.ReadAddr(d.home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		client, base, err := cli.Dial(addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		blocks := planv1connect.NewBlockServiceClient(client, base)
+		if _, err := blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
+			WishId: wishID, Kind: "note", Title: "Diagram",
+			Content: "```mermaid\nflowchart LR\n  Oil --> Wick --> Light\n```\n",
+		})); err != nil {
+			t.Fatal(err)
+		}
+		// Opens the wish once its block is there, then waits on the same page.
+		open := fmt.Sprintf(`const nav = [...document.querySelectorAll(".wish-nav")].find((b) => b.textContent.includes(%q));
+			if (nav && !nav.classList.contains("selected")) nav.click();`, wishTitle)
+		eventually(t, 30*time.Second, func() error {
+			var diagram struct {
+				Shown     bool   `json:"shown"`
+				Preparing bool   `json:"preparing"`
+				Error     string `json:"error"`
+			}
+			if err := d.eval(open+`
+				const s = document.querySelector(".mermaid-support");
+				return {
+					shown: !!s,
+					preparing: !!s?.querySelector("[role=status]"),
+					error: s?.querySelector("[role=alert]")?.textContent ?? "",
+				};`, &diagram); err != nil {
+				return err
+			}
+			if diagram.Error != "" {
+				t.Fatalf("the diagram did not draw: %s", diagram.Error)
+			}
+			if !diagram.Shown || diagram.Preparing {
+				return fmt.Errorf("not drawn yet: %+v", diagram)
+			}
+			return nil
 		})
 	})
 

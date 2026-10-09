@@ -8,7 +8,7 @@ const filename = require("node:path").resolve("src/visualization-document.ts");
 const loaded = new Module(filename, module);
 loaded.filename = filename;
 loaded.paths = Module._nodeModulePaths(require("node:path").dirname(filename));
-// The module imports ./i18n at run time: load sibling TypeScript files the same way.
+// Load the other TypeScript files the tests require the same way.
 Module._extensions[".ts"] ??= (mod, file) =>
   mod._compile(
     ts.transpileModule(fs.readFileSync(file, "utf8"), {
@@ -29,29 +29,7 @@ loaded._compile(
   }).outputText,
   filename,
 );
-const { visualizationDocument, visualizationMessage, VISUALIZATION_POLICY } =
-  loaded.exports;
-test("isolated document places restrictive policy before supplied markup and reports height/errors", () => {
-  const html = visualizationDocument(
-    "<h1>Local</h1><script>window.local=true</script>",
-    "test-token",
-  );
-  assert.ok(html.indexOf("Content-Security-Policy") < html.indexOf("<h1>"));
-  for (const directive of [
-    "connect-src 'none'",
-    "frame-src 'none'",
-    "object-src 'none'",
-    "form-action 'none'",
-    "base-uri 'none'",
-  ])
-    assert.ok(VISUALIZATION_POLICY.includes(directive));
-  assert.ok(html.includes("script-src 'unsafe-inline'"));
-  assert.ok(html.includes("djinn:visualization-height"));
-  assert.ok(html.includes("djinn:visualization-error"));
-  assert.throws(() => visualizationDocument("x".repeat(500001), "token"));
-  assert.throws(() => visualizationDocument("\0", "token"));
-  assert.throws(() => visualizationDocument("ok", "</script>"));
-});
+const { visualizationMessage } = loaded.exports;
 
 test("parent CSP allows only isolated frames in development and production", () => {
   const p = require("node:path").resolve("src/renderer-policy.ts");
