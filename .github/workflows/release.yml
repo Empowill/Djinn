@@ -254,7 +254,7 @@ jobs:
           path: bin/release
           merge-multiple: true
       # The notices ship beside the archives too, and the install scripts of this very release.
-      - run: cp LICENSE NOTICE THIRD_PARTY_NOTICES.md scripts/install.sh scripts/install.ps1 bin/release/
+      - run: cp LICENSE NOTICE docs/THIRD_PARTY_NOTICES.md scripts/install.sh scripts/install.ps1 bin/release/
       - run: go tool task release-sums
       - name: Draft the release
         env:

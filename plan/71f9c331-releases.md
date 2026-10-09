@@ -40,7 +40,7 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
 
 ## What we want
 - A release workflow triggered by a tag: build every target, attach the binaries, their
-  checksums and the licence notices (`NOTICE`, `THIRD_PARTY_NOTICES.md`) to the release.
+  checksums and the licence notices (`NOTICE`, `docs/THIRD_PARTY_NOTICES.md`) to the release.
 - An install one-liner that picks the right binary, checks its checksum, and falls back to
   `go install` without CGO when no binary fits or the Linux libraries are missing.
 - The same release runnable by hand on a developer's machine (`go tool task release`), so the

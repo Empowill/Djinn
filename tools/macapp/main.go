@@ -54,7 +54,7 @@ const (
 const iconSource = "build/icon.icns"
 
 // notices travel with the app, as with every archive of the release (tools/releasepack).
-var notices = []string{"LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"}
+var notices = []string{"LICENSE", "NOTICE", "docs/THIRD_PARTY_NOTICES.md"}
 
 func main() {
 	var err error
@@ -134,7 +134,7 @@ func bundle(root, binary, tag, dir string) (string, error) {
 		{dst: filepath.Join(resources, Icon), src: filepath.Join(root, filepath.FromSlash(iconSource)), mode: 0o644},
 	}
 	for _, name := range notices {
-		files = append(files, file{dst: filepath.Join(resources, name), src: filepath.Join(root, name), mode: 0o644})
+		files = append(files, file{dst: filepath.Join(resources, path.Base(name)), src: filepath.Join(root, filepath.FromSlash(name)), mode: 0o644})
 	}
 	for _, f := range files {
 		data := f.data

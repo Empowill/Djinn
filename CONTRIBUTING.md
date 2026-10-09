@@ -251,7 +251,7 @@ their contributors.
   [Playwright](https://github.com/microsoft/playwright),
   [Prettier](https://github.com/prettier/prettier),
   [DefinitelyTyped](https://github.com/DefinitelyTyped/DefinitelyTyped).
-- Adapted code and assets are credited in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+- Adapted code and assets are credited in [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md).
 
 ## Licenses: follow them to the letter
 Djinn is licensed under Apache-2.0 (`LICENSE`), with its copyright notice in `NOTICE`.
@@ -262,7 +262,7 @@ Djinn is licensed under Apache-2.0 (`LICENSE`), with its copyright notice in `NO
   - MPL-2.0: allowed only as an unmodified dependency, never copied into our files.
   - GPL, AGPL, LGPL, SSPL, BUSL or no license: do not copy. Read for ideas only, and say so in
     the change description.
-- **Cite it in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)**, following that license's own
+- **Cite it in [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md)**, following that license's own
   conventions: the project name, the source URL and the commit or version, what was adapted, the
   original copyright line, and the full license text when the license requires it (MIT and BSD
   do). Keep a short pointer in a comment at the top of the adapted file.

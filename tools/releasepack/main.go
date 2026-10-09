@@ -19,13 +19,15 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 )
 
 // Notices travel with every binary: Apache-2.0 asks for the licence and NOTICE, and the adapted code its credits.
-var notices = []string{"LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"}
+// notices are the licence notices, by their path in the module; each goes at the archive's top, by its name.
+var notices = []string{"LICENSE", "NOTICE", "docs/THIRD_PARTY_NOTICES.md"}
 
 // SumsFile is the name of the checksum file that sums writes.
 const SumsFile = "SHA256SUMS"
@@ -56,11 +58,11 @@ func main() {
 func pack(dir, root string) (string, error) {
 	dir = filepath.Clean(dir)
 	for _, name := range notices {
-		b, err := os.ReadFile(filepath.Join(root, name))
+		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
 		if err != nil {
 			return "", err
 		}
-		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, path.Base(name)), b, 0o644); err != nil {
 			return "", err
 		}
 	}
