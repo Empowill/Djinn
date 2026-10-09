@@ -42,11 +42,14 @@ checked against Windows first, because it is where the constraints are.
   CPU and memory accounting, limits and kill-the-whole-tree; pausing a worker has no simple
   equivalent to `SIGSTOP`.
 - Atomic writes: renaming over a file another process holds open fails on Windows ("Access is denied", seen by W72
-  in the CI log of `TestSync`). A browser reading `page.html`, or an antivirus scanning it, holds it a moment. The
-  plan's `writeFile` (`internal/plan/exchange.go`: pages and exports) tries the rename again for 500 ms on Windows
-  only (`TestRenameRetrying` with an injected rename; `TestWriteFileWhileOpen` holds the file open, which only
-  Windows refuses). `ui.WriteAtomic` (state, settings, crash notes) and the backup's rename do not retry yet: files
-  only Djinn reads.
+  in the CI log of `TestSync`), and so does moving a folder with such a file. A browser reading `page.html`, or an
+  antivirus scanning `settings.json` or a tilasm just written, holds it a moment. Every rename of Djinn's own files
+  goes through `fsx.OS()` (`internal/fsx`, W89 ported by W138), which tries again every 20 ms for 500 ms on Windows
+  only: the plan's `writeFile` (pages, wish and tilasm exports), a tilasm's new version and an import's tilasm folders
+  (`internal/plan/tilasms.go`), `ui.WriteAtomic` (settings, crash notes), the backup's archive and the restore's
+  moves. `TestRenameWhileOpen` holds the file open, which only Windows refuses: its proof is the CI's Windows job.
+  Left apart: `swapexe`, which moves a running executable aside on Windows by design, and the release's move of a
+  binary `go install` just wrote.
 - End-to-end on the native window: WebView2 accepts a remote debugging port, so Playwright can
   drive the real window there.
 
@@ -58,6 +61,10 @@ checked against Windows first, because it is where the constraints are.
   checked each one again against the log of run 37913958476)
 - [ ] A worker runs in a worktree on Windows, with its CPU and memory measured. (needs: a Windows machine, and the
   per-worker measure, not built: Job Objects, T17)
+- [x] An atomic write a held file refuses a moment goes through: every rename of Djinn's files tries again, with a
+  rename that refuses each first try injected (`TestRenameRetrying`, `TestWriteAtomicRetriesARefusedRename`,
+  `TestCreateRetriesARefusedRename`, `TestRestoreRetriesARefusedRename`, `TestTilasmMovesRetryARefusedRename`). W138,
+  10/10.
 
 ## How we test on Windows
 - The unit tests run on Windows (`go tool task test`). Cross-checks from Linux:
