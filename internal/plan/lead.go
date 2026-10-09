@@ -275,7 +275,7 @@ func localFolder(dir string, folders map[string]string) string {
 		return dir
 	}
 	first, rest, _ := strings.Cut(strings.ReplaceAll(dir, `\`, "/"), "/")
-	base := ""
+	var base string
 	if first == "~" {
 		base, _ = os.UserHomeDir()
 	} else {

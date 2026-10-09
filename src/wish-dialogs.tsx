@@ -20,7 +20,7 @@ import {
   systemLanguage,
   t,
 } from "./i18n";
-import { type Theme, chosenTheme, setTheme } from "./theme";
+import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
 
 // MakeWish makes a wish (WishService.Make): a sentence and the projects it works on. With three wishes active, it
 // is made paused, as the lamp would refuse a fourth.
@@ -389,7 +389,7 @@ export function ShortcutField({
 export function Settings({ onClose }: { onClose: () => void }) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
-  const [theme, setThemeState] = useState<Theme>(chosenTheme);
+  const [theme, setTheme] = useState<Theme>(chosenTheme);
   useEffect(() => {
     let live = true;
     clients.ui
@@ -469,8 +469,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
           aria-label={t("settings.theme")}
           onChange={(e) => {
             const next = e.target.value as Theme;
-            setThemeState(next);
             setTheme(next);
+            applyTheme(next);
           }}
         >
           <option value="">{t("settings.theme_system")}</option>

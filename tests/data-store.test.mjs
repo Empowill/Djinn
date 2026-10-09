@@ -145,14 +145,14 @@ test("a wish shown is read, and only what changed is read again", async () => {
   watch.push({ wishId: "", changes: everything });
   await until(store, (s) => s.loaded);
   const close = store.open(wishId);
-  let state = await until(store, (s) => s.details[wishId]?.loaded);
+  const state = await until(store, (s) => s.details[wishId]?.loaded);
   assert.equal(state.details[wishId].questions[0].text, "Oil?");
   assert.equal(state.details[wishId].blocks[0].content, "A wick.");
   const before = { ...reads };
 
   data.questions = [{ ...data.questions[0], answer: { choice: 1, note: "" } }];
   watch.push({ wishId, changes: [Change.WISH, Change.QUESTION] });
-  state = await until(
+  await until(
     store,
     (s) => s.details[wishId].questions[0].answer !== undefined,
   );
@@ -220,12 +220,12 @@ test("a change of the inbox reads it again, and nothing else", async () => {
   const store = createStore(clients, 10);
   const stop = store.start();
   watch.push({ wishId: "", changes: [...everything, Change.INBOX] });
-  let state = await until(store, (s) => s.loaded && s.inbox.length === 1);
+  const state = await until(store, (s) => s.loaded && s.inbox.length === 1);
   assert.equal(state.inbox[0].source, "babysit-mr");
   const before = { ...reads };
   data.inbox = [];
   watch.push({ wishId: "", changes: [Change.INBOX] });
-  state = await until(store, (s) => s.inbox.length === 0);
+  await until(store, (s) => s.inbox.length === 0);
   stop();
   assert.equal(reads.inbox, before.inbox + 1);
   assert.equal(reads.wishes, before.wishes);

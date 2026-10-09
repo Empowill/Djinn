@@ -160,4 +160,11 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     project whose tasks go to another agent warms no claude. (`TestWarmTakesTheProjectSettings` in `internal/harness`)
 - [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check; pause by signal is built
   for Linux and macOS alike in T07, `internal/harness/process_unix.go`, and tested on Linux only)
+- [x] Linters in `go tool task lint`, so in CI: golangci-lint v2.14 (`.golangci.yml`, pinned in
+  `tools/golangci/go.mod`, run through `go tool -modfile`) on the headless build and on cmd/djinn with `mcp`, its
+  gofmt formatter on every Go file whatever its tags; ESLint 10 (`eslint.config.mjs`: typescript-eslint, @eslint-react,
+  the rules of hooks) on `src/`, `e2e/`, `tests/` and the root configs. Each rule left out says why in its config.
+  They replace `tools/gofmtcheck`, the two `go vet` lines and `gofmt -w` in `format`; every other tool and task is
+  still called. W94 began it; W127 finished it. (`go tool task lint`: 0 issues, about 25 s warm; their findings fixed,
+  among them a redirect that `//host` sent off the site, `TestGuardToken`)
 - [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)

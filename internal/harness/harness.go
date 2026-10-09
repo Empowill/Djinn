@@ -1165,7 +1165,7 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 			}
 			if err != nil || !planned(task) {
 				if ctx.Err() != nil {
-					return nil
+					return nil //nolint:nilerr // Watching ends with its context: not an error.
 				}
 				return plan.Status(err) // The task has ended: the store holds all its events.
 			}

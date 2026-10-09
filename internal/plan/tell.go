@@ -34,7 +34,7 @@ func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 	name := LeadTerminal(wish.GetId())
 	if wish.GetState() != planv1.WishState_WISH_STATE_ACTIVE {
 		if err := w.Leads.Say(name, line); err != nil {
-			return fmt.Errorf("%w: %v", ErrNoLead, err)
+			return fmt.Errorf("%w: %w", ErrNoLead, err)
 		}
 		return nil
 	}

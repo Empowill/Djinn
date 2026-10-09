@@ -172,6 +172,10 @@ func TestGuardToken(t *testing.T) {
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/missions?tab=plan" {
 		t.Fatalf("URL token: status %d, location %q", rec.Code, rec.Header().Get("Location"))
 	}
+	// A path that starts with two slashes stays on this site.
+	if rec, _ := get(t, h, "//example.com/x?token="+token, nil); rec.Header().Get("Location") != "/example.com/x" {
+		t.Fatalf("URL token on //example.com/x: location %q, want /example.com/x", rec.Header().Get("Location"))
+	}
 	cookies := rec.Result().Cookies()
 	if len(cookies) != 1 || cookies[0].Name != "djinn_token_4000" || !cookies[0].HttpOnly ||
 		cookies[0].SameSite != http.SameSiteStrictMode {

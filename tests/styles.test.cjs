@@ -154,7 +154,9 @@ test("the stylesheets take their greys from the tokens", () => {
   );
   for (const entry of fs.readdirSync(root).filter((e) => e.endsWith(".css"))) {
     const css = fs.readFileSync(path.join(root, entry), "utf8");
-    for (const m of css.matchAll(/var\(--(n-[0-9a-f]{2}|term-[\w-]+|sand[\w-]*)\b/g))
+    for (const m of css.matchAll(
+      /var\(--(n-[0-9a-f]{2}|term-[\w-]+|sand[\w-]*)\b/g,
+    ))
       assert.ok(defined.has(m[1]), `${entry}: --${m[1]} is a token`);
     if (entry === "theme.css") continue;
     // Outside the blocks of tokens, the rules of the light theme alone and the masks, a grey is a token.
@@ -163,8 +165,11 @@ test("the stylesheets take their greys from the tokens", () => {
       .replace(/(^|\n)(:root|html\[data-theme="light"\][^{]*) \{[^}]*\}/g, "")
       .replace(/mask[\w-]*:[^;]*;/g, "");
     for (const m of rules.matchAll(/#([0-9a-f]{3,8})\b/gi)) {
-      const hex = m[1].length <= 4 ? [...m[1]].map((c) => c + c).join("") : m[1];
-      const grey = hex.slice(0, 2) === hex.slice(2, 4) && hex.slice(2, 4) === hex.slice(4, 6);
+      const hex =
+        m[1].length <= 4 ? [...m[1]].map((c) => c + c).join("") : m[1];
+      const grey =
+        hex.slice(0, 2) === hex.slice(2, 4) &&
+        hex.slice(2, 4) === hex.slice(4, 6);
       assert.ok(!grey, `${entry}: #${m[1]} is a grey written by hand`);
     }
   }
@@ -194,7 +199,8 @@ test("every class of the stylesheets is used by a component", () => {
     const classes = new Set();
     for (const [, selector] of selectors) {
       if (selector.trim().startsWith("@")) continue;
-      for (const [, name] of selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) classes.add(name);
+      for (const [, name] of selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g))
+        classes.add(name);
     }
     for (const name of classes) {
       if (dynamic.some((family) => family.test(name))) continue;

@@ -120,7 +120,12 @@ To use Djinn, see the [README](README.md). To work on it:
   `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 2 s
   (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
-- `go tool task lint`: every check (protos, Go, types, formatting). `go tool task format` fixes.
+- `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
+  can be.
+  - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
+    formats (gofmt) and runs vet with the linters, on the headless build and on cmd/djinn with the `mcp` tag.
+  - Interface: [ESLint](eslint.config.mjs) (typescript-eslint, @eslint-react, the rules of hooks); `tsc` checks the
+    types, Prettier owns the layout.
 - `go tool task gen`: code from the protos, and [`docs/openapi.json`](docs/openapi.json).
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
 - `go tool task dev`: the page reloads as you edit React, djinn rebuilds and restarts as you edit Go; in the browser,
@@ -234,7 +239,9 @@ their contributors.
   [x/sys](https://github.com/golang/sys), [x/term](https://github.com/golang/term) (tests),
   [x/mod](https://github.com/golang/mod) (release versions),
   [go-yaml](https://github.com/yaml/go-yaml) (the front matter of a skill's wish template); as module tools,
-  [Task](https://github.com/go-task/task) and [buf](https://github.com/bufbuild/buf).
+  [Task](https://github.com/go-task/task), [buf](https://github.com/bufbuild/buf) and
+  [golangci-lint](https://github.com/golangci/golangci-lint) (GPL-3.0: run on the code, in a module of its own, never
+  built into Djinn).
 - Interface: [React](https://github.com/react/react),
   [Connect for the web](https://github.com/connectrpc/connect-es) and
   [Protobuf-ES](https://github.com/bufbuild/protobuf-es),
@@ -250,6 +257,9 @@ their contributors.
   [TypeScript](https://github.com/microsoft/TypeScript),
   [Playwright](https://github.com/microsoft/playwright),
   [Prettier](https://github.com/prettier/prettier),
+  [ESLint](https://github.com/eslint/eslint) with [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint),
+  [ESLint React](https://github.com/Rel1cx/eslint-react),
+  [eslint-plugin-react-hooks](https://github.com/facebook/react) and [globals](https://github.com/sindresorhus/globals),
   [DefinitelyTyped](https://github.com/DefinitelyTyped/DefinitelyTyped).
 - Adapted code and assets are credited in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 

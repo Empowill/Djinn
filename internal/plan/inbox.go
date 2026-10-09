@@ -30,7 +30,7 @@ const (
 	// SourceEvery is the least time between two starts of a source's command, by default.
 	SourceEvery = 5 * time.Minute
 	// sourceEveryMin is the least a source may ask for: Djinn polls nobody's server faster.
-	sourceEveryMin = time.Minute
+	sourceEveryMin = time.Minute //nolint:revive // Min is the least, not minutes.
 )
 
 // What an item holds.

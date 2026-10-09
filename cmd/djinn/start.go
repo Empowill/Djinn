@@ -67,7 +67,7 @@ func startDetached(ctx context.Context, home string, say io.Writer, args ...stri
 		case <-ctx.Done():
 			return "", ctx.Err()
 		case err := <-exited:
-			return "", fmt.Errorf("djinn up stopped at once (%v): %s", err, tail(logPath, before))
+			return "", fmt.Errorf("djinn up stopped at once (%w): %s", err, tail(logPath, before))
 		case <-deadline.C:
 			return "", fmt.Errorf("djinn up does not answer after %s: see %s", startTimeout, logPath)
 		case <-tick.C:

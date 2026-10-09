@@ -16,7 +16,7 @@ import {
 import {
   type ReactNode,
   createContext,
-  useContext,
+  use,
   useEffect,
   useRef,
   useState,
@@ -89,8 +89,10 @@ function store(key: string, value: string) {
 }
 
 // The app tells the terminal which wish it shows: empty for none, such as the flight plan.
-const ShowWish = createContext<(wishId: string) => void>(() => undefined);
-export const useShowWish = () => useContext(ShowWish);
+const ShowWishContext = createContext<(wishId: string) => void>(
+  () => undefined,
+);
+export const useShowWish = () => use(ShowWishContext);
 
 // LeadTerminalFrame lays the app out above the terminal, when there is one.
 export function LeadTerminalFrame({ children }: { children: ReactNode }) {
@@ -99,9 +101,9 @@ export function LeadTerminalFrame({ children }: { children: ReactNode }) {
   if (!djinn) return <>{children}</>;
   return (
     <div className="lead-frame">
-      <ShowWish.Provider value={setWishId}>
+      <ShowWishContext value={setWishId}>
         <div className="lead-frame-app">{children}</div>
-      </ShowWish.Provider>
+      </ShowWishContext>
       <LeadTerminal djinn={djinn} wishId={wishId} />
     </div>
   );
@@ -279,6 +281,7 @@ function LeadTerminal({
             if (abort.signal.aborted) return;
             if ((error as { code?: number }).code === 5) throw error; // Not found: djinn up restarted.
           }
+          // eslint-disable-next-line @eslint-react/web-api-no-leaked-timeout -- a pause in a loop the cleanup aborts
           await new Promise((r) => setTimeout(r, 500));
         }
       } catch (error) {

@@ -171,13 +171,15 @@ func Guard(next http.Handler, token, origin string) http.Handler {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			http.SetCookie(w, &http.Cookie{
+			http.SetCookie(w, &http.Cookie{ //nolint:gosec // Plain HTTP on the loopback: no Secure; HttpOnly and SameSite are set.
 				Name: cookie, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
 			})
 			q.Del("token")
 			clean := *r.URL
 			clean.RawQuery = q.Encode()
-			http.Redirect(w, r, clean.RequestURI(), http.StatusSeeOther)
+			// One leading slash: "//host/…" would leave for another site.
+			target := "/" + strings.TrimLeft(clean.RequestURI(), "/")
+			http.Redirect(w, r, target, http.StatusSeeOther) //nolint:gosec // Same origin: a path, see above.
 			return
 		}
 		if c, err := r.Cookie(cookie); err == nil && valid(c.Value) {
@@ -201,7 +203,7 @@ func Guard(next http.Handler, token, origin string) http.Handler {
 func Serve(ctx context.Context, ln net.Listener, h http.Handler) error {
 	srv := newServer(ctx, ln, h)
 	done := make(chan error, 1)
-	go func() {
+	go func() { //nolint:gosec // The shutdown starts once ctx is done: it needs a context of its own.
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

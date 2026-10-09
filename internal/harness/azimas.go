@@ -381,7 +381,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 func azimaID(ctx context.Context, r store.Reader, fileID string) (string, error) {
 	u, err := uuid.Parse(fileID)
 	if err != nil {
-		return store.NewID(), nil
+		return store.NewID(), nil //nolint:nilerr // A file id that is not a UUID is not an error: the azima gets a new one.
 	}
 	id := u.String()
 	switch _, err := store.Get[*planv1.Task](ctx, r, id); {

@@ -196,7 +196,7 @@ func (b *bench) close() { _ = os.RemoveAll(filepath.Dir(b.repo)) }
 func git(ctx context.Context, dir string, args ...string) error {
 	out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git %s: %v: %s", args[0], err, out)
+		return fmt.Errorf("git %s: %w: %s", args[0], err, out)
 	}
 	return nil
 }

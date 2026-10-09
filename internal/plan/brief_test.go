@@ -217,7 +217,7 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 	folder := project.Msg.GetProject().GetDirectory()
 	last := ""
-	make := func(title string) string {
+	makeWish := func(title string) string {
 		t.Helper()
 		if last != "" { // Three wishes are active at most: each case makes one.
 			if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: last})); err != nil {
@@ -243,7 +243,7 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 
 	// Claude: the stable part from its file, the moving part as the first message, a session chosen and recorded.
-	id := make("Ship the API")
+	id := makeWish("Ship the API")
 	res := resume(id, planv1.Provider_PROVIDER_UNSPECIFIED)
 	lead := res.GetWish().GetLead()
 	rules := filepath.Join(home, PagesDir, id, LeadRulesFile)
@@ -285,7 +285,7 @@ func TestResumeFromBrief(t *testing.T) {
 	for p, prefix := range map[planv1.Provider]string{
 		planv1.Provider_PROVIDER_CODEX: "codex '# Leading a wish", planv1.Provider_PROVIDER_ANTIGRAVITY: "agy -i '# Leading a wish",
 	} {
-		id := make("Lead with " + p.String())
+		id := makeWish("Lead with " + p.String())
 		res := resume(id, p)
 		got := leads.opened[len(leads.opened)-1]
 		if !strings.HasPrefix(got, prefix) || !strings.Contains(got, "# The wish: Lead with") || res.GetWish().GetLead() != nil ||
@@ -295,7 +295,7 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 	// The fake agent has no terminal.
 	if _, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{
-		WishId: make("Fake lead"), Provider: planv1.Provider_PROVIDER_FAKE,
+		WishId: makeWish("Fake lead"), Provider: planv1.Provider_PROVIDER_FAKE,
 	})); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("a fake lead: %v, want invalid_argument", err)
 	}

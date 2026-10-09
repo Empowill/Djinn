@@ -92,7 +92,7 @@ var pageTemplate string
 var pageCSS string
 
 var tmpl = template.Must(template.New("page").Funcs(template.FuncMap{
-	"css": func() template.CSS { return template.CSS(pageCSS) },
+	"css": func() template.CSS { return template.CSS(pageCSS) }, //nolint:gosec // Our own stylesheet, embedded.
 	// pair hands a nested template two values: {{template "task" (pair . $.T)}}.
 	"pair": func(a, b any) []any { return []any{a, b} },
 	"icon": func(class string) string { return icons[class] },
@@ -354,7 +354,7 @@ func build(in Input) (*view, error) {
 	}
 	for i, d := range Decisions(exp) {
 		cd := decision{At: d.At.In(loc).Format("2006-01-02 15:04"), Icon: d.Icon, Human: d.Human, Tasks: d.Tasks}
-		note := ""
+		var note string
 		if q := d.Question; q != nil {
 			cd.Code, cd.Text, cd.Choice, note = q.GetCode(), q.GetText(), choice(q, tr), q.GetAnswer().GetNote()
 		} else {
@@ -417,14 +417,14 @@ func build(in Input) (*view, error) {
 		}
 	}
 	for _, t := range exp.GetTasks() {
-		switch t.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_WAITING:
-			if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil {
-				addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
-			} else {
-				addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
-					tr("page.bar_waiting", "task", t.GetCode()))
-			}
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
+			continue
+		}
+		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil {
+			addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
+		} else {
+			addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
+				tr("page.bar_waiting", "task", t.GetCode()))
 		}
 	}
 	for _, name := range in.Unattached {
@@ -722,7 +722,7 @@ func md(source string) template.HTML {
 	}
 	var b bytes.Buffer
 	if err := markdown.Convert([]byte(source), &b); err != nil {
-		return template.HTML("<pre>" + template.HTMLEscapeString(source) + "</pre>")
+		return template.HTML("<pre>" + template.HTMLEscapeString(source) + "</pre>") //nolint:gosec // The source is escaped.
 	}
 	return template.HTML(b.String()) //nolint:gosec // goldmark leaves raw HTML and dangerous links out.
 }
