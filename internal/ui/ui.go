@@ -30,7 +30,7 @@ import (
 type Service struct {
 	uiv1connect.UnimplementedUiServiceHandler
 
-	// Home is the data directory: $DJINN_HOME, by default ~/.config/djinn.
+	// Home is the data directory: $DJINN_HOME, by default djinn in the user's configuration folder.
 	Home string
 	// Version of djinn, as GetEnvironment reports it.
 	Version string
@@ -227,7 +227,8 @@ func IsRealHome(path string) bool {
 // its socket or its wishes. DJINN_HOME still decides when it is set.
 var Develop bool
 
-// Home is the data directory: $DJINN_HOME, by default ~/.config/djinn (djinn-dev for a development build).
+// Home is the data directory: $DJINN_HOME, by default djinn in the user's configuration folder (djinn-dev for a
+// development build).
 func Home() (string, error) {
 	home := os.Getenv("DJINN_HOME")
 	if home == "" {
