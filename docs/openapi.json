@@ -441,7 +441,7 @@
           },
           "state": {
             "$ref": "#/components/schemas/plan.v1.AzimaState",
-            "description": "Open, in progress or done."
+            "description": "Open, in progress, awaiting its proof, or done."
           }
         },
         "type": "object"
@@ -452,7 +452,8 @@
           "AZIMA_STATE_UNSPECIFIED",
           "AZIMA_STATE_OPEN",
           "AZIMA_STATE_IN_PROGRESS",
-          "AZIMA_STATE_DONE"
+          "AZIMA_STATE_DONE",
+          "AZIMA_STATE_AWAITING_PROOF"
         ],
         "type": "string"
       },
@@ -1014,6 +1015,13 @@
       },
       "plan.v1.PlanServiceSyncResponse": {
         "properties": {
+          "allChecked": {
+            "description": "The files whose status says not done while every box of their Done-when section is checked: their azimas count as done. Set their status to done.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "azimas": {
             "description": "The azimas of the files read, as the store holds them now, by code.",
             "items": {
@@ -1228,6 +1236,45 @@
           }
         },
         "type": "object"
+      },
+      "plan.v1.ProofNeed": {
+        "description": "ProofNeed is a Done-when box of a plan file left unchecked for a proof no worker can give: a person, a machine, a release or a real model gives it.",
+        "properties": {
+          "box": {
+            "description": "The box's text, without its needs.",
+            "type": "string"
+          },
+          "needs": {
+            "description": "What it needs, as the file says: \"a Mac, and a person to compare the rendering with Linux\".",
+            "type": "string"
+          },
+          "provers": {
+            "description": "Who or what gives the proof, read from the words of its needs, no model; at least one.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Prover"
+            },
+            "type": "array"
+          },
+          "reviewer": {
+            "description": "The person whose review it needs (\"Clément's review\"); empty for none.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.Prover": {
+        "description": "Prover says who or what gives a proof that no worker can, as the words of a box's needs name it.",
+        "enum": [
+          "PROVER_UNSPECIFIED",
+          "PROVER_MAC",
+          "PROVER_WINDOWS",
+          "PROVER_REVIEW",
+          "PROVER_RELEASE",
+          "PROVER_REAL_MODEL",
+          "PROVER_PERSON",
+          "PROVER_OTHER"
+        ],
+        "type": "string"
       },
       "plan.v1.Provider": {
         "description": "Provider is the kind of agent a worker runs.",
@@ -1943,6 +1990,13 @@
           "projectId": {
             "description": "Project the task works in; empty for a task outside any project, which only reads.",
             "type": "string"
+          },
+          "proofNeeds": {
+            "description": "For an azima read from a plan file (djinn plan sync): its Done-when boxes left unchecked for a proof no worker can give, box by box, when nothing else is left in them: every unchecked box says \"(needs: …)\", or holds boxes that do. Empty while a box without needs is unchecked (work is left), when every box is checked, and for a file without a Done-when section.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.ProofNeed"
+            },
+            "type": "array"
           },
           "provider": {
             "$ref": "#/components/schemas/plan.v1.Provider",
@@ -3687,7 +3741,7 @@
     },
     "/plan.v1.PlanService/Sync": {
       "post": {
-        "description": "Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on. A file whose status is done marks its azima done; read not done again, an azima it closed opens again. Then write what each azima depends on back into its file's front matter, as \"after: T02 T05\", so that Git carries the graph. The store stays the source of truth: an azima made here takes its file's after line, once.",
+        "description": "Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on. A file whose status is done, or whose Done-when boxes are all checked (reported in all_checked), marks its azima done; read not done again, an azima it closed opens again. The unchecked boxes that wait for a proof no worker can give, \"(needs: …)\", are kept on the azima (Task.proof_needs) when no other box is left. Then write what each azima depends on back into its file's front matter, as \"after: T02 T05\", so that Git carries the graph. The store stays the source of truth: an azima made here takes its file's after line, once.",
         "operationId": "PlanService_Sync",
         "requestBody": {
           "content": {

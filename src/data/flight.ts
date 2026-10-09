@@ -3,6 +3,8 @@
 // wish sorts the same way); what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
 import {
   AzimaState,
+  type ProofNeed,
+  Prover,
   type Question,
   type Task,
   TaskKind,
@@ -43,6 +45,8 @@ export interface FlightPlan {
   // part of an azima is in its azima's group, between them.
   moving: Item<Task>[];
   azimas: Item<AzimaGroup>[];
+  // The proofs a person can give, of the azimas whose work is done: they wait for the person, never as work.
+  proofs: Item<Proof>[];
   finished: Item<Task>[];
   // Every decision of the wishes, the latest first: the Decisions tab.
   decisions: Item<Decision>[];
@@ -95,16 +99,49 @@ function loose(tasks: readonly Task[]): Task[] {
   return tasks.filter((x) => !isAzima(x) && !azimas.has(x.partOf));
 }
 
-// azimasDone is how many azimas are done, and how many there are: their progress, as the work's is in tasks.
+// azimasDone is how many azimas are done, how many await their proof (their work done), and how many there are:
+// their progress, as the work's is in tasks.
 export function azimasDone(tasks: readonly Task[]): {
   done: number;
+  proof: number;
   count: number;
 } {
   const azimas = tasks.filter(isAzima);
   const done = azimas.filter(
     (x) => x.azima?.state === AzimaState.DONE || x.status === TaskStatus.DONE,
   ).length;
-  return { done, count: azimas.length };
+  const proof = azimas.filter(
+    (x) =>
+      x.azima?.state === AzimaState.AWAITING_PROOF &&
+      x.status !== TaskStatus.DONE,
+  ).length;
+  return { done, proof, count: azimas.length };
+}
+
+// Proof is a box of an azima's plan file that waits for a proof a person can give.
+export interface Proof {
+  azima: Task;
+  need: ProofNeed;
+}
+
+// givenByAPerson tells a proof a person can give: its needs name a person or a review (internal/plan.GivenByAPerson).
+export function givenByAPerson(need: ProofNeed): boolean {
+  return need.provers.some((p) => p === Prover.PERSON || p === Prover.REVIEW);
+}
+
+// awaitedProofs are the proofs a person can give, of the azimas that await theirs, by code.
+export function awaitedProofs(tasks: readonly Task[]): Proof[] {
+  return tasks
+    .filter(
+      (x) =>
+        isAzima(x) &&
+        x.azima?.state === AzimaState.AWAITING_PROOF &&
+        x.status !== TaskStatus.DONE,
+    )
+    .sort((a, b) => compareCodes(a.code, b.code))
+    .flatMap((azima) =>
+      azima.proofNeeds.filter(givenByAPerson).map((need) => ({ azima, need })),
+    );
 }
 
 // workCount is how many tasks of work there are: the azimas are the plan, not work.
@@ -138,10 +175,12 @@ export function compareCodes(a: string, b: string): number {
 }
 
 // azimaRank orders the azimas as the brief does: the ready ones first, those under way before the open ones, then
-// the blocked ones, the done ones last. Where an azima stands is the lamp's (Task.azima).
+// the blocked ones, then those awaiting their proof, the done ones last. Where an azima stands is the lamp's
+// (Task.azima).
 function azimaRank(task: Task): number {
   const state = task.azima?.state ?? AzimaState.OPEN;
-  if (state === AzimaState.DONE || task.status === TaskStatus.DONE) return 3;
+  if (state === AzimaState.DONE || task.status === TaskStatus.DONE) return 4;
+  if (state === AzimaState.AWAITING_PROOF) return 3;
   if (task.azima && !task.azima.ready) return 2;
   return state === AzimaState.IN_PROGRESS ? 0 : 1;
 }
@@ -266,6 +305,7 @@ export function flightPlan(
     running: [],
     moving: [],
     azimas: [],
+    proofs: [],
     finished: [],
     decisions: [],
     loaded: true,
@@ -291,6 +331,8 @@ export function flightPlan(
       plan.finished.push({ wish, item });
     for (const item of azimaGroups(detail.tasks))
       plan.azimas.push({ wish, item });
+    for (const item of awaitedProofs(detail.tasks))
+      plan.proofs.push({ wish, item });
     for (const item of decisionsOf(
       detail.questions,
       detail.blocks,

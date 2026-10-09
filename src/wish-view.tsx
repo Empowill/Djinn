@@ -354,7 +354,7 @@ export function WishView({
                   {t("pill.running")}
                 </CountPill>
               )}
-              {azimaProgress.count > 0 && (
+              {azimaProgress.count > 0 && azimaProgress.proof === 0 && (
                 <CountPill
                   tone="done"
                   count={azimaProgress.done}
@@ -364,6 +364,23 @@ export function WishView({
                   })}
                 >
                   / {azimaProgress.count} {t("pill.azimas")}
+                </CountPill>
+              )}
+              {azimaProgress.proof > 0 && (
+                // The azimas awaiting their proof, apart from the done ones: their work is done, not them.
+                <CountPill
+                  tone="done"
+                  count={azimaProgress.done}
+                  label={t("pill.azimas_proof_detail", {
+                    done: azimaProgress.done,
+                    proof: azimaProgress.proof,
+                    count: azimaProgress.count,
+                  })}
+                >
+                  {t("pill.azimas_done")} ·{" "}
+                  <b className="tone-proof">{azimaProgress.proof}</b>{" "}
+                  {t("pill.azimas_proof")} / {azimaProgress.count}{" "}
+                  {t("pill.azimas")}
                 </CountPill>
               )}
               {work > 0 && (

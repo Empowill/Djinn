@@ -56,7 +56,7 @@ test("the status colours keep their contrast in the dark and the light theme", (
   };
   for (const [name, theme] of Object.entries(themes)) {
     const states = Object.keys(theme).filter((k) => k.startsWith("st-"));
-    assert.equal(states.length, 11, `${name}: the eleven states have a colour`);
+    assert.equal(states.length, 12, `${name}: the twelve states have a colour`);
     for (const state of states)
       for (const ground of theme.grounds) {
         const tone = rgb(theme[state]);

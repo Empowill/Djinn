@@ -997,3 +997,110 @@ test("the update banner links the release notes of a newer release, and only a w
   // Nothing waits: no banner, whatever the notes.
   assert.equal(banner({ ready: "", notesUrl: "https://example.com" }), "");
 });
+
+test("an azima whose work is done awaits its proof: its own label and tone, what it needs, the pill apart, and the flight plan lists what a person can give", async () => {
+  const wishId = "01a11833-a440-7479-a067-52615c91da71";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const need = (box, needs, provers, reviewer = "") => ({
+    box,
+    needs,
+    provers,
+    reviewer,
+  });
+  const azima = (code, title, state, extra = {}) => ({
+    id: code,
+    wishId,
+    code,
+    title,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    proofNeeds: [],
+    azima: { state, ready: true, parts: 1, partsDone: 1 },
+    ...extra,
+  });
+  const tasks = [
+    azima("T1", "Lay the ground", s.AzimaState.DONE, {
+      status: s.TaskStatus.DONE,
+    }),
+    azima("T3", "The interface", s.AzimaState.AWAITING_PROOF, {
+      proofNeeds: [
+        need("Clément has reviewed the switch.", "Clément's review", [
+          s.Prover.REVIEW,
+        ], "Clément"),
+      ],
+    }),
+    azima("T6", "Native e2e", s.AzimaState.AWAITING_PROOF, {
+      proofNeeds: [need("The same scenario runs on macOS.", "a Mac", [s.Prover.MAC])],
+    }),
+    azima("T7", "The orchestrator", s.AzimaState.IN_PROGRESS),
+    { id: "w1", wishId, code: "W1", title: "Switch", status: s.TaskStatus.DONE, partOf: "T3" },
+    { id: "w2", wishId, code: "W2", title: "Drive", status: s.TaskStatus.DONE, partOf: "T6" },
+  ];
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const card = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: tasks[2],
+      parts: [tasks[5]],
+      tasks: byId,
+      render: () => null,
+    }),
+  );
+  assert.match(card, /azima-card tone-proof/);
+  assert.match(
+    card,
+    /<span class="status-badge tone-proof" title="The same scenario runs on macOS\. Needs a Mac">.*<span>Proof awaited<\/span>/,
+  );
+  assert.match(
+    card,
+    /<span class="azima-needs" title="The same scenario runs on macOS\. Needs a Mac">a Mac<\/span>/,
+  );
+  assert.doesNotMatch(card, /tone-waiting/);
+
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+    service(s.TaskService, { list: () => ({ tasks }) });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+  close();
+  // The wish's head counts the azimas awaiting their proof apart from the done ones.
+  const page = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
+  );
+  assert.match(
+    page,
+    /title="1 of 4 azimas done, 2 awaiting their proof"[^>]*>.*?<b>1<\/b>done · <b class="tone-proof">2<\/b> awaiting proof \/ 4 azimas<\/span>/,
+  );
+  // The flight plan lists the proof a person can give among what waits for them, never as work; a Mac's is not.
+  const plan = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+    ),
+  );
+  const yourMove = plan.slice(plan.indexOf('id="action-center"'));
+  assert.match(yourMove, /<h3>Proofs you can give<span class="count">1<\/span><\/h3>/);
+  assert.match(
+    yourMove,
+    /status-badge tone-proof" title="Needs Clément&#x27;s review"><svg[^]*?<span>Clément&#x27;s review<\/span>/,
+  );
+  assert.match(yourMove, /T3: Clément has reviewed the switch\./);
+  assert.doesNotMatch(plan, /The same scenario runs on macOS/);
+  assert.match(
+    plan,
+    /id="view-tab-tasks"[^>]*>Tasks<span class="count">2<\/span>/,
+  );
+  const fp = s.flightPlan([lamp], {
+    [wishId]: { tasks, questions: [], blocks: [], loaded: true },
+  });
+  assert.deepEqual(
+    fp.azimas.map((x) => x.item.azima.code),
+    ["T7", "T3", "T6", "T1"],
+  );
+  assert.equal(fp.moving.length + fp.waiting.length, 0);
+});

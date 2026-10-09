@@ -154,7 +154,8 @@ To use Djinn, see the [README](README.md). To work on it:
   --part-of T07` spawns work in one, `djinn task group <task-id> --part-of T07` moves it, `djinn task spawn <wish>
   --kind azima --title "…"` makes one. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes
   each one's `after:` back from the store ([T07](plan/8e8d3d76-orchestrator.md)). The Tasks tab groups work under its
-  azima.
+  azima. One whose work is finished and whose file's unchecked "Done when" boxes all say `(needs: …)` awaits its
+  proof ("Proof awaited"): a person, a machine, a release or a real model gives it, never a worker.
 - `djinn task done <task-id> --note "…"` closes a task no worker runs (planned, cut short, failed, stopped,
   imported) once its work is done, with who closed it and why; "Mark done" on its card does it in the window.
   `djinn task delete` stays for a task made by mistake.

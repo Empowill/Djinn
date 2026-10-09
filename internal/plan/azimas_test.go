@@ -108,6 +108,60 @@ func TestFillAzimas(t *testing.T) {
 	}
 }
 
+// TestAwaitingProof: an azima under way awaits its proof once its work is finished (done, stopped, or cut short for
+// good), its azimas done or awaiting theirs, and its plan file leaves only boxes that need a proof no worker can give.
+// Work left, a part failed or resuming, a box without needs, or nothing under way keeps it where it was.
+func TestAwaitingProof(t *testing.T) {
+	needs := []*planv1.ProofNeed{{Box: "Opened on a Mac.", Needs: "a Mac", Provers: []planv1.Prover{planv1.Prover_PROVER_MAC}}}
+	azima := func(code, partOf string, proof bool) *planv1.Task {
+		a := &planv1.Task{Id: code, Code: code, Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING, PartOf: partOf}
+		if proof {
+			a.ProofNeeds = needs
+		}
+		return a
+	}
+	work := func(code, partOf string, status planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: code, Code: code, Status: status, PartOf: partOf}
+	}
+	const (
+		done, stopped, cut = planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED
+		failed, resuming   = planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_RESUMING
+		pending, running   = planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING
+	)
+	const (
+		open, under = planv1.AzimaState_AZIMA_STATE_OPEN, planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
+		proof       = planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
+	)
+	tasks := []*planv1.Task{
+		// Its work done, stopped, or cut short for good.
+		azima("T1", "", true), work("W1", "T1", done), work("W2", "T1", stopped), work("W3", "T1", cut),
+		// Work left: planned, running, failed or resuming.
+		azima("T2", "", true), work("W4", "T2", done), work("W5", "T2", pending),
+		azima("T3", "", true), work("W6", "T3", done), work("W7", "T3", running),
+		azima("T4", "", true), work("W8", "T4", done), work("W9", "T4", failed),
+		azima("T5", "", true), work("W10", "T5", done), work("W11", "T5", resuming),
+		// A box without needs: the file gives the azima none.
+		azima("T6", "", false), work("W12", "T6", done),
+		// Nothing under way: open, whatever its file says.
+		azima("T7", "", true), work("W13", "T7", stopped),
+		// Its azima part awaits its proof too: it does; one with work left holds the other back.
+		azima("T8", "", true), azima("T9", "T8", true), work("W14", "T9", done),
+		azima("T10", "", true), azima("T11", "T10", true), work("W15", "T11", done), work("W16", "T11", pending),
+		// Done stays done.
+		{Id: "T12", Code: "T12", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done, ProofNeeds: needs},
+	}
+	FillAzimas(tasks)
+	for code, want := range map[string]planv1.AzimaState{
+		"T1": proof, "T2": under, "T3": under, "T4": under, "T5": under, "T6": under, "T7": open,
+		"T8": proof, "T9": proof, "T10": under, "T11": under, "T12": planv1.AzimaState_AZIMA_STATE_DONE,
+	} {
+		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
+		if got := tasks[i].GetAzima().GetState(); got != want {
+			t.Errorf("%s: %v, want %v", code, got, want)
+		}
+	}
+}
+
 // TestAzimaFiles: a plan file's front matter and title are read, the README's absence of one skips it; its after line
 // is written after its status, replaced, and removed, a file already right left as it is.
 func TestAzimaFiles(t *testing.T) {
@@ -177,7 +231,8 @@ func TestCompareCodes(t *testing.T) {
 }
 
 // TestBriefAzimas: the brief shows the plan as a graph, the ready azimas first (the one under way before the open one),
-// then the blocked ones with what they wait for, the done ones on one line; no azima is in the running, waiting or
+// then the blocked ones with what they wait for, those awaiting their proof apart with who gives it, the done ones on
+// one line; no azima is in the running, waiting or
 // finished work, and work says its azima.
 func TestBriefAzimas(t *testing.T) {
 	ctx := t.Context()
@@ -199,6 +254,20 @@ func TestBriefAzimas(t *testing.T) {
 	t4 := azima("T4", "The orchestrator", pending, t1.GetId(), t2.GetId())
 	t5 := azima("T5", "Spread the work", pending, t2.GetId(), t3.GetId(), t4.GetId())
 	t10 := azima("T10", "Releases", pending, t4.GetId())
+	t11 := azima("T11", "Windows", pending)
+	t11.ProofNeeds = []*planv1.ProofNeed{
+		{Box: "Opens on Windows 11.", Needs: "a Windows 11 machine", Provers: []planv1.Prover{planv1.Prover_PROVER_WINDOWS}},
+		{Box: "Reviewed.", Needs: "Clément's review", Provers: []planv1.Prover{planv1.Prover_PROVER_REVIEW}, Reviewer: "Clément"},
+	}
+	t12 := azima("T12", "Updates", pending)
+	t12.ProofNeeds = []*planv1.ProofNeed{{Box: "Updated.", Needs: "a published release, then a person",
+		Provers: []planv1.Prover{planv1.Prover_PROVER_RELEASE, planv1.Prover_PROVER_PERSON}}}
+	built := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W3", Title: "Build it", PartOf: t11.GetId(),
+		Status: done, CreateTime: day}
+	updated := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W4", Title: "Update it", PartOf: t12.GetId(),
+		Status: done, CreateTime: day}
+	dropped := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W5", Title: "Try it", PartOf: t12.GetId(),
+		Status: planv1.TaskStatus_TASK_STATUS_STOPPED, CreateTime: day}
 	running := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W1", Title: "Schedule", PartOf: t4.GetId(),
 		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, CreateTime: day, StartTime: day, Provider: planv1.Provider_PROVIDER_CLAUDE}
 	planned := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W2", Title: "Draw it", PartOf: t3.GetId(),
@@ -207,7 +276,7 @@ func TestBriefAzimas(t *testing.T) {
 		if err := tx.Journal(actor, "test/put", t1); err != nil {
 			return err
 		}
-		for _, task := range []*planv1.Task{t1, t2, t3, t4, t5, t10, running, planned} {
+		for _, task := range []*planv1.Task{t1, t2, t3, t4, t5, t10, t11, t12, running, planned, built, updated, dropped} {
 			if err := tx.Put(task); err != nil {
 				return err
 			}
@@ -230,6 +299,7 @@ func TestBriefAzimas(t *testing.T) {
 		"- **T3** The window: ready, open, 0 of 1 parts done\n" +
 		"- **T5** Spread the work: waits for T3, T4 (after T2, T3, T4); open\n" +
 		"- **T10** Releases: waits for T4; open\n" +
+		"- Work done, waiting for its proof: T11 needs a Windows machine, Clément's review; T12 needs a release, a person.\n" +
 		"- Done: T1, T2.\n"
 	if azimas != want {
 		t.Errorf("azimas =\n%s\nwant\n%s", azimas, want)
@@ -238,7 +308,7 @@ func TestBriefAzimas(t *testing.T) {
 		!strings.Contains(rest, "- **W2** Draw it (part of T3): planned") {
 		t.Errorf("work:\n%s", rest)
 	}
-	for _, code := range []string{"**T1**", "**T3**", "**T5**"} {
+	for _, code := range []string{"**T1**", "**T3**", "**T5**", "**T11**"} {
 		if strings.Contains(rest, code) {
 			t.Errorf("an azima is listed as work: %s\n%s", code, rest)
 		}
