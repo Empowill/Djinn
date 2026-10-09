@@ -56,7 +56,9 @@ func zipOf(t *testing.T, files map[string]string) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.Write([]byte(files[name]))
+		if _, err := w.Write([]byte(files[name])); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
@@ -83,7 +85,9 @@ func zipped(t *testing.T, file string) map[string]string {
 			t.Fatal(err)
 		}
 		var b bytes.Buffer
-		b.ReadFrom(rc)
+		if _, err := b.ReadFrom(rc); err != nil {
+			t.Fatal(err)
+		}
 		rc.Close()
 		out[f.Name] = b.String()
 	}
@@ -237,7 +241,9 @@ func TestTilasmPutReplaceHistoryRestore(t *testing.T) {
 
 	// Every change is journaled.
 	journaled := map[string]int{}
-	store.Commands(ctx, c.store, func(cmd store.Command) bool { journaled[cmd.Method]++; return false })
+	if _, err := store.Commands(ctx, c.store, func(cmd store.Command) bool { journaled[cmd.Method]++; return false }); err != nil {
+		t.Fatal(err)
+	}
 	if journaled[planv1connect.TilasmServicePutProcedure] != 3 || journaled[planv1connect.TilasmServiceRestoreProcedure] != 1 {
 		t.Errorf("journal = %v, want 3 puts and 1 restore", journaled)
 	}
@@ -420,12 +426,14 @@ func TestWishExportCarriesTilasms(t *testing.T) {
 		t.Errorf("tilasm after import = %v", got)
 	}
 	// The journal keeps what was imported, but not the files: they are in the data folder.
-	store.Commands(ctx, dst.store, func(cmd store.Command) bool {
+	if _, err := store.Commands(ctx, dst.store, func(cmd store.Command) bool {
 		if bytes.Contains(cmd.Request, []byte("second version")) {
 			t.Errorf("%s journals the files of the tilasm", cmd.Method)
 		}
 		return false
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// The snapshot of the window shows the manifests, without the files.
 	snap, err := dst.wishes.Snapshot(ctx, connect.NewRequest(&planv1.WishServiceSnapshotRequest{WishId: wish}))
 	if err != nil {

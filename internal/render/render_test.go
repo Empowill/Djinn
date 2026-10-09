@@ -629,7 +629,9 @@ func contrast(a, b string) float64 {
 		var rgb [3]float64
 		for i := range rgb {
 			var v int
-			fmt.Sscanf(hex[2*i:2*i+2], "%02x", &v)
+			if _, err := fmt.Sscanf(hex[2*i:2*i+2], "%02x", &v); err != nil {
+				panic(err) // The colours come from page.css: a test that reads them wrong must stop.
+			}
 			c := float64(v) / 255
 			if c <= 0.04045 {
 				rgb[i] = c / 12.92

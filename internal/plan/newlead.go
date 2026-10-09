@@ -109,7 +109,8 @@ func leadLine(goos string, lead *planv1.Lead, folder, msg string) (string, error
 		}
 		return q, nil
 	}
-	arg, byFile := "", false
+	var arg string
+	byFile := false
 	if q, ok := quoteArg(goos, msg); ok && len(msg) <= maxFirstArg {
 		arg = q
 	} else {

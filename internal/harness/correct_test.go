@@ -235,7 +235,6 @@ func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
 	if err != nil || len(tasks) != 3 {
 		t.Fatalf("%d tasks, %v; want 3", len(tasks), err)
 	}
-
 }
 
 // TestAnswerAFailedIntegration: trying again starts a new correction, its attempts counted from one; taking it leaves

@@ -66,6 +66,25 @@ lead spends its tokens on mechanical work.
   "where a task's work stands", the screens tests "the Tasks tab says where each task's work stands" and "the update
   banner proposes to install a build committed", TestABuildIsProposed, TestUpdateInstallsABuild)
 
+## Merged by hand into feat/wails-go
+
+Until Djinn integrates by itself, the lead merges finished branches. W129 (10/10/2026) brought four branches onto
+W115–W122, in this order, each merge tested green (`go tool task lint`, `go tool task test`) before the next:
+
+- **W123**, built on W121 beside W122: both kept. `ProjectSettings.install` took 9 (`correction_attempts` holds 8).
+  Its `TaskIntegration.corrected_by` is W122's (7): a task's id, which the page, the brief and the window show by its
+  code. A correction worker's worktree starts from its failure's base; any other from the wish's integration branch.
+- **W124**: `Task.proof_needs` took 43 (40–42 held by integration, tilasms, correction). The brief lists the azimas
+  awaiting their proof with the tilasms that explain them.
+- **W125**: `Wish.description` took 15 (12–14 held by the integration branches and the commit cadence). The brief
+  keeps its order, the wish before the rules, with the tilasms after what runs and waits.
+- **W127**: golangci-lint and ESLint now check the code W116–W125 brought too: their findings fixed or, where the code
+  means it, left with a reason.
+
+The method counts of `internal/cli`'s tests, which broke at every merge, are now derived from the protos: every public
+method is a command line with its help, every one that answers once is an MCP tool with its comment, and every one is
+described in `docs/openapi.json` (TestEveryPublicMethodIsExpressible, TestMCPListTools, TestOpenAPI).
+
 ## Tests must be fast
 
 No real sleep, fake clocks, milliseconds: a test over 1 s is a bug. Merges and conflicts on a real Git repository in

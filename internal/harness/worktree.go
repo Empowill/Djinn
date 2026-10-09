@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -32,12 +33,12 @@ func scratchDir(home, taskID string) string {
 func branchName(template, code, title, taskID string) string {
 	values := []string{"{code}", slug(code, 20), "{slug}", slug(title, 40), "{uuid8}", taskID[max(0, len(taskID)-8):]}
 	var pairs []string
-	for i := 0; i < len(values); i += 2 {
-		if values[i+1] != "" {
+	for kv := range slices.Chunk(values, 2) {
+		if kv[1] != "" {
 			continue
 		}
 		for _, sep := range []string{"-", "_", ".", "/"} {
-			pairs = append(pairs, values[i]+sep, "", sep+values[i], "")
+			pairs = append(pairs, kv[0]+sep, "", sep+kv[0], "")
 		}
 	}
 	out := strings.NewReplacer(pairs...).Replace(cmp.Or(template, plan.DefaultBranch))

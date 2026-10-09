@@ -344,8 +344,8 @@ func (h *Harness) cleanWarmLeftovers(ctx context.Context) {
 		return
 	}
 	root := filepath.Join(h.home, "projects")
-	if real, err := filepath.EvalSymlinks(root); err == nil {
-		root = real
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
 	}
 	root += string(filepath.Separator)
 	for _, p := range projects {

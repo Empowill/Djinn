@@ -59,7 +59,7 @@ func order(wishes []*planv1.Wish) string {
 	for i, w := range wishes {
 		parts[i] = w.GetTitle() + ":" + strings.TrimPrefix(w.GetState().String(), "WISH_STATE_")
 		if w.GetRank() > 0 {
-			parts[i] += string(rune('0' + w.GetRank()))
+			parts[i] += string(rune('0' + w.GetRank())) //nolint:unconvert // rune says a character is meant.
 		}
 	}
 	return strings.Join(parts, " ")

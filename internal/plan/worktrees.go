@@ -52,7 +52,7 @@ func cleanWorktree(ctx context.Context, dir string, task *planv1.Task) (bool, *p
 	if err != nil {
 		return fail(err)
 	}
-	commits, err := strconv.Atoi(count)
+	commits, err := strconv.ParseInt(count, 10, 32)
 	if err != nil {
 		return fail(fmt.Errorf("git rev-list: %q is not a count", count))
 	}

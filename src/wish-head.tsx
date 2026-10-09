@@ -116,6 +116,8 @@ export function LeadButton({
       document.removeEventListener("mousedown", away);
       document.removeEventListener("keydown", escape);
     };
+    // Opening the menu loads the agents once; a new loadAgents, at each render of the head, does not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- loadAgents left out, see above
   }, [open]);
   return (
     <div className="split-button" ref={root}>

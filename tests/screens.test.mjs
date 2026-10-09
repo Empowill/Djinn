@@ -1477,17 +1477,36 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
     }),
     azima("T3", "The interface", s.AzimaState.AWAITING_PROOF, {
       proofNeeds: [
-        need("Clément has reviewed the switch.", "Clément's review", [
-          s.Prover.REVIEW,
-        ], "Clément"),
+        need(
+          "Clément has reviewed the switch.",
+          "Clément's review",
+          [s.Prover.REVIEW],
+          "Clément",
+        ),
       ],
     }),
     azima("T6", "Native e2e", s.AzimaState.AWAITING_PROOF, {
-      proofNeeds: [need("The same scenario runs on macOS.", "a Mac", [s.Prover.MAC])],
+      proofNeeds: [
+        need("The same scenario runs on macOS.", "a Mac", [s.Prover.MAC]),
+      ],
     }),
     azima("T7", "The orchestrator", s.AzimaState.IN_PROGRESS),
-    { id: "w1", wishId, code: "W1", title: "Switch", status: s.TaskStatus.DONE, partOf: "T3" },
-    { id: "w2", wishId, code: "W2", title: "Drive", status: s.TaskStatus.DONE, partOf: "T6" },
+    {
+      id: "w1",
+      wishId,
+      code: "W1",
+      title: "Switch",
+      status: s.TaskStatus.DONE,
+      partOf: "T3",
+    },
+    {
+      id: "w2",
+      wishId,
+      code: "W2",
+      title: "Drive",
+      status: s.TaskStatus.DONE,
+      partOf: "T6",
+    },
   ];
   const byId = new Map(tasks.map((task) => [task.id, task]));
   const card = s.renderToStaticMarkup(
@@ -1536,7 +1555,10 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
     ),
   );
   const yourMove = plan.slice(plan.indexOf('id="action-center"'));
-  assert.match(yourMove, /<h3>Proofs you can give<span class="count">1<\/span><\/h3>/);
+  assert.match(
+    yourMove,
+    /<h3>Proofs you can give<span class="count">1<\/span><\/h3>/,
+  );
   assert.match(
     yourMove,
     /status-badge tone-proof" title="Needs Clément&#x27;s review"><svg[^]*?<span>Clément&#x27;s review<\/span>/,

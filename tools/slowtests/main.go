@@ -51,16 +51,16 @@ type result struct {
 }
 
 func main() {
-	max := flag.Duration("max", 2*time.Second, "the longest a top-level test may take")
+	limit := flag.Duration("max", 2*time.Second, "the longest a top-level test may take")
 	flag.Parse()
-	res, err := check(os.Stdin, os.Stdout, *max)
+	res, err := check(os.Stdin, os.Stdout, *limit)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "slowtests:", err)
 		os.Exit(1)
 	}
 	if len(res.slow) > 0 {
 		fmt.Fprintf(os.Stderr, "\nThese tests take longer than %s: make them fast (a fake clock, a short tick, a wait on an event "+
-			"instead of a sleep), or say why in tools/slowtests/main.go (allowed).\n", *max)
+			"instead of a sleep), or say why in tools/slowtests/main.go (allowed).\n", *limit)
 		for _, s := range res.slow {
 			fmt.Fprintf(os.Stderr, "  %s  %s\n", s.elapsed.Round(10*time.Millisecond), s.name)
 		}
@@ -72,7 +72,7 @@ func main() {
 
 // check reads the events of in, writes to out what go test prints without -json, and says what failed and which
 // tests were too slow. A line that is not an event (go test's own error) is printed and fails.
-func check(in io.Reader, out io.Writer, max time.Duration) (result, error) {
+func check(in io.Reader, out io.Writer, limit time.Duration) (result, error) {
 	var res result
 	held := map[string][]string{} // the output of each running test, printed only if it fails
 	sc := bufio.NewScanner(in)
@@ -110,7 +110,7 @@ func check(in io.Reader, out io.Writer, max time.Duration) (result, error) {
 			}
 			delete(held, key)
 			elapsed := time.Duration(e.Elapsed * float64(time.Second))
-			if strings.Contains(e.Test, "/") || elapsed <= max {
+			if strings.Contains(e.Test, "/") || elapsed <= limit {
 				continue
 			}
 			if _, ok := allowed[key]; !ok {

@@ -8,8 +8,6 @@ import {
   ChevronRight,
   Clock3,
   Download,
-  GitBranch,
-  Hourglass,
   Pause,
   Play,
   ScrollText,
@@ -787,7 +785,9 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
     clients.wishes
       .snapshot({ wishId: wish.id })
       .then((res) => {
-        if (current) (setExp(res.export), setError(""));
+        if (!current) return;
+        setExp(res.export);
+        setError("");
       })
       .catch((err) => {
         if (current) setError(message(err));

@@ -71,6 +71,7 @@ export function TilasmsTab({
       clearTimeout(timer);
     };
     // The wish's tilasms changing searches again; a new onToast does not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- onToast left out, see above
   }, [clients, wishId, search, tilasms]);
   const run = async (write: () => Promise<string>) => {
     try {

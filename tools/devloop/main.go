@@ -38,7 +38,7 @@ func main() {
 	defer stop()
 	if err := run(ctx, *home, *port, *poll); err != nil {
 		fmt.Fprintln(os.Stderr, "devloop:", err)
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // stop only releases the signal, which goes with the process.
 	}
 }
 
@@ -146,7 +146,7 @@ func snapshot() map[string]string {
 	for _, root := range watched {
 		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || strings.HasSuffix(p, "_test.go") {
-				return nil
+				return nil //nolint:nilerr // An entry it cannot read is not watched.
 			}
 			// Every file of the documentation site counts: djinn embeds it as it is.
 			site := strings.HasPrefix(filepath.ToSlash(p), "docs/site/")

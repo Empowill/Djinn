@@ -114,8 +114,8 @@ func (c *costs) project(ctx context.Context, taskID, dir string) (string, error)
 	if dir == "" || !filepath.IsAbs(dir) {
 		return "", nil
 	}
-	if real, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = real
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
 	}
 	projects, err := store.List[*planv1.Project](ctx, c.db, nil)
 	if err != nil {

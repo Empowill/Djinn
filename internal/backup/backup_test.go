@@ -353,7 +353,9 @@ func TestRestoreRefusesForeignArchives(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			io.WriteString(w, content)
+			if _, err := io.WriteString(w, content); err != nil {
+				t.Fatal(err)
+			}
 		}
 		if err := errors.Join(zw.Close(), f.Close()); err != nil {
 			t.Fatal(err)

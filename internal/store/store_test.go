@@ -56,6 +56,9 @@ func strs(t *testing.T, s *Store, q string, args ...any) []string {
 		}
 		out = append(out, v)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 

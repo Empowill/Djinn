@@ -180,7 +180,7 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 	folder := project.Msg.GetProject().GetDirectory()
 	last := ""
-	make := func(title string) string {
+	makeWish := func(title string) string {
 		t.Helper()
 		if last != "" { // Three wishes are active at most: each case makes one.
 			if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: last})); err != nil {
@@ -206,7 +206,7 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 
 	// Claude: the same first message as every agent, to run djinn wish brief; a session chosen and recorded.
-	id := make("Ship the API")
+	id := makeWish("Ship the API")
 	res := resume(id, planv1.Provider_PROVIDER_UNSPECIFIED)
 	lead := res.GetWish().GetLead()
 	first, err := os.ReadFile(filepath.Join(home, PagesDir, id, LeadFirstFile))
@@ -243,7 +243,7 @@ func TestResumeFromBrief(t *testing.T) {
 	for p, program := range map[planv1.Provider]string{
 		planv1.Provider_PROVIDER_CODEX: "codex ", planv1.Provider_PROVIDER_ANTIGRAVITY: "agy -i ",
 	} {
-		id := make("Lead with " + p.String())
+		id := makeWish("Lead with " + p.String())
 		res := resume(id, p)
 		got := leads.opened[len(leads.opened)-1]
 		if got != program+"'"+StartLine(id)+"' in "+folder || res.GetWish().GetLead() != nil || res.GetNote() == "" {
@@ -252,7 +252,7 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 	// The fake agent has no terminal.
 	if _, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{
-		WishId: make("Fake lead"), Provider: planv1.Provider_PROVIDER_FAKE,
+		WishId: makeWish("Fake lead"), Provider: planv1.Provider_PROVIDER_FAKE,
 	})); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("a fake lead: %v, want invalid_argument", err)
 	}

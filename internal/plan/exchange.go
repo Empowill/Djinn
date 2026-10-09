@@ -264,7 +264,7 @@ func request(c store.Command) (proto.Message, error) {
 	}
 	d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(service))
 	if err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // Not a method of the API: see above.
 	}
 	sd, ok := d.(protoreflect.ServiceDescriptor)
 	if !ok {
@@ -276,7 +276,7 @@ func request(c store.Command) (proto.Message, error) {
 	}
 	mt, err := protoregistry.GlobalTypes.FindMessageByName(md.Input().FullName())
 	if err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // Not a method of the API: see above.
 	}
 	m := mt.New().Interface()
 	return m, proto.Unmarshal(c.Request, m)

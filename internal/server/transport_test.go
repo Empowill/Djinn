@@ -237,7 +237,9 @@ func TestUnixSocketSpeaksH2C(t *testing.T) {
 	if _, err := chat.Receive(); !errors.Is(err, io.EOF) {
 		t.Fatalf("end of the chat: %v, want EOF", err)
 	}
-	chat.CloseResponse()
+	if err := chat.CloseResponse(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestLoopbackStaysHTTP1 checks that the loopback server, which browsers reach, speaks HTTP/1.1 only.
