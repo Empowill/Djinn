@@ -29,6 +29,16 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
+- **Watchers.** To wait on something outside, the lead spawns a watcher instead of polling:
+  `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model
+  and no slot, and each new paragraph it prints wakes the lead. `--restart` starts again a command that exits on each
+  change ([watch](providers.md#watch-a-command-no-agent)).
+- **Every request finds its wish.** A request that is not about the wish goes through
+  `djinn wish route "<request>" --wish-id <wish> --ask`: a card asks the developer to file it in another wish or to
+  open a new one, whose lead starts on it. The new lead reads the request once, on its first line; its brief leaves
+  the request block out of its latest blocks. A skill's [wish template](wish-templates.md) (`metadata.djinn.wish`)
+  makes the new wish follow the skill, its watcher started; the brief tells the lead to propose one for a request
+  that comes back.
 - **Blocks.** What Djinn does not compute (an analysis, a hand-off, a decision taken outside a question) is a block:
   `djinn block put`. Djinn shows it as written.
 - **The page.** `djinn wish sync <wish>` renders the wish's page in Go and prints its file, kept up to date. The lead

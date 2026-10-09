@@ -47,6 +47,8 @@ finds its wish". This task is its first part, the routing.
   that wish's lead; queue and swap keep three active; a second answer is refused. (`TestRouteAnswered`)
 - [x] The brief's rules hand a request over through `djinn wish route --ask`. (`internal/plan/brief.go`, `briefRules`)
 - [x] E2e: route a request, rub the lamp, see the new wish with its lead terminal. (`e2e/wish-route.spec.ts`)
+- [x] The new lead reads the request once: on its first line, not again in its brief's latest blocks; a later
+  `djinn wish brief` still lists the request block. (`TestLeadBriefOnce`, `plan.LeadBrief`; `TestRouteAnswered`)
 - [ ] A real lead hands a request over by itself, from the brief's rule. (needs: a person and a real model)
 
 ## Next (the design's parts 2 and 3)
