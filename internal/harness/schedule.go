@@ -216,7 +216,7 @@ func (h *Harness) HeldGates(held, waiting func(taskID string) []string) {
 
 // setWaiting records why a planned task waits, when the reason changed, with an event.
 func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string) {
-	why = shelvedWhy(t, why)
+	why = grantedWhy(t, shelvedWhy(t, why))
 	if t.GetWaitReason() == why {
 		return
 	}
