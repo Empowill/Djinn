@@ -47,6 +47,8 @@ export interface DjinnTerminal {
     onData: (offset: bigint, data: Uint8Array) => void,
     signal: AbortSignal,
   ): Promise<TerminalEnd>;
+  // The names of the terminals whose program runs, such as lead-<wish id>. Starts none.
+  running(): Promise<string[]>;
   // Hangs up: the program gets SIGHUP.
   close(id: string): Promise<void>;
 }
@@ -143,6 +145,10 @@ export function createTerminal(transport: Transport): DjinnTerminal {
         if (!signal.aborted || !(error instanceof ConnectError)) throw error;
       }
       return { exited: false, exitCode: 0 };
+    },
+    running: async () => {
+      const res = await client.list({});
+      return res.terminals.map((t) => t.name);
     },
     close: async (id: string) => {
       await client.close({ id });

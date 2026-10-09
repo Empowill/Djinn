@@ -455,3 +455,43 @@ func TestService(t *testing.T) {
 		t.Fatalf("write to an unknown terminal: %v, want not found", err)
 	}
 }
+
+// TestServiceList gives the terminals whose program runs, by name, without starting any: the window shows a wish's
+// lead only while it runs.
+func TestServiceList(t *testing.T) {
+	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
+	t.Cleanup(m.Close)
+	srv := httptest.NewServer(func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.Handle(Handler(m))
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	names := func() []string {
+		t.Helper()
+		res, err := c.List(ctx, connect.NewRequest(&terminalv1.TerminalServiceListRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, term := range res.Msg.GetTerminals() {
+			out = append(out, term.GetName())
+		}
+		return out
+	}
+	if got := names(); len(got) != 0 || len(m.Running()) != 0 {
+		t.Fatalf("listed %v before any terminal, or started one", got)
+	}
+	sh(t, m, "main")
+	lead := sh(t, m, "lead-w1", "-c", "exit 3")
+	end(t, lead)
+	if got := names(); len(got) != 1 || got[0] != "main" {
+		t.Fatalf("listed %v, want only main: an ended lead is not running", got)
+	}
+	sh(t, m, "lead-w2")
+	if got := strings.Join(names(), " "); got != "lead-w2 main" {
+		t.Fatalf("listed %q, want lead-w2 main", got)
+	}
+}

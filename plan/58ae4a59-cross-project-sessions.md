@@ -94,6 +94,10 @@ projects it touches, and a project is not necessarily a Git repository.
   marked with its wish; a question answered there goes to its wish. (branch `w30-ui`: `src/flight-plan.tsx`,
   `tests/data-flight.test.mjs`, the flight plan tests of `tests/screens.test.mjs`, `e2e/flight-plan.spec.ts`: two
   wishes, a question each, one answered from the merged view and read answered by `djinn question list`)
+- [x] Each wish shows its own lead: the wish shown brings its lead's terminal (`lead-<wish id>`) while it runs, else
+  the window's terminal; the flight plan shows the window's. Switching back finds the same lead, its output kept.
+  (`TestServiceList`, `tests/data-terminal.test.mjs`, e2e `lead-switch.spec.ts`: two wishes with a lead each and one
+  without, switched from the side panel)
 - [ ] Clément has reviewed the flight plan of several wishes: it changes `src/`. (needs: Clément's review)
 - [x] Adding a project in the native window, "Choose a folder…" opens the system's folder dialog and fills the field;
   in the browser the button is hidden and the path is typed. (`UiService.ChooseDirectory` on the Wails dialog:
@@ -189,6 +193,11 @@ projects it touches, and a project is not necessarily a Git repository.
   "Latest decisions" (eight, the latest first). Every line carries its wish's rank and title; an answer, a stop or a
   grant goes to that wish. A question blocks when a task waits for its answer (`edit_question_id`), as on the wish's
   page.
+- **Each wish shows its own lead, in the one terminal.** The window keeps one terminal at the bottom; the wish it
+  shows switches it to that wish's lead (`lead-<wish id>`) when it runs, else to the window's own (`main`), and so
+  does the flight plan. The window asks `TerminalService.List` (internal: the terminals whose program runs) and
+  never opens a lead itself: only `djinn wish resume` and the routing start one. `UiService.WatchShow` still
+  switches it, with the wish it shows. A lead that ends while shown stays, with its restart button.
 - **The journal stays per wish.** The merged plan has no merged journal: a wish's journal (its commands, from
   `WishService.Snapshot`, and its log blocks) shows in its own view, the commands on a click, since Snapshot reads
   the whole wish.
@@ -197,9 +206,6 @@ projects it touches, and a project is not necessarily a Git repository.
 - A journal of every active wish in the flight plan, merged by time? *Recommendation: not before someone asks;
   Snapshot reads a whole wish, events included, and three of them on every change is heavy. A light read of the
   journal (`WishService.Journal`, the entries only) would come first.*
-- The window shows one terminal at a time: `wish resume` switches it to the lead's, and a reload goes back to the
-  main one. *Recommendation: a terminal per wish, shown with the wish, once the interface reads the wishes itself
-  (T03).*
 - `Harness.Recover` marks every pending task interrupted at start-up, so the planned items of an
   imported wish (never started) turn interrupted after a restart. *Recommendation: recover only the
   tasks whose worker started (a start time), in the harness task.*
