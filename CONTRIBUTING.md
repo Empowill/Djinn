@@ -62,7 +62,8 @@ Each one is a decision. Changing one is a discussion first.
   allows no heavy command directly; light ones (`lint`, `test-pkg` on a package) run as they are.
 - **Workers never commit.** A worker edits its worktree; `.agents/` gives it no `git commit` and no
   `git push`. Djinn commits each task's work as it ends, tested, and pushes the branch on a cadence: one CI
-  run per push instead of one per worker.
+  run per push instead of one per worker. Only the review and correction workers Djinn starts by itself commit, in
+  their worktree ([integration](docs/team-settings.md#integration)); Djinn commits nothing blindly.
 - **Two words from the theme, no more.** You make a *wish*; you *summon* a skill. Everything
   else is plain.
 - **Names ignore case.** Two names that differ only by case are one name.
@@ -162,7 +163,10 @@ To use Djinn, see the [README](README.md). To work on it:
   when they pass, and removes the task's worktree when clean ([T30](plan/43303f46-integration.md)). It pushes the
   branch, never forcing, at an azima's end or once three tasks are committed and an hour has passed since the last
   push; `--push-mode ask` asks first. `djinn wish set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or red tests, start a correction
-  worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task waits for
+  worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task whose
+  worktree holds changes not committed is not merged, and nothing commits them blindly: a review worker, in that
+  worktree, commits what belongs to the task and drops the rest, then its work integrates; past the same attempts,
+  Djinn asks you. A task waits for
   its dependencies' work to be committed, and its worktree starts from that branch; once a batch is committed, the
   window proposes to install it (the `install` setting) and restart on it.
 - `djinn task spawn … --after W1,W2` gives a task what comes before it (`--depends-on`, its former name, still works);

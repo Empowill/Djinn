@@ -535,5 +535,7 @@
   "work.integrating": "En cours de commit dans {branch}",
   "work.pending": "Terminée, attend d’être commitée",
   "work.pending_why": "Terminée, attend d’être commitée : {reason}",
-  "work.red": "Tests rouges, non commitée : {reason}"
+  "work.red": "Tests rouges, non commitée : {reason}",
+  "work.reviewed_by": "revue par {task}",
+  "work.uncommitted": "Modifications non commitées, non fusionnée"
 }

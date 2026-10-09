@@ -69,6 +69,26 @@ func djinnOnly() *djinnv1.Permissions {
 	return &djinnv1.Permissions{Commands: djinnCommands, Mode: djinnv1.Mode_MODE_LISTED}
 }
 
+// commitCommands are what a worker Djinn starts to commit work, a correction or a review worker, may run besides what
+// the project lists: it commits what belongs to the task in its worktree, and drops the rest. Other workers never
+// commit. The project's denied_commands still win.
+var commitCommands = []string{"git status", "git diff", "git log", "git add", "git commit", "git restore", "git rm", "git clean"}
+
+// withCommit is perms with commitCommands for t when it is a correction or a review worker that may edit; perms as it
+// is otherwise.
+func withCommit(t *planv1.Task, perms *djinnv1.Permissions) *djinnv1.Permissions {
+	if perms == nil || !perms.GetEdit() || t.GetCorrection() == nil && t.GetReview() == nil {
+		return perms
+	}
+	perms = proto.CloneOf(perms)
+	for _, c := range commitCommands {
+		if !slices.Contains(perms.GetCommands(), c) {
+			perms.Commands = append(perms.Commands, c)
+		}
+	}
+	return perms
+}
+
 // matchesPrefix tells whether command starts with one of the prefixes, on a word boundary.
 func matchesPrefix(command string, prefixes []string) bool {
 	command = strings.Join(strings.Fields(command), " ")

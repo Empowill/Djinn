@@ -135,8 +135,8 @@ func (in *integration) tip(t *testing.T) string {
 }
 
 // finished makes a task of the wish as its worker leaves it done: a worktree on a branch of its own from the
-// repository's HEAD, files written there and not committed, its work waiting to be merged. Each finishes a second
-// after the one before.
+// repository's HEAD, files written and committed there with the task's title, its work waiting to be merged. Each
+// finishes a second after the one before.
 func (in *integration) finished(t *testing.T, code string, files map[string]string, opts ...func(*planv1.Task)) *planv1.Task {
 	t.Helper()
 	id := store.NewID()
@@ -156,11 +156,32 @@ func (in *integration) finished(t *testing.T, code string, files map[string]stri
 	if _, err := addWorktree(t.Context(), in.repo, task.GetWorktree(), task.GetBranch()); err != nil {
 		t.Fatal(err)
 	}
-	for name, content := range files {
-		writeFile(t, task.GetWorktree(), name, content)
+	if len(files) > 0 {
+		in.leave(t, task, files)
+		commitAll(t, task.GetWorktree(), task.GetTitle())
 	}
 	putTask(t, in.db, task, "work")
 	return task
+}
+
+// leave writes files in task's worktree, as a worker leaves them: not committed.
+func (in *integration) leave(t *testing.T, task *planv1.Task, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		writeFile(t, task.GetWorktree(), name, content)
+	}
+}
+
+// commitAll commits everything the worktree wt holds, as a worker that commits its work does; a merge under way is
+// concluded.
+func commitAll(t *testing.T, wt, message string) {
+	t.Helper()
+	if _, err := git(t.Context(), wt, "add", "--all"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(t.Context(), wt, "commit", "--quiet", "-m", message); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // events are the task's events, in their order.
@@ -501,6 +522,7 @@ func TestIntegrateADoneWorker(t *testing.T) {
 	in := integrating(t)
 	task := in.spawn(t, in.wishID, "write src/a.txt a")
 	in.watch(t.Context(), t, task.GetId(), 0)
+	commitAll(t, in.get(t, task.GetId()).GetWorktree(), "Write a") // Its worker committed its work.
 	got, texts := in.integration(t, task)
 	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING ||
 		!slices.Equal(texts, []string{"pending, to be merged into the integration branch"}) {

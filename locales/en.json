@@ -535,5 +535,7 @@
   "work.integrating": "Being committed into {branch}",
   "work.pending": "Done, waiting to be committed",
   "work.pending_why": "Done, waiting to be committed: {reason}",
-  "work.red": "Red tests, not committed: {reason}"
+  "work.red": "Red tests, not committed: {reason}",
+  "work.reviewed_by": "reviewed by {task}",
+  "work.uncommitted": "Changes not committed, not merged"
 }
