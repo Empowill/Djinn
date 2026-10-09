@@ -36,7 +36,8 @@ import (
 	"github.com/empowill/djinn/internal/ui"
 )
 
-// readMachine reads the machine for the scheduler and the gates; nil reads this machine. Tests replace it.
+// readMachine reads the machine for the scheduler and the gates; nil reads this machine, the disk of its data folder
+// and its GPUs. Tests replace it.
 var readMachine func() (machine.Snapshot, error)
 
 // runUp serves the interface and the API, then opens a native window on them, or with --browser prints the
@@ -104,7 +105,11 @@ func runUp(args []string) (restart bool, err error) {
 	// The workers stop before the database closes: deferred calls run last first.
 	policy := machine.DefaultPolicy()
 	policy.Workers = *maxWorkers
-	monitor := machine.NewMonitor(policy, readMachine)
+	read := readMachine
+	if read == nil {
+		read = machine.Reader(home)
+	}
+	monitor := machine.NewMonitor(policy, read)
 	opts := []harness.Option{harness.WithCapacity(monitor.Capacity)}
 	if *warmWorkers {
 		opts = append(opts, harness.WithWarm())

@@ -2,6 +2,8 @@ package machine
 
 import (
 	"errors"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -121,13 +123,138 @@ func TestMonitor(t *testing.T) {
 	}
 }
 
-// TestReadThisMachine reads the real machine: whatever it is, it has cores, and memory where Djinn reads it.
+// TestReadThisMachine reads the real machine: whatever it is, it has cores, and memory and a disk where Djinn reads
+// them; and a verdict on a local model, with its reason. Its GPUs depend on the machine: they are logged.
 func TestReadThisMachine(t *testing.T) {
-	s := NewMonitor(DefaultPolicy(), nil).Snapshot()
+	dir := t.TempDir()
+	s := NewMonitor(DefaultPolicy(), Reader(dir)).Snapshot()
 	if s.Cores < 1 {
 		t.Errorf("no cores: %+v", s)
 	}
-	if (s.OS == "linux" || s.OS == "darwin" || s.OS == "windows") && s.MemoryTotal == 0 {
-		t.Errorf("no memory: %+v", s)
+	if s.OS == "linux" || s.OS == "darwin" || s.OS == "windows" {
+		if s.MemoryTotal == 0 {
+			t.Errorf("no memory: %+v", s)
+		}
+		if s.Disk == nil || s.Disk.Path != dir || s.Disk.Total == 0 || s.Disk.Available > s.Disk.Total {
+			t.Errorf("disk: %+v", s.Disk)
+		}
+	}
+	if _, err := ReadDisk(filepath.Join(dir, "missing")); err == nil {
+		t.Error("read the disk of a missing folder")
+	}
+	ok, why := DefaultPolicy().LocalModel(s)
+	if why == "" {
+		t.Error("a verdict without a reason")
+	}
+	t.Logf("GPUs %+v; a local model: %v, %s", s.GPUs, ok, why)
+}
+
+// sysfs is a simulated /sys of a desktop: an NVIDIA card on its driver, with a connector, and an Intel integrated GPU.
+func sysfs() fstest.MapFS {
+	return fstest.MapFS{
+		"sys/class/drm/card0/device/uevent": {Data: []byte("DRIVER=nvidia\nPCI_CLASS=30000\nPCI_ID=10DE:2206\n" +
+			"PCI_SUBSYS_ID=3842:3897\nPCI_SLOT_NAME=0000:01:00.0\n")},
+		"sys/class/drm/card0-DP-1/status":        {Data: []byte("connected\n")},
+		"sys/class/drm/card0-DP-1/device/uevent": {Data: []byte("DEVTYPE=drm_minor\n")},
+		"sys/class/drm/card1/device/uevent":      {Data: []byte("DRIVER=i915\nPCI_ID=8086:4680\nPCI_SLOT_NAME=0000:00:02.0\n")},
+		"sys/class/drm/renderD128/device/uevent": {Data: []byte("DRIVER=i915\nPCI_ID=8086:4680\n")},
+		"sys/module/nvidia/version":              {Data: []byte("550.54.14\n")},
+		"sys/class/drm/version":                  {Data: []byte("drm 1.1.0 20060810\n")},
+	}
+}
+
+const smi = "NVIDIA GeForce RTX 3080, 10240, 550.54.14\n"
+
+// TestReadGPUs reads the GPUs from a simulated /sys and nvidia-smi output: nvidia-smi names NVIDIA's cards and gives
+// their memory, and runs only when a card is NVIDIA's or /sys shows none.
+func TestReadGPUs(t *testing.T) {
+	calls := 0
+	run := func(out string, err error) func() ([]byte, error) {
+		return func() ([]byte, error) { calls++; return []byte(out), err }
+	}
+	gpus := ReadGPUs(sysfs(), run(smi, nil))
+	want := []GPU{
+		{Vendor: "nvidia", Name: "NVIDIA GeForce RTX 3080", Driver: "nvidia", DriverVersion: "550.54.14", Memory: 10 * GiB},
+		{Vendor: "intel", Name: "8086:4680", Driver: "i915"},
+	}
+	if !slices.Equal(gpus, want) || calls != 1 {
+		t.Errorf("with nvidia-smi: %+v (%d calls)", gpus, calls)
+	}
+
+	// No nvidia-smi: the card stays, named by its PCI identifiers, its driver's version from the module, its memory
+	// unknown.
+	gpus = ReadGPUs(sysfs(), run("", errors.New("not found")))
+	if len(gpus) != 2 || gpus[0] != (GPU{Vendor: "nvidia", Name: "10de:2206", Driver: "nvidia", DriverVersion: "550.54.14"}) {
+		t.Errorf("without nvidia-smi: %+v", gpus)
+	}
+
+	// An AMD card gives its memory; no NVIDIA card, no nvidia-smi.
+	calls = 0
+	amd := fstest.MapFS{
+		"sys/class/drm/card0/device/uevent":              {Data: []byte("DRIVER=amdgpu\nPCI_ID=1002:73BF\nPCI_SLOT_NAME=0000:03:00.0\n")},
+		"sys/class/drm/card0/device/mem_info_vram_total": {Data: []byte("17163091968\n")},
+		"sys/class/drm/card0/device/product_name":        {Data: []byte("\n")},
+		"sys/class/drm/card1/device/uevent":              {Data: []byte("DRIVER=amdgpu\nPCI_ID=1002:164E\nPCI_SLOT_NAME=0000:0e:00.0\n")},
+		"sys/class/drm/card1/device/mem_info_vram_total": {Data: []byte("536870912\n")},
+	}
+	gpus = ReadGPUs(amd, run(smi, nil))
+	if len(gpus) != 2 || gpus[0] != (GPU{Vendor: "amd", Name: "1002:73bf", Driver: "amdgpu", Memory: 17163091968}) ||
+		gpus[1].Memory != 512<<20 || calls != 0 {
+		t.Errorf("amd: %+v (%d calls)", gpus, calls)
+	}
+
+	// WSL has no DRM card: nvidia-smi alone finds the GPU. A machine with neither has none.
+	if gpus := ReadGPUs(fstest.MapFS{}, run(smi, nil)); len(gpus) != 1 || gpus[0].Memory != 10*GiB {
+		t.Errorf("wsl: %+v", gpus)
+	}
+	if gpus := ReadGPUs(fstest.MapFS{}, run("", errors.New("not found"))); gpus != nil {
+		t.Errorf("no GPU: %+v", gpus)
+	}
+	// Two GPUs, one with a comma in its name and its memory unknown; a broken output is ignored.
+	gpus = ReadGPUs(fstest.MapFS{}, run("Tesla T4, 15360, 535.1\nGRID, vGPU, [N/A], 535.1\n", nil))
+	if len(gpus) != 2 || gpus[1].Name != "GRID, vGPU" || gpus[1].Memory != 0 {
+		t.Errorf("two GPUs: %+v", gpus)
+	}
+	if gpus := ReadGPUs(fstest.MapFS{}, run("NVIDIA-SMI has failed\n", nil)); gpus != nil {
+		t.Errorf("broken nvidia-smi: %+v", gpus)
+	}
+}
+
+func TestLocalModel(t *testing.T) {
+	p := DefaultPolicy()
+	rtx := GPU{Vendor: "nvidia", Name: "NVIDIA GeForce RTX 3080", Driver: "nvidia", DriverVersion: "550.54.14", Memory: 10 * GiB}
+	intel := GPU{Vendor: "intel", Name: "8086:4680", Driver: "i915"}
+	roomy := &Disk{Path: "/data", Total: 500 * GiB, Available: 100 * GiB}
+	for _, tt := range []struct {
+		name string
+		s    Snapshot
+		want bool
+		why  string
+	}{
+		{"nvidia", Snapshot{MemoryTotal: 8 * GiB, GPUs: []GPU{intel, rtx}, Disk: roomy}, true,
+			"on the NVIDIA GeForce RTX 3080, with 10.0 GiB of its own memory, driver nvidia 550.54.14"},
+		{"full disk", Snapshot{MemoryTotal: 64 * GiB, GPUs: []GPU{rtx}, Disk: &Disk{Path: "/data", Available: 3 * GiB}}, false,
+			"3.0 GiB free on the disk of /data, 10.0 GiB at least"},
+		{"nouveau", Snapshot{MemoryTotal: 8 * GiB, GPUs: []GPU{{Vendor: "nvidia", Name: "10de:2206", Driver: "nouveau"}}}, false,
+			"the 10de:2206 has no driver a model runs on (nouveau), and 8.0 GiB of memory (16.0 GiB at least"},
+		{"no smi", Snapshot{MemoryTotal: 8 * GiB, GPUs: []GPU{{Vendor: "nvidia", Name: "10de:2206", Driver: "nvidia"}}}, false,
+			"the memory of the 10de:2206 is unknown"},
+		{"small amd", Snapshot{MemoryTotal: 8 * GiB, GPUs: []GPU{{Vendor: "amd", Name: "1002:164e", Driver: "amdgpu", Memory: GiB / 2}}}, false,
+			"has 512 MiB of its own memory, 6.0 GiB at least"},
+		{"big amd", Snapshot{MemoryTotal: 8 * GiB, GPUs: []GPU{{Vendor: "amd", Name: "1002:73bf", Driver: "amdgpu", Memory: 16 * GiB}}}, true,
+			"driver amdgpu"},
+		{"apple", Snapshot{MemoryTotal: 32 * GiB, GPUs: []GPU{AppleGPU("Apple M2 Pro", 32*GiB)}}, true,
+			"on the Apple M2 Pro, through metal, with 32.0 GiB of unified memory"},
+		{"small apple", Snapshot{MemoryTotal: 8 * GiB, GPUs: []GPU{AppleGPU("Apple M1", 8*GiB)}}, false,
+			"the Apple M1 has 8.0 GiB of unified memory, 16.0 GiB at least"},
+		{"cpu", Snapshot{MemoryTotal: 32 * GiB, GPUs: []GPU{intel}, Disk: roomy}, true,
+			"on the CPU, slowly, with 32.0 GiB of memory: the intel GPU 8086:4680 is not counted"},
+		{"little", Snapshot{MemoryTotal: 8 * GiB}, false, "no GPU found, and 8.0 GiB of memory"},
+		{"unknown", Snapshot{}, false, "no GPU found, and the memory is unknown"},
+	} {
+		ok, why := p.LocalModel(tt.s)
+		if ok != tt.want || !strings.Contains(why, tt.why) {
+			t.Errorf("%s: %v (%s), want %v (%s)", tt.name, ok, why, tt.want, tt.why)
+		}
 	}
 }

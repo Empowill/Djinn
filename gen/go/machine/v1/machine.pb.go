@@ -165,9 +165,19 @@ type Machine struct {
 	// granted.
 	Pressure string `protobuf:"bytes,12,opt,name=pressure,proto3" json:"pressure,omitempty"`
 	// When the machine was read.
-	ReadTime      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=read_time,json=readTime,proto3" json:"read_time,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ReadTime *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=read_time,json=readTime,proto3" json:"read_time,omitempty"`
+	// The disk of Djinn's data folder, where the worktrees live; absent when it could not be read.
+	Disk *Disk `protobuf:"bytes,14,opt,name=disk,proto3" json:"disk,omitempty"`
+	// The graphics processors, read once at start-up; empty when Djinn found none, or does not read them (Windows,
+	// an Intel Mac).
+	Gpus []*Gpu `protobuf:"bytes,15,rep,name=gpus,proto3" json:"gpus,omitempty"`
+	// Whether a local open-weight model can run here, for dispatch: a usable GPU, or enough memory to run it on the
+	// CPU, and disk space for its weights.
+	CanRunLocalModel bool `protobuf:"varint,16,opt,name=can_run_local_model,json=canRunLocalModel,proto3" json:"can_run_local_model,omitempty"`
+	// Why it can or cannot.
+	LocalModelReason string `protobuf:"bytes,17,opt,name=local_model_reason,json=localModelReason,proto3" json:"local_model_reason,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Machine) Reset() {
@@ -291,6 +301,189 @@ func (x *Machine) GetReadTime() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Machine) GetDisk() *Disk {
+	if x != nil {
+		return x.Disk
+	}
+	return nil
+}
+
+func (x *Machine) GetGpus() []*Gpu {
+	if x != nil {
+		return x.Gpus
+	}
+	return nil
+}
+
+func (x *Machine) GetCanRunLocalModel() bool {
+	if x != nil {
+		return x.CanRunLocalModel
+	}
+	return false
+}
+
+func (x *Machine) GetLocalModelReason() string {
+	if x != nil {
+		return x.LocalModelReason
+	}
+	return ""
+}
+
+// Disk is the space of the file system that holds a folder.
+type Disk struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The folder read.
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Size of its file system, in bytes.
+	TotalBytes uint64 `protobuf:"varint,2,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
+	// Space available to Djinn, in bytes.
+	AvailableBytes uint64 `protobuf:"varint,3,opt,name=available_bytes,json=availableBytes,proto3" json:"available_bytes,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *Disk) Reset() {
+	*x = Disk{}
+	mi := &file_machine_v1_machine_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Disk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Disk) ProtoMessage() {}
+
+func (x *Disk) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Disk.ProtoReflect.Descriptor instead.
+func (*Disk) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Disk) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *Disk) GetTotalBytes() uint64 {
+	if x != nil {
+		return x.TotalBytes
+	}
+	return 0
+}
+
+func (x *Disk) GetAvailableBytes() uint64 {
+	if x != nil {
+		return x.AvailableBytes
+	}
+	return 0
+}
+
+// Gpu is a graphics processor of the machine.
+type Gpu struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Maker: nvidia, amd, intel, apple, or the PCI vendor identifier of another.
+	Vendor string `protobuf:"bytes,1,opt,name=vendor,proto3" json:"vendor,omitempty"`
+	// Name, as its driver gives it; its PCI identifiers when none does.
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Driver: nvidia, nouveau, amdgpu, i915, xe; metal on Apple Silicon. Empty when none is bound.
+	Driver string `protobuf:"bytes,3,opt,name=driver,proto3" json:"driver,omitempty"`
+	// Version of the driver; empty when unknown.
+	DriverVersion string `protobuf:"bytes,4,opt,name=driver_version,json=driverVersion,proto3" json:"driver_version,omitempty"`
+	// Memory of its own, in bytes; with unified memory, the machine's. 0 when unknown.
+	MemoryBytes uint64 `protobuf:"varint,5,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	// Whether it shares the machine's memory (Apple Silicon).
+	UnifiedMemory bool `protobuf:"varint,6,opt,name=unified_memory,json=unifiedMemory,proto3" json:"unified_memory,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Gpu) Reset() {
+	*x = Gpu{}
+	mi := &file_machine_v1_machine_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Gpu) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Gpu) ProtoMessage() {}
+
+func (x *Gpu) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Gpu.ProtoReflect.Descriptor instead.
+func (*Gpu) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Gpu) GetVendor() string {
+	if x != nil {
+		return x.Vendor
+	}
+	return ""
+}
+
+func (x *Gpu) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Gpu) GetDriver() string {
+	if x != nil {
+		return x.Driver
+	}
+	return ""
+}
+
+func (x *Gpu) GetDriverVersion() string {
+	if x != nil {
+		return x.DriverVersion
+	}
+	return ""
+}
+
+func (x *Gpu) GetMemoryBytes() uint64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *Gpu) GetUnifiedMemory() bool {
+	if x != nil {
+		return x.UnifiedMemory
+	}
+	return false
+}
+
 type MachineServiceShowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -299,7 +492,7 @@ type MachineServiceShowRequest struct {
 
 func (x *MachineServiceShowRequest) Reset() {
 	*x = MachineServiceShowRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[2]
+	mi := &file_machine_v1_machine_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -311,7 +504,7 @@ func (x *MachineServiceShowRequest) String() string {
 func (*MachineServiceShowRequest) ProtoMessage() {}
 
 func (x *MachineServiceShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[2]
+	mi := &file_machine_v1_machine_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -324,7 +517,7 @@ func (x *MachineServiceShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineServiceShowRequest.ProtoReflect.Descriptor instead.
 func (*MachineServiceShowRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{2}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{4}
 }
 
 type MachineServiceShowResponse struct {
@@ -337,7 +530,7 @@ type MachineServiceShowResponse struct {
 
 func (x *MachineServiceShowResponse) Reset() {
 	*x = MachineServiceShowResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[3]
+	mi := &file_machine_v1_machine_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -349,7 +542,7 @@ func (x *MachineServiceShowResponse) String() string {
 func (*MachineServiceShowResponse) ProtoMessage() {}
 
 func (x *MachineServiceShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[3]
+	mi := &file_machine_v1_machine_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -362,7 +555,7 @@ func (x *MachineServiceShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineServiceShowResponse.ProtoReflect.Descriptor instead.
 func (*MachineServiceShowResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{3}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MachineServiceShowResponse) GetMachine() *Machine {
@@ -391,7 +584,7 @@ type Gate struct {
 
 func (x *Gate) Reset() {
 	*x = Gate{}
-	mi := &file_machine_v1_machine_proto_msgTypes[4]
+	mi := &file_machine_v1_machine_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -403,7 +596,7 @@ func (x *Gate) String() string {
 func (*Gate) ProtoMessage() {}
 
 func (x *Gate) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[4]
+	mi := &file_machine_v1_machine_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -416,7 +609,7 @@ func (x *Gate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Gate.ProtoReflect.Descriptor instead.
 func (*Gate) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{4}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Gate) GetName() string {
@@ -469,7 +662,7 @@ type GateServiceHoldRequest struct {
 
 func (x *GateServiceHoldRequest) Reset() {
 	*x = GateServiceHoldRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[5]
+	mi := &file_machine_v1_machine_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -481,7 +674,7 @@ func (x *GateServiceHoldRequest) String() string {
 func (*GateServiceHoldRequest) ProtoMessage() {}
 
 func (x *GateServiceHoldRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[5]
+	mi := &file_machine_v1_machine_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -494,7 +687,7 @@ func (x *GateServiceHoldRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceHoldRequest.ProtoReflect.Descriptor instead.
 func (*GateServiceHoldRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{5}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GateServiceHoldRequest) GetName() string {
@@ -530,7 +723,7 @@ type GateServiceHoldResponse struct {
 
 func (x *GateServiceHoldResponse) Reset() {
 	*x = GateServiceHoldResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[6]
+	mi := &file_machine_v1_machine_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -542,7 +735,7 @@ func (x *GateServiceHoldResponse) String() string {
 func (*GateServiceHoldResponse) ProtoMessage() {}
 
 func (x *GateServiceHoldResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[6]
+	mi := &file_machine_v1_machine_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -555,7 +748,7 @@ func (x *GateServiceHoldResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceHoldResponse.ProtoReflect.Descriptor instead.
 func (*GateServiceHoldResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{6}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GateServiceHoldResponse) GetState() GateState {
@@ -580,7 +773,7 @@ type GateServiceListRequest struct {
 
 func (x *GateServiceListRequest) Reset() {
 	*x = GateServiceListRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[7]
+	mi := &file_machine_v1_machine_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -592,7 +785,7 @@ func (x *GateServiceListRequest) String() string {
 func (*GateServiceListRequest) ProtoMessage() {}
 
 func (x *GateServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[7]
+	mi := &file_machine_v1_machine_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -605,7 +798,7 @@ func (x *GateServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceListRequest.ProtoReflect.Descriptor instead.
 func (*GateServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{7}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{9}
 }
 
 type GateServiceListResponse struct {
@@ -618,7 +811,7 @@ type GateServiceListResponse struct {
 
 func (x *GateServiceListResponse) Reset() {
 	*x = GateServiceListResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[8]
+	mi := &file_machine_v1_machine_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +823,7 @@ func (x *GateServiceListResponse) String() string {
 func (*GateServiceListResponse) ProtoMessage() {}
 
 func (x *GateServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[8]
+	mi := &file_machine_v1_machine_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +836,7 @@ func (x *GateServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceListResponse.ProtoReflect.Descriptor instead.
 func (*GateServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{8}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GateServiceListResponse) GetGates() []*Gate {
@@ -688,7 +881,7 @@ type CommandCost struct {
 
 func (x *CommandCost) Reset() {
 	*x = CommandCost{}
-	mi := &file_machine_v1_machine_proto_msgTypes[9]
+	mi := &file_machine_v1_machine_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -700,7 +893,7 @@ func (x *CommandCost) String() string {
 func (*CommandCost) ProtoMessage() {}
 
 func (x *CommandCost) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[9]
+	mi := &file_machine_v1_machine_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -713,7 +906,7 @@ func (x *CommandCost) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandCost.ProtoReflect.Descriptor instead.
 func (*CommandCost) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{9}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CommandCost) GetId() string {
@@ -810,7 +1003,7 @@ type CommandServiceListRequest struct {
 
 func (x *CommandServiceListRequest) Reset() {
 	*x = CommandServiceListRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[10]
+	mi := &file_machine_v1_machine_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -822,7 +1015,7 @@ func (x *CommandServiceListRequest) String() string {
 func (*CommandServiceListRequest) ProtoMessage() {}
 
 func (x *CommandServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[10]
+	mi := &file_machine_v1_machine_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -835,7 +1028,7 @@ func (x *CommandServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandServiceListRequest.ProtoReflect.Descriptor instead.
 func (*CommandServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{10}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CommandServiceListRequest) GetProject() string {
@@ -855,7 +1048,7 @@ type CommandServiceListResponse struct {
 
 func (x *CommandServiceListResponse) Reset() {
 	*x = CommandServiceListResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[11]
+	mi := &file_machine_v1_machine_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -867,7 +1060,7 @@ func (x *CommandServiceListResponse) String() string {
 func (*CommandServiceListResponse) ProtoMessage() {}
 
 func (x *CommandServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[11]
+	mi := &file_machine_v1_machine_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -880,7 +1073,7 @@ func (x *CommandServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandServiceListResponse.ProtoReflect.Descriptor instead.
 func (*CommandServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{11}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CommandServiceListResponse) GetCosts() []*CommandCost {
@@ -912,7 +1105,7 @@ type CommandServiceRecordRequest struct {
 
 func (x *CommandServiceRecordRequest) Reset() {
 	*x = CommandServiceRecordRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[12]
+	mi := &file_machine_v1_machine_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -924,7 +1117,7 @@ func (x *CommandServiceRecordRequest) String() string {
 func (*CommandServiceRecordRequest) ProtoMessage() {}
 
 func (x *CommandServiceRecordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[12]
+	mi := &file_machine_v1_machine_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -937,7 +1130,7 @@ func (x *CommandServiceRecordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandServiceRecordRequest.ProtoReflect.Descriptor instead.
 func (*CommandServiceRecordRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{12}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CommandServiceRecordRequest) GetTaskId() string {
@@ -999,7 +1192,7 @@ type CommandServiceRecordResponse struct {
 
 func (x *CommandServiceRecordResponse) Reset() {
 	*x = CommandServiceRecordResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[13]
+	mi := &file_machine_v1_machine_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1011,7 +1204,7 @@ func (x *CommandServiceRecordResponse) String() string {
 func (*CommandServiceRecordResponse) ProtoMessage() {}
 
 func (x *CommandServiceRecordResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[13]
+	mi := &file_machine_v1_machine_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1024,7 +1217,7 @@ func (x *CommandServiceRecordResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandServiceRecordResponse.ProtoReflect.Descriptor instead.
 func (*CommandServiceRecordResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{13}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CommandServiceRecordResponse) GetCost() *CommandCost {
@@ -1044,7 +1237,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\n" +
 	"some_avg10\x18\x01 \x01(\x01R\tsomeAvg10\x12\x1d\n" +
 	"\n" +
-	"full_avg10\x18\x02 \x01(\x01R\tfullAvg10\"\xf0\x03\n" +
+	"full_avg10\x18\x02 \x01(\x01R\tfullAvg10\"\x98\x05\n" +
 	"\aMachine\x12\x0e\n" +
 	"\x02os\x18\x01 \x01(\tR\x02os\x12\x12\n" +
 	"\x04arch\x18\x02 \x01(\tR\x04arch\x12\x14\n" +
@@ -1059,8 +1252,24 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	" \x01(\tR\vworkersRule\x12\x18\n" +
 	"\arunning\x18\v \x01(\x05R\arunning\x12\x1a\n" +
 	"\bpressure\x18\f \x01(\tR\bpressure\x127\n" +
-	"\tread_time\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\breadTimeB\b\n" +
-	"\x06_load1\"\x1b\n" +
+	"\tread_time\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\breadTime\x12$\n" +
+	"\x04disk\x18\x0e \x01(\v2\x10.machine.v1.DiskR\x04disk\x12#\n" +
+	"\x04gpus\x18\x0f \x03(\v2\x0f.machine.v1.GpuR\x04gpus\x12-\n" +
+	"\x13can_run_local_model\x18\x10 \x01(\bR\x10canRunLocalModel\x12,\n" +
+	"\x12local_model_reason\x18\x11 \x01(\tR\x10localModelReasonB\b\n" +
+	"\x06_load1\"d\n" +
+	"\x04Disk\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1f\n" +
+	"\vtotal_bytes\x18\x02 \x01(\x04R\n" +
+	"totalBytes\x12'\n" +
+	"\x0favailable_bytes\x18\x03 \x01(\x04R\x0eavailableBytes\"\xba\x01\n" +
+	"\x03Gpu\x12\x16\n" +
+	"\x06vendor\x18\x01 \x01(\tR\x06vendor\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06driver\x18\x03 \x01(\tR\x06driver\x12%\n" +
+	"\x0edriver_version\x18\x04 \x01(\tR\rdriverVersion\x12!\n" +
+	"\fmemory_bytes\x18\x05 \x01(\x04R\vmemoryBytes\x12%\n" +
+	"\x0eunified_memory\x18\x06 \x01(\bR\runifiedMemory\"\x1b\n" +
 	"\x19MachineServiceShowRequest\"K\n" +
 	"\x1aMachineServiceShowResponse\x12-\n" +
 	"\amachine\x18\x01 \x01(\v2\x13.machine.v1.MachineR\amachine\"\xa4\x01\n" +
@@ -1143,51 +1352,55 @@ func file_machine_v1_machine_proto_rawDescGZIP() []byte {
 }
 
 var file_machine_v1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_machine_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_machine_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_machine_v1_machine_proto_goTypes = []any{
 	(GateState)(0),                       // 0: machine.v1.GateState
 	(*Pressure)(nil),                     // 1: machine.v1.Pressure
 	(*Machine)(nil),                      // 2: machine.v1.Machine
-	(*MachineServiceShowRequest)(nil),    // 3: machine.v1.MachineServiceShowRequest
-	(*MachineServiceShowResponse)(nil),   // 4: machine.v1.MachineServiceShowResponse
-	(*Gate)(nil),                         // 5: machine.v1.Gate
-	(*GateServiceHoldRequest)(nil),       // 6: machine.v1.GateServiceHoldRequest
-	(*GateServiceHoldResponse)(nil),      // 7: machine.v1.GateServiceHoldResponse
-	(*GateServiceListRequest)(nil),       // 8: machine.v1.GateServiceListRequest
-	(*GateServiceListResponse)(nil),      // 9: machine.v1.GateServiceListResponse
-	(*CommandCost)(nil),                  // 10: machine.v1.CommandCost
-	(*CommandServiceListRequest)(nil),    // 11: machine.v1.CommandServiceListRequest
-	(*CommandServiceListResponse)(nil),   // 12: machine.v1.CommandServiceListResponse
-	(*CommandServiceRecordRequest)(nil),  // 13: machine.v1.CommandServiceRecordRequest
-	(*CommandServiceRecordResponse)(nil), // 14: machine.v1.CommandServiceRecordResponse
-	(*timestamppb.Timestamp)(nil),        // 15: google.protobuf.Timestamp
+	(*Disk)(nil),                         // 3: machine.v1.Disk
+	(*Gpu)(nil),                          // 4: machine.v1.Gpu
+	(*MachineServiceShowRequest)(nil),    // 5: machine.v1.MachineServiceShowRequest
+	(*MachineServiceShowResponse)(nil),   // 6: machine.v1.MachineServiceShowResponse
+	(*Gate)(nil),                         // 7: machine.v1.Gate
+	(*GateServiceHoldRequest)(nil),       // 8: machine.v1.GateServiceHoldRequest
+	(*GateServiceHoldResponse)(nil),      // 9: machine.v1.GateServiceHoldResponse
+	(*GateServiceListRequest)(nil),       // 10: machine.v1.GateServiceListRequest
+	(*GateServiceListResponse)(nil),      // 11: machine.v1.GateServiceListResponse
+	(*CommandCost)(nil),                  // 12: machine.v1.CommandCost
+	(*CommandServiceListRequest)(nil),    // 13: machine.v1.CommandServiceListRequest
+	(*CommandServiceListResponse)(nil),   // 14: machine.v1.CommandServiceListResponse
+	(*CommandServiceRecordRequest)(nil),  // 15: machine.v1.CommandServiceRecordRequest
+	(*CommandServiceRecordResponse)(nil), // 16: machine.v1.CommandServiceRecordResponse
+	(*timestamppb.Timestamp)(nil),        // 17: google.protobuf.Timestamp
 }
 var file_machine_v1_machine_proto_depIdxs = []int32{
 	1,  // 0: machine.v1.Machine.cpu_pressure:type_name -> machine.v1.Pressure
 	1,  // 1: machine.v1.Machine.memory_pressure:type_name -> machine.v1.Pressure
-	15, // 2: machine.v1.Machine.read_time:type_name -> google.protobuf.Timestamp
-	2,  // 3: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
-	15, // 4: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
-	0,  // 5: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
-	5,  // 6: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
-	15, // 7: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
-	10, // 8: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
-	10, // 9: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
-	3,  // 10: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
-	6,  // 11: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
-	8,  // 12: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
-	11, // 13: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
-	13, // 14: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
-	4,  // 15: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
-	7,  // 16: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
-	9,  // 17: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
-	12, // 18: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
-	14, // 19: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
-	15, // [15:20] is the sub-list for method output_type
-	10, // [10:15] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	17, // 2: machine.v1.Machine.read_time:type_name -> google.protobuf.Timestamp
+	3,  // 3: machine.v1.Machine.disk:type_name -> machine.v1.Disk
+	4,  // 4: machine.v1.Machine.gpus:type_name -> machine.v1.Gpu
+	2,  // 5: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
+	17, // 6: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
+	0,  // 7: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
+	7,  // 8: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
+	17, // 9: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
+	12, // 10: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
+	12, // 11: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
+	5,  // 12: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
+	8,  // 13: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
+	10, // 14: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
+	13, // 15: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
+	15, // 16: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
+	6,  // 17: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
+	9,  // 18: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
+	11, // 19: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
+	14, // 20: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
+	16, // 21: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
+	17, // [17:22] is the sub-list for method output_type
+	12, // [12:17] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_machine_v1_machine_proto_init() }
@@ -1202,7 +1415,7 @@ func file_machine_v1_machine_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_machine_v1_machine_proto_rawDesc), len(file_machine_v1_machine_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

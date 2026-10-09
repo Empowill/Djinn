@@ -32,13 +32,27 @@ overloaded. Part of the orchestrator (T07).
   three runs in a temporary data folder showed `sh -c exit 3`, 2 runs, and a `sort` of 300 MB at 0.64 s of CPU and
   302 MB of peak memory. A command an agent runs with its own tool, outside a gate, is not measured)
 - [x] Djinn never starts more workers than the machine holds, and says why it waits.
+- [x] `djinn machine show` gives the disk, the GPUs and their drivers, and whether a local model can run, with why.
+  (`TestReadGPUs`, `TestLocalModel` and `TestReadThisMachine` in `internal/machine`; by hand, `djinn machine show` on
+  this Linux laptop gave its disk, an Intel GPU on i915, and "on the CPU, slowly, with 31.0 GiB of memory". Not run
+  on a Mac nor on an NVIDIA or AMD machine yet: their fixtures are what proves them)
 
 ## Decided along the way
 - **The minimum first** (`internal/machine`): cores (`runtime.NumCPU`), memory, load and pressure, read live (at
   most once a second), not stored yet. Linux: `/proc/meminfo`, `/proc/loadavg`, `/proc/pressure/{cpu,memory}` when
   the kernel has PSI. macOS: sysctl (`hw.memsize`, free pages, `vm.loadavg`, and the system's own memory pressure
-  level). Windows: cores and memory (`GlobalMemoryStatusEx`), no load nor pressure. Elsewhere: the cores. No GPU,
-  disk nor cost per command yet. `djinn machine show` prints it, with the workers it holds and why.
+  level). Windows: cores and memory (`GlobalMemoryStatusEx`), no load nor pressure. Elsewhere: the cores. `djinn machine show` prints it, with the workers it holds and why.
+- **The disk and the GPUs.** The disk is the data folder's, where the worktrees live: `statfs` (Linux, macOS),
+  `GetDiskFreeSpaceEx` (Windows), read with the rest. The GPUs are read once, at start-up, in the background; not
+  refreshed while Djinn runs. Linux: one per DRM card of `/sys/class/drm` on the PCI bus (`device/uevent`: vendor,
+  driver), the driver's version from `/sys/module/<driver>/version`, amdgpu's memory from `mem_info_vram_total`;
+  `nvidia-smi` names NVIDIA's and gives their memory, run only when a card is NVIDIA's or `/sys` shows none (WSL).
+  Apple Silicon: one GPU, the chip's name, Metal, the machine's unified memory. An Intel Mac and Windows: none read
+  yet (`system_profiler` takes seconds). No CUDA version: the driver's says which it supports.
+- **Can it run a local model?** (`Policy.LocalModel`, every threshold a field): no with less than 10 GiB free on the
+  disk; yes on an NVIDIA GPU on the nvidia driver or an AMD one on amdgpu with 6 GiB of its own, or on Apple Silicon
+  with 16 GiB; else yes on the CPU, slowly, with 16 GiB of memory; else no. Intel GPUs are not counted. The reason
+  names each GPU set aside and why. It reads what the machine has, not its live load.
 - **The rule** (`machine.DefaultPolicy`, every threshold a field): one worker per 2 cores, and per 2 GiB of memory
   beyond 2 GiB kept for the system, the smaller, between 1 and 16. A worker is mostly an agent waiting for its
   model; heavy commands go through gates. `djinn up --workers N` (or `$DJINN_WORKERS`) sets it by hand, 1 to 16.
