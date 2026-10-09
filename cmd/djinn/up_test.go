@@ -316,14 +316,14 @@ func TestWishResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No djinn runs: resume starts one in the background, then resumes the lead in its terminal.
+	// No djinn runs: resume starts one in the background, then resumes the lead in its terminal. The wish being the
+	// first active one, djinn up may have resumed its lead at its start already: resume attaches to it then.
 	code, out, errs := runDjinn(t, env, "wish", "resume", wish.GetId())
 	if strings.Contains(errs, "(pid ") {
 		stopStarted(t, home, errs)
 	}
 	name := "lead-" + wish.GetId()
-	if code != 0 || !strings.Contains(errs, "started djinn up in the background") || !strings.Contains(out, "terminal: "+name) ||
-		strings.Contains(out, "attached: true") {
+	if code != 0 || !strings.Contains(errs, "started djinn up in the background") || !strings.Contains(out, "terminal: "+name) {
 		t.Fatalf("resume: exit %d\n%s%s", code, out, errs)
 	}
 	addr := answering(t, home, func() string { return errs })

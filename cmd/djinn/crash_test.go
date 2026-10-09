@@ -73,7 +73,7 @@ func starts(t *testing.T, count string) int {
 
 // TestCrashReopensTheLeads: a djinn killed while its lead runs leaves the note of its leads, and the next djinn up
 // reopens the lead on its session, in its folder, and shows it. A djinn stopped as asked removes the note: the next
-// one reopens nothing.
+// one reopens none of its terminals, only the lead of the first active wish, as at every start.
 func TestCrashReopensTheLeads(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
@@ -145,18 +145,23 @@ func TestCrashReopensTheLeads(t *testing.T) {
 		t.Fatalf("no note of the reopened lead: %v", err)
 	}
 
-	// Stopped as asked: the note goes, and the next djinn reopens nothing.
+	// Stopped as asked: the note goes. The next djinn reopens no terminal of the note, but the lead of the first
+	// active wish comes back at every start, on its session, in its folder.
 	second.stop(t, syscall.SIGTERM)
 	if _, err := os.Stat(notePath); !os.IsNotExist(err) {
 		t.Fatalf("the note after a quit: %v", err)
 	}
-	third, _ := startUp(t, home, env)
-	time.Sleep(500 * time.Millisecond)
-	if n := starts(t, count); n != 2 {
-		t.Fatalf("claude started %d times after a quit, want twice", n)
+	third, addr := startUp(t, home, env)
+	_, terminals = clients(t, addr)
+	waitUntil(t, "the first wish's lead after a quit", func() bool { return starts(t, count) == 3 })
+	opened, err = terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: lead}))
+	if err != nil || !opened.Msg.GetAttached() {
+		t.Fatalf("the lead after a quit: %v, %v\n%s", opened, err, third.errs.String())
 	}
-	if strings.Contains(third.errs.String(), "reopened") {
-		t.Fatalf("djinn up after a quit reopened leads:\n%s", third.errs.String())
+	read(t, terminals, opened.Msg.GetTerminal().GetId(), "fake-claude --resume "+session+" in "+folder)
+	if errs := third.errs.String(); strings.Contains(errs, "reopened") ||
+		!strings.Contains(errs, "the lead of \""+wish.GetTitle()+"\" resumed in "+folder) {
+		t.Fatalf("djinn up after a quit says:\n%s", errs)
 	}
 }
 
@@ -224,5 +229,15 @@ func waitTask(t *testing.T, c planv1connect.TaskServiceClient, id string, ok fun
 			t.Fatalf("task %s: %v, %v", id, res, err)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// waitUntil waits up to 15 s for ok, and fails the test saying what it waited for.
+func waitUntil(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(15 * time.Second); !ok(); time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
 	}
 }

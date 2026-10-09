@@ -58,8 +58,10 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.match(html, /1 granted/);
   // Granted wishes stay folded until asked.
   assert.doesNotMatch(html, /Light it/);
-  // Only the active ones are dragged to a new rank.
-  assert.equal(html.match(/draggable="true"/g).length, 2);
+  // The active ones are dragged to a new rank, and a paused one among them; a granted one is not.
+  assert.equal(html.match(/draggable="true"/g).length, 3);
+  // A paused wish goes first with its button.
+  assert.equal(html.match(/Make it the first active wish/g).length / 2, 1);
   assert.match(html, /mission-nav wish-nav selected/);
   // Each wish says at a glance what waits and what runs: an icon and a count, with their words.
   const counted = s.renderToStaticMarkup(

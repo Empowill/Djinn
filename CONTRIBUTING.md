@@ -92,7 +92,9 @@ changes only when you click "update". Three separations make it so:
    window unless asked (`check-window` opens one, on demand).
 
 When an update restarts Djinn, it reopens the window and the leads that were open, on the same
-sessions; so does the next start after a crash, but not after you quit. You pick up where you were.
+sessions; so does the next start after a crash, but not after you quit. At every start, the lead of
+the first active wish comes back on its session, in its folder (a project, never your home folder),
+unless a lead came back already: claude or codex, whichever leads it. You pick up where you were.
 
 Why: dogfooding is our best test, and only if it is safe. A test that can kill your session
 gets switched off.

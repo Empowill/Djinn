@@ -42,6 +42,10 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   (`TestCrashReopensTheLeads`: a test djinn killed by its PID with SIGKILL, then started again, runs the fake
   `claude --resume <session>` in its folder and shows it; stopped with SIGTERM, the note is gone and the next one starts
   no claude; `TestChangedFollowsWhatRuns`).
+- [x] Every start resumes the lead of the first active wish, as `djinn wish resume` does (its provider's resume
+  line, in its folder, never the home folder), unless a lead came back already: from a menu, after a Quit, after
+  an update whose lead was in another terminal. (`cmd/djinn/firstlead.go`; `TestCrashReopensTheLeads`, its last
+  step)
 - [x] An answer given in the window reaches the lead: one line typed in its terminal, then Enter, once the person is
   quiet, in order; a lead that does not run is reopened on its session (`TestSayTypesOneLineAndEnter`,
   `TestSayWaitsWhileThePersonTypes`, `TestSayWaitsForAProgramJustStarted`, `TestAnswerReachesTheLead`, e2e

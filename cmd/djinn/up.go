@@ -155,6 +155,8 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
 	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
+	// Then the lead of the first active wish, unless a lead came back already.
+	resumeFirstLead(ctx, db, terminals, uiSvc, os.Stderr)
 	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
