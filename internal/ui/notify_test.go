@@ -147,6 +147,49 @@ func TestNoticesWithoutNotifier(t *testing.T) {
 	}
 }
 
+func TestNoticesShowNewInboxItems(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	db := n.Store
+	receive := func(item *planv1.InboxItem) *planv1.InboxItem {
+		t.Helper()
+		item.Id, item.Key = store.NewID(), store.NewID()
+		if item.CreateTime == nil {
+			item.CreateTime = timestamppb.Now()
+		}
+		if err := db.Tx(t.Context(), func(tx *store.Tx) error { return putJournaled(tx, item) }); err != nil {
+			t.Fatal(err)
+		}
+		return item
+	}
+
+	// Not news: an item dismissed, one routed, and one of an hour ago.
+	receive(&planv1.InboxItem{Source: "babysit-mr", Text: "Dismissed", State: planv1.InboxState_INBOX_STATE_DISMISSED})
+	receive(&planv1.InboxItem{Source: "babysit-mr", Text: "Routed", State: planv1.InboxState_INBOX_STATE_ROUTED})
+	receive(&planv1.InboxItem{Source: "babysit-mr", Text: "Old", State: planv1.InboxState_INBOX_STATE_NEW,
+		CreateTime: timestamppb.New(time.Now().Add(-time.Hour))})
+
+	item := receive(&planv1.InboxItem{
+		Source: "babysit-mr", State: planv1.InboxState_INBOX_STATE_NEW,
+		Text: "Babysit !12 · Fix the wick\nhttps://gitlab.example.com/acme/gong/-/merge_requests/12",
+	})
+	got := notes.next(t)
+	if got.Title != "Inbox · babysit-mr" || got.Body != item.GetText() || got.ID != item.GetId() ||
+		got.WishID != "" || got.QuestionID != "" || len(got.Actions) != 0 {
+		t.Errorf("notification = %+v", got)
+	}
+
+	// Dismissed, the item is stored again: no second notification.
+	item.State = planv1.InboxState_INBOX_STATE_DISMISSED
+	if err := db.Tx(t.Context(), func(tx *store.Tx) error { return putJournaled(tx, item) }); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case extra := <-notes:
+		t.Errorf("unexpected notification %+v", extra)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestNoticesRespond(t *testing.T) {
 	var shown []string
 	type answer struct {

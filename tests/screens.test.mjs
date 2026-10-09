@@ -85,6 +85,39 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.match(html, />lamp</);
 });
 
+test("the side panel counts the new inbox items on the flight plan's entry, even with no active wish", () => {
+  const sidebar = (wishes, inbox) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes,
+        projects: [],
+        inbox,
+        onSelectPlan() {},
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const paused = wish("w1", "Trim the wick", s.WishState.PAUSED, 0);
+  // Nothing active, nothing new: no flight plan.
+  assert.doesNotMatch(sidebar([paused], 0), /plan-nav/);
+  // Two new items: the flight plan shows them, its entry counts them.
+  const html = sidebar([paused], 2);
+  assert.match(html, /plan-nav/);
+  assert.match(
+    html,
+    /aria-label="2 new items in the inbox"[^>]*><svg[^>]*lucide-inbox[^>]*>.*?<b>2<\/b>/,
+  );
+  assert.match(
+    sidebar([wish("w2", "Ship the lamp", s.WishState.ACTIVE, 1)], 1),
+    /aria-label="1 new item in the inbox"/,
+  );
+});
+
 test("a question shows its options by letter and its recommendation; answered, what was chosen", () => {
   const open = s.renderToStaticMarkup(
     h(s.WishQuestion, {

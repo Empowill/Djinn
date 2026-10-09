@@ -180,7 +180,7 @@ To use Djinn, see the [README](README.md). To work on it:
   decision block's id) says which decision a task comes from. The window lists them in a "Decisions" tab, read only:
   who took each one (you, the lead, a worker) and the tasks it led to; the page and the brief follow.
 - With the window, a question asked in an active wish shows as a system notification: a click shows the wish, a
-  button answers it. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
+  button answers it. A new inbox item shows as one too, and the side panel counts the new ones on the flight plan. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.
 - `go tool task e2e-native`: drive the real window end to end through the Wails MCP server (a test build, window

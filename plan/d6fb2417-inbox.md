@@ -44,6 +44,10 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
   told (`plan.InboxFiledLine`). `Change.CHANGE_INBOX` tells the window.
 - **The window**: the inbox heads the flight plan (`src/inbox.tsx`), newest first, each card with its source, its
   options (the recommended first), "Rub the lamp" and "Dismiss". Empty, it is hidden.
+- **Outside the flight plan**: the side panel's flight plan entry counts the new items (an inbox icon beside the
+  questions' count), and shows while one waits even with no active wish. A new item is a system notification
+  (`ui.Notices`, as a question's): its source as title, its text as body, no button; a click brings the window
+  forward. An item dismissed, routed or older than a minute is not news.
 
 ## Done when
 
@@ -58,6 +62,10 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
   a routed one, a link a wish's block holds; `TestItemKey`)
 - [x] E2e: a fake source prints an assigned merge request, the card proposes the babysit template, a click makes the
   wish with its watcher. (`e2e/inbox.spec.ts`)
+- [x] The inbox shows outside the flight plan: a count in the side panel, a notification for a new item.
+  (`TestNoticesShowNewInboxItems`: a new item is notified once, with its source and its text; a dismissed, routed or
+  old one is not; `tests/screens.test.mjs` "the side panel counts the new inbox items on the flight plan's entry,
+  even with no active wish")
 - [ ] A real source (`glab mr list --assignee=@me`, wrapped) brings a real merge request to a babysit wish. (needs: a
   person, logged in to a real forge)
 
@@ -65,7 +73,8 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
 
 - A `source` for Djinn's own `babysit-pr`, on `gh pr list --assignee @me`: it would poll GitHub for whoever opens
   Djinn's repository, so it waits for the developer's say.
-- The inbox outside the flight plan: a count in the side panel, a notification for a new item.
+- A click on an item's notification raises the window as it is: showing the flight plan would need the window's show
+  request (`UiServiceWatchShowResponse`) to name it.
 
 ## Open questions
 

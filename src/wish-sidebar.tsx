@@ -1,13 +1,15 @@
-// The side panel's lists, read from the services: the wishes, the active ones by rank (drag one up or down, or
-// Alt+Arrow) and how many of the three places they take, then the paused ones and the granted ones; and the
-// projects. The wishes' list shows three rows and scrolls under the pointer. A paused wish dragged onto an active
-// one, or sent first with its button, becomes active there: the wish pushed past the third place is paused.
+// The side panel's lists, read from the services: the flight plan's entry with what waits for you there (questions,
+// new inbox items), the wishes, the active ones by rank (drag one up or down, or Alt+Arrow) and how many of the three
+// places they take, then the paused ones and the granted ones; and the projects. The wishes' list shows three rows and
+// scrolls under the pointer. A paused wish dragged onto an active one, or sent first with its button, becomes active
+// there: the wish pushed past the third place is paused.
 import {
   ArrowUpToLine,
   ChevronDown,
   ChevronRight,
   FolderOpen,
   GripVertical,
+  Inbox,
   Plane,
   Plus,
 } from "lucide-react";
@@ -29,6 +31,7 @@ export function WishSidebar({
   wishes,
   projects,
   counts = {},
+  inbox = 0,
   planSelected = false,
   onSelectPlan,
   selectedWishId,
@@ -43,6 +46,8 @@ export function WishSidebar({
   projects: Project[];
   // What each active wish holds, by id: questions that wait for you, workers that run.
   counts?: Readonly<Record<string, WishCounts>>;
+  // How many inbox items wait for your answer: the flight plan shows them.
+  inbox?: number;
   // The flight plan of the active wishes shows.
   planSelected?: boolean;
   onSelectPlan?: () => void;
@@ -152,7 +157,7 @@ export function WishSidebar({
   );
   return (
     <>
-      {onSelectPlan && active.length > 0 && (
+      {onSelectPlan && (active.length > 0 || inbox > 0) && (
         <button
           className={`nav-item plan-nav ${planSelected ? "selected" : ""}`}
           onClick={onSelectPlan}
@@ -165,6 +170,14 @@ export function WishSidebar({
               tone="waiting"
               count={waits}
               label={t("wish.questions_wait", { count: waits })}
+            />
+          )}
+          {inbox > 0 && (
+            <CountPill
+              tone="waiting"
+              icon={Inbox}
+              count={inbox}
+              label={t("sidebar.inbox_new", { count: inbox })}
             />
           )}
         </button>
