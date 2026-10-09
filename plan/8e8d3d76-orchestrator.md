@@ -59,6 +59,11 @@ status: in-progress
   (`TestDependencyResumes` in `internal/dispatch`, `TestGo` in `internal/dispatch/bench`, `TestReady` in
   `internal/plan`, `TestPauseHoldingGate` in `internal/harness`, `TestOneAtATime` and `TestWaiting` in
   `internal/gate`)
+- [x] After a restart the orchestrator alone puts the workers back, never the person: the resumed tasks start by the
+  rank of their wish, then in their own order, before any planned task, a new spawn included; never more than the
+  machine's slots and pressure allow, the others waiting with their reason; a paused wish's tasks wait for it; no
+  worker starts twice. (`TestRestartQueue` in `internal/dispatch`: 6 resumed tasks over 2 wishes and 2 slots;
+  `TestRestartResumesInOrder`, `TestRestartBeforeNewSpawn` in `internal/harness`)
 - [x] A task is continued in place, never copied: `djinn task continue` gives a task no worker runs a new turn of its
   own session, in its worktree, through the scheduler; a fork of a task cut short closes it, continued in the fork.
   (`TestContinue`, `TestContinueWaitsForASlot`, `TestContinueRefused`, `TestForkClosesParent`, `TestContinueCommand`
@@ -138,7 +143,9 @@ status: in-progress
   ends, a task is planned or stopped, and every 2 s for the pressure. It serves the tasks by the rank of their wish
   (`plan.ActiveWishes`), then the oldest. In order, a task waits for: its wish being active (a paused or granted
   wish keeps its tasks planned), its dependencies done, its write scopes free, the machine (no pressure, a slot
-  free). Spawn and the pass decide under one lock, so a slot is never given twice.
+  free). Spawn and the pass decide under one lock, so a slot is never given twice. A spawn takes its turn in the
+  pass (09/10): the tasks before it, the resumed ones first, take the free slots before it does, so a task spawned
+  as a slot frees after a restart waits for the resumed ones.
 - **A dependency that ends without being done** (failed, stopped by a person, resumed 3 times without finishing)
   fails its dependents, down the chain. A spawn on such a dependency is refused. An interrupted or resuming
   dependency holds its dependents: Djinn resumes it (W34's question, B); one resumed as a fork is its fork ("its

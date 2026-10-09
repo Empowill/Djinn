@@ -31,7 +31,9 @@ overloaded. Part of the orchestrator (T07).
   on Linux: `TestRunCost` in `internal/gate`, `TestCosts` in `internal/machine`; by hand, `djinn command list` after
   three runs in a temporary data folder showed `sh -c exit 3`, 2 runs, and a `sort` of 300 MB at 0.64 s of CPU and
   302 MB of peak memory. A command an agent runs with its own tool, outside a gate, is not measured)
-- [x] Djinn never starts more workers than the machine holds, and says why it waits.
+- [x] Djinn never starts more workers than the machine holds, and says why it waits. (after a restart too:
+  `TestRestartQueue` in `internal/dispatch`, `TestRestartResumesInOrder` and `TestRestartBeforeNewSpawn` in
+  `internal/harness`)
 
 ## Decided along the way
 - **The minimum first** (`internal/machine`): cores (`runtime.NumCPU`), memory, load and pressure, read live (at
