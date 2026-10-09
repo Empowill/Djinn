@@ -1131,7 +1131,8 @@ service WishService {
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
-  // stop first. The worktrees and branches its workers made stay in the project. It cannot be undone.
+  // stop first, and its lead's terminal closes. A task's worktree goes when it holds no work: clean, and no commit
+  // beyond the project's current branch; the others stay, said with why. Branches all stay. It cannot be undone.
   rpc Delete(WishServiceDeleteRequest) returns (WishServiceDeleteResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_DELETE;
@@ -1353,6 +1354,28 @@ message WishServiceDeleteResponse {
   int32 questions = 3;
   // How many blocks went with it.
   int32 blocks = 4;
+  // How many worktrees of its tasks were removed: clean, with no commit beyond the project's current branch.
+  int32 worktrees_removed = 5;
+  // The worktrees of its tasks that stay on disk, and why.
+  repeated KeptWorktree kept = 6;
+}
+
+// A worktree of a deleted wish's task that stays on disk, and why: it holds work, or Git could not remove it.
+message KeptWorktree {
+  // The task's code: W1.
+  string task_code = 1;
+  // Root of the worktree.
+  string worktree = 2;
+  // Its branch, which stays.
+  string branch = 3;
+  // The project's current branch, where its commits are looked for.
+  string base = 4;
+  // How many commits of the worktree the current branch does not have.
+  int32 commits = 5;
+  // The worktree holds changes not committed, or files Git does not track.
+  bool changed = 6;
+  // What Git said when it could not look at the worktree or remove it.
+  string error = 7;
 }
 
 message WishServiceMoveRequest {

@@ -758,6 +758,41 @@
         ],
         "type": "string"
       },
+      "plan.v1.KeptWorktree": {
+        "description": "A worktree of a deleted wish's task that stays on disk, and why: it holds work, or Git could not remove it.",
+        "properties": {
+          "base": {
+            "description": "The project's current branch, where its commits are looked for.",
+            "type": "string"
+          },
+          "branch": {
+            "description": "Its branch, which stays.",
+            "type": "string"
+          },
+          "changed": {
+            "description": "The worktree holds changes not committed, or files Git does not track.",
+            "type": "boolean"
+          },
+          "commits": {
+            "description": "How many commits of the worktree the current branch does not have.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "error": {
+            "description": "What Git said when it could not look at the worktree or remove it.",
+            "type": "string"
+          },
+          "taskCode": {
+            "description": "The task's code: W1.",
+            "type": "string"
+          },
+          "worktree": {
+            "description": "Root of the worktree.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.Lead": {
         "description": "The lead of a wish: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and the session's identifier, which the agent's own command line resumes.",
         "properties": {
@@ -2495,6 +2530,13 @@
             "format": "int32",
             "type": "integer"
           },
+          "kept": {
+            "description": "The worktrees of its tasks that stay on disk, and why.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.KeptWorktree"
+            },
+            "type": "array"
+          },
           "questions": {
             "description": "How many questions went with it.",
             "format": "int32",
@@ -2508,6 +2550,11 @@
           "wish": {
             "$ref": "#/components/schemas/plan.v1.Wish",
             "description": "The wish, as it was."
+          },
+          "worktreesRemoved": {
+            "description": "How many worktrees of its tasks were removed: clean, with no commit beyond the project's current branch.",
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -4343,7 +4390,7 @@
     },
     "/plan.v1.WishService/Delete": {
       "post": {
-        "description": "Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers stop first. The worktrees and branches its workers made stay in the project. It cannot be undone.",
+        "description": "Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers stop first, and its lead's terminal closes. A task's worktree goes when it holds no work: clean, and no commit beyond the project's current branch; the others stay, said with why. Branches all stay. It cannot be undone.",
         "operationId": "WishService_Delete",
         "requestBody": {
           "content": {

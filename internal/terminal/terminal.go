@@ -219,6 +219,18 @@ func (m *Manager) Running() []*Terminal {
 	return out
 }
 
+// Hangup hangs up the running terminal called name, as the window closing it does, and tells whether one ran.
+func (m *Manager) Hangup(name string) bool {
+	m.mu.Lock()
+	t := m.byName[name]
+	m.mu.Unlock()
+	if t == nil || t.Exited() {
+		return false
+	}
+	t.Hangup()
+	return true
+}
+
 // Close hangs up every terminal, kills the programs still there after Grace, and returns once they ended. No
 // terminal opens after.
 func (m *Manager) Close() {

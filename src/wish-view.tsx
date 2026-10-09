@@ -26,6 +26,7 @@ import {
   Change,
   type Choice,
   Closer,
+  type KeptWorktree,
   type MarkKind,
   type Project,
   type Task,
@@ -49,6 +50,7 @@ import {
 } from "./data/flight";
 import {
   allowanceOf,
+  deletedText,
   MAX_ACTIVE,
   isActive,
   projectsOf,
@@ -114,8 +116,11 @@ export function WishView({
     enlighten,
     mark,
   } = useWrites(onToast);
-  const act = (run: () => Promise<unknown>, changes: Change[], done?: string) =>
-    write(wish.id, run, changes, done);
+  const act = (
+    run: () => Promise<unknown>,
+    changes: Change[],
+    done?: string | (() => string),
+  ) => write(wish.id, run, changes, done);
   const attention = attentionOf(open, waiting, wish.ready ? [wish] : []);
   const tone = wishTone(wish, open.length, running);
 
@@ -246,11 +251,14 @@ export function WishView({
           onClose={() => setDeleting(false)}
           onDelete={() => {
             setDeleting(false);
+            let kept: KeptWorktree[] = [];
             quiet(
               act(
-                () => clients.wishes.delete({ wishId: wish.id }),
+                async () => {
+                  ({ kept } = await clients.wishes.delete({ wishId: wish.id }));
+                },
                 [Change.WISH],
-                t("wish.deleted_toast", { title: wish.title }),
+                () => deletedText(wish.title, kept),
               ),
             );
           }}
@@ -821,7 +829,8 @@ function Rights({
 }
 
 // DeleteWish asks before a wish goes for good, with its tasks, their events, its questions and its blocks
-// (WishService.Delete). Its workers stop first; the worktrees and branches they made stay in the project.
+// (WishService.Delete). Its workers stop first and its lead's terminal closes; a worktree with no work of its own
+// goes, the others and every branch stay, as the toast says after the delete.
 function DeleteWish({
   wish,
   tasks,

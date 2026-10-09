@@ -138,7 +138,8 @@ To use Djinn, see the [README](README.md). To work on it:
 - Three wishes are active at most; the others wait, paused. `djinn wish pause <wish-id>` sets one aside and stops its
   workers; `djinn wish activate <wish-id>` takes it back, its workers resumed, in the last place (three being active,
   the third wish is paused); `djinn wish move <wish-id> --to 1` gives one priority, active or not;
-  `djinn wish grant <wish-id>` says it is done; `djinn wish delete <wish-id>` deletes it with its tasks.
+  `djinn wish grant <wish-id>` says it is done; `djinn wish delete <wish-id>` deletes it with its tasks,
+  closes its lead's terminal and removes the worktrees with no work of their own (branches all stay).
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
 - `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. Not on Windows

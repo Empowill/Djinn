@@ -4,6 +4,7 @@ import { type Timestamp, timestampDate } from "@bufbuild/protobuf/wkt";
 import {
   Allowance,
   Choice,
+  type KeptWorktree,
   type Mark,
   MarkKind,
   type Project,
@@ -173,6 +174,27 @@ export function projectsOf(wish: Wish, projects: Project[]): Project[] {
   return wish.projectIds
     .map((id) => projects.find((p) => p.id.toLowerCase() === id.toLowerCase()))
     .filter((p): p is Project => !!p);
+}
+
+// deletedText says a wish is deleted, and which worktrees of its tasks stay on disk, and why: commits the project's
+// current branch does not have, changes not committed, or what Git said.
+export function deletedText(title: string, kept: KeptWorktree[]): string {
+  const lines = kept.map((k) => {
+    const why = k.error
+      ? [k.error]
+      : [
+          ...(k.commits > 0
+            ? [t("wish.kept_commits", { count: k.commits, base: k.base })]
+            : []),
+          ...(k.changed ? [t("wish.kept_changed")] : []),
+        ];
+    return t("wish.kept_worktree", {
+      code: k.taskCode,
+      branch: k.branch,
+      why: why.join(", "),
+    });
+  });
+  return [t("wish.deleted_toast", { title }), ...lines].join(" ");
 }
 
 // usd says a cost in dollars, to the cent.
