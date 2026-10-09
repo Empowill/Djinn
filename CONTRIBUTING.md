@@ -152,7 +152,9 @@ To use Djinn, see the [README](README.md). To work on it:
   branches in a worktree of its own, makes the generated files again on a conflict only in them, runs the tests
   through a gate, and moves the wish's branch when they pass ([T30](plan/43303f46-integration.md)). `djinn wish
   set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or red tests, start a correction
-  worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you.
+  worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task waits for
+  its dependencies' work to be committed, and its worktree starts from that branch; once a batch is committed, the
+  window proposes to install it (the `install` setting) and restart on it.
 - `djinn task spawn … --after W1,W2` gives a task what comes before it (`--depends-on`, its former name, still works);
   `--blocks W5` puts the new task before a planned one, W5 waiting for it from the same step, refused once W5 has
   started. `djinn task depend <task-id> --after W1,W2 --also W6=W5` sets what tasks wait for, in place of what they

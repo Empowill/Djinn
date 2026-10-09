@@ -407,3 +407,63 @@ func TestBriefFinished(t *testing.T) {
 		t.Errorf("a finished task in the live list:\n%s", waiting)
 	}
 }
+
+// TestBriefWorkStands: the brief says where each finished task's work stands on its way into the wish's integration
+// branch, and why a task waits for a dependency's work to be committed.
+func TestBriefWorkStands(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Integrates"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	day := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+	in := func(state planv1.IntegrationState, reason, by string) *planv1.TaskIntegration {
+		return &planv1.TaskIntegration{State: state, Branch: "feat/x", Sha: "1a2b3c4d5e6f", Reason: reason, CorrectedBy: by}
+	}
+	var tasks []*planv1.Task
+	for i, integration := range []*planv1.TaskIntegration{
+		nil,
+		in(planv1.IntegrationState_INTEGRATION_STATE_PENDING, "", ""),
+		in(planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, "", ""),
+		in(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, "W4 conflicts with feat/x in a.go", "W9"),
+		in(planv1.IntegrationState_INTEGRATION_STATE_RED, "test exited 1", ""),
+	} {
+		tasks = append(tasks, &planv1.Task{
+			Id: store.NewID(), WishId: wishID, Code: fmt.Sprintf("W%d", i+1), Title: "Work", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(time.Duration(5-i) * time.Minute)), Integration: integration,
+		})
+	}
+	tasks = append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W6", Title: "Next", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Scheduled: true, DependsOn: []string{tasks[1].GetId()}, WaitReason: "waits for W2 to be committed", CreateTime: timestamppb.New(day)})
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, task := range tasks {
+			if err := tx.Journal(actor, "test/put", task); err != nil {
+				return err
+			}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"- **W6** Next: planned, waits for W2 to be committed\n",
+		"- **W1** Work: done\n" +
+			"- **W2** Work: done, waiting to be committed\n" +
+			"- **W3** Work: committed into feat/x as 1a2b3c4d\n" +
+			"- **W4** Work: conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9\n" +
+			"- **W5** Work: red tests, not committed: test exited 1\n",
+	} {
+		if !strings.Contains(brief.Moving, want) {
+			t.Errorf("the brief lacks\n%s\nin\n%s", want, brief.Moving)
+		}
+	}
+}

@@ -414,6 +414,12 @@
   "time.hm": "{h}h{m}m",
   "time.ms": "{m}m{s}s",
   "time.s": "{s}s",
+  "update.build": "{tasks} commitées dans {branch} de {project}",
+  "update.build_changes": "Ce qui a changé",
+  "update.build_checks": "À vérifier",
+  "update.build_install": "Installer et redémarrer",
+  "update.build_installed": "{sha} installé",
+  "update.build_installing": "Installation…",
   "update.dismiss": "Fermer",
   "update.failed": "La mise à jour a échoué : {message}",
   "update.install": "Mettre à jour",
@@ -475,5 +481,12 @@
   "wish.state_active": "Actif · {rank}",
   "wish.state_granted": "Exaucé",
   "wish.state_paused": "En pause",
-  "wish.tasks": "Tâches"
+  "wish.tasks": "Tâches",
+  "work.committed": "Commitée dans {branch} en {sha}",
+  "work.conflict": "Conflit, non commitée : {reason}",
+  "work.corrected_by": "corrigée par {task}",
+  "work.integrating": "En cours de commit dans {branch}",
+  "work.pending": "Terminée, attend d’être commitée",
+  "work.pending_why": "Terminée, attend d’être commitée : {reason}",
+  "work.red": "Tests rouges, non commitée : {reason}"
 }

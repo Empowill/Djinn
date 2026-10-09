@@ -50,3 +50,19 @@
 .update-banner button:hover {
   background: var(--surface);
 }
+/* A build committed: what changed and what to check, read in a glance, the buttons at the top. */
+.update-build {
+  align-items: flex-start;
+}
+.update-build strong {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--text);
+}
+.update-build ul {
+  max-height: 9em;
+  overflow-y: auto;
+  font-family: inherit;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}

@@ -1393,8 +1393,13 @@ type ProjectSettings struct {
 	// How many correction workers Djinn starts, one after the other, for a batch whose merge conflicts in code or whose
 	// tests fail, before it asks the person. Not set: 2. 0: it asks at once.
 	CorrectionAttempts *int32 `protobuf:"varint,8,opt,name=correction_attempts,json=correctionAttempts,proto3,oneof" json:"correction_attempts,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The command that installs the project's new build, run in the project's folder of the integration worktree at
+	// the commit: "go tool task install". Once a batch is committed, the window proposes it, with what changed and what
+	// to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are split on spaces, without
+	// a shell. Not set: nothing is proposed.
+	Install       *string `protobuf:"bytes,9,opt,name=install,proto3,oneof" json:"install,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProjectSettings) Reset() {
@@ -1483,11 +1488,18 @@ func (x *ProjectSettings) GetCorrectionAttempts() int32 {
 	return 0
 }
 
+func (x *ProjectSettings) GetInstall() string {
+	if x != nil && x.Install != nil {
+		return *x.Install
+	}
+	return ""
+}
+
 // ProjectSetting is one setting of a project, as its workers get it.
 type ProjectSetting struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,
-	// correction_attempts.
+	// correction_attempts, install.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The
 	// generated globs are joined by commas.
@@ -10890,7 +10902,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\xff\x04\n" +
+	"createTime\"\xb4\x05\n" +
 	"\x0fProjectSettings\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
 	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
@@ -10900,14 +10912,17 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bgenerate\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x04R\bgenerate\x88\x01\x01\x12!\n" +
 	"\x04test\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x05R\x04test\x88\x01\x01\x12?\n" +
 	"\x13correction_attempts\x18\b \x01(\x05B\t\xbaH\x06\x1a\x04\x18\n" +
-	"(\x00H\x06R\x12correctionAttempts\x88\x01\x01B\v\n" +
+	"(\x00H\x06R\x12correctionAttempts\x88\x01\x01\x12'\n" +
+	"\ainstall\x18\t \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\aR\ainstall\x88\x01\x01B\v\n" +
 	"\t_providerB\b\n" +
 	"\x06_modelB\x11\n" +
 	"\x0f_max_budget_usdB\t\n" +
 	"\a_branchB\v\n" +
 	"\t_generateB\a\n" +
 	"\x05_testB\x16\n" +
-	"\x14_correction_attempts\"j\n" +
+	"\x14_correction_attemptsB\n" +
+	"\n" +
+	"\b_install\"j\n" +
 	"\x0eProjectSetting\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12.\n" +

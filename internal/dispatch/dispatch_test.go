@@ -318,3 +318,31 @@ func TestMemoryHoldsWorker(t *testing.T) {
 		t.Errorf("memory unknown: %v", got)
 	}
 }
+
+// TestWaitsForTheCommit: a dependency whose work Djinn integrates counts once committed into the wish's integration
+// branch, not when its worker ends done; one whose work Djinn does not integrate counts once done.
+func TestWaitsForTheCommit(t *testing.T) {
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	for _, c := range []struct {
+		state planv1.IntegrationState
+		want  string
+	}{
+		{planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED, ""},
+		{planv1.IntegrationState_INTEGRATION_STATE_PENDING, "waits for W5 to be committed"},
+		{planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, "waits for W5 to be committed"},
+		{planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, "waits for W5 to be committed (conflict)"},
+		{planv1.IntegrationState_INTEGRATION_STATE_RED, "waits for W5 to be committed (red)"},
+		{planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, ""},
+	} {
+		dep := &planv1.Task{Id: "d", WishId: "w", Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE}
+		if c.state != planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED {
+			dep.Integration = &planv1.TaskIntegration{State: c.state}
+		}
+		task := &planv1.Task{Id: "t", WishId: "w", Code: "W6", Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+			DependsOn: []string{"d"}}
+		d := New([]*planv1.Task{dep, task}, []*planv1.Wish{wish}, nil, nil).Pass()[0]
+		if d.Why != c.want || d.Failed != "" || d.Commit != (c.want != "") {
+			t.Errorf("W5 %s: %+v; want %q", c.state, d, c.want)
+		}
+	}
+}

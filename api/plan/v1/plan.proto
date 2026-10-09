@@ -104,6 +104,11 @@ message ProjectSettings {
     gte: 0
     lte: 10
   }];
+  // The command that installs the project's new build, run in the project's folder of the integration worktree at
+  // the commit: "go tool task install". Once a batch is committed, the window proposes it, with what changed and what
+  // to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are split on spaces, without
+  // a shell. Not set: nothing is proposed.
+  optional string install = 9 [(buf.validate.field).string.max_len = 500];
 }
 
 // SettingSource is where a project setting comes from.
@@ -121,7 +126,7 @@ enum SettingSource {
 // ProjectSetting is one setting of a project, as its workers get it.
 message ProjectSetting {
   // Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,
-  // correction_attempts.
+  // correction_attempts, install.
   string name = 1;
   // Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The
   // generated globs are joined by commas.

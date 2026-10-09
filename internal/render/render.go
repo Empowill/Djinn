@@ -213,7 +213,9 @@ type task struct {
 	After, Wait string
 	// Closed says who marked the task done by hand, and why.
 	Closed string
-	src    *planv1.Task
+	// Work says where its finished work stands on its way into the wish's integration branch, WorkClass its colour.
+	Work, WorkClass string
+	src             *planv1.Task
 }
 
 type block struct {
@@ -262,13 +264,7 @@ func build(in Input) (*view, error) {
 	}
 	loc := now.Location()
 	at := func(t interface{ AsTime() time.Time }) string { return t.AsTime().In(loc).Format("2006-01-02 15:04") }
-	tr := func(key string, params ...string) string {
-		m := map[string]string{}
-		for i := 0; i+1 < len(params); i += 2 {
-			m[params[i]] = params[i+1]
-		}
-		return locales.T(lang, key, m)
-	}
+	tr := Translator(lang)
 	v := &view{Lang: lang, Title: exp.GetWish().GetTitle(), T: map[string]string{}}
 	for _, key := range []string{
 		"page.actions", "page.actions_sub", "page.after_col", "page.bar", "page.contents", "page.context",
@@ -511,6 +507,7 @@ func build(in Input) (*view, error) {
 			ct.After = tr("page.after", "tasks", strings.Join(after, ", "))
 		}
 		ct.Wait = t.GetWaitReason()
+		ct.Work, ct.WorkClass = Work(t, func(id string) string { return tasks[id].GetCode() }, tr)
 		ct.Agent = strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 		if t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED {
 			ct.Agent = "claude"
@@ -809,6 +806,51 @@ func motionRank(t *planv1.Task) int {
 func ByMotion(a, b *planv1.Task) int {
 	return cmp.Compare(motionRank(a), motionRank(b))
 }
+
+// Translator is the texts of the language lang: a key of locales, then its parameters as name and value pairs.
+func Translator(lang string) func(key string, params ...string) string {
+	return func(key string, params ...string) string {
+		m := map[string]string{}
+		for i := 0; i+1 < len(params); i += 2 {
+			m[params[i]] = params[i+1]
+		}
+		return locales.T(lang, key, m)
+	}
+}
+
+// Work says where the finished work of t stands on its way into its wish's integration branch (T30), with tr, and
+// the class that colours it: "" for work Djinn does not integrate. code names a task of the wish by its identifier,
+// for the correction worker; "": the identifier itself.
+func Work(t *planv1.Task, code func(id string) string, tr func(string, ...string) string) (text, class string) {
+	in := t.GetIntegration()
+	switch in.GetState() {
+	case planv1.IntegrationState_INTEGRATION_STATE_PENDING:
+		text, class = tr("work.pending"), "pause"
+		if why := in.GetReason(); why != "" {
+			text = tr("work.pending_why", "reason", why)
+		}
+	case planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
+		text, class = tr("work.integrating", "branch", in.GetBranch()), "run"
+	case planv1.IntegrationState_INTEGRATION_STATE_COMMITTED:
+		text, class = tr("work.committed", "branch", in.GetBranch(), "sha", ShortSha(in.GetSha())), "ok"
+	case planv1.IntegrationState_INTEGRATION_STATE_CONFLICT:
+		text, class = tr("work.conflict", "reason", in.GetReason()), "fail"
+	case planv1.IntegrationState_INTEGRATION_STATE_RED:
+		text, class = tr("work.red", "reason", in.GetReason()), "fail"
+	default:
+		return "", ""
+	}
+	if c := in.GetCorrectedBy(); c != "" {
+		if code != nil && code(c) != "" {
+			c = code(c)
+		}
+		text += ", " + tr("work.corrected_by", "task", c)
+	}
+	return text, class
+}
+
+// ShortSha is a commit's first eight characters, as Djinn shows it.
+func ShortSha(sha string) string { return sha[:min(8, len(sha))] }
 
 // status names a task's status, with the class that colours it and gives its icon.
 func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, string) {

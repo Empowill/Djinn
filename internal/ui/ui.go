@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
@@ -39,6 +40,9 @@ type Service struct {
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
 	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
 	Restart func() (version string, terminals int, err error)
+	// Install installs a build that SetBuild proposed: its project's install command, run on its commit. It tells
+	// whether a newer Djinn waits at the path of the running one since, to restart on. Nil: no build installs.
+	Install func(ctx context.Context, build *uiv1.Build) (newer bool, err error)
 	// ChooseFolder opens the system's folder dialog over the window, titled title and open in directory, and returns
 	// the folder chosen, or empty when the user cancelled. Nil: the page has no folder dialog (the browser).
 	ChooseFolder func(title, directory string) (string, error)
@@ -59,6 +63,7 @@ type Service struct {
 	ready      string        // version of the newer Djinn waiting; empty for none
 	notesURL   string        // where its release notes are; empty for none
 	notResumed []string      // terminals the last restart could not run again
+	build      *uiv1.Build   // the last build committed and not installed; nil for none
 	updated    chan struct{} // closed and replaced at each change
 }
 
@@ -323,6 +328,15 @@ func (s *Service) SetReady(version, notesURL string) {
 	s.notifyUpdate()
 }
 
+// SetBuild proposes to install build, a batch committed into a wish's integration branch, in place of the one
+// proposed before; nil proposes none.
+func (s *Service) SetBuild(build *uiv1.Build) {
+	s.updates.Lock()
+	defer s.updates.Unlock()
+	s.build = build
+	s.notifyUpdate()
+}
+
 // Ready is the version of the newer Djinn waiting; empty for none.
 func (s *Service) Ready() string {
 	s.updates.Lock()
@@ -365,6 +379,7 @@ func (s *Service) WatchUpdate(
 		changed := s.updated
 		msg := &uiv1.UiServiceWatchUpdateResponse{
 			Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
+			Build: proto.CloneOf(s.build),
 		}
 		s.updates.Unlock()
 		if err := stream.Send(msg); err != nil {
@@ -379,8 +394,35 @@ func (s *Service) WatchUpdate(
 }
 
 func (s *Service) Update(
-	context.Context, *connect.Request[uiv1.UiServiceUpdateRequest],
+	ctx context.Context, req *connect.Request[uiv1.UiServiceUpdateRequest],
 ) (*connect.Response[uiv1.UiServiceUpdateResponse], error) {
+	installed := ""
+	if sha := req.Msg.GetBuild(); sha != "" {
+		s.updates.Lock()
+		build := s.build
+		s.updates.Unlock()
+		switch {
+		case build.GetSha() != sha:
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the build %s is not the one proposed", sha))
+		case s.Install == nil:
+			return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn installs no build"))
+		}
+		newer, err := s.Install(ctx, build)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("install %s: %w", build.GetBranch(), err))
+		}
+		installed = sha
+		s.updates.Lock()
+		if s.build == build { // Proposed no more, unless a newer one came meanwhile.
+			s.build = nil
+			s.notifyUpdate()
+		}
+		s.updates.Unlock()
+		if !newer || s.Restart == nil {
+			// The build installed no newer Djinn at this one's path: the project is not Djinn, nothing restarts.
+			return connect.NewResponse(&uiv1.UiServiceUpdateResponse{Installed: installed}), nil
+		}
+	}
 	if s.Restart == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn cannot update itself"))
 	}
@@ -388,7 +430,7 @@ func (s *Service) Update(
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
-	return connect.NewResponse(&uiv1.UiServiceUpdateResponse{Version: version, Terminals: int32(terminals)}), nil
+	return connect.NewResponse(&uiv1.UiServiceUpdateResponse{Version: version, Terminals: int32(terminals), Installed: installed}), nil
 }
 
 func (s *Service) WatchShow(

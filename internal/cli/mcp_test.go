@@ -97,9 +97,21 @@ func TestMCPListTools(t *testing.T) {
 	for _, tool := range list.Tools {
 		names = append(names, tool.Name)
 	}
-	// Every public method that answers once: the three streams (gate hold, wish watch, task watch) are left out.
-	if len(names) != 61 {
-		t.Errorf("got %d tools, want 61: %v", len(names), names)
+	// Every public method of the protos that answers once is a tool, with its comment; a stream is none.
+	var want []string
+	for _, md := range protoMethods(t) {
+		if md.IsStreamingClient() || md.IsStreamingServer() {
+			continue
+		}
+		want = append(want, toolName(md))
+		if i := slices.Index(names, toolName(md)); i < 0 || list.Tools[i].Description != comment(md) {
+			t.Errorf("%s is no tool %s with its comment", md.FullName(), toolName(md))
+		}
+	}
+	for _, name := range names {
+		if !slices.Contains(want, name) {
+			t.Errorf("tool %s is no public method that answers once", name)
+		}
 	}
 	for _, want := range []string{"question_answer", "wish_set_lead", "project_list", "machine_show"} {
 		if !slices.Contains(names, want) {

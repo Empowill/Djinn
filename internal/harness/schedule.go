@@ -167,6 +167,9 @@ func (h *Harness) schedule(ctx context.Context) {
 		if h.ctx.Err() != nil {
 			return
 		}
+		if d.Commit {
+			h.kickIntegrate() // A task another waits for is committed at once.
+		}
 		switch t := d.Task; {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
@@ -333,10 +336,11 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 		return err
 	}
 	var project *planv1.Project
+	var wish *planv1.Wish
 	var prep prepared
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		wish, err := store.Get[*planv1.Wish](ctx, tx, t.GetWishId())
-		if err != nil {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, t.GetWishId()); err != nil {
 			return err
 		}
 		if t.GetProjectId() != "" {
@@ -363,7 +367,7 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("project %s: %w", project.GetName(), err)})
 			return nil
 		}
-		r.branch = settings.Branch
+		r.branch, r.from = settings.Branch, plan.IntegrationBranchOf(wish, project.GetId())
 	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err

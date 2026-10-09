@@ -51,6 +51,7 @@ type warm struct {
 	worktree string // in Git: its worktree, its placeholder branch and the commit it started from
 	branch   string
 	base     string
+	from     string // the wish's integration branch base was the tip of; empty: the project's HEAD
 	since    time.Time
 }
 
@@ -64,6 +65,7 @@ type wantWarm struct {
 	perms    *djinnv1.Permissions
 	model    string
 	budget   float64
+	from     string // the wish's integration branch in the project, which a task's worktree starts from
 }
 
 func warmKey(wishID, projectID string) string { return wishID + "/" + projectID }
@@ -116,7 +118,7 @@ func (h *Harness) refreshWarm(ctx context.Context) {
 			h.dropWarm(w, "the rights of its project changed")
 		case !w.settled(ww.model, ww.budget):
 			h.dropWarm(w, "the settings of its project changed")
-		case w.stale(ctx):
+		case w.stale(ctx, ww.from):
 			h.dropWarm(w, "its project moved on")
 		default:
 			continue
@@ -157,7 +159,7 @@ func (h *Harness) wantedWarm(ctx context.Context) []wantWarm {
 			readOnly, perms := accessSpec(access, declared)
 			out = append(out, wantWarm{
 				key: warmKey(wish.GetId(), id), wishID: wish.GetId(), project: project, readOnly: readOnly, perms: perms,
-				model: settings.Model, budget: settings.MaxBudgetUSD,
+				model: settings.Model, budget: settings.MaxBudgetUSD, from: plan.IntegrationBranchOf(wish, id),
 			})
 		}
 	}
@@ -171,12 +173,12 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 	dir := ww.project.GetDirectory()
 	if ww.project.GetGit() {
 		var err error
-		if w.base, err = git(ctx, dir, "rev-parse", "HEAD"); err != nil {
+		if w.base, w.from, err = startPoint(ctx, dir, ww.from); err != nil {
 			log.Printf("djinn: warm worker for %s: %v", ww.project.GetName(), err)
 			return
 		}
 		w.worktree, w.branch = worktreeDir(h.home, ww.project.GetId(), id), warmBranchPrefix+id[len(id)-8:]
-		if dir, err = addWorktree(ctx, ww.project.GetDirectory(), w.worktree, w.branch); err != nil {
+		if dir, err = addWorktreeFrom(ctx, ww.project.GetDirectory(), w.worktree, w.branch, w.base); err != nil {
 			log.Printf("djinn: warm worker for %s: %v", ww.project.GetName(), err)
 			return
 		}
@@ -216,7 +218,7 @@ func (h *Harness) claimWarm(ctx context.Context, wish *planv1.Wish, project *pla
 		h.dropWarm(w, "its process ended")
 	case err != nil || !w.fits(readOnly, perms):
 		h.dropWarm(w, "the task's rights differ")
-	case w.stale(ctx):
+	case w.stale(ctx, plan.IntegrationBranchOf(wish, project.GetId())):
 		h.dropWarm(w, "its project moved on")
 	default:
 		h.wake() // Another warm worker for the next task.
@@ -235,14 +237,14 @@ func (w *warm) settled(model string, budget float64) bool {
 	return w.spec.Model == model && w.spec.MaxBudgetUSD == budget
 }
 
-// stale tells whether the project has moved on since the warm worker started: its HEAD is no longer the commit
-// the worktree started from.
-func (w *warm) stale(ctx context.Context) bool {
+// stale tells whether the project has moved on since the warm worker started: the commit a task's worktree starts
+// from now, the tip of the wish's integration branch integration or else HEAD, is no longer the one it started from.
+func (w *warm) stale(ctx context.Context, integration string) bool {
 	if w.base == "" {
 		return false
 	}
-	head, err := git(ctx, w.project.GetDirectory(), "rev-parse", "HEAD")
-	return err != nil || head != w.base
+	sha, _, err := startPoint(ctx, w.project.GetDirectory(), integration)
+	return err != nil || sha != w.base
 }
 
 // dropWarm stops a warm worker and removes its worktree, in the background.

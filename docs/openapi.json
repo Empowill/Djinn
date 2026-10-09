@@ -2004,7 +2004,7 @@
           "name": {
             "type": "string",
             "title": "name",
-            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,\n correction_attempts."
+            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,\n correction_attempts, install."
           },
           "value": {
             "type": "string",

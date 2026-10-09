@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0IqIBCh9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCBIhCghzaG9ydGN1dBgFIAEoCzIPLnVpLnYxLlNob3J0Y3V0IlQKCFNob3J0Y3V0Eg0KBWNob3JkGAEgASgJEhUKDWRlZmF1bHRfY2hvcmQYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB3Byb2JsZW0YBCABKAkiLgoIU2V0dGluZ3MSFQoIc2hvcnRjdXQYASABKAlIAIgBAUILCglfc2hvcnRjdXQiSAoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJoChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkiHQobVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0ImYKHFVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2USDwoHY3VycmVudBgBIAEoCRINCgVyZWFkeRgCIAEoCRITCgtub3RfcmVzdW1lZBgDIAMoCRIRCglub3Rlc191cmwYBCABKAkiGAoWVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdCI9ChdVaVNlcnZpY2VVcGRhdGVSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhEKCXRlcm1pbmFscxgCIAEoBTLCBgoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCElwKC1NldFNob3J0Y3V0EiIudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXNwb25zZSIEyPMYAhJHCgRTaG93EhsudWkudjEuVWlTZXJ2aWNlU2hvd1JlcXVlc3QaHC51aS52MS5VaVNlcnZpY2VTaG93UmVzcG9uc2UiBMjzGAISUwoIT3BlbkxpbmsSHy51aS52MS5VaVNlcnZpY2VPcGVuTGlua1JlcXVlc3QaIC51aS52MS5VaVNlcnZpY2VPcGVuTGlua1Jlc3BvbnNlIgTI8xgCElgKCVdhdGNoU2hvdxIgLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZSIEyPMYAjABEl4KC1dhdGNoVXBkYXRlEiIudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZSIEyPMYAjABEk0KBlVwZGF0ZRIdLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlcXVlc3QaHi51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXNwb25zZSIEyPMYAkJ2Cgljb20udWkudjFCB1VpUHJvdG9QAVorZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdWkvdjE7dWl2MaICA1VYWKoCBVVpLlYxygIFVWlcVjHiAhFVaVxWMVxHUEJNZXRhZGF0YeoCBlVpOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0IqIBCh9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCBIhCghzaG9ydGN1dBgFIAEoCzIPLnVpLnYxLlNob3J0Y3V0IlQKCFNob3J0Y3V0Eg0KBWNob3JkGAEgASgJEhUKDWRlZmF1bHRfY2hvcmQYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB3Byb2JsZW0YBCABKAkiLgoIU2V0dGluZ3MSFQoIc2hvcnRjdXQYASABKAlIAIgBAUILCglfc2hvcnRjdXQiSAoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJoChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkiHQobVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0IoMBChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkSEQoJbm90ZXNfdXJsGAQgASgJEhsKBWJ1aWxkGAUgASgLMgwudWkudjEuQnVpbGQirwEKBUJ1aWxkEg8KB3dpc2hfaWQYASABKAkSEgoKd2lzaF90aXRsZRgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEg8KB3Byb2plY3QYBCABKAkSDgoGYnJhbmNoGAUgASgJEgsKA3NoYRgGIAEoCRINCgV0YXNrcxgHIAMoCRIPCgdjaGFuZ2VzGAggAygJEg4KBmNoZWNrcxgJIAMoCRIPCgdpbnN0YWxsGAogASgJIjAKFlVpU2VydmljZVVwZGF0ZVJlcXVlc3QSFgoFYnVpbGQYASABKAlCB7pIBHICGEAiUAoXVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIRCgl0ZXJtaW5hbHMYAiABKAUSEQoJaW5zdGFsbGVkGAMgASgJMsIGCglVaVNlcnZpY2USZQoOR2V0RW52aXJvbm1lbnQSJS51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlcXVlc3QaJi51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlIgTI8xgCEmgKD0Nob29zZURpcmVjdG9yeRImLnVpLnYxLlVpU2VydmljZUNob29zZURpcmVjdG9yeVJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZSIEyPMYAhJfCgxPcGVuRXh0ZXJuYWwSIy51aS52MS5VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0GiQudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2UiBMjzGAISXAoLU2V0U2hvcnRjdXQSIi51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJTCghPcGVuTGluaxIfLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVxdWVzdBogLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVzcG9uc2UiBMjzGAISWAoJV2F0Y2hTaG93EiAudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1Jlc3BvbnNlIgTI8xgCMAESXgoLV2F0Y2hVcGRhdGUSIi51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlIgTI8xgCMAESTQoGVXBkYXRlEh0udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdBoeLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlc3BvbnNlIgTI8xgCQnYKCWNvbS51aS52MUIHVWlQcm90b1ABWitnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby91aS92MTt1aXYxogIDVVhYqgIFVWkuVjHKAgVVaVxWMeICEVVpXFYxXEdQQk1ldGFkYXRh6gIGVWk6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -501,6 +501,14 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
    * @generated from field: string notes_url = 4;
    */
   notesUrl: string;
+
+  /**
+   * The last batch of finished work committed into a wish's integration branch, in a project whose settings name an
+   * install command, and not installed since: the window proposes to install it and restart on it. Unset for none.
+   *
+   * @generated from field: ui.v1.Build build = 5;
+   */
+  build?: Build | undefined;
 };
 
 /**
@@ -511,9 +519,94 @@ export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdate
   messageDesc(file_ui_v1_ui, 18);
 
 /**
+ * Build is a batch of finished work committed into a wish's integration branch (T30), to install.
+ *
+ * @generated from message ui.v1.Build
+ */
+export type Build = Message<"ui.v1.Build"> & {
+  /**
+   * The wish, and its title.
+   *
+   * @generated from field: string wish_id = 1;
+   */
+  wishId: string;
+
+  /**
+   * @generated from field: string wish_title = 2;
+   */
+  wishTitle: string;
+
+  /**
+   * The project, by its identifier and its name.
+   *
+   * @generated from field: string project_id = 3;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string project = 4;
+   */
+  project: string;
+
+  /**
+   * The integration branch, and the commit it moved to.
+   *
+   * @generated from field: string branch = 5;
+   */
+  branch: string;
+
+  /**
+   * @generated from field: string sha = 6;
+   */
+  sha: string;
+
+  /**
+   * The tasks of the batch, by code: W5.
+   *
+   * @generated from field: repeated string tasks = 7;
+   */
+  tasks: string[];
+
+  /**
+   * What changed: the titles of the commits the batch brought, the latest first.
+   *
+   * @generated from field: repeated string changes = 8;
+   */
+  changes: string[];
+
+  /**
+   * What to check, one line per task: its code and title, then what its worker said last.
+   *
+   * @generated from field: repeated string checks = 9;
+   */
+  checks: string[];
+
+  /**
+   * The command that installs it: go tool task install.
+   *
+   * @generated from field: string install = 10;
+   */
+  install: string;
+};
+
+/**
+ * Describes the message ui.v1.Build.
+ * Use `create(BuildSchema)` to create a new message.
+ */
+export const BuildSchema: GenMessage<Build> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 19);
+
+/**
  * @generated from message ui.v1.UiServiceUpdateRequest
  */
 export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
+  /**
+   * The commit of the build to install first, as WatchUpdate proposed it; empty to restart on the newer Djinn
+   * already installed. Refused when it is not the build proposed.
+   *
+   * @generated from field: string build = 1;
+   */
+  build: string;
 };
 
 /**
@@ -521,14 +614,14 @@ export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
  * Use `create(UiServiceUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceUpdateRequestSchema: GenMessage<UiServiceUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 19);
+  messageDesc(file_ui_v1_ui, 20);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateResponse
  */
 export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> & {
   /**
-   * Version Djinn restarts on.
+   * Version Djinn restarts on; empty when the build installed no newer Djinn: nothing restarts.
    *
    * @generated from field: string version = 1;
    */
@@ -540,6 +633,13 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
    * @generated from field: int32 terminals = 2;
    */
   terminals: number;
+
+  /**
+   * The commit of the build installed, when one was.
+   *
+   * @generated from field: string installed = 3;
+   */
+  installed: string;
 };
 
 /**
@@ -547,7 +647,7 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
  * Use `create(UiServiceUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 20);
+  messageDesc(file_ui_v1_ui, 21);
 
 /**
  * What the window needs to show and follow the plan.
@@ -634,7 +734,7 @@ export const UiService: GenService<{
   },
   /**
    * Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-   * change. With the leads that a restart could not resume, once.
+   * change. With the leads that a restart could not resume, once, and the last build committed that is not installed.
    *
    * @generated from rpc ui.v1.UiService.WatchUpdate
    */
@@ -646,7 +746,8 @@ export const UiService: GenService<{
   /**
    * Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
    * as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-   * sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
+   * sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
+   * newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
    *
    * @generated from rpc ui.v1.UiService.Update
    */

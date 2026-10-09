@@ -59,9 +59,12 @@ lead spends its tokens on mechanical work.
 - [x] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
   (TestCorrectACodeConflict, TestCorrectRedTests, TestCorrectionAttemptsThenAQuestion,
   TestAnswerAFailedIntegration, TestACorrectionWorkerThatFails)
-- [ ] A task waits for its dependencies to be integrated, and starts from the integration branch.
-- [ ] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
-  conflict, red), and propose installing once a batch is integrated.
+- [x] A task waits for its dependencies to be integrated, and starts from the integration branch.
+  (TestWaitsForTheCommit, TestADependentStartsFromTheCommit)
+- [x] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
+  conflict, red), and propose installing once a batch is integrated. (TestWorkStands, TestBriefWorkStands, TestRun
+  "where a task's work stands", the screens tests "the Tasks tab says where each task's work stands" and "the update
+  banner proposes to install a build committed", TestABuildIsProposed, TestUpdateInstallsABuild)
 
 ## Tests must be fast
 
