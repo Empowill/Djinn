@@ -29,6 +29,7 @@ type env struct {
 	tasks   planv1connect.TaskServiceClient
 	project planv1connect.ProjectServiceClient
 	wishes  planv1connect.WishServiceClient
+	plans   planv1connect.PlanServiceClient
 	last    string // the wish e.wish made last
 }
 
@@ -55,12 +56,14 @@ func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, o
 		mux.Handle(prefix, handler)
 	}
 	mux.Handle(Handler(h))
+	mux.Handle(PlanHandler(h))
 	srv := httptest.NewServer(mux)
 	e := &env{
 		home: home, db: db, h: h, srv: srv,
 		tasks:   planv1connect.NewTaskServiceClient(srv.Client(), srv.URL),
 		project: planv1connect.NewProjectServiceClient(srv.Client(), srv.URL),
 		wishes:  planv1connect.NewWishServiceClient(srv.Client(), srv.URL),
+		plans:   planv1connect.NewPlanServiceClient(srv.Client(), srv.URL),
 	}
 	t.Cleanup(e.down)
 	return e

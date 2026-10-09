@@ -3,6 +3,7 @@ id: 01a118b4-0310-7924-8cee-d87717ed4dcd
 code: T21
 phase: 2
 status: in-progress
+after: T01 T13
 ---
 
 # T21 · The lead's terminal, inside the app, by voice

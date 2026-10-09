@@ -3,6 +3,7 @@ id: 01a11880-4a06-7df5-947e-08089c8f55df
 code: T15
 phase: later
 status: open
+after: T07 T17 T18 T24
 ---
 
 # T15 · Work spread over trusted machines

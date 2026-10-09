@@ -419,6 +419,43 @@
         },
         "type": "object"
       },
+      "plan.v1.Azima": {
+        "description": "Azima is where an azima stands, computed on every read from the tasks of its wish; never stored.",
+        "properties": {
+          "parts": {
+            "description": "The tasks part of it, how many of them are done, and how many have a worker on them now (running, paused, or resuming).",
+            "format": "int32",
+            "type": "integer"
+          },
+          "partsDone": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "partsRunning": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ready": {
+            "description": "Every task it depends on is done: its work may go.",
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/plan.v1.AzimaState",
+            "description": "Open, in progress or done."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.AzimaState": {
+        "description": "AzimaState is where an azima stands.",
+        "enum": [
+          "AZIMA_STATE_UNSPECIFIED",
+          "AZIMA_STATE_OPEN",
+          "AZIMA_STATE_IN_PROGRESS",
+          "AZIMA_STATE_DONE"
+        ],
+        "type": "string"
+      },
       "plan.v1.Block": {
         "description": "A block is free content of a wish, laid out by the lead: a decision taken outside a question, a section of analysis, a line of the journal, a diagram. Djinn computes nothing from it, and shows a kind it does not know as text: nothing is lost.",
         "properties": {
@@ -617,7 +654,8 @@
         "enum": [
           "CLOSER_UNSPECIFIED",
           "CLOSER_LEAD",
-          "CLOSER_DEVELOPER"
+          "CLOSER_DEVELOPER",
+          "CLOSER_PLAN_FILE"
         ],
         "type": "string"
       },
@@ -952,6 +990,56 @@
           "wishId": {
             "description": "Wish of the question or block.",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.PlanServiceSyncRequest": {
+        "properties": {
+          "projectId": {
+            "description": "Only this project's plan folder; by default every project of the wish that has one.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.PlanServiceSyncResponse": {
+        "properties": {
+          "azimas": {
+            "description": "The azimas of the files read, as the store holds them now, by code.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Task"
+            },
+            "type": "array"
+          },
+          "changed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "made": {
+            "description": "The codes of the azimas made, and of those changed.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "written": {
+            "description": "The files whose after line was written, as their project names them.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -1759,6 +1847,10 @@
             "$ref": "#/components/schemas/plan.v1.TaskAccess",
             "description": "Where its worker's rights come from."
           },
+          "azima": {
+            "$ref": "#/components/schemas/plan.v1.Azima",
+            "description": "For an azima: where it stands, computed on every read from its parts and what it depends on, never stored."
+          },
           "branch": {
             "description": "Branch of the worktree.",
             "type": "string"
@@ -1821,6 +1913,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "kind": {
+            "$ref": "#/components/schemas/plan.v1.TaskKind",
+            "description": "What the task is: work a worker does, the default, or an azima of the plan, which no worker ever runs."
+          },
           "lastLine": {
             "description": "The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an agent.",
             "type": "string"
@@ -1831,6 +1927,17 @@
           },
           "model": {
             "description": "Model of the agent, as spawned; empty for the provider's default. A worker started again keeps it.",
+            "type": "string"
+          },
+          "partOf": {
+            "description": "The azima the task is part of (an azima of its wish), by identifier; empty for none. A grouping, never a wait: only depends_on makes a task wait. The tasks of a wish, through depends_on and part_of together, form a graph without cycle.",
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "planFile": {
+            "description": "For an azima read from a plan file (djinn plan sync): the file, as its project names it (\"plan/8e8d3d76-orchestrator.md\"), and its phase there (\"2\", \"later\"). Empty for an azima of no file.",
             "type": "string"
           },
           "projectId": {
@@ -1978,6 +2085,15 @@
           "TASK_EVENT_KIND_GATE",
           "TASK_EVENT_KIND_MESSAGE",
           "TASK_EVENT_KIND_RECEIVED"
+        ],
+        "type": "string"
+      },
+      "plan.v1.TaskKind": {
+        "description": "TaskKind says what a task is.",
+        "enum": [
+          "TASK_KIND_UNSPECIFIED",
+          "TASK_KIND_WORK",
+          "TASK_KIND_AZIMA"
         ],
         "type": "string"
       },
@@ -2143,6 +2259,33 @@
         },
         "type": "object"
       },
+      "plan.v1.TaskServiceGroupRequest": {
+        "properties": {
+          "partOf": {
+            "description": "The azima: its code (T07) or its identifier. Empty: the task is part of no azima.",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceGroupResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, with its azima."
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.TaskServiceListRequest": {
         "properties": {
           "projectId": {
@@ -2266,6 +2409,10 @@
             "description": "Start the worker from a copy of the lead's conversation, as --fork does from a task.",
             "type": "boolean"
           },
+          "kind": {
+            "$ref": "#/components/schemas/plan.v1.TaskKind",
+            "description": "What the task is; by default work, for a worker. azima makes an azima (T1, T2…): no worker, no prompt, never scheduled; work is spawned part of it."
+          },
           "later": {
             "description": "Only plan the task: the call returns at once, and djinn up starts the worker when the task is ready.",
             "type": "boolean"
@@ -2277,6 +2424,11 @@
           "model": {
             "description": "Model of the agent; by default the provider's.",
             "maxLength": 200,
+            "type": "string"
+          },
+          "partOf": {
+            "description": "The azima the task belongs to: its code (T07) or its identifier. A grouping, never a wait: say what the task waits for with depends_on.",
+            "maxLength": 64,
             "type": "string"
           },
           "projectId": {
@@ -3472,6 +3624,44 @@
         ]
       }
     },
+    "/plan.v1.PlanService/Sync": {
+      "post": {
+        "description": "Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on. A file whose status is done marks its azima done; read not done again, an azima it closed opens again. Then write what each azima depends on back into its file's front matter, as \"after: T02 T05\", so that Git carries the graph. The store stays the source of truth: an azima made here takes its file's after line, once.",
+        "operationId": "PlanService_Sync",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.PlanServiceSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.PlanServiceSyncResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn plan sync",
+        "tags": [
+          "PlanService"
+        ]
+      }
+    },
     "/plan.v1.ProjectService/Add": {
       "post": {
         "description": "Add a folder as a project. It need not be a Git repository.",
@@ -4121,6 +4311,44 @@
           "TaskService"
         ],
         "x-read-only": true
+      }
+    },
+    "/plan.v1.TaskService/Group": {
+      "post": {
+        "description": "Set the azima a task is part of, in place of the one it had: an azima of its wish, by code (T07) or identifier; none takes it out of any. A grouping, never a wait: the task still waits only for what it depends on. One that would close a cycle with what the tasks depend on is refused, naming it; so is a task whose worker runs, until it ends.",
+        "operationId": "TaskService_Group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceGroupResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task group",
+        "tags": [
+          "TaskService"
+        ]
       }
     },
     "/plan.v1.TaskService/List": {
@@ -4999,6 +5227,10 @@
     {
       "description": "Marks: what the developer read or approved from the window, on questions, decisions and blocks, so that the lead acts on a click without a word.",
       "name": "MarkService"
+    },
+    {
+      "description": "The plan of a wish as a graph of azimas: tasks of kind AZIMA that no worker runs, which work is part of. The store holds the graph; a project's plan/ folder holds one Markdown file per azima, for Git to carry.",
+      "name": "PlanService"
     },
     {
       "description": "Projects Djinn works in.",

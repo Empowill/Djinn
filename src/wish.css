@@ -399,3 +399,60 @@
 .icon-button.danger:hover {
   color: var(--danger);
 }
+
+/* An azima of the plan in the Tasks tab: its heading, then, opened, the work part of it, set in. */
+.azima-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--tone, var(--line));
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  margin-bottom: var(--space-2);
+}
+.azima-heading {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 11px 14px;
+  text-align: left;
+}
+.azima-heading strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.azima-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.azima-waits {
+  color: var(--text);
+}
+.azima-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* How much of its work is done: a thin bar, its numbers beside it. */
+.azima-bar {
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.azima-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--st-done);
+}
+.azima-parts {
+  border-top: 1px solid var(--line);
+  padding: var(--space-2) var(--space-2) 0 24px;
+}

@@ -3,6 +3,7 @@ id: 01a11884-1974-7b62-a764-2e27263f074f
 code: T16
 phase: 3
 status: in-progress
+after: T07 T17
 ---
 
 # T16 · Dispatch: plain Go code or a local model?

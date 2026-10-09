@@ -2,7 +2,9 @@
 
 **One file per task**, named after the last 8 characters of its UUIDv7 (the random part) and a short slug. The
 front matter holds the full id, a short code (`T01`) to say it out loud, the phase and the
-status. Each file says what to do, when it is done, and the questions still open.
+status. Each file says what to do, when it is done, and the questions still open. Each task is an azima of the wish
+that builds Djinn: `djinn plan sync <wish>` reads these files into it, and writes back `after:`, what the azima
+depends on, from Djinn's store. Change the graph with `djinn task depend`, never by hand here.
 
 **Status**: `open` when no "Done when" box is checked, `in-progress` when some are, `done` when all are. A box is
 checked only with its proof in parentheses (a named test, a command's output); a box that needs a person, a machine

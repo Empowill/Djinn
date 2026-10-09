@@ -1,6 +1,7 @@
 // The tasks have a tab of their own, in a wish's view and in the flight plan, next to the rest. In it, a list: at the
 // top what moves or waits for someone, by status (running, cut short and failed first, then waiting and paused, the
-// planned ones last); at the bottom every finished task, the latest ended first. The decisions have the next tab
+// planned ones last); then the azimas of the plan, each with the work part of it (src/azima.tsx); at the bottom every
+// finished task, the latest ended first. The decisions have the next tab
 // (src/decision-log.tsx).
 import { type ReactNode } from "react";
 
@@ -49,16 +50,21 @@ export function ViewTabs({
   );
 }
 
-// TaskSections lays out the Tasks tab: the tasks that move or wait, then the finished ones, each in the order given.
-export function TaskSections<T>({
+// TaskSections lays out the Tasks tab: the tasks that move or wait, then the azimas with the work part of them, then
+// the finished ones, each in the order given. Without azimas, their section is hidden.
+export function TaskSections<T, A = never>({
   moving,
   finished,
   render,
+  azimas = [],
+  renderAzima,
   aside,
 }: {
   moving: readonly T[];
   finished: readonly T[];
   render: (item: T) => ReactNode;
+  azimas?: readonly A[];
+  renderAzima?: (azima: A) => ReactNode;
   // Beside the first title: what the tasks spent.
   aside?: ReactNode;
 }) {
@@ -80,6 +86,20 @@ export function TaskSections<T>({
         )}
         {moving.map(render)}
       </section>
+      {azimas.length > 0 && renderAzima && (
+        <section
+          className="wish-section tasks-azimas"
+          aria-label={t("tasks.azimas")}
+        >
+          <div className="section-title">
+            <h2>
+              {t("tasks.azimas")}
+              <span className="count">{azimas.length}</span>
+            </h2>
+          </div>
+          {azimas.map(renderAzima)}
+        </section>
+      )}
       <section
         className="wish-section tasks-finished"
         aria-label={t("tasks.done")}

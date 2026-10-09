@@ -3,6 +3,7 @@ id: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76
 code: T07
 phase: 2
 status: in-progress
+after: T08 T17
 ---
 
 # T07 · The orchestrator
@@ -218,6 +219,30 @@ status: in-progress
   dependencies, in place of those it had, tasks of its wish by code; the tasks of a wish form a graph without cycle,
   and a dependency that would close one is refused, naming it ("W1 → W3 → W1"). A task whose worker runs is refused
   until it ends: its worker writes the task as it goes. (`TestDepend`)
+- **Azimas: the plan is a graph Djinn understands** (10/10; an azima, Arabic ʿazīma, the incantation that binds and
+  commands a djinn). `Task.kind` is `WORK` (the default: a worker runs it) or `AZIMA` (`T07`: no worker ever, never
+  scheduled, never waiting for the person, never in the moving or waiting work). Work is part of an azima
+  (`Task.part_of`, `djinn task spawn --part-of T07`, changed by `djinn task group <task> --part-of T07`), a grouping
+  and never a wait: only `depends_on` makes a task wait, so a part runs while its azima still waits for others
+  (`TestAzimasAreNeverScheduled`). A task that depends on an azima waits "for the azima T1 to be done". The tasks of a
+  wish, through `depends_on` and `part_of` together, form a graph without cycle: `Depend` and `Group` refuse one,
+  naming it ("T1 → W1 → T1", `TestGroupRefusesCycles`). Where an azima stands is computed on every read, never stored
+  (`Task.azima`, `plan.FillAzimas`): done when marked done (`djinn task done`) or its plan file says so, in progress
+  when a part has a worker on it or is done, open otherwise, ready when every task it depends on is done; with its
+  parts, done and running. `djinn task spawn --kind azima` makes one (T1, T2… after the highest).
+- **`djinn plan sync <wish>`** (`PlanService.Sync`, `internal/harness/azimas.go`) reads the `plan/*.md` of the wish's
+  projects (front matter `id`, `code`, `phase`, `status`, and the title) into its azimas: found by the file's id, else
+  its code; the missing ones made with the file's id; title, phase and file updated; never what they depend on. A file
+  whose status is `done` closes its azima (`Closure.actor` `PLAN_FILE`), and opens it again once it says otherwise.
+  Then it writes each azima's dependencies back into its front matter, `after: T08 T17` after `status`, so that Git
+  carries the graph; the store stays the source of truth, and an azima made by a sync takes its file's `after` once
+  (`TestSyncPlan`, on a copy of this folder). The T01…T24 a plan import stored as work, never run, become azimas at
+  the next `djinn up` (`migrateAzimas`, journaled `harness/azima`, `TestMigrateAzimas`).
+- **The lead plans with them**: the brief shows the azimas as a graph, the ready ones first (under way before open),
+  then the blocked ones with what they wait for, the done ones on one line (`TestBriefAzimas`), and its rules say to
+  spawn work `--part-of` its azima and `--depends-on` only what it needs. The Tasks tab groups work under its azima,
+  which shows what it waits for and its progress (`screens.test.mjs`, `e2e/azimas.spec.ts`); the page and the flight
+  plan never list an azima as work or as waiting for the person.
 - **A follow-up continues the task, it does not copy it** (W83: every resume through a fork left a duplicate):
   `djinn task continue <task> --prompt "…"` (`TaskService.Continue`) makes a done, failed, stopped or interrupted task
   `resuming` again, `Task.continuing` set: the scheduler starts it like any task (slots, dependencies, pressure, the

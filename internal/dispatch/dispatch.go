@@ -87,8 +87,12 @@ type Decision struct {
 }
 
 // Planned tells whether Djinn starts the task by itself, once it is ready: a task planned on this machine, or one
-// whose worker Djinn resumes (cut short by a restart, or by its provider's usage limit).
+// whose worker Djinn resumes (cut short by a restart, or by its provider's usage limit). An azima never is: no worker
+// runs it.
 func Planned(t *planv1.Task) bool {
+	if plan.IsAzima(t) {
+		return false
+	}
 	switch t.GetStatus() {
 	case planv1.TaskStatus_TASK_STATUS_PENDING:
 		return t.GetScheduled() && t.GetStartTime() == nil
@@ -192,8 +196,11 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 			// Failed covers a task resumed maxResumes times without finishing: Djinn resumes it no more.
 			return "", fmt.Sprintf("its dependency %s ended %s", ended, status(d.GetStatus()))
 		}
-		// Interrupted or resuming: Djinn resumes it by itself, so the task waits for it.
-		if why == "" {
+		// Interrupted or resuming: Djinn resumes it by itself, so the task waits for it. An azima waits to be marked
+		// done. The azima a task is part of is never waited for: only what it depends on.
+		if why == "" && plan.IsAzima(d) {
+			why = fmt.Sprintf("waits for the azima %s to be done", d.GetCode())
+		} else if why == "" {
 			why = fmt.Sprintf("waits for %s (%s)", d.GetCode(), status(d.GetStatus()))
 		}
 	}

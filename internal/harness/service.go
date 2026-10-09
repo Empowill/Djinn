@@ -49,6 +49,9 @@ func (s *Tasks) List(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	if tasks, err = s.h.withAzimas(ctx, tasks); err != nil {
+		return nil, plan.Status(err)
+	}
 	return connect.NewResponse(&planv1.TaskServiceListResponse{Tasks: tasks}), nil
 }
 
@@ -59,7 +62,11 @@ func (s *Tasks) Get(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: task}), nil
+	filled, err := s.h.withAzimas(ctx, []*planv1.Task{task})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: filled[0]}), nil
 }
 
 func (s *Tasks) Stop(
@@ -127,6 +134,16 @@ func (s *Tasks) Depend(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TaskServiceDependResponse{Task: task}), nil
+}
+
+func (s *Tasks) Group(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceGroupRequest],
+) (*connect.Response[planv1.TaskServiceGroupResponse], error) {
+	task, err := s.h.Group(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceGroupResponse{Task: task}), nil
 }
 
 func (s *Tasks) Delete(
