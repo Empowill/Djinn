@@ -28,15 +28,22 @@ type Leads interface {
 	// Running tells whether the terminal called name runs a program.
 	Running(name string) bool
 	// Tell types text into the terminal called name as the developer would, then Enter, once nothing is being typed
-	// there and no choice is on screen; it returns at once, with whether the text waits, or ErrNoLead when the
-	// terminal runs no program. Texts told arrive in order.
+	// there and no choice is on screen; it returns at once, with whether the text waits, ErrNoLead when the terminal
+	// runs no program, or ErrNotLead when it runs another program than a lead's line (LeadLine). Texts told arrive
+	// in order.
 	Tell(name, text string) (waiting bool, err error)
 	// Watch calls f each time a terminal starts or ends; f never waits.
 	Watch(f func())
 }
 
-// ErrNoLead is the error of Leads.Tell when the lead's terminal runs no program.
-var ErrNoLead = errors.New("the lead does not run")
+// Errors of Leads.Tell.
+var (
+	// ErrNoLead: the lead's terminal runs no program.
+	ErrNoLead = errors.New("the lead does not run")
+	// ErrNotLead: the lead's terminal runs another program than its lead, a shell the window opened under its name:
+	// a text typed there would run as a command.
+	ErrNotLead = errors.New("the lead's terminal runs another program than the lead")
+)
 
 // LeadTerminal is the name of the terminal of a wish's lead.
 func LeadTerminal(wishID string) string { return "lead-" + strings.ToLower(wishID) }
@@ -58,6 +65,13 @@ func resumeLine(lead *planv1.Lead) (string, error) {
 	}
 	return "", fmt.Errorf("a %s lead cannot be resumed in a terminal: only claude and codex",
 		strings.ToLower(strings.TrimPrefix(lead.GetProvider().String(), "PROVIDER_")))
+}
+
+// LeadLine tells whether line is one a lead runs, as Resume starts it (resumeLine, briefLine) and a restart takes
+// it back: its agent's program first.
+func LeadLine(line string) bool {
+	program, _, _ := strings.Cut(line, " ")
+	return program == "claude" || program == "codex" || program == "agy"
 }
 
 func (w *Wishes) SetLead(
@@ -128,6 +142,10 @@ func (w *Wishes) Tell(
 	if errors.Is(err, ErrNoLead) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"%w: djinn wish resume %s starts it", err, wish.GetId()))
+	}
+	if errors.Is(err, ErrNotLead) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"%w: nothing written. Close that terminal, then djinn wish resume %s", err, wish.GetId()))
 	}
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)

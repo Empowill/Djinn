@@ -102,10 +102,13 @@ type Terminal struct {
 	exited  bool
 	code    int
 	// What the user types, and what the program asked of the terminal, for Tell.
-	composing int       // characters typed at the prompt since it was last sent or cleared
-	lastTyped byte      // the last byte of them
+	draft     []rune    // what was typed at the prompt since it was last sent or cleared, a rune per character
+	recalled  bool      // a line of the history may be at the prompt
+	escaped   bool      // the last key was Esc alone
+	lastTyped byte      // the last byte typed
 	lastKey   time.Time // when the user last typed
 	paste     bool      // the program takes bracketed paste
+	screen    *screen   // what the program shows now
 	posted    []post    // what Post keeps to tell, in order
 	posting   bool      // a goroutine tells what is posted
 }
@@ -173,6 +176,7 @@ func (m *Manager) OpenExclusive(
 	t = &Terminal{
 		ID: uuid.NewString(), Name: name, Command: slices.Clone(command), Dir: dir,
 		p: p, done: make(chan struct{}), cols: cols, rows: rows, changed: make(chan struct{}),
+		screen: newScreen(cols, rows),
 	}
 	if old := m.byName[name]; old != nil {
 		delete(m.byID, old.ID) // Ended: its output goes with it.
@@ -282,6 +286,7 @@ func (t *Terminal) append(b []byte) {
 	from := len(t.buf)
 	t.buf = append(t.buf, b...)
 	t.pasteMode(from)
+	t.screen.write(b)
 	if len(t.buf) > Scrollback+Scrollback/4 {
 		drop := len(t.buf) - Scrollback
 		t.base += uint64(drop)
@@ -337,6 +342,7 @@ func (t *Terminal) Resize(cols, rows int) error {
 	}
 	t.mu.Lock()
 	t.cols, t.rows = cols, rows
+	t.screen.resize(cols, rows)
 	t.mu.Unlock()
 	return nil
 }

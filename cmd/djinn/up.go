@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -205,7 +206,11 @@ func runUp(args []string) (restart bool, err error) {
 	// developer typed it there: the wish moves on without anyone writing to it.
 	// What the developer writes to the lead from the window goes the same way, in order with the news.
 	nudges := &plan.Nudges{Tell: func(wishID, text string) {
-		if t := terminals.Lookup(plan.LeadTerminal(wishID)); t != nil {
+		t, err := leadIn(terminals, plan.LeadTerminal(wishID))
+		if errors.Is(err, plan.ErrNotLead) {
+			log.Printf("djinn: not told to the lead of %s: %v", wishID, err)
+		}
+		if t != nil {
 			t.Post(text, func(err error) {
 				if !errors.Is(err, terminal.ErrExited) {
 					log.Printf("djinn: tell the lead of %s: %v", wishID, err)
@@ -311,15 +316,31 @@ func (l leads) Open(name, line, dir, exclusive string) ([]string, string, bool, 
 func (l leads) Running(name string) bool { return l.terminals.Lookup(name) != nil }
 
 func (l leads) Tell(name, text string) (bool, error) {
-	t := l.terminals.Lookup(name)
-	if t == nil {
-		return false, plan.ErrNoLead
+	t, err := leadIn(l.terminals, name)
+	if err != nil {
+		return false, err
 	}
 	return t.Post(text, func(err error) {
 		if !errors.Is(err, terminal.ErrExited) {
 			log.Printf("djinn: write to %s: %v", name, err)
 		}
 	}), nil
+}
+
+// leadIn returns the terminal called name if it runs a lead's line through a shell, as Open starts it: plan.ErrNoLead
+// when it runs nothing, plan.ErrNotLead when it runs another program (a shell the window opened under that name, where
+// a text told would run as a command). A shell given a line with -c ends with it, never left to type into. The shell
+// itself may differ from today's: a lead taken back after a crash runs the one of the djinn up before.
+func leadIn(terminals *terminal.Manager, name string) (*terminal.Terminal, error) {
+	t := terminals.Lookup(name)
+	if t == nil {
+		return nil, plan.ErrNoLead
+	}
+	if n := len(t.Command); n < 3 || !plan.LeadLine(t.Command[n-1]) ||
+		!slices.Contains([]string{"-c", "/c"}, t.Command[n-2]) {
+		return nil, fmt.Errorf("%w (%s runs %s)", plan.ErrNotLead, name, filepath.Base(t.Command[0]))
+	}
+	return t, nil
 }
 
 func (l leads) Watch(f func()) { l.moved.Store(&f) }

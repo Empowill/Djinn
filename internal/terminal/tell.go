@@ -2,17 +2,17 @@ package terminal
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
 )
 
 const (
-	// choiceTail is how much of the last output tells whether the program shows a choice: a choice drawn longer
-	// ago has been covered since.
-	choiceTail = 8 << 10
 	// pasteOn and pasteOff turn bracketed paste on and off, from the program.
 	pasteOn, pasteOff = "\x1b[?2004h", "\x1b[?2004l"
+	// maxDraft is how much of what the user types Tell keeps: enough to erase a word, bounded whatever is pasted.
+	maxDraft = 4 << 10
 )
 
 var (
@@ -23,12 +23,22 @@ var (
 	enterGap = 300 * time.Millisecond
 	// tellPoll is how often Tell looks again while it waits on the keyboard.
 	tellPoll = 200 * time.Millisecond
+	// typingIdle is how long something under way at the prompt holds Tell without a key: Tell follows the keys,
+	// not the prompt, and loses track of an edit it does not know (a word erased by a key of the user's own).
+	typingIdle = 30 * time.Second
 )
 
-// choiceMarks are what an agent shows under a choice that keys answer, letters and spaces removed: Claude Code's
-// permission prompts and menus ("Esc to cancel"), Codex's approvals ("Press enter to confirm or esc to cancel").
-// A line typed there would pick an option, and its Enter confirm one.
-var choiceMarks = []string{"tocancel"}
+// A choice that keys answer shows a hint: a key, "to" and what it does, that ends its line or a part of it between
+// "·" (Claude Code adds "· Tab to amend" and more after its own). Claude Code's permission
+// prompts, menus and folder trust ("Enter to confirm · Esc to cancel", or "Esc to exit"), its first run's
+// onboarding ("Enter to confirm"), Codex's approvals ("Press enter to confirm or esc to cancel"). A line typed there
+// would pick an option (a digit picks by number), and its Enter confirm one: trust a folder for the developer, or
+// leave. Neither agent shows one at its prompt at rest (Claude Code 2.1.295 in auto mode, Codex 0.162), and prose
+// seldom does: a sentence ends with a period.
+var (
+	choiceKeys  = []string{"esc", "escape", "enter", "return", "⏎", "↵"}
+	choiceVerbs = []string{"cancel", "exit", "confirm", "continue"}
+)
 
 // Tell types line into the program as if the user had, then Enter, once the user has nothing under way at the
 // prompt and no choice is on screen. An agent that is busy answering takes the line into its queue, as Claude Code
@@ -76,7 +86,7 @@ func (t *Terminal) Post(text string, failed func(error)) (waits bool) {
 		t.posting = true
 		go t.drain()
 	}
-	return t.composing > 0 || t.choosing()
+	return t.underWay() || t.choosing()
 }
 
 // drain tells what is posted, one text after the other, until none is left.
@@ -103,7 +113,7 @@ func (t *Terminal) typeIn(line string, lines bool) error {
 	defer t.tell.Unlock()
 	for {
 		t.mu.Lock()
-		composing, choosing, quiet := t.composing > 0, t.choosing(), time.Since(t.lastKey)
+		composing, choosing, quiet := t.underWay(), t.choosing(), time.Since(t.lastKey)
 		changed := t.changed
 		t.mu.Unlock()
 		if !composing && !choosing && quiet >= settle {
@@ -113,7 +123,7 @@ func (t *Terminal) typeIn(line string, lines bool) error {
 		if !composing && !choosing {
 			poll = time.After(settle - quiet)
 		} else if composing {
-			poll = time.After(tellPoll) // Keys change nothing on screen we watch.
+			poll = time.After(tellPoll) // Keys change nothing on screen we watch, and what is under way expires.
 		}
 		select {
 		case <-t.done:
@@ -150,66 +160,46 @@ func (t *Terminal) typeIn(line string, lines bool) error {
 	return err
 }
 
-// choosing tells whether the program shows a choice that keys answer; t.mu is held.
+// choosing tells whether the program shows a choice that keys answer, on its screen now: a choice it covered since,
+// and what scrolled away, hold nothing. t.mu is held.
 func (t *Terminal) choosing() bool {
-	tail := t.buf[max(0, len(t.buf)-choiceTail):]
-	plain := strings.ToLower(strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) || unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, string(stripEscapes(tail))))
-	for _, mark := range choiceMarks {
-		if strings.Contains(plain, mark) {
-			return true
+	for _, row := range strings.Split(t.screen.text(), "\n") {
+		for _, part := range strings.Split(row, "·") {
+			w := strings.Fields(strings.ToLower(strings.TrimRight(part, " …")))
+			for i := range w {
+				w[i] = strings.Trim(w[i], "()[]")
+			}
+			if n := len(w); n >= 3 && w[n-2] == "to" && slices.Contains(choiceVerbs, w[n-1]) &&
+				slices.Contains(choiceKeys, w[n-3]) {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// stripEscapes removes the escape sequences of output: CSI, OSC and the two-byte ones.
-func stripEscapes(b []byte) []byte {
-	out := make([]byte, 0, len(b))
-	for i := 0; i < len(b); i++ {
-		if b[i] != 0x1b {
-			out = append(out, b[i])
-			continue
-		}
-		if i+1 >= len(b) {
-			break
-		}
-		switch b[i+1] {
-		case '[': // CSI: parameters, then a final byte from @ to ~.
-			i += 2
-			for i < len(b) && (b[i] < 0x40 || b[i] > 0x7e) {
-				i++
-			}
-		case ']': // OSC: up to BEL or ST.
-			i += 2
-			for i < len(b) && b[i] != 0x07 && !(b[i] == 0x1b && i+1 < len(b) && b[i+1] == '\\') {
-				i++
-			}
-			if i < len(b) && b[i] == 0x1b {
-				i++
-			}
-		default:
-			i++
-		}
-	}
-	return out
+// underWay tells whether the user has something under way at the prompt that a line told would join: typed and not
+// sent nor cleared, or a line recalled from the history, with a key less than typingIdle ago. t.mu is held.
+func (t *Terminal) underWay() bool {
+	return (len(t.draft) > 0 || t.recalled) && time.Since(t.lastKey) < typingIdle
 }
 
 // typed follows what the user types at the program's prompt: whether something is under way there, that a line
-// told would join. Printable keys add, Backspace takes off, Enter (not after a backslash, which makes it a line
-// break), Ctrl+C and Ctrl+U clear. Keys that answer a choice on screen type nothing. t.mu is held.
+// told would join. Printable keys add; Backspace takes a character off, Ctrl+W and Alt+Backspace a word; Enter (not
+// after a backslash, which makes it a line break), Ctrl+C, Ctrl+U and Esc twice clear; Up and Down at an empty prompt
+// recall a line of the history. Keys that answer a choice on screen type nothing. t.mu is held.
 func (t *Terminal) typed(b []byte) {
 	t.lastKey = time.Now()
 	if t.choosing() {
+		t.escaped = false
 		return
 	}
+	reset := func() { t.draft, t.recalled, t.lastTyped = t.draft[:0], false, 0 }
 	paste := false
 	for i := 0; i < len(b); i++ {
 		c := b[i]
+		escaped := t.escaped
+		t.escaped = false
 		switch {
 		case c == 0x1b:
 			if bytes.HasPrefix(b[i:], []byte("\x1b[200~")) {
@@ -220,29 +210,62 @@ func (t *Terminal) typed(b []byte) {
 				paste, i = false, i+5
 				continue
 			}
-			// A key that moves or edits: it adds nothing. Its sequence ends at its final byte.
-			if i+1 < len(b) && (b[i+1] == '[' || b[i+1] == 'O') {
+			t.lastTyped = 0
+			switch {
+			case i+1 == len(b): // Esc alone: twice clears the prompt.
+				if escaped {
+					reset()
+				} else {
+					t.escaped = true
+				}
+			case b[i+1] == 0x1b:
+				reset()
+				i++
+			case b[i+1] == 0x7f || b[i+1] == 0x08: // Alt+Backspace
+				t.eraseWord()
+				i++
+			case b[i+1] == '[' || b[i+1] == 'O':
+				// A key that moves or edits: it adds nothing. Its sequence ends at its final byte.
 				i += 2
 				for i < len(b) && (b[i] < 0x40 || b[i] > 0x7e) {
 					i++
 				}
-			} else {
+				if i < len(b) && (b[i] == 'A' || b[i] == 'B') && len(t.draft) == 0 {
+					t.recalled = true // Up or Down at an empty prompt: a line of the history, maybe.
+				}
+			default: // Alt and a key.
 				i++
 			}
-			t.lastTyped = 0
 		case c == '\r' && !paste && t.lastTyped != '\\':
-			t.composing, t.lastTyped = 0, 0
+			reset()
 		case c == 0x03 || c == 0x15:
-			t.composing, t.lastTyped = 0, 0
+			reset()
+		case c == 0x17:
+			t.eraseWord()
 		case c == 0x7f || c == 0x08:
-			t.composing, t.lastTyped = max(0, t.composing-1), 0
+			t.draft, t.lastTyped = t.draft[:max(0, len(t.draft)-1)], 0
 		case c >= 0x20 || c == '\r' || c == '\n' || c == '\t':
 			if c < 0x80 || c >= 0xc0 { // One character: a lead byte, not a continuation one.
-				t.composing++
+				if len(t.draft) == maxDraft {
+					t.draft = append(t.draft[:0], t.draft[maxDraft/2:]...)
+				}
+				t.draft = append(t.draft, rune(c))
 			}
 			t.lastTyped = c
 		}
 	}
+}
+
+// eraseWord follows Ctrl+W: the spaces before the cursor go, then the word before them. t.mu is held.
+func (t *Terminal) eraseWord() {
+	n := len(t.draft)
+	for n > 0 && unicode.IsSpace(t.draft[n-1]) {
+		n--
+	}
+	for n > 0 && !unicode.IsSpace(t.draft[n-1]) {
+		n--
+	}
+	t.draft, t.lastTyped = t.draft[:n], 0
 }
 
 // pasteMode follows whether the program turned bracketed paste on, in the output from offset from of t.buf; t.mu

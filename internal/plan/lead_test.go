@@ -54,6 +54,9 @@ func (f *fakeLeads) Tell(name, text string) (bool, error) {
 	if !f.Running(name) {
 		return false, ErrNoLead
 	}
+	if cmd := f.running[name]; !LeadLine(cmd[len(cmd)-1]) {
+		return false, ErrNotLead
+	}
 	f.told = append(f.told, name+": "+text)
 	return f.waiting, nil
 }
@@ -352,10 +355,50 @@ func TestTell(t *testing.T) {
 	if want := []string{"lead-" + id + ": First line\nsecond line", "lead-" + id + ": Then"}; strings.Join(leads.told, "|") != strings.Join(want, "|") {
 		t.Errorf("told %q, want %q", leads.told, want)
 	}
+	// A shell under the lead's name: nothing is typed there, where it would run as a command.
+	leads.running[LeadTerminal(id)] = []string{"/bin/sh"}
+	if _, err := tell("rm -rf ."); code(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "another program than the lead") || len(leads.told) != 2 {
+		t.Errorf("tell a shell: %v, told %q; want refused", err, leads.told)
+	}
 	if _, err := tell(" \n "); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("tell nothing: %v, want invalid", err)
 	}
 	if _, err := c.wishes.Tell(ctx, connect.NewRequest(&planv1.WishServiceTellRequest{WishId: session, Text: "hi"})); code(err) != connect.CodeNotFound {
 		t.Errorf("tell an unknown wish: %v, want not found", err)
+	}
+}
+
+// TestLeadLine: the lines a lead runs, as Resume starts them, and nothing else.
+func TestLeadLine(t *testing.T) {
+	lead := &planv1.Lead{SessionId: session}
+	var lines []string
+	for _, p := range []planv1.Provider{planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX} {
+		lead.Provider = p
+		line, err := resumeLine(lead)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines = append(lines, line)
+	}
+	for _, p := range []planv1.Provider{
+		planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_ANTIGRAVITY,
+	} {
+		lead.Provider = p
+		line, err := briefLine("linux", lead, "/data/wish", Brief{Stable: "rules", Moving: "now"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines = append(lines, line)
+	}
+	for _, line := range lines {
+		if !LeadLine(line) {
+			t.Errorf("%q is a lead's line", line)
+		}
+	}
+	for _, line := range []string{"", "zsh", "/bin/sh -l", "sleep 30", "claudette", "echo claude"} {
+		if LeadLine(line) {
+			t.Errorf("%q is not a lead's line", line)
+		}
 	}
 }
