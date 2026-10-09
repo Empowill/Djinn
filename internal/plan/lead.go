@@ -60,6 +60,10 @@ func (w *Wishes) SetLead(
 		if lead.Directory, err = canonical(dir); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("directory: %w", err))
 		}
+		if HoldsHome(lead.Directory) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"directory: %s holds your home folder, where Djinn never runs a lead: start the session in a project", lead.Directory))
+		}
 	}
 	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
@@ -104,18 +108,29 @@ func (w *Wishes) Resume(
 	res := &planv1.WishServiceResumeResponse{Wish: wish, Terminal: LeadTerminal(wish.GetId())}
 	var line, dir, exclusive string
 	var started *planv1.Lead // the lead a brief starts, recorded once its terminal runs
-	if wish.GetLead().GetSessionId() != "" {
+	// A session recorded in the home folder is not resumed: Djinn never runs a lead there, and claude finds a
+	// session only from the folder it was made in. A new lead starts from the brief, in a project.
+	atHome := wish.GetLead().GetSessionId() != "" && HoldsHome(wish.GetLead().GetDirectory())
+	if wish.GetLead().GetSessionId() != "" && !atHome {
 		if line, dir, err = sessionLine(wish); err != nil {
 			return nil, err
 		}
 		exclusive = wish.GetLead().GetSessionId()
 	} else {
-		if dir, err = firstFolder(ctx, w.Store, wish); err != nil {
+		if dir, err = startFolder(ctx, w.Store, wish); err != nil {
 			return nil, Status(err)
 		}
+		provider := req.Msg.GetProvider()
+		if atHome && provider == planv1.Provider_PROVIDER_UNSPECIFIED {
+			provider = wish.GetLead().GetProvider()
+		}
 		var note string
-		if line, dir, started, note, err = w.newLead(ctx, wish, req.Msg.GetProvider(), dir, ""); err != nil {
+		if line, dir, started, note, err = w.newLead(ctx, wish, provider, dir, ""); err != nil {
 			return nil, err
+		}
+		if atHome {
+			note = fmt.Sprintf("The lead's session %s was recorded in %s, the home folder, where Djinn never runs a "+
+				"lead. ", wish.GetLead().GetSessionId(), wish.GetLead().GetDirectory()) + note
 		}
 		res.Note, exclusive = note, started.GetSessionId()
 	}
@@ -148,15 +163,52 @@ func sessionLine(wish *planv1.Wish) (line, dir string, err error) {
 		return "", "", connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	dir = lead.GetDirectory()
-	if info, err := os.Stat(dir); dir == "" || !filepath.IsAbs(dir) || err != nil || !info.IsDir() {
+	if !isFolder(dir) {
 		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"the lead's folder %q is not on this machine: djinn wish set-lead %s %s --directory <folder> gives it",
 			dir, wish.GetId(), lead.GetSessionId()))
 	}
+	if HoldsHome(dir) {
+		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"the lead's folder %s holds your home folder, where Djinn never runs a lead: djinn wish resume %s starts "+
+				"a new one in a project", dir, wish.GetId()))
+	}
 	return line, dir, nil
 }
 
-// firstFolder is the folder of the first project of the wish that has one on this machine; empty when none has.
+// ErrNoProject says that no project has a folder on this machine: a lead has nowhere to start, and Djinn never starts
+// one in the home folder.
+var ErrNoProject = errors.New("no project has a folder on this machine, and Djinn never starts a lead in your home " +
+	"folder: create a project first (djinn project add <folder>, or + beside Projects in the window)")
+
+// startFolder is the folder a new lead of wish starts in: the wish's first project that has one on this machine,
+// else the first of Djinn's projects, in the order the window lists them. ErrNoProject when no project has one.
+func startFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string, error) {
+	dir, err := firstFolder(ctx, r, wish)
+	if dir != "" || err != nil {
+		return dir, err
+	}
+	return FirstProjectFolder(ctx, r)
+}
+
+// FirstProjectFolder is the folder of the first of Djinn's projects, in the order the window lists them, that has
+// one on this machine, outside the home folder's own. ErrNoProject when none has: where the window's terminal opens
+// by default, and a new lead without a project of its own.
+func FirstProjectFolder(ctx context.Context, r store.Reader) (string, error) {
+	projects, err := store.List[*planv1.Project](ctx, r, nil)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range projects {
+		if dir := p.GetDirectory(); isFolder(dir) && !HoldsHome(dir) {
+			return dir, nil
+		}
+	}
+	return "", ErrNoProject
+}
+
+// firstFolder is the folder of the first project of the wish that has one on this machine, outside the home
+// folder's own; empty when none has.
 func firstFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string, error) {
 	for _, id := range wish.GetProjectIds() {
 		p, err := store.Get[*planv1.Project](ctx, r, id)
@@ -166,11 +218,41 @@ func firstFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string
 		if err != nil {
 			return "", err
 		}
-		if p.GetDirectory() != "" {
-			return p.GetDirectory(), nil
+		if dir := p.GetDirectory(); isFolder(dir) && !HoldsHome(dir) {
+			return dir, nil
 		}
 	}
 	return "", nil
+}
+
+// isFolder reports whether dir is an absolute path to a folder of this machine.
+func isFolder(dir string) bool {
+	info, err := os.Stat(dir)
+	return dir != "" && filepath.IsAbs(dir) && err == nil && info.IsDir()
+}
+
+// HoldsHome reports whether dir is the user's home folder or a folder above it (/, /home, C:\): Djinn never runs a
+// lead there. An agent started there asks whether to trust the whole home folder, and reaches all of it.
+func HoldsHome(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	dir = filepath.Clean(dir)
+	if filepath.Dir(dir) == dir {
+		return true // A root.
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	resolve := func(p string) string {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			return r
+		}
+		return filepath.Clean(p)
+	}
+	rel, err := filepath.Rel(resolve(dir), resolve(home))
+	return err == nil && (rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // portableFolder is the lead's folder as an export carries it, with forward slashes whatever the system: the

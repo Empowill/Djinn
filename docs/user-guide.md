@@ -15,6 +15,12 @@ djinn up
 Install Djinn first: see the [README](../README.md#install). To build it from this repository:
 [`CONTRIBUTING.md`](../CONTRIBUTING.md#getting-set-up).
 
+The window opens with a terminal at the bottom, in the folder of your first project (the first of
+the sidebar), never in your home folder: an agent started there would ask you to trust all of it.
+With no project yet, the terminal asks you to create one. `djinn up --terminal-dir <folder>` picks
+another folder. A wish's lead follows the same rule: it resumes in the folder its session was
+recorded in, or starts in a project of the wish, else in your first project.
+
 ## First steps
 
 The **Projects space** wish is an interactive demonstration: no model and no project code is run.

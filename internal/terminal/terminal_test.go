@@ -139,6 +139,31 @@ func TestOpenAttachesToTheRunningTerminal(t *testing.T) {
 	}
 }
 
+// TestOpenStartsInAFolderGiven: without a folder from the window nor Dir, a terminal starts in the one Folder gives,
+// asked at each start; with none, it does not start, never in the home folder.
+func TestOpenStartsInAFolderGiven(t *testing.T) {
+	if _, _, err := NewManager(Config{Command: []string{"/bin/sh"}}).Open("main", nil, "", 0, 0); !errors.Is(err, ErrNoFolder) {
+		t.Fatalf("no folder at all: %v, want ErrNoFolder", err)
+	}
+	none := errors.New("no project yet")
+	folder := ""
+	m := NewManager(Config{Command: []string{"/bin/sh"}, Folder: func() (string, error) {
+		if folder == "" {
+			return "", none
+		}
+		return folder, nil
+	}})
+	t.Cleanup(m.Close)
+	if _, _, err := m.Open("main", nil, "", 0, 0); !errors.Is(err, ErrNoFolder) || !errors.Is(err, none) {
+		t.Fatalf("no folder yet: %v, want ErrNoFolder and why", err)
+	}
+	folder = t.TempDir()
+	term, _, err := m.Open("main", nil, "", 0, 0)
+	if err != nil || term.Dir != folder {
+		t.Fatalf("open once a folder is given: %v in %q, want %q", err, term.Dir, folder)
+	}
+}
+
 func TestOpenExclusiveRefusesASessionRunningElsewhere(t *testing.T) {
 	m := NewManager(Config{})
 	t.Cleanup(m.Close)

@@ -362,6 +362,7 @@
   "terminal.collapse": "Collapse the terminal",
   "terminal.exited": "exited ({code})",
   "terminal.expand": "Expand the terminal",
+  "terminal.no_project": "Create a project first: the terminal opens in the folder of your first project, never in your home folder.",
   "terminal.restart": "Restart",
   "terminal.title": "Terminal",
   "update.dismiss": "Dismiss",

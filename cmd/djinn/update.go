@@ -29,6 +29,7 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/swapexe"
 	"github.com/empowill/djinn/internal/terminal"
@@ -331,6 +332,9 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 	shown := ""
 	for _, t := range note.Terminals {
 		_, err := os.Stat(t.Directory)
+		if err == nil && strings.HasPrefix(t.Name, "lead-") && plan.HoldsHome(t.Directory) {
+			err = errors.New("a lead never runs in the home folder: djinn wish resume starts it in a project")
+		}
 		if err == nil {
 			_, _, err = terms.Open(t.Name, t.Command, t.Directory, 0, 0)
 		}

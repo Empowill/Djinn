@@ -46,6 +46,9 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   quiet, in order; a lead that does not run is reopened on its session (`TestSayTypesOneLineAndEnter`,
   `TestSayWaitsWhileThePersonTypes`, `TestSayWaitsForAProgramJustStarted`, `TestAnswerReachesTheLead`, e2e
   `lead-tell.spec.ts`).
+- [x] The window's terminal and every lead open in a project, never in the home folder, where Djinn starts from a
+  menu or the Dock: with no project, the terminal asks for one, and a lead does not start (`TestLeadStartsInAProject`,
+  `TestWindowTerminalOpensInAProject`, `TestOpenStartsInAFolderGiven`, e2e `terminal-project.spec.ts`).
 - [ ] This flight plan's session resumes inside Djinn's terminal and goes on by voice. (needs: a person, by voice)
 
 ## Decided along the way
@@ -68,9 +71,14 @@ included, so the session that builds Djinn can move into Djinn and keep going.
 - **Kept in memory only**: the last mebibyte of output per terminal (a quarter more before it is
   trimmed), enough for a window that reattaches to redraw the screen. Nothing in the database: a
   terminal lives as long as `djinn up`.
-- **The program**: the user's `$SHELL` in the home directory (a login shell on macOS, as Terminal
-  does; PowerShell, else `%COMSPEC%`, on Windows), or `djinn up --terminal "<command>"`
-  `--terminal-dir <dir>`, run through that shell. It gets Djinn's environment untouched, never
+- **The program**: the user's `$SHELL` (a login shell on macOS, as Terminal does; PowerShell, else `%COMSPEC%`, on
+  Windows), or `djinn up --terminal "<command>"`, run through that shell, in `--terminal-dir <dir>`.
+- **Never in the home folder.** Started from a menu, the Dock or Finder, Djinn's working folder is the home folder,
+  and a claude typed there asks to trust all of it. Without `--terminal-dir`, the window's terminal opens in the first
+  project's folder, in the order the window lists them (`plan.FirstProjectFolder`), asked at each start. With no
+  project, it does not start: the window says to create one, with the button that opens "Add a project", and starts
+  once one has a folder. A lead's folder follows T13: never the home folder nor one above it (`plan.HoldsHome`); a
+  restart does not reopen a lead noted there. It gets Djinn's environment untouched, never
   read, plus `TERM=xterm-256color` and `COLORTERM=truecolor`. On Unix it leads its own session
   with the terminal as controlling terminal (job control works).
 - **Stopping**: closing a terminal or stopping `djinn up` sends SIGHUP to the program's group and to

@@ -12,6 +12,11 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   `0` success, `1` the call failed, `2` the command line is wrong.
 - **The brief says how to lead.** `djinn wish brief <wish>` prints Djinn's rules, the projects' rules and where the
   wish stands. Djinn writes it from its store (`internal/plan/brief.go`), without a model.
+- **A lead runs in a project, never in the home folder.** `djinn wish resume` resumes the lead's session in the
+  folder it was recorded in (`djinn wish set-lead --directory`): claude finds a session only from the folder it was
+  made in. A new lead starts in the wish's first project, else the first of Djinn's projects as the window lists them.
+  A session recorded in the home folder, or a folder above it, is not resumed: a new lead starts from the brief, in a
+  project. With no project, no lead starts, and the error says to create one (`internal/plan/lead.go`).
 - **Questions.** `djinn question ask` offers up to four options, answered by letter, or none for a yes. An answered
   question is a decision. On options that say yes and no, `yes` and `no` pick them too. Start a recommendation with
   its option's letter (`B: …`): the developer applies it in one click, "Rub the lamp".

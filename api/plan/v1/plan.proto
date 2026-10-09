@@ -1056,8 +1056,10 @@ service WishService {
     option (djinn.v1.autostart) = true;
   }
   // Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-  // to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
-  // (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
+  // to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
+  // wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
+  // A lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
+  // project nothing starts, the error says to create one. Starts djinn if it is not running.
   rpc Resume(WishServiceResumeRequest) returns (WishServiceResumeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -1434,7 +1436,8 @@ message WishServiceSetLeadRequest {
   ];
   // Kind of agent: claude (the default) or codex.
   Provider provider = 3;
-  // Folder the session runs in. By default, the folder of the wish's first project.
+  // Folder the session runs in. By default, the folder of the wish's first project. Never the home folder, nor
+  // a folder above it.
   string directory = 4 [(buf.validate.field).string.max_len = 4096];
 }
 

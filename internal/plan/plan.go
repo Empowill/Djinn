@@ -135,6 +135,8 @@ func Status(err error) error {
 		return connect.NewError(connect.CodeNotFound, err)
 	case errors.Is(err, store.ErrDuplicate):
 		return connect.NewError(connect.CodeAlreadyExists, err)
+	case errors.Is(err, ErrNoProject):
+		return connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewError(connect.CodeInternal, err)
 }

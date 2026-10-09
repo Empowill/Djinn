@@ -2872,7 +2872,8 @@ export type WishServiceSetLeadRequest = Message<"plan.v1.WishServiceSetLeadReque
   provider: Provider;
 
   /**
-   * Folder the session runs in. By default, the folder of the wish's first project.
+   * Folder the session runs in. By default, the folder of the wish's first project. Never the home folder, nor
+   * a folder above it.
    *
    * @generated from field: string directory = 4;
    */
@@ -5427,8 +5428,10 @@ export const WishService: GenService<{
   },
   /**
    * Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-   * to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
-   * (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
+   * to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
+   * wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
+   * A lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
+   * project nothing starts, the error says to create one. Starts djinn if it is not running.
    *
    * @generated from rpc plan.v1.WishService.Resume
    */

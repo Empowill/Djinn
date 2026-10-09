@@ -37,14 +37,18 @@ var (
 	ErrExited   = errors.New("the program of this terminal has ended")
 	ErrClosed   = errors.New("the terminals are closed: djinn is stopping")
 	ErrBusy     = errors.New("already running in another terminal")
+	ErrNoFolder = errors.New("no folder to start in")
 )
 
 // Config is what djinn up says about the terminals the window opens.
 type Config struct {
 	// Command runs when the window gives none: program first. Empty: the user's shell.
 	Command []string
-	// Dir is the working directory when the window gives none. Empty: the home directory.
+	// Dir is the working directory when the window gives none.
 	Dir string
+	// Folder, when Dir is empty, gives the working directory when the window gives none, asked at each start: the
+	// first project's folder in djinn up. Neither: ErrNoFolder. A terminal never opens in the home folder by default.
+	Folder func() (string, error)
 	// Changed, when set, runs once a program started and once one ended, outside the manager's lock: Running
 	// tells what runs then. Calls may overlap.
 	Changed func()
@@ -146,10 +150,13 @@ func (m *Manager) OpenExclusive(
 	if dir == "" {
 		dir = m.cfg.Dir
 	}
-	if dir == "" {
-		if dir, err = os.UserHomeDir(); err != nil {
-			return nil, false, err
+	if dir == "" && m.cfg.Folder != nil {
+		if dir, err = m.cfg.Folder(); err != nil {
+			return nil, false, fmt.Errorf("%w: %w", ErrNoFolder, err)
 		}
+	}
+	if dir == "" {
+		return nil, false, ErrNoFolder
 	}
 	if !filepath.IsAbs(dir) {
 		return nil, false, fmt.Errorf("the working directory must be absolute: %s", dir)

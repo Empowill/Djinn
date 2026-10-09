@@ -733,7 +733,7 @@ func (w *Wishes) startLead(ctx context.Context, wishID string, provider planv1.P
 		if err != nil {
 			return err
 		}
-		dir, err := firstFolder(ctx, w.Store, wish)
+		dir, err := startFolder(ctx, w.Store, wish)
 		if err != nil {
 			return err
 		}

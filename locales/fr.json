@@ -362,6 +362,7 @@
   "terminal.collapse": "Replier le terminal",
   "terminal.exited": "terminé ({code})",
   "terminal.expand": "Déplier le terminal",
+  "terminal.no_project": "Créez d’abord un projet : le terminal s’ouvre dans le dossier de votre premier projet, jamais dans votre dossier personnel.",
   "terminal.restart": "Relancer",
   "terminal.title": "Terminal",
   "update.dismiss": "Fermer",

@@ -5,12 +5,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/store"
 )
 
 const session = "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69"
@@ -267,6 +270,145 @@ func TestLeadFolders(t *testing.T) {
 	} {
 		if got := localFolder(in, folders); got != want {
 			t.Errorf("localFolder(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestLeadStartsInAProject: a lead never starts in the home folder. A session recorded there is not resumed: a new
+// lead starts from the brief in the wish's project; a wish without a project starts in the first of Djinn's projects;
+// with no project at all, nothing starts, and the error says to create one.
+func TestLeadStartsInAProject(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the home folder comes from USERPROFILE there; HoldsHome is the same code")
+	}
+	ctx := t.Context()
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	c, leads := serveLeads(t, t.TempDir())
+	resume := func(id string) (*planv1.WishServiceResumeResponse, error) {
+		res, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: id}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+
+	// No project: no lead, and the way out.
+	bare := c.wish(t)
+	if _, err := resume(bare); code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "create a project first") {
+		t.Errorf("resume without any project: %v, want failed_precondition asking for a project", err)
+	}
+	if _, err := FirstProjectFolder(ctx, c.store); !errors.Is(err, ErrNoProject) {
+		t.Errorf("FirstProjectFolder without a project: %v", err)
+	}
+	if len(leads.opened) != 0 {
+		t.Fatalf("opened %q without a project", leads.opened)
+	}
+
+	// Two projects, the home folder's own first (a project there never hosts a lead), then lamp, then shop.
+	homeProject := &planv1.Project{Id: store.NewID(), Name: "home", Directory: home}
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		return errors.Join(tx.Journal("test", planv1connect.ProjectServiceAddProcedure,
+			&planv1.ProjectServiceAddRequest{Directory: home}), tx.Put(homeProject))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	add := func(name string) *planv1.Project {
+		t.Helper()
+		dir := filepath.Join(home, "code", name)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		res, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetProject()
+	}
+	lamp, shop := add("lamp"), add("shop")
+	if got, err := FirstProjectFolder(ctx, c.store); err != nil || got != lamp.GetDirectory() {
+		t.Errorf("FirstProjectFolder = %q, %v; want lamp's", got, err)
+	}
+
+	// A wish without a project starts its lead in the first of Djinn's projects.
+	res, err := resume(bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.GetDirectory() != lamp.GetDirectory() || res.GetWish().GetLead().GetDirectory() != lamp.GetDirectory() ||
+		len(leads.opened) != 1 || !strings.HasSuffix(leads.opened[0], " in "+lamp.GetDirectory()) {
+		t.Errorf("a wish without a project: %v, opened %q", res, leads.opened)
+	}
+
+	// The home folder is refused as a lead's folder.
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Stock the shop", ProjectIds: []string{shop.GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := made.Msg.GetWish().GetId()
+	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session, Directory: home}); code(err) != connect.CodeInvalidArgument ||
+		!strings.Contains(err.Error(), "home folder") {
+		t.Errorf("set-lead in the home folder: %v, want invalid_argument", err)
+	}
+	// A session recorded there all the same (by an older Djinn, an import of ~) is not resumed there, nor told.
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		wish, err := store.Get[*planv1.Wish](ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		wish.Lead = &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session, Directory: home}
+		return errors.Join(tx.Journal("test", planv1connect.WishServiceSetLeadProcedure,
+			&planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session, Directory: home}), tx.Put(wish))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Wishes{Store: c.store, Leads: leads}).Tell(ctx, id, "Djinn: hello"); err == nil || !strings.Contains(err.Error(), "home folder") {
+		t.Errorf("tell a lead recorded in the home folder: %v", err)
+	}
+	if len(leads.opened) != 1 {
+		t.Fatalf("opened %q in the home folder", leads.opened[1:])
+	}
+	// Resume starts a new lead from the brief, in the wish's project, and records it.
+	if res, err = resume(id); err != nil {
+		t.Fatal(err)
+	}
+	lead := res.GetWish().GetLead()
+	if len(leads.opened) != 2 || !strings.HasPrefix(leads.opened[1], "claude --session-id "+lead.GetSessionId()) ||
+		!strings.HasSuffix(leads.opened[1], " in "+shop.GetDirectory()) {
+		t.Errorf("opened %q, want a new lead in shop", leads.opened[1:])
+	}
+	if lead.GetSessionId() == session || lead.GetDirectory() != shop.GetDirectory() ||
+		!strings.Contains(res.GetNote(), "home folder") || !strings.Contains(res.GetNote(), session) {
+		t.Errorf("resume of a lead recorded in the home folder = %v", res)
+	}
+}
+
+func TestHoldsHome(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the home folder comes from USERPROFILE there")
+	}
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", filepath.Join(home, "me"))
+	for dir, want := range map[string]bool{
+		filepath.Join(home, "me"):                true,
+		filepath.Join(home, "me") + "/":          true,
+		home:                                     true,
+		"/":                                      true,
+		filepath.Join(home, "me", "code"):        false,
+		filepath.Join(home, "me-too"):            false,
+		filepath.Join(home, "other", "..", "me"): true,
+		"":                                       false,
+	} {
+		if got := HoldsHome(dir); got != want {
+			t.Errorf("HoldsHome(%q) = %v, want %v", dir, got, want)
 		}
 	}
 }

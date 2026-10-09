@@ -759,8 +759,10 @@ type WishServiceClient interface {
 	// djinn if it is not running.
 	SetLead(context.Context, *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error)
 	// Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-	// to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
-	// (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
+	// to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
+	// wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
+	// A lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
+	// project nothing starts, the error says to create one. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
 	// The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
 	// what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
@@ -1078,8 +1080,10 @@ type WishServiceHandler interface {
 	// djinn if it is not running.
 	SetLead(context.Context, *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error)
 	// Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-	// to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
-	// (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
+	// to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
+	// wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
+	// A lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
+	// project nothing starts, the error says to create one. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
 	// The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
 	// what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
