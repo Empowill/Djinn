@@ -20,7 +20,12 @@ test("a newer Djinn is offered, and restarts only on update()", async () => {
       async *watchUpdate() {
         yield { current: "v1", ready: "", notResumed: [] };
         await offered;
-        yield { current: "v1", ready: "v2", notResumed: [] };
+        yield {
+          current: "v1",
+          ready: "v2",
+          notResumed: [],
+          notesUrl: "https://example.com/v2",
+        };
         await new Promise(() => {}); // The stream stays open, as the server's does.
       },
       update: () => {
@@ -43,6 +48,7 @@ test("a newer Djinn is offered, and restarts only on update()", async () => {
   // A part of the page that subscribes later gets the offer at once.
   const late = await new Promise((resolve) => djinnUpdate.subscribe(resolve));
   assert.equal(late.ready, "v2");
+  assert.equal(late.notesUrl, "https://example.com/v2");
   assert.deepEqual(await djinnUpdate.update(), { version: "v2", terminals: 1 });
   assert.equal(updates, 1);
 });

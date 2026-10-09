@@ -368,6 +368,7 @@
   "update.dismiss": "Fermer",
   "update.failed": "La mise à jour a échoué : {message}",
   "update.install": "Mettre à jour",
+  "update.notes": "Notes de version",
   "update.not_resumed": "Ces terminaux n’ont pas redémarré :",
   "update.ready": "Une nouvelle version de Djinn est prête",
   "update.restarting": "Redémarrage…",

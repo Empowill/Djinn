@@ -203,6 +203,9 @@ message UiServiceWatchUpdateResponse {
   string ready = 2;
   // The terminals the last restart could not run again, one line each: name, command, folder and why.
   repeated string not_resumed = 3;
+  // Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
+  // local install, which has none.
+  string notes_url = 4;
 }
 
 message UiServiceUpdateRequest {}
