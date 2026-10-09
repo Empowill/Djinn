@@ -237,10 +237,22 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		return nil, plan.Status(err)
 	}
 	kind := cmp.Or(req.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
-	if src, err := forkSource(ctx, h.store, wish, req); err != nil {
+	src, err := forkSource(ctx, h.store, wish, req)
+	if err != nil {
 		return nil, plan.Status(err)
-	} else if src.session != "" {
+	}
+	if src.session != "" {
 		task.ForkSession, task.ForkOf, kind = src.session, src.of, src.provider
+	}
+	// A fork of a task cut short, failed or stopped continues it: the parent is closed with the fork, in its
+	// transaction. A fork of a task that runs or is done leaves it as it is.
+	var parent *planv1.Task
+	if src.task != nil && forkCloses(src.task) {
+		h.mu.Lock()
+		if h.runs[src.task.GetId()] == nil {
+			parent = src.task
+		}
+		h.mu.Unlock()
 	}
 	task.Provider = kind
 	provider, ok := h.providers[kind]
@@ -279,7 +291,7 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		why = "planned: it starts at the scheduler's next pass"
 	}
 	if why != "" {
-		return h.plan(ctx, procedure, req, task, prompt, why)
+		return h.plan(ctx, procedure, req, task, parent, prompt, why)
 	}
 
 	// A warm worker of the wish in the project, when the task asks for nothing it was not started with.
@@ -306,6 +318,11 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
 			return err
 		}
+		if parent != nil {
+			if err := closeParent(ctx, tx, parent, task.GetCode()); err != nil {
+				return err
+			}
+		}
 		if prep, err = prepare(ctx, tx, task, wish, project); err != nil {
 			return err
 		}
@@ -325,9 +342,10 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	return h.launch(ctx, r, provider, project, prep, prompt)
 }
 
-// plan creates a task that waits, with its prompt and why it waits; the scheduler starts it.
+// plan creates a task that waits, with its prompt and why it waits, and closes the parent it continues, if any; the
+// scheduler starts it.
 func (h *Harness) plan(
-	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, task *planv1.Task, prompt, why string,
+	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, task, parent *planv1.Task, prompt, why string,
 ) (*planv1.Task, error) {
 	task.WaitReason = why
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -337,6 +355,11 @@ func (h *Harness) plan(
 		var err error
 		if task.Code, err = nextCode(ctx, tx, task.GetWishId()); err != nil {
 			return err
+		}
+		if parent != nil {
+			if err := closeParent(ctx, tx, parent, task.GetCode()); err != nil {
+				return err
+			}
 		}
 		if err := tx.Put(task); err != nil {
 			return err

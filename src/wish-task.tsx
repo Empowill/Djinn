@@ -36,6 +36,7 @@ import {
   TaskEventKind,
   TaskStatus,
 } from "../gen/ts/plan/v1/plan_pb";
+import { jump } from "./attention";
 import { useTaskEvents } from "./data/djinn";
 import {
   taskFinished,
@@ -188,7 +189,15 @@ export function WishTask({
               : "task.closed_by_lead",
             { when: when(task.closed.createTime) },
           )}
-          {task.closed.note && `: ${task.closed.note}`}
+          {task.closed.continuedIn ? (
+            <>
+              {": "}
+              {t("task.continued_in")}{" "}
+              <TaskLink code={task.closed.continuedIn} codes={codes} />
+            </>
+          ) : (
+            task.closed.note && `: ${task.closed.note}`
+          )}
         </p>
       )}
       {(task.waitReason ||
@@ -211,6 +220,27 @@ export function WishTask({
         <SendBox onSend={onSend} />
       )}
     </article>
+  );
+}
+
+// TaskLink is a task of the wish by its code: a click shows its card. A code no card holds stays text.
+function TaskLink({
+  code,
+  codes,
+}: {
+  code: string;
+  codes?: ReadonlyMap<string, string>;
+}) {
+  const id = [...(codes ?? [])].find(([, c]) => c === code)?.[0];
+  if (!id) return <span className="agent-code">{code}</span>;
+  return (
+    <button
+      type="button"
+      className="text-button agent-code task-link"
+      onClick={() => jump(`task-${id}`)}
+    >
+      {code}
+    </button>
   );
 }
 

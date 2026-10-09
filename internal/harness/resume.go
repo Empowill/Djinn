@@ -41,6 +41,7 @@ const (
 	whyRestarted = "djinn restarted while the worker ran"
 	byRestart    = "after djinn restarted"
 	byLimit      = "after its usage limit reset"
+	byContinue   = "continued" // djinn task continue: its worker takes the new prompt on its session
 )
 
 // WithClock gives the harness its time: when a usage limit resets is compared with it. Tests set a fake one.
@@ -147,21 +148,35 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 }
 
 // relaunch starts again the worker of a task Djinn resumes: in its worktree (or its project's folder, or its own
-// folder outside any project), on its session when its agent can resume one, told why it stopped. Its access is
-// decided again in a project, as for a planned task, but for an answer the developer gave about editing, which
-// stays. A worker that cannot start fails the task.
+// folder outside any project), on its session when its agent can resume one, told why it stopped. A continued task's
+// worker takes its last prompt on its session instead (Continue). Its access is decided again in a project, as for a
+// planned task, but for an answer the developer gave about editing, which stays. A worker that cannot start fails
+// the task.
 func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 	t = proto.CloneOf(t)
-	limit := t.GetResumeAfter() != nil
+	by := byRestart
+	switch {
+	case t.GetContinuing():
+		by = byContinue
+	case t.GetResumeAfter() != nil:
+		by = byLimit
+	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
 	t.Status, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", nil
-	t.Resumes++
+	if by == byContinue {
+		t.Continuing = false // Cut short again, it resumes as any task does.
+	} else {
+		t.Resumes++
+	}
 	provider, ok := h.providers[t.GetProvider()]
 	if !ok {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
 		return nil
 	}
 	prompt, err := firstPrompt(h.store, t.GetId())
+	if by == byContinue {
+		prompt, err = lastPrompt(ctx, h.store, t.GetId())
+	}
 	if err != nil {
 		h.failPlanned(ctx, t, err.Error())
 		return nil
@@ -205,7 +220,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 		return tx.Put(t)
 	})
 	if err == nil {
-		err = h.resumeWorker(r, provider, project, prep, prompt, limit)
+		err = h.resumeWorker(r, provider, project, prep, prompt, by)
 	}
 	if err != nil {
 		h.finish(r, Result{ExitCode: -1, Err: err})
@@ -215,8 +230,9 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 	return nil
 }
 
-// resumeWorker starts the worker of a resumed task where its last one worked. The caller owns the run's task.
-func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Project, prep prepared, prompt string, limit bool) error {
+// resumeWorker starts the worker of a resumed task where its last one worked, by: byRestart, byLimit, or byContinue
+// with the prompt it was continued with. The caller owns the run's task.
+func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Project, prep prepared, prompt, by string) error {
 	t := r.task
 	dir := project.GetDirectory()
 	switch {
@@ -250,9 +266,12 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return fmt.Errorf("its budget of $%.2f is spent", t.GetMaxBudgetUsd())
 		}
 	}
-	line, by := restartedLine, byRestart
-	if limit {
-		line, by = limitLine, byLimit
+	line := restartedLine
+	switch by {
+	case byLimit:
+		line = limitLine
+	case byContinue:
+		line = prompt
 	}
 	readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
 	spec := Spec{
@@ -260,6 +279,9 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		Resume: t.GetSessionId(), Prompt: line,
 	}
 	how := ", resuming its session"
+	if by == byContinue && (t.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY || spec.Resume == "") {
+		return errors.New("its session cannot be resumed")
+	}
 	if t.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY || spec.Resume == "" {
 		// agy's resume is not verified (docs/providers.md): it starts again on its first prompt, as does a worker
 		// whose session was never known.
@@ -273,5 +295,9 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	}
 	text := fmt.Sprintf("resumed %s (%d of %d): started %s %s%s, %s%s", by, t.GetResumes(), maxResumes,
 		short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
+	if by == byContinue {
+		text = fmt.Sprintf("continued: started %s %s%s, %s%s", short(t.GetProvider()), where, how, accessText(t, nil),
+			skillsText(spec.Skills))
+	}
 	return h.start(r, provider, spec, text)
 }
