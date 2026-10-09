@@ -41,30 +41,45 @@ func code(err error) connect.Code {
 	return 0
 }
 
-func TestHomeDefaultsToConfigDirectory(t *testing.T) {
-	t.Setenv("DJINN_HOME", "")
+// configIn makes /somewhere the user's folder and returns the system's place for user configuration in it, the one
+// docs/backup.md names: ~/.config on Linux, ~/Library/Application Support on macOS, %AppData% on Windows.
+func configIn(t *testing.T) string {
+	t.Helper()
 	t.Setenv("HOME", "/somewhere")
 	t.Setenv("USERPROFILE", "/somewhere")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join("/somewhere", "Library", "Application Support")
+	case "windows":
+		t.Setenv("AppData", filepath.Join("/somewhere", "AppData", "Roaming"))
+		return filepath.Join("/somewhere", "AppData", "Roaming")
+	}
+	return filepath.Join("/somewhere", ".config")
+}
+
+func TestHomeDefaultsToConfigDirectory(t *testing.T) {
+	t.Setenv("DJINN_HOME", "")
+	config := configIn(t)
 	home, err := Home()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join("/somewhere", ".config", "djinn"); home != want {
+	if want := filepath.Join(config, "djinn"); home != want {
 		t.Fatalf("Home() = %q, want %q", home, want)
 	}
 }
 
 func TestHomeOfADevelopmentBuild(t *testing.T) {
-	t.Setenv("HOME", "/somewhere")
-	t.Setenv("USERPROFILE", "/somewhere")
+	config := configIn(t)
 	t.Cleanup(func() { Develop = false })
 	for _, c := range []struct {
 		develop bool
 		env     string
 		want    string
 	}{
-		{true, "", filepath.Join("/somewhere", ".config", "djinn-dev")},
-		{false, "", filepath.Join("/somewhere", ".config", "djinn")},
+		{true, "", filepath.Join(config, "djinn-dev")},
+		{false, "", filepath.Join(config, "djinn")},
 		// DJINN_HOME decides, development build or not.
 		{true, "/data/mine", "/data/mine"},
 	} {

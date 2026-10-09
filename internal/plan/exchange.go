@@ -339,18 +339,23 @@ type scrubber struct{ r *strings.Replacer }
 func newScrubber(projects []*planv1.Project, extra ...string) *scrubber {
 	type pair struct{ from, to string }
 	var pairs []pair
+	add := func(dir, name string) {
+		for _, d := range aliases(dir) {
+			pairs = append(pairs, pair{d, name}, pair{filepath.ToSlash(d), name})
+		}
+	}
 	for i := 0; i+1 < len(extra); i += 2 {
 		if extra[i] != "" {
-			pairs = append(pairs, pair{extra[i], extra[i+1]}, pair{filepath.ToSlash(extra[i]), extra[i+1]})
+			add(extra[i], extra[i+1])
 		}
 	}
 	for _, p := range projects {
 		if dir := p.GetDirectory(); dir != "" {
-			pairs = append(pairs, pair{dir, p.GetName()}, pair{filepath.ToSlash(dir), p.GetName()})
+			add(dir, p.GetName())
 		}
 	}
 	if home, err := os.UserHomeDir(); err == nil && len(home) > 1 {
-		pairs = append(pairs, pair{home, "~"}, pair{filepath.ToSlash(home), "~"})
+		add(home, "~")
 	}
 	// The longest first: a project inside the home folder keeps its name.
 	slices.SortStableFunc(pairs, func(a, b pair) int { return len(b.from) - len(a.from) })
@@ -359,6 +364,27 @@ func newScrubber(projects []*planv1.Project, extra ...string) *scrubber {
 		args = append(args, p.from, p.to)
 	}
 	return &scrubber{strings.NewReplacer(args...)}
+}
+
+// aliases returns dir and the other paths of the same folder that text may hold: dir with its symbolic links
+// resolved, as a project's folder is stored, and, on macOS, the path without /private that a shell or a temporary
+// folder gives (/var, /tmp and /etc are links into /private there).
+func aliases(dir string) []string {
+	all := []string{dir}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return all
+	}
+	if real != dir {
+		all = append(all, real)
+	}
+	if short, ok := strings.CutPrefix(real, "/private/"); ok {
+		short = "/" + short
+		if r, err := filepath.EvalSymlinks(short); err == nil && r == real && short != dir {
+			all = append(all, short)
+		}
+	}
+	return all
 }
 
 func (s *scrubber) message(m protoreflect.Message) {

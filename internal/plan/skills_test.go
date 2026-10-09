@@ -77,6 +77,11 @@ func TestSummon(t *testing.T) {
 		}
 	}
 	before := tree(t, infra)
+	// A project's folder is stored with its links resolved (/var is /private/var on macOS), and so are its skills'.
+	src, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	summon := func(skill, into string) (*planv1.Skill, error) {
 		res, err := skills.Summon(t.Context(), connect.NewRequest(&planv1.SkillServiceSummonRequest{Skill: skill, Into: into}))
