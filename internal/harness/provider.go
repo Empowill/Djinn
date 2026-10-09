@@ -92,6 +92,13 @@ type Pauser interface {
 	Resume() error
 }
 
+// Process is a worker that runs a process of its own, which leads its process group: Djinn measures what it uses.
+// A worker that is not one (the fake agent, which runs in Djinn's process) is not measured.
+type Process interface {
+	// PID is the process of the agent, or of a watcher's command; 0 while none runs.
+	PID() int
+}
+
 // ErrReadOnly is returned by Start when the provider cannot keep its agent from writing: it cannot run a
 // read-only worker.
 var ErrReadOnly = errors.New("it cannot be kept from writing")

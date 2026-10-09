@@ -363,6 +363,26 @@ message Task {
   // The decision the task comes from (djinn task spawn --decision): a question's code (Q43), or the id of a block of
   // kind decision. Empty for a task no decision led to.
   string decision = 33 [(buf.validate.field).string.max_len = 64];
+  // What its worker uses of the machine, read every few seconds while it runs: the latest reading and the peaks over
+  // all its workers. Absent until a reading, and where Djinn does not measure workers (Windows, the fake agent).
+  Resources resources = 34;
+}
+
+// Resources is what a task's worker uses of the machine: its process group and every process it started, even one
+// that left the group. Linux reads /proc; macOS, ps.
+message Resources {
+  // CPU used since the reading before, in percent of one core: 200 is two cores busy.
+  double cpu_percent = 1;
+  // Resident memory, in bytes: the sum over its processes, a page they share counted once per process.
+  uint64 memory_bytes = 2;
+  // Processes running.
+  int32 processes = 3;
+  // Highest cpu_percent read, over all the task's workers.
+  double peak_cpu_percent = 4;
+  // Highest memory_bytes read, over all the task's workers.
+  uint64 peak_memory_bytes = 5;
+  // When it was last read.
+  google.protobuf.Timestamp read_time = 6;
 }
 
 // Closure records a task marked done by hand: its worker's own done records none.

@@ -200,7 +200,8 @@ status: in-progress
   `Closure.continued_in`, which the scheduler follows: a task that depends on W55 waits for W57. The Tasks tab shows
   it finished, with W57 as a link to its card. A fork of a running or done task leaves it as it is. The lead's brief
   says it: to follow up on a task, continue it; fork only to start a different task from its context.
-- **Not built yet**: per-worker measures (gopsutil), cgroups (T17).
+- **Per-worker measures** are built, without gopsutil: each worker's process group, read from /proc on Linux and
+  `ps` on macOS, its latest reading and peaks on its task (T17). **Not built yet**: a cgroup per worker (T17).
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`; built (`branch`, `TestBranchFromSettings`).*

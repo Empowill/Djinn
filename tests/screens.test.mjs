@@ -20,6 +20,7 @@ export { TaskSections } from "@/src/task-tabs.tsx";
 export { finishedTasks, movingTasks } from "@/src/data/flight.ts";
 export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
+export { memory, resourcesDetail } from "@/src/usage.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -391,6 +392,37 @@ test("a task shows its tokens and its cost; a Codex task, its tokens only", () =
   );
   assert.match(codex, /6\.5K tokens</);
   assert.doesNotMatch(codex, /\$/);
+});
+
+test("a running task shows what its worker uses now; its facts, the peaks too", () => {
+  const resources = {
+    cpuPercent: 34.4,
+    memoryBytes: 512n << 20n,
+    processes: 3,
+    peakCpuPercent: 180,
+    peakMemoryBytes: 1288490189n,
+    readTime: { seconds: 1760000000n, nanos: 0 },
+  };
+  const card = (status) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Trim the wick",
+          status,
+          resources,
+        },
+        onStop() {},
+      }),
+    );
+  assert.match(
+    card(s.TaskStatus.RUNNING),
+    /title="now CPU 34% · 512 MB · 3 processes · peak CPU 180% · 1\.2 GB">CPU 34% · 512 MB</,
+  );
+  assert.doesNotMatch(card(s.TaskStatus.DONE), /CPU/);
+  assert.equal(s.resourcesDetail(resources, false), "peak CPU 180% · 1.2 GB");
+  assert.equal(s.memory(1536n), "1.5 kB");
 });
 
 test("a task no worker runs can be marked done; a task closed by hand says who closed it, and why", () => {

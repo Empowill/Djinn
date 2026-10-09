@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/plan"
@@ -38,6 +39,7 @@ const (
 	methodAnswer   = "harness/answer"   // the task took the answer to its edit question; the request is the task
 	methodReceived = "harness/received" // the worker took a message in; the request is the event
 	methodHold     = "harness/hold"     // the task's worker was paused or resumed; the request is the task
+	methodMeasure  = "harness/measure"  // what the task's worker uses was read; the request is the reading
 )
 
 // maxText is the most of an event's text, and of its raw line, that is kept.
@@ -69,6 +71,9 @@ type Harness struct {
 	prefix []string // the command every worker runs under (WithPrefix)
 
 	clock func() time.Time // nil: the machine's (WithClock)
+
+	measureEvery time.Duration // how often a worker is read (WithMeasure); 0: never
+	measureRead  MeasureFunc   // nil: workers are not measured
 
 	tell    TellFunc    // wakes the lead of a watcher's wish (TellLeads); guarded by mu
 	watched WatchedFunc // reads a watcher's new paragraph (OnWatched); guarded by mu
@@ -106,11 +111,12 @@ type run struct {
 	// Guarded by Harness.mu.
 	worker   Worker
 	stopping bool
-	shelved  bool               // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
-	paused   bool               // the worker holds still: it takes no slot
-	watcher  bool               // a watcher runs a command, and takes no slot
-	final    bool               // the task is getting its final status: an answer waits for done instead
-	answers  []*planv1.Question // answers to the task's edit question, for the pump to apply
+	shelved  bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
+	paused   bool                 // the worker holds still: it takes no slot
+	watcher  bool                 // a watcher runs a command, and takes no slot
+	final    bool                 // the task is getting its final status: an answer waits for done instead
+	answers  []*planv1.Question   // answers to the task's edit question, for the pump to apply
+	use      *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
 	subs     map[chan *planv1.TaskEvent]struct{}
 
 	// Owned by whoever writes the task: Spawn, then the pump.
@@ -531,6 +537,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	t := r.task
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
 	r.failure, r.limit = "", nil
+	fresh(t)
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
@@ -540,7 +547,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		return err
 	}
 	h.mu.Lock()
-	r.worker = w
+	r.worker, r.use = w, nil
 	if r.stopping || r.shelved {
 		w.Stop()
 	}
@@ -634,8 +641,17 @@ func (h *Harness) pump(r *run) {
 // drain records the worker's events, and applies the answers to the task's edit question, until the worker ends.
 func (h *Harness) drain(r *run) Result {
 	events := r.worker.Events()
+	var measuring <-chan time.Time
+	m := h.newMeter(r)
+	if m != nil {
+		tick := time.NewTicker(h.measureEvery)
+		defer tick.Stop()
+		measuring = tick.C
+	}
 	for {
 		select {
+		case <-measuring:
+			h.measure(r, m)
 		case ev, ok := <-events:
 			if !ok {
 				r.unread = nil // A worker started again never had them.

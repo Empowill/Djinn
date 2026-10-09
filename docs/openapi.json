@@ -303,6 +303,17 @@
             "format": "int32",
             "type": "integer"
           },
+          "workerMeasure": {
+            "description": "Why the workers' CPU and memory are not measured on this machine; empty where they are (Linux, macOS).",
+            "type": "string"
+          },
+          "workerUses": {
+            "description": "The workers running now, with what each uses of the machine, the busiest first; a worker not read yet is left out.",
+            "items": {
+              "$ref": "#/components/schemas/machine.v1.WorkerUse"
+            },
+            "type": "array"
+          },
           "workers": {
             "description": "The most workers Djinn runs at once on this machine.",
             "format": "int32",
@@ -338,6 +349,32 @@
           "someAvg10": {
             "description": "Percent of the last 10 seconds during which at least one task waited.",
             "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "machine.v1.WorkerUse": {
+        "description": "WorkerUse is what the worker of a running task uses of the machine.",
+        "properties": {
+          "code": {
+            "description": "Its code in the wish, like W2.",
+            "type": "string"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/plan.v1.Resources",
+            "description": "What its worker uses, at the last reading."
+          },
+          "taskId": {
+            "description": "The task.",
+            "type": "string"
+          },
+          "title": {
+            "description": "What the task does.",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "Its wish.",
+            "type": "string"
           }
         },
         "type": "object"
@@ -1355,6 +1392,45 @@
         },
         "type": "object"
       },
+      "plan.v1.Resources": {
+        "description": "Resources is what a task's worker uses of the machine: its process group and every process it started, even one that left the group. Linux reads /proc; macOS, ps.",
+        "properties": {
+          "cpuPercent": {
+            "description": "CPU used since the reading before, in percent of one core: 200 is two cores busy.",
+            "type": "number"
+          },
+          "memoryBytes": {
+            "description": "Resident memory, in bytes: the sum over its processes, a page they share counted once per process.",
+            "format": "uint64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "peakCpuPercent": {
+            "description": "Highest cpu_percent read, over all the task's workers.",
+            "type": "number"
+          },
+          "peakMemoryBytes": {
+            "description": "Highest memory_bytes read, over all the task's workers.",
+            "format": "uint64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "processes": {
+            "description": "Processes running.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "readTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When it was last read."
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.Round": {
         "description": "A round of a question before it is decided: a request to investigate, or the lead's revision.",
         "properties": {
@@ -1717,6 +1793,10 @@
           "provider": {
             "$ref": "#/components/schemas/plan.v1.Provider",
             "description": "Kind of agent that works on the task."
+          },
+          "resources": {
+            "$ref": "#/components/schemas/plan.v1.Resources",
+            "description": "What its worker uses of the machine, read every few seconds while it runs: the latest reading and the peaks over all its workers. Absent until a reading, and where Djinn does not measure workers (Windows, the fake agent)."
           },
           "restart": {
             "description": "A watcher's command starts again after each exit, until the task is stopped (djinn task spawn --restart).",
@@ -2960,7 +3040,7 @@
     },
     "/machine.v1.MachineService/Show": {
       "post": {
-        "description": "Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at once, and whether it can run a local model.",
+        "description": "Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at once, what each running worker uses, and whether it can run a local model.",
         "operationId": "MachineService_Show",
         "requestBody": {
           "content": {

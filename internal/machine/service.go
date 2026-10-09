@@ -12,15 +12,16 @@ import (
 )
 
 // Handler returns the Connect handler of MachineService on m, and its path prefix. running counts the workers that
-// run now; nil counts none.
-func Handler(m *Monitor, running func() int) (string, http.Handler) {
-	return machinev1connect.NewMachineServiceHandler(&service{m: m, running: running})
+// run now, uses lists what each one uses; nil counts and lists none.
+func Handler(m *Monitor, running func() int, uses func() []*machinev1.WorkerUse) (string, http.Handler) {
+	return machinev1connect.NewMachineServiceHandler(&service{m: m, running: running, uses: uses})
 }
 
 type service struct {
 	machinev1connect.UnimplementedMachineServiceHandler
 	m       *Monitor
 	running func() int
+	uses    func() []*machinev1.WorkerUse
 }
 
 func (s *service) Show(
@@ -55,5 +56,9 @@ func (s *service) Show(
 	if s.running != nil {
 		out.Running = int32(s.running())
 	}
+	if s.uses != nil {
+		out.WorkerUses = s.uses()
+	}
+	out.WorkerMeasure = NotMeasured
 	return connect.NewResponse(&machinev1.MachineServiceShowResponse{Machine: out}), nil
 }

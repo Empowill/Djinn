@@ -39,7 +39,7 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
-import { useTaskEvents } from "./data/djinn";
+import { useData, useTaskEvents } from "./data/djinn";
 import {
   taskFinished,
   taskStatusText,
@@ -51,7 +51,7 @@ import { DecisionLink } from "./decision-log";
 import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
-import { TaskUsage, usageDetail } from "./usage";
+import { resourcesDetail, resourcesNow, TaskUsage, usageDetail } from "./usage";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.PROMPT]: MessageSquare,
@@ -161,6 +161,14 @@ export function WishTask({
             {origin}
             {project?.name && <span>{project.name}</span>}
             <TaskUsage usage={task.usage} />
+            {task.status === TaskStatus.RUNNING && task.resources?.readTime && (
+              <span
+                className="task-usage"
+                title={resourcesDetail(task.resources, true)}
+              >
+                {resourcesNow(task.resources)}
+              </span>
+            )}
           </span>
           <ChevronDown size={14} className={open ? "rotated" : ""} />
         </button>
@@ -334,6 +342,10 @@ function TaskBody({ task, forkOf }: { task: Task; forkOf: string }) {
   // A finished worker's last text is its report: it shows first, as Markdown.
   const lastWord = taskFinished(task.status) ? lastText(events) : "";
   const spent = usageDetail(task.usage);
+  const running = task.status === TaskStatus.RUNNING;
+  const used = task.resources ? resourcesDetail(task.resources, running) : "";
+  // Where Djinn does not measure workers (Windows), a running worker says so.
+  const unmeasured = useData((s) => !!s.machine?.workerMeasure) && running;
   const scopes = task.writeScopes ?? [];
   return (
     <div className="wish-task-body">
@@ -354,6 +366,8 @@ function TaskBody({ task, forkOf }: { task: Task; forkOf: string }) {
           <span>{t("task.budget", { cost: usd(task.maxBudgetUsd) })}</span>
         )}
         {spent && <span>{spent}</span>}
+        {used && <span>{used}</span>}
+        {!used && unmeasured && <span>{t("resources.not_measured")}</span>}
       </div>
       {lastWord && (
         <div className="wish-task-last-word">
