@@ -51,7 +51,7 @@ func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, o
 	}
 	h.Schedule()
 	mux := http.NewServeMux()
-	for prefix, handler := range plan.Handlers(db, plan.WithAnswered(h.Answered)) {
+	for prefix, handler := range plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithWorkers(h)) {
 		mux.Handle(prefix, handler)
 	}
 	mux.Handle(Handler(h))

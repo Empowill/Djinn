@@ -45,8 +45,35 @@
   letter-spacing: 0.5px;
   color: var(--muted-dim);
 }
+/* Three rows show; the others scroll under the pointer. */
 .wish-list {
   flex: 0 0 auto;
+  max-height: calc(3 * 36px + 14px);
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+.wish-list:hover,
+.wish-list:focus-within {
+  overflow-y: auto;
+}
+.sidebar-collapsed .wish-list {
+  max-height: none;
+}
+.wish-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.wish-first {
+  position: absolute;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.wish-row:hover .wish-first,
+.wish-first:focus-visible {
+  opacity: 1;
 }
 
 /* Sections of a wish. */
@@ -375,4 +402,7 @@
 }
 .journal-list li.log > div {
   flex-direction: column;
+}
+.icon-button.danger:hover {
+  color: var(--danger);
 }

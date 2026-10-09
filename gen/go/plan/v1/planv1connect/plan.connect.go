@@ -104,6 +104,8 @@ const (
 	WishServicePauseProcedure = "/plan.v1.WishService/Pause"
 	// WishServiceActivateProcedure is the fully-qualified name of the WishService's Activate RPC.
 	WishServiceActivateProcedure = "/plan.v1.WishService/Activate"
+	// WishServiceDeleteProcedure is the fully-qualified name of the WishService's Delete RPC.
+	WishServiceDeleteProcedure = "/plan.v1.WishService/Delete"
 	// WishServiceMoveProcedure is the fully-qualified name of the WishService's Move RPC.
 	WishServiceMoveProcedure = "/plan.v1.WishService/Move"
 	// WishServiceRenderProcedure is the fully-qualified name of the WishService's Render RPC.
@@ -773,12 +775,17 @@ type WishServiceClient interface {
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
-	// Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.
+	// Pause a wish: it keeps everything, its workers stop and wait to resume with it, and it leaves its place among the
+	// three active wishes to another one.
 	Pause(context.Context, *connect.Request[v1.WishServicePauseRequest]) (*connect.Response[v1.WishServicePauseResponse], error)
-	// Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one
-	// first.
+	// Make a paused or granted wish active again, last by rank; its stopped workers start again. Three wishes are
+	// active at most: when three are, it takes the third place, and the third wish is paused.
 	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
-	// Move an active wish to another rank: --to 1 gives it priority over the others.
+	// Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
+	// stop first. The worktrees and branches its workers made stay in the project. It cannot be undone.
+	Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error)
+	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
+	// there, the third place at most, and the wish it pushes past the third place is paused.
 	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
@@ -893,6 +900,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Activate")),
 			connect.WithClientOptions(opts...),
 		),
+		delete: connect.NewClient[v1.WishServiceDeleteRequest, v1.WishServiceDeleteResponse](
+			httpClient,
+			baseURL+WishServiceDeleteProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Delete")),
+			connect.WithClientOptions(opts...),
+		),
 		move: connect.NewClient[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse](
 			httpClient,
 			baseURL+WishServiceMoveProcedure,
@@ -941,6 +954,7 @@ type wishServiceClient struct {
 	grant      *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
 	pause      *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
 	activate   *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
+	delete     *connect.Client[v1.WishServiceDeleteRequest, v1.WishServiceDeleteResponse]
 	move       *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
 	render     *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
 	sync       *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
@@ -1013,6 +1027,11 @@ func (c *wishServiceClient) Activate(ctx context.Context, req *connect.Request[v
 	return c.activate.CallUnary(ctx, req)
 }
 
+// Delete calls plan.v1.WishService.Delete.
+func (c *wishServiceClient) Delete(ctx context.Context, req *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error) {
+	return c.delete.CallUnary(ctx, req)
+}
+
 // Move calls plan.v1.WishService.Move.
 func (c *wishServiceClient) Move(ctx context.Context, req *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error) {
 	return c.move.CallUnary(ctx, req)
@@ -1075,12 +1094,17 @@ type WishServiceHandler interface {
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
-	// Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.
+	// Pause a wish: it keeps everything, its workers stop and wait to resume with it, and it leaves its place among the
+	// three active wishes to another one.
 	Pause(context.Context, *connect.Request[v1.WishServicePauseRequest]) (*connect.Response[v1.WishServicePauseResponse], error)
-	// Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one
-	// first.
+	// Make a paused or granted wish active again, last by rank; its stopped workers start again. Three wishes are
+	// active at most: when three are, it takes the third place, and the third wish is paused.
 	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
-	// Move an active wish to another rank: --to 1 gives it priority over the others.
+	// Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
+	// stop first. The worktrees and branches its workers made stay in the project. It cannot be undone.
+	Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error)
+	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
+	// there, the third place at most, and the wish it pushes past the third place is paused.
 	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
@@ -1191,6 +1215,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Activate")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceDeleteHandler := connect.NewUnaryHandler(
+		WishServiceDeleteProcedure,
+		svc.Delete,
+		connect.WithSchema(wishServiceMethods.ByName("Delete")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceMoveHandler := connect.NewUnaryHandler(
 		WishServiceMoveProcedure,
 		svc.Move,
@@ -1249,6 +1279,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServicePauseHandler.ServeHTTP(w, r)
 		case WishServiceActivateProcedure:
 			wishServiceActivateHandler.ServeHTTP(w, r)
+		case WishServiceDeleteProcedure:
+			wishServiceDeleteHandler.ServeHTTP(w, r)
 		case WishServiceMoveProcedure:
 			wishServiceMoveHandler.ServeHTTP(w, r)
 		case WishServiceRenderProcedure:
@@ -1318,6 +1350,10 @@ func (UnimplementedWishServiceHandler) Pause(context.Context, *connect.Request[v
 
 func (UnimplementedWishServiceHandler) Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Activate is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Delete is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error) {
