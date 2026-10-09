@@ -129,6 +129,16 @@ func (s *Tasks) Delete(
 	return connect.NewResponse(&planv1.TaskServiceDeleteResponse{Task: task}), nil
 }
 
+func (s *Tasks) Done(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDoneRequest],
+) (*connect.Response[planv1.TaskServiceDoneResponse], error) {
+	task, err := s.h.Done(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceDoneResponse{Task: task}), nil
+}
+
 func (s *Tasks) Send(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceSendRequest],
 ) (*connect.Response[planv1.TaskServiceSendResponse], error) {

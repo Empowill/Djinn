@@ -8,7 +8,7 @@ import {
   type Usage,
   type Wish,
 } from "../../gen/ts/plan/v1/plan_pb";
-import { investigating, isOpen, waitsForYou } from "./format";
+import { investigating, isOpen, waitsForYou, watcherRuns } from "./format";
 import type { WishDetail } from "./store";
 
 // How many decisions the flight plan shows, the latest first.
@@ -39,6 +39,9 @@ export interface FlightPlan {
   // The wishes Djinn proposes to grant.
   ready: Wish[];
   running: Item<Task>[];
+  // The tasks that move or wait, by status, then those done or stopped, the latest ended first: the Tasks tab.
+  moving: Item<Task>[];
+  finished: Item<Task>[];
   decisions: Item<Question>[];
   // Read for every wish shown.
   loaded: boolean;
@@ -59,6 +62,61 @@ export function blocking(tasks: readonly Task[]): Map<string, string[]> {
 
 const time = (ts?: { seconds: bigint; nanos: number }) =>
   ts ? Number(ts.seconds) * 1000 + ts.nanos / 1e6 : 0;
+
+// finishedTask tells a finished task: done, stopped on request, or cut short and taken over by a fork among tasks, as
+// the wish's page and brief say. Every other one still moves, or waits for someone.
+export function finishedTask(task: Task, tasks: readonly Task[] = []): boolean {
+  return (
+    task.status === TaskStatus.DONE ||
+    task.status === TaskStatus.STOPPED ||
+    (task.status === TaskStatus.INTERRUPTED && forkedAs(task, tasks) !== "")
+  );
+}
+
+// newestEnded orders finished tasks the latest ended first, then the latest created, as the wish's page and brief do.
+export function newestEnded(a: Task, b: Task): number {
+  return (
+    time(b.endTime) - time(a.endTime) || time(b.createTime) - time(a.createTime)
+  );
+}
+
+// finishedTasks are the tasks at the bottom of the Tasks tab, the latest ended first.
+export function finishedTasks(tasks: readonly Task[]): Task[] {
+  return tasks.filter((x) => finishedTask(x, tasks)).sort(newestEnded);
+}
+
+// The order of the tasks that move or wait: what runs or broke first (running, cut short, failed, resuming), then
+// what waits (waiting, paused, a watcher that watches), the planned ones last. A status this page does not name yet
+// comes before the planned ones.
+const motion = [
+  TaskStatus.RUNNING,
+  TaskStatus.INTERRUPTED,
+  TaskStatus.FAILED,
+  TaskStatus.RESUMING,
+  TaskStatus.WAITING,
+  TaskStatus.PAUSED,
+];
+const motionRank = (task: Task) => {
+  if (
+    task.status === TaskStatus.PENDING ||
+    task.status === TaskStatus.UNSPECIFIED
+  )
+    return motion.length + 2;
+  // A running watcher watches: it waits with the paused ones.
+  if (watcherRuns(task)) return motion.length;
+  const i = motion.indexOf(task.status);
+  return i < 0 ? motion.length + 1 : i;
+};
+
+// byMotion orders the tasks that move or wait by status; a sort keeps the order within a status.
+export function byMotion(a: Task, b: Task): number {
+  return motionRank(a) - motionRank(b);
+}
+
+// movingTasks are the tasks at the top of the Tasks tab: what moves or waits for someone, by status.
+export function movingTasks(tasks: readonly Task[]): Task[] {
+  return tasks.filter((x) => !finishedTask(x, tasks)).sort(byMotion);
+}
 
 // openQuestions are a wish's questions that wait for your answer, the blocking ones first, then in the order they were
 // asked. Those being investigated wait for the lead: investigatingQuestions.
@@ -127,6 +185,8 @@ export function flightPlan(
     waiting: [],
     ready: [],
     running: [],
+    moving: [],
+    finished: [],
     decisions: [],
     loaded: true,
   };
@@ -138,12 +198,15 @@ export function flightPlan(
     plan.questions.push(...openQuestions(wish, detail));
     plan.investigating.push(...investigatingQuestions(wish, detail));
     plan.waiting.push(...waitingTasks(wish, detail));
-    for (const item of detail.tasks)
+    for (const item of detail.tasks) {
       if (
         item.status === TaskStatus.RUNNING ||
         item.status === TaskStatus.RESUMING
       )
         plan.running.push({ wish, item });
+      if (finishedTask(item, detail.tasks)) plan.finished.push({ wish, item });
+      else plan.moving.push({ wish, item });
+    }
     for (const item of detail.questions)
       if (!isOpen(item)) plan.decisions.push({ wish, item });
   }
@@ -155,6 +218,8 @@ export function flightPlan(
     (a, b) => time(b.item.answer?.createTime) - time(a.item.answer?.createTime),
   );
   plan.decisions = plan.decisions.slice(0, RECENT_DECISIONS);
+  plan.moving.sort((a, b) => byMotion(a.item, b.item));
+  plan.finished.sort((a, b) => newestEnded(a.item, b.item));
   return plan;
 }
 

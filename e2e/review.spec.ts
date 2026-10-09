@@ -151,12 +151,14 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   );
   await shoot(page, "review-wish-dark");
   await theme(page, "light");
+  await page.getByRole("tab", { name: /^Tasks/ }).click();
   await page
     .locator(".wish-task")
     .filter({ hasText: "Polish the brass" })
     .locator(".wish-task-heading")
     .click();
   await shoot(page, "review-wish-light");
+  await page.getByRole("tab", { name: /^Wish/ }).click();
   await theme(page, "");
 
   // Enlighten me: what to dig into goes to the lead; the question waits for the lead, not for you.

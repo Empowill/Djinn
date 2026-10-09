@@ -91,7 +91,7 @@
       <tbody>
       {{- range .Finished}}
       <tr>
-        <td data-label="{{index $.T "page.task"}}"><span class="code">{{.Code}}</span> {{.Title}}{{if .Error}}<p class="error">{{.Error}}</p>{{end}}</td>
+        <td data-label="{{index $.T "page.task"}}"><span class="code">{{.Code}}</span> {{.Title}}{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{if .Closed}}<p class="closed">{{.Closed}}</p>{{end}}</td>
         <td data-label="{{index $.T "page.status"}}">{{template "st" (pair .StatusClass .Status)}}</td>
         <td data-label="{{index $.T "page.took"}}" class="num">{{.Time}}</td>
         <td data-label="{{index $.T "page.spent"}}" class="num">{{.Spent}}</td>

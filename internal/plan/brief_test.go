@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -287,5 +289,74 @@ func TestBriefLine(t *testing.T) {
 	}
 	if q, ok := quoteArg("darwin", "it's"); !ok || q != `'it'\''s'` {
 		t.Errorf("quote = %q", q)
+	}
+}
+
+// TestBriefFinished: finished tasks leave the live lists; only the latest few show, the latest ended first, with who
+// closed one by hand and why.
+func TestBriefFinished(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Old work"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	day := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	var tasks []*planv1.Task
+	for i := range briefDone + 2 {
+		tasks = append(tasks, &planv1.Task{
+			Id: store.NewID(), WishId: wishID, Code: fmt.Sprintf("W%d", i+1), Title: "Old task", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(time.Duration(i) * time.Hour)),
+		})
+	}
+	// W7 ended last; W3 was closed by hand, later than W6 ended.
+	tasks[2].EndTime = timestamppb.New(day.Add(5*time.Hour + 30*time.Minute))
+	tasks[2].Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: tasks[2].GetEndTime(), Note: "merged in Git"}
+	for code, status := range map[string]planv1.TaskStatus{
+		"W10": planv1.TaskStatus_TASK_STATUS_PENDING, "W11": planv1.TaskStatus_TASK_STATUS_WAITING,
+		"W12": planv1.TaskStatus_TASK_STATUS_FAILED, "W9": planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
+	} {
+		tasks = append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: code, Title: "Live", Status: status,
+			CreateTime: timestamppb.New(day)})
+	}
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, task := range tasks {
+			if err := tx.Journal(actor, "test/put", task); err != nil {
+				return err
+			}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, finished, ok := strings.Cut(brief.Moving, "## Finished: 7, the latest\n\n")
+	if !ok {
+		t.Fatalf("no finished section:\n%s", brief.Moving)
+	}
+	want := "- **W7** Old task: done\n- **W3** Old task: done, closed by the developer: merged in Git\n- **W6** Old task: done\n" +
+		"- **W5** Old task: done\n- **W4** Old task: done\n"
+	if !strings.HasPrefix(finished, want) {
+		t.Errorf("finished =\n%s\nwant\n%s", finished, want)
+	}
+	// What waits, by status: cut short, failed, waiting, then planned.
+	waiting, _, _ := strings.Cut(brief.Moving, "## Finished")
+	last := -1
+	for _, code := range []string{"**W9**", "**W12**", "**W11**", "**W10**"} {
+		i := strings.Index(waiting, code)
+		if i <= last {
+			t.Fatalf("%s at %d, after %d: the waiting list is out of order\n%s", code, i, last, waiting)
+		}
+		last = i
+	}
+	if strings.Contains(waiting, "**W1** ") {
+		t.Errorf("a finished task in the live list:\n%s", waiting)
 	}
 }

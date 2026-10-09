@@ -64,7 +64,8 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\"` (`--project-id`, `--depends-on W1`, `--later`, " +
 	"`--fork W1`, `--from-lead`); `djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
 	"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
-	"`djinn task stop <task>`.\n" +
+	"`djinn task stop <task>`; `djinn task done <task> --note \"…\"` closes a task no worker runs (planned, " +
+	"cut short, failed, stopped, imported) once its work is done elsewhere.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\"`; `djinn block list <wish>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for your " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, after you investigated.\n" +
@@ -274,6 +275,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			waiting = append(waiting, t)
 		}
 	}
+	// What moves or waits, by status, as the window and the page show it.
+	slices.SortStableFunc(running, render.ByMotion)
+	slices.SortStableFunc(waiting, render.ByMotion)
 	if len(running) > 0 {
 		b.WriteString("\n## Running\n\n")
 		for _, t := range running {
@@ -294,16 +298,21 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 	}
 	if len(done) > 0 {
-		slices.SortStableFunc(done, func(x, y *planv1.Task) int {
-			return y.GetEndTime().AsTime().Compare(x.GetEndTime().AsTime())
-		})
-		fmt.Fprintf(&b, "\n## Finished: %d\n\n", len(done))
+		slices.SortStableFunc(done, render.NewestEnded)
+		fmt.Fprintf(&b, "\n## Finished: %d, the latest\n\n", len(done))
 		for _, t := range done[:min(len(done), briefDone)] {
 			word := statusWord(t.GetStatus())
 			if as := render.ForkedAs(t, exp.GetTasks()); as != "" && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
 				word = "resumed as " + as
 			}
-			fmt.Fprintf(&b, "- **%s** %s: %s\n", t.GetCode(), clipLine(t.GetTitle()), word)
+			fmt.Fprintf(&b, "- **%s** %s: %s", t.GetCode(), clipLine(t.GetTitle()), word)
+			if c := t.GetClosed(); c != nil {
+				b.WriteString(", closed by the " + CloserWord(c.GetActor()))
+				if n := clipLine(c.GetNote()); n != "" {
+					b.WriteString(": " + n)
+				}
+			}
+			b.WriteString("\n")
 		}
 	}
 
@@ -328,6 +337,14 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 	}
 	return stripCredentials(b.String())
+}
+
+// CloserWord names who marked a task done by hand.
+func CloserWord(c planv1.Closer) string {
+	if c == planv1.Closer_CLOSER_DEVELOPER {
+		return "developer"
+	}
+	return "lead"
 }
 
 // waitText says why a task that is not finished nor running waits.

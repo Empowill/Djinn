@@ -271,6 +271,7 @@ p.reason { margin: 4px 0 0; }
 .tbl td.at, .tbl td.num { width: 1%; white-space: nowrap; }
 .tbl .at time { color: var(--muted); font-size: 13px; font-family: var(--mono); }
 .tbl td .error { margin: 4px 0 0; }
+.tbl td .closed { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
 .tbl.log { font-size: 13.5px; }
 .tbl.log td { padding: 6px 14px; }
 .tbl.log .what > code { font-family: var(--mono); font-size: 12.5px; font-weight: 600; white-space: nowrap; }

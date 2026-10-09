@@ -646,6 +646,37 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
 .review .wish-task-note.error {
   color: var(--st-failed);
 }
+.review .wish-task-closed {
+  color: var(--st-done);
+}
+.wish-task-done {
+  align-items: center;
+}
+
+/* The tabs of a view: the wish or the flight plan, and the tasks, which say how many they are. */
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+.view-tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+}
+.view-tabs > button:hover {
+  color: var(--text);
+}
+.view-tabs > button.active {
+  color: var(--text);
+  border-bottom-color: var(--lamp);
+}
 .compact-table {
   width: 100%;
   border-collapse: collapse;

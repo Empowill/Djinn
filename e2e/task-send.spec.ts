@@ -40,6 +40,7 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
     );
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
+    await page.getByRole("tab", { name: /^Tasks/ }).click();
     await page.getByRole("button", { name: /Work a while/ }).click();
     await expect(
       page.locator(".wish-event").getByText("working", { exact: true }),

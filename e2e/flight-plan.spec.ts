@@ -187,15 +187,18 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   ).questions;
   expect(open.answer).toBeUndefined();
 
-  // The wish's own view stays: its tasks with their tokens, its note about W1, its journal.
+  // The wish's own view stays: its tasks with their tokens in their own tab, its note about W1, its journal.
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
+  await page.getByRole("tab", { name: /^Tasks/ }).click();
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
   await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
+  await page.getByRole("tab", { name: /^Wish/ }).click();
   await expect(page.locator(".wish-block")).toContainText("About W1");
   // The journal is folded: a click opens it.
   await page.getByRole("button", { name: /^Journal/ }).click();
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
+  await page.getByRole("tab", { name: /^Tasks/ }).click();
   await page
     .locator(".wish-task")
     .filter({ hasText: "Trim the wick" })

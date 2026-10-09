@@ -296,6 +296,28 @@ message Task {
   // The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an
   // agent.
   string last_line = 30;
+  // Who marked the task done by hand, when and why (TaskService.Done). Empty for a task its worker finished.
+  Closure closed = 31;
+}
+
+// Closure records a task marked done by hand: its worker's own done records none.
+message Closure {
+  // Who closed it.
+  Closer actor = 1;
+  // When.
+  google.protobuf.Timestamp create_time = 2;
+  // Why, in a few words; may be empty.
+  string note = 3;
+}
+
+// Closer says who marked a task done by hand.
+enum Closer {
+  // Not set.
+  CLOSER_UNSPECIFIED = 0;
+  // The wish's lead, through the command line or MCP.
+  CLOSER_LEAD = 1;
+  // The developer, in the window.
+  CLOSER_DEVELOPER = 2;
 }
 
 // TaskEventKind says what a worker event is. Its content stays free text.
@@ -1547,6 +1569,13 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_DELETE;
   }
+  // Mark a task done that no worker runs now: planned, waiting, cut short, failed, stopped or imported. It records
+  // who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
+  // done already is refused.
+  rpc Done(TaskServiceDoneRequest) returns (TaskServiceDoneResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Send a message to a running worker: an instruction added while it works. The message is an event of the task,
   // and a "received" event follows once the worker says something after it.
   rpc Send(TaskServiceSendRequest) returns (TaskServiceSendResponse) {
@@ -1740,5 +1769,22 @@ message TaskServiceDeleteRequest {
 
 message TaskServiceDeleteResponse {
   // The task, as it was.
+  Task task = 1;
+}
+
+message TaskServiceDoneRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Why it is done, in a few words.
+  string note = 2 [(buf.validate.field).string.max_len = 2000];
+  // Who closes it; by default the lead. The window says developer.
+  Closer by = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+message TaskServiceDoneResponse {
+  // The task, done.
   Task task = 1;
 }

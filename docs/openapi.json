@@ -474,6 +474,33 @@
         ],
         "type": "string"
       },
+      "plan.v1.Closer": {
+        "description": "Closer says who marked a task done by hand.",
+        "enum": [
+          "CLOSER_UNSPECIFIED",
+          "CLOSER_LEAD",
+          "CLOSER_DEVELOPER"
+        ],
+        "type": "string"
+      },
+      "plan.v1.Closure": {
+        "description": "Closure records a task marked done by hand: its worker's own done records none.",
+        "properties": {
+          "actor": {
+            "$ref": "#/components/schemas/plan.v1.Closer",
+            "description": "Who closed it."
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When."
+          },
+          "note": {
+            "description": "Why, in a few words; may be empty.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.Lead": {
         "description": "The lead of a wish: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and the session's identifier, which the agent's own command line resumes.",
         "properties": {
@@ -1303,6 +1330,10 @@
             "description": "Branch of the worktree.",
             "type": "string"
           },
+          "closed": {
+            "$ref": "#/components/schemas/plan.v1.Closure",
+            "description": "Who marked the task done by hand, when and why (TaskService.Done). Empty for a task its worker finished."
+          },
           "code": {
             "description": "Short code to dictate, like W2, unique within the wish.",
             "type": "string"
@@ -1548,6 +1579,37 @@
           "task": {
             "$ref": "#/components/schemas/plan.v1.Task",
             "description": "The task, as it was."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDoneRequest": {
+        "properties": {
+          "by": {
+            "$ref": "#/components/schemas/plan.v1.Closer",
+            "description": "Who closes it; by default the lead. The window says developer."
+          },
+          "note": {
+            "description": "Why it is done, in a few words.",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDoneResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, done."
           }
         },
         "type": "object"
@@ -3174,6 +3236,44 @@
           }
         },
         "summary": "djinn task delete",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Done": {
+      "post": {
+        "description": "Mark a task done that no worker runs now: planned, waiting, cut short, failed, stopped or imported. It records who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task done already is refused.",
+        "operationId": "TaskService_Done",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceDoneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceDoneResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task done",
         "tags": [
           "TaskService"
         ]

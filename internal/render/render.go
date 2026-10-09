@@ -204,6 +204,9 @@ type task struct {
 	LastWord, LastAt string
 	// After names the tasks this one waits to be done; Wait says why a planned task has not started yet.
 	After, Wait string
+	// Closed says who marked the task done by hand, and why.
+	Closed string
+	src    *planv1.Task
 }
 
 type block struct {
@@ -466,7 +469,17 @@ func build(in Input) (*view, error) {
 	for _, t := range exp.GetTasks() {
 		ct := task{
 			Code: t.GetCode(), Title: t.GetTitle(), Project: projects[t.GetProjectId()], Error: t.GetError(),
-			LastWord: cut(lastWord[t.GetId()].text, maxLastWord), LastAt: lastWord[t.GetId()].at,
+			LastWord: cut(lastWord[t.GetId()].text, maxLastWord), LastAt: lastWord[t.GetId()].at, src: t,
+		}
+		if c := t.GetClosed(); c != nil {
+			key := "page.closed_by_lead"
+			if c.GetActor() == planv1.Closer_CLOSER_DEVELOPER {
+				key = "page.closed_by_you"
+			}
+			ct.Closed = tr(key)
+			if n := strings.TrimSpace(c.GetNote()); n != "" {
+				ct.Closed += ": " + n
+			}
 		}
 		ct.Status, ct.StatusClass = status(t.GetStatus(), tr)
 		forked := ""
@@ -530,6 +543,11 @@ func build(in Input) (*view, error) {
 			v.Tasks = append(v.Tasks, ct)
 		}
 	}
+	// The work finished, the latest first.
+	slices.SortStableFunc(v.Finished, func(a, b task) int { return NewestEnded(a.src, b.src) })
+	// What moves or waits, by status, as in the window.
+	slices.SortStableFunc(v.Running, func(a, b task) int { return ByMotion(a.src, b.src) })
+	slices.SortStableFunc(v.Tasks, func(a, b task) int { return ByMotion(a.src, b.src) })
 	// The tasks by status, what needs an eye first, each pointing to the section that shows it.
 	for _, s := range []planv1.TaskStatus{
 		planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_FAILED,
@@ -739,6 +757,43 @@ func ForkedAs(t *planv1.Task, tasks []*planv1.Task) string {
 		}
 	}
 	return ""
+}
+
+// NewestEnded orders finished tasks the latest ended first, then the latest created: the window, the page and the
+// brief show them so.
+func NewestEnded(a, b *planv1.Task) int {
+	return cmp.Or(b.GetEndTime().AsTime().Compare(a.GetEndTime().AsTime()),
+		b.GetCreateTime().AsTime().Compare(a.GetCreateTime().AsTime()))
+}
+
+// motion is the order of the tasks that move or wait: what runs or broke first (running, cut short, failed,
+// resuming), then what waits (waiting, paused, a watcher that watches). A status not named comes after them, and the
+// planned ones last.
+var motion = []planv1.TaskStatus{
+	planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
+	planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_RESUMING,
+	planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_PAUSED,
+}
+
+// motionRank is where a task that moves or waits comes, by status; a running watcher waits with the paused ones.
+func motionRank(t *planv1.Task) int {
+	s := t.GetStatus()
+	switch {
+	case s == planv1.TaskStatus_TASK_STATUS_PENDING || s == planv1.TaskStatus_TASK_STATUS_UNSPECIFIED:
+		return len(motion) + 2
+	case s == planv1.TaskStatus_TASK_STATUS_RUNNING && t.GetProvider() == planv1.Provider_PROVIDER_WATCH:
+		return len(motion)
+	}
+	if i := slices.Index(motion, s); i >= 0 {
+		return i
+	}
+	return len(motion) + 1
+}
+
+// ByMotion orders the tasks that move or wait by status, as the window does; a stable sort keeps the order within a
+// status.
+func ByMotion(a, b *planv1.Task) int {
+	return cmp.Compare(motionRank(a), motionRank(b))
 }
 
 // status names a task's status, with the class that colours it and gives its icon.

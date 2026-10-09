@@ -105,6 +105,105 @@ test("the flight plan merges the wishes: blocking questions first, every item ke
   assert.equal(f.flightPlan([lamp], {}).loaded, false);
 });
 
+test("the Tasks tab: what moves or waits by status, then the finished tasks, the latest ended first", () => {
+  const tasks = [
+    {
+      id: "t1",
+      code: "W1",
+      status: f.TaskStatus.DONE,
+      createTime: at(1),
+      endTime: at(10),
+    },
+    {
+      id: "t2",
+      code: "W2",
+      status: f.TaskStatus.INTERRUPTED,
+      createTime: at(2),
+    },
+    {
+      id: "t3",
+      code: "W3",
+      status: f.TaskStatus.STOPPED,
+      createTime: at(3),
+      endTime: at(30),
+    },
+    {
+      id: "t4",
+      code: "W4",
+      status: f.TaskStatus.DONE,
+      createTime: at(4),
+      endTime: at(10),
+    },
+    {
+      id: "t5",
+      code: "W5",
+      status: f.TaskStatus.FAILED,
+      createTime: at(5),
+      endTime: at(50),
+    },
+    { id: "t6", code: "W6", status: f.TaskStatus.DONE, createTime: at(6) },
+  ];
+  assert.deepEqual(
+    f.finishedTasks(tasks).map((t) => t.code),
+    ["W3", "W4", "W1", "W6"],
+  );
+  // Running, cut short and failed first, then waiting and paused, the planned ones last.
+  assert.deepEqual(
+    f.movingTasks(tasks).map((t) => t.code),
+    ["W2", "W5"],
+  );
+  const moving = [
+    { code: "P", status: f.TaskStatus.PENDING },
+    { code: "A", status: f.TaskStatus.PAUSED },
+    { code: "W", status: f.TaskStatus.WAITING },
+    { code: "F", status: f.TaskStatus.FAILED },
+    { code: "I", status: f.TaskStatus.INTERRUPTED },
+    { code: "R", status: f.TaskStatus.RUNNING },
+    { code: "R2", status: f.TaskStatus.RUNNING },
+    { code: "S", status: f.TaskStatus.RESUMING },
+    {
+      code: "WA",
+      status: f.TaskStatus.RUNNING,
+      provider: f.Provider.WATCH,
+    },
+  ];
+  // A running watcher watches: it waits after the paused ones.
+  assert.deepEqual(
+    f.movingTasks(moving).map((t) => t.code),
+    ["R", "R2", "I", "F", "S", "W", "A", "WA", "P"],
+  );
+  // A task cut short and taken over by a fork is finished, as on the page.
+  const forked = [
+    { id: "a", wishId: "w", code: "W1", status: f.TaskStatus.INTERRUPTED },
+    {
+      id: "b",
+      wishId: "w",
+      code: "W2",
+      status: f.TaskStatus.RUNNING,
+      forkOf: "W1",
+    },
+  ];
+  assert.deepEqual(
+    f.finishedTasks(forked).map((t) => t.code),
+    ["W1"],
+  );
+  // The flight plan merges the Tasks tabs of its wishes, each task with its wish.
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const oil = wish("w2", "Find the oil", 2);
+  const plan = f.flightPlan([lamp, oil], {
+    w1: detail(tasks.slice(0, 3), []),
+    w2: detail(tasks.slice(3), []),
+  });
+  assert.deepEqual(
+    plan.finished.map(({ wish, item }) => `${wish.id}:${item.code}`),
+    ["w1:W3", "w2:W4", "w1:W1", "w2:W6"],
+  );
+  assert.deepEqual(
+    plan.moving.map(({ wish, item }) => `${wish.id}:${item.code}`),
+    ["w1:W2", "w2:W5"],
+  );
+});
+
 test("what tasks spent: tokens always, the cost only where the agent gives one", () => {
   const usage = (input, output, read, write, cost) => ({
     inputTokens: BigInt(input),

@@ -401,3 +401,42 @@ func TestImportRefusesBadFiles(t *testing.T) {
 		t.Errorf("journal after refused imports = %d entries", len(all))
 	}
 }
+
+// TestExportKeepsClosure: a task marked done by hand keeps who closed it, when and why, through an export and an
+// import.
+func TestExportKeepsClosure(t *testing.T) {
+	ctx := t.Context()
+	src := serve(t)
+	made, err := src.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Close tasks"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wish := made.Msg.GetWish()
+	closed := &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: timestamppb.Now(), Note: "merged by hand"}
+	task := &planv1.Task{
+		Id: store.NewID(), WishId: wish.GetId(), Code: "W1", Title: "Old work", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		CreateTime: timestamppb.Now(), EndTime: closed.GetCreateTime(), Closed: closed,
+	}
+	if err := src.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "wish.djinn")
+	export(t, src, wish.GetId(), file)
+	dst := serve(t)
+	if _, err := dst.wishes.Import(ctx, connect.NewRequest(&planv1.WishServiceImportRequest{File: file})); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := dst.wishes.Snapshot(ctx, connect.NewRequest(&planv1.WishServiceSnapshotRequest{WishId: wish.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tasks := snap.Msg.GetExport().GetTasks(); len(tasks) != 1 || !proto.Equal(tasks[0].GetClosed(), closed) ||
+		tasks[0].GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("tasks after import = %v, want W1 done with %v", tasks, closed)
+	}
+}
