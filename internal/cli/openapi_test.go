@@ -58,8 +58,8 @@ func TestOpenAPI(t *testing.T) {
 		t.Errorf("openapi %q", doc.OpenAPI)
 	}
 	// The unary public methods: the streams use Connect's streaming protocol.
-	if len(doc.Paths) != 44 {
-		t.Errorf("%d paths, want 44", len(doc.Paths))
+	if len(doc.Paths) != 50 {
+		t.Errorf("%d paths, want 50", len(doc.Paths))
 	}
 	if _, ok := doc.Paths["/plan.v1.WishService/Watch"]; ok {
 		t.Error("a stream is described")
@@ -73,6 +73,10 @@ func TestOpenAPI(t *testing.T) {
 	}
 	if ref := op.RequestBody.Content["application/json"].Schema.Ref; ref != "#/components/schemas/plan.v1.QuestionServiceAnswerRequest" {
 		t.Errorf("request %q", ref)
+	}
+	makeReq := doc.Components.Schemas["plan.v1.WishServiceMakeRequest"]
+	if len(makeReq.Required) != 0 {
+		t.Errorf("Make permits prompt-only requests, required %v", makeReq.Required)
 	}
 	req := doc.Components.Schemas["plan.v1.QuestionServiceAnswerRequest"]
 	if len(req.Required) != 2 || req.Required[0] != "question" || req.Required[1] != "choice" {

@@ -124,11 +124,8 @@ test("a new wish whose agent is not ready offers the setup, and keeps what was t
   });
   await page.goto(process.env.DJINN_URL!);
   await expect(page.locator(".sidebar")).toBeVisible();
-  await page
-    .locator(".sidebar")
-    .getByRole("button", { name: /New wish/ })
-    .click();
-  const dialog = page.getByRole("dialog");
+  await page.locator(".sidebar .new-mission").click();
+  const dialog = page.locator(".wish-creation");
   await dialog.getByLabel("What do you wish?").fill("Polish the lamp");
   await expect(dialog.locator(".agent-warning")).toHaveCount(0);
 
@@ -147,7 +144,7 @@ test("a new wish whose agent is not ready offers the setup, and keeps what was t
     row(page, "codex").getByRole("button", { name: "Sign in" }),
   ).toBeVisible();
   await dialog.getByRole("button", { name: "Back to the wish" }).click();
-  await expect(dialog.getByLabel("What do you wish?")).toHaveValue(
+  await expect(dialog.getByLabel("What do you wish?")).toHaveText(
     "Polish the lamp",
   );
 });

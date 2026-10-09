@@ -92,6 +92,7 @@ var leadCommands = []string{
 	"djinn task spawn", "djinn task list", "djinn task get", "djinn task watch", "djinn task send",
 	"djinn task stop", "djinn task pause", "djinn task resume", "djinn task start",
 	"djinn block put", "djinn block list", "djinn mark list",
+	"djinn instruction list", "djinn instruction reflect", "djinn instruction assign", "djinn instruction complete",
 }
 
 // leadFlags are the options of a lead's agent for the mode the wish allows in the project it starts in, quoted for

@@ -18,13 +18,14 @@ import (
 )
 
 type clients struct {
-	projects  planv1connect.ProjectServiceClient
-	wishes    planv1connect.WishServiceClient
-	questions planv1connect.QuestionServiceClient
-	blocks    planv1connect.BlockServiceClient
-	marks     planv1connect.MarkServiceClient
-	skills    planv1connect.SkillServiceClient
-	store     *store.Store
+	projects     planv1connect.ProjectServiceClient
+	wishes       planv1connect.WishServiceClient
+	instructions planv1connect.InstructionServiceClient
+	questions    planv1connect.QuestionServiceClient
+	blocks       planv1connect.BlockServiceClient
+	marks        planv1connect.MarkServiceClient
+	skills       planv1connect.SkillServiceClient
+	store        *store.Store
 }
 
 // serve runs the plan services on a store in memory, behind a real Connect server.
@@ -42,13 +43,14 @@ func serve(t *testing.T, opts ...Option) clients {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return clients{
-		projects:  planv1connect.NewProjectServiceClient(srv.Client(), srv.URL),
-		wishes:    planv1connect.NewWishServiceClient(srv.Client(), srv.URL),
-		questions: planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL),
-		blocks:    planv1connect.NewBlockServiceClient(srv.Client(), srv.URL),
-		marks:     planv1connect.NewMarkServiceClient(srv.Client(), srv.URL),
-		skills:    planv1connect.NewSkillServiceClient(srv.Client(), srv.URL),
-		store:     s,
+		projects:     planv1connect.NewProjectServiceClient(srv.Client(), srv.URL),
+		wishes:       planv1connect.NewWishServiceClient(srv.Client(), srv.URL),
+		instructions: planv1connect.NewInstructionServiceClient(srv.Client(), srv.URL),
+		questions:    planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL),
+		blocks:       planv1connect.NewBlockServiceClient(srv.Client(), srv.URL),
+		marks:        planv1connect.NewMarkServiceClient(srv.Client(), srv.URL),
+		skills:       planv1connect.NewSkillServiceClient(srv.Client(), srv.URL),
+		store:        s,
 	}
 }
 

@@ -4,6 +4,7 @@
 import type { Gate, Machine } from "../../gen/ts/machine/v1/machine_pb";
 import {
   type Block,
+  type Instruction,
   Change,
   type Project,
   type Question,
@@ -18,6 +19,7 @@ export interface WishDetail {
   tasks: Task[];
   questions: Question[];
   blocks: Block[];
+  instructions: Instruction[];
   // Read at least once.
   loaded: boolean;
 }
@@ -61,6 +63,7 @@ const EMPTY_DETAIL: WishDetail = {
   tasks: [],
   questions: [],
   blocks: [],
+  instructions: [],
   loaded: false,
 };
 
@@ -100,7 +103,8 @@ export function createStore(clients: Clients, retry = 1000): Store {
       if (
         change !== Change.TASK &&
         change !== Change.QUESTION &&
-        change !== Change.BLOCK
+        change !== Change.BLOCK &&
+        change !== Change.INSTRUCTION
       )
         continue;
       // Without a wish, every wish shown; a wish not shown is read when it is.
@@ -147,6 +151,12 @@ export function createStore(clients: Clients, retry = 1000): Store {
       if (kinds.has(Change.BLOCK))
         attempt(async () => {
           into.blocks = (await clients.blocks.list({ wishId })).blocks;
+        });
+      if (kinds.has(Change.INSTRUCTION))
+        attempt(async () => {
+          into.instructions = (
+            await clients.instructions.list({ wishId })
+          ).instructions;
         });
     }
     await Promise.all(reads);
@@ -260,7 +270,12 @@ export function createStore(clients: Clients, retry = 1000): Store {
     },
     open(wishId) {
       opened.set(wishId, (opened.get(wishId) ?? 0) + 1);
-      mark(wishId, [Change.TASK, Change.QUESTION, Change.BLOCK]);
+      mark(wishId, [
+        Change.TASK,
+        Change.QUESTION,
+        Change.BLOCK,
+        Change.INSTRUCTION,
+      ]);
       void flush();
       return () => {
         const count = (opened.get(wishId) ?? 1) - 1;

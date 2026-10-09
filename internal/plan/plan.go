@@ -29,7 +29,7 @@ import (
 // Entities are the messages the store keeps: those of plan.v1, and what each command of a project costs.
 func Entities() []proto.Message {
 	return []proto.Message{
-		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
+		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{}, &planv1.Instruction{},
 		&machinev1.CommandCost{},
 	}
 }
@@ -90,6 +90,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
 	out[p] = h
 	p, h = planv1connect.NewQuestionServiceHandler(&Questions{Store: s, Answered: o.answered}, opt)
+	out[p] = h
+	p, h = planv1connect.NewInstructionServiceHandler(&Instructions{Store: s, Leads: o.leads}, opt)
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
 	out[p] = h
@@ -275,10 +277,35 @@ type Wishes struct {
 func (w *Wishes) Make(
 	ctx context.Context, req *connect.Request[planv1.WishServiceMakeRequest],
 ) (*connect.Response[planv1.WishServiceMakeResponse], error) {
+	if err := protovalidate.Validate(req.Msg); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	language := locales.Match(strings.Split(req.Header().Get("Accept-Language"), ",")...)
+	title := req.Msg.GetTitle()
+	if title == "" {
+		title = locales.T(language, "wish.provisionalTitle", nil)
+	}
 	wish := &planv1.Wish{
-		Id: store.NewID(), Title: req.Msg.GetTitle(), CreateTime: timestamppb.Now(), Provider: req.Msg.GetProvider(),
+		Title: title, Provider: req.Msg.GetProvider(),
 	}
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		// Reuse the creation command's UUID to identify it exactly after a rename or export, with no extra field.
+		wish.Id = tx.JournalID()
+		wish.CreateTime = timestamppb.Now()
+		put := func() error {
+			if err := tx.Put(wish); err != nil {
+				return err
+			}
+			if prompt := req.Msg.GetPrompt(); prompt != "" {
+				return tx.Put(&planv1.Block{
+					Id: store.NewID(), WishId: wish.GetId(), Kind: creationKind,
+					Title: locales.T(language, "wish.originalPrompt", nil), Content: prompt,
+					MediaType: "text/markdown", Position: gap,
+					CreateTime: wish.GetCreateTime(), UpdateTime: wish.GetCreateTime(),
+				})
+			}
+			return nil
+		}
 		for _, id := range req.Msg.GetProjectIds() {
 			project, err := store.Get[*planv1.Project](ctx, tx, id)
 			if err != nil {
@@ -296,7 +323,7 @@ func (w *Wishes) Make(
 		}
 		if req.Msg.GetPaused() {
 			wish.State = planv1.WishState_WISH_STATE_PAUSED
-			return tx.Put(wish)
+			return put()
 		}
 		actives, err := ActiveWishes(ctx, tx)
 		if err != nil {
@@ -309,7 +336,7 @@ func (w *Wishes) Make(
 			return err
 		}
 		wish.State, wish.Rank = planv1.WishState_WISH_STATE_ACTIVE, int32(len(actives)+1)
-		return tx.Put(wish)
+		return put()
 	})
 	if err != nil {
 		return nil, err

@@ -16,6 +16,7 @@ export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
 export { FlightPlan } from "@/src/flight-plan.tsx";
+export { InstructionList } from "@/src/instruction-list.tsx";
 export { FolderField } from "@/src/wish-dialogs.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
@@ -98,7 +99,10 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.match(open, /Which oil\?/);
   assert.match(open, /<strong class="option-letter">A<\/strong><p>Olive<\/p>/);
-  assert.match(open, /<strong class="option-letter">B<\/strong><p>Paraffin<\/p>/);
+  assert.match(
+    open,
+    /<strong class="option-letter">B<\/strong><p>Paraffin<\/p>/,
+  );
   assert.match(open, /<strong>A<\/strong>, for the smell\./);
   assert.match(open, /Confirm this choice/);
   // The recommendation is boxed first, its option marked; nothing to rub without onMark.
@@ -174,7 +178,10 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.match(digging, /Being investigated/);
   assert.match(digging, /You asked to find out more: And the price\?/);
   assert.match(digging, /Revised/);
-  assert.match(digging, /<details class="question-rounds"><summary>.*History: 3 rounds/);
+  assert.match(
+    digging,
+    /<details class="question-rounds"><summary>.*History: 3 rounds/,
+  );
   assert.match(digging, /Recommended before: B: brighter\./);
   // Already asked: no second request.
   assert.doesNotMatch(digging, /Enlighten me/);
@@ -237,6 +244,19 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
         ],
       }),
     });
+    service(s.InstructionService, {
+      list: () => ({
+        instructions: [
+          {
+            id: "i1",
+            wishId,
+            code: "I01",
+            text: "Durable request below notes",
+            status: s.InstructionStatus.PENDING,
+          },
+        ],
+      }),
+    });
     service(s.BlockService, {
       list: () => ({
         blocks: [
@@ -262,15 +282,23 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   assert.match(html, /Trim the wick/);
   assert.match(html, /<strong>wick<\/strong> carries the oil\./);
   assert.match(html, /1 decision recorded/);
+  assert.ok(html.indexOf("wish-instructions") > html.indexOf('id="block-b1"'));
+  assert.match(html, /Durable request below notes/);
   // Nothing waits for an answer: no yes/no card waiting.
   assert.doesNotMatch(html, /Confirm the answer/);
   // The bar at the top lists what waits for you: here, the grant, which it links to.
-  assert.match(html, /<nav class="attention-bar" aria-label="What waits for you">/);
+  assert.match(
+    html,
+    /<nav class="attention-bar" aria-label="What waits for you">/,
+  );
   assert.match(html, /1 thing waits for you/);
   assert.match(html, /id="grant-01a11833/);
   // The status language, in words: the wish waits, its task is done, a question is being investigated, apart.
   assert.match(html, /status-badge tone-done[^>]*>.*Done/);
-  assert.match(html, /<h2>Being investigated<span class="count">1<\/span><\/h2>/);
+  assert.match(
+    html,
+    /<h2>Being investigated<span class="count">1<\/span><\/h2>/,
+  );
   assert.match(html, /1 question being investigated by the lead/);
   assert.match(html, /You asked to find out more: Burn time\?/);
   // A block has its read and approve marks; the journal is folded.
@@ -402,6 +430,7 @@ function twoWishes() {
     service(s.QuestionService, {
       list: (req) => ({ questions: questions[req.wishId] ?? [] }),
     });
+    service(s.InstructionService, { list: () => ({ instructions: [] }) });
     service(s.BlockService, { list: () => ({ blocks: [] }) });
   });
   return { lamp, oil, djinn: s.createDjinn(transport, 10) };
@@ -455,6 +484,7 @@ test("the flight plan hides its empty sections", async () => {
     service(s.WishService, { list: () => ({ wishes: [lamp] }) });
     service(s.TaskService, { list: () => ({ tasks: [] }) });
     service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.InstructionService, { list: () => ({ instructions: [] }) });
     service(s.BlockService, { list: () => ({ blocks: [] }) });
   });
   const djinn = s.createDjinn(transport, 10);
@@ -487,5 +517,38 @@ test("the folder of a new project has a folder dialog's button only when the win
   assert.match(
     native,
     /<button type="button"[^>]*>.*Choose a folder…<\/button>/,
+  );
+});
+
+test("the durable list shows every lifecycle and links delegated workers", () => {
+  const states = [
+    s.InstructionStatus.PENDING,
+    s.InstructionStatus.REFLECTING,
+    s.InstructionStatus.PROCESSING,
+    s.InstructionStatus.DONE,
+  ];
+  const html = s.renderToStaticMarkup(
+    h(s.InstructionList, {
+      instructions: states.map((status, i) => ({
+        id: `i${i}`,
+        code: `I0${i + 1}`,
+        text: `Full indication ${i}\nKeep the line`,
+        status,
+        taskId: i > 1 ? "task-one" : "",
+      })),
+      tasks: [{ id: "task-one", code: "W7" }],
+    }),
+  );
+  assert.match(html, /Pending/);
+  assert.match(html, /Reflecting/);
+  assert.match(html, /Processing by/);
+  assert.match(html, /Done/);
+  assert.equal((html.match(/href="#task-task-one"/g) ?? []).length, 2);
+  assert.match(html, /Full indication 3\nKeep the line/);
+  assert.equal(
+    s.renderToStaticMarkup(
+      h(s.InstructionList, { instructions: [], tasks: [] }),
+    ),
+    "",
   );
 });

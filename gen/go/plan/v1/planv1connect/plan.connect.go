@@ -37,6 +37,8 @@ const (
 	MarkServiceName = "plan.v1.MarkService"
 	// TaskServiceName is the fully-qualified name of the TaskService service.
 	TaskServiceName = "plan.v1.TaskService"
+	// InstructionServiceName is the fully-qualified name of the InstructionService service.
+	InstructionServiceName = "plan.v1.InstructionService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -70,6 +72,8 @@ const (
 	SkillServiceUnsummonProcedure = "/plan.v1.SkillService/Unsummon"
 	// WishServiceMakeProcedure is the fully-qualified name of the WishService's Make RPC.
 	WishServiceMakeProcedure = "/plan.v1.WishService/Make"
+	// WishServiceRenameProcedure is the fully-qualified name of the WishService's Rename RPC.
+	WishServiceRenameProcedure = "/plan.v1.WishService/Rename"
 	// WishServiceListProcedure is the fully-qualified name of the WishService's List RPC.
 	WishServiceListProcedure = "/plan.v1.WishService/List"
 	// WishServiceExportProcedure is the fully-qualified name of the WishService's Export RPC.
@@ -140,6 +144,19 @@ const (
 	TaskServiceDeleteProcedure = "/plan.v1.TaskService/Delete"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
+	// InstructionServiceSendProcedure is the fully-qualified name of the InstructionService's Send RPC.
+	InstructionServiceSendProcedure = "/plan.v1.InstructionService/Send"
+	// InstructionServiceListProcedure is the fully-qualified name of the InstructionService's List RPC.
+	InstructionServiceListProcedure = "/plan.v1.InstructionService/List"
+	// InstructionServiceReflectProcedure is the fully-qualified name of the InstructionService's
+	// Reflect RPC.
+	InstructionServiceReflectProcedure = "/plan.v1.InstructionService/Reflect"
+	// InstructionServiceAssignProcedure is the fully-qualified name of the InstructionService's Assign
+	// RPC.
+	InstructionServiceAssignProcedure = "/plan.v1.InstructionService/Assign"
+	// InstructionServiceCompleteProcedure is the fully-qualified name of the InstructionService's
+	// Complete RPC.
+	InstructionServiceCompleteProcedure = "/plan.v1.InstructionService/Complete"
 )
 
 // QuestionServiceClient is a client for the plan.v1.QuestionService service.
@@ -562,6 +579,8 @@ func (UnimplementedSkillServiceHandler) Unsummon(context.Context, *connect.Reque
 type WishServiceClient interface {
 	// Make a wish.
 	Make(context.Context, *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error)
+	// Rename a wish with a concise title written by its lead or the developer. The original request stays whole.
+	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
 	// List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
 	// the most recent last.
 	List(context.Context, *connect.Request[v1.WishServiceListRequest]) (*connect.Response[v1.WishServiceListResponse], error)
@@ -644,6 +663,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+WishServiceMakeProcedure,
 			connect.WithSchema(wishServiceMethods.ByName("Make")),
+			connect.WithClientOptions(opts...),
+		),
+		rename: connect.NewClient[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse](
+			httpClient,
+			baseURL+WishServiceRenameProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Rename")),
 			connect.WithClientOptions(opts...),
 		),
 		list: connect.NewClient[v1.WishServiceListRequest, v1.WishServiceListResponse](
@@ -766,6 +791,7 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 // wishServiceClient implements WishServiceClient.
 type wishServiceClient struct {
 	make        *connect.Client[v1.WishServiceMakeRequest, v1.WishServiceMakeResponse]
+	rename      *connect.Client[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse]
 	list        *connect.Client[v1.WishServiceListRequest, v1.WishServiceListResponse]
 	export      *connect.Client[v1.WishServiceExportRequest, v1.WishServiceExportResponse]
 	_import     *connect.Client[v1.WishServiceImportRequest, v1.WishServiceImportResponse]
@@ -790,6 +816,11 @@ type wishServiceClient struct {
 // Make calls plan.v1.WishService.Make.
 func (c *wishServiceClient) Make(ctx context.Context, req *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error) {
 	return c.make.CallUnary(ctx, req)
+}
+
+// Rename calls plan.v1.WishService.Rename.
+func (c *wishServiceClient) Rename(ctx context.Context, req *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
+	return c.rename.CallUnary(ctx, req)
 }
 
 // List calls plan.v1.WishService.List.
@@ -891,6 +922,8 @@ func (c *wishServiceClient) Watch(ctx context.Context, req *connect.Request[v1.W
 type WishServiceHandler interface {
 	// Make a wish.
 	Make(context.Context, *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error)
+	// Rename a wish with a concise title written by its lead or the developer. The original request stays whole.
+	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
 	// List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
 	// the most recent last.
 	List(context.Context, *connect.Request[v1.WishServiceListRequest]) (*connect.Response[v1.WishServiceListResponse], error)
@@ -969,6 +1002,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		WishServiceMakeProcedure,
 		svc.Make,
 		connect.WithSchema(wishServiceMethods.ByName("Make")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceRenameHandler := connect.NewUnaryHandler(
+		WishServiceRenameProcedure,
+		svc.Rename,
+		connect.WithSchema(wishServiceMethods.ByName("Rename")),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceListHandler := connect.NewUnaryHandler(
@@ -1089,6 +1128,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		switch r.URL.Path {
 		case WishServiceMakeProcedure:
 			wishServiceMakeHandler.ServeHTTP(w, r)
+		case WishServiceRenameProcedure:
+			wishServiceRenameHandler.ServeHTTP(w, r)
 		case WishServiceListProcedure:
 			wishServiceListHandler.ServeHTTP(w, r)
 		case WishServiceExportProcedure:
@@ -1138,6 +1179,10 @@ type UnimplementedWishServiceHandler struct{}
 
 func (UnimplementedWishServiceHandler) Make(context.Context, *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Make is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Rename is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) List(context.Context, *connect.Request[v1.WishServiceListRequest]) (*connect.Response[v1.WishServiceListResponse], error) {
@@ -1810,4 +1855,188 @@ func (UnimplementedTaskServiceHandler) Delete(context.Context, *connect.Request[
 
 func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Send is not implemented"))
+}
+
+// InstructionServiceClient is a client for the plan.v1.InstructionService service.
+type InstructionServiceClient interface {
+	// Persist an instruction and its journal entry before notifying the lead. Works while the lead is offline.
+	Send(context.Context, *connect.Request[v1.InstructionServiceSendRequest]) (*connect.Response[v1.InstructionServiceSendResponse], error)
+	// List every instruction of a wish, oldest first, with its full text and worker task reference.
+	List(context.Context, *connect.Request[v1.InstructionServiceListRequest]) (*connect.Response[v1.InstructionServiceListResponse], error)
+	// Move a pending instruction to reflecting: the lead considers which worker should handle it.
+	Reflect(context.Context, *connect.Request[v1.InstructionServiceReflectRequest]) (*connect.Response[v1.InstructionServiceReflectResponse], error)
+	// Delegate a reflecting instruction to a task of its wish, moving it to processing; may reassign processing.
+	Assign(context.Context, *connect.Request[v1.InstructionServiceAssignRequest]) (*connect.Response[v1.InstructionServiceAssignResponse], error)
+	// Complete a processing instruction explicitly, after verifying its worker task ended successfully.
+	Complete(context.Context, *connect.Request[v1.InstructionServiceCompleteRequest]) (*connect.Response[v1.InstructionServiceCompleteResponse], error)
+}
+
+// NewInstructionServiceClient constructs a client for the plan.v1.InstructionService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewInstructionServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) InstructionServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	instructionServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("InstructionService").Methods()
+	return &instructionServiceClient{
+		send: connect.NewClient[v1.InstructionServiceSendRequest, v1.InstructionServiceSendResponse](
+			httpClient,
+			baseURL+InstructionServiceSendProcedure,
+			connect.WithSchema(instructionServiceMethods.ByName("Send")),
+			connect.WithClientOptions(opts...),
+		),
+		list: connect.NewClient[v1.InstructionServiceListRequest, v1.InstructionServiceListResponse](
+			httpClient,
+			baseURL+InstructionServiceListProcedure,
+			connect.WithSchema(instructionServiceMethods.ByName("List")),
+			connect.WithClientOptions(opts...),
+		),
+		reflect: connect.NewClient[v1.InstructionServiceReflectRequest, v1.InstructionServiceReflectResponse](
+			httpClient,
+			baseURL+InstructionServiceReflectProcedure,
+			connect.WithSchema(instructionServiceMethods.ByName("Reflect")),
+			connect.WithClientOptions(opts...),
+		),
+		assign: connect.NewClient[v1.InstructionServiceAssignRequest, v1.InstructionServiceAssignResponse](
+			httpClient,
+			baseURL+InstructionServiceAssignProcedure,
+			connect.WithSchema(instructionServiceMethods.ByName("Assign")),
+			connect.WithClientOptions(opts...),
+		),
+		complete: connect.NewClient[v1.InstructionServiceCompleteRequest, v1.InstructionServiceCompleteResponse](
+			httpClient,
+			baseURL+InstructionServiceCompleteProcedure,
+			connect.WithSchema(instructionServiceMethods.ByName("Complete")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// instructionServiceClient implements InstructionServiceClient.
+type instructionServiceClient struct {
+	send     *connect.Client[v1.InstructionServiceSendRequest, v1.InstructionServiceSendResponse]
+	list     *connect.Client[v1.InstructionServiceListRequest, v1.InstructionServiceListResponse]
+	reflect  *connect.Client[v1.InstructionServiceReflectRequest, v1.InstructionServiceReflectResponse]
+	assign   *connect.Client[v1.InstructionServiceAssignRequest, v1.InstructionServiceAssignResponse]
+	complete *connect.Client[v1.InstructionServiceCompleteRequest, v1.InstructionServiceCompleteResponse]
+}
+
+// Send calls plan.v1.InstructionService.Send.
+func (c *instructionServiceClient) Send(ctx context.Context, req *connect.Request[v1.InstructionServiceSendRequest]) (*connect.Response[v1.InstructionServiceSendResponse], error) {
+	return c.send.CallUnary(ctx, req)
+}
+
+// List calls plan.v1.InstructionService.List.
+func (c *instructionServiceClient) List(ctx context.Context, req *connect.Request[v1.InstructionServiceListRequest]) (*connect.Response[v1.InstructionServiceListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
+// Reflect calls plan.v1.InstructionService.Reflect.
+func (c *instructionServiceClient) Reflect(ctx context.Context, req *connect.Request[v1.InstructionServiceReflectRequest]) (*connect.Response[v1.InstructionServiceReflectResponse], error) {
+	return c.reflect.CallUnary(ctx, req)
+}
+
+// Assign calls plan.v1.InstructionService.Assign.
+func (c *instructionServiceClient) Assign(ctx context.Context, req *connect.Request[v1.InstructionServiceAssignRequest]) (*connect.Response[v1.InstructionServiceAssignResponse], error) {
+	return c.assign.CallUnary(ctx, req)
+}
+
+// Complete calls plan.v1.InstructionService.Complete.
+func (c *instructionServiceClient) Complete(ctx context.Context, req *connect.Request[v1.InstructionServiceCompleteRequest]) (*connect.Response[v1.InstructionServiceCompleteResponse], error) {
+	return c.complete.CallUnary(ctx, req)
+}
+
+// InstructionServiceHandler is an implementation of the plan.v1.InstructionService service.
+type InstructionServiceHandler interface {
+	// Persist an instruction and its journal entry before notifying the lead. Works while the lead is offline.
+	Send(context.Context, *connect.Request[v1.InstructionServiceSendRequest]) (*connect.Response[v1.InstructionServiceSendResponse], error)
+	// List every instruction of a wish, oldest first, with its full text and worker task reference.
+	List(context.Context, *connect.Request[v1.InstructionServiceListRequest]) (*connect.Response[v1.InstructionServiceListResponse], error)
+	// Move a pending instruction to reflecting: the lead considers which worker should handle it.
+	Reflect(context.Context, *connect.Request[v1.InstructionServiceReflectRequest]) (*connect.Response[v1.InstructionServiceReflectResponse], error)
+	// Delegate a reflecting instruction to a task of its wish, moving it to processing; may reassign processing.
+	Assign(context.Context, *connect.Request[v1.InstructionServiceAssignRequest]) (*connect.Response[v1.InstructionServiceAssignResponse], error)
+	// Complete a processing instruction explicitly, after verifying its worker task ended successfully.
+	Complete(context.Context, *connect.Request[v1.InstructionServiceCompleteRequest]) (*connect.Response[v1.InstructionServiceCompleteResponse], error)
+}
+
+// NewInstructionServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewInstructionServiceHandler(svc InstructionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	instructionServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("InstructionService").Methods()
+	instructionServiceSendHandler := connect.NewUnaryHandler(
+		InstructionServiceSendProcedure,
+		svc.Send,
+		connect.WithSchema(instructionServiceMethods.ByName("Send")),
+		connect.WithHandlerOptions(opts...),
+	)
+	instructionServiceListHandler := connect.NewUnaryHandler(
+		InstructionServiceListProcedure,
+		svc.List,
+		connect.WithSchema(instructionServiceMethods.ByName("List")),
+		connect.WithHandlerOptions(opts...),
+	)
+	instructionServiceReflectHandler := connect.NewUnaryHandler(
+		InstructionServiceReflectProcedure,
+		svc.Reflect,
+		connect.WithSchema(instructionServiceMethods.ByName("Reflect")),
+		connect.WithHandlerOptions(opts...),
+	)
+	instructionServiceAssignHandler := connect.NewUnaryHandler(
+		InstructionServiceAssignProcedure,
+		svc.Assign,
+		connect.WithSchema(instructionServiceMethods.ByName("Assign")),
+		connect.WithHandlerOptions(opts...),
+	)
+	instructionServiceCompleteHandler := connect.NewUnaryHandler(
+		InstructionServiceCompleteProcedure,
+		svc.Complete,
+		connect.WithSchema(instructionServiceMethods.ByName("Complete")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.InstructionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case InstructionServiceSendProcedure:
+			instructionServiceSendHandler.ServeHTTP(w, r)
+		case InstructionServiceListProcedure:
+			instructionServiceListHandler.ServeHTTP(w, r)
+		case InstructionServiceReflectProcedure:
+			instructionServiceReflectHandler.ServeHTTP(w, r)
+		case InstructionServiceAssignProcedure:
+			instructionServiceAssignHandler.ServeHTTP(w, r)
+		case InstructionServiceCompleteProcedure:
+			instructionServiceCompleteHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedInstructionServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedInstructionServiceHandler struct{}
+
+func (UnimplementedInstructionServiceHandler) Send(context.Context, *connect.Request[v1.InstructionServiceSendRequest]) (*connect.Response[v1.InstructionServiceSendResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.Send is not implemented"))
+}
+
+func (UnimplementedInstructionServiceHandler) List(context.Context, *connect.Request[v1.InstructionServiceListRequest]) (*connect.Response[v1.InstructionServiceListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.List is not implemented"))
+}
+
+func (UnimplementedInstructionServiceHandler) Reflect(context.Context, *connect.Request[v1.InstructionServiceReflectRequest]) (*connect.Response[v1.InstructionServiceReflectResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.Reflect is not implemented"))
+}
+
+func (UnimplementedInstructionServiceHandler) Assign(context.Context, *connect.Request[v1.InstructionServiceAssignRequest]) (*connect.Response[v1.InstructionServiceAssignResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.Assign is not implemented"))
+}
+
+func (UnimplementedInstructionServiceHandler) Complete(context.Context, *connect.Request[v1.InstructionServiceCompleteRequest]) (*connect.Response[v1.InstructionServiceCompleteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.Complete is not implemented"))
 }

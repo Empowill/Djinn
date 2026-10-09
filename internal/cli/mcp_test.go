@@ -96,8 +96,8 @@ func TestMCPListTools(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	// Every public method that answers once: the three streams (gate hold, wish watch, task watch) are left out.
-	if len(names) != 44 {
-		t.Errorf("got %d tools, want 44: %v", len(names), names)
+	if len(names) != 50 {
+		t.Errorf("got %d tools, want 50: %v", len(names), names)
 	}
 	for _, want := range []string{"question_answer", "wish_set_lead", "project_list", "machine_show"} {
 		if !slices.Contains(names, want) {
@@ -108,6 +108,10 @@ func TestMCPListTools(t *testing.T) {
 		if slices.Contains(names, unwanted) {
 			t.Errorf("tool %s should not be served", unwanted)
 		}
+	}
+	makeTool := list.Tools[slices.Index(names, "wish_make")]
+	if len(makeTool.InputSchema.Required) != 0 {
+		t.Errorf("wish_make permits prompt-only requests, required %v", makeTool.InputSchema.Required)
 	}
 	tool := list.Tools[slices.Index(names, "question_answer")]
 	if tool.Description != "Answer a question, which turns it into a decision." {

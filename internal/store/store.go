@@ -229,7 +229,7 @@ type Tx struct {
 	ctx     context.Context
 	tx      *sql.Tx
 	s       *Store
-	journal bool
+	journal string
 	changed []proto.Message
 }
 
@@ -283,14 +283,18 @@ func (tx *Tx) Journal(actor, method string, req proto.Message) error {
 		id.String(), actor, at, method, b); err != nil {
 		return fmt.Errorf("journal %s: %w", method, err)
 	}
-	tx.journal = true
+	tx.journal = id.String()
 	return nil
 }
+
+// JournalID returns the identifier of the last command journaled in this transaction, or empty before Journal.
+// A newly created entity may use it as its identifier, tying creation to its command without extra stored fields.
+func (tx *Tx) JournalID() string { return tx.journal }
 
 // Put inserts or replaces an entity. It returns an error wrapping ErrDuplicate when another entity has the same
 // values in a unique group.
 func (tx *Tx) Put(m proto.Message) error {
-	if !tx.journal {
+	if tx.journal == "" {
 		return errors.New("store: journal the command before changing an entity")
 	}
 	t, err := tx.s.table(m.ProtoReflect().Descriptor())
@@ -306,7 +310,7 @@ func (tx *Tx) Put(m proto.Message) error {
 
 // Delete removes an entity, found by the type and the id of m. Like Put, it follows the command that caused it.
 func (tx *Tx) Delete(m proto.Message) error {
-	if !tx.journal {
+	if tx.journal == "" {
 		return errors.New("store: journal the command before changing an entity")
 	}
 	t, err := tx.s.table(m.ProtoReflect().Descriptor())

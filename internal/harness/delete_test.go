@@ -46,3 +46,38 @@ func TestDelete(t *testing.T) {
 		t.Errorf("delete a task a worker ran: %v, want failed precondition", err)
 	}
 }
+
+func TestDeleteInstructionWorker(t *testing.T) {
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, t.TempDir())
+	task := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W1", Title: "Imported worker", Status: planv1.TaskStatus_TASK_STATUS_DONE}
+	instruction := &planv1.Instruction{Id: store.NewID(), WishId: wishID, Code: "I01", Text: "Keep the worker reference", TaskId: task.GetId(), Status: planv1.InstructionStatus_INSTRUCTION_STATUS_PROCESSING}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", task); err != nil {
+			return err
+		}
+		if err := tx.Put(task); err != nil {
+			return err
+		}
+		return tx.Put(instruction)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []planv1.InstructionStatus{planv1.InstructionStatus_INSTRUCTION_STATUS_PROCESSING, planv1.InstructionStatus_INSTRUCTION_STATUS_DONE} {
+		instruction.Status = status
+		if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+			if err := tx.Journal("test", "instruction", instruction); err != nil {
+				return err
+			}
+			return tx.Put(instruction)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.tasks.Delete(t.Context(), connect.NewRequest(&planv1.TaskServiceDeleteRequest{TaskId: task.GetId()})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Fatalf("delete referenced task with instruction %v: %v", status, err)
+		}
+		if _, err := store.Get[*planv1.Task](t.Context(), e.db, task.GetId()); err != nil {
+			t.Fatalf("referenced worker deleted: %v", err)
+		}
+	}
+}

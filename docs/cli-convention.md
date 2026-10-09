@@ -1,8 +1,9 @@
 # The command line convention
 
-Every command of `djinn` comes from a proto in `api/`. No CLI option lives in the proto: the command line is
-read from the request messages by convention, at runtime, through `protoreflect`. Adding a public method to a
-service adds a command, with its help, its arguments and their validation.
+Every command of `djinn` comes from a proto in `api/`. The command line reads request messages
+by convention, at runtime, through `protoreflect`; an optional positional annotation preserves arguments
+when a field becomes optional. Adding a public method to a service adds a command, with its help, its
+arguments and their validation.
 
 ## Commands
 
@@ -26,6 +27,7 @@ The arguments are the fields of the request.
 | Field                                       | On the command line                                      |
 | ------------------------------------------- | -------------------------------------------------------- |
 | `(buf.validate.field).required = true`      | Positional, in field-number order: `<question> <choice>` |
+| `(djinn.v1.positional) = true`               | Optional positional: `[<title>]`                         |
 | any other field                             | `--kebab-case value` or `--kebab-case=value`             |
 | `bool`                                      | `--open`, without a value (`--open=false` also works)    |
 | `repeated`                                  | A repeatable flag: `--options a --options b`             |
@@ -34,6 +36,11 @@ The arguments are the fields of the request.
 | a message holding only a `oneof` of scalars | One input, stored in the first member whose rules pass   |
 | `string directory` or `*_directory`         | A folder: a relative path is made absolute, from the current directory, before sending |
 | `string file` or `*_file`                   | A file, made absolute the same way: the server reads or writes it on this machine |
+
+A field marked `(djinn.v1.positional) = true` keeps its positional spelling even when validation allows
+it to be omitted; the help displays it in brackets. For example, `djinn wish make "Short title"` keeps its
+existing spelling, while `djinn wish make --prompt "The complete request"` creates a wish whose lead will write the title. MCP and
+OpenAPI mark only fields whose validation requires a value as required; positional spelling alone does not.
 
 The `oneof` rule is how a question is named by its code or its identifier: `QuestionRef` has `code` (pattern
 `^Q[0-9]{2,3}$`) then `id` (a UUID), so `Q03` lands in `code` and a UUID in `id`. An input no member accepts

@@ -64,7 +64,7 @@ message Wish {
   // When the user granted the wish.
   google.protobuf.Timestamp grant_time = 9;
   // Djinn proposes to grant the wish: it has tasks, all finished, no question is open, and no task waits for an
-  // answer or failed. Computed on every read, never stored. Only the user grants a wish.
+  // answer or failed, and every developer instruction is done. Computed on every read, never stored. Only the user grants a wish.
   bool ready = 10;
   // Kind of agent of the wish, chosen when it was made and changed by djinn wish set-provider: its lead runs it, and so
   // does every task that names no other. Not set on a wish made before the choice: Claude.
@@ -720,6 +720,10 @@ service WishService {
   rpc Make(WishServiceMakeRequest) returns (WishServiceMakeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+  // Rename a wish with a concise title written by its lead or the developer. The original request stays whole.
+  rpc Rename(WishServiceRenameRequest) returns (WishServiceRenameResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
   // List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
   // the most recent last.
   rpc List(WishServiceListRequest) returns (WishServiceListResponse) {
@@ -857,6 +861,8 @@ enum Change {
   CHANGE_BLOCK = 4;
   // The projects: one added or changed.
   CHANGE_PROJECT = 5;
+  // Durable developer instructions and their lifecycle; also changes wish readiness.
+  CHANGE_INSTRUCTION = 6;
 }
 
 message WishServiceRenderRequest {
@@ -972,9 +978,14 @@ message WishServiceMoveResponse {
 }
 
 message WishServiceMakeRequest {
-  // What you wish, in a sentence.
+  option (buf.validate.message).cel = {
+    id: "wish.request"
+    message: "a nonblank title or prompt is required"
+    expression: "this.title.matches('[^\\\\s\\\\p{Z}\\\\x{0085}]') || this.prompt.matches('[^\\\\s\\\\p{Z}\\\\x{0085}]')"
+  };
+  // A title for the wish, in a sentence. May be omitted with --prompt: the lead writes its title at startup.
   string title = 1 [
-    (buf.validate.field).required = true,
+    (djinn.v1.positional) = true,
     (buf.validate.field).string.max_len = 500
   ];
   // A project the wish works on; repeat for each one.
@@ -987,6 +998,28 @@ message WishServiceMakeRequest {
   // What its agent may do in each of its projects from the start, as djinn wish allow gives it: edit, or auto. None,
   // or not set, leaves it to each project's configuration.
   Allowance allowance = 5 [(buf.validate.field).enum.defined_only = true];
+  // The full original request in Markdown, stored as a creation block. Without a title, the wish gets a neutral
+  // provisional title until its lead writes one. Either title or prompt must contain non-whitespace text.
+  string prompt = 6 [(buf.validate.field).string.max_len = 1000000];
+}
+
+message WishServiceRenameRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The new title, a nonblank line, at most 500 characters.
+  string title = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 500,
+    (buf.validate.field).string.pattern = "^[^\\r\\n\\x{0085}\\p{Zl}\\p{Zp}]*[^\\s\\p{Z}\\x{0085}][^\\r\\n\\x{0085}\\p{Zl}\\p{Zp}]*$"
+  ];
+}
+
+message WishServiceRenameResponse {
+  // The wish with its new title.
+  Wish wish = 1;
 }
 
 message WishServiceMakeResponse {
@@ -1255,6 +1288,8 @@ message WishExport {
   repeated Block blocks = 8;
   // The commands of the journal that changed the wish, oldest first.
   repeated Command commands = 9;
+  // Durable developer instructions and their worker associations.
+  repeated Instruction instructions = 10;
 }
 
 // ProjectRef names a project without its folder, so that another machine finds its own copy.
@@ -1719,4 +1754,125 @@ message TaskServiceDeleteRequest {
 message TaskServiceDeleteResponse {
   // The task, as it was.
   Task task = 1;
+}
+
+// A durable developer instruction for a wish. The lead reflects, delegates to a worker task of the same wish,
+// verifies the result, and explicitly completes it. Generic wish tell messages are not instructions.
+message Instruction {
+  option (djinn.v1.unique) = {fields: ["wish_id", "code"]};
+  option (djinn.v1.unique) = {fields: ["wish_id", "request_id"]};
+  option (buf.validate.message).cel = {
+    id: "instruction.worker"
+    message: "processing and done require a worker task; pending and reflecting have none"
+    expression: "(this.status == 3 || this.status == 4) ? this.task_id != '' : this.task_id == ''"
+  };
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // Wish this instruction belongs to.
+  string wish_id = 2 [(buf.validate.field).string.uuid = true];
+  // Code within its wish, I01, I02 and so on.
+  string code = 3 [(buf.validate.field).string.pattern = "^I[0-9]{2,}$"];
+  // The developer's full text, without truncation.
+  string text = 4 [(buf.validate.field).string = {min_len: 1, max_len: 200000}];
+  // Caller retry identifier, unique within the wish when set.
+  string request_id = 9 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+  // When the instruction was submitted.
+  google.protobuf.Timestamp create_time = 5 [(buf.validate.field).required = true];
+  // When its lifecycle last changed.
+  google.protobuf.Timestamp update_time = 6 [(buf.validate.field).required = true];
+  // Where the instruction stands.
+  InstructionStatus status = 7 [(buf.validate.field).required = true, (buf.validate.field).enum.defined_only = true];
+  // Worker task of the same wish; required for processing and done.
+  string task_id = 8 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+}
+
+// InstructionStatus follows the lead's handling of a developer instruction, independently of the worker status.
+enum InstructionStatus {
+  // Not set.
+  INSTRUCTION_STATUS_UNSPECIFIED = 0;
+  // Persisted, waiting for the lead.
+  INSTRUCTION_STATUS_PENDING = 1;
+  // The lead is considering how to delegate it.
+  INSTRUCTION_STATUS_REFLECTING = 2;
+  // Delegated to a worker task; stays so even when the task ends, fails or waits.
+  INSTRUCTION_STATUS_PROCESSING = 3;
+  // The lead verified the worker's successful result and explicitly completed the instruction.
+  INSTRUCTION_STATUS_DONE = 4;
+}
+
+// Instructions: durable developer requests that the lead must delegate to a worker, never implement itself.
+service InstructionService {
+  // Persist an instruction and its journal entry before notifying the lead. Works while the lead is offline.
+  rpc Send(InstructionServiceSendRequest) returns (InstructionServiceSendResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // List every instruction of a wish, oldest first, with its full text and worker task reference.
+  rpc List(InstructionServiceListRequest) returns (InstructionServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Move a pending instruction to reflecting: the lead considers which worker should handle it.
+  rpc Reflect(InstructionServiceReflectRequest) returns (InstructionServiceReflectResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Delegate a reflecting instruction to a task of its wish, moving it to processing; may reassign processing.
+  rpc Assign(InstructionServiceAssignRequest) returns (InstructionServiceAssignResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // Complete a processing instruction explicitly, after verifying its worker task ended successfully.
+  rpc Complete(InstructionServiceCompleteRequest) returns (InstructionServiceCompleteResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+}
+
+message InstructionServiceSendRequest {
+  // The wish.
+  string wish_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
+  // The full developer instruction.
+  string text = 2 [(buf.validate.field).required = true, (buf.validate.field).string.max_len = 200000];
+  // Optional UUID for safe retries: the same wish and request id return the original instruction.
+  string request_id = 3 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+}
+message InstructionServiceSendResponse {
+  // The instruction, persisted even when its lead is offline.
+  Instruction instruction = 1;
+}
+message InstructionServiceListRequest {
+  // The wish.
+  string wish_id = 1 [(buf.validate.field).required = true, (buf.validate.field).string.uuid = true];
+}
+message InstructionServiceListResponse {
+  // Every instruction, oldest first, with full text.
+  repeated Instruction instructions = 1;
+}
+message InstructionServiceReflectRequest {
+  // Instruction code (I01) or identifier; codes ignore case.
+  string instruction = 1 [(buf.validate.field).required = true, (buf.validate.field).string = {min_len: 1, max_len: 64}];
+  // The wish, required when a code exists in several wishes.
+  string wish_id = 2 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+}
+message InstructionServiceReflectResponse {
+  // The instruction, reflecting.
+  Instruction instruction = 1;
+}
+message InstructionServiceAssignRequest {
+  // Instruction code (I01) or identifier; codes ignore case.
+  string instruction = 1 [(buf.validate.field).required = true, (buf.validate.field).string = {min_len: 1, max_len: 64}];
+  // Worker task code (W1) or identifier, of the same wish.
+  string task = 2 [(buf.validate.field).required = true, (buf.validate.field).string = {min_len: 1, max_len: 64}];
+  // The wish, required when an instruction code exists in several wishes.
+  string wish_id = 3 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+}
+message InstructionServiceAssignResponse {
+  // The instruction, processing, with its worker task reference.
+  Instruction instruction = 1;
+}
+message InstructionServiceCompleteRequest {
+  // Instruction code (I01) or identifier; codes ignore case.
+  string instruction = 1 [(buf.validate.field).required = true, (buf.validate.field).string = {min_len: 1, max_len: 64}];
+  // The wish, required when a code exists in several wishes.
+  string wish_id = 2 [(buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE, (buf.validate.field).string.uuid = true];
+}
+message InstructionServiceCompleteResponse {
+  // The instruction, done after explicit verification by the lead.
+  Instruction instruction = 1;
 }

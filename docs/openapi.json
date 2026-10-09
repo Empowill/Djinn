@@ -474,6 +474,220 @@
         ],
         "type": "string"
       },
+      "plan.v1.Instruction": {
+        "description": "A durable developer instruction for a wish. The lead reflects, delegates to a worker task of the same wish, verifies the result, and explicitly completes it. Generic wish tell messages are not instructions.",
+        "properties": {
+          "code": {
+            "description": "Code within its wish, I01, I02 and so on.",
+            "pattern": "^I[0-9]{2,}$",
+            "type": "string"
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When the instruction was submitted."
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "description": "Caller retry identifier, unique within the wish when set.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/plan.v1.InstructionStatus",
+            "description": "Where the instruction stands."
+          },
+          "taskId": {
+            "description": "Worker task of the same wish; required for processing and done.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "text": {
+            "description": "The developer's full text, without truncation.",
+            "maxLength": 200000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updateTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When its lifecycle last changed."
+          },
+          "wishId": {
+            "description": "Wish this instruction belongs to.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createTime",
+          "updateTime",
+          "status"
+        ],
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceAssignRequest": {
+        "properties": {
+          "instruction": {
+            "description": "Instruction code (I01) or identifier; codes ignore case.",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "task": {
+            "description": "Worker task code (W1) or identifier, of the same wish.",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish, required when an instruction code exists in several wishes.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instruction",
+          "task"
+        ],
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceAssignResponse": {
+        "properties": {
+          "instruction": {
+            "$ref": "#/components/schemas/plan.v1.Instruction",
+            "description": "The instruction, processing, with its worker task reference."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceCompleteRequest": {
+        "properties": {
+          "instruction": {
+            "description": "Instruction code (I01) or identifier; codes ignore case.",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish, required when a code exists in several wishes.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instruction"
+        ],
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceCompleteResponse": {
+        "properties": {
+          "instruction": {
+            "$ref": "#/components/schemas/plan.v1.Instruction",
+            "description": "The instruction, done after explicit verification by the lead."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceListRequest": {
+        "properties": {
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceListResponse": {
+        "properties": {
+          "instructions": {
+            "description": "Every instruction, oldest first, with full text.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Instruction"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceReflectRequest": {
+        "properties": {
+          "instruction": {
+            "description": "Instruction code (I01) or identifier; codes ignore case.",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish, required when a code exists in several wishes.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instruction"
+        ],
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceReflectResponse": {
+        "properties": {
+          "instruction": {
+            "$ref": "#/components/schemas/plan.v1.Instruction",
+            "description": "The instruction, reflecting."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceSendRequest": {
+        "properties": {
+          "requestId": {
+            "description": "Optional UUID for safe retries: the same wish and request id return the original instruction.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "text": {
+            "description": "The full developer instruction.",
+            "maxLength": 200000,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId",
+          "text"
+        ],
+        "type": "object"
+      },
+      "plan.v1.InstructionServiceSendResponse": {
+        "properties": {
+          "instruction": {
+            "$ref": "#/components/schemas/plan.v1.Instruction",
+            "description": "The instruction, persisted even when its lead is offline."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InstructionStatus": {
+        "description": "InstructionStatus follows the lead's handling of a developer instruction, independently of the worker status.",
+        "enum": [
+          "INSTRUCTION_STATUS_UNSPECIFIED",
+          "INSTRUCTION_STATUS_PENDING",
+          "INSTRUCTION_STATUS_REFLECTING",
+          "INSTRUCTION_STATUS_PROCESSING",
+          "INSTRUCTION_STATUS_DONE"
+        ],
+        "type": "string"
+      },
       "plan.v1.Lead": {
         "description": "The lead of a wish: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and the session's identifier, which the agent's own command line resumes.",
         "properties": {
@@ -1853,7 +2067,7 @@
             "type": "integer"
           },
           "ready": {
-            "description": "Djinn proposes to grant the wish: it has tasks, all finished, no question is open, and no task waits for an answer or failed. Computed on every read, never stored. Only the user grants a wish.",
+            "description": "Djinn proposes to grant the wish: it has tasks, all finished, no question is open, and no task waits for an answer or failed, and every developer instruction is done. Computed on every read, never stored. Only the user grants a wish.",
             "type": "boolean"
           },
           "state": {
@@ -2069,19 +2283,21 @@
             },
             "type": "array"
           },
+          "prompt": {
+            "description": "The full original request in Markdown, stored as a creation block. Without a title, the wish gets a neutral provisional title until its lead writes one. Either title or prompt must contain non-whitespace text.",
+            "maxLength": 1000000,
+            "type": "string"
+          },
           "provider": {
             "$ref": "#/components/schemas/plan.v1.Provider",
             "description": "Kind of agent for the wish's lead and, unless a task names another, its tasks: claude (the default), codex or antigravity."
           },
           "title": {
-            "description": "What you wish, in a sentence.",
+            "description": "A title for the wish, in a sentence. May be omitted with --prompt: the lead writes its title at startup.",
             "maxLength": 500,
             "type": "string"
           }
         },
-        "required": [
-          "title"
-        ],
         "type": "object"
       },
       "plan.v1.WishServiceMakeResponse": {
@@ -2141,6 +2357,35 @@
           "wish": {
             "$ref": "#/components/schemas/plan.v1.Wish",
             "description": "The wish, paused."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceRenameRequest": {
+        "properties": {
+          "title": {
+            "description": "The new title, a nonblank line, at most 500 characters.",
+            "maxLength": 500,
+            "pattern": "^[^\\r\\n\\x{0085}\\p{Zl}\\p{Zp}]*[^\\s\\p{Z}\\x{0085}][^\\r\\n\\x{0085}\\p{Zl}\\p{Zp}]*$",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceRenameResponse": {
+        "properties": {
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish with its new title."
           }
         },
         "type": "object"
@@ -2617,6 +2862,196 @@
         "summary": "djinn block put",
         "tags": [
           "BlockService"
+        ]
+      }
+    },
+    "/plan.v1.InstructionService/Assign": {
+      "post": {
+        "description": "Delegate a reflecting instruction to a task of its wish, moving it to processing; may reassign processing.",
+        "operationId": "InstructionService_Assign",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InstructionServiceAssignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InstructionServiceAssignResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn instruction assign",
+        "tags": [
+          "InstructionService"
+        ]
+      }
+    },
+    "/plan.v1.InstructionService/Complete": {
+      "post": {
+        "description": "Complete a processing instruction explicitly, after verifying its worker task ended successfully.",
+        "operationId": "InstructionService_Complete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InstructionServiceCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InstructionServiceCompleteResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn instruction complete",
+        "tags": [
+          "InstructionService"
+        ]
+      }
+    },
+    "/plan.v1.InstructionService/List": {
+      "post": {
+        "description": "List every instruction of a wish, oldest first, with its full text and worker task reference.",
+        "operationId": "InstructionService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InstructionServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InstructionServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn instruction list",
+        "tags": [
+          "InstructionService"
+        ]
+      }
+    },
+    "/plan.v1.InstructionService/Reflect": {
+      "post": {
+        "description": "Move a pending instruction to reflecting: the lead considers which worker should handle it.",
+        "operationId": "InstructionService_Reflect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InstructionServiceReflectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InstructionServiceReflectResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn instruction reflect",
+        "tags": [
+          "InstructionService"
+        ]
+      }
+    },
+    "/plan.v1.InstructionService/Send": {
+      "post": {
+        "description": "Persist an instruction and its journal entry before notifying the lead. Works while the lead is offline.",
+        "operationId": "InstructionService_Send",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InstructionServiceSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InstructionServiceSendResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn instruction send",
+        "tags": [
+          "InstructionService"
         ]
       }
     },
@@ -3836,6 +4271,44 @@
         ]
       }
     },
+    "/plan.v1.WishService/Rename": {
+      "post": {
+        "description": "Rename a wish with a concise title written by its lead or the developer. The original request stays whole.",
+        "operationId": "WishService_Rename",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceRenameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceRenameResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish rename",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
     "/plan.v1.WishService/Render": {
       "post": {
         "description": "Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no local path.",
@@ -4089,6 +4562,10 @@
     {
       "description": "GateService grants the gates: shared resources, such as code generation (codegen), the local stack (stack), an end-to-end run (e2e) or a paid model run (paid), each held by one holder at a time, and granted only while the machine is not under pressure. To run a command under a gate: djinn gate run <name> -- <command>.",
       "name": "GateService"
+    },
+    {
+      "description": "Instructions: durable developer requests that the lead must delegate to a worker, never implement itself.",
+      "name": "InstructionService"
     },
     {
       "description": "MachineService says what the machine has, how loaded it is, and how many workers Djinn runs on it.",

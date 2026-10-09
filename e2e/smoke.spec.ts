@@ -25,9 +25,7 @@ test("the interface loads from djinn", async ({ page }) => {
   // The token left the address bar: it is now an HttpOnly cookie.
   expect(new URL(page.url()).search).toBe("");
   await expect(page).toHaveTitle(/Djinn$/);
-  await expect(
-    page.locator(".sidebar").getByRole("button", { name: "New wish" }),
-  ).toBeVisible();
+  await expect(page.locator(".sidebar .new-mission")).toBeVisible();
   // The page follows djinn: the watch stream answers.
   await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
   expect(errors).toEqual([]);

@@ -60,16 +60,16 @@ test("a word written in the window reaches the lead's terminal", async ({
       .click();
     await page.locator(".wish-nav").filter({ hasText: title }).click();
 
-    // No lead runs yet: the box says so, and offers to resume it.
-    await page.getByRole("button", { name: "Write to the lead" }).click();
-    const panel = page.getByRole("dialog", { name: "To the lead" });
+    // Saving works before the fake lead resumes; Resume remains an explicit action.
+    await page.getByRole("button", { name: "Add an indication" }).click();
+    const panel = page.getByRole("dialog", { name: "Indication for the lead" });
     await expect(
-      panel.getByText("The lead is not running: nothing can reach it."),
+      panel.getByText(
+        "The lead is stopped. Your indication will be saved for its next resume.",
+      ),
     ).toBeVisible();
-    const box = panel.getByLabel(
-      "A word for the lead, as if typed in its terminal",
-    );
-    await expect(box).toBeDisabled();
+    const box = panel.getByLabel("An indication for this wish");
+    await expect(box).toBeEnabled();
     await panel.getByRole("button", { name: "Resume the lead" }).click();
     await expect(box).toBeEnabled({ timeout: 10_000 });
     const rows = page.locator(".lead-terminal .xterm-rows > div");
@@ -77,27 +77,38 @@ test("a word written in the window reaches the lead's terminal", async ({
       rows.filter({ hasText: `fake-claude --resume ${session}` }),
     ).toHaveCount(1);
 
-    // Shift+Enter breaks the line, Enter sends: the fake lead reads one line, its breaks made spaces.
+    // Shift+Enter preserves the full text; the fake lead receives a reference to its durable record.
     await box.fill("Hello");
     await box.press("Shift+Enter");
     await box.pressSequentially("lead");
     await expect(box).toHaveValue("Hello\nlead");
     await box.press("Enter");
     await expect(box).toHaveValue("");
-    await expect(panel.getByText("Sent to the lead")).toBeVisible();
-    await expect(rows.filter({ hasText: "Hello lead" }).first()).toBeVisible({
+    await expect(panel.getByText("Saved · pending")).toBeVisible();
+    await expect(
+      rows.filter({ hasText: "Developer instruction I01" }).first(),
+    ).toBeVisible({
       timeout: 10_000,
     });
+
+    const saved = JSON.parse(
+      djinn("instruction", "list", wishId, "--json"),
+    ).instructions;
+    expect(saved).toHaveLength(1);
+    expect(saved[0].text).toBe("Hello\nlead");
 
     // Escape folds the box.
     await box.press("Escape");
     await expect(panel).toHaveCount(0);
 
-    // The command line says the same, the same way.
+    // Generic reports remain transient and still reach the lead.
     djinn("wish", "tell", wishId, "From the command line");
     await expect(
       rows.filter({ hasText: "From the command line" }).first(),
     ).toBeVisible({ timeout: 10_000 });
+    expect(
+      JSON.parse(djinn("instruction", "list", wishId, "--json")).instructions,
+    ).toHaveLength(1);
     expect(errors).toEqual([]);
   } finally {
     djinn("wish", "pause", wishId);

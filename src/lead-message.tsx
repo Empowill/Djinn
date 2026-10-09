@@ -1,75 +1,96 @@
-// A discreet button at the bottom right of a wish: a click unfolds a box whose text goes to the wish's lead, as if
-// typed in its terminal (WishService.Tell). Enter sends, Shift+Enter breaks the line, Escape folds it. Without a lead
-// running, the box says so and offers to resume it. A text that waits in the terminal says why, until the next one.
-import {
-  Check,
-  Hourglass,
-  MessageSquare,
-  Send,
-  Terminal,
-  X,
-} from "lucide-react";
+// A durable user indication, from a wish or its flight-plan card. Saving never starts a model.
+// Enter saves, Shift+Enter breaks the line, Escape folds the box and returns focus to its button.
+import { Check, MessageSquare, Send, Terminal, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 
-import { TellWait, type Wish } from "../gen/ts/plan/v1/plan_pb";
+import { Change, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { useClients } from "./data/djinn";
+import { useClients, useStore } from "./data/djinn";
 import { t } from "./i18n";
+import { useInstructionDraft } from "./instruction-draft";
+import "./instruction.css";
 
 export function LeadMessage({
   wish,
   onResume,
   onToast,
+  variant = "floating",
 }: {
   wish: Wish;
   onResume: () => Promise<unknown>;
   onToast: (text: string) => void;
+  variant?: "floating" | "card";
 }) {
   const clients = useClients();
+  const store = useStore();
+  const { draft, state } = useInstructionDraft(store, wish.id);
   const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState<"" | "sent" | "typing" | "choice">("");
+  const [resuming, setResuming] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
-  const running = wish.leadRunning;
-
+  const toggle = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const mounted = useRef(true);
   useEffect(() => {
-    if (open && running) box.current?.focus();
-  }, [open, running]);
-  // The confirmation fades on its own; why a text waits stays.
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => {
-    if (sent !== "sent") return;
-    const timer = setTimeout(() => setSent(""), 4000);
+    if (open) box.current?.focus();
+  }, [open, wish.id]);
+  useEffect(() => {
+    if (!state.notice) return;
+    const notice = state.notice;
+    const timer = setTimeout(() => {
+      if (draft.get().notice === notice) draft.set({ notice: "" });
+    }, 4000);
     return () => clearTimeout(timer);
-  }, [sent]);
+  }, [draft, state.notice]);
 
+  const close = () => {
+    setOpen(false);
+    toggle.current?.focus();
+  };
   const send = async () => {
-    const said = text.trim();
-    if (!said || busy || !running) return;
-    setBusy(true);
+    // Synchronous lock across every mounted variant, including Enter followed immediately by a click.
+    const request = draft.begin();
+    if (!request) return;
     try {
-      const res = await clients.wishes.tell({ wishId: wish.id, text: said });
-      setText("");
-      setSent(
-        res.wait === TellWait.CHOICE
-          ? "choice"
-          : res.waiting
-            ? "typing"
-            : "sent",
-      );
+      await clients.instructions.send({ wishId: wish.id, ...request });
+      draft.set({ text: "", requestId: "", requestText: "", notice: "saved" });
+      // A failed refresh cannot make a committed write look like a failed submission.
+      void store.changed(wish.id, [Change.INSTRUCTION]);
     } catch (error) {
-      onToast(message(error)); // The text stays, to send again.
+      const feedback = message(error);
+      draft.set({ error: feedback });
+      onToast(feedback);
     } finally {
-      setBusy(false);
-      box.current?.focus();
+      draft.set({ busy: false });
+      if (mounted.current) box.current?.focus();
+    }
+  };
+  const resume = async () => {
+    if (resuming) return;
+    setResuming(true);
+    try {
+      await onResume();
+    } catch (error) {
+      draft.set({ error: message(error) });
+      onToast(message(error));
+    } finally {
+      if (mounted.current) {
+        setResuming(false);
+        box.current?.focus();
+      }
     }
   };
   const keys = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      setOpen(false);
+      close();
     } else if (
       event.key === "Enter" &&
       !event.shiftKey &&
@@ -79,12 +100,12 @@ export function LeadMessage({
       void send();
     }
   };
-
   return (
-    <div className="lead-message">
+    <div className={`lead-message lead-message-${variant}`}>
       <AnimatePresence>
         {open && (
           <motion.div
+            id={`${id}-panel`}
             className="lead-message-panel"
             role="dialog"
             aria-label={t("lead_message.title")}
@@ -93,27 +114,29 @@ export function LeadMessage({
             exit={{ opacity: 0, y: 6 }}
             onKeyDown={(event) => {
               if (event.key !== "Escape") return;
+              event.preventDefault();
               event.stopPropagation();
-              setOpen(false);
+              close();
             }}
           >
             <header>
               <span>{t("lead_message.title")}</span>
               <button
                 className="icon-button"
-                onClick={() => setOpen(false)}
+                onClick={close}
                 title={t("lead_message.close")}
                 aria-label={t("lead_message.close")}
               >
                 <X size={13} />
               </button>
             </header>
-            {!running && (
+            {!wish.leadRunning && (
               <div className="lead-message-off">
                 <p>{t("lead_message.not_running")}</p>
                 <button
                   className="button secondary small"
-                  onClick={() => void onResume().catch(() => undefined)}
+                  disabled={resuming}
+                  onClick={() => void resume()}
                 >
                   <Terminal size={13} />
                   <span>{t("lead_message.resume")}</span>
@@ -123,26 +146,32 @@ export function LeadMessage({
             <textarea
               ref={box}
               rows={3}
-              value={text}
-              onChange={(event) => setText(event.target.value)}
+              value={state.text}
+              onChange={(event) =>
+                draft.set({ text: event.target.value, error: "", notice: "" })
+              }
               onKeyDown={keys}
               placeholder={t("lead_message.placeholder")}
               aria-label={t("lead_message.placeholder")}
-              disabled={!running}
+              aria-invalid={!!state.error}
+              aria-describedby={state.error ? `${id}-error` : `${id}-hint`}
+              readOnly={state.busy}
             />
+            {state.error && (
+              <p id={`${id}-error`} className="instruction-error" role="alert">
+                {state.error}
+              </p>
+            )}
             <footer>
-              <span className="lead-message-hint" aria-live="polite">
-                {sent === "sent" ? (
+              <span
+                id={`${id}-hint`}
+                className="lead-message-hint"
+                role="status"
+              >
+                {state.notice ? (
                   <span className="lead-message-sent">
                     <Check size={12} aria-hidden="true" />
-                    {t("lead_message.sent")}
-                  </span>
-                ) : sent ? (
-                  <span className="lead-message-sent waiting">
-                    <Hourglass size={12} aria-hidden="true" />
-                    {sent === "choice"
-                      ? t("lead_message.waiting_choice")
-                      : t("lead_message.waiting_typing")}
+                    {t("instruction.saved")}
                   </span>
                 ) : (
                   t("lead_message.hint")
@@ -151,7 +180,7 @@ export function LeadMessage({
               <button
                 className="icon-button"
                 onClick={() => void send()}
-                disabled={!running || busy || !text.trim()}
+                disabled={state.busy || !state.text.trim()}
                 title={t("lead_message.send")}
                 aria-label={t("lead_message.send")}
               >
@@ -162,13 +191,19 @@ export function LeadMessage({
         )}
       </AnimatePresence>
       <button
-        className={`lead-message-toggle ${running ? "" : "off"} ${open ? "open" : ""}`}
-        onClick={() => setOpen(!open)}
-        title={running ? t("lead_message.open") : t("lead_message.not_running")}
-        aria-label={t("lead_message.open")}
+        ref={toggle}
+        className={`lead-message-toggle ${wish.leadRunning ? "" : "off"} ${open ? "open" : ""}`}
+        onClick={() => (open ? close() : setOpen(true))}
+        title={t("lead_message.open")}
+        aria-label={
+          variant === "card"
+            ? t("instruction.open_for", { wish: wish.title })
+            : t("lead_message.open")
+        }
         aria-expanded={open}
+        aria-controls={open ? `${id}-panel` : undefined}
       >
-        <MessageSquare size={16} />
+        <MessageSquare size={variant === "card" ? 13 : 16} />
       </button>
     </div>
   );

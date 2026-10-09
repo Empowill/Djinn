@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	"github.com/empowill/djinn/locales"
 )
 
@@ -74,7 +75,7 @@ func format(msg protoreflect.Message) []string {
 		}
 	}
 	for _, fd := range byNumber(md) {
-		if required(fd) || !msg.Has(fd) {
+		if positional(fd) || !msg.Has(fd) {
 			continue
 		}
 		name := "--" + kebab(string(fd.Name()))
@@ -117,11 +118,11 @@ func check(msg proto.Message, name func(protoreflect.FieldDescriptor) string) er
 	return errors.New(strings.Join(lines, "\n"))
 }
 
-// positionals are the required singular fields, in field-number order.
+// positionals are required singular fields and fields marked positional, in field-number order.
 func positionals(md protoreflect.MessageDescriptor) []protoreflect.FieldDescriptor {
 	var out []protoreflect.FieldDescriptor
 	for _, fd := range byNumber(md) {
-		if required(fd) {
+		if positional(fd) {
 			out = append(out, fd)
 		}
 	}
@@ -141,6 +142,11 @@ func required(fd protoreflect.FieldDescriptor) bool {
 	return !fd.IsList() && !fd.IsMap() && rules(fd).GetRequired()
 }
 
+// positional preserves an argument's spelling without requiring its value in the API.
+func positional(fd protoreflect.FieldDescriptor) bool {
+	return required(fd) || (!fd.IsList() && !fd.IsMap() && proto.GetExtension(fd.Options(), djinnv1.E_Positional) == true)
+}
+
 func rules(fd protoreflect.FieldDescriptor) *validate.FieldRules {
 	r, _ := proto.GetExtension(fd.Options(), validate.E_Field).(*validate.FieldRules)
 	return r
@@ -148,7 +154,7 @@ func rules(fd protoreflect.FieldDescriptor) *validate.FieldRules {
 
 func flag(md protoreflect.MessageDescriptor, name string) protoreflect.FieldDescriptor {
 	for _, fd := range byNumber(md) {
-		if !required(fd) && kebab(string(fd.Name())) == name {
+		if !positional(fd) && kebab(string(fd.Name())) == name {
 			return fd
 		}
 	}
@@ -157,7 +163,7 @@ func flag(md protoreflect.MessageDescriptor, name string) protoreflect.FieldDesc
 
 // label is how the command line names a field: <name> when positional, --name otherwise.
 func label(fd protoreflect.FieldDescriptor) string {
-	if required(fd) {
+	if positional(fd) {
 		return "<" + kebab(string(fd.Name())) + ">"
 	}
 	return "--" + kebab(string(fd.Name()))

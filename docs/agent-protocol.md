@@ -12,6 +12,15 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   `0` success, `1` the call failed, `2` the command line is wrong.
 - **The brief says how to lead.** `djinn wish brief <wish>` prints Djinn's rules, the projects' rules and where the
   wish stands. Djinn writes it from its store (`internal/plan/brief.go`), without a model.
+- **The original request stays whole.** `djinn wish make "<title>"` still creates a title-only wish.
+  `djinn wish make --prompt "<Markdown>"` creates one immediately with a neutral, localized provisional title;
+  an explicit title may accompany the prompt. The complete Markdown is a `creation` block, written in the same
+  durable transaction as the wish and its journal entry, including for `--paused`. It travels through export and
+  import and appears once in the brief, outside the normal latest-block count and text limits, with the same
+  local-path and URL-credential scrubbing as other portable content. At startup, the lead of a prompt-only wish
+  writes a concise title from that full request with `djinn wish rename <wish> "<title>"`. Rename validates a
+  nonblank line of at most 500 characters, journals the change and notifies readers; it leaves the request intact.
+  A wish already renamed, or made with an explicit title, keeps that title when another lead starts.
 - **Questions.** `djinn question ask` offers up to four options, answered by letter, or none for a yes. An answered
   question is a decision. On options that say yes and no, `yes` and `no` pick them too. Start a recommendation with
   its option's letter (`B: …`): the developer applies it in one click, "Rub the lamp".
@@ -21,6 +30,25 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   dated, and waits for the developer again. A decision may take several rounds.
 - **Marks.** What the developer read or approved as it is, from the window: `djinn mark list <wish>`, and the brief's
   "Marked by the developer". An approved block or decision is a go.
+- **Lead discipline.** The lead never authors source or test changes, including small fixes, review findings or
+  failed checks. Delegate every implementation to an existing worker (`djinn task send`) or a new task
+  (`djinn task spawn`). The lead frames, coordinates, reviews, integrates and verifies their work.
+- **Developer instructions.** `djinn instruction send <wish> "<full text>"` persists a durable instruction, with
+  code I01, I02 and so on within the wish. It commits the instruction and the journal atomically before notifying
+  the lead. Submission works while the lead is offline; it is available in full in the next brief. An optional
+  `--request-id <uuid>` makes retries return the original instruction, without a second notification. Reusing it with different text is rejected atomically.
+  `djinn instruction list <wish>` reads every instruction and its full text.
+  The lead runs `djinn instruction reflect I01 --wish-id <wish>` (pending → reflecting), delegates to an existing
+  worker or creates one, then `djinn instruction assign I01 W1 --wish-id <wish>` (reflecting → processing).
+  Both references also accept UUIDs; an instruction code without a wish must be globally unambiguous.
+  Assignment requires a task of the same wish. A processing instruction may be reassigned to another such worker.
+  The lead verifies the successful worker result, then runs `djinn instruction complete I01 --wish-id <wish>`
+  (processing → done). Completion requires a successful DONE task; a failed, stopped or waiting task cannot
+  complete it. Worker completion alone never completes the instruction. Repeating the same transition is safe;
+  other transitions fail atomically. Processing and done always keep a worker task reference; a referenced task
+  cannot be deleted. Lifecycle commands journal resolved instruction/wish IDs so their history stays unambiguous.
+  Instructions travel in snapshots, exports and imports (with portable text scrubbing), change the Watch stream
+  and the synced page, and prevent readiness while unfinished. Only the developer grants a wish.
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
 - **Blocks.** What Djinn does not compute (an analysis, a hand-off, a decision taken outside a question) is a block:
@@ -31,8 +59,14 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 
 ### Writing to the lead
 
+`WishService.Tell` stays generic and transient: worker-to-lead reports never become developer instructions.
+Use `InstructionService.Send` for developer instructions. A notification is best effort after durable acceptance:
+if the lead is offline or exits, the persisted instruction remains pending for the next brief. Retry identifiers
+prevent duplicate instructions when the response to a committed submission is lost.
+
 Djinn types into the lead's terminal as the developer would: the news of the wish (`Q02 answered: A. Continue.`) and
-what `djinn wish tell` or the window's button says. Its terminal reads on the screen as it shows now, not on what it
+generic messages sent with `djinn wish tell`. A durable instruction notification names its code and identifier,
+with explicit read/reflect/assign guidance; the lead reads the full text from the store before delegating. Its terminal reads on the screen as it shows now, not on what it
 once drew:
 
 - **Never into a choice.** A hint that ends a line, or a part of it between `·`, with a key, `to` and what it does
@@ -76,3 +110,6 @@ Djinn reads each worker's stream into the same task events, stored with the task
 
 The kinds are typed in `api/plan/v1/plan.proto` (`TaskEventKind`); their content stays free text. Tests never call
 a model: every provider case is a recorded stream, replayed through the real process path.
+
+When a provider does not surface queued task messages, a worker explicitly reads them with `djinn task watch <task>`
+(or `--after-seq <last-read>`). Do not infer that no new guidance exists from a quiet provider stream.

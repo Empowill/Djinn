@@ -109,12 +109,12 @@ tasks:
       - go run -tags headless ./tools/benchdispatch
 
   e2e:
-    desc: Build the interface and djinn, then run the browser-mode smoke tests headless (e2e/)
+    desc: "Build the interface and djinn, then run browser tests headless; -- e2e/file.spec.ts narrows the tests"
     deps: [ui]
     cmds:
       - npx vite build --config e2e/vite.config.ts --logLevel warn
       - go build -tags headless -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
-      - npx playwright test --config e2e/playwright.config.ts
+      - npx playwright test --config e2e/playwright.config.ts {{.CLI_ARGS}}
 
   e2e-native:
     desc: "Drive the real native window end to end through the MCP server of Wails (e2e/native/): builds a test variant, bin/djinn-e2e-native, opens its window a few seconds. Not part of test; -- -v shows each step, DJINN_E2E_NATIVE_HOLD=5s keeps the window up to look at it"

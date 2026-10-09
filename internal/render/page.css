@@ -160,11 +160,10 @@ time, code, pre, .code, .kind, .meta, .num { font-variant-numeric: tabular-nums;
 .line {
   display: flex; align-items: center; gap: 10px; min-width: 0;
   text-decoration: none; font-size: 14px; padding: 3px 8px; border-radius: 8px;
-  border-left: 4px solid var(--c);
 }
 .line:hover { background: var(--surface-soft); }
 .line .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.line.more { border-left-color: transparent; color: var(--muted); font-weight: 600; }
+.line.more { color: var(--muted); font-weight: 600; }
 
 /* The header. */
 .head .projects { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; }
@@ -196,9 +195,9 @@ details[open] > summary::before { transform: rotate(90deg); }
 .fold > summary { color: var(--muted); font-size: 15px; font-weight: 650; padding: 6px 0; }
 .fold[open] > summary { margin-bottom: 10px; }
 
-/* Open questions: a card each, its edge in the colour of how urgent it is. */
+/* Open questions: a card each, urgency shown by its state word and icon. */
 .q {
-  background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--c);
+  background: var(--surface); border: 1px solid var(--line);
   border-radius: 12px; margin-bottom: 14px;
 }
 .q > summary { display: grid; grid-template-columns: auto 1fr; gap: 6px 4px; padding: 16px 20px; }
@@ -210,7 +209,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 .q[open] .qreco { display: none; }
 .qbody { padding: 0 24px 22px calc(20px + 1.1em + 4px); display: grid; gap: 16px; }
 .recom {
-  background: var(--surface-soft); border: 1px solid var(--line); border-left: 4px solid var(--text);
+  background: var(--surface-soft); border: 1px solid var(--line);
   border-radius: 10px; padding: 12px 16px; max-width: 76ch;
 }
 .recom .label { color: var(--text); }
@@ -230,14 +229,14 @@ details[open] > summary::before { transform: rotate(90deg); }
 .actions { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
 .actions li {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px;
-  background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--c);
+  background: var(--surface); border: 1px solid var(--line);
   border-radius: 10px; padding: 12px 16px;
 }
 .actions li > span:last-child { flex: 1 1 260px; }
 
 /* The workers running. */
 .worker {
-  background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--run);
+  background: var(--surface); border: 1px solid var(--line);
   border-radius: 12px; padding: 16px 20px; margin-bottom: 12px;
 }
 .w-head, .task-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
@@ -251,7 +250,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 /* The tasks that need an eye. */
 .rows { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
 .row {
-  background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--c);
+  background: var(--surface); border: 1px solid var(--line);
   border-radius: 10px; padding: 12px 16px;
 }
 .task-head .title { font-weight: 650; font-size: 16.5px; line-height: 1.4; }
@@ -367,3 +366,6 @@ pre, .md pre {
   .tbl.stack td:empty { display: none; }
   .tbl.log td { padding: 1px 0; }
 }
+
+/* Instructions preserve every line while wrapping long developer text within the page. */
+#instructions pre { white-space: pre-wrap; overflow-wrap: anywhere; }

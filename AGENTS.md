@@ -13,6 +13,11 @@ its commands and its license rules. They bind agents as much as people; this fil
 repeat them.
 
 ## For agents
+- **The lead delegates every code change.** A wish's lead never authors source or test changes, including small
+  fixes, review findings and failed checks. It sends implementation to an existing worker or starts a new one.
+  The lead frames, coordinates, reviews, integrates and verifies workers' work. Durable developer instructions
+  must refer to a worker task of the same wish before processing or completion; the lead verifies the worker's
+  successful result and explicitly completes the instruction.
 - **Run the tasks, not the tools.** `go tool task test`, `go tool task gen`, `go tool task e2e`,
   `go tool task build`: they set the tags and the order.
 - **Never call a paid model in a test.** Record a stream instead (`docs/providers.md`).
@@ -20,3 +25,7 @@ repeat them.
   `CONTRIBUTING.md`, and name every new dependency in your change description.
 - **What you add to a wish's plan is smoke** unless the code computes on it: write a block, do
   not add a field.
+
+## Interface
+- Rounded elements use a uniform border on all sides, or no border. Never combine a rounded card with a
+  one-sided border or a thicker accent border on one side. Straight separators belong on square elements.

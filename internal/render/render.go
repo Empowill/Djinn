@@ -127,26 +127,29 @@ type view struct {
 	State      string // where the wish stands: active and its rank, paused, granted
 	StateClass string
 	// Bar holds what waits for the user, a line each, in sight as the page scrolls.
-	Bar       []barLine
-	Counts    []count // the tasks by status
-	Contents  []link  // the sections present, in their order
-	Questions []question
-	Actions   []action
-	Running   []task // the workers running now
-	Finished  []task // the work finished, folded under them
-	Tasks     []task // what needs an eye: waiting, cut short, failed
-	Planned   []task
-	Decisions []decision // the latest ones
-	Older     []decision // the decisions before them, folded
-	Blocks    []block
-	Notes     []notes // the blocks as shown: alone, or gathered in a run of one kind
-	Journal   []entry // the latest entries
-	Earlier   []entry // the entries before them, folded
+	Bar          []barLine
+	Counts       []count // the tasks by status
+	Contents     []link  // the sections present, in their order
+	Instructions []instruction
+	Questions    []question
+	Actions      []action
+	Running      []task // the workers running now
+	Finished     []task // the work finished, folded under them
+	Tasks        []task // what needs an eye: waiting, cut short, failed
+	Planned      []task
+	Decisions    []decision // the latest ones
+	Older        []decision // the decisions before them, folded
+	Blocks       []block
+	Notes        []notes // the blocks as shown: alone, or gathered in a run of one kind
+	Journal      []entry // the latest entries
+	Earlier      []entry // the entries before them, folded
 	// JournalCut says how many entries the page left out.
 	JournalCut string
 	Events     []event // the workers' latest events
 	EarlierEv  []event // the events before them, folded
 }
+
+type instruction struct{ Code, Text, Task, Status, Class string }
 
 // link is an entry of the contents: a section of the page and how many things it holds.
 type link struct {
@@ -268,12 +271,35 @@ func build(in Input) (*view, error) {
 		"page.planned", "page.projects", "page.questions", "page.questions_sub", "page.recommendation",
 		"page.running", "page.running_sub", "page.spent", "page.status", "page.task", "page.tasks", "page.tasks_sub",
 		"page.took", "page.wait_col", "page.what", "page.when", "page.why", "page.yes_only",
-		"page.rounds",
+		"page.rounds", "instructionBackend.heading", "instructionBackend.sub",
 	} {
 		v.T[key] = tr(key)
 	}
 	v.Rendered = tr("page.rendered", "version", cmp.Or(in.Version, "dev"), "time", now.In(loc).Format("2006-01-02 15:04 MST"))
 	v.State, v.StateClass = state(exp.GetWish(), at, tr)
+	for _, item := range exp.GetInstructions() {
+		key, class := "instructionBackend.pending", "idle"
+		switch item.GetStatus() {
+		case planv1.InstructionStatus_INSTRUCTION_STATUS_REFLECTING:
+			key, class = "instructionBackend.reflecting", "dig"
+		case planv1.InstructionStatus_INSTRUCTION_STATUS_PROCESSING:
+			key, class = "instructionBackend.processing", "run"
+		case planv1.InstructionStatus_INSTRUCTION_STATUS_DONE:
+			key, class = "instructionBackend.done", "ok"
+		}
+		worker := ""
+		if item.GetTaskId() != "" {
+			code := item.GetTaskId()
+			for _, task := range exp.GetTasks() {
+				if task.GetId() == item.GetTaskId() {
+					code = task.GetCode()
+					break
+				}
+			}
+			worker = tr("instructionBackend.task", "task", code)
+		}
+		v.Instructions = append(v.Instructions, instruction{Code: item.GetCode(), Text: item.GetText(), Task: worker, Status: tr(key), Class: class})
+	}
 
 	projects := map[string]string{}
 	for _, p := range exp.GetProjects() {
@@ -629,6 +655,7 @@ func contents(v *view, tr func(string, ...string) string) []link {
 	add("tasks", "page.tasks", "", len(v.Tasks)+len(v.Planned), len(v.Tasks)+len(v.Planned) > 0)
 	add("decisions", "page.decisions", "", len(v.Decisions)+len(v.Older), len(v.Decisions) > 0)
 	add("notes", "page.notes", "", len(v.Blocks), len(v.Blocks) > 0)
+	add("instructions", "instructionBackend.heading", "", len(v.Instructions), len(v.Instructions) > 0)
 	add("journal", "page.journal", "", len(v.Journal)+len(v.Earlier), len(v.Journal) > 0)
 	add("events", "page.events", "", len(v.Events)+len(v.EarlierEv), len(v.Events) > 0)
 	return links

@@ -65,6 +65,7 @@ export function WishApp() {
     () => stored("djinn.sidebar.collapsed") === "1",
   );
   const [modal, setModal] = useState<Modal>(null);
+  const [making, setMaking] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
   const importRef = useRef<HTMLInputElement>(null);
@@ -189,7 +190,7 @@ export function WishApp() {
 
   return (
     <div className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""}`}>
-      <aside className="sidebar">
+      <aside className="sidebar" inert={modal === "make" && making}>
         <div className="sidebar-brand">
           <button
             onClick={() => setCollapsed(!collapsed)}
@@ -217,11 +218,17 @@ export function WishApp() {
           projects={projects}
           counts={counts}
           planSelected={plan}
-          onSelectPlan={() => setSelected(PLAN)}
+          onSelectPlan={() => {
+            setSelected(PLAN);
+            setModal(null);
+          }}
           selectedWishId={wish?.id ?? ""}
           selectedProjectId={projectId}
           collapsed={collapsed}
-          onSelectWish={setSelected}
+          onSelectWish={(id) => {
+            setSelected(id);
+            setModal(null);
+          }}
           onSelectProject={setProjectId}
           onMove={move}
           onNewProject={() => setModal("project")}
@@ -255,7 +262,20 @@ export function WishApp() {
         </div>
       </aside>
       <main className="main-shell">
-        {plan ? (
+        {modal === "make" ? (
+          <MakeWish
+            projects={projects}
+            active={active.length}
+            onBusyChange={setMaking}
+            onClose={() => setModal(null)}
+            onMade={(made) => {
+              setModal(null);
+              setSelected(made.id);
+              void data.changed(made.id, [Change.WISH]);
+              void launchMadeLead(made);
+            }}
+          />
+        ) : plan ? (
           <FlightPlan wishes={active} onOpen={setSelected} onToast={setToast} />
         ) : wish ? (
           <WishView key={wish.id} wish={wish} onToast={setToast} />
@@ -269,19 +289,6 @@ export function WishApp() {
         <StatusBar live={live} error={error} />
       </main>
       <AnimatePresence>
-        {modal === "make" && (
-          <MakeWish
-            projects={projects}
-            active={wishes.filter(isActive).length}
-            onClose={() => setModal(null)}
-            onMade={(made) => {
-              setModal(null);
-              setSelected(made.id);
-              void data.changed(made.id, [Change.WISH]);
-              void launchMadeLead(made);
-            }}
-          />
-        )}
         {modal === "project" && (
           <AddProject
             onClose={() => setModal(null)}
@@ -294,7 +301,7 @@ export function WishApp() {
         )}
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
-        {project && (
+        {project && modal !== "make" && (
           <ProjectPanel project={project} onClose={() => setProjectId("")} />
         )}
       </AnimatePresence>

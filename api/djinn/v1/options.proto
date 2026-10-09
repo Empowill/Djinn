@@ -33,3 +33,9 @@ extend google.protobuf.MessageOptions {
   // Groups of fields that must be unique among stored messages of this type.
   repeated Unique unique = 51002;
 }
+
+// A field's argument spelling is independent of whether validation requires a value.
+extend google.protobuf.FieldOptions {
+  // Keep a singular field positional when it becomes optional, preserving an existing command's arguments.
+  bool positional = 51004;
+}

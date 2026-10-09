@@ -1,7 +1,12 @@
 // Lead startup through the window uses the provider command in a retained terminal. This spec keeps the Codex
 // executable fake and checks the lifecycle the user sees: a new active wish starts once, a paused wish waits, and an
 // ended lead keeps its output until an explicit retry.
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { fromBinary } from "@bufbuild/protobuf";
+import {
+  WishServiceMakeResponseSchema,
+  WishState,
+} from "../gen/ts/plan/v1/plan_pb";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -85,7 +90,7 @@ const created: string[] = [];
 // Active wishes from earlier specs can occupy the shared server's three slots. Free a slot only when needed for the
 // active startup cases; each wish made here is paused again after its test.
 function ensureActiveSlot() {
-  const listed = JSON.parse(djinn("wish", "list", "--json")).wishes as {
+  const listed = (JSON.parse(djinn("wish", "list", "--json")).wishes ?? []) as {
     id: string;
     state: string;
   }[];
@@ -105,6 +110,21 @@ test.afterEach(() => {
   fs.rmSync(failureMarker(), { force: true });
 });
 
+// Capture the made wish from the service response: the prompt is deliberately separate from its provisional title.
+async function submitWish(page: Page, dialog: Locator, button: string) {
+  const response = page.waitForResponse((res) =>
+    res.url().endsWith("/plan.v1.WishService/Make"),
+  );
+  await dialog.getByRole("button", { name: button, exact: true }).click();
+  const made = fromBinary(
+    WishServiceMakeResponseSchema,
+    new Uint8Array(await (await response).body()),
+  );
+  if (!made.wish) throw new Error("Make returned no wish");
+  created.push(made.wish.id);
+  return made.wish;
+}
+
 test("an active Codex wish starts once with Auto flags", async ({ page }) => {
   ensureActiveSlot();
   const folder = fs.realpathSync(
@@ -112,29 +132,39 @@ test("an active Codex wish starts once with Auto flags", async ({ page }) => {
   );
   const projectName = `Lead startup ${path.basename(folder)}`;
   djinn("project", "add", folder, "--name", projectName);
-  const title = "Auto launch the Codex lead";
+  const title =
+    "Auto launch the Codex lead\n" + "Keep the full request. ".repeat(35);
 
   await page.goto(process.env.DJINN_URL!);
-  await page
-    .locator(".sidebar")
-    .getByRole("button", { name: "New wish" })
-    .click();
-  const dialog = page.getByRole("dialog", { name: "Make a wish" });
-  await dialog.getByRole("textbox", { name: "What do you wish?" }).fill(title);
+  await page.locator(".sidebar .new-mission").click();
+  const dialog = page.locator(".wish-creation");
+  const editor = dialog.getByRole("textbox", { name: "What do you wish?" });
+  await expect(editor).toBeFocused();
+  await expect(
+    dialog.getByRole("button", { name: "Make the wish", exact: true }),
+  ).toBeDisabled();
+  await editor.fill(title);
+  await editor.press("ControlOrMeta+a");
+  await dialog.getByRole("button", { name: "Bold", exact: true }).click();
+  await expect(editor.locator("b,strong").first()).toBeVisible();
+  await dialog.getByRole("searchbox").fill(projectName);
+  await expect(dialog.locator(".wish-project-card")).toHaveCount(1);
+  await expect(dialog.locator(".wish-project-card")).toContainText(folder);
+  await page.screenshot({ path: "test-results/wish-creation.png" });
   await dialog.getByLabel("Agent").selectOption({ label: "Codex" });
   await dialog.getByRole("checkbox", { name: projectName }).check();
   await dialog
     .getByLabel("Permissions in the selected projects")
     .selectOption({ label: "Edit, in auto mode" });
-  await dialog.getByRole("button", { name: "Make the wish" }).click();
+  const wish = await submitWish(page, dialog, "Make the wish");
   await expect(dialog).toHaveCount(0);
 
   const status = page.locator(".lead-status");
-  await expect(page.locator(".hero h1")).toHaveText(title);
-  const wish = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
-    (item: { title: string }) => item.title === title,
-  ) as { id: string };
-  created.push(wish.id);
+  await expect(page.locator(".hero h1")).toHaveText(wish.title);
+  expect(wish.title).not.toBe(title);
+  const brief = djinn("wish", "brief", wish.id);
+  expect(brief).toContain("**Auto launch the Codex lead");
+  expect(brief).toContain("Keep the full request. ".repeat(35).trim());
   await expect(status).toContainText("Lead ended (0)");
 
   const rows = page.locator(".lead-terminal .xterm-rows > div");
@@ -145,14 +175,18 @@ test("an active Codex wish starts once with Auto flags", async ({ page }) => {
   await expect(rows.filter({ hasText: "FAKE-CODEX-MIXED-FLAGS" })).toHaveCount(
     0,
   );
+  // The lead authors a title through the same public command; the live wish keeps its original request.
+  djinn("wish", "rename", wish.id, "Launch the Codex lead");
+  await expect(page.locator(".hero h1")).toHaveText("Launch the Codex lead");
+  expect(djinn("wish", "brief", wish.id)).toContain("Keep the full request.");
 });
 
 test("a paused wish stays unstarted until the user starts it", async ({
   page,
 }) => {
-  const active = JSON.parse(djinn("wish", "list", "--json")).wishes.filter(
-    (wish: { state: string }) => wish.state === "WISH_STATE_ACTIVE",
-  );
+  const active = (
+    JSON.parse(djinn("wish", "list", "--json")).wishes ?? []
+  ).filter((wish: { state: string }) => wish.state === "WISH_STATE_ACTIVE");
   for (let i = active.length; i < 3; i++) {
     const reserve = JSON.parse(
       djinn("wish", "make", `Reserved startup slot ${i}`, "--json"),
@@ -166,26 +200,21 @@ test("a paused wish stays unstarted until the user starts it", async ({
       starts.push(request.url());
   });
   await page.goto(process.env.DJINN_URL!);
-  await page
-    .locator(".sidebar")
-    .getByRole("button", { name: "New wish" })
-    .click();
-  const dialog = page.getByRole("dialog", { name: "Make a wish" });
+  await page.locator(".sidebar .new-mission").click();
+  const dialog = page.locator(".wish-creation");
   await dialog.getByRole("textbox", { name: "What do you wish?" }).fill(title);
   await dialog.getByLabel("Agent").selectOption({ label: "Codex" });
-  await dialog.getByRole("button", { name: "Make it paused" }).click();
+  const wish = await submitWish(page, dialog, "Make it paused");
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator(".hero h1")).toHaveText(title);
-  const wish = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
-    (item: { title: string }) => item.title === title,
-  );
-  created.push(wish.id);
+  await expect(page.locator(".hero h1")).toHaveText(wish.title);
+  expect(wish.title).not.toBe(title);
+  expect(djinn("wish", "brief", wish.id)).toContain(title);
   await expect(page.locator(".lead-status")).toContainText("Lead not started");
   await expect(
     page.locator(".lead-status").getByRole("button", { name: "Start lead" }),
   ).toBeVisible();
   expect(wish.lead).toBeUndefined();
-  expect(wish.state).toBe("WISH_STATE_PAUSED");
+  expect(wish.state).toBe(WishState.PAUSED);
   expect(starts).toEqual([]);
 });
 
@@ -202,25 +231,18 @@ test("an ended lead retains output and retries explicitly", async ({
   const title = "Show a failed lead";
 
   await page.goto(process.env.DJINN_URL!);
-  await page
-    .locator(".sidebar")
-    .getByRole("button", { name: "New wish" })
-    .click();
-  const dialog = page.getByRole("dialog", { name: "Make a wish" });
+  await page.locator(".sidebar .new-mission").click();
+  const dialog = page.locator(".wish-creation");
   await dialog.getByRole("textbox", { name: "What do you wish?" }).fill(title);
   await dialog.getByLabel("Agent").selectOption({ label: "Codex" });
   await dialog.getByRole("checkbox", { name: projectName }).check();
   await dialog
     .getByLabel("Permissions in the selected projects")
     .selectOption({ label: "Edit, in auto mode" });
-  await dialog.getByRole("button", { name: "Make the wish" }).click();
+  const wish = await submitWish(page, dialog, "Make the wish");
   await expect(dialog).toHaveCount(0);
 
   const status = page.locator(".lead-status");
-  const wish = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
-    (item: { title: string }) => item.title === title,
-  ) as { id: string };
-  created.push(wish.id);
   await expect(status).toContainText("Lead ended (2)");
   await expect(
     status.getByRole("button", { name: "Retry lead" }),

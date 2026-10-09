@@ -150,7 +150,6 @@ html[data-theme="light"] {
   min-width: 0;
   padding: 5px 10px;
   border-radius: 6px;
-  border-left: 3px solid var(--tone);
   background: color-mix(in srgb, var(--tone) 8%, var(--bg));
   text-align: left;
 }
@@ -349,7 +348,6 @@ html[data-theme="light"] {
 .review .question-card {
   --tone: var(--st-waiting);
   border: 1px solid var(--line);
-  border-left: 4px solid var(--tone);
   border-radius: 10px;
   background: var(--surface);
   margin: 0 0 16px;
@@ -447,7 +445,6 @@ html[data-theme="light"] {
   margin: 0;
   padding: 12px 16px 14px;
   border: 1px solid color-mix(in srgb, var(--lamp) 45%, var(--line));
-  border-left: 4px solid var(--lamp);
   border-radius: 8px;
   background: color-mix(in srgb, var(--lamp) 9%, var(--surface));
 }
@@ -619,10 +616,8 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
 
 /* Tasks: one row each, its state first. */
 .review .wish-task {
-  border-left: 3px solid var(--tone, var(--line));
   background: var(--surface);
   border-color: var(--line);
-  border-left-color: var(--tone, var(--line));
 }
 .review .wish-task-heading {
   gap: 12px;
@@ -708,7 +703,6 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
 
 /* The flight plan: each wish at a glance. */
 .review .plan-wish {
-  border-top: 3px solid var(--tone, var(--line));
   background: var(--surface);
   gap: 10px;
 }

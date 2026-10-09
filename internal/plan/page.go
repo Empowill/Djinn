@@ -87,7 +87,7 @@ func (p *Pages) Page(ctx context.Context, wishID string) ([]byte, error) {
 	// to grant it.
 	wish := exp.GetWish()
 	rank := wish.GetRank()
-	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
+	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions(), exp.GetInstructions()...)
 	exp = portable(exp, newScrubber(all, p.Home, dataName))
 	exp.Wish.Rank, exp.Wish.Ready = rank, ready
 	var unattached []string
@@ -173,6 +173,8 @@ func (p *Pages) changed(ms []proto.Message) {
 				p.tasks[strings.ToLower(m.GetTaskId())] = true
 			}
 		case *planv1.Question:
+			mark(m.GetWishId())
+		case *planv1.Instruction:
 			mark(m.GetWishId())
 		case *planv1.Block:
 			mark(m.GetWishId())

@@ -406,7 +406,11 @@ func writeMethodHelp(w io.Writer, md protoreflect.MethodDescriptor) {
 	pos := positionals(in)
 	usage := "djinn " + command(md.Parent().(protoreflect.ServiceDescriptor)) + " " + kebab(string(md.Name()))
 	for _, fd := range pos {
-		usage += " " + label(fd)
+		argument := label(fd)
+		if !required(fd) {
+			argument = "[" + argument + "]"
+		}
+		usage += " " + argument
 	}
 	if len(pos) < in.Fields().Len() {
 		usage += " [flags]"
@@ -423,7 +427,7 @@ func writeMethodHelp(w io.Writer, md protoreflect.MethodDescriptor) {
 		fmt.Fprintln(tw, "\nFlags:")
 	}
 	for _, fd := range byNumber(in) {
-		if required(fd) {
+		if positional(fd) {
 			continue
 		}
 		name := label(fd)

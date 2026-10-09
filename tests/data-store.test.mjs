@@ -14,6 +14,7 @@ const {
   TaskService,
   QuestionService,
   BlockService,
+  InstructionService,
 } = await bundle(
   "store",
   `export { createStore } from "@/src/data/store.ts";
@@ -71,6 +72,9 @@ function server(data) {
     service(QuestionService, {
       list: () => (count("questions"), { questions: data.questions }),
     });
+    service(InstructionService, {
+      list: () => (count("instructions"), { instructions: data.instructions }),
+    });
     service(BlockService, {
       list: () => (count("blocks"), { blocks: data.blocks }),
     });
@@ -85,6 +89,9 @@ function sample() {
     tasks: [{ id: taskId, wishId, code: "T01", title: "Polish", status: 2 }],
     questions: [{ id: "q1", wishId, code: "Q01", text: "Oil?" }],
     blocks: [{ id: "b1", wishId, title: "Lexicon", content: "A wick." }],
+    instructions: [
+      { id: "i1", wishId, code: "I01", text: "Keep the brass", status: 1 },
+    ],
     events: [
       { id: "e1", taskId, seq: 1n, kind: 1, text: "Polish the brass" },
       { id: "e2", taskId, seq: 2n, kind: 2, text: "Done." },
@@ -116,6 +123,7 @@ const everything = [
   Change.QUESTION,
   Change.BLOCK,
   Change.PROJECT,
+  Change.INSTRUCTION,
 ];
 
 test("the first message of the watch reads the wishes and the projects", async () => {
@@ -145,9 +153,7 @@ test("a wish shown is read, and only what changed is read again", async () => {
   assert.equal(state.details[wishId].blocks[0].content, "A wick.");
   const before = { ...reads };
 
-  data.questions = [
-    { ...data.questions[0], answer: { choice: 1, note: "" } },
-  ];
+  data.questions = [{ ...data.questions[0], answer: { choice: 1, note: "" } }];
   watch.push({ wishId, changes: [Change.WISH, Change.QUESTION] });
   state = await until(
     store,
@@ -209,4 +215,30 @@ test("a write the page made is read at once", async () => {
   await store.changed(wishId, [Change.BLOCK]);
   assert.deepEqual(store.getState().details[wishId].blocks, []);
   assert.equal(reads.blocks, 2);
+});
+
+test("instructions reload on watch changes and remain available after reopening a wish", async () => {
+  const data = sample();
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  const close = store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.instructions.length === 1);
+  assert.equal(
+    store.getState().details[wishId].instructions[0].text,
+    "Keep the brass",
+  );
+  const before = { ...reads };
+  data.instructions = [{ ...data.instructions[0], status: 3, taskId }];
+  watch.push({ wishId, changes: [Change.INSTRUCTION] });
+  await until(store, (s) => s.details[wishId].instructions[0].status === 3);
+  assert.equal(reads.instructions, before.instructions + 1);
+  assert.equal(reads.tasks, before.tasks);
+  close();
+  data.instructions = [{ ...data.instructions[0], status: 4 }];
+  const reopen = store.open(wishId);
+  await until(store, (s) => s.details[wishId].instructions[0].status === 4);
+  assert.equal(store.getState().details[wishId].instructions[0].taskId, taskId);
+  reopen();
+  stop();
 });

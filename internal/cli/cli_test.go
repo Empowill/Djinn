@@ -59,6 +59,11 @@ func TestConvention(t *testing.T) {
 		want      proto.Message
 		parseOnly bool // the arguments are a variant format does not produce
 	}{
+		{name: "durable instruction send", args: []string{wishID, "Full\ntext", "--request-id", questionID}, want: &planv1.InstructionServiceSendRequest{WishId: wishID, Text: "Full\ntext", RequestId: questionID}},
+		{name: "durable instruction list", args: []string{wishID}, want: &planv1.InstructionServiceListRequest{WishId: wishID}},
+		{name: "durable instruction reflect", args: []string{"I01", "--wish-id", wishID}, want: &planv1.InstructionServiceReflectRequest{Instruction: "I01", WishId: wishID}},
+		{name: "durable instruction assign", args: []string{"I01", "W1", "--wish-id", wishID}, want: &planv1.InstructionServiceAssignRequest{Instruction: "I01", Task: "W1", WishId: wishID}},
+		{name: "durable instruction complete", args: []string{questionID}, want: &planv1.InstructionServiceCompleteRequest{Instruction: questionID}},
 		{
 			name: "oneof takes a code",
 			args: []string{"Q03", "b", "--note", "ship it"},
@@ -104,6 +109,16 @@ func TestConvention(t *testing.T) {
 			parseOnly: true,
 		},
 		{name: "empty request", args: nil, want: &planv1.ProjectServiceListRequest{}},
+		{
+			name: "wish title keeps its positional spelling",
+			args: []string{"A short title", "--paused"},
+			want: &planv1.WishServiceMakeRequest{Title: "A short title", Paused: true},
+		},
+		{
+			name: "wish prompt may omit positional title",
+			args: []string{"--paused", "--prompt", "**The request**\n\n- Keep the complete text"},
+			want: &planv1.WishServiceMakeRequest{Prompt: "**The request**\n\n- Keep the complete text", Paused: true},
+		},
 		{
 			name:      "enum ignores case and accepts its full name",
 			args:      []string{"--note=later", "Q03", "CHOICE_c"},
@@ -281,8 +296,9 @@ func TestRun(t *testing.T) {
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
 		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},
 		{name: "ambiguous method", args: []string{"question", "a"}, wantCode: 2, wantErr: `question method "a" is ambiguous: ask, answer`},
-		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, machine, mark, project, question, skill, task, wish`},
+		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, instruction, machine, mark, project, question, skill, task, wish`},
 		{name: "internal service is hidden", args: []string{"ui", "get-environment"}, wantCode: 2, wantErr: `unknown command "ui"`},
+		{name: "optional positional help", args: []string{"wish", "make", "--help"}, wantOut: "Usage: djinn wish make [<title>] [flags]"},
 		{name: "version", args: []string{"v"}, wantOut: "djinn test\n"},
 		{name: "help comes from the proto comments", args: []string{"q", "answer", "--help"}, wantOut: "Usage: djinn question answer <question> <choice> [flags]\n\nAnswer a question, which turns it into a decision."},
 		{name: "help command", args: []string{"help", "p"}, wantOut: "Methods:\n  add    Add a folder as a project."},
@@ -321,8 +337,8 @@ func TestEveryPublicMethodIsExpressible(t *testing.T) {
 			}
 		}
 	}
-	if methods != 47 {
-		t.Errorf("found %d public methods, want 47", methods)
+	if methods != 53 {
+		t.Errorf("found %d public methods, want 53", methods)
 	}
 }
 
@@ -342,4 +358,30 @@ func TestEmbeddedDescriptorsAreFresh(t *testing.T) {
 		}
 		return true
 	})
+}
+
+// Make accepts either input, but still rejects missing, blank and oversized titles.
+func TestMakeInputValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		args  []string
+		valid bool
+	}{
+		{"legacy title", []string{"Short title"}, true},
+		{"prompt only", []string{"--prompt", "A complete request"}, true},
+		{"missing inputs", nil, false},
+		{"blank inputs", []string{" ", "--prompt", "\n\t"}, false},
+		{"oversized title", []string{strings.Repeat("x", 501)}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := parse(local(t, &planv1.WishServiceMakeRequest{}), tt.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = check(msg, label)
+			if (err == nil) != tt.valid {
+				t.Errorf("valid=%v, error=%v", tt.valid, err)
+			}
+		})
+	}
 }

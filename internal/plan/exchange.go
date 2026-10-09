@@ -120,7 +120,7 @@ func (w *Wishes) Snapshot(
 		return nil, Status(err)
 	}
 	wish := exp.GetWish()
-	wish.Ready = wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
+	wish.Ready = wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions(), exp.GetInstructions()...)
 	return connect.NewResponse(&planv1.WishServiceSnapshotResponse{Export: exp, Projects: projects}), nil
 }
 
@@ -150,6 +150,10 @@ func collect(ctx context.Context, r store.Reader, wishID string) (*planv1.WishEx
 		return nil, nil, err
 	}
 	sortBlocks(exp.Blocks)
+	if exp.Instructions, err = store.List[*planv1.Instruction](ctx, r, where); err != nil {
+		return nil, nil, err
+	}
+	sortInstructions(exp.Instructions)
 
 	ids := slices.Clone(wish.GetProjectIds())
 	for _, t := range exp.GetTasks() {
@@ -184,6 +188,9 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	for _, t := range exp.GetTasks() {
 		ids[strings.ToLower(t.GetId())] = true
 	}
+	for _, instruction := range exp.GetInstructions() {
+		ids[strings.ToLower(instruction.GetId())] = true
+	}
 	answered := map[string]time.Time{}
 	for _, q := range exp.GetQuestions() {
 		ids[strings.ToLower(q.GetId())] = true
@@ -196,6 +203,11 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	}
 	var out []*planv1.Command
 	var failed error
+	// A new wish reuses its creation command's identifier. Older wishes can only match by their original title
+	// and timestamp; never use that fallback after a rename, which could attach a neighbor's request instead.
+	var made *planv1.Command
+	var legacy []*planv1.Command
+	var imported, renamed bool
 	_, err := store.Commands(ctx, r, func(c store.Command) bool {
 		req, err := request(c)
 		if err != nil || req == nil {
@@ -204,16 +216,26 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 		}
 		switch m := req.(type) {
 		case *planv1.WishServiceImportDataRequest:
-			imported, err := decode(m.GetData())
-			if err == nil && strings.EqualFold(imported.GetWish().GetId(), wish.GetId()) {
+			carried, err := decode(m.GetData())
+			if err == nil && strings.EqualFold(carried.GetWish().GetId(), wish.GetId()) {
 				// The import set the wish as the file held it: what came before is in the file, or was replaced.
-				out = slices.Clone(imported.GetCommands())
+				out = slices.Clone(carried.GetCommands())
+				made = nil
+				legacy = nil
+				// An imported wish already carries its creation history; local Make commands cannot add to it.
+				imported = true
 			}
 			return false
 		case *planv1.WishServiceMakeRequest:
-			if m.GetTitle() != wish.GetTitle() || !within(c.At, wish.GetCreateTime().AsTime()) {
+			if imported || !strings.EqualFold(c.ID, wish.GetId()) &&
+				(m.GetTitle() != wish.GetTitle() || !within(c.At, wish.GetCreateTime().AsTime())) {
 				return false
 			}
+		case *planv1.WishServiceRenameRequest:
+			if !strings.EqualFold(m.GetWishId(), wish.GetId()) {
+				return false
+			}
+			renamed = true
 		case *planv1.QuestionServiceAnswerRequest:
 			at, ok := answered[strings.ToUpper(m.GetQuestion().GetCode())]
 			byCode := m.GetWishId() == "" && ok && within(c.At, at)
@@ -230,11 +252,26 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 			failed = err
 			return false
 		}
-		out = append(out, &planv1.Command{
+		command := &planv1.Command{
 			Id: c.ID, Actor: c.Actor, At: timestamppb.New(c.At), Method: c.Method, Request: packed,
-		})
+		}
+		if _, ok := req.(*planv1.WishServiceMakeRequest); ok {
+			if strings.EqualFold(c.ID, wish.GetId()) {
+				made = command
+			} else {
+				legacy = append(legacy, command)
+			}
+		} else {
+			out = append(out, command)
+		}
 		return false
 	})
+	if made != nil {
+		out = append(out, made)
+	} else if !renamed {
+		out = append(out, legacy...)
+	}
+	slices.SortStableFunc(out, func(a, b *planv1.Command) int { return a.GetAt().AsTime().Compare(b.GetAt().AsTime()) })
 	return out, errors.Join(err, failed)
 }
 
@@ -293,6 +330,9 @@ func names(m protoreflect.Message, ids map[string]bool) bool {
 // portable strips from an export what only makes sense on this machine, and the local paths in its text.
 func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 	exp = proto.Clone(exp).(*planv1.WishExport)
+	for _, instruction := range exp.GetInstructions() {
+		instruction.Text = stripCredentials(instruction.GetText())
+	}
 	for _, t := range exp.GetTasks() {
 		// The worktree is a folder here, and the agent session lives in this machine's provider.
 		t.Worktree, t.SessionId, t.ForkSession = "", "", ""
@@ -314,6 +354,9 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 		req, err := c.GetRequest().UnmarshalNew()
 		if err != nil {
 			continue
+		}
+		if instruction, ok := req.(*planv1.InstructionServiceSendRequest); ok {
+			instruction.Text = stripCredentials(instruction.GetText())
 		}
 		scrub.message(req.ProtoReflect())
 		if packed, err := anypb.New(req); err == nil {
@@ -560,9 +603,12 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 	return res, nil
 }
 
-// entities are the events, questions and blocks of an export, which an import writes as they are.
+// entities are the events, questions, blocks and instructions of an export, which an import writes as they are.
 func entities(exp *planv1.WishExport) []proto.Message {
 	var out []proto.Message
+	for _, instruction := range exp.GetInstructions() {
+		out = append(out, instruction)
+	}
 	for _, e := range exp.GetEvents() {
 		out = append(out, e)
 	}
@@ -655,6 +701,34 @@ func check(exp *planv1.WishExport) error {
 		}
 		codes[code] = true
 	}
+	clear(codes)
+	requestIDs := map[string]bool{}
+	for _, instruction := range exp.GetInstructions() {
+		if err := errors.Join(valid("instruction", instruction, instruction.GetId()), ofWish("instruction", instruction.GetId(), instruction.GetWishId())); err != nil {
+			return err
+		}
+		code := strings.ToUpper(instruction.GetCode())
+		if !instructionCode.MatchString(code) || codes[code] || strings.TrimSpace(instruction.GetText()) == "" {
+			return fmt.Errorf("instruction %s: it needs nonblank text and a code of its own", code)
+		}
+		codes[code] = true
+		if requestID := strings.ToLower(instruction.GetRequestId()); requestID != "" {
+			if requestIDs[requestID] {
+				return fmt.Errorf("instruction %s: retry identifier is given twice", code)
+			}
+			requestIDs[requestID] = true
+		}
+		if instruction.GetStatus() == planv1.InstructionStatus_INSTRUCTION_STATUS_DONE {
+			for _, task := range exp.GetTasks() {
+				if task.GetId() == instruction.GetTaskId() && task.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+					return fmt.Errorf("instruction %s: completed instructions require a successful worker task", code)
+				}
+			}
+		}
+		if id := instruction.GetTaskId(); id != "" && !tasks[id] {
+			return fmt.Errorf("instruction %s: its worker task must be in the export", code)
+		}
+	}
 	for _, b := range exp.GetBlocks() {
 		if err := errors.Join(valid("block", b, b.GetId()), ofWish("block", b.GetId(), b.GetWishId())); err != nil {
 			return err
@@ -679,6 +753,9 @@ func free(ctx context.Context, tx *store.Tx, exp *planv1.WishExport) error {
 		return err
 	}
 	var errs []error
+	for _, instruction := range exp.GetInstructions() {
+		errs = append(errs, check("instruction", instruction.GetId(), func() error { _, err := store.Get[*planv1.Instruction](ctx, tx, instruction.GetId()); return err }))
+	}
 	for _, t := range exp.GetTasks() {
 		errs = append(errs, check("task", t.GetId(), func() error { _, err := store.Get[*planv1.Task](ctx, tx, t.GetId()); return err }))
 	}
@@ -707,6 +784,13 @@ func forget(ctx context.Context, tx *store.Tx, wishID string) error {
 		return err
 	}
 	var all []proto.Message
+	instructions, err := store.List[*planv1.Instruction](ctx, tx, where)
+	if err != nil {
+		return err
+	}
+	for _, instruction := range instructions {
+		all = append(all, instruction)
+	}
 	for _, t := range tasks {
 		events, err := store.List[*planv1.TaskEvent](ctx, tx, store.Where{"task_id": t.GetId()})
 		if err != nil {

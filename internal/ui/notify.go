@@ -204,7 +204,7 @@ func (n *Notices) committed(changes []proto.Message) {
 	}
 	for _, m := range changes {
 		switch m.(type) {
-		case *planv1.Question, *planv1.Task:
+		case *planv1.Question, *planv1.Task, *planv1.Instruction:
 		default:
 			continue
 		}
@@ -227,6 +227,8 @@ func (n *Notices) follow(ctx context.Context, m proto.Message) error {
 		if p != nil {
 			n.LeadPrompt(m.GetId(), p)
 		}
+	case *planv1.Instruction:
+		wishID = m.GetWishId()
 	case *planv1.Question:
 		wishID = m.GetWishId()
 		if m.GetAnswer() == nil && recent(m.GetCreateTime()) {
@@ -355,7 +357,11 @@ func (n *Notices) isReady(ctx context.Context, wishID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return plan.Ready(tasks, questions), nil
+	instructions, err := store.List[*planv1.Instruction](ctx, n.Store, where)
+	if err != nil {
+		return false, err
+	}
+	return plan.Ready(tasks, questions, instructions...), nil
 }
 
 // activeWish is the wish of id when it is active, else nil.

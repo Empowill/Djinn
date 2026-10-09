@@ -100,15 +100,52 @@ test("the approval card checks the command and sends the user's answer", async (
     const rows = page.locator(".lead-terminal .xterm-rows > div");
     await expect(rows.filter({ hasText: "APPROVAL-RECEIVED" })).toHaveCount(1);
 
-    await page.getByRole("button", { name: "Write to the lead" }).click();
-    const panel = page.getByRole("dialog", { name: "To the lead" });
-    await panel
-      .getByLabel("A word for the lead, as if typed in its terminal")
-      .fill("Keep going after approval");
-    await panel.getByRole("button", { name: "Send to the lead" }).click();
-    await expect(
-      rows.filter({ hasText: "Keep going after approval" }).first(),
-    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Add an indication", exact: true })
+      .click();
+    const panel = page.getByRole("dialog", { name: "Indication for the lead" });
+    const text = "Keep going after approval";
+    await panel.getByLabel("An indication for this wish").fill(text);
+    await panel.getByRole("button", { name: "Save the indication" }).click();
+    await expect(panel.getByText("Saved · pending")).toBeVisible();
+    await expect(panel.getByLabel("An indication for this wish")).toHaveValue(
+      "",
+    );
+
+    // Approval leaves the lead ready for a wake referencing the durable record, rather than its raw text.
+    const instructions = () =>
+      JSON.parse(djinn("instruction", "list", wishId, "--json")).instructions;
+    const saved = instructions();
+    expect(saved).toHaveLength(1);
+    const instruction = saved[0];
+    expect(instruction).toMatchObject({
+      id: expect.any(String),
+      wish_id: wishId,
+      code: "I01",
+      text,
+      status: "INSTRUCTION_STATUS_PENDING",
+      create_time: expect.any(String),
+      update_time: expect.any(String),
+    });
+    const wake = `Developer instruction ${instruction.code} (${instruction.id}) persisted.`;
+    const read = `djinn instruction list ${wishId}`;
+    // xterm may wrap the reference across screen rows.
+    await expect
+      .poll(async () => (await rows.allTextContents()).join(""), {
+        timeout: 10_000,
+      })
+      .toContain(wake);
+    await expect
+      .poll(async () => (await rows.allTextContents()).join(""))
+      .toContain(read);
+    await expect(rows.filter({ hasText: text })).toHaveCount(0);
+
+    await page.reload();
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+    const entry = page.locator(`#instruction-${instruction.id}`);
+    await expect(entry).toContainText(text);
+    await expect(entry.getByText("Pending", { exact: true })).toBeVisible();
+    expect(instructions()).toEqual(saved);
   } finally {
     djinn("wish", "pause", wishId);
   }

@@ -451,3 +451,56 @@ func TestLeadPromptBeforeNotifierIsReplayed(t *testing.T) {
 	default:
 	}
 }
+
+func TestNoticesWaitForDeveloperInstructions(t *testing.T) {
+	db, err := store.Open(t.Context(), "", plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	n := &Notices{Store: db, Language: "en"}
+	notes := make(fakeNotifier, 8)
+	n.Use(notes)
+	wish := makeWish(t, db, "Review instructions", planv1.WishState_WISH_STATE_ACTIVE)
+	task := &planv1.Task{Id: store.NewID(), WishId: wish.GetId(), Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE}
+	instruction := &planv1.Instruction{Id: store.NewID(), WishId: wish.GetId(), Code: "I01", Text: "Verify the worker before completion", Status: planv1.InstructionStatus_INSTRUCTION_STATUS_PENDING}
+	put(t, db, task)
+	put(t, db, instruction)
+	// Submission is a readiness change even if every worker had already finished.
+	n.changes = make(chan proto.Message, 1)
+	n.committed([]proto.Message{instruction})
+	select {
+	case change := <-n.changes:
+		if err := n.follow(t.Context(), change); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatal("instruction commit was not followed")
+	}
+	for _, status := range []planv1.InstructionStatus{planv1.InstructionStatus_INSTRUCTION_STATUS_PENDING, planv1.InstructionStatus_INSTRUCTION_STATUS_REFLECTING, planv1.InstructionStatus_INSTRUCTION_STATUS_PROCESSING} {
+		instruction.Status = status
+		if status == planv1.InstructionStatus_INSTRUCTION_STATUS_PROCESSING {
+			instruction.TaskId = task.GetId()
+		}
+		put(t, db, instruction)
+		if err := n.follow(t.Context(), instruction); err != nil {
+			t.Fatal(err)
+		}
+		if ready, err := n.isReady(t.Context(), wish.GetId()); err != nil || ready {
+			t.Fatalf("unfinished instruction caused ready suggestion: %v", err)
+		}
+		select {
+		case note := <-notes:
+			t.Fatalf("premature ready notification: %v", note)
+		default:
+		}
+	}
+	instruction.Status = planv1.InstructionStatus_INSTRUCTION_STATUS_DONE
+	put(t, db, instruction)
+	if err := n.follow(t.Context(), instruction); err != nil {
+		t.Fatal(err)
+	}
+	if got := notes.next(t); got.WishID != wish.GetId() || got.ID != "ready-"+wish.GetId() {
+		t.Fatalf("completion readiness: %+v", got)
+	}
+}

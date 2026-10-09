@@ -46,6 +46,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"Djinn holds the plan of this wish: its tasks, questions, decisions and blocks. You lead it: you talk with the " +
 	"developer, split the work into tasks for workers, and keep the plan true. Djinn computes the plan; you change it " +
 	"with the `djinn` command, never in its data folder.\n\n" +
+	"- **Lead; delegate every code change.** Never author source or test changes yourself, including small fixes, " +
+	"review findings or failed checks. Send the work to an existing worker with `djinn task send`, or create a worker " +
+	"with `djinn task spawn`. You frame, coordinate, review, integrate and verify their work.\n" +
+	"- **Durable developer instructions.** Reflect, delegate to a worker task of the same wish, then verify its result " +
+	"and explicitly complete the instruction. A worker ending never completes an instruction automatically.\n" +
 	"- **Ask, do not guess.** A question for the developer goes through `djinn question ask`, with its options and " +
 	"your recommendation. An answered question is a decision.\n" +
 	"- **Workers start from a short prompt.** Say what to do, in which project, and how to check it. " +
@@ -65,6 +70,10 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`--fork W1`, `--from-lead`); `djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
 	"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
 	"`djinn task stop <task>`.\n" +
+	"- `djinn instruction list <wish>`: every instruction in full; `djinn instruction reflect <instruction> --wish-id <wish>`; " +
+	"`djinn instruction assign <instruction> <worker-task> --wish-id <wish>`; " +
+	"`djinn instruction complete <instruction> --wish-id <wish>` after verifying the successful worker result. " +
+	"Use an instruction UUID or its I01 code; tasks use a UUID or W1 code.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\"`; `djinn block list <wish>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for your " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, after you investigated.\n" +
@@ -89,7 +98,7 @@ func BuildBrief(ctx context.Context, r store.Reader, home, wishID string) (Brief
 	}
 	wish := exp.GetWish()
 	rank := wish.GetRank()
-	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
+	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions(), exp.GetInstructions()...)
 	exp = portable(exp, newScrubber(all, home, dataName))
 	return Brief{Stable: stableBrief(projects), Moving: movingBrief(exp, rank, ready)}, nil
 }
@@ -185,9 +194,44 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	fmt.Fprintf(&b, "- Agent: %s, %s. You run it, and so does every task you spawn without "+
 		"`--provider`; give `--provider` for a task that needs another.\n", providerName(WishProvider(wish)), how)
 	if ready {
-		b.WriteString("- Djinn proposes to grant it: every task is finished and no question is open. Granting is the developer's word.\n")
+		b.WriteString("- Djinn proposes to grant it: every task is finished, no question is open and every developer instruction is done. Granting is the developer's word.\n")
 	}
 
+	// The original request starts every new lead whole, even after it falls out of the latest blocks. Render
+	// each distinct creation text once and leave its duplicates out of the shortened block section below.
+	originals := map[string]bool{}
+	for _, bl := range exp.GetBlocks() {
+		if !strings.EqualFold(bl.GetKind(), creationKind) || originals[bl.GetContent()] {
+			continue
+		}
+		if len(originals) == 0 {
+			b.WriteString("\n## Original request\n\n")
+		}
+		originals[bl.GetContent()] = true
+		b.WriteString(bl.GetContent() + "\n")
+	}
+	if len(originals) > 0 && needsTitle(exp) {
+		b.WriteString("\nAt startup, write a concise title in the developer's language, using the language of the complete " +
+			"original request above when no preference is given, then run " +
+			"`djinn wish rename <wish> \"<title>\"`. The current title is provisional; keep the original request whole.\n")
+	}
+
+	var unfinished []*planv1.Instruction
+	for _, instruction := range exp.GetInstructions() {
+		if instruction.GetStatus() != planv1.InstructionStatus_INSTRUCTION_STATUS_DONE {
+			unfinished = append(unfinished, instruction)
+		}
+	}
+	if len(unfinished) > 0 {
+		b.WriteString("\n## Developer instructions\n\nEvery instruction below is unfinished. Full text is included without truncation; `djinn instruction list <wish>` also reads it. Reflect, delegate to a same-wish worker, verify, then explicitly complete.\n")
+		for _, instruction := range unfinished {
+			fmt.Fprintf(&b, "\n### %s (%s) — %s\n\n", instruction.GetCode(), instruction.GetId(), instructionStatusWord(instruction.GetStatus()))
+			if instruction.GetTaskId() != "" {
+				fmt.Fprintf(&b, "Worker task: `%s`. Read its result with `djinn task get` and `djinn task watch`.\n\n", instruction.GetTaskId())
+			}
+			b.WriteString(instruction.GetText() + "\n")
+		}
+	}
 	var open, investigate, decided []*planv1.Question
 	for _, q := range exp.GetQuestions() {
 		if Investigating(q) {
@@ -297,7 +341,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 	}
 
-	blocks := slices.Clone(exp.GetBlocks())
+	blocks := slices.DeleteFunc(slices.Clone(exp.GetBlocks()), func(bl *planv1.Block) bool {
+		return originals[bl.GetContent()]
+	})
 	if len(blocks) > 0 {
 		slices.SortStableFunc(blocks, func(x, y *planv1.Block) int {
 			return cmp.Or(blockTime(y).Compare(blockTime(x)), strings.Compare(y.GetId(), x.GetId()))
@@ -318,6 +364,24 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 	}
 	return stripCredentials(b.String())
+}
+
+// needsTitle only asks the lead to name a prompt-only creation that has never been renamed. Explicit titles
+// and older title-only wishes keep their existing behavior, including on restart or a change of provider.
+func needsTitle(exp *planv1.WishExport) bool {
+	needed := false
+	for _, c := range exp.GetCommands() {
+		if c.GetMethod() == planv1connect.WishServiceRenameProcedure {
+			return false
+		}
+		if c.GetMethod() == planv1connect.WishServiceMakeProcedure {
+			var m planv1.WishServiceMakeRequest
+			if err := c.GetRequest().UnmarshalTo(&m); err == nil {
+				needed = m.GetTitle() == "" && m.GetPrompt() != ""
+			}
+		}
+	}
+	return needed
 }
 
 // waitText says why a task that is not finished nor running waits.

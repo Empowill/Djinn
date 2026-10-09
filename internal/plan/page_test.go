@@ -34,11 +34,12 @@ func servePages(t *testing.T, home string) (clients, *Pages) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return clients{
-		projects:  planv1connect.NewProjectServiceClient(srv.Client(), srv.URL),
-		wishes:    planv1connect.NewWishServiceClient(srv.Client(), srv.URL),
-		questions: planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL),
-		blocks:    planv1connect.NewBlockServiceClient(srv.Client(), srv.URL),
-		store:     s,
+		projects:     planv1connect.NewProjectServiceClient(srv.Client(), srv.URL),
+		wishes:       planv1connect.NewWishServiceClient(srv.Client(), srv.URL),
+		instructions: planv1connect.NewInstructionServiceClient(srv.Client(), srv.URL),
+		questions:    planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL),
+		blocks:       planv1connect.NewBlockServiceClient(srv.Client(), srv.URL),
+		store:        s,
 	}, pages
 }
 

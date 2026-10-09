@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"buf.build/go/protovalidate"
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -19,6 +20,27 @@ import (
 // MaxActive is how many wishes are active at once, at most. A djinn grants three wishes: the limit guards the
 // user's attention, not the machine, and no option changes it.
 const MaxActive = 3
+
+// creationKind is the original Markdown request, kept as free content rather than a field of the wish.
+const creationKind = "creation"
+
+// Rename journals a new title and changes the wish in the same transaction. The store's commit notification
+// reaches Watch and synced pages, just as any other change to the wish does.
+func (w *Wishes) Rename(
+	ctx context.Context, req *connect.Request[planv1.WishServiceRenameRequest],
+) (*connect.Response[planv1.WishServiceRenameResponse], error) {
+	if err := protovalidate.Validate(req.Msg); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	wish, err := change(ctx, w, req.Spec(), req.Msg, func(tx *store.Tx, wish *planv1.Wish) error {
+		wish.Title = strings.TrimSpace(req.Msg.GetTitle())
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.WishServiceRenameResponse{Wish: wish}), nil
+}
 
 // Active tells whether wish is active. A wish made before Djinn recorded states is.
 func Active(wish *planv1.Wish) bool {
@@ -55,9 +77,14 @@ func Ranked(all []*planv1.Wish) []*planv1.Wish {
 }
 
 // Ready tells whether Djinn proposes to grant a wish that has these tasks and questions: it has tasks, every one
-// finished (done, or stopped by the user), and no question is open. A task waiting for an answer, failed,
+// finished (done, or stopped by the user), no question is open, and every developer instruction is done. A task waiting for an answer, failed,
 // interrupted, planned or running keeps it from being ready. Djinn only proposes: the user grants.
-func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
+func Ready(tasks []*planv1.Task, questions []*planv1.Question, instructions ...*planv1.Instruction) bool {
+	for _, instruction := range instructions {
+		if instruction.GetStatus() != planv1.InstructionStatus_INSTRUCTION_STATUS_DONE {
+			return false
+		}
+	}
 	if len(tasks) == 0 {
 		return false
 	}
@@ -95,7 +122,11 @@ func fill(ctx context.Context, r store.Reader, wishes ...*planv1.Wish) error {
 		if err != nil {
 			return err
 		}
-		w.Ready = Ready(tasks, questions)
+		instructions, err := store.List[*planv1.Instruction](ctx, r, where)
+		if err != nil {
+			return err
+		}
+		w.Ready = Ready(tasks, questions, instructions...)
 	}
 	return nil
 }

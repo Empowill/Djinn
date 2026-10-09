@@ -1,7 +1,21 @@
 // The window's dialogs on the services: make a wish, add a project, look at a project and its skills, and the
 // settings that stay on this page (the language).
-import { ArrowRight, FolderOpen } from "lucide-react";
-import { type FormEvent, useEffect, useId, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  FolderOpen,
+  LoaderCircle,
+  Search,
+} from "lucide-react";
+import {
+  type FormEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   Allowance,
@@ -24,6 +38,7 @@ import { MAX_ACTIVE } from "./data/format";
 import { Brand, ModalFrame } from "./frame";
 import {
   chosenLanguage,
+  language,
   languageName,
   languages,
   setLanguage,
@@ -37,176 +52,406 @@ import {
   wishProviders,
 } from "./provider";
 import { type Theme, chosenTheme, setTheme } from "./theme";
+import { WishComposer } from "./wish-composer";
+import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
 
-// MakeWish makes a wish (WishService.Make): a sentence and the projects it works on. With three wishes active, it
-// is made paused, as the lamp would refuse a fourth.
+// MakeWish sends the complete Markdown request. Naming the wish belongs to the server and its lead. With three
+// wishes active, it is made paused, as the lamp would refuse a fourth.
 export function MakeWish({
   projects,
   active,
   onMade,
   onClose,
+  onBusyChange,
 }: {
   projects: Project[];
   active: number;
   onMade: (wish: Wish) => void;
   onClose: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const clients = useClients();
   const full = active >= MAX_ACTIVE;
-  const [title, setTitle] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [hasText, setHasText] = useState(false);
+  const overLimit = useMemo(() => promptTooLong(prompt), [prompt]);
   const [allowance, setAllowance] = useState(Allowance.NONE);
   const [chosen, setChosen] = useState<string[]>([]);
   const [provider, setProvider] = useState<Provider>(defaultProvider);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const submissionFocus = useRef<HTMLElement | null>(null);
+  const [search, setSearch] = useState("");
+  const form = useRef<HTMLFormElement>(null);
+  const page = useRef<HTMLElement>(null);
+  const promptId = useId();
+  const providerId = useId();
+  const searchId = useId();
+  const allowanceId = useId();
   // Whether the chosen agent can run the wish; the setup of the agents shows in place of the form, which keeps what
   // was typed.
   const agents = useAgents();
   const [setup, setSetup] = useState(false);
   const agent = agents.env?.providers.find((p) => p.id === agentOf[provider]);
+  const previousFocus = useRef<HTMLElement | null>(
+    document.activeElement as HTMLElement | null,
+  );
+  useEffect(() => {
+    return () => {
+      if (previousFocus.current?.isConnected)
+        previousFocus.current.focus({ preventScroll: true });
+    };
+  }, []);
+  useEffect(() => {
+    if (setup)
+      page.current?.querySelector<HTMLElement>("[data-setup-back]")?.focus();
+    else document.getElementById(promptId)?.focus({ preventScroll: true });
+  }, [setup, promptId]);
+  useEffect(() => {
+    if (busy) page.current?.focus({ preventScroll: true });
+    else if (submissionFocus.current?.isConnected) {
+      submissionFocus.current.focus({ preventScroll: true });
+      submissionFocus.current = null;
+    }
+  }, [busy]);
+  const filtered = projects.filter((project) =>
+    `${project.name} ${project.directory}`
+      .toLocaleLowerCase()
+      .includes(search.trim().toLocaleLowerCase()),
+  );
+  const selected = chosen.filter((id) =>
+    projects.some((project) => project.id === id),
+  );
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (submitting.current || !hasText || !prompt.trim() || overLimit) return;
+    submitting.current = true;
+    submissionFocus.current = document.activeElement as HTMLElement | null;
     setBusy(true);
+    onBusyChange?.(true);
+    setError("");
     try {
-      const res = await clients.wishes.make({
-        title: title.trim(),
-        projectIds: chosen,
-        paused: full,
-        provider,
-        allowance: chosen.length ? allowance : Allowance.NONE,
-      });
+      const res = await clients.wishes.make(
+        {
+          prompt: prompt.trim(),
+          projectIds: selected,
+          paused: full,
+          provider,
+          allowance: selected.length ? allowance : Allowance.NONE,
+        },
+        { headers: { "Accept-Language": language } },
+      );
       if (res.wish) onMade(res.wish);
     } catch (err) {
       setError(message(err));
     } finally {
+      submitting.current = false;
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
-  if (setup)
-    return (
-      <ModalFrame
-        title={t("agents.title")}
-        eyebrow={t("make.eyebrow")}
-        onClose={onClose}
-        wide
-      >
-        <AgentSetupPanel agents={agents} />
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => setSetup(false)}
-          >
-            {t("agents.back")}
-          </button>
-        </div>
-      </ModalFrame>
-    );
   return (
-    <ModalFrame
-      title={t("make.title")}
-      eyebrow={t("make.eyebrow")}
-      onClose={onClose}
+    <section
+      ref={page}
+      className="wish-creation"
+      aria-labelledby={`${promptId}-heading`}
+      aria-busy={busy}
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        // The agent setup terminal owns Escape and its other shell shortcuts.
+        if (
+          event.target instanceof HTMLElement &&
+          event.target.closest(".xterm")
+        )
+          return;
+        if (busy && event.key === "Tab") {
+          event.preventDefault();
+          event.currentTarget.focus();
+        }
+        if (event.defaultPrevented || event.nativeEvent.isComposing || busy)
+          return;
+        if (event.key === "Escape") {
+          event.preventDefault();
+          if (setup) setSetup(false);
+          else onClose();
+        }
+        if (
+          !setup &&
+          event.key === "Enter" &&
+          (event.metaKey || event.ctrlKey)
+        ) {
+          event.preventDefault();
+          form.current?.requestSubmit();
+        }
+      }}
     >
-      <form className="form-fields" onSubmit={(e) => void submit(e)}>
-        <label>
-          <span>{t("make.what")}</span>
-          <input
-            autoFocus
-            value={title}
-            maxLength={500}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={t("make.what_placeholder")}
-          />
-        </label>
-        <label>
-          <span>{t("make.provider")}</span>
-          <select
-            value={provider}
-            onChange={(e) => setProvider(Number(e.target.value) as Provider)}
-          >
-            {wishProviders.map((p) => (
-              <option key={p.provider} value={p.provider}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {agent && needsSetup(agent) && (
-          <div className="agent-warning" role="status">
-            <span>
-              {agent.state === ProviderState.MISSING
-                ? t("agents.make_missing", { agent: agent.name })
-                : t("agents.make_signed_out", { agent: agent.name })}
-            </span>
-            <button
-              type="button"
-              className="button secondary small"
-              onClick={() => setSetup(true)}
-            >
-              {t("agents.set_up")}
-            </button>
+      <header className="wish-creation-header">
+        <button
+          type="button"
+          className="wish-creation-back"
+          disabled={busy}
+          onClick={() => (setup ? setSetup(false) : onClose())}
+          data-setup-back={setup || undefined}
+        >
+          <ArrowLeft size={16} />
+          {setup ? t("agents.back") : t("make.back")}
+        </button>
+        <span className="eyebrow">{t("make.eyebrow")}</span>
+      </header>
+      <div className="wish-creation-scroll">
+        <div className="wish-creation-content">
+          <div className="wish-creation-intro">
+            <h1 id={`${promptId}-heading`}>
+              {setup ? t("agents.title") : t("make.title")}
+            </h1>
+            <p>{setup ? t("make.draft_kept") : t("make.intro")}</p>
           </div>
-        )}
-        {projects.length > 0 && (
-          <fieldset className="wish-projects">
-            <legend>{t("make.projects")}</legend>
-            {projects.map((project) => (
-              <label key={project.id} className="wish-project-choice">
-                <input
-                  type="checkbox"
-                  checked={chosen.includes(project.id)}
-                  onChange={(e) =>
-                    setChosen(
-                      e.target.checked
-                        ? [...chosen, project.id]
-                        : chosen.filter((id) => id !== project.id),
-                    )
-                  }
-                />
-                <FolderOpen size={14} />
-                <span>{project.name}</span>
-              </label>
-            ))}
-          </fieldset>
-        )}
-        {chosen.length > 0 && (
-          <label>
-            <span>{t("make.allowance")}</span>
-            <select
-              value={allowance}
-              onChange={(e) =>
-                setAllowance(Number(e.target.value) as Allowance)
-              }
-            >
-              <option value={Allowance.NONE}>{t("rights.none")}</option>
-              <option value={Allowance.EDIT}>{t("rights.edit")}</option>
-              <option value={Allowance.AUTO}>{t("rights.auto")}</option>
-            </select>
-            <small className="form-tip">{t("make.allowance_detail")}</small>
-          </label>
-        )}
-        <p className="form-tip">
-          {full
-            ? t("make.full", { max: MAX_ACTIVE })
-            : t("make.tip", { command: 'djinn wish make "…"' })}
-        </p>
-        {error && <p className="login-message">{error}</p>}
-        <div className="modal-footer">
-          <button type="button" className="button secondary" onClick={onClose}>
-            {t("common.cancel")}
-          </button>
-          <button
-            type="submit"
-            className="button accent"
-            disabled={busy || !title.trim()}
+          {setup && <AgentSetupPanel agents={agents} />}
+          {/* Keep the editor mounted during setup: text, formatting, selection and undo history survive. */}
+          <form
+            ref={form}
+            hidden={setup}
+            className="wish-creation-form"
+            onSubmit={(event) => void submit(event)}
+            aria-busy={busy}
           >
-            {full ? t("make.submit_paused") : t("make.submit")}
-            <ArrowRight size={14} />
-          </button>
+            <div className="wish-creation-layout">
+              <div className="wish-creation-request">
+                <label
+                  id={`${promptId}-label`}
+                  htmlFor={promptId}
+                  className="wish-creation-label"
+                >
+                  {t("make.what")}
+                </label>
+                <WishComposer
+                  id={promptId}
+                  describedBy={`${promptId}-help${overLimit ? ` ${promptId}-limit` : ""}`}
+                  disabled={busy}
+                  invalid={overLimit}
+                  onChange={(markdown, hasText) => {
+                    setPrompt(markdown);
+                    setHasText(hasText);
+                  }}
+                />
+                <p
+                  id={`${promptId}-help`}
+                  className="form-tip wish-composer-help"
+                >
+                  {t("make.editor_help")}
+                </p>
+                {overLimit && (
+                  <p
+                    id={`${promptId}-limit`}
+                    className="wish-creation-error"
+                    role="alert"
+                  >
+                    {t("make.prompt_too_long", {
+                      max: MAX_PROMPT_CHARACTERS.toLocaleString(language),
+                    })}
+                  </p>
+                )}
+                <fieldset className="wish-creation-projects" disabled={busy}>
+                  <legend>{t("make.projects")}</legend>
+                  <p className="form-tip">{t("make.projects_detail")}</p>
+                  {projects.length > 0 && (
+                    <div className="wish-project-search">
+                      <Search size={15} aria-hidden="true" />
+                      <label
+                        className="wish-creation-sr-only"
+                        htmlFor={searchId}
+                      >
+                        {t("make.search_projects")}
+                      </label>
+                      <input
+                        id={searchId}
+                        type="search"
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder={t("make.search_projects")}
+                      />
+                    </div>
+                  )}
+                  <div className="wish-project-cards">
+                    {filtered.map((project) => (
+                      <label
+                        key={project.id}
+                        className={`wish-project-card ${selected.includes(project.id) ? "is-selected" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={project.name}
+                          aria-describedby={`${promptId}-project-${project.id}-folder`}
+                          checked={selected.includes(project.id)}
+                          onChange={(event) =>
+                            setChosen(
+                              event.target.checked
+                                ? [...chosen, project.id]
+                                : chosen.filter((id) => id !== project.id),
+                            )
+                          }
+                        />
+                        <FolderOpen size={20} aria-hidden="true" />
+                        <span className="wish-project-card-copy">
+                          <strong>{project.name}</strong>
+                          <small
+                            id={`${promptId}-project-${project.id}-folder`}
+                            title={project.directory || undefined}
+                          >
+                            {project.directory || t("make.folder_missing")}
+                          </small>
+                        </span>
+                        <span
+                          className="wish-project-card-check"
+                          aria-hidden="true"
+                        >
+                          <Check size={13} />
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  {filtered.length === 0 && (
+                    <div className="wish-project-empty" role="status">
+                      <FolderOpen size={22} />
+                      <p>
+                        {projects.length
+                          ? t("make.no_matches")
+                          : t("make.no_projects")}
+                      </p>
+                    </div>
+                  )}
+                  {selected.length > 0 && (
+                    <p className="form-tip wish-project-count" role="status">
+                      {t("make.selected_projects", { count: selected.length })}
+                    </p>
+                  )}
+                </fieldset>
+              </div>
+              <aside
+                className="wish-creation-options"
+                aria-label={t("make.options")}
+              >
+                <div className="wish-creation-option">
+                  <label htmlFor={providerId}>{t("make.provider")}</label>
+                  <select
+                    id={providerId}
+                    disabled={busy}
+                    value={provider}
+                    onChange={(e) =>
+                      setProvider(Number(e.target.value) as Provider)
+                    }
+                  >
+                    {wishProviders.map((p) => (
+                      <option key={p.provider} value={p.provider}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="form-tip">{t("make.agent_detail")}</p>
+                  {agent && needsSetup(agent) && (
+                    <div className="agent-warning" role="status">
+                      <span>
+                        {agent.state === ProviderState.MISSING
+                          ? t("agents.make_missing", { agent: agent.name })
+                          : t("agents.make_signed_out", { agent: agent.name })}
+                      </span>
+                      <button
+                        type="button"
+                        className="button secondary small"
+                        disabled={busy}
+                        onClick={() => setSetup(true)}
+                      >
+                        {t("agents.set_up")}
+                      </button>
+                    </div>
+                  )}
+                  {agents.checking && !agents.env && (
+                    <p className="form-tip" role="status">
+                      {t("settings.agent_checking")}
+                    </p>
+                  )}
+                  {agents.error && (
+                    <p className="form-tip" role="alert">
+                      {agents.error}
+                    </p>
+                  )}
+                </div>
+                {selected.length > 0 && (
+                  <div className="wish-creation-option">
+                    <label htmlFor={allowanceId}>{t("make.allowance")}</label>
+                    <select
+                      id={allowanceId}
+                      disabled={busy}
+                      value={allowance}
+                      onChange={(e) =>
+                        setAllowance(Number(e.target.value) as Allowance)
+                      }
+                    >
+                      <option value={Allowance.NONE}>{t("rights.none")}</option>
+                      <option value={Allowance.EDIT}>{t("rights.edit")}</option>
+                      <option value={Allowance.AUTO}>{t("rights.auto")}</option>
+                    </select>
+                    <small className="form-tip">
+                      {t("make.allowance_detail")}
+                    </small>
+                  </div>
+                )}
+                <div
+                  className={`wish-creation-status ${full ? "is-full" : ""}`}
+                  role="status"
+                >
+                  <span
+                    className={`status-dot ${full ? "neutral" : "green"}`}
+                  />
+                  <p>
+                    {full
+                      ? t("make.full", { max: MAX_ACTIVE })
+                      : t("make.ready")}
+                  </p>
+                </div>
+              </aside>
+            </div>
+            {error && (
+              <p className="wish-creation-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="wish-creation-footer">
+              <p className="form-tip">
+                {t("make.tip", { command: 'djinn wish make "…"' })}
+              </p>
+              <div className="wish-creation-actions">
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={onClose}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="submit"
+                  className="button accent"
+                  disabled={busy || !hasText || !prompt.trim() || overLimit}
+                >
+                  {busy
+                    ? t("make.submitting")
+                    : full
+                      ? t("make.submit_paused")
+                      : t("make.submit")}
+                  {busy ? (
+                    <LoaderCircle className="wish-creation-spinner" size={14} />
+                  ) : (
+                    <ArrowRight size={14} />
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
-      </form>
-    </ModalFrame>
+      </div>
+    </section>
   );
 }
 

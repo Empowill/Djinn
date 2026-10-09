@@ -442,3 +442,17 @@ func TestWishProvider(t *testing.T) {
 		}
 	}
 }
+
+func TestLeadDelegatesAllInstructionCode(t *testing.T) {
+	rules := StableBrief(nil)
+	for _, text := range []string{"Never author source or test changes yourself", "small fixes", "review findings", "failed checks", "djinn task send", "djinn task spawn", "djinn instruction reflect", "djinn instruction assign", "djinn instruction complete", "A worker ending never completes an instruction automatically"} {
+		if !strings.Contains(rules, text) {
+			t.Errorf("provider-neutral lead rules missing %q", text)
+		}
+	}
+	for _, command := range []string{"djinn instruction list", "djinn instruction reflect", "djinn instruction assign", "djinn instruction complete"} {
+		if !slices.Contains(leadCommands, command) {
+			t.Errorf("lead command is not allowed: %s", command)
+		}
+	}
+}

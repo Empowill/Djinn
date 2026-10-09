@@ -6,7 +6,7 @@
 
 import type { GenEnum, GenExtension, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, extDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { MessageOptions, MethodOptions } from "@bufbuild/protobuf/wkt";
+import type { FieldOptions, MessageOptions, MethodOptions } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_descriptor } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/options.proto.
  */
 export const file_djinn_v1_options: GenFile = /*@__PURE__*/
-  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SwoGdW5pcXVlEh8uZ29vZ2xlLnByb3RvYnVmLk1lc3NhZ2VPcHRpb25zGLqOAyADKAsyEC5kamlubi52MS5VbmlxdWVSBnVuaXF1ZUKQAQoMY29tLmRqaW5uLnYxQgxPcHRpb25zUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_google_protobuf_descriptor]);
+  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SwoGdW5pcXVlEh8uZ29vZ2xlLnByb3RvYnVmLk1lc3NhZ2VPcHRpb25zGLqOAyADKAsyEC5kamlubi52MS5VbmlxdWVSBnVuaXF1ZTo/Cgpwb3NpdGlvbmFsEh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxi8jgMgASgIUgpwb3NpdGlvbmFsQpABCgxjb20uZGppbm4udjFCDE9wdGlvbnNQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9kamlubi92MTtkamlubnYxogIDRFhYqgIIRGppbm4uVjHKAghEamlublxWMeICFERqaW5uXFYxXEdQQk1ldGFkYXRh6gIJRGppbm46OlYxYgZwcm90bzM", [file_google_protobuf_descriptor]);
 
 /**
  * Unique is one group of fields whose values, taken together, identify a stored message.
@@ -95,4 +95,12 @@ export const autostart: GenExtension<MethodOptions, boolean> = /*@__PURE__*/
  */
 export const unique: GenExtension<MessageOptions, Unique[]> = /*@__PURE__*/
   extDesc(file_djinn_v1_options, 2);
+
+/**
+ * Keep a singular field positional when it becomes optional, preserving an existing command's arguments.
+ *
+ * @generated from extension: bool positional = 51004;
+ */
+export const positional: GenExtension<FieldOptions, boolean> = /*@__PURE__*/
+  extDesc(file_djinn_v1_options, 3);
 

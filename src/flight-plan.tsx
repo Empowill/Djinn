@@ -8,10 +8,11 @@ import { type CSSProperties, useRef } from "react";
 
 import { Change, TaskStatus, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import { AttentionBar, attentionOf } from "./attention";
-import { useData, useWishDetails } from "./data/djinn";
+import { useData, useStore, useWishDetails } from "./data/djinn";
 import { flightPlan, spent } from "./data/flight";
 import { investigating, waitsForYou, wishTone } from "./data/format";
 import { t } from "./i18n";
+import { LeadMessage } from "./lead-message";
 import { LeadPromptCard } from "./lead-prompt";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
@@ -37,6 +38,7 @@ export function FlightPlan({
   onOpen: (wishId: string) => void;
   onToast: (text: string) => void;
 }) {
+  const store = useStore();
   const projects = useData((s) => s.projects);
   const details = useWishDetails(wishes.map((w) => w.id));
   const plan = flightPlan(wishes, details);
@@ -106,12 +108,16 @@ export function FlightPlan({
                       x.status === TaskStatus.INTERRUPTED,
                   ).length ?? 0;
                 return (
-                  <button
+                  <article
                     key={wish.id}
-                    className={`plan-wish tone-${wishTone(wish, open, running)}`}
-                    onClick={() => onOpen(wish.id)}
-                    title={t("plan.open_wish")}
+                    className={`plan-wish instruction-card tone-${wishTone(wish, open, running)}`}
                   >
+                    <button
+                      className="plan-wish-open"
+                      onClick={() => onOpen(wish.id)}
+                      aria-label={`${t("plan.open_wish")}: ${wish.title}`}
+                      title={t("plan.open_wish")}
+                    />
                     <span className="plan-wish-title">
                       <span className="plan-wish-rank">{wish.rank}</span>
                       <strong>{wish.title}</strong>
@@ -176,7 +182,23 @@ export function FlightPlan({
                       />
                     )}
                     <SpentLine spent={spent(detail?.tasks ?? [])} />
-                  </button>
+                    <LeadMessage
+                      wish={wish}
+                      variant="card"
+                      onResume={async () => {
+                        const res = await clients.wishes.resume({
+                          wishId: wish.id,
+                          provider: wish.provider,
+                        });
+                        await store.changed(wish.id, [Change.WISH]);
+                        await clients.ui.show({
+                          wishId: wish.id,
+                          terminal: res.terminal,
+                        });
+                      }}
+                      onToast={onToast}
+                    />
+                  </article>
                 );
               })}
             </section>

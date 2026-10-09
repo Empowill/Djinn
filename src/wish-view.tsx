@@ -58,6 +58,7 @@ import { type Entry, isLog, journal } from "./data/journal";
 import { t } from "./i18n";
 import { AttentionBar, attentionOf } from "./attention";
 import { MarkButtons, type OnMark, useWrites } from "./marks";
+import { InstructionList } from "./instruction-list";
 import { LeadMessage } from "./lead-message";
 import { LeadPromptCard } from "./lead-prompt";
 import { leadTerminal } from "./lead-terminal";
@@ -130,12 +131,14 @@ export function WishView({
       await data.changed(wish.id, [Change.WISH]);
       await clients.ui.show({ wishId: wish.id, terminal: res.terminal });
     } catch (error) {
-      onToast(message(error));
       await data.changed(wish.id, [Change.WISH]).catch(() => undefined);
+      throw error;
     }
   };
   const openLead = () =>
-    wish.leadRunning || wish.leadExit ? viewLead() : startLead();
+    wish.leadRunning || wish.leadExit
+      ? viewLead()
+      : startLead().catch((error) => onToast(message(error)));
   const prompt = wish.leadRunning ? wish.leadPrompt : undefined;
   const attention = attentionOf(
     open,
@@ -494,6 +497,11 @@ export function WishView({
             </section>
           )}
 
+          <InstructionList
+            instructions={detail.instructions}
+            tasks={detail.tasks}
+          />
+
           {decided.length > 0 && (
             <div className="decision-history">
               <button
@@ -551,9 +559,7 @@ export function WishView({
           )}
         </div>
       </div>
-      {(wish.lead || wish.leadRunning) && (
-        <LeadMessage wish={wish} onResume={startLead} onToast={onToast} />
-      )}
+      <LeadMessage wish={wish} onResume={startLead} onToast={onToast} />
     </div>
   );
 }
