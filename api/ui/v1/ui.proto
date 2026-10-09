@@ -34,6 +34,12 @@ service UiService {
   rpc OpenExternal(UiServiceOpenExternalRequest) returns (UiServiceOpenExternalResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // Choose the global shortcut that brings the window forward from anywhere on the desktop; an empty chord turns it
+  // off. Kept in the data directory. Fails on a chord Djinn does not take; one the system refuses (another
+  // application holds it) is kept, and its problem said.
+  rpc SetShortcut(UiServiceSetShortcutRequest) returns (UiServiceSetShortcutResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
   // Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
   // window shows them too. In browser mode, djinn up prints the address of the page again.
   rpc Show(UiServiceShowRequest) returns (UiServiceShowResponse) {
@@ -72,6 +78,29 @@ message UiServiceGetEnvironmentResponse {
   repeated Provider providers = 3;
   // The window can open the system's folder dialog: ChooseDirectory works. False in the browser.
   bool folder_dialog = 4;
+  // The global shortcut that brings the window forward.
+  Shortcut shortcut = 5;
+}
+
+// The global shortcut that brings the window forward from anywhere on the desktop, on the wish with the newest open
+// question, else on the flight plan.
+message Shortcut {
+  // The chord in effect, such as Ctrl+Alt+Space; empty when off.
+  string chord = 1;
+  // The chord used until one is chosen.
+  string default_chord = 2;
+  // This Djinn can take a global shortcut: a native window on a system that has them. False in the browser.
+  bool available = 3;
+  // Why the chord does not work, as the system said, such as another application holding it; empty when it works or
+  // is off.
+  string problem = 4;
+}
+
+// The window's settings that Djinn acts on, in settings.json of the data directory. The page keeps its own (the
+// language, the theme).
+message Settings {
+  // The global shortcut's chord. Unset: the default one. Empty: off.
+  optional string shortcut = 1;
 }
 
 // An agent command line.
@@ -132,6 +161,16 @@ message UiServiceOpenExternalRequest {
 message UiServiceOpenExternalResponse {
   // The link as opened.
   string url = 1;
+}
+
+message UiServiceSetShortcutRequest {
+  // The chord: modifiers then a key, joined by +, such as Ctrl+Alt+Space. Empty turns the shortcut off.
+  string chord = 1 [(buf.validate.field).string.max_len = 64];
+}
+
+message UiServiceSetShortcutResponse {
+  // The shortcut as it now is.
+  Shortcut shortcut = 1;
 }
 
 message UiServiceShowRequest {

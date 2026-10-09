@@ -174,6 +174,13 @@ func runUp(args []string) (restart bool, err error) {
 		default: // Already asked.
 		}
 	}
+	// The window takes a global shortcut that brings it forward on what waits for you.
+	shortcuts := &ui.Shortcuts{
+		Home: home, Store: db, Show: func(wishID string) { leads{terminals, uiSvc}.Show(wishID, "") },
+	}
+	if !*browser {
+		uiSvc.Shortcuts = shortcuts
+	}
 	// The pages of the synced wishes follow every change, until djinn up stops.
 	pages := plan.NewPages(db, home, version)
 	go pages.Run(ctx)
@@ -229,9 +236,9 @@ func runUp(args []string) (restart bool, err error) {
 		err = <-served
 	default:
 		if transport == server.Wails {
-			err = openWindow(ctx, "", h, raise, notices)
+			err = openWindow(ctx, "", h, raise, notices, shortcuts)
 		} else {
-			err = openWindow(ctx, url, nil, raise, notices)
+			err = openWindow(ctx, url, nil, raise, notices, shortcuts)
 		}
 		stop() // The window is closed: stop the server too.
 		err = errors.Join(err, <-served)

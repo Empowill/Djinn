@@ -2420,11 +2420,18 @@ button {
   margin-top: 6px;
   line-height: 1.6;
 }
-.setting-row select {
+.setting-row select,
+.setting-row input {
   font-size: var(--font-size-body, 12px);
   background: var(--n-25);
   border-color: var(--n-57);
   color: var(--n-c4);
+}
+.setting-row input {
+  flex: 0 0 180px;
+}
+.setting-row input:disabled {
+  opacity: 0.5;
 }
 .toggle {
   width: 34px;

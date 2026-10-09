@@ -16,7 +16,7 @@ export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
 export { FlightPlan } from "@/src/flight-plan.tsx";
-export { FolderField } from "@/src/wish-dialogs.tsx";
+export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -488,4 +488,42 @@ test("the folder of a new project has a folder dialog's button only when the win
     native,
     /<button type="button"[^>]*>.*Choose a folder…<\/button>/,
   );
+});
+
+test("the global shortcut is a field of the settings, disabled where djinn cannot take one", () => {
+  const set = s.renderToStaticMarkup(
+    h(s.ShortcutField, {
+      shortcut: {
+        chord: "Ctrl+Alt+Space",
+        defaultChord: "Ctrl+Alt+Space",
+        available: true,
+        problem: "",
+      },
+      onSave: async () => {},
+    }),
+  );
+  assert.match(set, /Global shortcut/);
+  assert.match(set, /value="Ctrl\+Alt\+Space"/);
+  assert.match(set, /Default: Ctrl\+Alt\+Space/);
+  assert.doesNotMatch(set, /disabled/);
+  assert.doesNotMatch(set, /Not working/);
+
+  const refused = s.renderToStaticMarkup(
+    h(s.ShortcutField, {
+      shortcut: {
+        chord: "Ctrl+Alt+J",
+        defaultChord: "Ctrl+Alt+Space",
+        available: true,
+        problem: "another application holds it",
+      },
+      onSave: async () => {},
+    }),
+  );
+  assert.match(refused, /Not working: another application holds it/);
+
+  const browser = s.renderToStaticMarkup(
+    h(s.ShortcutField, { shortcut: undefined, onSave: async () => {} }),
+  );
+  assert.match(browser, /<input[^>]*disabled=""/);
+  assert.match(browser, /Only in Djinn&#x27;s window/);
 });

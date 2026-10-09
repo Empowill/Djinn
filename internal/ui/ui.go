@@ -46,6 +46,8 @@ type Service struct {
 	// ChooseFolder opens the system's folder dialog over the window, titled title and open in directory, and returns
 	// the folder chosen, or empty when the user cancelled. Nil: the page has no folder dialog (the browser).
 	ChooseFolder func(title, directory string) (string, error)
+	// Shortcuts is the global shortcut that brings the window forward. Nil: SetShortcut is unavailable.
+	Shortcuts *Shortcuts
 
 	mu      sync.Mutex // Serializes the writes of the state.
 	dialogs sync.Mutex // One folder dialog at a time.
@@ -112,6 +114,9 @@ func (s *Service) GetEnvironment(
 	res := &uiv1.UiServiceGetEnvironmentResponse{
 		Version: s.Version, Platform: platform, FolderDialog: s.ChooseFolder != nil,
 	}
+	if s.Shortcuts != nil {
+		res.Shortcut = s.Shortcuts.State()
+	}
 	for _, p := range providers {
 		command, err := exec.LookPath(p.id)
 		if err != nil {
@@ -122,6 +127,22 @@ func (s *Service) GetEnvironment(
 		})
 	}
 	return connect.NewResponse(res), nil
+}
+
+func (s *Service) SetShortcut(
+	_ context.Context, req *connect.Request[uiv1.UiServiceSetShortcutRequest],
+) (*connect.Response[uiv1.UiServiceSetShortcutResponse], error) {
+	if s.Shortcuts == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn has no global shortcut"))
+	}
+	shortcut, err := s.Shortcuts.Set(req.Msg.GetChord())
+	if errors.Is(err, errChord) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&uiv1.UiServiceSetShortcutResponse{Shortcut: shortcut}), nil
 }
 
 func (s *Service) LoadState(
