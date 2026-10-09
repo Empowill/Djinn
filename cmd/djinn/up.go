@@ -150,7 +150,7 @@ func runUp(args []string) (restart bool, err error) {
 	if scopes := workerScopes(ctx, os.Stderr, *workerCPU, policy.WorkerMemory); scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))
 	}
-	// The integration of finished work runs its gen and test commands under the gates, as djinn gate run does.
+	// The integration of finished work runs its gen, setup and checks under the gates, as djinn gate run does.
 	var gates *gate.Gates
 	opts = append(opts, harness.WithGates(func(ctx context.Context, name, taskID, what, dir string) (func(), error) {
 		held, err := gates.Take(ctx, gate.Request{Name: name, TaskID: taskID, What: what, Dir: dir}, nil)

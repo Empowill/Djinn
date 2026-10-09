@@ -155,16 +155,20 @@ To use Djinn, see the [README](README.md). To work on it:
   closes its lead's terminal and removes the worktrees with no work of their own (branches all stay).
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
 - `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
-  on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. The buttons on its
-  card in the window do the same. Not on Windows yet.
-- In a project whose settings name a test command ([`docs/team-settings.md`](docs/team-settings.md#integration)), Djinn
-  integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own,
-  makes the generated files again on a conflict only in them, runs the tests through a gate, moves the wish's branch
-  when they pass, and removes the task's worktree when clean ([T30](plan/43303f46-integration.md)). It pushes the
-  branch, never forcing, at an azima's end or once three tasks are committed and an hour has passed since the last
-  push; `--push-mode ask` asks first. `djinn wish set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or red tests, start a correction
-  worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task whose
-  worktree holds changes not committed is not merged, and nothing commits them blindly: a review worker, in that
+  on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. The buttons on
+  its card in the window do the same. Not on Windows yet.
+- In a project whose settings name its checks ([`docs/team-settings.md`](docs/team-settings.md#checks)), Djinn
+  integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own
+  (made ready by the `setup` command, again when a lock file changes), makes the generated files again on a conflict
+  only in them, runs the `commit` checks each through a gate of its name, moves the wish's branch when they pass, and
+  removes the task's worktree when clean ([T30](plan/43303f46-integration.md)). It pushes the branch, never forcing,
+  at an azima's end or once three tasks are committed and an hour has passed since the last push, once the `push`
+  checks pass (red, the push is held, and asked about if they stay red); `--push-mode ask` asks first.
+  Djinn's own checks are in [`.agents/settings.txtpb`](.agents/settings.txtpb): the lint at commit, the tests at push.
+  `djinn project show <project>` and the window's project view list them with their last runs.
+  `djinn wish set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or a red check, start a
+  correction worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task
+  whose worktree holds changes not committed is not merged, and nothing commits them blindly: a review worker, in that
   worktree, commits what belongs to the task and drops the rest, then its work integrates; past the same attempts,
   Djinn asks you. A task waits for
   its dependencies' work to be committed, and its worktree starts from that branch; once a batch is committed, the

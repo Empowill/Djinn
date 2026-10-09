@@ -147,7 +147,7 @@ func correctionPrompt(group []*planv1.Task, f *planv1.IntegrationFailure, branch
 	var b strings.Builder
 	fmt.Fprintf(&b, "Djinn could not integrate the work of %s into %s: %s.\n\n", codes(group), branch, headline(f.GetReason()))
 	if f.GetState() == planv1.IntegrationState_INTEGRATION_STATE_RED {
-		fmt.Fprintf(&b, "You correct it. Your worktree is on that merge: their work merged onto %s, where the tests failed. "+
+		fmt.Fprintf(&b, "You correct it. Your worktree is on that merge: their work merged onto %s, where a check failed. "+
 			"The command, run in the project's folder: `%s`. Its output ends with:\n\n", branch, f.GetCommand())
 		for line := range strings.Lines(strings.TrimPrefix(f.GetOutput(), ":\n")) {
 			b.WriteString("    " + line)
@@ -167,8 +167,8 @@ func correctionPrompt(group []*planv1.Task, f *planv1.IntegrationFailure, branch
 	}
 	fmt.Fprintf(&b, " Commit your work before you end, with a message in the repository's style (`git log` shows it), which "+
 		"concludes the merge, and leave nothing not committed: Djinn commits nothing blindly, and a review worker would judge "+
-		"what you leave. Djinn then integrates your branch like any task's, the tests (`%s`) run through a gate. Its success "+
-		"brings the work of %s in with yours.", settings.Test, codes(group))
+		"what you leave. Djinn then integrates your branch like any task's, its commit checks (%s) run through their gates. "+
+		"Its success brings the work of %s in with yours.", settings.CommitGates(), codes(group))
 	if attempt > 1 {
 		fmt.Fprintf(&b, "\n\nThis is attempt %d: the correction before yours failed.", attempt)
 	}

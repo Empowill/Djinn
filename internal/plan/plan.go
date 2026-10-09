@@ -243,7 +243,10 @@ func (p *Projects) Show(
 		return nil, Status(err)
 	}
 	repo, dev, problems := loadSettings(p.Home, project)
-	out := &planv1.ProjectServiceShowResponse{Project: project, Settings: ResolveSettings(repo, dev).Rows()}
+	settings := ResolveSettings(repo, dev)
+	out := &planv1.ProjectServiceShowResponse{
+		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
+	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
 	for _, err := range problems {
 		out.Problems = append(out.Problems, err.Error())

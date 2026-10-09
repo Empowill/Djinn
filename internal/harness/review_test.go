@@ -109,7 +109,7 @@ func TestReviewUncommittedWork(t *testing.T) {
 	for _, s := range []string{"the work of W1 into " + in.branch, "The task, W1: Work of W1. Its prompt:\n\n    work\n",
 		"     M app/README.md\n    ?? app/scratch.txt\n    ?? app/src/b.txt\n", "    -# App\n    +# App, with b\n",
 		"    +++ b/app/scratch.txt\n    +debug\n", "    +++ b/app/src/b.txt\n    +b", "Commit what belongs to the task",
-		"debug output, scratch files, build artifacts", "the tests (`test`)", "what you kept, what you dropped, and why"} {
+		"debug output, scratch files, build artifacts", "its commit checks (`djinn gate run test -- test`) run through their gates", "what you kept, what you dropped, and why"} {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("W2's prompt lacks %q:\n%s", s, prompt)
 		}

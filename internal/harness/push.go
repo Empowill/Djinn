@@ -26,8 +26,9 @@ import (
 // branch to its remote is the orchestrator's, never an agent's (.agents/ denies git push). Djinn checks it each time
 // a task's merge ends: a push is due when an azima ends, its last part committed, or once enough tasks are committed
 // since the last push and more than an hour has passed since it. In auto mode, the default, Djinn pushes, through git
-// with the person's own credentials, never forcing; in ask mode it asks first. A push the remote refuses is said, and
-// asked about. Once pushed, a project that names an install command proposes the build.
+// with the person's own credentials, never forcing; in ask mode it asks first. The project's push checks run first:
+// red, they hold the push (checks.go). A push the remote refuses is said, and asked about. Once pushed, a project that
+// names an install command proposes the build.
 
 // methodPush is how the journal records a push: the request is the push (planv1.IntegrationPush).
 const methodPush = "harness/push"
@@ -218,6 +219,36 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
 		return
 	}
+	sha, err := git(ctx, repo, "rev-parse", "refs/heads/"+branch)
+	if err != nil {
+		log.Printf("djinn: push %s: %v", branch, err)
+		return
+	}
+	state := pushState(wish, project.GetId())
+	unchecked := approved && state.GetUnchecked()
+	if !unchecked {
+		var held, out string
+		var stopped bool
+		if settings, err := plan.LoadSettings(h.home, project); err != nil {
+			held = err.Error()
+		} else {
+			held, out, stopped = h.pushChecks(pushing, wish, project, settings, branch, sha, committed)
+		}
+		switch {
+		case stopped || pushing.Err() != nil:
+			return
+		case held != "":
+			h.holdPush(ctx, wish, project, committed, branch, sha, held, out)
+			return
+		case state.GetHeld() != "" || state.GetHeldRuns() > 0:
+			err := h.store.Tx(ctx, func(tx *store.Tx) error {
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) { p.Held, p.HeldRuns = "", 0 })
+			})
+			if err != nil {
+				log.Printf("djinn: push %s: %v", branch, err)
+			}
+		}
+	}
 	if wish.GetPushMode() == planv1.PushMode_PUSH_MODE_ASK && !approved {
 		q := h.pushQuestion(wish, fmt.Sprintf("Push %s to %s? (%s)", branch, remote, commitsText(count, titles)),
 			fmt.Sprintf("**Why now.** %s.\n\n**What it pushes.** %s\n\nDjinn never forces a push; agents never push.", capital(why),
@@ -244,10 +275,6 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 		}
 		return
 	}
-	sha, err := git(ctx, repo, "rev-parse", "refs/heads/"+branch)
-	if err != nil {
-		log.Printf("djinn: push %s: %v", branch, err)
-	}
 	record := &planv1.IntegrationPush{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Branch: branch, Remote: remote, OldSha: old, NewSha: sha,
 		Count: int32(count), Commits: titles, TaskIds: ids(committed), PushTime: timestamppb.New(h.now()),
@@ -258,10 +285,14 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 		}
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 			p.Last, p.QuestionId, p.Refused, p.Approved = record, "", "", false
+			p.Held, p.HeldRuns, p.Unchecked = "", 0, false
 		})
 	})
 	if err != nil {
 		log.Printf("djinn: push %s: %v", branch, err)
+	}
+	if unchecked {
+		why += "; without the push checks, as you said"
 	}
 	h.pushSteps(ctx, committed, fmt.Sprintf("integration: pushed %s to %s as %s, %s (%s)", branch, remote, short8(sha),
 		commitsText(count, nil), why))
@@ -347,7 +378,8 @@ func editPush(ctx context.Context, tx *store.Tx, wishID, projectID string, edit 
 }
 
 // answerPush takes the person's answer to a question Djinn asked about a push: A pushes at the integration's next
-// pass, B waits for the next push due. It tells whether q was such a question.
+// pass, B waits for the next push due; once the push checks stay red, B pushes without them and C waits. It tells
+// whether q was such a question.
 func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) bool {
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
 	if err != nil {
@@ -357,11 +389,17 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) bool {
 	if i < 0 {
 		return false
 	}
-	push := q.GetAnswer().GetChoice() == planv1.Choice_CHOICE_A
+	// Once the push checks stay red: A checks again and pushes if they pass, B pushes without them, C waits for the next
+	// push due. Otherwise A pushes, B waits.
+	choice, held := q.GetAnswer().GetChoice(), wish.GetPushes()[i].GetHeld() != ""
+	push := choice == planv1.Choice_CHOICE_A || held && choice == planv1.Choice_CHOICE_B
 	ctx = context.WithoutCancel(ctx)
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), wish.GetPushes()[i].GetProjectId(), func(p *planv1.WishPush) {
-			p.QuestionId, p.Approved = "", push
+			p.QuestionId, p.Approved, p.Unchecked = "", push, held && choice == planv1.Choice_CHOICE_B
+			if held && !push {
+				p.HeldRuns = 0
+			}
 		})
 	})
 	if err != nil {

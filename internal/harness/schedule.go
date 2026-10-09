@@ -367,7 +367,7 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("project %s: %w", project.GetName(), err)})
 			return nil
 		}
-		r.branch, r.from = settings.Branch, plan.IntegrationBranchOf(wish, project.GetId())
+		r.branch, r.from, r.checks = settings.Branch, plan.IntegrationBranchOf(wish, project.GetId()), settings.ChecksBrief()
 	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err

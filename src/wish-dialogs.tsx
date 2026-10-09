@@ -1,16 +1,23 @@
-// The window's dialogs on the services: make a wish, add a project, look at a project and its skills, and the
+// The window's dialogs on the services: make a wish, add a project, look at a project, its checks and its skills, and the
 // settings: those that stay on this page (the language, the theme), and the global shortcut, which djinn takes.
 import { ArrowRight, BookOpen, FolderOpen, Terminal } from "lucide-react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 
-import type { Project, Skill } from "../gen/ts/plan/v1/plan_pb";
+import {
+  type CheckRun,
+  CheckWhen,
+  type Project,
+  type ProjectCheck,
+  type ProjectServiceShowResponse,
+  type Skill,
+} from "../gen/ts/plan/v1/plan_pb";
 import type {
   Shortcut,
   UiServiceGetEnvironmentResponse,
 } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
-import { MAX_ACTIVE } from "./data/format";
+import { MAX_ACTIVE, span, when } from "./data/format";
 import { Brand, ModalFrame } from "./frame";
 import {
   chosenLanguage,
@@ -254,7 +261,8 @@ export function FolderField({
   );
 }
 
-// ProjectPanel shows a project as djinn knows it, and its skills (SkillService.List): its own and those it summons.
+// ProjectPanel shows a project as djinn knows it, the checks Djinn runs on its work with their last runs
+// (ProjectService.Show), and its skills (SkillService.List): its own and those it summons.
 export function ProjectPanel({
   project,
   onClose,
@@ -264,12 +272,17 @@ export function ProjectPanel({
 }) {
   const clients = useClients();
   const [skills, setSkills] = useState<Skill[] | undefined>();
+  const [shown, setShown] = useState<ProjectServiceShowResponse>();
   const [error, setError] = useState("");
   useEffect(() => {
     let live = true;
     clients.skills
       .list({ project: project.id })
       .then((res) => live && setSkills(res.skills))
+      .catch((err) => live && setError(message(err)));
+    clients.projects
+      .show({ project: project.id })
+      .then((res) => live && setShown(res))
       .catch((err) => live && setError(message(err)));
     return () => {
       live = false;
@@ -300,6 +313,18 @@ export function ProjectPanel({
         </div>
       )}
       <div className="settings-divider" />
+      <h3>{t("project.checks")}</h3>
+      {shown === undefined && !error && (
+        <p className="muted-text">{t("common.loading")}</p>
+      )}
+      {shown && (
+        <ProjectChecks
+          setup={shown.setup}
+          checks={shown.checks}
+          runs={shown.project?.checkRuns ?? []}
+        />
+      )}
+      <div className="settings-divider" />
       <h3>{t("project.skills")}</h3>
       {error && <p className="login-message">{error}</p>}
       {skills === undefined && !error && (
@@ -323,6 +348,90 @@ export function ProjectPanel({
       ))}
     </ModalFrame>
   );
+}
+
+const whenKeys = {
+  [CheckWhen.UNSPECIFIED]: "project.check_setup",
+  [CheckWhen.COMMIT]: "project.check_commit",
+  [CheckWhen.PUSH]: "project.check_push",
+} as const;
+
+// ProjectChecks says what Djinn runs on a project's work: the setup that makes a fresh worktree ready, and each check
+// with when it runs, before a commit or before a push; each with its last run, the commit it checked and how it
+// ended, its output on hover when it failed.
+export function ProjectChecks({
+  setup,
+  checks,
+  runs,
+}: {
+  setup: string;
+  checks: ProjectCheck[];
+  runs: CheckRun[];
+}) {
+  if (!setup && checks.length === 0)
+    return <p className="muted-text">{t("project.no_checks")}</p>;
+  const last = (name: string, isSetup: boolean) =>
+    runs.find(
+      (r) => r.setup === isSetup && r.name.toLowerCase() === name.toLowerCase(),
+    );
+  const row = (
+    key: string,
+    name: string,
+    command: string,
+    whens: CheckWhen[],
+    run?: CheckRun,
+  ) => (
+    <div className="setting-row" key={key}>
+      <div>
+        <strong>{name}</strong>
+        <p>
+          <code>{command}</code>
+        </p>
+        <p
+          className={run && !run.passed ? "login-message" : "muted-text"}
+          title={run?.output || undefined}
+        >
+          {runText(run)}
+        </p>
+      </div>
+      <span>
+        {whens.map((w) => (
+          <span className="badge muted" key={w}>
+            {t(whenKeys[w])}
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+  return (
+    <>
+      <p className="muted-text">{t("project.checks_detail")}</p>
+      {setup &&
+        row(
+          "setup",
+          "setup",
+          setup,
+          [CheckWhen.UNSPECIFIED],
+          last("setup", true),
+        )}
+      {checks.map((c) =>
+        row(`check-${c.name}`, c.name, c.command, c.when, last(c.name, false)),
+      )}
+    </>
+  );
+}
+
+// runText says how a check last ran: never yet, passed on a commit, or failed and why, its first line.
+function runText(run?: CheckRun): string {
+  if (!run) return t("project.check_never");
+  const at = {
+    sha: run.sha.slice(0, 8),
+    when: when(run.endTime),
+    took: span(Number(run.durationMs)),
+  };
+  if (run.passed) return t("project.check_passed", at);
+  const reason = run.reason.split("\n")[0].replace(/:$/, "");
+  return t("project.check_red", { ...at, reason });
 }
 
 // ShortcutField is the global shortcut that brings the window forward, typed in as Ctrl+Alt+Space; empty turns it

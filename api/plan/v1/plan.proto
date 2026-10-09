@@ -31,6 +31,35 @@ message Project {
   string remote = 6;
   // Skills of other projects this project summons: its workers get them at launch, nothing is copied.
   repeated Summon summons = 7;
+  // The last run of each of its checks, and of its setup, as Djinn integrated and pushed its wishes' work.
+  repeated CheckRun check_runs = 8;
+}
+
+// CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
+message CheckRun {
+  // The check's name: lint, test. "setup" for the setup command.
+  string name = 1;
+  // It is the setup command, not a check.
+  bool setup = 2;
+  // The command, as the settings named it then.
+  string command = 3;
+  // When it ran: before a commit or before a push; unspecified for the setup.
+  CheckWhen when = 4;
+  // The wish whose integration ran it, and the task whose work it checked before a commit.
+  string wish_id = 5;
+  string task_id = 6;
+  // The commit it checked, in the wish's integration worktree.
+  string sha = 7;
+  // It passed: it ran and exited 0.
+  bool passed = 8;
+  // Its exit code; -1 when it could not run.
+  int32 exit_code = 9;
+  // When it failed, why, and the end of its output.
+  string reason = 10;
+  string output = 11;
+  // When it ended, and how long it took, in milliseconds.
+  google.protobuf.Timestamp end_time = 12;
+  int64 duration_ms = 13;
 }
 
 // A skill a project summons from another project. It stays in its source, and the summoning project follows it:
@@ -94,9 +123,8 @@ message ProjectSettings {
   // The command that makes the generated files, run in the project's folder: "go tool task gen". Its words are
   // split on spaces, without a shell. Not set: a conflict in generated files is a conflict like any other.
   optional string generate = 6 [(buf.validate.field).string.max_len = 500];
-  // The command that tests the project, run in the project's folder: "go tool task test". Djinn integrates the
-  // finished work of the project's tasks into their wish's integration branch only once it is set, and moves the
-  // branch only when it passes. Its words are split on spaces, without a shell.
+  // The former name of a check run before each commit: test: "go tool task test" is the check test at commit. A file
+  // that names a check test too keeps that one.
   optional string test = 7 [(buf.validate.field).string.max_len = 500];
   // How many correction workers Djinn starts, one after the other, for a batch whose merge conflicts in code or whose
   // tests fail, before it asks the person. Not set: 2. 0: it asks at once.
@@ -124,6 +152,53 @@ message ProjectSettings {
     gte: 0
     lte: 10000
   }];
+  // The command that makes a fresh worktree of the project ready, run in the project's folder: "npm ci". Djinn runs it
+  // once in each integration worktree, before the first command there, and again when its lock files change. Its
+  // words are split on spaces, without a shell.
+  optional string setup = 13 [(buf.validate.field).string.max_len = 500];
+  // The commands Djinn runs on the project's work, each through a gate of its name, before it commits a task's work
+  // into its wish's integration branch, before it pushes that branch, or both. Djinn integrates the project's finished
+  // work only once one is set. A file that sets some sets them all; names ignore case and are unique.
+  repeated ProjectCheck checks = 14 [(buf.validate.field).repeated.max_items = 20];
+}
+
+// ProjectCheck is a command Djinn runs on a project's work: checks { name: "lint" command: "go tool task lint" when:
+// CHECK_WHEN_COMMIT }.
+message ProjectCheck {
+  // Its name, and the gate it runs through: lint, test.
+  string name = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 40,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+  ];
+  // The command, run in the project's folder: "go tool task lint". Its words are split on spaces, without a shell.
+  string command = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 500
+  ];
+  // When it runs: before a commit, before a push, or both.
+  repeated CheckWhen when = 3 [(buf.validate.field).repeated = {
+    min_items: 1
+    unique: true
+    items: {
+      enum: {
+        defined_only: true
+        not_in: [0]
+      }
+    }
+  }];
+}
+
+// CheckWhen is when Djinn runs a project's check.
+enum CheckWhen {
+  // Not set.
+  CHECK_WHEN_UNSPECIFIED = 0;
+  // Before a task's work is committed into its wish's integration branch, on the merge: red, a correction worker
+  // starts, as for a conflict.
+  CHECK_WHEN_COMMIT = 1;
+  // Before Djinn pushes the integration branch, on its tip: red, the push is held, and Djinn says why; a question when
+  // it stays red.
+  CHECK_WHEN_PUSH = 2;
 }
 
 // SettingSource is where a project setting comes from.
@@ -140,11 +215,11 @@ enum SettingSource {
 
 // ProjectSetting is one setting of a project, as its workers get it.
 message ProjectSetting {
-  // Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,
+  // Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, setup, checks,
   // correction_attempts, install.
   string name = 1;
   // Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The
-  // generated globs are joined by commas.
+  // generated globs are joined by commas; the checks by "; ", each "lint: go tool task lint (commit, push)".
   string value = 2;
   // Where it comes from.
   SettingSource source = 3;
@@ -226,6 +301,12 @@ message WishPush {
   string refused = 4;
   // The person said to push (an answer to the question): Djinn pushes at its next pass, whatever the cadence.
   bool approved = 5;
+  // Why the project's push checks hold the push, at the branch's tip then; empty once they pass.
+  string held = 6;
+  // How many times in a row they held it: at the second, or once no work is left to commit, Djinn asks.
+  int32 held_runs = 7;
+  // The person said to push without the push checks: the next push skips them, once.
+  bool unchecked = 8;
 }
 
 // IntegrationPush is a push of a wish's integration branch to its remote, as the journal records it and the wish shows
@@ -524,7 +605,7 @@ message Task {
   // For an azima: where it stands, computed on every read from its parts and what it depends on, never stored.
   Azima azima = 39;
   // Where the task's finished work stands on its way into its wish's integration branch: unset for a task whose work
-  // Djinn does not integrate (outside Git, an azima, a project that names no test command, not done).
+  // Djinn does not integrate (outside Git, an azima, a project that names no check, not done).
   TaskIntegration integration = 40;
   // The tilasms of the wish that cite it (djinn tilasm put --cites), by code (L01): computed on every read, never
   // stored.
@@ -575,7 +656,7 @@ message IntegrationFailure {
   string merge_branch = 3;
   // For a conflict, the files in conflict, as the repository names them.
   repeated string files = 4;
-  // For red tests, the test command, and the end of its output.
+  // For a red check, or a setup that failed, its command, and the end of its output.
   string command = 5;
   string output = 6;
   // The tasks whose work is in base and merge_branch: what the correction corrects, and what its success commits.
@@ -1224,6 +1305,10 @@ message ProjectServiceShowResponse {
   // Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is
   // fixed.
   repeated string problems = 5;
+  // The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
+  // files resolve them. Their last runs are the project's check_runs.
+  string setup = 6;
+  repeated ProjectCheck checks = 7;
 }
 
 // Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe

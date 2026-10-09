@@ -205,8 +205,8 @@ export function LeadMenu({
 }
 
 // LastPushes says, for each project of the wish, when Djinn last pushed its integration branch and how many commits it
-// brought, their titles on hover; and a push the remote refused, until one passes. Names the project when the wish has
-// several.
+// brought, their titles on hover; a push the remote refused, until one passes; and a push its checks hold, why on
+// hover. Names the project when the wish has several.
 export function LastPushes({
   pushes,
   projects,
@@ -218,7 +218,7 @@ export function LastPushes({
     <>
       {pushes.map((push) => {
         const last = push.last;
-        if (!last && !push.refused) return null;
+        if (!last && !push.refused && !push.held) return null;
         const project =
           projects.length > 1
             ? projects.find((p) => p.id === push.projectId)?.name
@@ -240,6 +240,11 @@ export function LastPushes({
             {push.refused && (
               <span className="wish-push-refused" title={push.refused}>
                 {t("wish.push_refused")}
+              </span>
+            )}
+            {push.held && (
+              <span className="wish-push-refused" title={push.held}>
+                {t("wish.push_held")}
               </span>
             )}
           </span>

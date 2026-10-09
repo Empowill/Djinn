@@ -194,8 +194,9 @@ func reviewPrompt(from *planv1.Task, prompt string, status []string, diff, branc
 	fmt.Fprintf(&b, "Their diff, against the branch's last commit:\n\n%s\n\n", indent(diff))
 	fmt.Fprintf(&b, "Commit what belongs to the task, with a message in the repository's style (`git log` shows it). Revert "+
 		"(`git restore`) or delete what does not: debug output, scratch files, build artifacts. Leave nothing not committed: "+
-		"`git status --porcelain` prints nothing when you end. Do not push: Djinn integrates the branch like any task's, the "+
-		"tests (`%s`) run through a gate. End with one line saying what you kept, what you dropped, and why.", settings.Test)
+		"`git status --porcelain` prints nothing when you end. Do not push: Djinn integrates the branch like any task's, its "+
+		"commit checks (%s) run through their gates. End with one line saying what you kept, what you dropped, and why.",
+		settings.CommitGates())
 	if attempt > 1 {
 		fmt.Fprintf(&b, "\n\nThis is attempt %d: the review before yours left changes not committed.", attempt)
 	}

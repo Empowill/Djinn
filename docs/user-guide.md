@@ -278,11 +278,13 @@ A repository may share defaults for its workers in `.agents/settings.txtpb`: whi
 much one may spend. Your own file, in Djinn's data folder, wins over the team's; a task's own flags win over both.
 `djinn project show <project>` says where each setting comes from. Details: [team settings](team-settings.md).
 
-When a project's settings name a test command, Djinn brings finished work into the wish's branch by itself: at an
-azima's end, or after an hour and three tasks done, it merges the tasks' branches in a worktree of its own, runs the
-tests through a gate, and moves the branch when they pass. Each task says where its work stands: waiting to be
-committed, committed, conflict, red tests, corrected by another task. A conflict in code or red tests start a
-correction worker; past two attempts, Djinn asks you. When the settings also name an install command, the window
+When a project's settings name its checks, Djinn brings finished work into the wish's branch by itself: as each task
+ends, it merges the task's branch in a worktree of its own (made ready by the `setup` command), runs the checks named
+for `commit` through their gates, and moves the branch when they pass. Each task says where its work stands: waiting
+to be committed, committed, conflict, red, corrected by another task. A conflict in code or a red check start a
+correction worker; past two attempts, Djinn asks you. Before it pushes the branch, at an azima's end or after an hour
+and three tasks committed, it runs the checks named for `push`: red, the push is held, and Djinn asks you if they stay
+red. `djinn project show` and the project's view in the window list the checks and how each last ran. When the settings also name an install command, the window
 proposes the batch it committed, with **What changed** and **What to check**; **Install and restart** installs it,
 nothing before your click. Details: [integration](team-settings.md#integration).
 

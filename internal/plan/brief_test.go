@@ -29,6 +29,10 @@ func TestBrief(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The checks Djinn runs on the project's work, which the lead and each worker learn.
+	writeSettings(t, filepath.Join(repo, SettingsFile), "setup: \"npm ci\"\n"+
+		"checks { name: \"lint\" command: \"go tool task lint\" when: CHECK_WHEN_COMMIT }\n"+
+		"checks { name: \"test\" command: \"go tool task test\" when: CHECK_WHEN_PUSH }\n")
 	// What a brief must never carry: a local path, credentials in a URL, a raw line, a tool's result.
 	if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
 		WishId: wish.GetId(), Kind: "report", Title: "Where the code is",
@@ -98,6 +102,9 @@ func TestBrief(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Read `AGENTS.md`, `contributing.md` at its root first", "**notes**, outside Git", "**api**, a Git repository",
+		"  Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
+			"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
+			"and fixes what they find. A fresh worktree needs `npm ci` first. Djinn says so in each worker's first prompt.\n",
 		wish.GetId(), "**Q01** Which store? → A: SQLite", "**W1** Write the store (claude", "**W2** Write the docs: failed",
 		"### No CGO (decision)", "In api/internal", "https://example.com/acme.git",
 		"`djinn wish sync <wish>`", "republish that file as it is, in one call",

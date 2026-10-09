@@ -48,7 +48,19 @@ func TestReadSettings(t *testing.T) {
 			t.Errorf("model %s: %v, %v", model, s, err)
 		}
 	}
+	writeSettings(t, path, "setup: \"npm ci\"\nchecks { name: \"lint\" command: \"go tool task lint\" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }\n"+
+		"checks { name: \"test\" command: \"go tool task test\" when: CHECK_WHEN_PUSH }\n")
+	if s, err := ReadSettings(path); err != nil || s.GetSetup() != "npm ci" ||
+		ChecksText(s.GetChecks()) != "lint: go tool task lint (commit, push); test: go tool task test (push)" {
+		t.Errorf("checks: %v, %v", s, err)
+	}
 	for _, bad := range []string{
+		"checks { name: \"lint\" command: \"a\" when: CHECK_WHEN_COMMIT }\nchecks { name: \"LINT\" command: \"b\" when: CHECK_WHEN_PUSH }\n",
+		"checks { name: \"lint\" command: \"a\" }\n",
+		"checks { name: \"lint\" command: \"a\" when: CHECK_WHEN_UNSPECIFIED }\n",
+		"checks { name: \"lint\" command: \"a\" when: [CHECK_WHEN_PUSH, CHECK_WHEN_PUSH] }\n",
+		"checks { name: \"lint\" when: CHECK_WHEN_PUSH }\n",
+		"checks { name: \"../lint\" command: \"a\" when: CHECK_WHEN_PUSH }\n",
 		"provider: PROVIDER_CLAUDE\nprovider: \n",
 		"unknown_field: 1\n",
 		"provider: PROVIDER_WATCH\n",
@@ -112,43 +124,60 @@ func TestResolveSettings(t *testing.T) {
 		want      Settings
 	}{
 		{"neither file", nil, nil, Settings{
-			Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the repository's only", team, nil, Settings{
 			Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the developer's win, setting by setting", team, &planv1.ProjectSettings{Model: proto.String("sonnet")}, Settings{
 			Provider: claude, Model: "sonnet", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			ProviderFrom: repo, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"a provider brings its model, not the other file's", team, &planv1.ProjectSettings{Provider: &codex}, Settings{
 			Provider: codex, MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"an explicit zero lifts the team's budget", team, &planv1.ProjectSettings{MaxBudgetUsd: proto.Float64(0)}, Settings{
 			Provider: claude, Model: "opus", Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: dev, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: dev, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the developer's branch wins", team, &planv1.ProjectSettings{Branch: proto.String("me/{slug}-{uuid8}")}, Settings{
 			Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "me/{slug}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: dev, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: dev, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the developer's only", nil, &planv1.ProjectSettings{Provider: &codex, Model: proto.String("gpt-5.1-codex")}, Settings{
 			Provider: codex, Model: "gpt-5.1-codex", Branch: DefaultBranch,
-			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the integration's, the developer's winning", &planv1.ProjectSettings{
 			Generated: []string{"gen/**", "docs/openapi.json"}, Generate: proto.String("go tool task gen"), Test: proto.String("go tool task test"),
 			Install: proto.String("go tool task install"),
 		}, &planv1.ProjectSettings{Test: proto.String("go tool task test-go")}, Settings{
 			Provider: claude, Branch: DefaultBranch, Generated: []string{"gen/**", "docs/openapi.json"}, Generate: "go tool task gen",
-			Test: "go tool task test-go", ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: repo,
-			GenerateFrom: repo, TestFrom: dev, InstallFrom: repo, Install: "go tool task install", CorrectionAttempts: 2, AttemptsFrom: def,
+			Checks: []*planv1.ProjectCheck{atCommit("test", "go tool task test-go")}, ProviderFrom: def, ModelFrom: def,
+			BudgetFrom: def, BranchFrom: def, GeneratedFrom: repo, GenerateFrom: repo, SetupFrom: def, ChecksFrom: dev,
+			InstallFrom: repo, Install: "go tool task install", CorrectionAttempts: 2, AttemptsFrom: def,
+		}},
+		{"the checks of one file, its test among them", &planv1.ProjectSettings{
+			Setup: proto.String("npm ci"), Test: proto.String("go tool task test"),
+			Checks: []*planv1.ProjectCheck{atCommit("lint", "go tool task lint")},
+		}, nil, Settings{
+			Provider: claude, Branch: DefaultBranch, Setup: "npm ci",
+			Checks:       []*planv1.ProjectCheck{atCommit("lint", "go tool task lint"), atCommit("test", "go tool task test")},
+			ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
+			SetupFrom: repo, ChecksFrom: repo, InstallFrom: def, CorrectionAttempts: 2, AttemptsFrom: def,
+		}},
+		{"a file that sets checks sets them all", &planv1.ProjectSettings{
+			Checks: []*planv1.ProjectCheck{atCommit("lint", "go tool task lint")}, Test: proto.String("go tool task test"),
+		}, &planv1.ProjectSettings{Checks: []*planv1.ProjectCheck{atCommit("test", "make check")}, Test: proto.String("make test")}, Settings{
+			Provider: claude, Branch: DefaultBranch, Checks: []*planv1.ProjectCheck{atCommit("test", "make check")},
+			ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
+			SetupFrom: def, ChecksFrom: dev, InstallFrom: def, CorrectionAttempts: 2, AttemptsFrom: def,
 		}},
 		{"no correction worker", nil, &planv1.ProjectSettings{CorrectionAttempts: proto.Int32(0)}, Settings{
 			Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def,
-			GeneratedFrom: def, GenerateFrom: def, TestFrom: def, InstallFrom: def, AttemptsFrom: dev,
+			GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: dev,
 		}},
 	} {
 		got := ResolveSettings(c.repo, c.dev)
@@ -210,6 +239,9 @@ func TestProjectShow(t *testing.T) {
 		}
 		return res.Msg
 	}
+	checks := func(res *planv1.ProjectServiceShowResponse) string {
+		return "setup " + res.GetSetup() + "; " + ChecksText(res.GetChecks())
+	}
 	rows := func(res *planv1.ProjectServiceShowResponse) string {
 		var b []string
 		for _, s := range res.GetSettings() {
@@ -228,7 +260,7 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, test= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -246,7 +278,8 @@ func TestProjectShow(t *testing.T) {
 	writeSettings(t, devFile, "model: \"sonnet\"\nbranch: \"me/{slug}-{uuid8}\"\ntest: \"go tool task test-go\"\n")
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/openapi.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
-		"test=go tool task test-go DEVELOPER, correction_attempts=3 REPOSITORY, install=go tool task install REPOSITORY"; got != want {
+		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, correction_attempts=3 REPOSITORY, "+
+		"install=go tool task install REPOSITORY"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
@@ -255,7 +288,7 @@ func TestProjectShow(t *testing.T) {
 	res = show()
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/openapi.json REPOSITORY, "+
-		"generate=go tool task gen REPOSITORY, test=go tool task test REPOSITORY, correction_attempts=3 REPOSITORY, "+
+		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, correction_attempts=3 REPOSITORY, "+
 		"install=go tool task install REPOSITORY"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
@@ -266,7 +299,54 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("LoadSettings = %v; want an error naming %s", err, devFile)
 	}
 
+	// The setup and the checks, as Djinn runs them; their last runs are the project's.
+	writeSettings(t, devFile, "setup: \"npm ci\"\nchecks { name: \"lint\" command: \"go tool task lint\" when: CHECK_WHEN_COMMIT }\n"+
+		"checks { name: \"test\" command: \"go tool task test\" when: CHECK_WHEN_PUSH }\n")
+	res = show()
+	if got, want := checks(res), "setup npm ci; lint: go tool task lint (commit); test: go tool task test (push)"; got != want {
+		t.Errorf("the checks: %s; want %s", got, want)
+	}
+
 	if _, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "nope"})); code(err) != connect.CodeNotFound {
 		t.Errorf("an unknown project: %v, want not_found", err)
+	}
+}
+
+// atCommit is a check run before each commit.
+func atCommit(name, command string) *planv1.ProjectCheck {
+	return &planv1.ProjectCheck{Name: name, Command: command, When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_COMMIT}}
+}
+
+// TestChecksBrief: the lead's brief and each worker's first prompt say which checks Djinn runs and when, how to run
+// them through their gates, and what a fresh worktree needs first; nothing for a project without checks.
+func TestChecksBrief(t *testing.T) {
+	if got := (Settings{}).ChecksBrief(); got != "" {
+		t.Errorf("no check: %q", got)
+	}
+	s := Settings{Setup: "npm ci", Checks: []*planv1.ProjectCheck{
+		atCommit("lint", "go tool task lint"),
+		{Name: "test", Command: "go tool task test", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}},
+	}}
+	want := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
+		"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
+		"and fixes what they find. A fresh worktree needs `npm ci` first."
+	if got := s.ChecksBrief(); got != want {
+		t.Errorf("brief:\n%s\nwant:\n%s", got, want)
+	}
+	push := Settings{Checks: []*planv1.ProjectCheck{{Name: "lint", Command: "make lint", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}}}}
+	if got, want := push.ChecksBrief(), "Djinn checks this project's work before it pushes, with `djinn gate run lint -- make lint`."; got != want {
+		t.Errorf("push only: %q; want %q", got, want)
+	}
+}
+
+// TestDjinnsOwnSettings: Djinn's repository names its setup and its checks, the lint before each commit and the tests
+// before each push, in a file Djinn reads.
+func TestDjinnsOwnSettings(t *testing.T) {
+	s, err := ReadSettings(filepath.Join("..", "..", SettingsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ChecksText(s.GetChecks()), "lint: go tool task lint (commit); test: go tool task test (push)"; s.GetSetup() != "npm ci" || got != want {
+		t.Errorf("setup %q, checks %q; want npm ci, %q", s.GetSetup(), got, want)
 	}
 }

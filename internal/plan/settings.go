@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -46,6 +47,14 @@ func ReadSettings(path string) (*planv1.ProjectSettings, error) {
 	}
 	if err := protovalidate.Validate(s); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	seen := map[string]bool{}
+	for _, c := range s.GetChecks() {
+		name := strings.ToLower(c.GetName())
+		if seen[name] {
+			return nil, fmt.Errorf("%s: two checks are named %s: names ignore case", path, c.GetName())
+		}
+		seen[name] = true
 	}
 	return s, nil
 }
@@ -102,9 +111,11 @@ type Settings struct {
 	MaxBudgetUSD float64
 	Branch       string // a template: {code}, {slug}, {uuid8}
 	// How Djinn integrates the project's finished work (T30): the generated files as globs, the command that makes
-	// them, the command that tests the project, and the one that installs its new build; empty when not set.
-	Generated               []string
-	Generate, Test, Install string
+	// them, the one that makes a fresh worktree ready, and the one that installs its new build; empty when not set.
+	Generated                []string
+	Generate, Setup, Install string
+	// The checks Djinn runs before it commits a task's work and before it pushes, in the order the file names them.
+	Checks []*planv1.ProjectCheck
 	// How many correction workers Djinn starts for a batch that conflicts in code or tests red, before it asks.
 	CorrectionAttempts int
 
@@ -114,9 +125,9 @@ type Settings struct {
 	QuestionModel     string
 	QuestionBudgetUSD float64
 
-	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, TestFrom planv1.SettingSource
-	AttemptsFrom, InstallFrom                                                              planv1.SettingSource
-	QuestionWorkersFrom, QuestionModelFrom, QuestionBudgetFrom                             planv1.SettingSource
+	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom planv1.SettingSource
+	ChecksFrom, AttemptsFrom, InstallFrom                                                   planv1.SettingSource
+	QuestionWorkersFrom, QuestionModelFrom, QuestionBudgetFrom                              planv1.SettingSource
 }
 
 // Defaults of the question workers: a cheaper model is enough to turn a decision into tasks, or to read and revise a
@@ -134,7 +145,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 	s := Settings{
 		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch, CorrectionAttempts: DefaultCorrectionAttempts,
 		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
-		TestFrom: def, InstallFrom: def, AttemptsFrom: def,
+		SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def,
 		QuestionWorkers: true, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
 		QuestionWorkersFrom: def, QuestionModelFrom: def, QuestionBudgetFrom: def,
 	}
@@ -166,8 +177,11 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.Generate != nil {
 			s.Generate, s.GenerateFrom = f.settings.GetGenerate(), f.from
 		}
-		if f.settings.Test != nil {
-			s.Test, s.TestFrom = f.settings.GetTest(), f.from
+		if f.settings.Setup != nil {
+			s.Setup, s.SetupFrom = f.settings.GetSetup(), f.from
+		}
+		if checks := fileChecks(f.settings); len(checks) > 0 {
+			s.Checks, s.ChecksFrom = checks, f.from
 		}
 		if f.settings.CorrectionAttempts != nil {
 			s.CorrectionAttempts, s.AttemptsFrom = int(f.settings.GetCorrectionAttempts()), f.from
@@ -245,11 +259,106 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "branch", Value: s.Branch, Source: s.BranchFrom},
 		{Name: "generated", Value: strings.Join(s.Generated, ","), Source: s.GeneratedFrom},
 		{Name: "generate", Value: s.Generate, Source: s.GenerateFrom},
-		{Name: "test", Value: s.Test, Source: s.TestFrom},
+		{Name: "setup", Value: s.Setup, Source: s.SetupFrom},
+		{Name: "checks", Value: ChecksText(s.Checks), Source: s.ChecksFrom},
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
 		{Name: "question_workers", Value: strconv.FormatBool(s.QuestionWorkers), Source: s.QuestionWorkersFrom},
 		{Name: "question_model", Value: s.QuestionModel, Source: s.QuestionModelFrom},
 		{Name: "question_budget_usd", Value: usd(s.QuestionBudgetUSD), Source: s.QuestionBudgetFrom},
 	}
+}
+
+// fileChecks are the checks a file sets: its checks, and its former test command as the check test at commit, unless
+// a check has that name.
+func fileChecks(f *planv1.ProjectSettings) []*planv1.ProjectCheck {
+	checks := f.GetChecks()
+	if f.Test == nil || f.GetTest() == "" ||
+		slices.ContainsFunc(checks, func(c *planv1.ProjectCheck) bool { return strings.EqualFold(c.GetName(), "test") }) {
+		return checks
+	}
+	return append(slices.Clone(checks), &planv1.ProjectCheck{
+		Name: "test", Command: f.GetTest(), When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_COMMIT},
+	})
+}
+
+// Integrates tells whether Djinn integrates the project's finished work by itself: once a check is set.
+func (s Settings) Integrates() bool { return len(s.Checks) > 0 }
+
+// ChecksAt are the checks Djinn runs at when: before a commit, or before a push.
+func (s Settings) ChecksAt(when planv1.CheckWhen) []*planv1.ProjectCheck {
+	var out []*planv1.ProjectCheck
+	for _, c := range s.Checks {
+		if slices.Contains(c.GetWhen(), when) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// WhenWord is when a check runs, as the settings and the brief say it: commit, push.
+func WhenWord(w planv1.CheckWhen) string {
+	return strings.ToLower(strings.TrimPrefix(w.String(), "CHECK_WHEN_"))
+}
+
+// ChecksText lists checks on one line: "lint: go tool task lint (commit, push); test: go tool task test (push)".
+func ChecksText(checks []*planv1.ProjectCheck) string {
+	parts := make([]string, len(checks))
+	for i, c := range checks {
+		words := make([]string, len(c.GetWhen()))
+		for j, w := range c.GetWhen() {
+			words[j] = WhenWord(w)
+		}
+		parts[i] = fmt.Sprintf("%s: %s (%s)", c.GetName(), c.GetCommand(), strings.Join(words, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// CommitGates lists how an agent runs the commit checks, each through its gate: "`djinn gate run lint -- make lint`".
+func (s Settings) CommitGates() string {
+	var gates []string
+	for _, c := range s.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT) {
+		gates = append(gates, "`"+GateCommand(c)+"`")
+	}
+	return strings.Join(gates, ", ")
+}
+
+// GateCommand is how an agent runs a check of the project: through the gate of its name.
+func GateCommand(c *planv1.ProjectCheck) string {
+	return "djinn gate run " + c.GetName() + " -- " + c.GetCommand()
+}
+
+// ChecksBrief says, in a sentence or two, which checks Djinn runs on the project's work and when, and what a fresh
+// worktree needs first; "" for a project that sets none. The lead's brief and each worker's first prompt carry it.
+func (s Settings) ChecksBrief() string {
+	if !s.Integrates() {
+		return ""
+	}
+	list := func(when planv1.CheckWhen) string {
+		var names []string
+		for _, c := range s.ChecksAt(when) {
+			names = append(names, "`"+GateCommand(c)+"`")
+		}
+		return strings.Join(names, ", ")
+	}
+	var b strings.Builder
+	b.WriteString("Djinn checks this project's work")
+	commit, push := list(planv1.CheckWhen_CHECK_WHEN_COMMIT), list(planv1.CheckWhen_CHECK_WHEN_PUSH)
+	if commit != "" {
+		b.WriteString(" before it commits a task's work, with " + commit)
+	}
+	if push != "" {
+		if commit != "" {
+			b.WriteString(";")
+		}
+		b.WriteString(" before it pushes, with " + push)
+	}
+	b.WriteString(".")
+	if commit != "" {
+		b.WriteString(" A worker runs the commit checks before it ends, and fixes what they find.")
+	}
+	if s.Setup != "" {
+		b.WriteString(" A fresh worktree needs `" + s.Setup + "` first.")
+	}
+	return b.String()
 }
