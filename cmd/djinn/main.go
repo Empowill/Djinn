@@ -33,7 +33,15 @@ func main() {
 	version = moduleVersion(version)
 	ui.Develop = version == "dev"
 	args := fromBundle(os.Args[1:])
+	// `djinn open <link>` is what the system runs for a djinn:// link clicked anywhere; without a link, as the menu entry
+	// of Linux runs it, it is djinn up.
+	if len(args) == 1 && args[0] == "open" {
+		args = []string{"up"}
+	}
 	fromLauncher(args, os.Stderr)
+	if len(args) > 0 && args[0] == "open" {
+		os.Exit(runOpen(args[1:], os.Stdout, os.Stderr))
+	}
 	// `djinn up` opens the app; every other command is generated from the protos by the cli package.
 	if len(args) > 0 && args[0] == "up" {
 		restart, err := runUp(args[1:])

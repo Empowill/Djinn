@@ -32,9 +32,11 @@ const hasWindow = true
 // or stopping djinn up. Each value received on raise brings the window back to the front.
 //
 // While the window runs, notices show the questions as system notifications, and shortcuts takes the global shortcut
-// that brings the window forward.
+// that brings the window forward. A djinn:// link the system gives the app goes to links: macOS sends it to Djinn.app,
+// and starts the app for it when it does not run; Linux and Windows run djinn open instead.
 func openWindow(
 	ctx context.Context, url string, assets http.Handler, raise <-chan struct{}, notices *ui.Notices, shortcuts *ui.Shortcuts,
+	links func(string),
 ) error {
 	opts := application.Options{
 		Name: "Djinn",
@@ -89,6 +91,11 @@ func openWindow(
 		shortcuts.Use(wailsShortcuts{app})
 	})
 	defer shortcuts.Use(nil)
+	app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(e *application.ApplicationEvent) {
+		if raw := e.Context().URL(); raw != "" {
+			go links(raw)
+		}
+	})
 	if runtime.GOOS == "darwin" {
 		// A click on the Dock icon brings the hidden window back.
 		app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) { show() })

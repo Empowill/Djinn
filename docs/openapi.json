@@ -4094,31 +4094,6 @@
         "additionalProperties": false,
         "description": "A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out.\n A folder with an index.html and its sources, kept in Djinn's data folder, tilasms/\u003cid\u003e/v\u003cn\u003e/, never in a project.\n Putting it again adds a version; the latest is what its links show. The word comes from the Arabic ṭilasm, the\n origin of \"talisman\"."
       },
-      "plan.v1.TilasmFile": {
-        "type": "object",
-        "properties": {
-          "version": {
-            "type": "integer",
-            "title": "version",
-            "format": "int32",
-            "description": "The version it belongs to."
-          },
-          "path": {
-            "type": "string",
-            "title": "path",
-            "description": "Its path in the version's folder, with forward slashes: index.html, img/model.svg."
-          },
-          "content": {
-            "type": "string",
-            "title": "content",
-            "format": "byte",
-            "description": "Its content."
-          }
-        },
-        "title": "TilasmFile",
-        "additionalProperties": false,
-        "description": "TilasmFile is a file of a tilasm's version."
-      },
       "plan.v1.TilasmRef": {
         "type": "object",
         "allOf": [
@@ -4317,6 +4292,16 @@
             },
             "title": "files",
             "description": "Its files, relative to that folder, with forward slashes."
+          },
+          "link": {
+            "type": "string",
+            "title": "link",
+            "description": "Its link, djinn://tilasm/\u003cid\u003e: it opens the tilasm in the app from a browser, a chat, a terminal or a Markdown\n file. Cite it so."
+          },
+          "url": {
+            "type": "string",
+            "title": "url",
+            "description": "The local http address of its latest version, for a browser or an agent that wants the HTML, while this Djinn\n runs: given when djinn up serves http (--browser, and on Windows). Empty while it listens on a socket only (the\n window on macOS and Linux): read the files in its folder then."
           }
         },
         "title": "TilasmServiceGetResponse",
@@ -4445,45 +4430,32 @@
         "title": "TilasmServiceListResponse",
         "additionalProperties": false
       },
-      "plan.v1.TilasmServicePutDataRequest": {
+      "plan.v1.TilasmServiceOpenRequest": {
         "type": "object",
         "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TilasmRef"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
           "wish": {
             "type": "string",
             "title": "wish",
             "format": "uuid",
-            "description": "The wish to put it into."
-          },
-          "name": {
-            "type": "string",
-            "title": "name",
-            "maxLength": 1000,
-            "description": "The name of what was dropped, the folder's or the .zip's: the title when its index.html has none."
-          },
-          "files": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/plan.v1.TilasmFile"
-            },
-            "title": "files",
-            "maxItems": 10000,
-            "minItems": 1,
-            "description": "The files, by their paths in the folder (version 0); or one file, the .zip."
-          },
-          "author": {
-            "type": "string",
-            "title": "author",
-            "maxLength": 100,
-            "description": "Who puts it; the developer by default."
+            "description": "The wish, when a code is given and several wishes have it."
           }
         },
-        "title": "TilasmServicePutDataRequest",
+        "title": "TilasmServiceOpenRequest",
         "required": [
-          "wish"
+          "tilasm"
         ],
         "additionalProperties": false
       },
-      "plan.v1.TilasmServicePutDataResponse": {
+      "plan.v1.TilasmServiceOpenResponse": {
         "type": "object",
         "properties": {
           "tilasm": {
@@ -4493,15 +4465,20 @@
               }
             ],
             "title": "tilasm",
-            "description": "The tilasm, its new version last."
+            "description": "The tilasm shown."
           },
-          "imported": {
+          "link": {
+            "type": "string",
+            "title": "link",
+            "description": "Its link, djinn://tilasm/\u003cid\u003e."
+          },
+          "window": {
             "type": "boolean",
-            "title": "imported",
-            "description": "The .zip was a tilasm's export: it was imported."
+            "title": "window",
+            "description": "A native window was brought to the front; false in browser mode, where the page shows it."
           }
         },
-        "title": "TilasmServicePutDataResponse",
+        "title": "TilasmServiceOpenResponse",
         "additionalProperties": false
       },
       "plan.v1.TilasmServicePutRequest": {
@@ -10055,6 +10032,68 @@
         }
       }
     },
+    "/plan.v1.TilasmService/Open": {
+      "post": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "Open",
+        "description": "Show a tilasm in the window, in its wish's Tilasms tab, starting Djinn when it does not run: what its link\n djinn://tilasm/\u003cid\u003e does from anywhere.",
+        "operationId": "TilasmService_Open",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceOpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceOpenResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/plan.v1.TilasmService/Put": {
       "post": {
         "tags": [
@@ -10110,68 +10149,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/plan.v1.TilasmServicePutResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/plan.v1.TilasmService/PutData": {
-      "post": {
-        "tags": [
-          "TilasmService"
-        ],
-        "summary": "PutData",
-        "description": "Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm\n export wrote is imported, as Import; any other is put, as Put.",
-        "operationId": "TilasmService_PutData",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "description": "Define the version of the Connect protocol",
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            },
-            "example": 1
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "description": "Define the timeout, in ms",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            },
-            "example": 1000
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/plan.v1.TilasmServicePutDataRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/plan.v1.TilasmServicePutDataResponse"
                 }
               }
             }

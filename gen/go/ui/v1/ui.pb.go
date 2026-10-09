@@ -715,6 +715,114 @@ func (x *UiServiceShowResponse) GetWindow() bool {
 	return false
 }
 
+type UiServiceOpenLinkRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The link: djinn://tilasm/<id> or djinn://wish/<id>.
+	Url           string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UiServiceOpenLinkRequest) Reset() {
+	*x = UiServiceOpenLinkRequest{}
+	mi := &file_ui_v1_ui_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UiServiceOpenLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UiServiceOpenLinkRequest) ProtoMessage() {}
+
+func (x *UiServiceOpenLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ui_v1_ui_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UiServiceOpenLinkRequest.ProtoReflect.Descriptor instead.
+func (*UiServiceOpenLinkRequest) Descriptor() ([]byte, []int) {
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *UiServiceOpenLinkRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+type UiServiceOpenLinkResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish shown.
+	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// The tilasm shown in its Tilasms tab; empty for a wish's link.
+	TilasmId string `protobuf:"bytes,2,opt,name=tilasm_id,json=tilasmId,proto3" json:"tilasm_id,omitempty"`
+	// A native window was brought to the front; false in browser mode.
+	Window        bool `protobuf:"varint,3,opt,name=window,proto3" json:"window,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UiServiceOpenLinkResponse) Reset() {
+	*x = UiServiceOpenLinkResponse{}
+	mi := &file_ui_v1_ui_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UiServiceOpenLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UiServiceOpenLinkResponse) ProtoMessage() {}
+
+func (x *UiServiceOpenLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ui_v1_ui_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UiServiceOpenLinkResponse.ProtoReflect.Descriptor instead.
+func (*UiServiceOpenLinkResponse) Descriptor() ([]byte, []int) {
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *UiServiceOpenLinkResponse) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *UiServiceOpenLinkResponse) GetTilasmId() string {
+	if x != nil {
+		return x.TilasmId
+	}
+	return ""
+}
+
+func (x *UiServiceOpenLinkResponse) GetWindow() bool {
+	if x != nil {
+		return x.Window
+	}
+	return false
+}
+
 type UiServiceWatchShowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -723,7 +831,7 @@ type UiServiceWatchShowRequest struct {
 
 func (x *UiServiceWatchShowRequest) Reset() {
 	*x = UiServiceWatchShowRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[13]
+	mi := &file_ui_v1_ui_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -735,7 +843,7 @@ func (x *UiServiceWatchShowRequest) String() string {
 func (*UiServiceWatchShowRequest) ProtoMessage() {}
 
 func (x *UiServiceWatchShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[13]
+	mi := &file_ui_v1_ui_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -748,7 +856,7 @@ func (x *UiServiceWatchShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchShowRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchShowRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{13}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{15}
 }
 
 type UiServiceWatchShowResponse struct {
@@ -756,14 +864,19 @@ type UiServiceWatchShowResponse struct {
 	// The wish to show; empty for none.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	// The terminal to show; empty for none.
-	Terminal      string `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	Terminal string `protobuf:"bytes,2,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	// The tilasm to show, in the wish's Tilasms tab; empty for none.
+	TilasmId string `protobuf:"bytes,3,opt,name=tilasm_id,json=tilasmId,proto3" json:"tilasm_id,omitempty"`
+	// A link the window was asked to open and Djinn does not know, or whose tilasm or wish is not on this machine: the
+	// window says so. Empty for none.
+	UnknownLink   string `protobuf:"bytes,4,opt,name=unknown_link,json=unknownLink,proto3" json:"unknown_link,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UiServiceWatchShowResponse) Reset() {
 	*x = UiServiceWatchShowResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[14]
+	mi := &file_ui_v1_ui_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -775,7 +888,7 @@ func (x *UiServiceWatchShowResponse) String() string {
 func (*UiServiceWatchShowResponse) ProtoMessage() {}
 
 func (x *UiServiceWatchShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[14]
+	mi := &file_ui_v1_ui_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -788,7 +901,7 @@ func (x *UiServiceWatchShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchShowResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchShowResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{14}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UiServiceWatchShowResponse) GetWishId() string {
@@ -805,6 +918,20 @@ func (x *UiServiceWatchShowResponse) GetTerminal() string {
 	return ""
 }
 
+func (x *UiServiceWatchShowResponse) GetTilasmId() string {
+	if x != nil {
+		return x.TilasmId
+	}
+	return ""
+}
+
+func (x *UiServiceWatchShowResponse) GetUnknownLink() string {
+	if x != nil {
+		return x.UnknownLink
+	}
+	return ""
+}
+
 type UiServiceWatchUpdateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -813,7 +940,7 @@ type UiServiceWatchUpdateRequest struct {
 
 func (x *UiServiceWatchUpdateRequest) Reset() {
 	*x = UiServiceWatchUpdateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[15]
+	mi := &file_ui_v1_ui_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -825,7 +952,7 @@ func (x *UiServiceWatchUpdateRequest) String() string {
 func (*UiServiceWatchUpdateRequest) ProtoMessage() {}
 
 func (x *UiServiceWatchUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[15]
+	mi := &file_ui_v1_ui_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -838,7 +965,7 @@ func (x *UiServiceWatchUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchUpdateRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{15}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{17}
 }
 
 type UiServiceWatchUpdateResponse struct {
@@ -858,7 +985,7 @@ type UiServiceWatchUpdateResponse struct {
 
 func (x *UiServiceWatchUpdateResponse) Reset() {
 	*x = UiServiceWatchUpdateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[16]
+	mi := &file_ui_v1_ui_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +997,7 @@ func (x *UiServiceWatchUpdateResponse) String() string {
 func (*UiServiceWatchUpdateResponse) ProtoMessage() {}
 
 func (x *UiServiceWatchUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[16]
+	mi := &file_ui_v1_ui_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +1010,7 @@ func (x *UiServiceWatchUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchUpdateResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{16}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *UiServiceWatchUpdateResponse) GetCurrent() string {
@@ -922,7 +1049,7 @@ type UiServiceUpdateRequest struct {
 
 func (x *UiServiceUpdateRequest) Reset() {
 	*x = UiServiceUpdateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	mi := &file_ui_v1_ui_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -934,7 +1061,7 @@ func (x *UiServiceUpdateRequest) String() string {
 func (*UiServiceUpdateRequest) ProtoMessage() {}
 
 func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	mi := &file_ui_v1_ui_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -947,7 +1074,7 @@ func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{17}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{19}
 }
 
 type UiServiceUpdateResponse struct {
@@ -962,7 +1089,7 @@ type UiServiceUpdateResponse struct {
 
 func (x *UiServiceUpdateResponse) Reset() {
 	*x = UiServiceUpdateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[18]
+	mi := &file_ui_v1_ui_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -974,7 +1101,7 @@ func (x *UiServiceUpdateResponse) String() string {
 func (*UiServiceUpdateResponse) ProtoMessage() {}
 
 func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[18]
+	mi := &file_ui_v1_ui_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -987,7 +1114,7 @@ func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{18}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UiServiceUpdateResponse) GetVersion() string {
@@ -1046,11 +1173,19 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12#\n" +
 	"\bterminal\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18@R\bterminal\"/\n" +
 	"\x15UiServiceShowResponse\x12\x16\n" +
-	"\x06window\x18\x01 \x01(\bR\x06window\"\x1b\n" +
-	"\x19UiServiceWatchShowRequest\"Q\n" +
+	"\x06window\x18\x01 \x01(\bR\x06window\"6\n" +
+	"\x18UiServiceOpenLinkRequest\x12\x1a\n" +
+	"\x03url\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\x03url\"i\n" +
+	"\x19UiServiceOpenLinkResponse\x12\x17\n" +
+	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1b\n" +
+	"\ttilasm_id\x18\x02 \x01(\tR\btilasmId\x12\x16\n" +
+	"\x06window\x18\x03 \x01(\bR\x06window\"\x1b\n" +
+	"\x19UiServiceWatchShowRequest\"\x91\x01\n" +
 	"\x1aUiServiceWatchShowResponse\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1a\n" +
-	"\bterminal\x18\x02 \x01(\tR\bterminal\"\x1d\n" +
+	"\bterminal\x18\x02 \x01(\tR\bterminal\x12\x1b\n" +
+	"\ttilasm_id\x18\x03 \x01(\tR\btilasmId\x12!\n" +
+	"\funknown_link\x18\x04 \x01(\tR\vunknownLink\"\x1d\n" +
 	"\x1bUiServiceWatchUpdateRequest\"\x8c\x01\n" +
 	"\x1cUiServiceWatchUpdateResponse\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\tR\acurrent\x12\x14\n" +
@@ -1061,13 +1196,14 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x16UiServiceUpdateRequest\"Q\n" +
 	"\x17UiServiceUpdateResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1c\n" +
-	"\tterminals\x18\x02 \x01(\x05R\tterminals2\xed\x05\n" +
+	"\tterminals\x18\x02 \x01(\x05R\tterminals2\xc2\x06\n" +
 	"\tUiService\x12e\n" +
 	"\x0eGetEnvironment\x12%.ui.v1.UiServiceGetEnvironmentRequest\x1a&.ui.v1.UiServiceGetEnvironmentResponse\"\x04\xc8\xf3\x18\x02\x12h\n" +
 	"\x0fChooseDirectory\x12&.ui.v1.UiServiceChooseDirectoryRequest\x1a'.ui.v1.UiServiceChooseDirectoryResponse\"\x04\xc8\xf3\x18\x02\x12_\n" +
 	"\fOpenExternal\x12#.ui.v1.UiServiceOpenExternalRequest\x1a$.ui.v1.UiServiceOpenExternalResponse\"\x04\xc8\xf3\x18\x02\x12\\\n" +
 	"\vSetShortcut\x12\".ui.v1.UiServiceSetShortcutRequest\x1a#.ui.v1.UiServiceSetShortcutResponse\"\x04\xc8\xf3\x18\x02\x12G\n" +
-	"\x04Show\x12\x1b.ui.v1.UiServiceShowRequest\x1a\x1c.ui.v1.UiServiceShowResponse\"\x04\xc8\xf3\x18\x02\x12X\n" +
+	"\x04Show\x12\x1b.ui.v1.UiServiceShowRequest\x1a\x1c.ui.v1.UiServiceShowResponse\"\x04\xc8\xf3\x18\x02\x12S\n" +
+	"\bOpenLink\x12\x1f.ui.v1.UiServiceOpenLinkRequest\x1a .ui.v1.UiServiceOpenLinkResponse\"\x04\xc8\xf3\x18\x02\x12X\n" +
 	"\tWatchShow\x12 .ui.v1.UiServiceWatchShowRequest\x1a!.ui.v1.UiServiceWatchShowResponse\"\x04\xc8\xf3\x18\x020\x01\x12^\n" +
 	"\vWatchUpdate\x12\".ui.v1.UiServiceWatchUpdateRequest\x1a#.ui.v1.UiServiceWatchUpdateResponse\"\x04\xc8\xf3\x18\x020\x01\x12M\n" +
 	"\x06Update\x12\x1d.ui.v1.UiServiceUpdateRequest\x1a\x1e.ui.v1.UiServiceUpdateResponse\"\x04\xc8\xf3\x18\x02Bv\n" +
@@ -1085,7 +1221,7 @@ func file_ui_v1_ui_proto_rawDescGZIP() []byte {
 	return file_ui_v1_ui_proto_rawDescData
 }
 
-var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_ui_v1_ui_proto_goTypes = []any{
 	(*UiServiceGetEnvironmentRequest)(nil),   // 0: ui.v1.UiServiceGetEnvironmentRequest
 	(*UiServiceGetEnvironmentResponse)(nil),  // 1: ui.v1.UiServiceGetEnvironmentResponse
@@ -1100,12 +1236,14 @@ var file_ui_v1_ui_proto_goTypes = []any{
 	(*UiServiceSetShortcutResponse)(nil),     // 10: ui.v1.UiServiceSetShortcutResponse
 	(*UiServiceShowRequest)(nil),             // 11: ui.v1.UiServiceShowRequest
 	(*UiServiceShowResponse)(nil),            // 12: ui.v1.UiServiceShowResponse
-	(*UiServiceWatchShowRequest)(nil),        // 13: ui.v1.UiServiceWatchShowRequest
-	(*UiServiceWatchShowResponse)(nil),       // 14: ui.v1.UiServiceWatchShowResponse
-	(*UiServiceWatchUpdateRequest)(nil),      // 15: ui.v1.UiServiceWatchUpdateRequest
-	(*UiServiceWatchUpdateResponse)(nil),     // 16: ui.v1.UiServiceWatchUpdateResponse
-	(*UiServiceUpdateRequest)(nil),           // 17: ui.v1.UiServiceUpdateRequest
-	(*UiServiceUpdateResponse)(nil),          // 18: ui.v1.UiServiceUpdateResponse
+	(*UiServiceOpenLinkRequest)(nil),         // 13: ui.v1.UiServiceOpenLinkRequest
+	(*UiServiceOpenLinkResponse)(nil),        // 14: ui.v1.UiServiceOpenLinkResponse
+	(*UiServiceWatchShowRequest)(nil),        // 15: ui.v1.UiServiceWatchShowRequest
+	(*UiServiceWatchShowResponse)(nil),       // 16: ui.v1.UiServiceWatchShowResponse
+	(*UiServiceWatchUpdateRequest)(nil),      // 17: ui.v1.UiServiceWatchUpdateRequest
+	(*UiServiceWatchUpdateResponse)(nil),     // 18: ui.v1.UiServiceWatchUpdateResponse
+	(*UiServiceUpdateRequest)(nil),           // 19: ui.v1.UiServiceUpdateRequest
+	(*UiServiceUpdateResponse)(nil),          // 20: ui.v1.UiServiceUpdateResponse
 }
 var file_ui_v1_ui_proto_depIdxs = []int32{
 	4,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
@@ -1116,19 +1254,21 @@ var file_ui_v1_ui_proto_depIdxs = []int32{
 	7,  // 5: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
 	9,  // 6: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
 	11, // 7: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
-	13, // 8: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
-	15, // 9: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
-	17, // 10: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
-	1,  // 11: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	6,  // 12: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	8,  // 13: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	10, // 14: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	12, // 15: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	14, // 16: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	16, // 17: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	18, // 18: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	11, // [11:19] is the sub-list for method output_type
-	3,  // [3:11] is the sub-list for method input_type
+	13, // 8: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
+	15, // 9: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
+	17, // 10: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
+	19, // 11: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
+	1,  // 12: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	6,  // 13: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	8,  // 14: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	10, // 15: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	12, // 16: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	14, // 17: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
+	16, // 18: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	18, // 19: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	20, // 20: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	12, // [12:21] is the sub-list for method output_type
+	3,  // [3:12] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -1146,7 +1286,7 @@ func file_ui_v1_ui_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ui_v1_ui_proto_rawDesc), len(file_ui_v1_ui_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

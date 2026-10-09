@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0IqIBCh9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCBIhCghzaG9ydGN1dBgFIAEoCzIPLnVpLnYxLlNob3J0Y3V0IlQKCFNob3J0Y3V0Eg0KBWNob3JkGAEgASgJEhUKDWRlZmF1bHRfY2hvcmQYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB3Byb2JsZW0YBCABKAkiLgoIU2V0dGluZ3MSFQoIc2hvcnRjdXQYASABKAlIAIgBAUILCglfc2hvcnRjdXQiSAoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCI/ChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJIh0KG1VpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdCJmChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkSEQoJbm90ZXNfdXJsGAQgASgJIhgKFlVpU2VydmljZVVwZGF0ZVJlcXVlc3QiPQoXVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIRCgl0ZXJtaW5hbHMYAiABKAUy7QUKCVVpU2VydmljZRJlCg5HZXRFbnZpcm9ubWVudBIlLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVxdWVzdBomLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2UiBMjzGAISaAoPQ2hvb3NlRGlyZWN0b3J5EiYudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVxdWVzdBonLnVpLnYxLlVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlIgTI8xgCEl8KDE9wZW5FeHRlcm5hbBIjLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlcXVlc3QaJC51aS52MS5VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZSIEyPMYAhJcCgtTZXRTaG9ydGN1dBIiLnVpLnYxLlVpU2VydmljZVNldFNob3J0Y3V0UmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2UiBMjzGAISRwoEU2hvdxIbLnVpLnYxLlVpU2VydmljZVNob3dSZXF1ZXN0GhwudWkudjEuVWlTZXJ2aWNlU2hvd1Jlc3BvbnNlIgTI8xgCElgKCVdhdGNoU2hvdxIgLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZSIEyPMYAjABEl4KC1dhdGNoVXBkYXRlEiIudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZSIEyPMYAjABEk0KBlVwZGF0ZRIdLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlcXVlc3QaHi51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXNwb25zZSIEyPMYAkJ2Cgljb20udWkudjFCB1VpUHJvdG9QAVorZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdWkvdjE7dWl2MaICA1VYWKoCBVVpLlYxygIFVWlcVjHiAhFVaVxWMVxHUEJNZXRhZGF0YeoCBlVpOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0IqIBCh9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCBIhCghzaG9ydGN1dBgFIAEoCzIPLnVpLnYxLlNob3J0Y3V0IlQKCFNob3J0Y3V0Eg0KBWNob3JkGAEgASgJEhUKDWRlZmF1bHRfY2hvcmQYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB3Byb2JsZW0YBCABKAkiLgoIU2V0dGluZ3MSFQoIc2hvcnRjdXQYASABKAlIAIgBAUILCglfc2hvcnRjdXQiSAoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJoChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkiHQobVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0ImYKHFVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2USDwoHY3VycmVudBgBIAEoCRINCgVyZWFkeRgCIAEoCRITCgtub3RfcmVzdW1lZBgDIAMoCRIRCglub3Rlc191cmwYBCABKAkiGAoWVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdCI9ChdVaVNlcnZpY2VVcGRhdGVSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhEKCXRlcm1pbmFscxgCIAEoBTLCBgoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCElwKC1NldFNob3J0Y3V0EiIudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXNwb25zZSIEyPMYAhJHCgRTaG93EhsudWkudjEuVWlTZXJ2aWNlU2hvd1JlcXVlc3QaHC51aS52MS5VaVNlcnZpY2VTaG93UmVzcG9uc2UiBMjzGAISUwoIT3BlbkxpbmsSHy51aS52MS5VaVNlcnZpY2VPcGVuTGlua1JlcXVlc3QaIC51aS52MS5VaVNlcnZpY2VPcGVuTGlua1Jlc3BvbnNlIgTI8xgCElgKCVdhdGNoU2hvdxIgLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZSIEyPMYAjABEl4KC1dhdGNoVXBkYXRlEiIudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZSIEyPMYAjABEk0KBlVwZGF0ZRIdLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlcXVlc3QaHi51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXNwb25zZSIEyPMYAkJ2Cgljb20udWkudjFCB1VpUHJvdG9QAVorZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdWkvdjE7dWl2MaICA1VYWKoCBVVpLlYxygIFVWlcVjHiAhFVaVxWMVxHUEJNZXRhZGF0YeoCBlVpOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -351,6 +351,58 @@ export const UiServiceShowResponseSchema: GenMessage<UiServiceShowResponse> = /*
   messageDesc(file_ui_v1_ui, 12);
 
 /**
+ * @generated from message ui.v1.UiServiceOpenLinkRequest
+ */
+export type UiServiceOpenLinkRequest = Message<"ui.v1.UiServiceOpenLinkRequest"> & {
+  /**
+   * The link: djinn://tilasm/<id> or djinn://wish/<id>.
+   *
+   * @generated from field: string url = 1;
+   */
+  url: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceOpenLinkRequest.
+ * Use `create(UiServiceOpenLinkRequestSchema)` to create a new message.
+ */
+export const UiServiceOpenLinkRequestSchema: GenMessage<UiServiceOpenLinkRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 13);
+
+/**
+ * @generated from message ui.v1.UiServiceOpenLinkResponse
+ */
+export type UiServiceOpenLinkResponse = Message<"ui.v1.UiServiceOpenLinkResponse"> & {
+  /**
+   * The wish shown.
+   *
+   * @generated from field: string wish_id = 1;
+   */
+  wishId: string;
+
+  /**
+   * The tilasm shown in its Tilasms tab; empty for a wish's link.
+   *
+   * @generated from field: string tilasm_id = 2;
+   */
+  tilasmId: string;
+
+  /**
+   * A native window was brought to the front; false in browser mode.
+   *
+   * @generated from field: bool window = 3;
+   */
+  window: boolean;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceOpenLinkResponse.
+ * Use `create(UiServiceOpenLinkResponseSchema)` to create a new message.
+ */
+export const UiServiceOpenLinkResponseSchema: GenMessage<UiServiceOpenLinkResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 14);
+
+/**
  * @generated from message ui.v1.UiServiceWatchShowRequest
  */
 export type UiServiceWatchShowRequest = Message<"ui.v1.UiServiceWatchShowRequest"> & {
@@ -361,7 +413,7 @@ export type UiServiceWatchShowRequest = Message<"ui.v1.UiServiceWatchShowRequest
  * Use `create(UiServiceWatchShowRequestSchema)` to create a new message.
  */
 export const UiServiceWatchShowRequestSchema: GenMessage<UiServiceWatchShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 13);
+  messageDesc(file_ui_v1_ui, 15);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowResponse
@@ -380,6 +432,21 @@ export type UiServiceWatchShowResponse = Message<"ui.v1.UiServiceWatchShowRespon
    * @generated from field: string terminal = 2;
    */
   terminal: string;
+
+  /**
+   * The tilasm to show, in the wish's Tilasms tab; empty for none.
+   *
+   * @generated from field: string tilasm_id = 3;
+   */
+  tilasmId: string;
+
+  /**
+   * A link the window was asked to open and Djinn does not know, or whose tilasm or wish is not on this machine: the
+   * window says so. Empty for none.
+   *
+   * @generated from field: string unknown_link = 4;
+   */
+  unknownLink: string;
 };
 
 /**
@@ -387,7 +454,7 @@ export type UiServiceWatchShowResponse = Message<"ui.v1.UiServiceWatchShowRespon
  * Use `create(UiServiceWatchShowResponseSchema)` to create a new message.
  */
 export const UiServiceWatchShowResponseSchema: GenMessage<UiServiceWatchShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 14);
+  messageDesc(file_ui_v1_ui, 16);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateRequest
@@ -400,7 +467,7 @@ export type UiServiceWatchUpdateRequest = Message<"ui.v1.UiServiceWatchUpdateReq
  * Use `create(UiServiceWatchUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateRequestSchema: GenMessage<UiServiceWatchUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 15);
+  messageDesc(file_ui_v1_ui, 17);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateResponse
@@ -441,7 +508,7 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
  * Use `create(UiServiceWatchUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 16);
+  messageDesc(file_ui_v1_ui, 18);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateRequest
@@ -454,7 +521,7 @@ export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
  * Use `create(UiServiceUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceUpdateRequestSchema: GenMessage<UiServiceUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 17);
+  messageDesc(file_ui_v1_ui, 19);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateResponse
@@ -480,7 +547,7 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
  * Use `create(UiServiceUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 18);
+  messageDesc(file_ui_v1_ui, 20);
 
 /**
  * What the window needs to show and follow the plan.
@@ -541,6 +608,18 @@ export const UiService: GenService<{
     methodKind: "unary";
     input: typeof UiServiceShowRequestSchema;
     output: typeof UiServiceShowResponseSchema;
+  },
+  /**
+   * Open a djinn:// link in the window, as the system does when one is clicked anywhere (djinn open): djinn://tilasm/<id>
+   * shows its wish's Tilasms tab on that tilasm, djinn://wish/<id> the wish. A link Djinn does not know, or a tilasm or
+   * a wish not on this machine, is refused, saying so; the window says so too.
+   *
+   * @generated from rpc ui.v1.UiService.OpenLink
+   */
+  openLink: {
+    methodKind: "unary";
+    input: typeof UiServiceOpenLinkRequestSchema;
+    output: typeof UiServiceOpenLinkResponseSchema;
   },
   /**
    * What the window is asked to show, as it comes. A request of the last minute comes first, for a window that

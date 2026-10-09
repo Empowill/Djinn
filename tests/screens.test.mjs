@@ -28,6 +28,9 @@ export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
 export { memory, resourcesDetail } from "@/src/usage.tsx";
 export { TilasmList } from "@/src/tilasms.tsx";
+export { MarkdownBody } from "@/src/markdown-body.tsx";
+export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
+export { ConnectError, Code } from "@connectrpc/connect";
 export { readDrop } from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -1206,4 +1209,111 @@ test("a folder dropped on the Tilasms tab is read with its files by their paths 
     zip.files.map((f) => f.path),
     ["model.zip"],
   );
+});
+
+test("a djinn:// link in Markdown stays a link that opens what it names in place: a tilasm in its wish's Tilasms tab", async () => {
+  const wishId = "01a11833-a440-7479-a067-52615c91da71";
+  const id = "01a1223a-ae45-728f-8c37-c005eee91edb";
+  // In a block, a question, a decision or the brief: Markdown keeps the link, which does not leave the page.
+  const html = s.renderToStaticMarkup(
+    h(s.MarkdownBody, {
+      text: `See [L01](djinn://tilasm/${id}), [the wish](djinn://wish/${wishId}) and [the docs](https://example.com).`,
+    }),
+  );
+  assert.match(
+    html,
+    new RegExp(`<a href="djinn://tilasm/${id}" class="djinn-link">L01</a>`),
+  );
+  assert.match(
+    html,
+    new RegExp(
+      `<a href="djinn://wish/${wishId}" class="djinn-link">the wish</a>`,
+    ),
+  );
+  assert.match(html, /<a href="https:\/\/example.com" target="_blank"/);
+
+  // Read as djinn open reads them.
+  assert.deepEqual(
+    s.parseDjinnLink(`DJINN://Talisman/${id.toUpperCase()}/?x#y`),
+    {
+      kind: "tilasm",
+      id,
+    },
+  );
+  for (const unknown of [
+    "djinn://moon/" + id,
+    "djinn://tilasm/L01",
+    `djinn://tilasm/${id}/more`,
+    `https://tilasm/${id}`,
+  ])
+    assert.equal(s.parseDjinnLink(unknown), undefined, unknown);
+
+  // A click: the tilasm's wish on its Tilasms tab, the wish, or the window says it does not know the link.
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.TilasmService, {
+      get: (req) => {
+        if (req.tilasm?.ref.value !== id)
+          throw new s.ConnectError("no tilasm", s.Code.NotFound);
+        return { tilasm: tilasm(id, "L01", "Model", { wishId }) };
+      },
+    });
+  });
+  const shown = [];
+  const djinn = {
+    clients: s.createDjinn(transport, 10).clients,
+    focus: { show: (focus) => shown.push(focus) },
+  };
+  const gone = "djinn://tilasm/01a1223a-ae45-728f-8c37-000000000000";
+  for (const link of [
+    `djinn://tilasm/${id}`,
+    `djinn://wish/${wishId}`,
+    gone,
+    "djinn://moon/x",
+  ])
+    await s.openDjinnLink(djinn, link);
+  assert.deepEqual(shown, [
+    { wishId, tilasmId: id },
+    { wishId },
+    { unknownLink: gone },
+    { unknownLink: "djinn://moon/x" },
+  ]);
+
+  // The wish's view, asked to open the tilasm: its Tilasms tab, the tilasm in the frame.
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const store = s.createDjinn(
+    s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.TaskService, { list: () => ({ tasks: [] }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+      service(s.TilasmService, {
+        list: () => ({
+          tilasms: [
+            tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows", {
+              wishId,
+            }),
+            tilasm(id, "L01", "Model", { wishId }),
+          ],
+        }),
+      });
+    }),
+    10,
+  );
+  const close = store.store.open(wishId);
+  await store.store.changed(wishId, [s.Change.TILASM]);
+  close();
+  const view = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn: store },
+      h(s.WishView, {
+        wish: lamp,
+        opening: { wishId, tilasmId: id },
+        onToast() {},
+      }),
+    ),
+  );
+  assert.match(view, /id="view-tab-tilasms" aria-selected="true"/);
+  assert.match(view, new RegExp(`<iframe[^>]*src="/tilasm/${id}/"`));
+  assert.match(view, /<section class="tilasm-view" aria-label="Model">/);
 });

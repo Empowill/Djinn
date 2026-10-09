@@ -413,6 +413,7 @@ func writeHelp(w io.Writer) {
 	}
 	fmt.Fprintf(tw, "  version\tPrint the version of djinn.\n")
 	fmt.Fprintf(tw, "  mcp\tServe these commands as MCP tools on stdin and stdout, for an agent that speaks MCP.\n")
+	fmt.Fprintf(tw, "  open\tOpen a djinn:// link in Djinn, starting it when it does not run: what the system runs for one.\n")
 	fmt.Fprintf(tw, "  update\tRestart the running djinn on the newer one installed at its path (go tool task install).\n")
 	tw.Flush()
 	fmt.Fprint(w, `

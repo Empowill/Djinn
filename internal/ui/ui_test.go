@@ -16,6 +16,7 @@ import (
 
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
+	"github.com/empowill/djinn/internal/link"
 )
 
 func newService(t *testing.T) (*Service, *[]string) {
@@ -283,5 +284,78 @@ func TestHandler(t *testing.T) {
 	}
 	if env.Msg.GetVersion() != "test" || env.Msg.GetPlatform() == "" || len(env.Msg.GetProviders()) != 2 {
 		t.Fatalf("GetEnvironment = %v", env.Msg)
+	}
+}
+
+func TestOpenLink(t *testing.T) {
+	s, _ := newService(t)
+	raised := 0
+	s.Raise = func() { raised++ }
+	s.Window = true
+	const tilasm, wish = "01a1223a-ae45-728f-8c37-c005eee91edb", "01a11833-a440-7479-a067-52615c91da70"
+	s.Linked = func(_ context.Context, l link.Link) (string, error) {
+		if l.ID == tilasm || l.ID == wish {
+			return wish, nil
+		}
+		return "", connect.NewError(connect.CodeNotFound, errors.New("no tilasm "+l.ID))
+	}
+	mux := http.NewServeMux()
+	mux.Handle(uiv1connect.NewUiServiceHandler(s))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := uiv1connect.NewUiServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	stream, err := client.WatchShow(ctx, connect.NewRequest(&uiv1.UiServiceWatchShowRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stream.Close() })
+	next := func() *uiv1.UiServiceWatchShowResponse {
+		t.Helper()
+		if !stream.Receive() {
+			t.Fatalf("the stream ended: %v", stream.Err())
+		}
+		return stream.Msg()
+	}
+	open := func(url string) (*uiv1.UiServiceOpenLinkResponse, error) {
+		res, err := client.OpenLink(ctx, connect.NewRequest(&uiv1.UiServiceOpenLinkRequest{Url: url}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+
+	// A tilasm's link shows its wish's Tilasms tab on it, the window in front.
+	res, err := open("djinn://tilasm/" + strings.ToUpper(tilasm))
+	if err != nil || res.GetWishId() != wish || res.GetTilasmId() != tilasm || !res.GetWindow() || raised != 1 {
+		t.Fatalf("a tilasm's link: %v, %v, raised %d", res, err, raised)
+	}
+	if got := next(); got.GetWishId() != wish || got.GetTilasmId() != tilasm || got.GetUnknownLink() != "" {
+		t.Fatalf("shown: %v", got)
+	}
+	// A wish's link, the wish.
+	if res, err = open("djinn://wish/" + wish); err != nil || res.GetWishId() != wish || res.GetTilasmId() != "" {
+		t.Fatalf("a wish's link: %v, %v", res, err)
+	}
+	if got := next(); got.GetWishId() != wish || got.GetTilasmId() != "" {
+		t.Fatalf("shown: %v", got)
+	}
+	// A link Djinn does not know, or whose tilasm is not here: refused, and the window says so.
+	for _, c := range []struct {
+		url  string
+		code connect.Code
+	}{
+		{"djinn://moon/" + wish, connect.CodeInvalidArgument},
+		{"djinn://tilasm/01a1223a-ae45-728f-8c37-000000000000", connect.CodeNotFound},
+	} {
+		if _, err := open(c.url); code(err) != c.code {
+			t.Errorf("%s: %v, want %v", c.url, err, c.code)
+		}
+		if got := next(); got.GetUnknownLink() != c.url || got.GetWishId() != "" {
+			t.Errorf("%s: shown %v", c.url, got)
+		}
+	}
+	if raised != 4 {
+		t.Errorf("raised %d times, want 4: the window comes forward to say so", raised)
 	}
 }

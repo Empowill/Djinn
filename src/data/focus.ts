@@ -1,5 +1,5 @@
 // What djinn asks the window to show (UiService.WatchShow), such as the wish and the lead's terminal that `djinn wish
-// resume` takes back. One stream for the page; each part of the interface subscribes to it, and one that subscribes
+// resume` takes back, or the tilasm a djinn:// link names. One stream for the page; each part of the interface subscribes to it, and one that subscribes
 // late still gets a request of the last minute.
 import { type Transport, createClient } from "@connectrpc/connect";
 
@@ -10,12 +10,21 @@ export interface Focus {
   wishId: string;
   // The terminal to show at the bottom of the window; empty for none.
   terminal: string;
+  // The tilasm to show, in the wish's Tilasms tab; empty for none.
+  tilasmId: string;
+  // A link the window was asked to open and does not know, or whose tilasm or wish is not on this machine; empty for
+  // none.
+  unknownLink: string;
 }
 
 export interface DjinnFocus {
   // Calls callback with each request to show something; at once with the last one if it is less than a minute old.
   subscribe(callback: (focus: Focus) => void): () => void;
+  // Asks the parts of the page to show something, as djinn would: a djinn:// link clicked in the page.
+  show(focus: Partial<Focus>): void;
 }
+
+const none: Focus = { wishId: "", terminal: "", tilasmId: "", unknownLink: "" };
 
 const RECENT = 60_000;
 
@@ -29,8 +38,13 @@ export function createFocus(transport: Transport, retry = 1000): DjinnFocus {
     for (;;) {
       try {
         for await (const res of ui.watchShow({})) {
-          if (!res.wishId && !res.terminal) continue;
-          const focus = { wishId: res.wishId, terminal: res.terminal };
+          if (!res.wishId && !res.terminal && !res.unknownLink) continue;
+          const focus = {
+            wishId: res.wishId,
+            terminal: res.terminal,
+            tilasmId: res.tilasmId,
+            unknownLink: res.unknownLink,
+          };
           last = { focus, at: Date.now() };
           listeners.forEach((listener) => listener(focus));
         }
@@ -50,6 +64,10 @@ export function createFocus(transport: Transport, retry = 1000): DjinnFocus {
         void watch();
       }
       return () => void listeners.delete(callback);
+    },
+    show: (focus: Partial<Focus>) => {
+      const full = { ...none, ...focus };
+      listeners.forEach((listener) => listener(full));
     },
   });
 }

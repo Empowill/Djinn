@@ -45,3 +45,4 @@ plugins:
       - machine.v1.CommandService.Record
       - plan.v1.WishService.ImportData
       - plan.v1.WishService.Snapshot
+      - plan.v1.TilasmService.PutData

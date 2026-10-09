@@ -53,6 +53,7 @@
   "inbox.rub_detail": "L'envoyer où Djinn le recommande",
   "inbox.title": "Boîte de réception",
   "language.name": "Français",
+  "link.unknown": "Djinn ne connaît pas ce lien, ou ce qu’il désigne n’est pas sur cette machine : {link}",
   "make.eyebrow": "NOUVEAU SOUHAIT",
   "make.full": "{max} vœux sont déjà actifs : celui-ci attend en pause, jusqu’à ce que vous le repreniez.",
   "make.projects": "Projets concernés",

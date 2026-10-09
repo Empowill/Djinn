@@ -32,6 +32,12 @@ service UiService {
   rpc Show(UiServiceShowRequest) returns (UiServiceShowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // Open a djinn:// link in the window, as the system does when one is clicked anywhere (djinn open): djinn://tilasm/<id>
+  // shows its wish's Tilasms tab on that tilasm, djinn://wish/<id> the wish. A link Djinn does not know, or a tilasm or
+  // a wish not on this machine, is refused, saying so; the window says so too.
+  rpc OpenLink(UiServiceOpenLinkRequest) returns (UiServiceOpenLinkResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
   // What the window is asked to show, as it comes. A request of the last minute comes first, for a window that
   // opens after it.
   rpc WatchShow(UiServiceWatchShowRequest) returns (stream UiServiceWatchShowResponse) {
@@ -142,6 +148,20 @@ message UiServiceShowResponse {
   bool window = 1;
 }
 
+message UiServiceOpenLinkRequest {
+  // The link: djinn://tilasm/<id> or djinn://wish/<id>.
+  string url = 1 [(buf.validate.field).string.max_len = 4096];
+}
+
+message UiServiceOpenLinkResponse {
+  // The wish shown.
+  string wish_id = 1;
+  // The tilasm shown in its Tilasms tab; empty for a wish's link.
+  string tilasm_id = 2;
+  // A native window was brought to the front; false in browser mode.
+  bool window = 3;
+}
+
 message UiServiceWatchShowRequest {}
 
 message UiServiceWatchShowResponse {
@@ -149,6 +169,11 @@ message UiServiceWatchShowResponse {
   string wish_id = 1;
   // The terminal to show; empty for none.
   string terminal = 2;
+  // The tilasm to show, in the wish's Tilasms tab; empty for none.
+  string tilasm_id = 3;
+  // A link the window was asked to open and Djinn does not know, or whose tilasm or wish is not on this machine: the
+  // window says so. Empty for none.
+  string unknown_link = 4;
 }
 
 message UiServiceWatchUpdateRequest {}

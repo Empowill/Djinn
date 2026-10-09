@@ -263,6 +263,14 @@ func TestGuardTilasmFrame(t *testing.T) {
 	if rec.Code != http.StatusOK || len(served) != 1 || served[0] != "/tilasm/"+id+"/js/app.mjs" {
 		t.Fatalf("file with the key: %d, served %v", rec.Code, served)
 	}
+	// The address djinn tilasm get gives a browser or an agent is that one, its page at the root of the key.
+	if want := origin + "/tilasm/" + id + "/@" + key + "/"; server.TilasmAddress(origin, token, strings.ToUpper(id)) != want {
+		t.Errorf("TilasmAddress = %q, want %q", server.TilasmAddress(origin, token, id), want)
+	}
+	rec, _ = get(t, h, strings.TrimPrefix(server.TilasmAddress(origin, token, id), origin), nil)
+	if rec.Code != http.StatusOK || served[len(served)-1] != "/tilasm/"+id+"/" {
+		t.Fatalf("the address given: %d, served %v", rec.Code, served)
+	}
 	// Another tilasm's key, a wrong key, or a write: refused.
 	for _, target := range []string{
 		"/tilasm/01a1223a-ae45-728f-8c37-c005eee91ede/@" + key + "/index.html",

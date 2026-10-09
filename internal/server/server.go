@@ -234,6 +234,13 @@ func FrameKey(token, id string) string {
 	return hex.EncodeToString(mac.Sum(nil))[:32]
 }
 
+// TilasmAddress is the address of a tilasm's latest version on the http server at origin guarded by token, with its
+// key: a browser or a program opens it as it is, while that server runs, and it opens nothing else.
+func TilasmAddress(origin, token, id string) string {
+	id = strings.ToLower(id)
+	return origin + TilasmPrefix + id + "/" + keyMark + FrameKey(token, id) + "/"
+}
+
 // keyedTilasm reads an address /tilasm/<id>/@<key>/<rest>.
 func keyedTilasm(p string) (id, key, rest string, ok bool) {
 	id, after, ok := strings.Cut(strings.TrimPrefix(p, TilasmPrefix), "/")

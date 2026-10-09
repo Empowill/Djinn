@@ -1,7 +1,11 @@
 import { memo, useState, isValidElement, type ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, {
+  type Components,
+  defaultUrlTransform,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useDjinn } from "./data/djinn";
+import { isDjinnLink, openDjinnLink } from "./data/links";
 import { MermaidDiagram } from "./mermaid-diagram";
 import "./agent-chat.css";
 import { t } from "./i18n";
@@ -50,7 +54,8 @@ function MarkdownCode({ children }: { children?: ReactNode }) {
     </div>
   );
 }
-// A link: in the window, the system's browser opens it; anything but http(s) stays text.
+// A link: a djinn:// one opens what it names in place, a tilasm or a wish; in the window, the system's browser opens
+// an http(s) one; anything else stays text.
 function MarkdownLink({
   href,
   children,
@@ -59,6 +64,19 @@ function MarkdownLink({
   children?: ReactNode;
 }) {
   const djinn = useDjinn();
+  if (href && isDjinnLink(href))
+    return (
+      <a
+        href={href}
+        className="djinn-link"
+        onClick={(e) => {
+          e.preventDefault();
+          if (djinn) void openDjinnLink(djinn, href);
+        }}
+      >
+        {children}
+      </a>
+    );
   if (!href || !/^https?:\/\//i.test(href)) return <span>{children}</span>;
   return (
     <a
@@ -82,6 +100,9 @@ function MarkdownLink({
 // so every code block and every Mermaid frame below it was unmounted and mounted again at each render of the card,
 // at each key typed in its comment box.
 const plugins = [remarkGfm];
+// react-markdown empties a link of a scheme it does not know: djinn:// is Djinn's own.
+const urlTransform = (url: string) =>
+  isDjinnLink(url) ? url : defaultUrlTransform(url);
 const components: Components = {
   pre: ({ children }) => <MarkdownCode>{children}</MarkdownCode>,
   a: ({ href, children }) => (
@@ -99,7 +120,12 @@ export const MarkdownBody = memo(function MarkdownBody({
 }) {
   return (
     <div className="ac-markdown">
-      <ReactMarkdown remarkPlugins={plugins} skipHtml components={components}>
+      <ReactMarkdown
+        remarkPlugins={plugins}
+        skipHtml
+        components={components}
+        urlTransform={urlTransform}
+      >
         {text}
       </ReactMarkdown>
     </div>

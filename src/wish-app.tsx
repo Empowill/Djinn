@@ -24,7 +24,7 @@ import { useShowWish } from "./lead-terminal";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
-import { WishView } from "./wish-view";
+import { type Opening, WishView } from "./wish-view";
 import "./wish.css";
 import "./review.css";
 
@@ -66,6 +66,8 @@ export function WishApp() {
   const [modal, setModal] = useState<Modal>(null);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
+  // The tilasm a djinn:// link asks to show, in its wish; a new object at each request.
+  const [opening, setOpening] = useState<Opening>();
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
 
@@ -74,13 +76,23 @@ export function WishApp() {
     () => store("djinn.sidebar.collapsed", collapsed ? "1" : ""),
     [collapsed],
   );
-  // djinn wish resume asks the window to show a wish.
+  // djinn wish resume asks the window to show a wish; a djinn:// link, a wish or a tilasm in its wish, or says Djinn
+  // does not know it.
   useEffect(
     () =>
       djinn.focus.subscribe((focus) => {
         if (focus.wishId) setSelected(focus.wishId);
+        if (focus.tilasmId)
+          setOpening({ wishId: focus.wishId, tilasmId: focus.tilasmId });
+        if (focus.unknownLink)
+          setToast(t("link.unknown", { link: focus.unknownLink }));
       }),
     [djinn],
+  );
+  // Another wish shown: a tilasm asked for earlier is not opened again on coming back.
+  useEffect(
+    () => setOpening((o) => (o && o.wishId !== selected ? undefined : o)),
+    [selected],
   );
   // Ctrl+N (Cmd+N) makes a wish.
   useEffect(() => {
@@ -209,7 +221,12 @@ export function WishApp() {
         {plan ? (
           <FlightPlan wishes={active} onOpen={setSelected} onToast={setToast} />
         ) : wish ? (
-          <WishView key={wish.id} wish={wish} onToast={setToast} />
+          <WishView
+            key={wish.id}
+            wish={wish}
+            opening={opening?.wishId === wish.id ? opening : undefined}
+            onToast={setToast}
+          />
         ) : (
           <Welcome
             loaded={loaded}

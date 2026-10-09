@@ -7,7 +7,7 @@
 // The bundle gives macOS what a bare binary lacks: an identifier, which system notifications need, a name and an icon
 // for Finder, Launchpad and the Dock. Its layout:
 //
-//	Djinn.app/Contents/Info.plist          the identifier, the version from the tag, the icon's name
+//	Djinn.app/Contents/Info.plist          the identifier, the version from the tag, the icon's name, the djinn:// links
 //	Djinn.app/Contents/PkgInfo
 //	Djinn.app/Contents/MacOS/djinn         the binary, the same as in the release's .tar.gz, and the bundle's executable
 //	Djinn.app/Contents/Resources/djinn.icns    build/icon.icns, made from the logo by tools/icons
@@ -154,9 +154,22 @@ func bundle(root, binary, tag, dir string) (string, error) {
 	return app, nil
 }
 
-// plistKeys are the keys of Info.plist, in order. Values are strings unless they are booleans.
-func plistKeys(version string) [][2]string {
-	return [][2]string{
+// plistEntry is a key of a property list and its value: a string, a bool, a []string, or a []plistEntries.
+type plistEntry struct {
+	key   string
+	value any
+}
+
+// plistEntries is a dictionary of a property list, its keys in order.
+type plistEntries []plistEntry
+
+// URLScheme is the scheme of Djinn's links, djinn://tilasm/<id>: macOS opens Djinn.app for one clicked anywhere, and
+// sends it the link (cmd/djinn/window.go).
+const URLScheme = "djinn"
+
+// plistKeys are the keys of Info.plist, in order.
+func plistKeys(version string) plistEntries {
+	return plistEntries{
 		{"CFBundleDevelopmentRegion", "en"},
 		{"CFBundleDisplayName", "Djinn"},
 		{"CFBundleExecutable", Binary},
@@ -167,10 +180,15 @@ func plistKeys(version string) [][2]string {
 		{"CFBundlePackageType", "APPL"},
 		{"CFBundleShortVersionString", version},
 		{"CFBundleSignature", "????"},
+		{"CFBundleURLTypes", []plistEntries{{
+			{"CFBundleTypeRole", "Viewer"},
+			{"CFBundleURLName", Identifier},
+			{"CFBundleURLSchemes", []string{URLScheme}},
+		}}},
 		{"CFBundleVersion", version},
 		{"LSApplicationCategoryType", "public.app-category.developer-tools"},
 		{"LSMinimumSystemVersion", MinSystem},
-		{"NSHighResolutionCapable", "true"},
+		{"NSHighResolutionCapable", true},
 	}
 }
 
@@ -182,16 +200,42 @@ func infoPlist(version string) string {
 <plist version="1.0">
 <dict>
 `)
-	for _, kv := range plistKeys(version) {
-		fmt.Fprintf(&b, "\t<key>%s</key>\n", escape(kv[0]))
-		if kv[1] == "true" || kv[1] == "false" {
-			fmt.Fprintf(&b, "\t<%s/>\n", kv[1])
-		} else {
-			fmt.Fprintf(&b, "\t<string>%s</string>\n", escape(kv[1]))
-		}
-	}
+	writeDict(&b, plistKeys(version), "\t")
 	b.WriteString("</dict>\n</plist>\n")
 	return b.String()
+}
+
+// writeDict writes the entries of a dictionary, each line after indent.
+func writeDict(b *strings.Builder, d plistEntries, indent string) {
+	for _, e := range d {
+		fmt.Fprintf(b, "%s<key>%s</key>\n", indent, escape(e.key))
+		writeValue(b, e.value, indent)
+	}
+}
+
+func writeValue(b *strings.Builder, v any, indent string) {
+	switch v := v.(type) {
+	case bool:
+		fmt.Fprintf(b, "%s<%t/>\n", indent, v)
+	case string:
+		fmt.Fprintf(b, "%s<string>%s</string>\n", indent, escape(v))
+	case []string:
+		fmt.Fprintf(b, "%s<array>\n", indent)
+		for _, s := range v {
+			writeValue(b, s, indent+"\t")
+		}
+		fmt.Fprintf(b, "%s</array>\n", indent)
+	case []plistEntries:
+		fmt.Fprintf(b, "%s<array>\n", indent)
+		for _, d := range v {
+			fmt.Fprintf(b, "%s\t<dict>\n", indent)
+			writeDict(b, d, indent+"\t\t")
+			fmt.Fprintf(b, "%s\t</dict>\n", indent)
+		}
+		fmt.Fprintf(b, "%s</array>\n", indent)
+	default:
+		panic(fmt.Sprintf("Info.plist: a value of type %T", v))
+	}
 }
 
 func escape(s string) string {
