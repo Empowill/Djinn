@@ -52,7 +52,8 @@ metadata:
 compile, a placeholder that is no group of the match, a `done_when` or a `restart` without `watch`.
 
 The watcher's command must be allowed where the project lists its commands (`.agents/permissions.txtpb`): a watcher
-has no reviewer. Djinn's own repository lists `sh .agents/skills/babysit-pr/watch.sh`.
+has no reviewer. Djinn's own repository lists `sh .agents/skills/babysit-pr/watch.sh` and
+`sh .agents/skills/babysit-mr/watch.sh`.
 
 ## Djinn's own: babysit-pr, for GitHub
 
@@ -69,7 +70,26 @@ It prints `MERGED: PR #12 is merged.` and exits on the merge, `CLOSED: …` on a
 shell script: on Windows, run it with the `sh` of Git for Windows. Copy the folder into your project to use it
 there, with the line in your `.agents/permissions.txtpb`.
 
-## Another project's: a GitLab merge request
+## Djinn's own: babysit-mr, for GitLab
+
+[`.agents/skills/babysit-mr/`](../.agents/skills/babysit-mr/SKILL.md) babysits a GitLab merge request: a request with
+a merge request's link (`…/-/merge_requests/12`) or its reference (`!12`) makes the wish "Babysit !12". Its
+`watch.sh` needs `glab` 1.100 or later (its `--jq`), logged in, and runs in a clone of the merge request's project.
+Every minute it reads the merge request, its merge status and its threads (`glab mr view --comments --output json`),
+then the jobs of its latest pipeline (`glab ci get --pipeline-id`), and prints a paragraph only when something changed:
+
+```
+MR !12 · pipeline: 1 failed, 2 success, 1 warning (failed: lint) · merge status: ci_must_pass · comments: 1
+latest comment, by a-reviewer: Could this name say what it holds?
+```
+
+A job that fails but is allowed to counts as a warning. The merge status is GitLab's `detailed_merge_status`
+(`mergeable`, `ci_must_pass`, `not_approved`, `discussions_not_resolved`, `conflict`…); the comments leave out
+GitLab's system notes. It prints `MERGED: MR !12 is merged.` and exits on the merge, `CLOSED: …` on a close without
+one. It only reads: no `glab` command of it writes to GitLab. Like babysit-pr, it is a POSIX shell script; copy the
+folder into your project to use it there, with the line in your `.agents/permissions.txtpb`.
+
+## Another project's: its own watcher
 
 A project declares its own template in its own skill. Say its developers have a command, `mrwatch`, that waits for
 the next change of a merge request and prints it, then exits; and prints `MERGED` once it is merged:
@@ -154,7 +174,8 @@ From the command line: `djinn inbox list` (`--all` for the routed and dismissed 
 
 Tests: `TestReadTemplate`, `TestFillQuotes`, `TestDoneLine`, `TestRouteTemplate`, `TestTemplateWish`,
 `TestTemplateWithoutWatchers`, `TestSkillListTemplate` (`internal/plan/templates_test.go`), `TestWatcherDoneLine`,
-`TestWatcherFinishes` (`internal/harness/watch_test.go`), and `e2e/wish-template.spec.ts` (a fake watcher). The
+`TestWatcherFinishes` (`internal/harness/watch_test.go`), `TestBabysitMRReadsOnly`
+(`internal/harness/babysit_mr_test.go`: babysit-mr's template and watcher, a fake `glab` on the `PATH`), and `e2e/wish-template.spec.ts` (a fake watcher). The
 inbox: `TestReadSource`, `TestSources`, `TestInbox`, `TestItemKey` (`internal/plan/inbox_test.go`),
 `TestSourceReadsOnly`, `TestSourceRefused` (`internal/harness/watch_source_test.go`), and `e2e/inbox.spec.ts` (a fake
 source).
