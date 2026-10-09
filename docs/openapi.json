@@ -1296,6 +1296,37 @@
         ],
         "description": "InboxState is where an inbox item stands."
       },
+      "plan.v1.IntegrationBranch": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "title": "project_id",
+            "description": "The project."
+          },
+          "branch": {
+            "type": "string",
+            "title": "branch",
+            "description": "The branch, without refs/heads/."
+          }
+        },
+        "title": "IntegrationBranch",
+        "additionalProperties": false,
+        "description": "IntegrationBranch is the branch a wish integrates its finished work into, in one of its projects."
+      },
+      "plan.v1.IntegrationState": {
+        "type": "string",
+        "title": "IntegrationState",
+        "enum": [
+          "INTEGRATION_STATE_UNSPECIFIED",
+          "INTEGRATION_STATE_PENDING",
+          "INTEGRATION_STATE_INTEGRATING",
+          "INTEGRATION_STATE_COMMITTED",
+          "INTEGRATION_STATE_CONFLICT",
+          "INTEGRATION_STATE_RED"
+        ],
+        "description": "IntegrationState is where a task's finished work stands on its way into its wish's integration branch."
+      },
       "plan.v1.KeptWorktree": {
         "type": "object",
         "properties": {
@@ -1916,12 +1947,12 @@
           "name": {
             "type": "string",
             "title": "name",
-            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch."
+            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test."
           },
           "value": {
             "type": "string",
             "title": "value",
-            "description": "Its value, as text; empty for the provider's own default model, or no budget limit."
+            "description": "Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The\n generated globs are joined by commas."
           },
           "source": {
             "allOf": [
@@ -3083,6 +3114,23 @@
             ],
             "title": "azima",
             "description": "For an azima: where it stands, computed on every read from its parts and what it depends on, never stored."
+          },
+          "integration": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TaskIntegration"
+              }
+            ],
+            "title": "integration",
+            "description": "Where the task's finished work stands on its way into its wish's integration branch: unset for a task whose work\n Djinn does not integrate (outside Git, an azima, a project that names no test command, not done)."
+          },
+          "tilasms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "tilasms",
+            "description": "The tilasms of the wish that cite it (djinn tilasm put --cites), by code (L01): computed on every read, never\n stored."
           }
         },
         "title": "Task",
@@ -3214,6 +3262,47 @@
           "TASK_EVENT_KIND_RECEIVED"
         ],
         "description": "TaskEventKind says what a worker event is. Its content stays free text."
+      },
+      "plan.v1.TaskIntegration": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.IntegrationState"
+              }
+            ],
+            "title": "state",
+            "description": "Where it stands."
+          },
+          "branch": {
+            "type": "string",
+            "title": "branch",
+            "description": "The integration branch, in the task's project."
+          },
+          "sha": {
+            "type": "string",
+            "title": "sha",
+            "description": "For COMMITTED, the commit the branch moved to, with the task's work."
+          },
+          "reason": {
+            "type": "string",
+            "title": "reason",
+            "description": "For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch."
+          },
+          "updateTime": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/google.protobuf.Timestamp"
+              }
+            ],
+            "title": "update_time",
+            "description": "When it last changed."
+          }
+        },
+        "title": "TaskIntegration",
+        "additionalProperties": false,
+        "description": "TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a\n worker ends done, Djinn commits its worktree on its branch, merges it with the batch into the integration branch in\n a worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,\n and moves the branch when it passes."
       },
       "plan.v1.TaskKind": {
         "type": "string",
@@ -3800,6 +3889,17 @@
             "title": "blocks",
             "maxItems": 100,
             "description": "What comes after the task: planned tasks of the same wish, by code or identifier, that wait for it from now on.\n Each one gets the new task as one more dependency, in the same step as the spawn, so that no scheduler pass\n starts it in between. Refused for a task that has started (running, paused, done…) and for one that would close\n a cycle. Repeat it, or separate them with commas: --blocks W5,W6."
+          },
+          "tilasm": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000,
+              "minLength": 1
+            },
+            "title": "tilasm",
+            "maxItems": 20,
+            "description": "A tilasm of the wish given to the worker as context, by code (L01) or identifier: the worker's first prompt holds\n its text and the folder of its files. Repeat it, or separate them with commas: --tilasm L01,L02."
           }
         },
         "title": "TaskServiceSpawnRequest",
@@ -4701,6 +4801,29 @@
             ],
             "title": "template",
             "description": "The skill the wish was made from, when a request matched its wish template; unset otherwise."
+          },
+          "integrationBranches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.IntegrationBranch"
+            },
+            "title": "integration_branches",
+            "description": "The branch each Git project of the wish integrates its tasks' finished work into: by default the branch the\n project's checkout was on when the wish was made, or, for a wish made before Djinn recorded it, when its first\n task's work was to integrate (djinn wish set-integration)."
+          },
+          "commitAfterMinutes": {
+            "type": "integer",
+            "title": "commit_after_minutes",
+            "maximum": 10080,
+            "minimum": 0,
+            "format": "int32",
+            "description": "Djinn commits the finished work into the integration branch when an azima ends, or once this many minutes have\n passed and commit_after_tasks tasks are done since the last commit, whichever comes first; a task another task\n waits for is committed at once, alone. 0: 60 minutes, 3 tasks."
+          },
+          "commitAfterTasks": {
+            "type": "integer",
+            "title": "commit_after_tasks",
+            "maximum": 100,
+            "minimum": 0,
+            "format": "int32"
           }
         },
         "title": "Wish",
@@ -5331,6 +5454,67 @@
           }
         },
         "title": "WishServiceRouteResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.WishServiceSetIntegrationRequest": {
+        "type": "object",
+        "properties": {
+          "wishId": {
+            "type": "string",
+            "title": "wish_id",
+            "format": "uuid",
+            "description": "The wish."
+          },
+          "projectId": {
+            "type": "string",
+            "title": "project_id",
+            "format": "uuid",
+            "description": "The project of the branch; by default the wish's project, when it has only one."
+          },
+          "branch": {
+            "type": "string",
+            "title": "branch",
+            "maxLength": 200,
+            "pattern": "^([A-Za-z0-9_]+([./-][A-Za-z0-9_]+)*)?$",
+            "description": "The branch the project's finished work goes to, without refs/heads/: feat/wails-go."
+          },
+          "commitAfterMinutes": {
+            "type": "integer",
+            "title": "commit_after_minutes",
+            "maximum": 10080,
+            "minimum": 0,
+            "format": "int32",
+            "description": "Commit once this many minutes have passed since the last commit, with commit_after_tasks tasks done."
+          },
+          "commitAfterTasks": {
+            "type": "integer",
+            "title": "commit_after_tasks",
+            "maximum": 100,
+            "minimum": 0,
+            "format": "int32",
+            "description": "Commit once this many tasks are done since the last commit, the minutes having passed."
+          }
+        },
+        "title": "WishServiceSetIntegrationRequest",
+        "required": [
+          "wishId"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.WishServiceSetIntegrationResponse": {
+        "type": "object",
+        "properties": {
+          "wish": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.Wish"
+              }
+            ],
+            "title": "wish",
+            "description": "The wish, with its integration settings."
+          }
+        },
+        "title": "WishServiceSetIntegrationResponse",
         "additionalProperties": false
       },
       "plan.v1.WishServiceSetLeadRequest": {
@@ -11118,6 +11302,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/plan.v1.WishServiceRouteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.WishService/SetIntegration": {
+      "post": {
+        "tags": [
+          "WishService"
+        ],
+        "summary": "SetIntegration",
+        "description": "Set where and when the wish's finished work is committed: the integration branch of one of its projects, and\n how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.",
+        "operationId": "WishService_SetIntegration",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceSetIntegrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceSetIntegrationResponse"
                 }
               }
             }

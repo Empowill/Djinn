@@ -147,6 +147,11 @@ To use Djinn, see the [README](README.md). To work on it:
 - `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. Not on Windows
   yet.
+- In a project whose settings name a test command ([`docs/team-settings.md`](docs/team-settings.md#integration)), Djinn
+  integrates finished work by itself: at an azima's end, or after an hour and three tasks done, it merges the tasks'
+  branches in a worktree of its own, makes the generated files again on a conflict only in them, runs the tests
+  through a gate, and moves the wish's branch when they pass ([T30](plan/43303f46-integration.md)). `djinn wish
+  set-integration <wish-id> --branch feat/x` names the branch.
 - `djinn task spawn … --after W1,W2` gives a task what comes before it (`--depends-on`, its former name, still works);
   `--blocks W5` puts the new task before a planned one, W5 waiting for it from the same step, refused once W5 has
   started. `djinn task depend <task-id> --after W1,W2 --also W6=W5` sets what tasks wait for, in place of what they
@@ -173,7 +178,10 @@ To use Djinn, see the [README](README.md). To work on it:
   `djinn talisman …` is the same command ([T29](plan/eee91edb-tilasms.md)). Djinn serves each one's latest version at
   `/tilasm/<id>/`, with a content security policy of its own: its scripts and files run, the network and Djinn stay
   out of reach. The wish's *Tilasms* tab lists them, opens one in a sandboxed frame, searches their titles and text,
-  restores a version and exports one; a folder or a `.zip` dropped on it becomes a tilasm.
+  restores a version and exports one; a folder or a `.zip` dropped on it becomes a tilasm. The brief lists the wish's
+  tilasms, each with its link, `djinn://tilasm/<id>`, and the azimas and tasks it cites; `djinn task get` and the
+  brief's azima graph show each task the tilasms that cite it. `djinn task spawn … --tilasm L01` opens the worker's
+  first prompt with the tilasm's text and the folder of its files.
 - `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
   `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
 - `djinn gate run <name> -- <command>` runs a command under a gate and records what it cost in its project (CPU

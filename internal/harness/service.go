@@ -52,6 +52,9 @@ func (s *Tasks) List(
 	if tasks, err = s.h.withAzimas(ctx, tasks); err != nil {
 		return nil, plan.Status(err)
 	}
+	if err := plan.FillTilasms(ctx, s.h.store, tasks); err != nil {
+		return nil, plan.Status(err)
+	}
 	return connect.NewResponse(&planv1.TaskServiceListResponse{Tasks: tasks}), nil
 }
 
@@ -64,6 +67,9 @@ func (s *Tasks) Get(
 	}
 	filled, err := s.h.withAzimas(ctx, []*planv1.Task{task})
 	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := plan.FillTilasms(ctx, s.h.store, filled); err != nil {
 		return nil, plan.Status(err)
 	}
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: filled[0]}), nil

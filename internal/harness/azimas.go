@@ -31,9 +31,10 @@ import (
 func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
 	if req.GetPrompt() != "" || req.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || req.GetModel() != "" ||
 		req.GetMaxBudgetUsd() != 0 || len(req.GetWriteScopes()) > 0 || req.GetLater() || req.GetFork() != "" ||
-		req.GetFromLead() || req.GetRestart() {
+		req.GetFromLead() || req.GetRestart() || len(req.GetTilasm()) > 0 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(
-			"an azima has no worker: no prompt, provider, model, budget, write scope, --later, --fork, --from-lead or --restart"))
+			"an azima has no worker: no prompt, provider, model, budget, write scope, --later, --fork, --from-lead, "+
+				"--restart or --tilasm"))
 	}
 	h.sched.Lock()
 	defer h.sched.Unlock()

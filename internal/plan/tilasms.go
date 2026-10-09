@@ -578,15 +578,7 @@ func (t *Tilasms) Get(
 		_, res.Text = htmlText(f)
 		f.Close()
 	}
-	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(dir, p)
-		res.Files = append(res.Files, filepath.ToSlash(rel))
-		return err
-	})
-	if err != nil {
+	if res.Files, err = folderFiles(dir); err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("read the files of %s: %w", tilasm.GetCode(), err))
 	}
 	return connect.NewResponse(res), nil
@@ -1152,4 +1144,143 @@ func checkTilasms(exp *planv1.WishExport, tasks map[string]bool, valid func(stri
 		}
 	}
 	return nil
+}
+
+// TilasmLink is the link that opens a tilasm in Djinn from anywhere: a block, a question, a terminal, a browser.
+func TilasmLink(id string) string { return "djinn://tilasm/" + strings.ToLower(id) }
+
+// FillTilasms sets Task.tilasms on tasks: the codes of the tilasms of their wish that cite each, in code order.
+func FillTilasms(ctx context.Context, r store.Reader, tasks []*planv1.Task) error {
+	byWish := map[string][]*planv1.Tilasm{}
+	for _, t := range tasks {
+		id := t.GetWishId()
+		if _, ok := byWish[id]; ok {
+			continue
+		}
+		all, err := store.List[*planv1.Tilasm](ctx, r, store.Where{"wish_id": id})
+		if err != nil {
+			return err
+		}
+		slices.SortStableFunc(all, func(a, b *planv1.Tilasm) int { return CompareCodes(a.GetCode(), b.GetCode()) })
+		byWish[id] = all
+	}
+	for _, t := range tasks {
+		t.Tilasms = citing(byWish[t.GetWishId()], t.GetId())
+	}
+	return nil
+}
+
+// citing are the codes of the tilasms among all that cite the task taskID.
+func citing(all []*planv1.Tilasm, taskID string) []string {
+	var out []string
+	for _, tilasm := range all {
+		if slices.ContainsFunc(tilasm.GetCites(), func(id string) bool { return strings.EqualFold(id, taskID) }) {
+			out = append(out, tilasm.GetCode())
+		}
+	}
+	return out
+}
+
+// tilasmPromptText is how much of a tilasm's text a worker's first prompt holds: the rest is in its files.
+const tilasmPromptText = 20000
+
+// tilasmPromptFiles is how many of a tilasm's files a worker's first prompt names.
+const tilasmPromptFiles = 20
+
+// TilasmContext is what a worker's first prompt holds of the tilasms it is given (djinn task spawn --tilasm): for each,
+// its code, title, link, what it explains, the folder of its latest version's files and the text of its page. names
+// are codes (L01, any case) or identifiers of tilasms of the wish, repeated or separated by commas or spaces; home is
+// Djinn's data folder. Empty for no name.
+func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, names []string) (string, error) {
+	var tilasms []*planv1.Tilasm
+	for _, list := range names {
+		for _, name := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+			tilasm, err := wishTilasm(ctx, r, wishID, name)
+			if err != nil {
+				return "", err
+			}
+			if !slices.ContainsFunc(tilasms, func(t *planv1.Tilasm) bool { return t.GetId() == tilasm.GetId() }) {
+				tilasms = append(tilasms, tilasm)
+			}
+		}
+	}
+	if len(tilasms) == 0 {
+		return "", nil
+	}
+	if home == "" {
+		return "", connect.NewError(connect.CodeUnavailable, errors.New("this server keeps no tilasms: run djinn up"))
+	}
+	var b strings.Builder
+	b.WriteString("# Tilasms given as context\n\n")
+	b.WriteString("The material that explains this work, kept by Djinn outside the project: read its files where they " +
+		"are, and do not copy them into the project. `djinn tilasm get <code>` reads one again.\n")
+	for _, tilasm := range tilasms {
+		n, err := pickVersion(tilasm, 0)
+		if err != nil {
+			return "", err
+		}
+		dir := versionDir(home, tilasm.GetId(), n)
+		fmt.Fprintf(&b, "\n## %s · %s\n\n", tilasm.GetCode(), cmp.Or(oneLine(tilasm.GetTitle()), "(untitled)"))
+		fmt.Fprintf(&b, "- Link: %s\n", TilasmLink(tilasm.GetId()))
+		codes, err := citeCodes(ctx, r, tilasm)
+		if err != nil {
+			return "", err
+		}
+		if len(codes) > 0 {
+			fmt.Fprintf(&b, "- Explains: %s\n", strings.Join(codes, ", "))
+		}
+		files, err := folderFiles(dir)
+		if err != nil {
+			return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("read the files of %s: %w", tilasm.GetCode(), err))
+		}
+		fmt.Fprintf(&b, "- Files, version %d: %s\n", n, dir)
+		if len(files) > tilasmPromptFiles {
+			files = append(files[:tilasmPromptFiles], fmt.Sprintf("and %d more", len(files)-tilasmPromptFiles))
+		}
+		fmt.Fprintf(&b, "  (%s)\n", strings.Join(files, ", "))
+		text := ""
+		if f, err := os.Open(filepath.Join(dir, tilasmIndex)); err == nil {
+			_, text = htmlText(f)
+			f.Close()
+		}
+		if text = clipText(text, tilasmPromptText); text != "" {
+			b.WriteString("\n" + text + "\n")
+		}
+	}
+	return b.String(), nil
+}
+
+// wishTilasm is the tilasm of the wish named by its code, any case, or its identifier; another wish's is refused.
+func wishTilasm(ctx context.Context, r store.Reader, wishID, name string) (*planv1.Tilasm, error) {
+	var tilasm *planv1.Tilasm
+	var err error
+	if uuidLike(name) {
+		tilasm, err = store.Get[*planv1.Tilasm](ctx, r, name)
+		if errors.Is(err, store.ErrNotFound) {
+			tilasm, err = nil, nil
+		}
+	} else {
+		tilasm, err = tilasmByCode(ctx, r, wishID, strings.ToUpper(name))
+	}
+	if err != nil {
+		return nil, err
+	}
+	if tilasm == nil || tilasm.GetWishId() != wishID {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("tilasm %s is not a tilasm of the wish", name))
+	}
+	return tilasm, nil
+}
+
+// folderFiles are the files under dir, relative to it, with forward slashes.
+func folderFiles(dir string) ([]string, error) {
+	var out []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		out = append(out, filepath.ToSlash(rel))
+		return err
+	})
+	return out, err
 }

@@ -78,6 +78,26 @@ message ProjectSettings {
     (buf.validate.field).string.pattern = "^([A-Za-z0-9]+|\\{(code|slug|uuid8)\\})([._/-]?([A-Za-z0-9]+|\\{(code|slug|uuid8)\\}))*$",
     (buf.validate.field).string.contains = "{uuid8}"
   ];
+  // The files code generation makes, as globs in the project's folder: "gen/**", "docs/openapi.json". "**" stands
+  // for any number of folders, "*" for any name in one. When merging a task's work into its wish's integration
+  // branch meets a conflict only in these files, Djinn takes one side and makes them again with generate. A file that
+  // sets some sets them all.
+  repeated string generated = 5 [(buf.validate.field).repeated = {
+    max_items: 100
+    items: {
+      string: {
+        min_len: 1
+        max_len: 200
+      }
+    }
+  }];
+  // The command that makes the generated files, run in the project's folder: "go tool task gen". Its words are
+  // split on spaces, without a shell. Not set: a conflict in generated files is a conflict like any other.
+  optional string generate = 6 [(buf.validate.field).string.max_len = 500];
+  // The command that tests the project, run in the project's folder: "go tool task test". Djinn integrates the
+  // finished work of the project's tasks into their wish's integration branch only once it is set, and moves the
+  // branch only when it passes. Its words are split on spaces, without a shell.
+  optional string test = 7 [(buf.validate.field).string.max_len = 500];
 }
 
 // SettingSource is where a project setting comes from.
@@ -94,9 +114,10 @@ enum SettingSource {
 
 // ProjectSetting is one setting of a project, as its workers get it.
 message ProjectSetting {
-  // Its name, as the files write it: provider, model, max_budget_usd, branch.
+  // Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test.
   string name = 1;
-  // Its value, as text; empty for the provider's own default model, or no budget limit.
+  // Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The
+  // generated globs are joined by commas.
   string value = 2;
   // Where it comes from.
   SettingSource source = 3;
@@ -127,6 +148,29 @@ message Wish {
   bool ready = 10;
   // The skill the wish was made from, when a request matched its wish template; unset otherwise.
   WishTemplate template = 11;
+  // The branch each Git project of the wish integrates its tasks' finished work into: by default the branch the
+  // project's checkout was on when the wish was made, or, for a wish made before Djinn recorded it, when its first
+  // task's work was to integrate (djinn wish set-integration).
+  repeated IntegrationBranch integration_branches = 12;
+  // Djinn commits the finished work into the integration branch when an azima ends, or once this many minutes have
+  // passed and commit_after_tasks tasks are done since the last commit, whichever comes first; a task another task
+  // waits for is committed at once, alone. 0: 60 minutes, 3 tasks.
+  int32 commit_after_minutes = 13 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10080
+  }];
+  int32 commit_after_tasks = 14 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+// IntegrationBranch is the branch a wish integrates its finished work into, in one of its projects.
+message IntegrationBranch {
+  // The project.
+  string project_id = 1;
+  // The branch, without refs/heads/.
+  string branch = 2;
 }
 
 // WishTemplate is the skill a wish was made from: a request matched the wish template its SKILL.md declares, under
@@ -379,6 +423,59 @@ message Task {
   string phase = 38;
   // For an azima: where it stands, computed on every read from its parts and what it depends on, never stored.
   Azima azima = 39;
+  // Where the task's finished work stands on its way into its wish's integration branch: unset for a task whose work
+  // Djinn does not integrate (outside Git, an azima, a project that names no test command, not done).
+  TaskIntegration integration = 40;
+  // The tilasms of the wish that cite it (djinn tilasm put --cites), by code (L01): computed on every read, never
+  // stored.
+  repeated string tilasms = 41;
+}
+
+// TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a
+// worker ends done, Djinn commits its worktree on its branch, merges it with the batch into the integration branch in
+// a worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,
+// and moves the branch when it passes.
+message TaskIntegration {
+  // Where it stands.
+  IntegrationState state = 1;
+  // The integration branch, in the task's project.
+  string branch = 2;
+  // For COMMITTED, the commit the branch moved to, with the task's work.
+  string sha = 3;
+  // For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch.
+  string reason = 4;
+  // When it last changed.
+  google.protobuf.Timestamp update_time = 5;
+}
+
+// IntegrationState is where a task's finished work stands on its way into its wish's integration branch.
+enum IntegrationState {
+  // Not set: Djinn does not integrate the task's work.
+  INTEGRATION_STATE_UNSPECIFIED = 0;
+  // Done, waiting for its batch: an azima's end, or an hour and three tasks done since the last commit.
+  INTEGRATION_STATE_PENDING = 1;
+  // Its batch is being merged and tested.
+  INTEGRATION_STATE_INTEGRATING = 2;
+  // In the integration branch, tested.
+  INTEGRATION_STATE_COMMITTED = 3;
+  // Its batch met a conflict in code, or a merge Djinn could not settle: the branch stayed as it was.
+  INTEGRATION_STATE_CONFLICT = 4;
+  // Its batch's tests failed: the branch stayed as it was.
+  INTEGRATION_STATE_RED = 5;
+}
+
+// IntegrationCommit is a batch of finished work committed into a wish's integration branch, as the journal records
+// it.
+message IntegrationCommit {
+  // The wish, and the project whose branch moved.
+  string wish_id = 1;
+  string project_id = 2;
+  // The branch, and the commits it moved from and to.
+  string branch = 3;
+  string old_sha = 4;
+  string new_sha = 5;
+  // The tasks of the batch, in the order they were merged.
+  repeated string task_ids = 6;
 }
 
 // TaskKind says what a task is.
@@ -1167,6 +1264,12 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Set where and when the wish's finished work is committed: the integration branch of one of its projects, and
+  // how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.
+  rpc SetIntegration(WishServiceSetIntegrationRequest) returns (WishServiceSetIntegrationResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
   // task finished, no question open), and you may grant it before.
   rpc Grant(WishServiceGrantRequest) returns (WishServiceGrantResponse) {
@@ -1346,6 +1449,39 @@ message WishServiceAllowRequest {
 
 message WishServiceAllowResponse {
   // The wish, with its allowances.
+  Wish wish = 1;
+}
+
+message WishServiceSetIntegrationRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The project of the branch; by default the wish's project, when it has only one.
+  string project_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The branch the project's finished work goes to, without refs/heads/: feat/wails-go.
+  string branch = 3 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^([A-Za-z0-9_]+([./-][A-Za-z0-9_]+)*)?$"
+  ];
+  // Commit once this many minutes have passed since the last commit, with commit_after_tasks tasks done.
+  int32 commit_after_minutes = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10080
+  }];
+  // Commit once this many tasks are done since the last commit, the minutes having passed.
+  int32 commit_after_tasks = 5 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+message WishServiceSetIntegrationResponse {
+  // The wish, with its integration settings.
   Wish wish = 1;
 }
 
@@ -2043,6 +2179,13 @@ message TaskServiceSpawnRequest {
   // a cycle. Repeat it, or separate them with commas: --blocks W5,W6.
   repeated string blocks = 18 [
     (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // A tilasm of the wish given to the worker as context, by code (L01) or identifier: the worker's first prompt holds
+  // its text and the folder of its files. Repeat it, or separate them with commas: --tilasm L01,L02.
+  repeated string tilasm = 19 [
+    (buf.validate.field).repeated.max_items = 20,
     (buf.validate.field).repeated.items.string.min_len = 1,
     (buf.validate.field).repeated.items.string.max_len = 1000
   ];

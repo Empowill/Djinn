@@ -74,8 +74,10 @@ be referenced by simple links that open it natively in the app from anywhere."
   answers as tilasm", "an alias by a prefix no command takes", from `option (djinn.v1.alias)`; `TestTilasmSearch`:
   "talisman" or "tilasm", in English or French, finds them all, the search the tab will call.)
 - [ ] The first tilasm, the objects in the database drawn from the protos, is put and opens from its link.
-- [ ] The brief lists the wish's tilasms, and the rules tell the lead to make one to explain a concept, and to cite
-  it.
+- [x] The brief lists the wish's tilasms, and the rules tell the lead to make one to explain a concept, and to cite
+  it. (09/10, `TestBriefListsTilasms`; the citations both ways, `TestTilasmCitationsBothWays` and `TestSpawnTilasm` for
+  `djinn task get|list`; a worker given a tilasm, `djinn task spawn --tilasm`, `TestTilasmContext` and
+  `TestSpawnTilasm`)
 
 ## Tests must be fast
 
