@@ -34,8 +34,8 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   and no slot, and each new paragraph it prints wakes the lead. `--restart` starts again a command that exits on each
   change ([watch](providers.md#watch-a-command-no-agent)).
 - **Every request finds its wish.** A request that is not about the wish goes through
-  `djinn wish route "<request>" --wish-id <wish> --ask`: a card asks the developer to file it in another wish or to
-  open a new one, whose lead starts on it. The new lead reads the request once, on its first line; its brief leaves
+  `djinn wish route "<request>" --wish-id <wish> --ask`: a card asks the developer to open a new wish, whose lead
+  starts on it, to file it in an existing wish, or to keep it in this one; then the lead does its work. The new lead reads the request once, on its first line; its brief leaves
   the request block out of its latest blocks. A skill's [wish template](wish-templates.md) (`metadata.djinn.wish`)
   makes the new wish follow the skill, its watcher started; the brief tells the lead to propose one for a request
   that comes back.

@@ -39,6 +39,7 @@ func TestRouteRanking(t *testing.T) {
 		reason string // in the first option's reason
 		ids    []string
 		pause  string
+		filed  []*planv1.Wish // the wishes of the options that file the request, in order: the wish it came to last
 	}
 	file, made := planv1.RouteKind_ROUTE_KIND_FILE, planv1.RouteKind_ROUTE_KIND_NEW
 	for _, c := range []struct {
@@ -51,55 +52,90 @@ func TestRouteRanking(t *testing.T) {
 		name:    "a link to another merge request of a project: a new wish there",
 		request: "babysit https://gitlab.com/acme/shop/-/merge_requests/41 please",
 		from:    sidebar, wishes: []*planv1.Wish{babysit, sidebar, notes, colours},
-		want: want{kinds: []planv1.RouteKind{made, file}, first: "Babysit shop!41 please", reason: "not close enough",
-			ids: []string{shop.GetId()}},
+		want: want{kinds: []planv1.RouteKind{made, file, file, file}, first: "Babysit shop!41 please", reason: "not close enough",
+			ids: []string{shop.GetId()}, filed: []*planv1.Wish{babysit, notes, sidebar}},
 	}, {
 		name:    "a link to the merge request a wish babysits: that wish",
 		request: "the CI of https://gitlab.com/acme/shop/-/merge_requests/37 is red",
 		from:    sidebar, wishes: []*planv1.Wish{babysit, sidebar, notes, colours},
-		want: want{kinds: []planv1.RouteKind{file, made}, first: babysit.GetId(), reason: "the same !37"},
+		want: want{kinds: []planv1.RouteKind{file, file, made, file}, first: babysit.GetId(), reason: "the same !37",
+			filed: []*planv1.Wish{babysit, notes, sidebar}},
 	}, {
 		name:    "a repository's path, without a link",
 		request: "look at the pipelines of acme/shop",
 		from:    sidebar, wishes: []*planv1.Wish{babysit, sidebar, notes},
-		want: want{kinds: []planv1.RouteKind{made, file}, first: "Look at the pipelines of acme/shop",
-			ids: []string{shop.GetId()}},
+		want: want{kinds: []planv1.RouteKind{made, file, file, file}, first: "Look at the pipelines of acme/shop",
+			ids: []string{shop.GetId()}, filed: []*planv1.Wish{babysit, notes, sidebar}},
 	}, {
 		name:    "title words and a project named: that wish, never a granted one",
 		request: "the lamp sidebar flickers",
 		from:    babysit, wishes: []*planv1.Wish{babysit, sidebar, notes, colours},
-		want: want{kinds: []planv1.RouteKind{file, made}, first: sidebar.GetId(), reason: "its title shares sidebar"},
+		want: want{kinds: []planv1.RouteKind{file, file, made, file}, first: sidebar.GetId(), reason: "its title shares sidebar",
+			filed: []*planv1.Wish{sidebar, notes, babysit}},
 	}, {
 		name:    "a title word and the latest blocks: proposed, not recommended",
 		request: "write the changelog",
 		from:    babysit, wishes: []*planv1.Wish{babysit, sidebar, notes},
-		want: want{kinds: []planv1.RouteKind{made, file}, first: "Write the changelog", ids: babysit.GetProjectIds()},
+		want: want{kinds: []planv1.RouteKind{made, file, file, file}, first: "Write the changelog", ids: babysit.GetProjectIds(),
+			filed: []*planv1.Wish{notes, sidebar, babysit}},
 	}, {
-		name:    "nothing close: a new wish in the projects of the wish it came to",
+		name:    "nothing close: new wish recommended, other wishes still offered, then keep",
 		request: "order more coffee beans",
 		from:    babysit, wishes: []*planv1.Wish{babysit, sidebar, notes},
-		want: want{kinds: []planv1.RouteKind{made}, first: "Order more coffee beans", reason: "no wish is close",
-			ids: babysit.GetProjectIds()},
+		want: want{kinds: []planv1.RouteKind{made, file, file, file}, first: "Order more coffee beans", reason: "no wish is close",
+			ids: babysit.GetProjectIds(), filed: []*planv1.Wish{sidebar, notes, babysit}},
+	}, {
+		name:    "only one other wish scoring 0 is still offered",
+		request: "order more coffee beans",
+		from:    babysit, wishes: []*planv1.Wish{babysit, notes, colours},
+		want: want{kinds: []planv1.RouteKind{made, file, file}, first: "Order more coffee beans", reason: "no wish is close",
+			ids: babysit.GetProjectIds(), filed: []*planv1.Wish{notes, babysit}},
 	}, {
 		name:    "three active: wait paused, or pause the last one but the lead's own",
 		request: "order more coffee beans",
 		from:    oil, wishes: []*planv1.Wish{babysit, sidebar, oil},
-		want: want{kinds: []planv1.RouteKind{planv1.RouteKind_ROUTE_KIND_QUEUE, planv1.RouteKind_ROUTE_KIND_SWAP},
-			first: "Order more coffee beans", reason: "waits paused", ids: oil.GetProjectIds(), pause: sidebar.GetId()},
+		want: want{kinds: []planv1.RouteKind{planv1.RouteKind_ROUTE_KIND_QUEUE, planv1.RouteKind_ROUTE_KIND_SWAP, file, file},
+			first: "Order more coffee beans", reason: "waits paused", ids: oil.GetProjectIds(), pause: sidebar.GetId(),
+			filed: []*planv1.Wish{babysit, oil}},
 	}} {
 		t.Run(c.name, func(t *testing.T) {
 			route := propose(routeInput{
 				lang: "en", text: c.request, from: c.from, wishes: c.wishes, projects: projects, blocks: blocks,
 			})
 			var kinds []planv1.RouteKind
+			var filed []string
 			for _, o := range route.GetOptions() {
 				kinds = append(kinds, o.GetKind())
-				if o.GetWishId() == c.from.GetId() || o.GetWishId() == colours.GetId() {
-					t.Errorf("proposed %q", o.GetTitle())
+				if o.GetWishId() == colours.GetId() {
+					t.Errorf("proposed the granted %q", o.GetTitle())
+				}
+				if o.GetKind() != file {
+					continue
+				}
+				filed = append(filed, o.GetWishId())
+				switch {
+				case o.GetWishId() == c.from.GetId():
+					if !strings.Contains(o.GetReason(), "keep it if it belongs here") {
+						t.Errorf("kept, reason %q", o.GetReason())
+					}
+				case o.GetScore() < routeShown:
+					if !strings.HasPrefix(o.GetReason(), "an existing wish") {
+						t.Errorf("far %q, reason %q", o.GetTitle(), o.GetReason())
+					}
 				}
 			}
 			if !slices.Equal(kinds, c.want.kinds) {
 				t.Fatalf("kinds %v, want %v: %v", kinds, c.want.kinds, route)
+			}
+			var want []string
+			for _, w := range c.want.filed {
+				want = append(want, w.GetId())
+			}
+			if !slices.Equal(filed, want) {
+				t.Errorf("filed in %v, want %v: %v", filed, want, route)
+			}
+			if last := route.GetOptions()[len(route.GetOptions())-1]; last.GetWishId() != c.from.GetId() {
+				t.Errorf("the last option %v is not to keep it in the wish it came to", last)
 			}
 			first := route.GetOptions()[0]
 			if got := first.GetWishId() + first.GetTitle(); first.GetKind() == file && first.GetWishId() != c.want.first ||
@@ -199,16 +235,17 @@ func TestRouteAnswered(t *testing.T) {
 		t.Errorf("--ask without --wish-id: %v", err)
 	}
 	dry, err := c.wishes.Route(ctx, connect.NewRequest(&planv1.WishServiceRouteRequest{Request: "x", WishId: here.GetId()}))
-	if err != nil || dry.Msg.GetQuestion() != nil || len(dry.Msg.GetRoute().GetOptions()) != 1 {
+	if err != nil || dry.Msg.GetQuestion() != nil || len(dry.Msg.GetRoute().GetOptions()) != 3 {
 		t.Errorf("without --ask: %v, %v", dry, err)
 	}
 
-	// A request about another merge request: the card recommends a new wish in its project, and rubbing the lamp makes
-	// it, files the request there, and starts its lead on it in its own terminal.
+	// A request about another merge request: the card recommends a new wish in its project, offers the other wish and
+	// to keep it here; rubbing the lamp makes the new wish, files the request there, and starts its lead on it in its
+	// own terminal.
 	request := "babysit https://gitlab.com/acme/shop/-/merge_requests/41"
 	q := c.route(t, here.GetId(), request)
-	if q.GetCode() != "Q01" || len(q.GetOptions()) != 2 || q.GetOptions()[0] != "New wish “Babysit shop!41”, in shop" ||
-		q.GetOptions()[1] != "File it in “Babysit !37 · shop”" || !strings.HasPrefix(q.GetRecommendation(), "A: ") ||
+	if q.GetCode() != "Q01" || !slices.Equal(q.GetOptions(), []string{"New wish “Babysit shop!41”, in shop",
+		"File it in “Babysit !37 · shop”", "Keep it in “Lamp: the sidebar”"}) || !strings.HasPrefix(q.GetRecommendation(), "A: ") ||
 		!strings.Contains(q.GetContext(), "> "+request) || q.GetRoute().GetRequest() != request {
 		t.Fatalf("question = %v", q)
 	}
@@ -272,9 +309,11 @@ func TestRouteAnswered(t *testing.T) {
 		t.Errorf("said %q, want %q", leads.said, want)
 	}
 
-	// Three wishes are active: the card offers to wait paused, or to pause the last one; each does what it says.
+	// Three wishes are active: the card offers to wait paused, or to pause the last one, then a wish to file it in and
+	// to keep it here; each does what it says.
 	q = c.route(t, here.GetId(), "order more coffee beans")
-	if len(q.GetOptions()) != 2 || !strings.Contains(q.GetOptions()[1], "pause “Babysit shop!41”") {
+	if len(q.GetOptions()) != 4 || !strings.Contains(q.GetOptions()[1], "pause “Babysit shop!41”") ||
+		!strings.HasPrefix(q.GetOptions()[2], "File it in ") || q.GetOptions()[3] != "Keep it in “Lamp: the sidebar”" {
 		t.Fatalf("options %q", q.GetOptions())
 	}
 	opened = len(leads.opened)
@@ -294,6 +333,29 @@ func TestRouteAnswered(t *testing.T) {
 	}
 	if actives := Ranked(c.list(t)); len(actives) != MaxActive {
 		t.Errorf("%d active", len(actives))
+	}
+
+	// The developer keeps the request in the wish it came to: filed there, no new wish, and its lead told to do it.
+	request = "the sidebar also needs a dark mode"
+	q = c.route(t, here.GetId(), request)
+	keep := len(q.GetOptions()) - 1
+	if q.GetOptions()[keep] != "Keep it in “Lamp: the sidebar”" {
+		t.Fatalf("options %q", q.GetOptions())
+	}
+	wishes, said := len(c.list(t)), len(leads.said)
+	c.answer(t, q, planv1.Choice_CHOICE_A+planv1.Choice(keep), "")
+	if got := c.requests(t, here.GetId()); !slices.Equal(got, []string{request}) {
+		t.Errorf("requests kept = %q", got)
+	}
+	if len(c.list(t)) != wishes {
+		t.Errorf("a wish was made: %d, was %d", len(c.list(t)), wishes)
+	}
+	if filed := LeadTerminal(here.GetId()) + ": " + FiledLine(here.GetId(), here.GetTitle(), request); slices.Contains(leads.said, filed) {
+		t.Errorf("said the request was filed: %q", leads.said[said:])
+	}
+	told = LeadTerminal(here.GetId()) + ": " + RoutedLine(c.questionOf(t, q.GetId()))
+	if !slices.Equal(leads.said[said:], []string{told}) || !strings.Contains(told, "keeps the request in this wish") {
+		t.Errorf("said %q, want %q", leads.said[said:], told)
 	}
 }
 

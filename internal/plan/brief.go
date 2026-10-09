@@ -59,8 +59,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- **What Djinn does not compute is a block**: a decision taken outside a question, an analysis, a hand-off.\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
-	"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to file it in " +
-	"another wish or to open a new one with its own lead. Hand it over: do not do its work here.\n" +
+	"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to open a new wish " +
+	"with its own lead, to file it in an existing wish, or to keep it in this one. Hand it over: do not do its work " +
+	"here, unless the developer keeps it here.\n" +
 	"- **Watch, do not poll.** To wait on something outside (a pipeline, a merge request, a queue), spawn a watcher: " +
 	"`--provider watch --prompt \"<command>\"` runs the command with no agent, no model and no slot, and each new " +
 	"paragraph it prints wakes you. `--restart` starts again a command that exits on each change. The project must " +

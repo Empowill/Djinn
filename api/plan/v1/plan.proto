@@ -497,7 +497,7 @@ message Question {
 message Route {
   // The request, as it was said.
   string request = 1;
-  // The wish the request came to; it is never proposed.
+  // The wish the request came to; it is proposed last, to keep the request there.
   string from_wish_id = 2;
   // The destinations, the recommended one first.
   repeated RouteOption options = 3;
@@ -1142,7 +1142,8 @@ message WishServiceRouteRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 4000
   ];
-  // The wish the request came to: the lead's own. It is not proposed, and --ask asks there.
+  // The wish the request came to: the lead's own. It is proposed last, to keep the request there, and --ask asks
+  // there.
   string wish_id = 2 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true

@@ -968,7 +968,7 @@ export type Route = Message<"plan.v1.Route"> & {
   request: string;
 
   /**
-   * The wish the request came to; it is never proposed.
+   * The wish the request came to; it is proposed last, to keep the request there.
    *
    * @generated from field: string from_wish_id = 2;
    */
@@ -2108,7 +2108,8 @@ export type WishServiceRouteRequest = Message<"plan.v1.WishServiceRouteRequest">
   request: string;
 
   /**
-   * The wish the request came to: the lead's own. It is not proposed, and --ask asks there.
+   * The wish the request came to: the lead's own. It is proposed last, to keep the request there, and --ask asks
+   * there.
    *
    * @generated from field: string wish_id = 2;
    */

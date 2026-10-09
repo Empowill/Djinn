@@ -24,7 +24,9 @@ import (
 
 // Every request finds its wish. A lead hands a request that is not about its wish to djinn wish route: Djinn ranks
 // the wishes without a model and proposes where the request goes, as a question on the lead's wish. The answer
-// files the request in a wish, or makes a new wish and starts its lead on it.
+// files the request in a wish, the lead's own when the developer keeps it there, or makes a new wish and starts its
+// lead on it. Filing in an existing wish is always offered when there is one: the developer, not the score, decides
+// what a wish is about.
 
 // What each sign of a request adds to a wish's score.
 const (
@@ -264,17 +266,16 @@ func sharedWords(a, b map[string]bool) []string {
 	return out
 }
 
-// rank scores the wishes a request may go to, the closest first, and keeps those close enough to propose: every
-// wish but the one it came to and the granted ones. Between equal scores, an active wish comes first, by rank.
-func rank(lang string, req signs, wishes []*planv1.Wish, blocks map[string][]*planv1.Block, from string) []candidate {
+// rank scores the wishes a request may go to, the closest first: every wish but the one it came to and the granted
+// ones. The close ones score routeShown or more; the others follow, the developer may still file the request there.
+// Between equal scores, an active wish comes first, by rank.
+func rank(lang string, req signs, wishes []*planv1.Wish, blocks map[string][]*planv1.Block, from string) (close, far []candidate) {
 	var out []candidate
 	for _, w := range wishes {
 		if w.GetId() == from || w.GetState() == planv1.WishState_WISH_STATE_GRANTED {
 			continue
 		}
-		if c := score(lang, req, w, blocks[w.GetId()]); c.score >= routeShown {
-			out = append(out, c)
-		}
+		out = append(out, score(lang, req, w, blocks[w.GetId()]))
 	}
 	order := func(w *planv1.Wish) int32 {
 		if !Active(w) || w.GetRank() <= 0 {
@@ -285,7 +286,11 @@ func rank(lang string, req signs, wishes []*planv1.Wish, blocks map[string][]*pl
 	slices.SortStableFunc(out, func(a, b candidate) int {
 		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(order(a.wish), order(b.wish)))
 	})
-	return out
+	n := slices.IndexFunc(out, func(c candidate) bool { return c.score < routeShown })
+	if n < 0 {
+		return out, nil
+	}
+	return out[:n], out[n:]
 }
 
 // proposeTitle makes a title for a new wish from a request, its links shortened: its first sentence, clipped on a
@@ -333,13 +338,14 @@ type routeInput struct {
 	templates []*Template
 }
 
-// propose computes the route of a request: the wishes close enough to file it in, and a new wish. The recommended
-// destination comes first. Three wishes being active, a new wish waits paused, or takes the place of the last
-// active one; there are four destinations at most, as a question has four options.
+// propose computes the route of a request: a new wish, the wish it came to (the developer may keep it there), and
+// the existing wishes to file it in, the closest first, a far one only when no close one fills the place. The
+// recommended destination comes first. Three wishes being active, a new wish waits paused, or takes the place of the
+// last active one; there are four destinations at most, as a question has four options.
 func propose(in routeInput) *planv1.Route {
 	req := readRequest(in.text, in.projects)
 	route := &planv1.Route{Request: in.text, FromWishId: in.from.GetId()}
-	candidates := rank(in.lang, req, in.wishes, in.blocks, in.from.GetId())
+	candidates, far := rank(in.lang, req, in.wishes, in.blocks, in.from.GetId())
 
 	title := in.title
 	if title == "" {
@@ -402,17 +408,34 @@ func propose(in routeInput) *planv1.Route {
 			}
 		}
 	}
+	// The lead found the request outside its wish; the developer may find it inside, and keep it there.
+	var kept []*planv1.RouteOption
+	if in.from != nil && in.from.GetState() != planv1.WishState_WISH_STATE_GRANTED {
+		kept = append(kept, &planv1.RouteOption{
+			Kind: planv1.RouteKind_ROUTE_KIND_FILE, WishId: in.from.GetId(), Title: in.from.GetTitle(),
+			Reason: locales.T(in.lang, "route.why_keep", nil),
+		})
+	}
 	var filed []*planv1.RouteOption
-	for _, c := range candidates[:min(len(candidates), 4-len(made))] {
+	room := 4 - len(made) - len(kept)
+	for _, c := range candidates[:min(len(candidates), room)] {
 		filed = append(filed, &planv1.RouteOption{
 			Kind: planv1.RouteKind_ROUTE_KIND_FILE, WishId: c.wish.GetId(), Title: c.wish.GetTitle(),
 			Score: int32(c.score), Reason: strings.Join(c.why, ", "),
 		})
 	}
+	// No close wish fills the place: the others still are wishes the developer may file the request in.
+	for _, c := range far[:min(len(far), room-len(filed))] {
+		why := slices.Concat([]string{locales.T(in.lang, "route.why_far", nil)}, c.why)
+		filed = append(filed, &planv1.RouteOption{
+			Kind: planv1.RouteKind_ROUTE_KIND_FILE, WishId: c.wish.GetId(), Title: c.wish.GetTitle(),
+			Score: int32(c.score), Reason: strings.Join(why, ", "),
+		})
+	}
 	if len(candidates) > 0 && candidates[0].score >= fileAt {
-		route.Options = append(filed, made...)
+		route.Options = slices.Concat(filed, made, kept)
 	} else {
-		route.Options = append(made, filed...)
+		route.Options = slices.Concat(made, filed, kept)
 	}
 	return route
 }
@@ -431,7 +454,7 @@ func routeQuestion(lang string, route *planv1.Route, names map[string]string) *p
 	}
 	ctx.WriteString("\n")
 	for i, opt := range route.GetOptions() {
-		q.Options = append(q.Options, optionText(lang, opt, names))
+		q.Options = append(q.Options, optionText(lang, opt, route.GetFromWishId(), names))
 		fmt.Fprintf(&ctx, "- **%c** · %s\n", 'A'+i, opt.GetReason())
 	}
 	q.Context = ctx.String()
@@ -442,10 +465,13 @@ func routeQuestion(lang string, route *planv1.Route, names map[string]string) *p
 }
 
 // optionText is how a destination reads on the question; names are the projects' names by identifier.
-func optionText(lang string, opt *planv1.RouteOption, names map[string]string) string {
+func optionText(lang string, opt *planv1.RouteOption, from string, names map[string]string) string {
 	params := map[string]string{"wish": opt.GetTitle(), "title": opt.GetTitle(), "pause": names[opt.GetPauseWishId()]}
 	switch opt.GetKind() {
 	case planv1.RouteKind_ROUTE_KIND_FILE:
+		if from != "" && opt.GetWishId() == from {
+			return locales.T(lang, "route.keep", params)
+		}
 		return locales.T(lang, "route.file", params)
 	case planv1.RouteKind_ROUTE_KIND_QUEUE:
 		return locales.T(lang, "route.queue", params) + skillText(lang, opt)
@@ -581,9 +607,14 @@ func (w *Wishes) settle(ctx context.Context, tx *store.Tx, q *planv1.Question) (
 		return nil, err
 	}
 	return w.routeTo(ctx, tx, route.GetOptions()[i], route.GetRequest(), origin{
-		block:    locales.T(lang, "route.block_title", map[string]string{"wish": from.GetTitle()}),
-		first:    FirstLine(from.GetTitle(), route.GetRequest()),
-		filed:    func(wishID string) string { return FiledLine(wishID, from.GetTitle(), route.GetRequest()) },
+		block: locales.T(lang, "route.block_title", map[string]string{"wish": from.GetTitle()}),
+		first: FirstLine(from.GetTitle(), route.GetRequest()),
+		filed: func(wishID string) string {
+			if wishID == from.GetId() {
+				return "" // kept in the lead's own wish: RoutedLine tells its lead
+			}
+			return FiledLine(wishID, from.GetTitle(), route.GetRequest())
+		},
 		provider: from.GetLead().GetProvider(),
 	})
 }
@@ -593,7 +624,7 @@ func (w *Wishes) settle(ctx context.Context, tx *store.Tx, q *planv1.Question) (
 type origin struct {
 	block    string                     // the title of the block that holds the request
 	first    string                     // the first line of a new wish's lead
-	filed    func(wishID string) string // the line that tells the lead of the wish wishID it was filed there
+	filed    func(wishID string) string // the line that tells the lead of the wish wishID it was filed there; empty for none
 	provider planv1.Provider            // the provider of a new wish's lead; claude when unset
 }
 
@@ -625,6 +656,9 @@ func (w *Wishes) routeTo(
 			return nil, err
 		}
 		line := from.filed(wish.GetId())
+		if line == "" {
+			return nil, nil
+		}
 		return func(ctx context.Context) {
 			if err := w.Tell(ctx, wish.GetId(), line); err != nil && !errors.Is(err, ErrNoLead) {
 				log.Printf("djinn: wish %s: tell the lead about a request filed: %v", wish.GetId(), err)
@@ -735,6 +769,10 @@ func FiledLine(wishID, from, text string) string {
 // RoutedLine is the line that tells the lead of a route question's wish where the request went: it hands it over.
 func RoutedLine(q *planv1.Question) string {
 	opt := routeOption(q)
+	if opt.GetKind() == planv1.RouteKind_ROUTE_KIND_FILE && opt.GetWishId() == q.GetRoute().GetFromWishId() {
+		return fmt.Sprintf("Djinn: %s answered: the developer keeps the request in this wish. Do its work here: djinn "+
+			"wish brief %s has it, in its blocks.", q.GetCode(), opt.GetWishId())
+	}
 	where := fmt.Sprintf("the wish %q (%s)", opt.GetTitle(), opt.GetWishId())
 	switch opt.GetKind() {
 	case planv1.RouteKind_ROUTE_KIND_NEW, planv1.RouteKind_ROUTE_KIND_SWAP:

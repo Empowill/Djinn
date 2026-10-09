@@ -2446,7 +2446,7 @@ type Route struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The request, as it was said.
 	Request string `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
-	// The wish the request came to; it is never proposed.
+	// The wish the request came to; it is proposed last, to keep the request there.
 	FromWishId string `protobuf:"bytes,2,opt,name=from_wish_id,json=fromWishId,proto3" json:"from_wish_id,omitempty"`
 	// The destinations, the recommended one first.
 	Options       []*RouteOption `protobuf:"bytes,3,rep,name=options,proto3" json:"options,omitempty"`
@@ -4659,7 +4659,8 @@ type WishServiceRouteRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The request, as it was said.
 	Request string `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
-	// The wish the request came to: the lead's own. It is not proposed, and --ask asks there.
+	// The wish the request came to: the lead's own. It is proposed last, to keep the request there, and --ask asks
+	// there.
 	WishId string `protobuf:"bytes,2,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	// Ask the proposal as a question on the wish --wish-id, the recommended destination first.
 	Ask bool `protobuf:"varint,3,opt,name=ask,proto3" json:"ask,omitempty"`
