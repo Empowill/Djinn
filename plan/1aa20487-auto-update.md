@@ -49,6 +49,9 @@ release pipeline per operating system: the update reuses `go install`.
       checks its SHA-256, swaps it in and restarts; a wrong sum is refused and changes nothing. (against a fake release
       served by the test, Linux: `TestUpdateFromRelease` runs the binary, `TestGitHubSource` the source; the `go
       install` path: `TestProxySource`, with a fake proxy and a fake `go`)
+- [x] The offer of a release links its release notes; the system's browser opens them. (`TestUpdateFromRelease`: the
+      `notes_url` of `UiService.WatchUpdate`, empty before and after; `tests/screens.test.mjs`: the banner shows the
+      link, never one that is not http(s), none for a local install)
 - [ ] A newer tag shows the offer in the window; the click installs and restarts on Linux,
       macOS and Windows. (needs: a published release, then a person on each system)
 - [x] A `(devel)` build never offers an update. (`moduleVersion` keeps a checkout build `dev`, `TestModuleVersion`;
@@ -96,13 +99,15 @@ release pipeline per operating system: the update reuses `go install`.
   the binary without its arguments and lives in `application.New` (absent from a build without the window): it
   would lose the leads. Djinn closes one gap: a release whose `SHA256SUMS` has no line for the archive is not offered
   at all; the provider alone would install it unchecked.
+- **Release notes, a link.** The GitHub source reads the release's page (`html_url`); `WatchUpdate` carries it
+  (`notes_url`) and the banner links it, "Release notes", opened by the system's browser. A link, not an excerpt: the
+  notes stay where they are written, and the banner stays one line. A local install and the proxy have none.
 - **No test reaches the network.** The tests turn the release check off unless they serve a fake release
   (`DJINN_TEST_RELEASE_API`, read only by the test binary).
 
 ## Open questions
 - Signatures: the GitHub provider fetches none. Signing `SHA256SUMS` (minisign or ed25519, the key pinned with
   `-X`) needs a small source of our own that reads `SHA256SUMS.sig`; the updater checks it. Who holds the key?
-- Release notes: the source has their link; the banner does not show it yet (a proto field and a link).
 - An opt-out for machines that must not reach GitHub (an environment variable, or a setting)?
 - Windows: `os.Executable` after the running binary was moved aside is not checked; the restart may start the old
   file. To try on Windows with the first release.

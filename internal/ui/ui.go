@@ -59,6 +59,7 @@ type Service struct {
 
 	updates    sync.Mutex
 	ready      string        // version of the newer Djinn waiting; empty for none
+	notesURL   string        // where its release notes are; empty for none
 	notResumed []string      // terminals the last restart could not run again
 	updated    chan struct{} // closed and replaced at each change
 }
@@ -346,14 +347,15 @@ func (s *Service) Present(wishID, terminal string) {
 	}
 }
 
-// SetReady says that a newer Djinn of version waits at the path of the running one; empty says none does.
-func (s *Service) SetReady(version string) {
+// SetReady says that a newer Djinn of version waits at the path of the running one, its release notes at notesURL
+// (empty for none); an empty version says none does.
+func (s *Service) SetReady(version, notesURL string) {
 	s.updates.Lock()
 	defer s.updates.Unlock()
-	if s.ready == version {
+	if s.ready == version && s.notesURL == notesURL {
 		return
 	}
-	s.ready = version
+	s.ready, s.notesURL = version, notesURL
 	s.notifyUpdate()
 }
 
@@ -398,7 +400,7 @@ func (s *Service) WatchUpdate(
 		}
 		changed := s.updated
 		msg := &uiv1.UiServiceWatchUpdateResponse{
-			Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed),
+			Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
 		}
 		s.updates.Unlock()
 		if err := stream.Send(msg); err != nil {

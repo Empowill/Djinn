@@ -368,6 +368,7 @@
   "update.dismiss": "Dismiss",
   "update.failed": "The update failed: {message}",
   "update.install": "Update",
+  "update.notes": "Release notes",
   "update.not_resumed": "These terminals did not start again:",
   "update.ready": "A new version of Djinn is ready",
   "update.restarting": "Restarting…",

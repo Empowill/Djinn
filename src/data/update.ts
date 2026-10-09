@@ -11,6 +11,8 @@ export interface UpdateState {
   ready: string;
   // The terminals the last restart could not run again, one line each.
   notResumed: string[];
+  // Where the release notes of the newer Djinn are; empty for none.
+  notesUrl: string;
 }
 
 export interface DjinnUpdate {
@@ -34,6 +36,7 @@ export function createUpdate(transport: Transport, retry = 1000): DjinnUpdate {
             current: res.current,
             ready: res.ready,
             notResumed: [...res.notResumed],
+            notesUrl: res.notesUrl,
           };
           listeners.forEach((listener) => listener(last!));
         }

@@ -1,6 +1,7 @@
 // A discreet banner at the top of the window when a newer Djinn waits at the path of the running one (installed with
 // `go tool task install`), with the button that restarts on it. Nothing restarts without that click. After a restart,
-// it lists the terminals that did not start again. Shown only when djinn serves the page (a DjinnProvider).
+// it lists the terminals that did not start again. Shown only when djinn serves the page (a DjinnProvider). A release
+// links its notes, which the system's browser opens.
 import { useEffect, useState } from "react";
 
 import { useDjinn } from "./data/djinn";
@@ -8,13 +9,14 @@ import type { UpdateState } from "./data/update";
 import { t } from "./i18n";
 import "./update-banner.css";
 
-type Phase =
+export type Phase =
   | { kind: "idle" }
   | { kind: "restarting" }
   | { kind: "failed"; message: string };
 
 export function UpdateBanner() {
-  const api = useDjinn()?.update;
+  const djinn = useDjinn();
+  const api = djinn?.update;
   const [state, setState] = useState<UpdateState | undefined>();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [dismissed, setDismissed] = useState(false);
@@ -39,8 +41,42 @@ export function UpdateBanner() {
     }
   }
 
+  return (
+    <UpdateBannerView
+      state={state}
+      phase={phase}
+      dismissed={dismissed}
+      onInstall={() => void install()}
+      onDismiss={() => setDismissed(true)}
+      onNotes={(url) =>
+        void djinn!.clients.ui
+          .openExternal({ url })
+          .catch(() => window.open(url, "_blank", "noopener"))
+      }
+    />
+  );
+}
+
+// UpdateBannerView is the banner for a state, without its hooks: the screens render it alone in the tests.
+export function UpdateBannerView({
+  state,
+  phase,
+  dismissed,
+  onInstall,
+  onDismiss,
+  onNotes,
+}: {
+  state: UpdateState;
+  phase: Phase;
+  dismissed: boolean;
+  onInstall: () => void;
+  onDismiss: () => void;
+  onNotes: (url: string) => void;
+}) {
   const notResumed = dismissed ? [] : state.notResumed;
   if (!state.ready && !notResumed.length) return null;
+  // Only a web link opens: anything else from a release stays out of the banner.
+  const notes = /^https?:\/\//i.test(state.notesUrl) ? state.notesUrl : "";
   return (
     <div className="update-banner" role="status">
       {state.ready && (
@@ -57,8 +93,21 @@ export function UpdateBanner() {
                 ? t("update.restarting")
                 : t("update.ready")}
           </span>
+          {notes && (
+            <a
+              href={notes}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                e.preventDefault();
+                onNotes(notes);
+              }}
+            >
+              {t("update.notes")}
+            </a>
+          )}
           {phase.kind !== "restarting" && (
-            <button type="button" onClick={() => void install()}>
+            <button type="button" onClick={onInstall}>
               {t("update.install")}
             </button>
           )}
@@ -74,7 +123,7 @@ export function UpdateBanner() {
               ))}
             </ul>
           </div>
-          <button type="button" onClick={() => setDismissed(true)}>
+          <button type="button" onClick={onDismiss}>
             {t("update.dismiss")}
           </button>
         </div>

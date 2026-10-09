@@ -1110,7 +1110,10 @@ type UiServiceWatchUpdateResponse struct {
 	// Version of the newer Djinn installed at the same path; empty when none waits.
 	Ready string `protobuf:"bytes,2,opt,name=ready,proto3" json:"ready,omitempty"`
 	// The terminals the last restart could not run again, one line each: name, command, folder and why.
-	NotResumed    []string `protobuf:"bytes,3,rep,name=not_resumed,json=notResumed,proto3" json:"not_resumed,omitempty"`
+	NotResumed []string `protobuf:"bytes,3,rep,name=not_resumed,json=notResumed,proto3" json:"not_resumed,omitempty"`
+	// Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
+	// local install, which has none.
+	NotesUrl      string `protobuf:"bytes,4,opt,name=notes_url,json=notesUrl,proto3" json:"notes_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1164,6 +1167,13 @@ func (x *UiServiceWatchUpdateResponse) GetNotResumed() []string {
 		return x.NotResumed
 	}
 	return nil
+}
+
+func (x *UiServiceWatchUpdateResponse) GetNotesUrl() string {
+	if x != nil {
+		return x.NotesUrl
+	}
+	return ""
 }
 
 type UiServiceUpdateRequest struct {
@@ -1456,12 +1466,13 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x1aUiServiceWatchShowResponse\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1a\n" +
 	"\bterminal\x18\x02 \x01(\tR\bterminal\"\x1d\n" +
-	"\x1bUiServiceWatchUpdateRequest\"o\n" +
+	"\x1bUiServiceWatchUpdateRequest\"\x8c\x01\n" +
 	"\x1cUiServiceWatchUpdateResponse\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\tR\acurrent\x12\x14\n" +
 	"\x05ready\x18\x02 \x01(\tR\x05ready\x12\x1f\n" +
 	"\vnot_resumed\x18\x03 \x03(\tR\n" +
-	"notResumed\"\x18\n" +
+	"notResumed\x12\x1b\n" +
+	"\tnotes_url\x18\x04 \x01(\tR\bnotesUrl\"\x18\n" +
 	"\x16UiServiceUpdateRequest\"Q\n" +
 	"\x17UiServiceUpdateResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1c\n" +

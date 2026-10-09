@@ -156,11 +156,11 @@ func (u *updater) check(ctx context.Context) string {
 
 // publish tells the window what it may offer: the newer binary at the path, else the newer release. u.mu is held.
 func (u *updater) publish() {
-	ready := u.local
+	ready, notes := u.local, ""
 	if ready == "" && u.offer != nil {
-		ready = u.offer.Version
+		ready, notes = u.offer.Version, u.offer.Notes
 	}
-	u.ui.SetReady(ready)
+	u.ui.SetReady(ready, notes)
 }
 
 // watchReleases asks the source for a newer release at once, then every releaseCheck, until ctx is done. It only

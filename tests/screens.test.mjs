@@ -19,6 +19,7 @@ export { FlightPlan } from "@/src/flight-plan.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
 export { finishedTasks, movingTasks } from "@/src/data/flight.ts";
 export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
+export { UpdateBannerView } from "@/src/update-banner.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -812,4 +813,44 @@ test("the global shortcut is a field of the settings, disabled where djinn canno
   );
   assert.match(browser, /<input[^>]*disabled=""/);
   assert.match(browser, /Only in Djinn&#x27;s window/);
+});
+
+test("the update banner links the release notes of a newer release, and only a web link", () => {
+  const banner = (state, phase = { kind: "idle" }) =>
+    s.renderToStaticMarkup(
+      h(s.UpdateBannerView, {
+        state: { current: "v1.0.0", notResumed: [], ...state },
+        phase,
+        dismissed: false,
+        onInstall() {},
+        onDismiss() {},
+        onNotes() {},
+      }),
+    );
+  const release = banner({
+    ready: "v2.0.0",
+    notesUrl: "https://github.com/Empowill/Djinn/releases/tag/v2.0.0",
+  });
+  assert.match(release, /A new version of Djinn is ready/);
+  assert.match(
+    release,
+    /<a href="https:\/\/github.com\/Empowill\/Djinn\/releases\/tag\/v2.0.0" target="_blank" rel="noopener noreferrer">Release notes<\/a>/,
+  );
+  assert.match(release, /<button type="button">Update<\/button>/);
+  // While it restarts, the notes stay; the button goes.
+  const restarting = banner(
+    { ready: "v2.0.0", notesUrl: "https://example.com/v2.0.0" },
+    { kind: "restarting" },
+  );
+  assert.match(restarting, /Restarting…/);
+  assert.match(restarting, /Release notes/);
+  assert.doesNotMatch(restarting, /<button/);
+  // A local install has no notes; a link that is not a web one is not shown.
+  assert.doesNotMatch(banner({ ready: "local-abc", notesUrl: "" }), /<a /);
+  assert.doesNotMatch(
+    banner({ ready: "v2.0.0", notesUrl: "javascript:alert(1)" }),
+    /<a /,
+  );
+  // Nothing waits: no banner, whatever the notes.
+  assert.equal(banner({ ready: "", notesUrl: "https://example.com" }), "");
 });

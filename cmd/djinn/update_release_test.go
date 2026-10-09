@@ -62,8 +62,8 @@ func trailerVersion(exe string) string {
 }
 
 // TestUpdateFromRelease runs a Djinn installed from a release while a fake release is served: it offers nothing while
-// the release is its own version, offers a newer one without downloading it, refuses it on a click while its sum is
-// wrong, then on djinn update downloads it, swaps it in and restarts on it.
+// the release is its own version, offers a newer one with a link to its notes without downloading it, refuses it on a
+// click while its sum is wrong, then on djinn update downloads it, swaps it in and restarts on it.
 func TestUpdateFromRelease(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
@@ -130,8 +130,8 @@ func TestUpdateFromRelease(t *testing.T) {
 		t.Fatalf("at start: %v, %v", updates.Msg(), updates.Err())
 	}
 	waitChecks(2)
-	if r := updates.Msg().GetReady(); r != "" {
-		t.Fatalf("the release of its own version is offered: %q", r)
+	if r, n := updates.Msg().GetReady(), updates.Msg().GetNotesUrl(); r != "" || n != "" {
+		t.Fatalf("the release of its own version is offered: %q, notes %q", r, n)
 	}
 
 	// A newer release, whose sum is wrong: offered, and nothing downloads without the click.
@@ -140,6 +140,10 @@ func TestUpdateFromRelease(t *testing.T) {
 		if !updates.Receive() {
 			t.Fatalf("v2.0.0 never offered: %v\n%s", updates.Err(), oldErrs.String())
 		}
+	}
+	// The window links its release notes.
+	if n := updates.Msg().GetNotesUrl(); n != fake.srv.URL+"/notes/v2.0.0" {
+		t.Fatalf("the notes of v2.0.0: %q", n)
 	}
 	waitChecks(3)
 	if _, downloads := fake.counts(); downloads != 0 {
@@ -189,7 +193,7 @@ func TestUpdateFromRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer now.Close()
-	if !now.Receive() || now.Msg().GetCurrent() != "v2.0.0" || now.Msg().GetReady() != "" {
+	if !now.Receive() || now.Msg().GetCurrent() != "v2.0.0" || now.Msg().GetReady() != "" || now.Msg().GetNotesUrl() != "" {
 		t.Fatalf("after the update: %v, %v", now.Msg(), now.Err())
 	}
 }
