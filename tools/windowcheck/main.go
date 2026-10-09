@@ -107,7 +107,7 @@ func run() int {
 	ui, _ := fs.Sub(page, "page") // "page" is a valid path: fs.Sub cannot fail on it.
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(c)
 	var acceptEncoding sync.Map // What the webview asks of a unary call, before Handler hides it.
-	h := server.Handler(ui, map[string]http.Handler{
+	h := server.Handler(ui, nil, map[string]http.Handler{
 		demoPrefix:               demoHandler,
 		"/windowcheck.v1.Bench/": benchService(),
 		"/windowcheck/result": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

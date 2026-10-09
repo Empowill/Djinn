@@ -121,6 +121,8 @@ To use Djinn, see the [README](README.md). To work on it:
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
 - `go tool task lint`: every check (protos, Go, types, formatting). `go tool task format` fixes.
 - `go tool task gen`: code from the protos, and [`docs/openapi.json`](docs/openapi.json).
+- `go tool task docs`: the documentation site, its concepts and its API, into `bin/docs` (open `bin/docs/index.html`,
+  offline). Its sources are in [`docs/site`](docs/site); `djinn up` serves it at `/docs/`, and the settings open it.
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
 - `go tool task dev`: the page reloads as you edit React, djinn rebuilds and restarts as you edit Go; in the browser,
   on its own data (`bin/dev-home`). Open the URL it prints.
@@ -230,7 +232,8 @@ their contributors.
   [x/sys](https://github.com/golang/sys), [x/term](https://github.com/golang/term) (tests),
   [x/mod](https://github.com/golang/mod) (release versions),
   [go-yaml](https://github.com/yaml/go-yaml) (the front matter of a skill's wish template); as module tools,
-  [Task](https://github.com/go-task/task) and [buf](https://github.com/bufbuild/buf).
+  [Task](https://github.com/go-task/task), [buf](https://github.com/bufbuild/buf) and
+  [protoc-gen-connect-openapi](https://github.com/sudorandom/protoc-gen-connect-openapi) (`docs/openapi.json`).
 - Interface: [React](https://github.com/react/react),
   [Connect for the web](https://github.com/connectrpc/connect-es) and
   [Protobuf-ES](https://github.com/bufbuild/protobuf-es),
@@ -241,6 +244,8 @@ their contributors.
   [Thinking Orbs](https://github.com/Jakubantalik/Libraries.dev),
   [xterm.js](https://github.com/xtermjs/xterm.js) and its fit and web-links addons (the terminal),
   [Fontsource](https://github.com/fontsource/font-files) (DM Sans, IBM Plex Mono).
+- Documentation site, vendored in `docs/site`: [RapiDoc](https://github.com/rapi-doc/RapiDoc) (the API tab), and
+  Cormorant Garamond, DM Sans and IBM Plex Mono from Fontsource.
 - Build and tests: [Vite](https://github.com/vitejs/vite) and
   [its React plugin](https://github.com/vitejs/vite-plugin-react),
   [TypeScript](https://github.com/microsoft/TypeScript),

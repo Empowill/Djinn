@@ -11,10 +11,14 @@ tasks:
   gen:
     desc: Generate Go code, the descriptors the command line embeds, and docs/openapi.json, from the protos in api/
     cmds:
+      # docs/openapi.json comes from protoc-gen-connect-openapi, a plugin of buf.gen.yaml.
       - go tool buf generate
       - go tool buf build --exclude-imports --as-file-descriptor-set -o gen/djinn.binpb
-      # Compiled after the line above: it reads the descriptors just written.
-      - go run ./tools/openapi docs/openapi.json
+
+  docs:
+    desc: "Build the documentation site into bin/docs, to open offline (bin/docs/index.html): docs/site, its concepts and its API tab on docs/openapi.json. djinn up serves the same at /docs/"
+    cmds:
+      - go run ./tools/docsite bin/docs
 
   ui:
     desc: Build the interface into dist/, only when its sources changed (the djinn binary embeds it)

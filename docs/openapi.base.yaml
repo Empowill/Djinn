@@ -1,0 +1,37 @@
+# The part of docs/openapi.json the protos do not say: protoc-gen-connect-openapi (buf.gen.yaml) starts from this
+# document and adds a path and its schemas for each public method of api/.
+openapi: 3.1.0
+info:
+  title: Djinn
+  version: "1"
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  description: |-
+    The public methods of Djinn, generated from the protos in `api/` (`go tool task gen`). They are the commands of
+    the `djinn` command line and the tools of `djinn mcp`: `QuestionService/Answer` is `djinn question answer`.
+
+    Each method speaks the [Connect protocol](https://connectrpc.com/docs/protocol): a `POST` with
+    `Content-Type: application/json`, the request in protobuf JSON as the body. `djinn up` writes its address in
+    `server.addr` of the data directory. On macOS and Linux it is a Unix socket:
+    `curl --unix-socket <data>/djinn.sock http://localhost/plan.v1.ProjectService/List -H 'Content-Type: application/json' -d '{}'`.
+    On Windows or with `djinn up --browser` it is `http://127.0.0.1:PORT/?token=…`, whose token goes in an
+    `Authorization: Bearer` header.
+
+    A method that only reads changes nothing, and Connect serves it as a `GET` too, the request in the query:
+    `GET /plan.v1.ProjectService/List?encoding=json&message=%7B%7D`.
+
+    The streaming methods (`GateService/Hold`, `WishService/Watch`, `TaskService/Watch`) use Connect's streaming
+    protocol: `Content-Type: application/connect+json`, each message in an envelope of 5 bytes, a flag and its length.
+servers:
+  - url: http://localhost
+    description: "The address in server.addr: the Unix socket, or the loopback port."
+security:
+  - {}
+  - bearer: []
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: The token of an http address in server.addr. The Unix socket needs none.

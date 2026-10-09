@@ -134,8 +134,11 @@ func relay(home, origin string) http.Handler {
 	})
 }
 
-// watched are the Go sources of the djinn binary, and what it embeds besides the interface.
-var watched = []string{"cmd/djinn", "internal", "gen/go", "locales", "go.mod", "go.sum", "assets.go"}
+// watched are the Go sources of the djinn binary, and what it embeds besides the interface: the locales, the
+// documentation site and its API document.
+var watched = []string{
+	"cmd/djinn", "internal", "gen/go", "locales", "go.mod", "go.sum", "assets.go", "docs/site", "docs/openapi.json",
+}
 
 // snapshot is the modification time and size of every watched file.
 func snapshot() map[string]string {
@@ -145,7 +148,9 @@ func snapshot() map[string]string {
 			if err != nil || d.IsDir() || strings.HasSuffix(p, "_test.go") {
 				return nil
 			}
-			if ext := filepath.Ext(p); ext != ".go" && ext != ".json" && ext != ".mod" && ext != ".sum" {
+			// Every file of the documentation site counts: djinn embeds it as it is.
+			site := strings.HasPrefix(filepath.ToSlash(p), "docs/site/")
+			if ext := filepath.Ext(p); !site && ext != ".go" && ext != ".json" && ext != ".mod" && ext != ".sum" {
 				return nil
 			}
 			if info, err := d.Info(); err == nil {

@@ -134,6 +134,46 @@ cytoscape/dist/cytoscape.esm.mjs:
 */
 
 
+## RapiDoc 10.1.0 (documentation site)
+
+https://github.com/rapi-doc/RapiDoc, the npm package `rapidoc` 10.1.0.
+
+`docs/site/vendor/rapidoc-10.1.0.classic.js` is its `dist/rapidoc-min.js`, changed only so that it loads as a classic
+script, which a page opened from a file may run: wrapped in a strict function, its last statement, an `export`,
+removed. The bundle carries lit, lit-html, lit-element and @lit/reactive-element (BSD-3-Clause, Google LLC), marked
+15.0.6 (MIT), github-slugger (ISC), microlighter (MIT), @scalar/openapi-parser and its @scalar packages (MIT) and yaml
+(ISC): their license texts are in `docs/site/vendor/BUNDLED-NOTICES.txt`.
+
+MIT License
+
+Copyright (c) 2022 Mrinmoy Majumdar
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Cormorant Garamond, DM Sans and IBM Plex Mono (documentation site)
+
+The fonts in `docs/site/fonts/`, from Fontsource 5.3.0 (https://github.com/fontsource/font-files): Cormorant Garamond
+(Copyright 2015 The Cormorant Project Authors), DM Sans (Copyright 2014 The DM Sans Project Authors) and IBM Plex Mono
+(Copyright 2017 IBM Corp.), each under the SIL Open Font License 1.1, whose text is beside them
+(`docs/site/fonts/OFL-*.txt`).
+
 ## Protovalidate (generated TypeScript)
 
 `gen/ts/buf/validate/validate_pb.ts` is generated from `buf/validate/validate.proto` of

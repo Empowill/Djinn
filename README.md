@@ -129,6 +129,9 @@ djinn it runs in: the store stays on your machine, in Djinn's data folder.
 
 [User guide](docs/user-guide.md) · [Agent protocol](docs/agent-protocol.md) · [Adaptable wishes](docs/adaptable-wishes.md)
 
+The concepts and the API, in one site: **Documentation** in the window's settings, or `go tool task docs`, then
+`bin/docs/index.html` ([`docs/site`](docs/site), the API from [`docs/openapi.json`](docs/openapi.json)).
+
 ## Credits
 
 The engine and some adapters are studied from [T3 Code](https://github.com/pingdotgg/t3code). The avatars use [Thinking Orbs](https://libraries.dev/orbs). Djinn's diagrams and illustrations are original. See [the notices](THIRD_PARTY_NOTICES.md) and [the license](LICENSE).

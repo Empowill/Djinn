@@ -1,6 +1,6 @@
 // The window's dialogs on the services: make a wish, add a project, look at a project and its skills, and the
 // settings: those that stay on this page (the language, the theme), and the global shortcut, which djinn takes.
-import { ArrowRight, FolderOpen, Terminal } from "lucide-react";
+import { ArrowRight, BookOpen, FolderOpen, Terminal } from "lucide-react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 
 import type { Project, Skill } from "../gen/ts/plan/v1/plan_pb";
@@ -385,8 +385,15 @@ export function ShortcutField({
   );
 }
 
-// Settings: the agents djinn finds on this machine, the language and the theme of the page, and the global shortcut.
-export function Settings({ onClose }: { onClose: () => void }) {
+// Settings: the agents djinn finds on this machine, the language and the theme of the page, the global shortcut, and
+// the way to the documentation.
+export function Settings({
+  onClose,
+  onDocs,
+}: {
+  onClose: () => void;
+  onDocs: () => void;
+}) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
   const [theme, setThemeState] = useState<Theme>(chosenTheme);
@@ -485,6 +492,16 @@ export function Settings({ onClose }: { onClose: () => void }) {
           setEnv((prev) => prev && { ...prev, shortcut: res.shortcut });
         }}
       />
+      <div className="setting-row">
+        <div>
+          <strong>{t("settings.docs")}</strong>
+          <p>{t("settings.docs_detail")}</p>
+        </div>
+        <button type="button" className="button secondary" onClick={onDocs}>
+          <BookOpen size={14} />
+          {t("settings.docs_open")}
+        </button>
+      </div>
       <div className="settings-foot">
         <Brand small />
         <span>Djinn {env?.version}</span>

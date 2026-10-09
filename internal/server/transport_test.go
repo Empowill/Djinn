@@ -175,7 +175,7 @@ func echoHandler() http.Handler {
 			}
 		}))
 	demoPrefix, demo := demov1connect.NewDemoServiceHandler(countTo{})
-	return server.Handler(fstest.MapFS{}, map[string]http.Handler{"/bench.v1.Echo/": mux, demoPrefix: demo})
+	return server.Handler(fstest.MapFS{}, nil, map[string]http.Handler{"/bench.v1.Echo/": mux, demoPrefix: demo})
 }
 
 // countTo sends 1, 2, … up to the request at once: demo.Service waits between two values.

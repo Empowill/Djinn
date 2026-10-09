@@ -120,9 +120,15 @@ No MCP library: the server is `internal/cli/mcp.go`, the protocol's `initialize`
 
 [`openapi.json`](openapi.json) describes the same public methods for any HTTP client, in OpenAPI 3.1: each is a
 `POST` of the [Connect protocol](https://connectrpc.com/docs/protocol) on `/<package>.<Service>/<Method>`, its body
-the request in protobuf JSON. A [read](#reads-and-writes) carries `x-read-only: true`. `go tool task gen` writes it
-(`tools/openapi`), and `TestOpenAPIIsFresh` fails when it lags behind the protos. Streaming methods are named there,
-not described.
+the request in protobuf JSON; a [read](#reads-and-writes) has a `GET` too, the request in the query. The streaming
+methods are described with Connect's streaming content types. `go tool task gen` writes it with
+[protoc-gen-connect-openapi](https://github.com/sudorandom/protoc-gen-connect-openapi), a plugin of `buf.gen.yaml`
+that starts from [`openapi.base.yaml`](openapi.base.yaml). The plugin knows only `google.api.visibility`, so
+`buf.gen.yaml` excludes the internal methods by name; `TestOpenAPI` fails when a public method is missing, an internal
+one is described, or a comment or a request field lags behind the protos.
+
+The API tab of the documentation site shows it: `go tool task docs` builds the site into `bin/docs`, and `djinn up`
+serves it at `/docs/`.
 
 ## How it works
 

@@ -22,12 +22,13 @@ import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
 import { useShowWish } from "./lead-terminal";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
+import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
 import { WishView } from "./wish-view";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | null;
+type Modal = "make" | "project" | "settings" | "docs" | null;
 
 // What the window shows instead of a wish: the flight plan of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -241,7 +242,13 @@ export function WishApp() {
             }}
           />
         )}
-        {modal === "settings" && <Settings onClose={() => setModal(null)} />}
+        {modal === "settings" && (
+          <Settings
+            onClose={() => setModal(null)}
+            onDocs={() => setModal("docs")}
+          />
+        )}
+        {modal === "docs" && <Docs onClose={() => setModal(null)} />}
         {project && (
           <ProjectPanel project={project} onClose={() => setProjectId("")} />
         )}
