@@ -36,6 +36,9 @@ import (
 	"github.com/empowill/djinn/internal/ui"
 )
 
+// readMachine reads the machine for the scheduler and the gates; nil reads this machine. Tests replace it.
+var readMachine func() (machine.Snapshot, error)
+
 // runUp serves the interface and the API, then opens a native window on them, or with --browser prints the
 // URL to open. On macOS and Linux the window goes through the Wails asset server and the command line through a
 // Unix socket: no port is open. On Windows, and with --browser, everything goes through a loopback HTTP server
@@ -100,7 +103,7 @@ func runUp(args []string) (restart bool, err error) {
 	// The workers stop before the database closes: deferred calls run last first.
 	policy := machine.DefaultPolicy()
 	policy.Workers = *maxWorkers
-	monitor := machine.NewMonitor(policy, nil)
+	monitor := machine.NewMonitor(policy, readMachine)
 	opts := []harness.Option{harness.WithCapacity(monitor.Capacity)}
 	if *warmWorkers {
 		opts = append(opts, harness.WithWarm())

@@ -38,6 +38,7 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
@@ -59,6 +60,7 @@ func TestMain(m *testing.M) {
 			}
 		}
 		updatePoll = updatePollForTests
+		readMachine = calmMachine
 		// No test reaches the network: only a fake release, served by the test, is looked for.
 		checkReleases = os.Getenv("DJINN_TEST_RELEASE_API") != ""
 		if checkReleases {
@@ -70,6 +72,15 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+// calmMachine is this machine, its cores and memory, never under pressure. A djinn up of a test starts its workers
+// whatever else the machine runs: a macOS runner of the CI, with no pressure stall information, reads a load of 21
+// on 3 cores while the packages test in parallel, and its scheduler held a resumed worker past the test's wait.
+// The pressure has its own tests (internal/machine, internal/gate).
+func calmMachine() (machine.Snapshot, error) {
+	s, err := machine.Read()
+	return machine.Snapshot{Cores: s.Cores, MemoryTotal: s.MemoryTotal, MemoryAvailable: s.MemoryTotal}, err
 }
 
 // environ is the environment of a djinn of the test: its data directory (none when home is empty), a plain POSIX
