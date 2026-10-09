@@ -3455,7 +3455,11 @@ type Question struct {
 	Grant bool `protobuf:"varint,14,opt,name=grant,proto3" json:"grant,omitempty"`
 	// One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.
 	// Empty: a default by kind.
-	Icon          string `protobuf:"bytes,15,opt,name=icon,proto3" json:"icon,omitempty"`
+	Icon string `protobuf:"bytes,15,opt,name=icon,proto3" json:"icon,omitempty"`
+	// What the answer is needed before, in a few words, set by the asker (djinn question ask --before "before the
+	// merge"): the question waits for the developer, orange, under those words. Empty: it can wait. A question a waiting
+	// task needs is blocking whatever this says: Djinn computes that from the tasks.
+	Before        string `protobuf:"bytes,16,opt,name=before,proto3" json:"before,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3591,6 +3595,13 @@ func (x *Question) GetGrant() bool {
 func (x *Question) GetIcon() string {
 	if x != nil {
 		return x.Icon
+	}
+	return ""
+}
+
+func (x *Question) GetBefore() string {
+	if x != nil {
+		return x.Before
 	}
 	return ""
 }
@@ -4204,7 +4215,10 @@ type QuestionServiceReviseRequest struct {
 	// The option you recommend now, and why; the former recommendation when empty.
 	Recommendation string `protobuf:"bytes,4,opt,name=recommendation,proto3" json:"recommendation,omitempty"`
 	// Wish of the question, needed only when its code exists in several wishes.
-	WishId        string `protobuf:"bytes,5,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	WishId string `protobuf:"bytes,5,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// What the answer is needed before now, like "before the merge"; the former words when not given, none when given
+	// empty (--before ""): the question can wait.
+	Before        *string `protobuf:"bytes,6,opt,name=before,proto3,oneof" json:"before,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4274,6 +4288,13 @@ func (x *QuestionServiceReviseRequest) GetWishId() string {
 	return ""
 }
 
+func (x *QuestionServiceReviseRequest) GetBefore() string {
+	if x != nil && x.Before != nil {
+		return *x.Before
+	}
+	return ""
+}
+
 type QuestionServiceReviseResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question, revised.
@@ -4332,7 +4353,10 @@ type QuestionServiceAskRequest struct {
 	// The option you recommend, and why, in Markdown.
 	Recommendation string `protobuf:"bytes,5,opt,name=recommendation,proto3" json:"recommendation,omitempty"`
 	// One emoji for the subject, like 🔒: the decision log shows it once the question is answered.
-	Icon          string `protobuf:"bytes,6,opt,name=icon,proto3" json:"icon,omitempty"`
+	Icon string `protobuf:"bytes,6,opt,name=icon,proto3" json:"icon,omitempty"`
+	// What the answer is needed before, in a few words, like "before the merge": the question waits for the developer
+	// under those words. Empty: it can wait.
+	Before        string `protobuf:"bytes,7,opt,name=before,proto3" json:"before,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4405,6 +4429,13 @@ func (x *QuestionServiceAskRequest) GetRecommendation() string {
 func (x *QuestionServiceAskRequest) GetIcon() string {
 	if x != nil {
 		return x.Icon
+	}
+	return ""
+}
+
+func (x *QuestionServiceAskRequest) GetBefore() string {
+	if x != nil {
+		return x.Before
 	}
 	return ""
 }
@@ -11390,7 +11421,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vcreate_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime:\x12\xd2\xf3\x18\x0e\n" +
 	"\atask_id\n" +
-	"\x03seq\"\xfe\x03\n" +
+	"\x03seq\"\x9f\x04\n" +
 	"\bQuestion\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x17\n" +
@@ -11408,7 +11439,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\brevision\x18\f \x01(\x05R\brevision\x12$\n" +
 	"\x05route\x18\r \x01(\v2\x0e.plan.v1.RouteR\x05route\x12\x14\n" +
 	"\x05grant\x18\x0e \x01(\bR\x05grant\x12\x1b\n" +
-	"\x04icon\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon:\x13\xd2\xf3\x18\x0f\n" +
+	"\x04icon\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\x12\x1f\n" +
+	"\x06before\x18\x10 \x01(\tB\a\xbaH\x04r\x02\x18dR\x06before:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"s\n" +
 	"\x05Route\x12\x18\n" +
@@ -11454,22 +11486,25 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"Q\n" +
 	" QuestionServiceEnlightenResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x80\x02\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xb1\x02\n" +
 	"\x1cQuestionServiceReviseRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12#\n" +
 	"\acontext\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x12(\n" +
 	"\aoptions\x18\x03 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x121\n" +
 	"\x0erecommendation\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\x12$\n" +
-	"\awish_id\x18\x05 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"N\n" +
+	"\awish_id\x18\x05 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12$\n" +
+	"\x06before\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x06before\x88\x01\x01B\t\n" +
+	"\a_before\"N\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x81\x02\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xa2\x02\n" +
 	"\x19QuestionServiceAskRequest\x12\x1f\n" +
 	"\x04text\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xd0\x0fR\x04text\x12(\n" +
 	"\aoptions\x18\x02 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12#\n" +
 	"\acontext\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x121\n" +
 	"\x0erecommendation\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\x12\x1b\n" +
-	"\x04icon\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\"K\n" +
+	"\x04icon\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\x12\x1f\n" +
+	"\x06before\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dR\x06before\"K\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xd2\x01\n" +
 	"\x1cQuestionServiceAnswerRequest\x128\n" +
@@ -12574,6 +12609,7 @@ func file_plan_v1_plan_proto_init() {
 		(*QuestionRef_Code)(nil),
 		(*QuestionRef_Id)(nil),
 	}
+	file_plan_v1_plan_proto_msgTypes[29].OneofWrappers = []any{}
 	file_plan_v1_plan_proto_msgTypes[111].OneofWrappers = []any{
 		(*MarkTarget_Code)(nil),
 		(*MarkTarget_Id)(nil),

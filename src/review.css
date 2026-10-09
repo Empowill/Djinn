@@ -85,6 +85,9 @@ html[data-theme="light"] {
 .tone-proof {
   --tone: var(--st-proof);
 }
+.tone-later {
+  --tone: var(--st-planned);
+}
 .status-badge,
 .count-pill {
   display: inline-flex;
@@ -177,6 +180,9 @@ html[data-theme="light"] {
 }
 .attention-item.level-action {
   --tone: var(--st-interrupted);
+}
+.attention-item.level-later {
+  --tone: var(--st-planned);
 }
 .attention-item.level-ready {
   --tone: var(--st-done);
@@ -372,6 +378,9 @@ html[data-theme="light"] {
 }
 .review .question-card.is-blocking {
   --tone: var(--st-failed);
+}
+.review .question-card.can-wait {
+  --tone: var(--st-planned);
 }
 .review .question-card.investigating {
   --tone: var(--st-investigating);

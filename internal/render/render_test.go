@@ -41,7 +41,7 @@ func rich(t *testing.T) *planv1.WishExport {
 		Questions: []*planv1.Question{
 			{
 				Id: "q1", Code: "Q01", WishId: "w", Text: "Which Markdown library?", Options: []string{"goldmark", "blackfriday"},
-				Context: "Both are **MIT**.", Recommendation: "A: maintained.", CreateTime: ts(-100),
+				Context: "Both are **MIT**.", Recommendation: "A: maintained.", CreateTime: ts(-100), Before: "before the release",
 			},
 			{
 				Id: "q2", Code: "Q02", WishId: "w", Text: "Keep the old page?", Options: []string{"Yes", "No"},
@@ -288,9 +288,10 @@ func TestBusyPage(t *testing.T) {
 	exp.Questions = append(exp.Questions,
 		&planv1.Question{
 			Id: "qa", Code: "Q90", Text: "A question nobody waits for", Recommendation: "**B**, because it is `simple`.\n\nMore.",
-			Options: []string{"Keep it", "Change it"}, Context: "### What changes\n\nThe page.",
+			Options: []string{"Keep it", "Change it"}, Context: "### What changes\n\nThe page.", Before: "before the merge",
 		},
 		&planv1.Question{Id: "qb", Code: "Q91", Text: "May W5 edit?"},
+		&planv1.Question{Id: "qc", Code: "Q92", Text: "A question that can wait", CreateTime: ts(-1)},
 	)
 	for i := range 20 {
 		exp.Questions = append(exp.Questions, &planv1.Question{
@@ -336,13 +337,16 @@ func TestBusyPage(t *testing.T) {
 		t.Errorf("the contents list %v, the page holds %v", toc, got)
 	}
 
-	// The question a task waits for comes first, open and red; the other is folded, its recommendation in sight.
-	if i, j := strings.Index(html, "May W5 edit?"), strings.Index(html, "A question nobody waits for"); i > j {
-		t.Error("a blocking question comes first")
+	// The question a task waits for comes first, open and red; then the one needed before the merge, orange under
+	// those words; then the one that can wait, neutral. The two others are folded, a recommendation in sight.
+	if i, j, k := strings.Index(html, "May W5 edit?"), strings.Index(html, "A question nobody waits for"),
+		strings.Index(html, "A question that can wait"); i > j || j > k {
+		t.Error("the questions come blocking, then before X, then can wait")
 	}
 	for _, s := range []string{
 		`<details class="q bad" id="q-Q91" open>`, `<span class="st bad"><i aria-hidden="true">!</i>Blocks W5</span>`,
-		`<details class="q wait" id="q-Q90">`, `<span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span>`,
+		`<details class="q wait" id="q-Q90">`, `<span class="st wait"><i aria-hidden="true">?</i>before the merge</span>`,
+		`<details class="q later" id="q-Q92">`, `<span class="st later"><i aria-hidden="true">◷</i>Can wait</span>`,
 		`<span class="qreco">Recommended: B, because it is simple.</span>`,
 	} {
 		if !strings.Contains(html, s) {
@@ -457,7 +461,7 @@ func TestBar(t *testing.T) {
 	bar := between(html, `<aside class="bar"`, "</aside>")
 	want := []string{
 		`<a class="line bad" href="#q-Q03"><span class="st bad"><i aria-hidden="true">!</i>Blocking</span><span class="what">Q03 · May W2 edit the folder? · Blocks W2</span></a>`,
-		`<a class="line wait" href="#q-Q01"><span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span><span class="what">Q01 · Which Markdown library?</span></a>`,
+		`<a class="line wait" href="#q-Q01"><span class="st wait"><i aria-hidden="true">?</i>before the release</span><span class="what">Q01 · Which Markdown library?</span></a>`,
 		`<a class="line wait" href="#actions"><span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span><span class="what">Project web is not on this machine</span></a>`,
 	}
 	last := -1
@@ -477,24 +481,44 @@ func TestBar(t *testing.T) {
 		t.Error("the bar comes before the page")
 	}
 
-	// Many questions and tasks cut short: the bar keeps to a few lines, and asks nothing about the tasks.
+	// Many questions and tasks cut short: the bar keeps to a few lines, one for the questions needed before
+	// something, then one for those that can wait, and asks nothing about the tasks.
 	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Many"}}
-	for i := range barQuestions + 1 {
+	for i := range barQuestions + 2 {
 		exp.Questions = append(exp.Questions, &planv1.Question{Id: fmt.Sprint(i), Code: fmt.Sprintf("Q%02d", i), Text: "Which?"})
 	}
+	exp.Questions[1].Before, exp.Questions[3].Before = "before the merge", "before the demo"
 	for i := range 3 {
 		exp.Tasks = append(exp.Tasks, &planv1.Task{Id: fmt.Sprint("t", i), Code: fmt.Sprintf("W%d", i), Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED})
 	}
 	bar = between(page(t, Input{Export: exp, Language: "en"}), `<aside class="bar"`, "</aside>")
+	last = -1
 	for _, s := range []string{
-		`<span class="what">3 questions wait for your answer: Q00, Q01, Q02</span>`,
+		`<a class="line wait" href="#questions"><span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span><span class="what">2 questions wait for your answer: Q01, Q03</span>`,
+		`<a class="line later" href="#questions"><span class="st later"><i aria-hidden="true">◷</i>Can wait</span><span class="what">2 questions can wait: Q00, Q02</span>`,
+	} {
+		i := strings.Index(bar, s)
+		if i < 0 {
+			t.Errorf("the bar lacks %q:\n%s", s, bar)
+		} else if i < last {
+			t.Errorf("the bar shows %q out of order", s)
+		}
+		last = i
+	}
+	if n := strings.Count(bar, `<a class="line`); n != 2 {
+		t.Errorf("the bar holds %d lines, want 2:\n%s", n, bar)
+	}
+
+	// A level of one question keeps its own line, under its words.
+	exp.Questions[3].Before = ""
+	bar = between(page(t, Input{Export: exp, Language: "en"}), `<aside class="bar"`, "</aside>")
+	for _, s := range []string{
+		`<a class="line wait" href="#q-Q01"><span class="st wait"><i aria-hidden="true">?</i>before the merge</span>`,
+		`<span class="what">3 questions can wait: Q00, Q02, Q03</span>`,
 	} {
 		if !strings.Contains(bar, s) {
 			t.Errorf("the bar lacks %q:\n%s", s, bar)
 		}
-	}
-	if n := strings.Count(bar, `<a class="line`); n != 1 {
-		t.Errorf("the bar holds %d lines, want 1:\n%s", n, bar)
 	}
 }
 

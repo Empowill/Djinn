@@ -2194,6 +2194,12 @@
             "title": "icon",
             "maxLength": 16,
             "description": "One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.\n Empty: a default by kind."
+          },
+          "before": {
+            "type": "string",
+            "title": "before",
+            "maxLength": 100,
+            "description": "What the answer is needed before, in a few words, set by the asker (djinn question ask --before \"before the\n merge\"): the question waits for the developer, orange, under those words. Empty: it can wait. A question a waiting\n task needs is blocking whatever this says: Djinn computes that from the tasks."
           }
         },
         "title": "Question",
@@ -2381,6 +2387,12 @@
             "title": "icon",
             "maxLength": 16,
             "description": "One emoji for the subject, like 🔒: the decision log shows it once the question is answered."
+          },
+          "before": {
+            "type": "string",
+            "title": "before",
+            "maxLength": 100,
+            "description": "What the answer is needed before, in a few words, like \"before the merge\": the question waits for the developer\n under those words. Empty: it can wait."
           }
         },
         "title": "QuestionServiceAskRequest",
@@ -2534,6 +2546,15 @@
             "title": "wish_id",
             "format": "uuid",
             "description": "Wish of the question, needed only when its code exists in several wishes."
+          },
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "before",
+            "maxLength": 100,
+            "description": "What the answer is needed before now, like \"before the merge\"; the former words when not given, none when given\n empty (--before \"\"): the question can wait."
           }
         },
         "title": "QuestionServiceReviseRequest",

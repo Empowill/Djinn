@@ -38,8 +38,8 @@ hand-offs: one person works, the other reads. Later, several people work on the 
   the tasks cut short in one line; a project to attach; a ready wish), the most urgent first. Header with the tasks
   counted by status and contents (pills naming only the sections present, coloured as their most urgent item). To
   decide (open questions, a card each: the recommendation boxed and first, then the options, then the context; a
-  question a waiting task needs is red, open and first; the others orange and folded, their recommendation in sight;
-  a lone question open), waiting for you, who runs now (the running workers as cards, with their last event; the
+  question a waiting task needs is red, open and first; then those needed before something, orange under their
+  `before` words; then those that can wait, grey; folded, their recommendation in sight; a lone question open), waiting for you, who runs now (the running workers as cards, with their last event; the
   finished work folded below as a table), tasks (waiting, failed and cut short in clear, with their dependencies;
   planned folded as a table with why each waits), decisions (the latest first, a table: when, the question and the
   choice in bold, why; past 15, folded), notes (the blocks in their order, each under its title; a long block

@@ -102,7 +102,8 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn wish describe <wish> --text \"…\"`: the wish's description, a few lines: what it is for, its scope, " +
 	"where it goes. The developer edits it in the window too.\n" +
 	"- `djinn question ask \"<question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔒` (one " +
-	"emoji for the subject); " +
+	"emoji for the subject); `--before \"before the merge\"` says what the answer is needed before, without it the " +
+	"question can wait (a question a waiting task needs is blocking anyway); " +
 	"`djinn question list --wish-id <wish> --open`.\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
 	"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`); " +
@@ -336,8 +337,17 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	}
 	if len(open) > 0 {
 		b.WriteString("\n## Open questions\n\n")
+		render.ByUrgency(open, exp.GetTasks())
+		blocked := render.Blocked(exp.GetTasks())
 		for _, q := range open {
-			fmt.Fprintf(&b, "- **%s** %s\n", q.GetCode(), clipLine(q.GetText()))
+			level := "can wait"
+			switch render.UrgencyOf(q, blocked) {
+			case render.Blocking:
+				level = "blocking: " + strings.Join(blocked[q.GetId()], ", ") + " waits"
+			case render.Before:
+				level = clipLine(q.GetBefore())
+			}
+			fmt.Fprintf(&b, "- **%s** %s (%s)\n", q.GetCode(), clipLine(q.GetText()), level)
 			for i, o := range q.GetOptions() {
 				fmt.Fprintf(&b, "  - %c: %s\n", 'A'+i, clipLine(o))
 			}
@@ -352,7 +362,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	if len(investigate) > 0 {
 		b.WriteString("\n## To investigate\n\n")
 		b.WriteString("The developer asked to find out more before deciding. Dig, then `djinn question revise <question> " +
-			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`).\n\n")
+			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`).\n\n")
 		for _, q := range investigate {
 			last := q.GetRounds()[len(q.GetRounds())-1]
 			fmt.Fprintf(&b, "- **%s** %s (asked %s)", q.GetCode(), clipLine(q.GetText()), when(last.GetCreateTime().AsTime()))

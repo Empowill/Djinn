@@ -16,6 +16,7 @@ export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
 export { FlightPlan } from "@/src/flight-plan.tsx";
+export { attentionOf } from "@/src/attention.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
 export {
   azimaGroups,
@@ -164,8 +165,30 @@ test("a question shows its options by letter and its recommendation; answered, w
   // The recommendation is boxed first, its option marked; nothing to rub without onMark.
   assert.ok(open.indexOf("Recommendation · A") < open.indexOf("Olive"));
   assert.match(open, /Olive<\/p><span class="option-recommended">Recommended/);
-  assert.match(open, /Waiting for you/);
+  // Nothing waits for it, nothing said before what: it can wait, grey.
+  assert.match(open, /question-card open can-wait/);
+  assert.match(open, /status-badge tone-later[^>]*>.*<span>Can wait<\/span>/);
   assert.doesNotMatch(open, /Rub the lamp/);
+  // Needed before the merge: orange, under those words.
+  const before = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question: {
+        id: "q1",
+        code: "Q01",
+        text: "Which oil?",
+        options: ["Olive", "Paraffin"],
+        recommendation: "",
+        context: "",
+        before: "before the merge",
+      },
+      onAnswer: async () => {},
+    }),
+  );
+  assert.match(
+    before,
+    /status-badge tone-waiting[^>]*>.*<span>before the merge<\/span>/,
+  );
+  assert.doesNotMatch(before, /can-wait|is-blocking/);
 
   // With the lamp's writes: rub, enlighten, and a read mark already put.
   const lamp = s.renderToStaticMarkup(
@@ -1683,5 +1706,40 @@ test("the wish's description shows under its title, the title until one is writt
   assert.match(
     editing,
     /<textarea class="wish-description-edit" aria-label="Description" rows="2" autofocus="">Light the house.\nNot the street.<\/textarea>/,
+  );
+});
+
+test("the attention bar says how much each question holds up: blocking, before X, can wait", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const q = (id, before = "") => ({
+    id,
+    code: id.toUpperCase(),
+    text: id,
+    before,
+  });
+  const items = s.attentionOf(
+    [
+      { wish: w, item: q("q1", "before the merge"), blocking: ["W1"] },
+      { wish: w, item: q("q2", "before the demo"), blocking: [] },
+      { wish: w, item: q("q3"), blocking: [] },
+    ],
+    [
+      {
+        wish: w,
+        item: { id: "t9", code: "W9", status: s.TaskStatus.WAITING },
+        question: "",
+      },
+    ],
+    [w],
+  );
+  assert.deepEqual(
+    items.map((i) => [i.key, i.level, i.label]),
+    [
+      ["q1", "blocking", undefined],
+      ["q2", "question", "before the demo"],
+      ["t9", "action", undefined],
+      ["q3", "later", undefined],
+      ["ready-w1", "ready", undefined],
+    ],
   );
 });

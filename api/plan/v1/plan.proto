@@ -771,6 +771,10 @@ message Question {
   // One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.
   // Empty: a default by kind.
   string icon = 15 [(buf.validate.field).string.max_len = 16];
+  // What the answer is needed before, in a few words, set by the asker (djinn question ask --before "before the
+  // merge"): the question waits for the developer, orange, under those words. Empty: it can wait. A question a waiting
+  // task needs is blocking whatever this says: Djinn computes that from the tasks.
+  string before = 16 [(buf.validate.field).string.max_len = 100];
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -954,6 +958,9 @@ message QuestionServiceReviseRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // What the answer is needed before now, like "before the merge"; the former words when not given, none when given
+  // empty (--before ""): the question can wait.
+  optional string before = 6 [(buf.validate.field).string.max_len = 100];
 }
 
 message QuestionServiceReviseResponse {
@@ -983,6 +990,9 @@ message QuestionServiceAskRequest {
   string recommendation = 5 [(buf.validate.field).string.max_len = 20000];
   // One emoji for the subject, like 🔒: the decision log shows it once the question is answered.
   string icon = 6 [(buf.validate.field).string.max_len = 16];
+  // What the answer is needed before, in a few words, like "before the merge": the question waits for the developer
+  // under those words. Empty: it can wait.
+  string before = 7 [(buf.validate.field).string.max_len = 100];
 }
 
 message QuestionServiceAskResponse {
