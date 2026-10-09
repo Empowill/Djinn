@@ -30,10 +30,14 @@ lead spends its tokens on mechanical work.
 - **Judgement goes to a worker, not to the lead.** A conflict in code, or red tests, starts a worker of correction on
   the merge, with what failed, part of the same azima; its work integrates the same way. After a few attempts
   (a setting), Djinn asks the person a question.
-- **When to commit** (the developer, 09/10/2026): Djinn commits the finished work into the integration branch when
-  an azima ends, or once an hour has passed **and** three tasks are done since the last commit, whichever comes first.
-  A task done waits for that batch, its work tested with the others'. One exception, so that the graph never stalls:
-  a task another task waits for is committed at once, alone. The hour and the count are settings of the wish.
+- **Commit at once, push on a cadence** (the developer, 09–10/10/2026). Each task's work is merged and tested into the
+  integration branch as soon as the task ends, alone: its dependents build on it at once. Pushing that branch to its
+  remote is the orchestrator's, never an agent's (agents keep `git push` denied, `.agents/permissions.txtpb`).
+  Djinn pushes **automatically by default**, checked each time a task's merge ends: when an azima ends (its last
+  part is committed), or when at least **three tasks are committed locally and more than an hour has passed since
+  the last push**. The count, the hour and the mode are settings of the wish: `auto` (the default) or `ask`, where a
+  question "Push feat/wails-go to origin? (3 commits: …)" lets the person push in one click (Rub the lamp). A push
+  refused by the remote (behind, protected) never forces: Djinn says why, and asks.
 - **A task done without its work committed is not done.** W94 ended "done" with its whole change staged in its
   worktree and no commit: integration finds a branch with nothing new, or a worktree with changes, and says so (the
   task is not done: its work waits, uncommitted), rather than counting it.
@@ -47,8 +51,9 @@ lead spends its tokens on mechanical work.
 - [ ] A task done integrates by itself: merged in its own worktree, generated files made again, tests through a gate,
   the branch moved on, the person's clean checkout fast-forwarded; each step in the task's events and status.
   (needs: the tests)
-- [ ] The commit cadence: at an azima's end, or after an hour and three tasks done since the last commit; at once for a
-  task another waits for. (needs: a test with a fake clock)
+- [ ] Each task committed alone as it ends; the push automatic at an azima's end, or with three tasks committed and an
+  hour since the last push, checked as each merge ends; `ask` mode by a question; a refused push never forced.
+  (needs: a test with a fake clock and a bare remote in a temp folder)
 - [ ] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
 - [ ] A task waits for its dependencies to be integrated, and starts from the integration branch.
 - [ ] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
