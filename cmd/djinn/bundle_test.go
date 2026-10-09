@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,7 +78,7 @@ func TestLoginShell(t *testing.T) {
 	}
 }
 
-// TestLoginPath: djinn takes the PATH a login shell sets from its profile, through what the profile prints, and
+// TestLoginPath: djinn takes the PATH an interactive login shell sets from its profile and its rc, through what the profile prints, and
 // says why when the shell fails, prints no PATH or hangs.
 func TestLoginPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -91,12 +92,15 @@ func TestLoginPath(t *testing.T) {
 		}
 		return p
 	}
-	// A fake login shell: it insists on -l, reads a "profile" that prints and sets PATH, then runs the command.
-	login := shell("zsh", `[ "$1" = -l ] && [ "$2" = -c ] || exit 3
+	// A fake shell: it insists on -i and -l, reads a "profile" and an "rc" that print and set PATH, then runs the
+	// command. Without -i, a real one skips the rc, where nvm adds to PATH.
+	login := shell("zsh", `[ "$1" = -i ] && [ "$2" = -l ] && [ "$3" = -c ] || exit 3
 echo "Last login: a profile that talks"
 PATH="/from/the/login/profile:/opt/homebrew/bin:$PATH"
+echo "an rc that talks too"
+PATH="/from/the/rc/nvm:$PATH"
 export PATH
-shift 2
+shift 3
 cmd=$1
 shift
 exec /bin/sh -c "$cmd" "$@"
@@ -105,8 +109,8 @@ exec /bin/sh -c "$cmd" "$@"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "/from/the/login/profile:/opt/homebrew/bin:"; len(path) <= len(want) || path[:len(want)] != want {
-		t.Errorf("PATH = %q, want the profile's first", path)
+	if want := "/from/the/rc/nvm:/from/the/login/profile:/opt/homebrew/bin:"; !strings.HasPrefix(path, want) || path == want {
+		t.Errorf("PATH = %q, want the rc's and the profile's first", path)
 	}
 
 	if _, err := loginPath(t.Context(), shell("broken", "exit 1\n")); err == nil {

@@ -33,7 +33,12 @@ checked against Windows first, because it is where the constraints are.
 - The machine monitor: no cgroups and no pressure stall information. Job Objects give per-worker
   CPU and memory accounting, limits and kill-the-whole-tree; pausing a worker has no simple
   equivalent to `SIGSTOP`.
-- Atomic writes: renaming over a file another process holds open fails on Windows.
+- Atomic writes: renaming over a file another process holds open fails on Windows ("Access is denied", seen by W72
+  in the CI log of `TestSync`). A browser reading `page.html`, or an antivirus scanning it, holds it a moment. The
+  plan's `writeFile` (`internal/plan/exchange.go`: pages and exports) tries the rename again for 500 ms on Windows
+  only (`TestRenameRetrying` with an injected rename; `TestWriteFileWhileOpen` holds the file open, which only
+  Windows refuses). `ui.WriteAtomic` (state, settings, crash notes) and the backup's rename do not retry yet: files
+  only Djinn reads.
 - End-to-end on the native window: WebView2 accepts a remote debugging port, so Playwright can
   drive the real window there.
 

@@ -106,8 +106,10 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
     weaker thing to sign and notarize. Finder starts an app with no arguments (older macOS with a `-psn_…` one), and
     `djinn` alone prints its help: `djinn` knows it runs from a bundle by its path, `…/<name>.app/Contents/MacOS/djinn`,
     and runs `up` (`cmd/djinn/bundle.go`, macOS only). An app started by macOS gets a bare `PATH`
-    (`/usr/bin:/bin:/usr/sbin:/sbin`), without the agents' commands: `djinn` first asks the user's login shell (bash,
-    zsh, ksh or sh from `$SHELL`; zsh otherwise) for its `PATH`, which is a terminal's, and takes it. A shell that
+    (`/usr/bin:/bin:/usr/sbin:/sbin`), without the agents' commands: `djinn` first asks the user's shell (bash,
+    zsh, ksh or sh from `$SHELL`; zsh otherwise), interactive and login (`-i -l -c`, as VS Code does), for its
+    `PATH`, which is a terminal's, and takes it: a login shell alone skips `~/.zshrc`, where nvm and many agent
+    installers add to `PATH`. A mark picks the `PATH` out of what the profiles print (`TestLoginPath`). A shell that
     fails, hangs past 10 s or prints no `PATH` leaves the bare one, and `djinn` says so. The process macOS started is
     `djinn up`, and the bundle around it gives it its identifier. The same binary run from a terminal by that path with
     no arguments starts `up` too.
