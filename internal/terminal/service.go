@@ -3,7 +3,9 @@ package terminal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"connectrpc.com/connect"
 
@@ -33,6 +35,18 @@ func (s *Service) Open(
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("set a command or a line, not both"))
 		}
 		command = ShellCommand(msg.GetLine())
+	}
+	if len(command) == 0 && strings.HasPrefix(strings.ToLower(msg.GetName()), "lead-") {
+		// A lead's terminal starts with its lead (djinn wish resume), never with a shell a text told would run in.
+		t := s.m.Lookup(msg.GetName())
+		if t == nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"%s runs no lead: resume the wish to start it", msg.GetName()))
+		}
+		if msg.GetCols() > 0 && msg.GetRows() > 0 {
+			_ = t.Resize(int(msg.GetCols()), int(msg.GetRows())) // Ended meanwhile: the window reads it.
+		}
+		return connect.NewResponse(&terminalv1.TerminalServiceOpenResponse{Terminal: describe(t), Attached: true}), nil
 	}
 	t, attached, err := s.m.Open(msg.GetName(), command, msg.GetDirectory(), int(msg.GetCols()), int(msg.GetRows()))
 	if err != nil {

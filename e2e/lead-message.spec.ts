@@ -53,6 +53,11 @@ test("a word written in the window reaches the lead's terminal", async ({
   djinn("wish", "set-lead", wishId, session, "--directory", folder);
   try {
     await page.goto(process.env.DJINN_URL!);
+    // Folded, the terminal waits to be opened before it resumes the lead of the wish shown.
+    await page
+      .locator(".lead-terminal-bar button[title='Collapse the terminal']")
+      .last()
+      .click();
     await page.locator(".wish-nav").filter({ hasText: title }).click();
 
     // No lead runs yet: the box says so, and offers to resume it.

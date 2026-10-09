@@ -66,6 +66,10 @@
 .lead-terminal-title > span {
   white-space: nowrap;
 }
+.lead-terminal-switch {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .lead-terminal-command {
   overflow: hidden;
   text-overflow: ellipsis;

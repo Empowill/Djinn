@@ -6,13 +6,24 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import {
+  Bot,
   ChevronDown,
   ChevronUp,
   RotateCcw,
   SquareTerminal,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
+import type { Wish } from "../gen/ts/plan/v1/plan_pb";
+import { message } from "./data/client";
 import { type Djinn, useDjinn } from "./data/djinn";
 import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
@@ -38,14 +49,57 @@ function store(key: string, value: string) {
   }
 }
 
+// leadTerminal is the name of the terminal of a wish's lead, as djinn names it (plan.LeadTerminal).
+export function leadTerminal(wishId: string): string {
+  return "lead-" + wishId.toLowerCase();
+}
+
+// The wish the window shows, as the terminal follows it: its lead, if it has one.
+interface Shown {
+  id: string;
+  lead: boolean; // A lead session is recorded: resuming it takes it back.
+  running: boolean; // The lead's terminal runs.
+}
+
+const ShowWish = createContext<(shown: Shown | undefined) => void>(
+  () => undefined,
+);
+
+// useTerminalFollows makes the terminal follow wish, the one the window shows (none for the flight plan): it shows
+// the wish's lead.
+export function useTerminalFollows(wish: Wish | undefined) {
+  const show = useContext(ShowWish);
+  const id = wish?.id ?? "";
+  const lead = !!wish?.lead?.sessionId;
+  const running = !!wish?.leadRunning;
+  useEffect(
+    () => show(id ? { id, lead, running } : undefined),
+    [show, id, lead, running],
+  );
+}
+
 // LeadTerminalFrame lays the app out above the terminal, when there is one.
 export function LeadTerminalFrame({ children }: { children: ReactNode }) {
   const djinn = useDjinn();
+  const [shown, setShown] = useState<Shown | undefined>(undefined);
+  const show = useCallback(
+    (next: Shown | undefined) =>
+      setShown((prev) =>
+        prev?.id === next?.id &&
+        prev?.lead === next?.lead &&
+        prev?.running === next?.running
+          ? prev
+          : next,
+      ),
+    [],
+  );
   if (!djinn) return <>{children}</>;
   return (
     <div className="lead-frame">
-      <div className="lead-frame-app">{children}</div>
-      <LeadTerminal djinn={djinn} />
+      <ShowWish.Provider value={show}>
+        <div className="lead-frame-app">{children}</div>
+      </ShowWish.Provider>
+      <LeadTerminal djinn={djinn} shown={shown} />
     </div>
   );
 }
@@ -56,7 +110,13 @@ export type TerminalStatus =
   | { kind: "exited"; info: TerminalInfo; code: number }
   | { kind: "error"; message: string };
 
-function LeadTerminal({ djinn }: { djinn: Djinn }) {
+function LeadTerminal({
+  djinn,
+  shown,
+}: {
+  djinn: Djinn;
+  shown: Shown | undefined;
+}) {
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.terminal.collapsed") === "1",
   );
@@ -66,6 +126,12 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
   const [status, setStatus] = useState<TerminalStatus>({ kind: "connecting" });
   const [generation, setGeneration] = useState(0); // A restart opens a new program.
   const [name, setName] = useState(NAME);
+  // What the terminal could not show of the wish, such as a lead that does not resume.
+  const [notice, setNotice] = useState("");
+  // The wish whose terminal the window took: another one shown takes its own.
+  const followed = useRef("");
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
   // The program a restart starts again: the one that ended, not the default of djinn up.
   const ended = useRef<TerminalInfo | undefined>(undefined);
   const host = useRef<HTMLDivElement>(null);
@@ -88,6 +154,37 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
       }),
     [djinn],
   );
+
+  // Show the lead of the wish the window shows, once the terminal is open: attach to it while it runs, else resume
+  // it, as the button Lead does. A wish without a lead keeps the window's terminal, and the bar proposes to resume it.
+  // Never a shell under a lead's name: djinn refuses to start one there.
+  // start resumes even a wish without a lead, which starts one from the wish's brief: only on the developer's click.
+  const follow = useCallback(
+    (wish: Shown, start = false) => {
+      followed.current = wish.id;
+      setNotice("");
+      const take = (terminal: string) => {
+        if (followed.current !== wish.id) return;
+        ended.current = undefined;
+        setName(terminal);
+      };
+      if (wish.running) take(leadTerminal(wish.id));
+      else if (!wish.lead && !start) take(NAME);
+      else
+        djinn.clients.wishes
+          .resume({ wishId: wish.id })
+          .then((res) => take(res.terminal))
+          .catch(
+            (error) =>
+              followed.current === wish.id && setNotice(message(error)),
+          );
+    },
+    [djinn],
+  );
+  useEffect(() => {
+    if (collapsed || !shown || followed.current === shown.id) return;
+    follow(shown);
+  }, [collapsed, shown, follow]);
 
   // The emulator, the program, and the links between them.
   useEffect(() => {
@@ -186,6 +283,39 @@ function LeadTerminal({ djinn }: { djinn: Djinn }) {
         )}
         {status.kind === "error" && (
           <span className="lead-terminal-state error">{status.message}</span>
+        )}
+        {notice && <span className="lead-terminal-state error">{notice}</span>}
+        {shown && name !== leadTerminal(shown.id) && (
+          <button
+            className="lead-terminal-switch"
+            onClick={() => follow(shownRef.current ?? shown, true)}
+            title={
+              shown.lead || shown.running
+                ? t("terminal.lead_detail")
+                : t("wish.resume_detail")
+            }
+          >
+            <Bot size={13} />
+            <span>
+              {shown.lead || shown.running
+                ? t("terminal.lead")
+                : t("terminal.resume")}
+            </span>
+          </button>
+        )}
+        {name !== NAME && (
+          <button
+            className="lead-terminal-switch"
+            onClick={() => {
+              ended.current = undefined;
+              setNotice("");
+              setName(NAME);
+            }}
+            title={t("terminal.shell_detail")}
+          >
+            <SquareTerminal size={13} />
+            <span>{t("terminal.shell")}</span>
+          </button>
         )}
         {(status.kind === "exited" || status.kind === "error") && (
           <button

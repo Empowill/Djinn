@@ -490,3 +490,33 @@ func TestBeforeStartRunsBeforeTheProgram(t *testing.T) {
 	}
 	output(t, term, 0, contains("got set"))
 }
+
+// TestServiceNeverOpensAShellForALead attaches the window to a lead's terminal while its lead runs, and refuses to
+// start the default shell under that name: a text told to the lead would run there as a command.
+func TestServiceNeverOpensAShellForALead(t *testing.T) {
+	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
+	t.Cleanup(m.Close)
+	srv := httptest.NewServer(func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.Handle(Handler(m))
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	_, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead-w1", Cols: 80, Rows: 24}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("open a lead's terminal that runs nothing: %v, want failed precondition", err)
+	}
+	if m.Lookup("lead-w1") != nil {
+		t.Fatal("a shell started under the lead's name")
+	}
+	lead := sh(t, m, "lead-w1")
+	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead-w1", Cols: 90, Rows: 20}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := open.Msg.GetTerminal(); got.GetId() != lead.ID || !open.Msg.GetAttached() || got.GetCols() != 90 {
+		t.Fatalf("opened %v, want attached to %s at 90 columns", open.Msg, lead.ID)
+	}
+}

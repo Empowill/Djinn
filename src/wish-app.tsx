@@ -23,6 +23,7 @@ import { jump } from "./attention";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
+import { useTerminalFollows } from "./lead-terminal";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { WishSidebar } from "./wish-sidebar";
 import { WishView } from "./wish-view";
@@ -143,6 +144,7 @@ export function WishApp() {
   const plan = !chosen && (selected === PLAN || active.length > 0);
   const wish = plan ? undefined : (chosen ?? wishes[0]);
   const shownId = wish?.id ?? "";
+  useTerminalFollows(wish);
   // djinn sends no notification for the wish shown while the window is in front.
   useEffect(() => {
     void clients.ui.view({ wishId: shownId }).catch(() => undefined);
