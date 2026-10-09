@@ -54,6 +54,10 @@ status: in-progress
   (`TestNothingLostOnShutdown`, `TestPausedInterrupted`, `TestResumeRules`, `TestSessionLimitWaitsThenResumes`,
   `TestSessionLimitBounded` in `internal/harness`; `TestCrashResumesTheWorkers` in `cmd/djinn` kills djinn up while a
   fake worker runs; `TestResumingFirst` in `internal/dispatch`; `TestResumingNotYourMove` in `internal/render`)
+- [x] The scheduler's rules follow the automatic resume: an interrupted or resuming dependency holds its dependents,
+  a task resumed as a fork holds no wish back, a worker holding a gate is not paused. (`TestDependencyResumes` in
+  `internal/dispatch`, `TestGo` in `internal/dispatch/bench`, `TestReady` in `internal/plan`,
+  `TestPauseHoldingGate` in `internal/harness`, `TestOneAtATime` in `internal/gate`)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -103,7 +107,8 @@ status: in-progress
   plus a minute, else 15 minutes doubled at each resume, at most 2 h; meanwhile no new worker of that provider
   starts. `Task.resumes` counts; at 3, a task cut short again fails, saying so. A task stopped by a person never
   resumes. The window, the page and the brief show these tasks by status ("Resuming", "Waiting for the limit",
-  "Resumed as W47"), never in what waits for the person.
+  "Resumed as W47"), never in what waits for the person. A task resumed as a fork no longer keeps its wish from being
+  proposed for granting (`plan.Ready`): its fork does.
 - **The journal** gets the user's commands as received (`spawn`, `stop`, `clean`), and the harness's own changes
   under the actors `harness` and `worker` with the names `harness/start`, `harness/event`, `harness/end` and
   `harness/recover`: an event is journaled as the event itself.
@@ -118,8 +123,10 @@ status: in-progress
   (`plan.ActiveWishes`), then the oldest. In order, a task waits for: its wish being active (a paused or granted
   wish keeps its tasks planned), its dependencies done, its write scopes free, the machine (no pressure, a slot
   free). Spawn and the pass decide under one lock, so a slot is never given twice.
-- **A dependency that ends without being done** (failed, stopped, interrupted) fails its dependents, down the chain.
-  A spawn on such a dependency is refused. A planned task is stopped at once by `djinn task stop`.
+- **A dependency that ends without being done** (failed, stopped by a person, resumed 3 times without finishing)
+  fails its dependents, down the chain. A spawn on such a dependency is refused. An interrupted or resuming
+  dependency holds its dependents: Djinn resumes it (W34's question, B); one resumed as a fork is its fork ("its
+  dependency W1, resumed as W5, ended failed"). A planned task is stopped at once by `djinn task stop`.
 - **Access is decided when the worker starts**, not when the task is planned: an allowance given meanwhile counts.
 - **Write scopes**: paths in the project's folder, cleaned, case ignored; none is the whole folder. Outside Git a
   task holds its scopes while it runs, and while it waits for the answer to its edit question (a yes restarts it
@@ -143,8 +150,11 @@ status: in-progress
   SIGCONT, so a paused worker stops at once; `djinn up` stopping or crashing interrupts it like a running one. What
   the worker wrote just before the pause may still land after the `paused` event. On Windows the call refuses, saying
   why: no signal stops a process tree there; it would take suspending each thread, or a job object (T17).
-- **Not built yet**: per-worker measures (gopsutil), cgroups (T17). A paused worker that holds a gate (`djinn gate
-  run` inside its process group) keeps it while paused.
+- **A worker that holds a gate is not paused** (W49's question, A): the gate would stay held, frozen, for every other
+  worker. The pause is refused, saying "W1 holds the gate test: wait or stop it" (`gate.Gates.Held`, given to the
+  harness by `djinn up`).
+- **Not built yet**: per-worker measures (gopsutil), cgroups (T17). A worker paused while it waits for a gate still
+  gets it when its turn comes, and holds it frozen.
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`.*

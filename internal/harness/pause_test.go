@@ -3,8 +3,10 @@ package harness
 import (
 	"cmp"
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -143,6 +145,47 @@ func TestPauseResume(t *testing.T) {
 	// Only a running worker pauses.
 	if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("pause a stopped task: %v", err)
+	}
+}
+
+// TestPauseHoldingGate: a worker that holds a gate is not paused, which would freeze the gate for every other
+// worker; it is once it has given the gate back.
+func TestPauseHoldingGate(t *testing.T) {
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, gitRepo(t))
+	long := e.mustSpawn(t, wishID, "Long", ticks(), nil)
+	id := long.GetId()
+	var mu sync.Mutex
+	held := map[string][]string{id: {"test"}}
+	e.h.HeldGates(func(taskID string) []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return held[taskID]
+	})
+	_, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), long.GetCode()+" holds the gate test: wait or stop it") {
+		t.Fatalf("pause while holding a gate: %v", err)
+	}
+	if got, err := store.Get[*planv1.Task](t.Context(), e.db, id); err != nil || got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Errorf("after a refused pause: %v, %v", got.GetStatus(), err)
+	}
+	mu.Lock()
+	held[id] = []string{"e2e", "test"}
+	mu.Unlock()
+	if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id})); err == nil ||
+		!strings.Contains(err.Error(), "holds the gates e2e, test") {
+		t.Errorf("pause while holding two gates: %v", err)
+	}
+
+	// Given back: the pause goes through, wherever the worker can pause.
+	mu.Lock()
+	delete(held, id)
+	mu.Unlock()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if got := e.pause(t, id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED {
+		t.Errorf("paused once the gate is given back = %v", got)
 	}
 }
 

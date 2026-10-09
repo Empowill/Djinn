@@ -121,7 +121,7 @@ func notGranted(t *testing.T, ch <-chan func(), what string) {
 }
 
 // TestOneAtATime: a gate has one holder at a time; the next waiter gets it when it is given back, and the tasks'
-// events say so. Another gate is free meanwhile.
+// events say so. Another gate is free meanwhile. Held says what a task holds.
 func TestOneAtATime(t *testing.T) {
 	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
 	g := New(nil, f)
@@ -136,8 +136,15 @@ func TestOneAtATime(t *testing.T) {
 	if l := g.List(); len(l) != 2 || l[0].Name != "codegen" || l[0].HolderTaskID != "W1" || !slices.Equal(l[0].Waiting, []string{"W2"}) {
 		t.Errorf("list = %+v", l)
 	}
+	// What a task holds, a worker that waits holding nothing; the holder outside any task is no task's.
+	if !slices.Equal(g.Held("W1"), []string{"codegen"}) || g.Held("W2") != nil || g.Held("") != nil {
+		t.Errorf("held: W1 %v, W2 %v, none %v", g.Held("W1"), g.Held("W2"), g.Held(""))
+	}
 	first()
 	first() // Giving back twice does nothing.
+	if g.Held("W1") != nil {
+		t.Errorf("W1 still holds %v", g.Held("W1"))
+	}
 	await(t, second, "second grant")()
 	want := []string{
 		"W1 gate codegen: taken", "W2 gate codegen: waiting: held by W1, for Ns", "W1 gate codegen: given back after Ns",

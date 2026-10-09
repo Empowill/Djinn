@@ -200,6 +200,19 @@ func TestReady(t *testing.T) {
 		{"an interrupted task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_INTERRUPTED)}, nil, false},
 		{"a running task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_RUNNING)}, nil, false},
 		{"a planned task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_PENDING)}, nil, false},
+		{"a task Djinn resumes", []*planv1.Task{done, task(planv1.TaskStatus_TASK_STATUS_RESUMING)}, nil, false},
+		{"an interrupted task resumed as a fork, done", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
+			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE},
+		}, nil, true},
+		{"an interrupted task resumed as a fork that runs", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
+			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING},
+		}, nil, false},
+		{"an interrupted task and a fork of another", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
+			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W2", Status: planv1.TaskStatus_TASK_STATUS_DONE},
+		}, nil, false},
 	} {
 		if got := Ready(tt.tasks, tt.questions); got != tt.want {
 			t.Errorf("%s: Ready = %v", tt.name, got)

@@ -13,6 +13,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/render"
 )
 
 // Machine is what the machine allows now.
@@ -156,12 +157,19 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 		if !ok {
 			return "", "its dependency " + id + " is gone"
 		}
+		// A dependency resumed as a fork is its fork: "W1, resumed as W5," when it ended, W5 while it waits.
+		ended := d.GetCode()
+		if as := s.forkedAs(d); as != d {
+			ended, d = fmt.Sprintf("%s, resumed as %s,", ended, as.GetCode()), as
+		}
 		switch d.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_DONE:
 			continue
-		case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
-			return "", fmt.Sprintf("its dependency %s ended %s", d.GetCode(), status(d.GetStatus()))
+		case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
+			// Failed covers a task resumed maxResumes times without finishing: Djinn resumes it no more.
+			return "", fmt.Sprintf("its dependency %s ended %s", ended, status(d.GetStatus()))
 		}
+		// Interrupted or resuming: Djinn resumes it by itself, so the task waits for it.
 		if why == "" {
 			why = fmt.Sprintf("waits for %s (%s)", d.GetCode(), status(d.GetStatus()))
 		}
@@ -185,6 +193,22 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 		}
 	}
 	return s.full(), ""
+}
+
+// forkedAs is the task that took over d: d itself, or, when d was cut short and resumed as a fork of its session
+// (render.ForkedAs), that fork, followed to the last one.
+func (s *Situation) forkedAs(d *planv1.Task) *planv1.Task {
+	seen := map[string]bool{}
+	for d.GetStatus() == planv1.TaskStatus_TASK_STATUS_INTERRUPTED && !seen[d.GetId()] {
+		seen[d.GetId()] = true
+		code := render.ForkedAs(d, s.tasks)
+		i := slices.IndexFunc(s.tasks, func(o *planv1.Task) bool { return o.GetWishId() == d.GetWishId() && o.GetCode() == code })
+		if code == "" || i < 0 {
+			break
+		}
+		d = s.tasks[i]
+	}
+	return d
 }
 
 // limited says why the task waits for a usage limit: its own, until it resets, or its provider's, which a task
