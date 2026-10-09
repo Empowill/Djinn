@@ -60,6 +60,7 @@ func TestMain(m *testing.M) {
 			}
 		}
 		updatePoll, restartDelay = updatePollForTests, restartDelayForTests
+		launcherPath = false
 		readMachine = calmMachine
 		// No test reaches the network: only a fake release, served by the test, is looked for.
 		checkReleases = os.Getenv("DJINN_TEST_RELEASE_API") != ""

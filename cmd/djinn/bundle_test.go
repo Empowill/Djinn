@@ -45,7 +45,7 @@ func TestFromFinder(t *testing.T) {
 		}
 	}
 	// Anywhere but in a bundle on macOS, the arguments stay.
-	if got := fromBundle(nil, os.Stderr); runtime.GOOS != "darwin" && got != nil {
+	if got := fromBundle(nil); runtime.GOOS != "darwin" && got != nil {
 		t.Errorf("fromBundle(nil) = %q on %s", got, runtime.GOOS)
 	}
 }
@@ -131,5 +131,16 @@ exec /bin/sh -c "$cmd" "$@"
 	}
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("a hanging shell held djinn %v", d)
+	}
+}
+
+// TestJoinPaths: the desktop's PATH keeps its order, and gains the login shell's folders it lacks, once each.
+func TestJoinPaths(t *testing.T) {
+	sep := string(os.PathListSeparator)
+	have := strings.Join([]string{"/fake/bin", "/usr/bin", "/home/u/.local/bin"}, sep)
+	add := strings.Join([]string{"/home/u/go/bin", "/usr/bin", "", "/home/u/.nvm/bin", "/home/u/go/bin"}, sep)
+	want := strings.Join([]string{"/fake/bin", "/usr/bin", "/home/u/.local/bin", "/home/u/go/bin", "/home/u/.nvm/bin"}, sep)
+	if got := joinPaths(have, add); got != want {
+		t.Errorf("joinPaths = %q, want %q", got, want)
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // loginTimeout is how long a login shell has to give its PATH: a profile that waits for input must not keep the
@@ -26,9 +28,7 @@ const pathMark = "djinn-login-path="
 
 // fromBundle gives the arguments djinn runs with. Finder, the Dock and Launchpad start Djinn.app with no arguments
 // (older macOS with a -psn_… one), where djinn alone would print its help: djinn started from its bundle runs up.
-// macOS gives such an app a bare PATH, without the agents' commands: it takes the PATH of the user's login shell
-// first, as a terminal would.
-func fromBundle(args []string, say io.Writer) []string {
+func fromBundle(args []string) []string {
 	if runtime.GOOS != "darwin" || !fromFinder(args) {
 		return args
 	}
@@ -36,16 +36,46 @@ func fromBundle(args []string, say io.Writer) []string {
 	if err != nil || !bundled(exe) {
 		return args
 	}
+	return []string{"up"}
+}
+
+// fromLauncher completes the PATH of a djinn up a launcher started, the same on Linux and macOS: a menu entry, the
+// Dock, Finder. A graphical session gives its apps its own PATH, without what the user's shell profiles add
+// (~/.zshrc's go/bin, nvm's node, an agent's own folder), so a watcher would not find gh, nor a lead go; a terminal
+// reads those profiles, and a djinn up started from one has its PATH already. It adds the folders of the login
+// shell's PATH that are missing, after the others: what the PATH already holds comes first, as a test's fake agents
+// do. Windows passes the user's PATH to its apps: nothing to do there.
+func fromLauncher(args []string, say io.Writer) {
+	if !launcherPath || runtime.GOOS == "windows" || len(args) == 0 || args[0] != "up" || term.IsTerminal(int(os.Stdin.Fd())) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
 	defer cancel()
 	path, err := loginPath(ctx, loginShell(os.Getenv("SHELL")))
 	if err == nil {
-		err = os.Setenv("PATH", path)
+		err = os.Setenv("PATH", joinPaths(os.Getenv("PATH"), path))
 	}
 	if err != nil {
 		fmt.Fprintf(say, "djinn: the PATH of the login shell: %v; the agents may not be found\n", err)
 	}
-	return []string{"up"}
+}
+
+// launcherPath completes a launcher's PATH; the tests' djinn up, started without a terminal, keep the PATH they give.
+var launcherPath = true
+
+// joinPaths is the PATH have, then each folder of add it does not hold, in add's order.
+func joinPaths(have, add string) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, list := range []string{have, add} {
+		for _, dir := range filepath.SplitList(list) {
+			if dir != "" && !seen[dir] {
+				seen[dir] = true
+				out = append(out, dir)
+			}
+		}
+	}
+	return strings.Join(out, string(os.PathListSeparator))
 }
 
 // bundled reports whether exe is the executable of a macOS app bundle: …/Djinn.app/Contents/MacOS/djinn.

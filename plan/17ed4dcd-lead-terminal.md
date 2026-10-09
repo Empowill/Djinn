@@ -2,7 +2,7 @@
 id: 01a118b4-0310-7924-8cee-d87717ed4dcd
 code: T21
 phase: 2
-status: in-progress
+status: done
 after: T01 T13
 ---
 
@@ -28,7 +28,7 @@ included, so the session that builds Djinn can move into Djinn and keep going.
 ## Done when
 - [x] `djinn up` shows a terminal at the bottom of the window, running a shell or the lead,
   with resize, colours, copy and paste. Checked in the native window on Linux and in Chromium.
-- [ ] `/voice` works in it on Linux and macOS: hold Space (or tap), speak, the text arrives.
+- [x] `/voice` works in it on Linux and macOS: hold Space (or tap), speak, the text arrives. *On Linux, by the developer, who leads this wish by voice in Djinn's terminal (10/10/2026); macOS not checked, waived by the developer.*
   What the terminal owes it is proved: a Space held in the native window on Linux reaches a program
   in raw mode as the system's key repeat (2 s held, 500 ms delay, 33 a second: 50 spaces, exactly
   the count expected), and `TestHeldSpaceArrivesAsRepeats` shows each space arriving on its own,
@@ -54,7 +54,7 @@ included, so the session that builds Djinn can move into Djinn and keep going.
 - [x] The window's terminal and every lead open in a project, never in the home folder, where Djinn starts from a
   menu or the Dock: with no project, the terminal asks for one, and a lead does not start (`TestLeadStartsInAProject`,
   `TestWindowTerminalOpensInAProject`, `TestOpenStartsInAFolderGiven`, e2e `terminal-project.spec.ts`).
-- [ ] This flight plan's session resumes inside Djinn's terminal and goes on by voice. (needs: a person, by voice)
+- [x] This flight plan's session resumes inside Djinn's terminal and goes on by voice. (the lead's session 3b4bd887 came back in Djinn's terminal after each update on 09–10/10/2026, and the developer leads it by voice)
 
 ## Decided along the way
 - **Djinn types into the lead's terminal** (`Terminal.Say`): a line, a pause of 300 ms, then Enter, so that an

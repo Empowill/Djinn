@@ -72,7 +72,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [ ] [T07 · The orchestrator: workers, worktrees, scheduling, the machine](plan/8e8d3d76-orchestrator.md) (in progress)
 - [x] [T17 · Know the machine, spend it wisely](plan/3da7b334-machine-discovery.md)
 - [ ] [T18 · Antigravity as a worker provider](plan/a72eb1f8-antigravity-provider.md) (in progress)
-- [ ] [T21 · The lead's terminal, inside the app, by voice](plan/17ed4dcd-lead-terminal.md) (in progress)
+- [x] [T21 · The lead's terminal, inside the app, by voice](plan/17ed4dcd-lead-terminal.md)
 - [ ] [T22 · Workers that start fast, with the right context, and are measured](plan/1689571a-fast-workers.md) (in progress)
 - [x] [T08 · Data: what we store, and why](plan/716b9f97-data.md)
 - [x] [T13 · Sessions across projects](plan/58ae4a59-cross-project-sessions.md)

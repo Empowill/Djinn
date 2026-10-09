@@ -32,7 +32,8 @@ func moduleVersion(v string) string {
 func main() {
 	version = moduleVersion(version)
 	ui.Develop = version == "dev"
-	args := fromBundle(os.Args[1:], os.Stderr)
+	args := fromBundle(os.Args[1:])
+	fromLauncher(args, os.Stderr)
 	// `djinn up` opens the app; every other command is generated from the protos by the cli package.
 	if len(args) > 0 && args[0] == "up" {
 		restart, err := runUp(args[1:])
