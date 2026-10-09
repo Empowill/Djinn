@@ -55,9 +55,10 @@ status: in-progress
   `TestSessionLimitBounded` in `internal/harness`; `TestCrashResumesTheWorkers` in `cmd/djinn` kills djinn up while a
   fake worker runs; `TestResumingFirst` in `internal/dispatch`; `TestResumingNotYourMove` in `internal/render`)
 - [x] The scheduler's rules follow the automatic resume: an interrupted or resuming dependency holds its dependents,
-  a task resumed as a fork holds no wish back, a worker holding a gate is not paused. (`TestDependencyResumes` in
-  `internal/dispatch`, `TestGo` in `internal/dispatch/bench`, `TestReady` in `internal/plan`,
-  `TestPauseHoldingGate` in `internal/harness`, `TestOneAtATime` in `internal/gate`)
+  a task resumed as a fork holds no wish back, a worker holding or waiting for a gate is not paused.
+  (`TestDependencyResumes` in `internal/dispatch`, `TestGo` in `internal/dispatch/bench`, `TestReady` in
+  `internal/plan`, `TestPauseHoldingGate` in `internal/harness`, `TestOneAtATime` and `TestWaiting` in
+  `internal/gate`)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -153,8 +154,10 @@ status: in-progress
 - **A worker that holds a gate is not paused** (W49's question, A): the gate would stay held, frozen, for every other
   worker. The pause is refused, saying "W1 holds the gate test: wait or stop it" (`gate.Gates.Held`, given to the
   harness by `djinn up`).
-- **Not built yet**: per-worker measures (gopsutil), cgroups (T17). A worker paused while it waits for a gate still
-  gets it when its turn comes, and holds it frozen.
+- **Nor is a worker that waits for a gate** (W60's question, A): paused, it would get the gate in its turn and hold
+  it frozen. The pause is refused, saying "W1 waits for the gate test: wait or stop it" (`gate.Gates.Waiting`, given
+  with `Held`). A worker that holds one gate and waits for another is told it holds.
+- **Not built yet**: per-worker measures (gopsutil), cgroups (T17).
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`.*

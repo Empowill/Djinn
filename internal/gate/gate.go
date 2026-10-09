@@ -216,6 +216,20 @@ func (g *Gates) Held(taskID string) []string {
 	return out
 }
 
+// Waiting gives the names of the gates the task waits for now, in order.
+func (g *Gates) Waiting(taskID string) []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var out []string
+	for _, w := range g.queue {
+		if taskID != "" && w.taskID == taskID && !slices.Contains(out, w.name) {
+			out = append(out, w.name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // State is a gate held or waited for.
 type State struct {
 	Name, Holder, HolderTaskID string
