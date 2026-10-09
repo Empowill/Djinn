@@ -25,18 +25,27 @@ func TestAnswerLine(t *testing.T) {
 		planv1.Choice_CHOICE_YES: `Djinn: Q43 answered yes. Note: "brighter, then cheaper". Act on it: djinn wish brief w1 has the context.`,
 	} {
 		q.Answer = &planv1.Answer{Choice: choice, Note: "brighter,\nthen cheaper"}
-		if got := AnswerLine(q); got != want {
+		if got := AnswerLine(q, ""); got != want {
 			t.Errorf("%v:\n got %s\nwant %s", choice, got, want)
 		}
 	}
 	q.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_A}
-	if got, want := AnswerLine(q), `Djinn: Q43 answered A — "Olive". Act on it: djinn wish brief w1 has the context.`; got != want {
+	if got, want := AnswerLine(q, ""), `Djinn: Q43 answered A — "Olive". Act on it: djinn wish brief w1 has the context.`; got != want {
 		t.Errorf("without a note:\n got %s\nwant %s", got, want)
 	}
-	if got, want := EnlightenLine(q, "what does each cost?"),
+	if got, want := EnlightenLine(q, "what does each cost?", ""),
 		`Djinn: Q43, the developer wants to know more before answering. Note: "what does each cost?". `+
 			`Investigate, then revise Q43: djinn wish brief w1 has the context.`; got != want {
 		t.Errorf("enlighten:\n got %s\nwant %s", got, want)
+	}
+	// A question worker took it: the lead is informed, not asked to act.
+	if got, want := AnswerLine(q, "W12"), `Djinn: Q43 answered A — "Olive". W12 turns it into tasks; you will hear when it ends.`; got != want {
+		t.Errorf("with a converter:\n got %s\nwant %s", got, want)
+	}
+	if got, want := EnlightenLine(q, "", "W13"),
+		`Djinn: Q43, the developer wants to know more before answering. W13 investigates, then revises it; you will `+
+			`hear when it ends.`; got != want {
+		t.Errorf("with an investigator:\n got %s\nwant %s", got, want)
 	}
 }
 
@@ -133,7 +142,7 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	want := LeadTerminal(id) + ": " + EnlightenLine(q, "what does each cost?")
+	want := LeadTerminal(id) + ": " + EnlightenLine(q, "what does each cost?", "")
 	if len(leads.said) != 1 || leads.said[0] != want {
 		t.Errorf("said %q, want %q", leads.said, want)
 	}

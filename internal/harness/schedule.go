@@ -115,13 +115,13 @@ func (h *Harness) generation() <-chan struct{} {
 }
 
 // Running is the number of workers that run now. A paused worker does not count: it takes no slot; nor does a
-// watcher, which sleeps until its command prints.
+// watcher, which sleeps until its command prints, nor a question worker, which reads and runs djinn's commands.
 func (h *Harness) Running() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	n := 0
 	for _, r := range h.runs {
-		if !r.paused && !r.watcher {
+		if !r.paused && !r.watcher && !r.light {
 			n++
 		}
 	}
@@ -129,12 +129,12 @@ func (h *Harness) Running() int {
 }
 
 // Works tells whether a worker of the task runs now and takes a slot: what it runs, a gate's command included, is in
-// that slot. A paused worker or a watcher takes none.
+// that slot. A paused worker, a watcher or a question worker takes none.
 func (h *Harness) Works(taskID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	r, ok := h.runs[taskID]
-	return ok && !r.paused && !r.watcher
+	return ok && !r.paused && !r.watcher && !r.light
 }
 
 // planned tells whether Djinn starts the task by itself, once it is ready.

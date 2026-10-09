@@ -991,7 +991,7 @@
             "type": "string",
             "title": "task_id",
             "format": "uuid",
-            "description": "Task the block is about."
+            "description": "Task the block is about, whose worker wrote it: the decision log says \"by W12\". By default $DJINN_TASK_ID,\n which Djinn sets for every worker; empty for the lead."
           },
           "position": {
             "type": "string",
@@ -2194,6 +2194,11 @@
             "title": "icon",
             "maxLength": 16,
             "description": "One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.\n Empty: a default by kind."
+          },
+          "taskId": {
+            "type": "string",
+            "title": "task_id",
+            "description": "The task whose worker asked it; empty when the lead did."
           }
         },
         "title": "Question",
@@ -2381,6 +2386,12 @@
             "title": "icon",
             "maxLength": 16,
             "description": "One emoji for the subject, like 🔒: the decision log shows it once the question is answered."
+          },
+          "taskId": {
+            "type": "string",
+            "title": "task_id",
+            "format": "uuid",
+            "description": "The task whose worker asks; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead."
           }
         },
         "title": "QuestionServiceAskRequest",
@@ -2534,6 +2545,12 @@
             "title": "wish_id",
             "format": "uuid",
             "description": "Wish of the question, needed only when its code exists in several wishes."
+          },
+          "taskId": {
+            "type": "string",
+            "title": "task_id",
+            "format": "uuid",
+            "description": "The task whose worker revises; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead."
           }
         },
         "title": "QuestionServiceReviseRequest",
@@ -2653,6 +2670,11 @@
             "type": "string",
             "title": "recommendation",
             "description": "For a revision, the recommendation before it."
+          },
+          "taskId": {
+            "type": "string",
+            "title": "task_id",
+            "description": "For a revision, the task whose worker revised it; empty when the lead did."
           }
         },
         "title": "Round",
@@ -3260,6 +3282,21 @@
             },
             "title": "proof_needs",
             "description": "For an azima read from a plan file (djinn plan sync): its Done-when boxes left unchecked for a proof no worker can\n give, box by box, when nothing else is left in them: every unchecked box says \"(needs: …)\", or holds boxes that\n do. Empty while a box without needs is unchecked (work is left), when every box is checked, and for a file\n without a Done-when section."
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TaskRole"
+              }
+            ],
+            "title": "role",
+            "description": "What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A\n question worker takes no slot of the machine and runs in its project's folder, reading."
+          },
+          "question": {
+            "type": "string",
+            "title": "question",
+            "maxLength": 64,
+            "description": "The code of the question a question worker works on (Q52); empty for any other task."
           }
         },
         "title": "Task",
@@ -3278,7 +3315,8 @@
           "TASK_ACCESS_EDIT_GRANTED",
           "TASK_ACCESS_EDIT_REFUSED",
           "TASK_ACCESS_WISH_EDIT",
-          "TASK_ACCESS_WISH_AUTO"
+          "TASK_ACCESS_WISH_AUTO",
+          "TASK_ACCESS_DJINN"
         ],
         "description": "TaskAccess says where the rights of a task's worker come from (docs/providers.md, \"What a worker may do\")."
       },
@@ -3490,6 +3528,16 @@
           "TASK_KIND_AZIMA"
         ],
         "description": "TaskKind says what a task is."
+      },
+      "plan.v1.TaskRole": {
+        "type": "string",
+        "title": "TaskRole",
+        "enum": [
+          "TASK_ROLE_UNSPECIFIED",
+          "TASK_ROLE_CONVERTER",
+          "TASK_ROLE_INVESTIGATOR"
+        ],
+        "description": "TaskRole says what a task Djinn started by itself on a question does. A task the lead or the developer spawned has\n none."
       },
       "plan.v1.TaskServiceCleanRequest": {
         "type": "object",

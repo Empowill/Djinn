@@ -68,7 +68,9 @@ type Harness struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // one per run
 
-	answering sync.Mutex // one answer to an edit question at a time
+	answering   sync.Mutex // one answer to an edit question at a time
+	questioning sync.Mutex // one question worker decided at a time (question.go)
+	questions   bool       // question workers start (WithQuestionWorkers)
 
 	scopes *machine.Scopes // the systemd scopes the workers run in, one each (WithScopes); nil: none
 
@@ -130,6 +132,7 @@ type run struct {
 	shelved  bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
 	paused   bool                 // the worker holds still: it takes no slot
 	watcher  bool                 // a watcher runs a command, and takes no slot
+	light    bool                 // a question worker reads and runs djinn's commands: it takes no slot
 	final    bool                 // the task is getting its final status: an answer waits for done instead
 	answers  []*planv1.Question   // answers to the task's edit question, for the pump to apply
 	use      *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
@@ -155,6 +158,7 @@ func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 		id: task.GetId(), wish: task.GetWishId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
+		light: questionWorker(task),
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -257,10 +261,11 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	return h.spawn(ctx, procedure, req, nil)
 }
 
-// spawn is Spawn, of a correction worker when correction is set: Djinn spawns it by itself, and its worktree starts
-// on the failed merge.
+// spawn is Spawn, of a task Djinn spawns by itself when made is set, with what made says it is for: a correction
+// worker (Task.correction), whose worktree starts on the failed merge, or a question worker (Task.role and question),
+// which reads in its project's folder.
 func (h *Harness) spawn(
-	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, correction *planv1.TaskCorrection,
+	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, made *planv1.Task,
 ) (*planv1.Task, error) {
 	if req.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		return h.spawnAzima(ctx, procedure, req)
@@ -272,7 +277,8 @@ func (h *Harness) spawn(
 	task := &planv1.Task{
 		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
 		CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
-		WriteScopes: scopes, Scheduled: true, Correction: correction,
+		WriteScopes: scopes, Scheduled: true, Correction: made.GetCorrection(), Role: made.GetRole(),
+		Question: made.GetQuestion(),
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
 
@@ -319,7 +325,8 @@ func (h *Harness) spawn(
 	if !ok {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", kind))
 	}
-	if kind != planv1.Provider_PROVIDER_WATCH {
+	// A question worker's model and budget are the project's question workers', in its request.
+	if kind != planv1.Provider_PROVIDER_WATCH && !questionWorker(task) {
 		if task.Model == "" && kind == settings.Provider {
 			task.Model = settings.Model
 		}
@@ -443,10 +450,10 @@ func (h *Harness) spawn(
 	return h.launch(ctx, r, provider, project, prep, prompt)
 }
 
-// spawner is who spawns task, as the journal records it: Djinn for a correction worker, the developer's side
-// otherwise.
+// spawner is who spawns task, as the journal records it: Djinn for a correction or a question worker, the
+// developer's side otherwise.
 func spawner(task *planv1.Task) string {
-	if task.GetCorrection() != nil {
+	if task.GetCorrection() != nil || questionWorker(task) {
 		return actorHarness
 	}
 	return actorLocal
@@ -508,6 +515,11 @@ type prepared struct {
 func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.Wish, project *planv1.Project) (prepared, error) {
 	var p prepared
 	var err error
+	if questionWorker(task) {
+		// It reads and runs djinn's commands, wherever it runs: no edit question to ask.
+		task.Access = planv1.TaskAccess_TASK_ACCESS_DJINN
+		return p, nil
+	}
 	if task.Access, p.declared, err = decideAccess(project, task.GetProvider(), plan.AllowanceOf(wish, project.GetId())); err != nil {
 		return p, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
 	}
@@ -542,7 +554,7 @@ func (h *Harness) launch(
 	}
 	var skills []Skill
 	var skillsDir string
-	if !r.watcher { // A command reads no skill.
+	if !r.watcher && !r.light { // A command reads no skill, nor does a question worker.
 		skills, skillsDir = h.summon(ctx, r, project)
 	}
 	if wk != nil && len(skills) > 0 {
@@ -561,7 +573,7 @@ func (h *Harness) launch(
 	}
 	// The integration branch the worktree starts from, and its commit then, for the start event.
 	fromText := ""
-	if project.GetGit() && !r.watcher { // A watcher writes nothing: it runs in the project's folder.
+	if project.GetGit() && !r.watcher && !r.light { // They write nothing: they run in the project's folder.
 		task.Branch = branchName(r.branch, task.GetCode(), task.GetTitle(), task.GetId())
 		task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
 		var err error
@@ -601,6 +613,10 @@ func (h *Harness) launch(
 		skillsText(spec.Skills)
 	if r.watcher {
 		text = "started watch " + where + watchText(task)
+	}
+	if r.light {
+		text = "started " + short(task.GetProvider()) + " " + where + ": " + questionStart(task) + "; " +
+			accessText(task, nil)
 	}
 	var err error
 	if wk != nil {
@@ -664,6 +680,8 @@ func accessText(t *planv1.Task, question *planv1.Question) string {
 		return "allowed to edit by the wish"
 	case planv1.TaskAccess_TASK_ACCESS_WISH_AUTO:
 		return "in auto mode by the wish"
+	case planv1.TaskAccess_TASK_ACCESS_DJINN:
+		return "reading, and running only djinn's commands: a question worker, it takes no slot"
 	}
 	return "with the agent's own configuration of the project"
 }
@@ -907,6 +925,9 @@ func (h *Harness) end(r *run, res Result) {
 	if integrate {
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, waiting for its batch"})
 		h.kickIntegrate()
+	}
+	if r.light {
+		h.questionEnded(t) // The lead learns what it did, before the task's watchers let go, as a watcher's lead does.
 	}
 	// The links to the summoned skills go with the worker; a worker started again makes them anew.
 	_ = os.RemoveAll(skillsDir(h.home, r.id))

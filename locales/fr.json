@@ -154,6 +154,7 @@
   "page.revised": "Révisée ×{count}",
   "page.round_enlighten": "Investigation demandée",
   "page.round_revise": "Révisée par le lead",
+  "page.round_revise_by": "Révisée par {task}",
   "page.rounds": "Tours",
   "page.run": "{kind} : {count} blocs",
   "page.running": "Qui tourne maintenant",

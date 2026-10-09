@@ -154,6 +154,7 @@
   "page.revised": "Revised ×{count}",
   "page.round_enlighten": "Asked to investigate",
   "page.round_revise": "Revised by the lead",
+  "page.round_revise_by": "Revised by {task}",
   "page.rounds": "Rounds",
   "page.run": "{kind}: {count} blocks",
   "page.running": "Who runs now",

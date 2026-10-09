@@ -151,7 +151,42 @@ func TestResolveSettings(t *testing.T) {
 			GeneratedFrom: def, GenerateFrom: def, TestFrom: def, InstallFrom: def, AttemptsFrom: dev,
 		}},
 	} {
-		if got := ResolveSettings(c.repo, c.dev); !reflect.DeepEqual(got, c.want) {
+		got := ResolveSettings(c.repo, c.dev)
+		// The question workers' settings are TestQuestionSettings'.
+		got.QuestionWorkers, got.QuestionModel, got.QuestionBudgetUSD = false, "", 0
+		got.QuestionWorkersFrom, got.QuestionModelFrom, got.QuestionBudgetFrom = 0, 0, 0
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestQuestionSettings: question workers are on by default, on a cheaper model for claude and the provider's own
+// default for another, with a budget; either file changes them, and a file that sets the provider resets the model.
+func TestQuestionSettings(t *testing.T) {
+	codex := planv1.Provider_PROVIDER_CODEX
+	type q struct {
+		on     bool
+		model  string
+		budget float64
+	}
+	for _, c := range []struct {
+		name      string
+		repo, dev *planv1.ProjectSettings
+		want      q
+	}{
+		{"neither file", nil, nil, q{true, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
+		{"another provider", &planv1.ProjectSettings{Provider: &codex}, nil, q{true, "", DefaultQuestionBudgetUSD}},
+		{"the team's", &planv1.ProjectSettings{
+			QuestionWorkers: proto.Bool(false), QuestionModel: proto.String("haiku"), QuestionBudgetUsd: proto.Float64(0.5),
+		}, nil, q{false, "haiku", 0.5}},
+		{"the developer's win", &planv1.ProjectSettings{QuestionWorkers: proto.Bool(false), QuestionModel: proto.String("haiku")},
+			&planv1.ProjectSettings{QuestionWorkers: proto.Bool(true), QuestionModel: proto.String("")}, q{true, "", DefaultQuestionBudgetUSD}},
+		{"a provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
+			&planv1.ProjectSettings{Provider: &codex}, q{true, "", DefaultQuestionBudgetUSD}},
+	} {
+		s := ResolveSettings(c.repo, c.dev)
+		if got := (q{s.QuestionWorkers, s.QuestionModel, s.QuestionBudgetUSD}); got != c.want {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
 	}
@@ -178,6 +213,9 @@ func TestProjectShow(t *testing.T) {
 	rows := func(res *planv1.ProjectServiceShowResponse) string {
 		var b []string
 		for _, s := range res.GetSettings() {
+			if strings.HasPrefix(s.GetName(), "question_") {
+				continue // The question workers' are checked apart.
+			}
 			b = append(b, s.GetName()+"="+s.GetValue()+" "+strings.TrimPrefix(s.GetSource().String(), "SETTING_SOURCE_"))
 		}
 		return strings.Join(b, ", ")
@@ -192,6 +230,15 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
 		"generated= DEFAULT, generate= DEFAULT, test= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
+	}
+	var question []string
+	for _, s := range res.GetSettings() {
+		if strings.HasPrefix(s.GetName(), "question_") {
+			question = append(question, s.GetName()+"="+s.GetValue())
+		}
+	}
+	if got, want := strings.Join(question, ", "), "question_workers=true, question_model=sonnet, question_budget_usd=2"; got != want {
+		t.Errorf("no file, the question workers: %s; want %s", got, want)
 	}
 
 	writeSettings(t, repoFile, "provider: PROVIDER_CLAUDE\nmodel: \"opus\"\nmax_budget_usd: 3\nbranch: \"djinn/{code}-{uuid8}\"\n"+

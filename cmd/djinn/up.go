@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -69,8 +70,18 @@ func runUp(args []string) (restart bool, err error) {
 	workerMemory := flags.Int("worker-memory", 0, "cap each worker's memory at this many MiB, in its systemd user "+
 		"scope: past it the kernel reclaims, then kills a process of the worker; Linux with systemd only, and only "+
 		"where systemd gives your user the memory controller; 0 caps nothing; default $DJINN_WORKER_MEMORY")
+	questionWorkers := flags.Bool("question-workers", true, "start a small worker on each answer (it turns the decision "+
+		"into tasks) and each \"Enlighten me\" (it investigates, then revises the question); a project's settings "+
+		"turn them off too (question_workers: false); default $DJINN_QUESTION_WORKERS (on or off), else on")
 	if err := flags.Parse(args); err != nil {
 		return false, err
+	}
+	if v := os.Getenv("DJINN_QUESTION_WORKERS"); v != "" && !flagSet(flags, "question-workers") {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_QUESTION_WORKERS: %w", err)
+		}
+		*questionWorkers = on
 	}
 	if flags.NArg() > 0 {
 		return false, fmt.Errorf("unexpected argument %q", flags.Arg(0))
@@ -132,6 +143,9 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	if *warmWorkers {
 		opts = append(opts, harness.WithWarm())
+	}
+	if *questionWorkers {
+		opts = append(opts, harness.WithQuestionWorkers())
 	}
 	if scopes := workerScopes(ctx, os.Stderr, *workerCPU, policy.WorkerMemory); scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))
@@ -334,7 +348,8 @@ func services(
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
 	language := render.SystemLanguage()
-	out := plan.Handlers(db, append([]plan.Option{plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}),
+	out := plan.Handlers(db, append([]plan.Option{plan.WithAnswered(h.Answered), plan.WithEnlightened(h.Enlightened),
+		plan.WithLeads(leads{terminals, uiSvc}),
 		plan.WithPages(pages), plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home),
 		plan.WithWorkers(h)}, more...)...)
 	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a
@@ -394,6 +409,28 @@ func answer(ctx context.Context, addr, questionID string, choice planv1.Choice) 
 		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: questionID}}, Choice: choice,
 	}))
 	return err
+}
+
+// flagSet tells whether the command line set the flag name.
+func flagSet(flags *flag.FlagSet, name string) bool {
+	set := false
+	flags.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
+}
+
+// onOff reads on or off, and the other words strconv.ParseBool reads.
+func onOff(v string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "on":
+		return true, nil
+	case "off":
+		return false, nil
+	}
+	on, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%q: expected on or off", v)
+	}
+	return on, nil
 }
 
 // showRunning asks the djinn that answers at addr to bring its window to the front, and says so.

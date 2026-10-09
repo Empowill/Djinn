@@ -343,6 +343,7 @@ func (s *mcpServer) handle(ctx context.Context, msg rpcMessage) {
 func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, args map[string]json.RawMessage) (string, error) {
 	req, err := request(md.Input(), args)
 	if err == nil {
+		fromEnv(req, s.cfg.getenv())
 		err = check(req, func(fd protoreflect.FieldDescriptor) string { return string(fd.Name()) })
 	}
 	if err != nil {

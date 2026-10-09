@@ -240,8 +240,10 @@ func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
 // TestAnswerAFailedIntegration: trying again starts a new correction, its attempts counted from one; taking it leaves
 // the work out, saying so.
 func TestAnswerAFailedIntegration(t *testing.T) {
-	in := integrating(t)
-	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "test: \"test\"\ncorrection_attempts: 1\n")
+	// Question workers on, of the fake agent: Djinn settles the question itself, no converter starts on it.
+	in := integrating(t, WithQuestionWorkers())
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"provider: PROVIDER_FAKE\ntest: \"test\"\ncorrection_attempts: 1\n")
 	in.testCode = 1
 	in.correctWith(func(string, string) string { return "" })
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -275,6 +277,9 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_RED || !strings.HasPrefix(got.GetReason(), "you take it ("+q.GetCode()+"): ") ||
 		texts[len(texts)-1] != "you take it ("+q.GetCode()+"); it stays out of "+in.branch+" until you bring it in" {
 		t.Errorf("taken: %v; events %q", got, texts)
+	}
+	if converters := in.roles(t, in.wishID, planv1.TaskRole_TASK_ROLE_CONVERTER); len(converters) != 0 {
+		t.Errorf("an answer on work that failed to integrate started %d converters", len(converters))
 	}
 }
 

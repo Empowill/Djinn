@@ -109,6 +109,21 @@ message ProjectSettings {
   // to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are split on spaces, without
   // a shell. Not set: nothing is proposed.
   optional string install = 9 [(buf.validate.field).string.max_len = 500];
+  // Djinn starts a small worker on each question of a wish's lead: after an answer, one that turns the decision into
+  // tasks; after "Enlighten me", one that investigates and revises the question. Not set: on. false: the lead is told
+  // to act on the answer itself, as before.
+  optional bool question_workers = 10;
+  // Model of those question workers, a model of the workers' provider. Not set: sonnet for claude, the provider's own
+  // default for another; empty: the provider's own default.
+  optional string question_model = 11 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+  ];
+  // Most a question worker may spend, in US dollars, when its provider can enforce it. Not set: 2. 0: no limit.
+  optional double question_budget_usd = 12 [(buf.validate.field).double = {
+    gte: 0
+    lte: 10000
+  }];
 }
 
 // SettingSource is where a project setting comes from.
@@ -304,6 +319,22 @@ enum TaskAccess {
   TASK_ACCESS_WISH_EDIT = 7;
   // The wish allows the auto mode in the project: the worker may edit, in its agent's auto mode.
   TASK_ACCESS_WISH_AUTO = 8;
+  // A question worker (Task.role): it reads, and runs only the djinn commands its job needs; it edits nothing and
+  // runs no gate.
+  TASK_ACCESS_DJINN = 9;
+}
+
+// TaskRole says what a task Djinn started by itself on a question does. A task the lead or the developer spawned has
+// none.
+enum TaskRole {
+  // A worker spawned by the lead or the developer.
+  TASK_ROLE_UNSPECIFIED = 0;
+  // Djinn started it once the developer answered Task.question ("Rub the lamp"): it turns the decision into tasks
+  // (djinn task spawn --decision), or asks what the answer leaves open.
+  TASK_ROLE_CONVERTER = 1;
+  // Djinn started it once the developer asked to know more about Task.question ("Enlighten me"): it reads, then
+  // revises the question so that it waits for the developer again.
+  TASK_ROLE_INVESTIGATOR = 2;
 }
 
 // Provider is the kind of agent a worker runs.
@@ -314,7 +345,7 @@ enum Provider {
   PROVIDER_CLAUDE = 1;
   // A fake agent that plays a script, to try Djinn without a paid model: each line of the prompt is a step,
   // like "text Hello", "tool Bash ls", "result ok", "usage 1200 300 0.02", "write notes.md Hi" (when it may edit),
-  // "sleep 5s", "fail why" or "exit 2";
+  // "sleep 5s", "fail why", "exit 2", or "djinn task list" (it runs Djinn's command line, as an agent does);
   // any other line is said back as text.
   PROVIDER_FAKE = 2;
   // Codex, the codex command, driven through its app-server (JSON-RPC on stdio).
@@ -453,6 +484,11 @@ message Task {
   // do. Empty while a box without needs is unchecked (work is left), when every box is checked, and for a file
   // without a Done-when section.
   repeated ProofNeed proof_needs = 43;
+  // What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
+  // question worker takes no slot of the machine and runs in its project's folder, reading.
+  TaskRole role = 44;
+  // The code of the question a question worker works on (Q52); empty for any other task.
+  string question = 45 [(buf.validate.field).string.max_len = 64];
 }
 
 // TaskCorrection is what a correction worker corrects.
@@ -771,6 +807,8 @@ message Question {
   // One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.
   // Empty: a default by kind.
   string icon = 15 [(buf.validate.field).string.max_len = 16];
+  // The task whose worker asked it; empty when the lead did.
+  string task_id = 16;
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -836,6 +874,8 @@ message Round {
   repeated string options = 6;
   // For a revision, the recommendation before it.
   string recommendation = 7;
+  // For a revision, the task whose worker revised it; empty when the lead did.
+  string task_id = 8;
 }
 
 // What a round is.
@@ -954,6 +994,12 @@ message QuestionServiceReviseRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // The task whose worker revises; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+  string task_id = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
 }
 
 message QuestionServiceReviseResponse {
@@ -983,6 +1029,12 @@ message QuestionServiceAskRequest {
   string recommendation = 5 [(buf.validate.field).string.max_len = 20000];
   // One emoji for the subject, like 🔒: the decision log shows it once the question is answered.
   string icon = 6 [(buf.validate.field).string.max_len = 16];
+  // The task whose worker asks; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+  string task_id = 7 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
 }
 
 message QuestionServiceAskResponse {
@@ -2014,10 +2066,12 @@ message BlockServicePutRequest {
   string content = 5 [(buf.validate.field).string.max_len = 1000000];
   // Media type of the content, like application/json; text/markdown by default.
   string media_type = 6 [(buf.validate.field).string.max_len = 200];
-  // Task the block is about.
+  // Task the block is about, whose worker wrote it: the decision log says "by W12". By default $DJINN_TASK_ID,
+  // which Djinn sets for every worker; empty for the lead.
   string task_id = 7 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
-    (buf.validate.field).string.uuid = true
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
   ];
   // Order within the wish; by default 1000 after the last block, for a new one.
   int64 position = 8;

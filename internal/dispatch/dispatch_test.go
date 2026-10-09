@@ -174,6 +174,49 @@ func TestWatcherTakesNoSlot(t *testing.T) {
 	}
 }
 
+// TestQuestionWorkerTakesNoSlot: a question worker starts on a full machine and beside a writer of its folder, but
+// waits while the machine is under pressure or its memory would not hold it; started, its memory counts for the next.
+func TestQuestionWorkerTakesNoSlot(t *testing.T) {
+	at := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	task := func(id string, s planv1.TaskStatus, role planv1.TaskRole, minute int) *planv1.Task {
+		return &planv1.Task{Id: id, WishId: "w", Code: id, Status: s, Role: role, Scheduled: true, ProjectId: "folder",
+			CreateTime: timestamppb.New(at.Add(time.Duration(minute) * time.Minute))}
+	}
+	writer := task("writer", planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskRole_TASK_ROLE_UNSPECIFIED, 0)
+	converter := task("converter", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskRole_TASK_ROLE_CONVERTER, 1)
+	agent := task("agent", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskRole_TASK_ROLE_UNSPECIFIED, 2)
+	pass := func(tasks []*planv1.Task, m *Machine) map[string]string {
+		got := map[string]string{}
+		for _, d := range New(tasks, []*planv1.Wish{wish}, nil, m).At(at).Pass() {
+			got[d.Task.GetId()] = d.Why
+		}
+		return got
+	}
+	full := &Machine{Slots: 1, Rule: "test", Running: 1}
+	if got, want := pass([]*planv1.Task{writer, converter, agent}, full), map[string]string{
+		"converter": "", "agent": "writer writes the whole folder, which overlaps the whole folder",
+	}; !maps.Equal(got, want) {
+		t.Errorf("full: %v, want %v", got, want)
+	}
+	full.Pressure = "simulated"
+	if got := pass([]*planv1.Task{converter}, full); got["converter"] != "the machine is under pressure: simulated" {
+		t.Errorf("under pressure: %v", got)
+	}
+	// 2 GiB free: the converter, a claude worker never measured (1 GiB), starts; the agent after it counts its GiB.
+	roomy := &Machine{Slots: 4, Rule: "test", Available: 2 * machine.GiB, Policy: machine.DefaultPolicy()}
+	if got, want := pass([]*planv1.Task{converter, agent}, roomy), map[string]string{
+		"converter": "", "agent": "a claude worker peaks at 1.0 GiB (none measured yet), 2.0 GiB free, 1.0 GiB of it " +
+			"for the workers running, 512 MiB kept",
+	}; !maps.Equal(got, want) {
+		t.Errorf("memory: %v, want %v", got, want)
+	}
+	roomy.Available = machine.GiB
+	if got := pass([]*planv1.Task{converter}, roomy); got["converter"] == "" {
+		t.Error("the converter started where the memory does not hold it")
+	}
+}
+
 // TestRestartQueue plays the passes after a restart: 6 tasks Djinn resumes over 2 wishes, a planned one, and 2
 // resumed tasks of a paused wish, on a machine of 2 slots where each pass ends the oldest worker. The first wish's
 // resumed tasks start first, then the second's, each wish in its own order, then the planned one: 2 at a time, the

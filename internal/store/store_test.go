@@ -68,14 +68,16 @@ func TestSchema(t *testing.T) {
 	if want := []string{"command", "project", "question"}; !slices.Equal(tables, want) {
 		t.Errorf("tables = %v, want %v", tables, want)
 	}
-	if cols, want := strs(t, s, `SELECT name FROM pragma_table_info('question')`), []string{"id", "payload", "wish_id", "code"}; !slices.Equal(cols, want) {
+	if cols, want := strs(t, s, `SELECT name FROM pragma_table_info('question')`), []string{"id", "payload", "wish_id", "task_id", "code"}; !slices.Equal(cols, want) {
 		t.Errorf("question columns = %v, want %v", cols, want)
 	}
 	if cols, want := strs(t, s, `SELECT name FROM pragma_table_info('project')`), []string{"id", "payload", "name", "directory"}; !slices.Equal(cols, want) {
 		t.Errorf("project columns = %v, want %v (git and create_time stay in the payload)", cols, want)
 	}
 	indexes := strs(t, s, `SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL ORDER BY name`)
-	want := []string{"project_unique_directory", "project_unique_name", "question_unique_wish_id_code", "question_wish_id"}
+	want := []string{
+		"project_unique_directory", "project_unique_name", "question_task_id", "question_unique_wish_id_code", "question_wish_id",
+	}
 	if !slices.Equal(indexes, want) {
 		t.Errorf("indexes = %v, want %v", indexes, want)
 	}

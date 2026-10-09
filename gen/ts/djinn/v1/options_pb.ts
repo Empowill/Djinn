@@ -6,7 +6,7 @@
 
 import type { GenEnum, GenExtension, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, extDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { MessageOptions, MethodOptions, ServiceOptions } from "@bufbuild/protobuf/wkt";
+import type { FieldOptions, MessageOptions, MethodOptions, ServiceOptions } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_descriptor } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/options.proto.
  */
 export const file_djinn_v1_options: GenFile = /*@__PURE__*/
-  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACKkYKBldyaXRlcxIWChJXUklURVNfVU5TUEVDSUZJRUQQABIRCg1XUklURVNfQ0hBTkdFEAESEQoNV1JJVEVTX0RFTEVURRACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SgoGd3JpdGVzEh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYvI4DIAEoDjIQLmRqaW5uLnYxLldyaXRlc1IGd3JpdGVzOjcKBWFsaWFzEh8uZ29vZ2xlLnByb3RvYnVmLlNlcnZpY2VPcHRpb25zGL2OAyADKAlSBWFsaWFzOksKBnVuaXF1ZRIfLmdvb2dsZS5wcm90b2J1Zi5NZXNzYWdlT3B0aW9ucxi6jgMgAygLMhAuZGppbm4udjEuVW5pcXVlUgZ1bmlxdWVCkAEKDGNvbS5kamlubi52MUIMT3B0aW9uc1Byb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL2RqaW5uL3YxO2RqaW5udjGiAgNEWFiqAghEamlubi5WMcoCCERqaW5uXFYx4gIURGppbm5cVjFcR1BCTWV0YWRhdGHqAglEamlubjo6VjFiBnByb3RvMw", [file_google_protobuf_descriptor]);
+  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACKkYKBldyaXRlcxIWChJXUklURVNfVU5TUEVDSUZJRUQQABIRCg1XUklURVNfQ0hBTkdFEAESEQoNV1JJVEVTX0RFTEVURRACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SgoGd3JpdGVzEh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYvI4DIAEoDjIQLmRqaW5uLnYxLldyaXRlc1IGd3JpdGVzOjcKBWFsaWFzEh8uZ29vZ2xlLnByb3RvYnVmLlNlcnZpY2VPcHRpb25zGL2OAyADKAlSBWFsaWFzOksKBnVuaXF1ZRIfLmdvb2dsZS5wcm90b2J1Zi5NZXNzYWdlT3B0aW9ucxi6jgMgAygLMhAuZGppbm4udjEuVW5pcXVlUgZ1bmlxdWU6MQoDZW52Eh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxi+jgMgASgJUgNlbnZCkAEKDGNvbS5kamlubi52MUIMT3B0aW9uc1Byb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL2RqaW5uL3YxO2RqaW5udjGiAgNEWFiqAghEamlubi5WMcoCCERqaW5uXFYx4gIURGppbm5cVjFcR1BCTWV0YWRhdGHqAglEamlubjo6VjFiBnByb3RvMw", [file_google_protobuf_descriptor]);
 
 /**
  * Unique is one group of fields whose values, taken together, identify a stored message.
@@ -148,4 +148,13 @@ export const alias: GenExtension<ServiceOptions, string[]> = /*@__PURE__*/
  */
 export const unique: GenExtension<MessageOptions, Unique[]> = /*@__PURE__*/
   extDesc(file_djinn_v1_options, 4);
+
+/**
+ * The command line and djinn mcp fill the field from this environment variable when the caller leaves it empty:
+ * a worker's commands name its task by $DJINN_TASK_ID, which Djinn sets for every worker.
+ *
+ * @generated from extension: string env = 51006;
+ */
+export const env: GenExtension<FieldOptions, string> = /*@__PURE__*/
+  extDesc(file_djinn_v1_options, 5);
 
