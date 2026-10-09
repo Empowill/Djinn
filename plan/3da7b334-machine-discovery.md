@@ -36,6 +36,12 @@ overloaded. Part of the orchestrator (T07).
   (`TestReadGPUs`, `TestLocalModel` and `TestReadThisMachine` in `internal/machine`; by hand, `djinn machine show` on
   this Linux laptop gave its disk, an Intel GPU on i915, and "on the CPU, slowly, with 31.0 GiB of memory". Not run
   on a Mac nor on an NVIDIA or AMD machine yet: their fixtures are what proves them)
+- [x] Djinn reads what each worker uses while it runs, keeps the latest reading and the peaks on its task, and shows
+  them in `djinn task get`, the Tasks tab and `djinn machine show`. (`TestReadGroup` on a simulated /proc,
+  `TestParsePS`, `TestReadWorker` and `TestNotMeasured` in `internal/machine`; `TestMeasureWorker`, a fake claude read
+  from /proc on Linux, `TestMeasurePeaks`, `TestNotMeasured` and `TestWorth` in `internal/harness`; "a running task
+  shows what its worker uses now" in `tests/screens.test.mjs`. macOS reads `ps`: not run on a Mac yet. Windows says it
+  is not measured yet)
 
 ## Decided along the way
 - **The minimum first** (`internal/machine`): cores (`runtime.NumCPU`), memory, load and pressure, read live (at
@@ -71,5 +77,14 @@ overloaded. Part of the orchestrator (T07).
   Mac yet. Windows: the CPU time and the duration; no peak memory, which needs a Job Object around the command (0).
   A cgroup per command would count a whole tree, but a systemd scope disappears with its last process, before its
   `memory.peak` can be read.
+- **What each worker uses** (`Task.resources`, `Machine.worker_uses`): every 5 seconds while a worker runs, Djinn
+  reads its process group and every process it started, even one in a group of its own (an agent's tool may start
+  one): the processes, the CPU in percent of one core since the reading before, and the resident memory summed over
+  them, a shared page counted once per process. Linux: `/proc/<pid>/stat`; macOS: one `ps` for all the workers, at
+  most once a second; Windows: not measured yet (`worker_measure` says so, and the Tasks tab). The task keeps the
+  latest reading and the peaks over all its workers; a new worker clears the latest. It is written (`harness/measure`
+  in the journal) only when it moved enough to show: a process more or less, 5 points of CPU, 5% of memory, or a
+  minute gone; `djinn machine show` gives every reading. The fake agent runs in Djinn's process: not measured. Not
+  read by the scheduler yet.
 - **Not used yet.** The scheduler and the gates do not read the costs yet: a heavy command waiting for a gate
   (the capacity, above) is the next step.

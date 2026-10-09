@@ -178,6 +178,9 @@ type codexWorker struct {
 
 func (w *codexWorker) Events() <-chan Event { return w.events }
 
+// PID is the process of the agent.
+func (w *codexWorker) PID() int { return w.p.cmd.Process.Pid }
+
 func (w *codexWorker) Pause() error  { return w.p.Pause() }
 func (w *codexWorker) Resume() error { return w.p.Resume() }
 

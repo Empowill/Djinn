@@ -7,11 +7,12 @@ package machine.v1;
 import "buf/validate/validate.proto";
 import "djinn/v1/options.proto";
 import "google/protobuf/timestamp.proto";
+import "plan/v1/plan.proto";
 
 // MachineService says what the machine has, how loaded it is, and how many workers Djinn runs on it.
 service MachineService {
   // Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
-  // once, and whether it can run a local model.
+  // once, what each running worker uses, and whether it can run a local model.
   rpc Show(MachineServiceShowRequest) returns (MachineServiceShowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -66,6 +67,25 @@ message Machine {
   bool can_run_local_model = 16;
   // Why it can or cannot.
   string local_model_reason = 17;
+  // The workers running now, with what each uses of the machine, the busiest first; a worker not read yet is left
+  // out.
+  repeated WorkerUse worker_uses = 18;
+  // Why the workers' CPU and memory are not measured on this machine; empty where they are (Linux, macOS).
+  string worker_measure = 19;
+}
+
+// WorkerUse is what the worker of a running task uses of the machine.
+message WorkerUse {
+  // The task.
+  string task_id = 1;
+  // Its wish.
+  string wish_id = 2;
+  // Its code in the wish, like W2.
+  string code = 3;
+  // What the task does.
+  string title = 4;
+  // What its worker uses, at the last reading.
+  plan.v1.Resources resources = 5;
 }
 
 // Disk is the space of the file system that holds a folder.

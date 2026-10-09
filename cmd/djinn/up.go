@@ -111,6 +111,9 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	monitor := machine.NewMonitor(policy, read)
 	opts := []harness.Option{harness.WithCapacity(monitor.Capacity)}
+	if machine.NotMeasured == "" {
+		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
+	}
 	if *warmWorkers {
 		opts = append(opts, harness.WithWarm())
 	}
@@ -198,7 +201,7 @@ func runUp(args []string) (restart bool, err error) {
 	pages := plan.NewPages(db, home, version)
 	go pages.Run(ctx)
 	svc := services(db, home, workers, terminals, uiSvc, pages)
-	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running)
+	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
 	svc[gatePrefix] = gateHandler

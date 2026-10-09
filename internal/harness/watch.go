@@ -145,6 +145,16 @@ func (w *watchWorker) Send(string) error {
 	return fmt.Errorf("%w: a watcher runs a command, and reads no message", ErrClosed)
 }
 
+// PID is the process of the command while it runs; 0 between two runs.
+func (w *watchWorker) PID() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.proc == nil {
+		return 0
+	}
+	return w.proc.cmd.Process.Pid
+}
+
 // Pause stops the command where it is; between two runs, the next one waits.
 func (w *watchWorker) Pause() error {
 	w.mu.Lock()
