@@ -94,6 +94,8 @@ func TestBrief(t *testing.T) {
 		"**W3** Reopen the leads: resuming by itself, the account's session limit, resets at 07:20",
 		"**W4** Pause a worker: resumed as W5",
 		"**To follow up on a task, continue it**", "Fork it only to start a different task from its context",
+		"`djinn wish route \"<request>\" --wish-id <wish> --ask`", "`--provider watch --prompt \"<command>\"`",
+		"`--restart` starts again", "`metadata.djinn.wish`", "`djinn skill list`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the brief lacks %q:\n%s", want, text)
@@ -132,6 +134,43 @@ func TestBrief(t *testing.T) {
 	}
 	if !strings.HasPrefix(res.Msg.GetText(), brief.Stable) || !strings.Contains(res.Msg.GetText(), "# The wish: Ship the API") {
 		t.Errorf("djinn wish brief = %q", res.Msg.GetText())
+	}
+}
+
+// A wish made for a request: its new lead reads the request once, on its first line, not again in the latest blocks.
+// A request filed later, and the other blocks, stay.
+func TestLeadBriefOnce(t *testing.T) {
+	ctx := t.Context()
+	c, wish, _ := source(t)
+	request := "babysit https://gitlab.com/acme/shop/-/merge_requests/41"
+	for _, b := range []*planv1.BlockServicePutRequest{
+		{WishId: wish.GetId(), Kind: routeKindBlock, Title: "Request from “Ship the API”", Content: request + "\n"},
+		{WishId: wish.GetId(), Kind: routeKindBlock, Title: "Request from “Ship the docs”", Content: "and the docs of !41"},
+		{WishId: wish.GetId(), Kind: "report", Title: "The same words", Content: request},
+	} {
+		if _, err := c.blocks.Put(ctx, connect.NewRequest(b)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := FirstLine("Ship the API", request)
+	brief, err := LeadBrief(ctx, c.store, "", wish.GetId(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(brief.Moving, first+"\n\n# The wish: Ship the API") {
+		t.Errorf("the request does not open the brief:\n%s", brief.Moving)
+	}
+	if n := strings.Count(brief.Moving, request); n != 2 || strings.Contains(brief.Moving, "Request from “Ship the API”") ||
+		!strings.Contains(brief.Moving, "Request from “Ship the docs”") || !strings.Contains(brief.Moving, "### The same words") {
+		t.Errorf("the request shows %d times, or a block went missing:\n%s", n, brief.Moving)
+	}
+	// djinn wish brief, later, still holds the request in its blocks.
+	plain, err := BuildBrief(ctx, c.store, "", wish.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plain.Moving, "Request from “Ship the API”") || plain.Stable != brief.Stable {
+		t.Errorf("the plain brief lost the request:\n%s", plain.Moving)
 	}
 }
 

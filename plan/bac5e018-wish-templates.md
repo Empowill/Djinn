@@ -46,6 +46,9 @@ opens a wish that already knows how to work. How a project declares one: [`docs/
   (`e2e/wish-template.spec.ts`)
 - [x] `babysit-pr` for GitHub, and the docs of a GitLab one. (`.agents/skills/babysit-pr/`, run by hand on a public
   pull request open then merged: a summary, then `MERGED` and exit 0; `docs/wish-templates.md`)
+- [x] The brief's rules tell a lead to spawn a watcher (`--provider watch`, `--restart`) instead of polling, and to
+  propose a template (`metadata.djinn.wish`) for a request that comes back. (`TestBrief`, `briefRules`;
+  `docs/agent-protocol.md`)
 - [ ] A real lead babysits a real pull request of Djinn to its merge, from the template. (needs: a person and a real
   model)
 

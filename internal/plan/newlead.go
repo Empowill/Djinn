@@ -41,12 +41,9 @@ func (w *Wishes) newLead(
 	if provider == planv1.Provider_PROVIDER_UNSPECIFIED {
 		provider = planv1.Provider_PROVIDER_CLAUDE
 	}
-	brief, err := BuildBrief(ctx, w.Store, home, wish.GetId())
+	brief, err := LeadBrief(ctx, w.Store, home, wish.GetId(), first)
 	if err != nil {
 		return "", "", nil, "", Status(err)
-	}
-	if first != "" {
-		brief.Moving = first + "\n\n" + brief.Moving
 	}
 	own := filepath.Join(home, PagesDir, strings.ToLower(wish.GetId()))
 	if err := os.MkdirAll(own, 0o700); err != nil {

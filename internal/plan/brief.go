@@ -59,18 +59,29 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
 	"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to file it in " +
-	"another wish or to open a new one with its own lead. Hand it over: do not do its work here.\n\n" +
+	"another wish or to open a new one with its own lead. Hand it over: do not do its work here.\n" +
+	"- **Watch, do not poll.** To wait on something outside (a pipeline, a merge request, a queue), spawn a watcher: " +
+	"`--provider watch --prompt \"<command>\"` runs the command with no agent, no model and no slot, and each new " +
+	"paragraph it prints wakes you. `--restart` starts again a command that exits on each change. The project must " +
+	"allow the command.\n" +
+	"- **A request that comes back is a template.** A skill holds one under `metadata.djinn.wish` in its `SKILL.md` " +
+	"(`title`, `match`, `watch`, `restart`, `done_when`): a routed request it matches becomes a wish that follows the " +
+	"skill, its watcher started. When the developer asks for the same kind of work again, propose one. " +
+	"`djinn skill list` shows the templates, or why one cannot be used.\n\n" +
 	"## Commands\n\n" +
 	"`<wish>` is the wish's identifier, given below.\n\n" +
 	"- `djinn wish brief <wish>`: this brief, up to date.\n" +
 	"- `djinn question ask \"<question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\"`; " +
 	"`djinn question list --wish-id <wish> --open`.\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\"` (`--project-id`, `--depends-on W1`, `--later`, " +
-	"`--fork W1`, `--from-lead`); `djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
+	"`--fork W1`, `--from-lead`, `--provider watch`, `--restart`); `djinn task list --wish-id <wish>`; " +
+	"`djinn task watch <task>`; " +
 	"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
 	"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task done <task> --note " +
 	"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done " +
 	"elsewhere.\n" +
+	"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
+	"card; without `--ask`, the proposal only.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\"`; `djinn block list <wish>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for your " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, after you investigated.\n" +
@@ -85,9 +96,22 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 // BuildBrief writes the brief of a wish from what r holds. home is Djinn's data folder: like the projects' folders
 // and the home folder, it never shows. No secret: Djinn stores none, and a URL loses its credentials.
 func BuildBrief(ctx context.Context, r store.Reader, home, wishID string) (Brief, error) {
+	return LeadBrief(ctx, r, home, wishID, "")
+}
+
+// LeadBrief is the brief a new lead starts from: first, its first line, opens the part that moves. A request block
+// whose text that line already holds, the request a wish was made for, is left out of the latest blocks: the lead
+// reads it once.
+func LeadBrief(ctx context.Context, r store.Reader, home, wishID, first string) (Brief, error) {
 	exp, projects, err := collect(ctx, r, wishID)
 	if err != nil {
 		return Brief{}, err
+	}
+	if first != "" {
+		exp.Blocks = slices.DeleteFunc(exp.Blocks, func(b *planv1.Block) bool {
+			text := strings.TrimSpace(b.GetContent())
+			return b.GetKind() == routeKindBlock && text != "" && strings.Contains(first, text)
+		})
 	}
 	all, err := store.List[*planv1.Project](ctx, r, nil)
 	if err != nil {
@@ -97,7 +121,11 @@ func BuildBrief(ctx context.Context, r store.Reader, home, wishID string) (Brief
 	rank := wish.GetRank()
 	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
 	exp = portable(exp, newScrubber(all, home, dataName))
-	return Brief{Stable: stableBrief(projects), Moving: movingBrief(exp, rank, ready)}, nil
+	moving := movingBrief(exp, rank, ready)
+	if first != "" {
+		moving = stripCredentials(first) + "\n\n" + moving
+	}
+	return Brief{Stable: stableBrief(projects), Moving: moving}, nil
 }
 
 // StableBrief is the part of a brief that changes rarely, for a wish on projects: Djinn's rules, then where each

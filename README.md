@@ -96,13 +96,21 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 ## From brief to result
 
-- **One wish, one journey.** Exploration, thinking, specification, prototype, implementation, review and delivery, with a free or a prepared workflow.
-- **A visible team.** Follow the lead and its workers, their scopes, dependencies, conversations and real activity.
-- **Usable results.** Markdown documents, diagrams, wireframes and interactive visualizations stay in the wish.
-- **You decide.** Answer the questions, give guidance, annotate the artifacts and validate the results.
-- **Resume without starting over.** The provider tag unfolds: choose Codex or Claude Code, then **Change and resume** after a stop or an exhausted quota. Files, decisions, artifacts and history are kept.
-- **A notification for each successful step.** Click it to find the result. Projects and wishes list the most recent first.
-- **Your language.** The interface follows the system language (English or French); change it in **Connections & preferences**.
+- **One wish, one lead.** Say what you wish. Its lead, Claude Code or Codex, splits it into tasks, each one a worker in
+  its own worktree. Three wishes are active at most; the flight plan shows them together.
+- **A visible team.** Each task shows its worker, its status, its live events and what it cost. Send it an instruction
+  while it works, or stop it. Talk to the lead in a terminal inside the window.
+- **You decide.** A question comes with its options and the lead's recommendation: **Rub the lamp** takes it,
+  **Enlighten me** sends the lead to dig first. A system notification answers it from anywhere.
+- **The lead's notes stay in the wish.** Markdown and Mermaid diagrams: mark what you read, approve what may go on
+  as it is. One HTML page shares the wish; `djinn wish export` hands it over whole, in one file.
+- **Nothing is lost.** Stopping Djinn interrupts the workers, never loses them: the next start resumes each one in
+  its own worktree and session. A worker stopped by its usage limit waits for the reset, then goes on.
+- **Every request finds its wish.** Something unrelated comes up: the lead offers to file it in another wish or to
+  open a new one. A skill's [wish template](docs/wish-templates.md) makes a wish that already knows how to work, with
+  a watcher that wakes its lead on each change.
+- **Your language.** The interface follows the system language (English or French); change it in **Connections &
+  preferences**.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/readme/tasks-light.png">

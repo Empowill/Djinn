@@ -238,7 +238,7 @@ session limit · resets …" or "Claude AI usage limit reached|<time>"; Codex's 
 
 ## Watch: a command, no agent
 
-`djinn task spawn <wish> "Watch !41" --provider watch --prompt "mrwatch -watch 41" --restart` runs the command
+`djinn task spawn <wish> --title "Watch !41" --provider watch --prompt "mrwatch -watch 41" --restart` runs the command
 in the project's folder: no agent, no model, no token. Each paragraph it prints (output, then a second of silence,
 or its exit; 200 lines at most) is a `TEXT` event, its raw line kept with its colours, and its first line wakes the
 wish's lead, typed in the lead's terminal as an answer is:
