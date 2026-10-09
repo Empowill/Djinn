@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,3 +115,39 @@ func ReadAddr(home string) (string, error) {
 	}
 	return addr, nil
 }
+
+// WholeWrites gathers what h writes until it flushes or returns, and hands it on in one Write: on wails://, each
+// Write is a chunk WebKit passes to the page. connect-go writes a message of a stream in two writes (its 5-byte
+// prefix, then its payload) and flushes after it; on macOS, WebKit sometimes held the payload back after handing
+// over the prefix, and the page waited for it until a reload: a change of WishService.Watch never showed. One chunk
+// per message leaves nothing half sent.
+func WholeWrites(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ww := &wholeWriter{ResponseWriter: w}
+		defer ww.Flush()
+		h.ServeHTTP(ww, r)
+	})
+}
+
+// wholeWriter holds the writes until a flush.
+type wholeWriter struct {
+	http.ResponseWriter
+	buf []byte
+}
+
+func (w *wholeWriter) Write(b []byte) (int, error) {
+	w.buf = append(w.buf, b...)
+	return len(b), nil
+}
+
+// Flush hands on what was written since the last flush, in one Write.
+func (w *wholeWriter) Flush() {
+	if len(w.buf) > 0 {
+		_, _ = w.ResponseWriter.Write(w.buf)
+		w.buf = w.buf[:0]
+	}
+	_ = http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+// Unwrap lets http.ResponseController reach the writer beneath.
+func (w *wholeWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
