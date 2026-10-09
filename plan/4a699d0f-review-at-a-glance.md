@@ -31,7 +31,7 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   computed (`render.Decisions`): the developer for an answered question or an approved block (the tone *human*),
   else the worker the block is about, else the lead. Marks stay on open questions and on the other blocks only.
 - **Three levels for an open question** (W88, ported by W134; W40's answer A): *blocking* is computed, a waiting task
-  needs the answer (`render.UrgencyOf`), red; *before X* is `Question.before` (16), a few words set with `djinn
+  needs the answer (`render.UrgencyOf`), red; *before X* is `Question.before` (17), a few words set with `djinn
   question ask --before "before the merge"` and changed with `djinn question revise --before …` (`--before ""` clears
   it), orange under those words; empty, the question *can wait*, grey with a clock (tone `later`). Every list orders
   them blocking, before X, can wait (`render.ByUrgency`, `byUrgency` in `src/data/flight.ts`); in the attention bars
