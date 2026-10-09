@@ -372,7 +372,7 @@ func TestOutside(t *testing.T) {
 func TestHolderEnds(t *testing.T) {
 	g := New(nil, nil, nil)
 	g.tick = 10 * time.Millisecond
-	read := Read(machine.ReadWorker)
+	read := Read(func(pid int) (machine.Group, error) { return machine.ReadWorker(pid, "") })
 	if machine.NotMeasured != "" {
 		read = func(int) (machine.Group, error) { return machine.Group{Processes: 1, Memory: 50 << 20}, nil }
 	}

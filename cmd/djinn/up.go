@@ -145,7 +145,8 @@ func runUp(args []string) (restart bool, err error) {
 	workers.GatesOutside(gates.Outside)
 	gates.Freed(workers.Wake)
 	if machine.NotMeasured == "" {
-		gates.Measure(5*time.Second, machine.ReadWorker)
+		// A gate's holder is a process of its own, in no worker's scope: read from its processes.
+		gates.Measure(5*time.Second, func(pid int) (machine.Group, error) { return machine.ReadWorker(pid, "") })
 	}
 	if *termDir != "" {
 		if *termDir, err = filepath.Abs(*termDir); err != nil {
