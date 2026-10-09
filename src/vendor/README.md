@@ -6,6 +6,6 @@ SHA-256: `18327bef70d96fb505fe7287d9f6a7362ebf07ff6576ddfaffb1a06f3e1a2954`.
 
 Upstream version and MIT license verified against `https://github.com/mermaid-js/mermaid/tree/mermaid%4011.16.1`. Included license banners are preserved in the JS and copied to `BUNDLED-NOTICES.txt`; Djinn's packaged notices also include them.
 
-Loaded on demand as text by Vite and executed only inside a scripts-only iframe, with strict Mermaid security, no network, no native bridge and an authenticated bounded height/error channel. The 3.6 MB raw bundle is outside the initial application chunk. Source text is JSON-escaped before interpolation.
+Inlined by the build into `mermaid-frame.html` (`src/mermaid-frame.ts`), which the page loads on demand in a scripts-only sandboxed iframe: strict Mermaid security, no network, scripts allowed by their SHA-256 hashes only, and an authenticated bounded height/error channel. The 3.6 MB bundle stays outside the application's chunks. The source reaches the frame by message, never interpolated.
 
 Future update: replace this bundle with a reproducible upstream package build when registry access is available, retain the notices and rerun the Mermaid interaction/isolation tests.

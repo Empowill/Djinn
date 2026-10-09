@@ -125,9 +125,19 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
     await expect(page.locator(".hero h1")).toHaveText(title);
     const block = page.locator(".ac-markdown").filter({ hasText: "wick" });
     await expect(block.locator(".ac-code")).toBeVisible();
-    // The diagram's document takes the theme's colours. (In the browser, the page's policy keeps Mermaid's script
-    // from running in it: the ground is what shows here.)
+    // Mermaid draws in its frame: an SVG with the three nodes of the source, on the theme's ground, in the theme's
+    // ink.
     const diagram = page.frameLocator(".mermaid-support iframe");
+    const svg = diagram.locator("#render svg");
+    await expect(svg).toBeVisible();
+    await expect(svg.locator(".node")).toHaveCount(3);
+    for (const node of ["Oil", "Wick", "Light"])
+      await expect(svg.locator(".node").filter({ hasText: node })).toHaveCount(
+        1,
+      );
+    await expect(
+      page.locator(".mermaid-support").getByRole("status"),
+    ).toHaveCount(0);
     await expect
       .poll(() =>
         diagram
@@ -135,6 +145,26 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
           .evaluate((e) => getComputedStyle(e).backgroundColor),
       )
       .toBe(look.card);
+    // The frame fits the diagram: no tall empty ground under it.
+    expect(
+      await page
+        .locator(".mermaid-support iframe")
+        .evaluate((e) => e.clientHeight),
+    ).toBeLessThan(200);
+    // The labels follow the theme: light ink on the dark ground, dark ink on the light one.
+    await expect
+      .poll(() =>
+        svg
+          .locator(".node .nodeLabel, .node text")
+          .first()
+          .evaluate((e) => {
+            const style = getComputedStyle(e);
+            const ink = e instanceof SVGElement ? style.fill : style.color;
+            const [r, g, b] = ink.match(/\d+/g)!.map(Number);
+            return r + g + b > 382 ? "light" : "dark";
+          }),
+      )
+      .toBe(theme === "dark" ? "light" : "dark");
 
     // The terminal: its ground is the page's, its rows are coloured by the theme.
     await expect(

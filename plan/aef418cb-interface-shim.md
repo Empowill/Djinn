@@ -93,8 +93,7 @@ Not switched yet, screen by screen:
   or chosen with "Choose a folder…" in the native window (`UiService.ChooseDirectory`, T13).
 - **Notifications** of a new question: shown by the server itself, not by the page (T09).
 - **A terminal per wish** (T13's open question): still one terminal, switched by `djinn wish resume`.
-- **Visualizations** (HTML artifacts in a frame): gone with the artifact workspace. Mermaid in a block shows an
-  empty frame in the page djinn serves: the frame's inline script meets the page's policy. It was so before.
+- **Visualizations** (HTML artifacts in a frame): gone with the artifact workspace.
 - **Clean-up**: the styles of the removed panels are still in `styles.css`; `UiService.LoadState`, `SaveState`,
   `ValidateProject` and the never implemented `UiService.Watch` have no caller left.
 - **`npm run dev`** has no djinn behind it: a proxy to a dev djinn would bring it back.
@@ -111,6 +110,12 @@ Not switched yet, screen by screen:
 - **Question cards drop Motion's `layout`**: its transforms fought the place-keeping script.
 - **A question opens unfolded when it is the only one waiting**; with several, each opens on a click. Its first
   option is chosen beforehand, as before.
+- **Mermaid draws in a frame of the page's own origin** (W73). A blob: frame inherited the page's policy, which
+  forbids inline scripts: the frame stayed empty in the browser. The build now writes `mermaid-frame.html`
+  (`src/mermaid-frame.ts`), served like any page by the server and by the window's asset server (wails://, the same
+  handler). Its own policy runs its two scripts by their SHA-256 hashes; the page allows `frame-src 'self'` and keeps
+  no `unsafe-inline` for scripts. Sandboxed with scripts only, the frame has an opaque origin and takes the source
+  and the theme by message. E2e `theme.spec.ts`: an SVG with its three nodes, dark and light.
 - **Electron goes in the same branch** (its own commit): its renderer was `src/`. With it go its runtime, its tests,
   its packaging scripts, `electron` and `electron-builder`, and the texts only it used. The visualization theme
   moves into `src/`.
