@@ -122,6 +122,32 @@
         },
         "type": "object"
       },
+      "machine.v1.Disk": {
+        "description": "Disk is the space of the file system that holds a folder.",
+        "properties": {
+          "availableBytes": {
+            "description": "Space available to Djinn, in bytes.",
+            "format": "uint64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "path": {
+            "description": "The folder read.",
+            "type": "string"
+          },
+          "totalBytes": {
+            "description": "Size of its file system, in bytes.",
+            "format": "uint64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "machine.v1.Gate": {
         "description": "Gate is a gate held or waited for.",
         "properties": {
@@ -167,12 +193,50 @@
         },
         "type": "object"
       },
+      "machine.v1.Gpu": {
+        "description": "Gpu is a graphics processor of the machine.",
+        "properties": {
+          "driver": {
+            "description": "Driver: nvidia, nouveau, amdgpu, i915, xe; metal on Apple Silicon. Empty when none is bound.",
+            "type": "string"
+          },
+          "driverVersion": {
+            "description": "Version of the driver; empty when unknown.",
+            "type": "string"
+          },
+          "memoryBytes": {
+            "description": "Memory of its own, in bytes; with unified memory, the machine's. 0 when unknown.",
+            "format": "uint64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "name": {
+            "description": "Name, as its driver gives it; its PCI identifiers when none does.",
+            "type": "string"
+          },
+          "unifiedMemory": {
+            "description": "Whether it shares the machine's memory (Apple Silicon).",
+            "type": "boolean"
+          },
+          "vendor": {
+            "description": "Maker: nvidia, amd, intel, apple, or the PCI vendor identifier of another.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "machine.v1.Machine": {
         "description": "Machine is the machine Djinn runs on, as read now.",
         "properties": {
           "arch": {
             "description": "Processor architecture: amd64, arm64.",
             "type": "string"
+          },
+          "canRunLocalModel": {
+            "description": "Whether a local open-weight model can run here, for dispatch: a usable GPU, or enough memory to run it on the CPU, and disk space for its weights.",
+            "type": "boolean"
           },
           "cores": {
             "description": "Logical cores Djinn may use.",
@@ -183,9 +247,24 @@
             "$ref": "#/components/schemas/machine.v1.Pressure",
             "description": "CPU pressure; absent where the system gives none (Linux without PSI, macOS, Windows)."
           },
+          "disk": {
+            "$ref": "#/components/schemas/machine.v1.Disk",
+            "description": "The disk of Djinn's data folder, where the worktrees live; absent when it could not be read."
+          },
+          "gpus": {
+            "description": "The graphics processors, read once at start-up; empty when Djinn found none, or does not read them (Windows, an Intel Mac).",
+            "items": {
+              "$ref": "#/components/schemas/machine.v1.Gpu"
+            },
+            "type": "array"
+          },
           "load1": {
             "description": "Load average over the last minute; absent where the system gives none (Windows).",
             "type": "number"
+          },
+          "localModelReason": {
+            "description": "Why it can or cannot.",
+            "type": "string"
           },
           "memoryAvailableBytes": {
             "description": "Memory available to new programs, in bytes.",
@@ -2881,7 +2960,7 @@
     },
     "/machine.v1.MachineService/Show": {
       "post": {
-        "description": "Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.",
+        "description": "Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at once, and whether it can run a local model.",
         "operationId": "MachineService_Show",
         "requestBody": {
           "content": {

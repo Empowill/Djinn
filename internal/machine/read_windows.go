@@ -33,3 +33,6 @@ func Read() (Snapshot, error) {
 	s.MemoryTotal, s.MemoryAvailable = m.totalPhys, m.availPhys
 	return s, nil
 }
+
+// readGPUs reads no GPU on Windows yet.
+func readGPUs() []GPU { return nil }

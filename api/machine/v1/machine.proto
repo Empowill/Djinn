@@ -10,7 +10,8 @@ import "google/protobuf/timestamp.proto";
 
 // MachineService says what the machine has, how loaded it is, and how many workers Djinn runs on it.
 service MachineService {
-  // Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.
+  // Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
+  // once, and whether it can run a local model.
   rpc Show(MachineServiceShowRequest) returns (MachineServiceShowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -55,6 +56,42 @@ message Machine {
   string pressure = 12;
   // When the machine was read.
   google.protobuf.Timestamp read_time = 13;
+  // The disk of Djinn's data folder, where the worktrees live; absent when it could not be read.
+  Disk disk = 14;
+  // The graphics processors, read once at start-up; empty when Djinn found none, or does not read them (Windows,
+  // an Intel Mac).
+  repeated Gpu gpus = 15;
+  // Whether a local open-weight model can run here, for dispatch: a usable GPU, or enough memory to run it on the
+  // CPU, and disk space for its weights.
+  bool can_run_local_model = 16;
+  // Why it can or cannot.
+  string local_model_reason = 17;
+}
+
+// Disk is the space of the file system that holds a folder.
+message Disk {
+  // The folder read.
+  string path = 1;
+  // Size of its file system, in bytes.
+  uint64 total_bytes = 2;
+  // Space available to Djinn, in bytes.
+  uint64 available_bytes = 3;
+}
+
+// Gpu is a graphics processor of the machine.
+message Gpu {
+  // Maker: nvidia, amd, intel, apple, or the PCI vendor identifier of another.
+  string vendor = 1;
+  // Name, as its driver gives it; its PCI identifiers when none does.
+  string name = 2;
+  // Driver: nvidia, nouveau, amdgpu, i915, xe; metal on Apple Silicon. Empty when none is bound.
+  string driver = 3;
+  // Version of the driver; empty when unknown.
+  string driver_version = 4;
+  // Memory of its own, in bytes; with unified memory, the machine's. 0 when unknown.
+  uint64 memory_bytes = 5;
+  // Whether it shares the machine's memory (Apple Silicon).
+  bool unified_memory = 6;
 }
 
 message MachineServiceShowRequest {}

@@ -14,7 +14,7 @@ task starts now, on which worker, once its dependencies, write scopes and gates 
 ## Depends on
 - **T17, knowing the machine.** Whether a local model can run at all comes from the discovery
   (a usable GPU and its drivers, the memory), and a dispatcher must respect the machine's budget
-  whatever it is made of.
+  whatever it is made of. (The verdict exists: `can_run_local_model` and its reason, in `djinn machine show`)
 
 ## The contenders
 - **Plain Go code**: the scheduler of the orchestrator (T07). Deterministic, free, instant.

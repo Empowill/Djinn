@@ -53,7 +53,8 @@ const (
 
 // MachineServiceClient is a client for the machine.v1.MachineService service.
 type MachineServiceClient interface {
-	// Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.
+	// Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
+	// once, and whether it can run a local model.
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
 }
 
@@ -90,7 +91,8 @@ func (c *machineServiceClient) Show(ctx context.Context, req *connect.Request[v1
 
 // MachineServiceHandler is an implementation of the machine.v1.MachineService service.
 type MachineServiceHandler interface {
-	// Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.
+	// Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
+	// once, and whether it can run a local model.
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
 }
 
