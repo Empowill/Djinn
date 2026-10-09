@@ -67,7 +67,42 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     is gone. (`window_none.go`; `noticeService.ServiceStartup` returns no error)
   - [ ] Seen on GNOME, with a click and a button (by hand). (needs: a person on Linux)
   - [ ] macOS: needs the `.app` bundle and its identifier. (needs: T19, then a Mac)
-  - [ ] A global shortcut. (needs: an agent)
+  - [ ] A global shortcut.
+    - [x] A chord anywhere on the desktop brings the window forward on the active wish with the newest question
+      that waits for you (not one being investigated), else on the flight plan. Through Wails beta.28's
+      `app.GlobalShortcut`, taken once the app runs (`events.Common.ApplicationStarted`), so that a refusal is
+      known at once; off in headless builds and with `--browser`. (`internal/ui/shortcut.go`;
+      `TestShortcutShowsWhatWaits`, `TestShortcutsSet`, `TestShortcutsRefused` with a fake registrar)
+    - [x] Configurable in the settings: one field, empty for off, saved on Enter (`UiService.SetShortcut`, kept in
+      `settings.json` of the data directory as `ui.v1.Settings`). A chord needs Ctrl, Alt, Cmd or Super and one key
+      (a letter, a digit, F1 to F12, Space), so it never takes a key from typing. One the system refuses is kept,
+      and the settings say why. (`TestNormalizeChord`, `TestShortcutsSettingsFile`, `TestSetShortcut`; screen test
+      "the global shortcut is a field of the settings")
+    - [x] The default chord: `Ctrl+Alt+Space` on Linux and Windows, `Ctrl+Cmd+J` on macOS. Checked here, on
+      Ubuntu 22.04 with GNOME 42 on X11, by reading every key binding of `gsettings`: `Ctrl+Alt+D`, `Ctrl+Alt+L`
+      and `Ctrl+Alt+T` are taken, `Ctrl+Alt+Space` is free (only `Alt+Space` and `Super+Space` are bound).
+      Supposed, not checked: KDE Plasma binds no `Ctrl+Alt+Space`; macOS keeps `Ctrl+Option+Space` for VoiceOver
+      and `Cmd+Option+Space` for Finder, and binds no `Ctrl+Cmd+J`; on Windows, AltGr is Ctrl+Alt, and no common
+      layout types a character with AltGr+Space.
+    - What each system does, as Wails' sources say (beta.28, `pkg/application/global_shortcut_*.go`):
+      - Linux on X11: `XGrabKey` on the root window, for every state of Caps Lock and Num Lock. A chord another
+        app holds is refused at once. Supposed to work; not pressed on a real desktop.
+      - Linux on Wayland (`XDG_SESSION_TYPE=wayland`): the `org.freedesktop.portal.GlobalShortcuts` portal. The chord
+        is only a preference: the desktop asks the user, and may bind other keys. The portal answers later; its
+        refusal reaches the settings through Wails' error handler. Supposed: GNOME has the portal from GNOME 48
+        (none on Ubuntu 22.04's GNOME 42: the settings then say why it does not work), KDE Plasma from 5.27; the
+        desktop may ask again at each start, as Djinn opens a new portal session each time.
+      - macOS: Carbon's `RegisterEventHotKey`; needs no accessibility permission. Supposed; not built on a Mac.
+      - Windows: `RegisterHotKey`; a chord another app holds is refused at once. Supposed; built (`GOOS=windows go
+        vet`), not run.
+    - [ ] Pressed by hand on GNOME on X11: the window comes forward on the wish with the newest open question, then
+      on the flight plan once it is answered; a chord another app holds says so in the settings; turned off, the
+      chord does nothing. A development build next to the installed Djinn finds `Ctrl+Alt+Space` taken by it: that
+      is the refusal case; choose another chord in its settings to try a press. (needs: a person on Linux, with an
+      installed Djinn)
+    - [ ] Pressed by hand on a Wayland desktop with the portal (GNOME 48 or later, or KDE Plasma): the desktop asks,
+      then the chord brings the window forward. (needs: a person on a Wayland desktop with the portal)
+    - [ ] Pressed by hand on macOS and on Windows. (needs: a Mac, and a Windows machine)
 - [x] OpenAPI documentation of the public methods. (`docs/openapi.json`, OpenAPI 3.1, written by `go tool task gen`
   through `tools/openapi`; `TestOpenAPIIsFresh`, `TestOpenAPI`; Redocly lint: valid, one warning on the localhost
   server; its `ProjectService/List` answered a curl with the bearer token)

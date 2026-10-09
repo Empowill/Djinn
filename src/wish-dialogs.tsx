@@ -1,10 +1,13 @@
 // The window's dialogs on the services: make a wish, add a project, look at a project and its skills, and the
-// settings that stay on this page (the language).
+// settings: those that stay on this page (the language, the theme), and the global shortcut, which djinn takes.
 import { ArrowRight, FolderOpen, Terminal } from "lucide-react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 
 import type { Project, Skill } from "../gen/ts/plan/v1/plan_pb";
-import type { UiServiceGetEnvironmentResponse } from "../gen/ts/ui/v1/ui_pb";
+import type {
+  Shortcut,
+  UiServiceGetEnvironmentResponse,
+} from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
 import { MAX_ACTIVE } from "./data/format";
@@ -322,7 +325,67 @@ export function ProjectPanel({
   );
 }
 
-// Settings: the agents djinn finds on this machine, and the language of the page.
+// ShortcutField is the global shortcut that brings the window forward, typed in as Ctrl+Alt+Space; empty turns it
+// off. Saved on Enter or when the field is left. Disabled where djinn cannot take one: the browser.
+export function ShortcutField({
+  shortcut,
+  onSave,
+}: {
+  shortcut?: Shortcut;
+  onSave: (chord: string) => Promise<void>;
+}) {
+  const id = useId();
+  const [draft, setDraft] = useState<string>();
+  const [error, setError] = useState("");
+  const available = shortcut?.available ?? false;
+  const value = draft ?? shortcut?.chord ?? "";
+  const save = () => {
+    if (draft === undefined || draft === shortcut?.chord) return;
+    onSave(draft).then(
+      () => {
+        setDraft(undefined);
+        setError("");
+      },
+      (err) => setError(message(err)),
+    );
+  };
+  return (
+    <div className="setting-row">
+      <div>
+        <label htmlFor={id}>
+          <strong>{t("settings.shortcut")}</strong>
+        </label>
+        <p>
+          {available
+            ? t("settings.shortcut_detail", {
+                chord: shortcut?.defaultChord ?? "",
+              })
+            : t("settings.shortcut_unavailable")}
+        </p>
+        {available && shortcut?.problem && !error && (
+          <p className="login-message">
+            {t("settings.shortcut_problem", { problem: shortcut.problem })}
+          </p>
+        )}
+        {error && <p className="login-message">{error}</p>}
+      </div>
+      <input
+        id={id}
+        value={value}
+        disabled={!available}
+        placeholder={t("settings.shortcut_off")}
+        spellCheck={false}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+        }}
+      />
+    </div>
+  );
+}
+
+// Settings: the agents djinn finds on this machine, the language and the theme of the page, and the global shortcut.
 export function Settings({ onClose }: { onClose: () => void }) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
@@ -415,6 +478,13 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <option value="system">{t("settings.theme_system")}</option>
         </select>
       </div>
+      <ShortcutField
+        shortcut={env?.shortcut}
+        onSave={async (chord) => {
+          const res = await clients.ui.setShortcut({ chord });
+          setEnv((prev) => prev && { ...prev, shortcut: res.shortcut });
+        }}
+      />
       <div className="settings-foot">
         <Brand small />
         <span>Djinn {env?.version}</span>

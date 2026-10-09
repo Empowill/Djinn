@@ -16,7 +16,7 @@ import (
 const hasWindow = false
 
 // openWindow is unavailable in a build without a native window.
-func openWindow(context.Context, string, http.Handler, <-chan struct{}, *ui.Notices) error {
+func openWindow(context.Context, string, http.Handler, <-chan struct{}, *ui.Notices, *ui.Shortcuts) error {
 	return errors.New("this build has no native window: use --browser, or rebuild with CGO and the system libraries of the window (see the README)")
 }
 

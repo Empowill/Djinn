@@ -49,6 +49,8 @@ const (
 	UiServiceChooseDirectoryProcedure = "/ui.v1.UiService/ChooseDirectory"
 	// UiServiceOpenExternalProcedure is the fully-qualified name of the UiService's OpenExternal RPC.
 	UiServiceOpenExternalProcedure = "/ui.v1.UiService/OpenExternal"
+	// UiServiceSetShortcutProcedure is the fully-qualified name of the UiService's SetShortcut RPC.
+	UiServiceSetShortcutProcedure = "/ui.v1.UiService/SetShortcut"
 	// UiServiceShowProcedure is the fully-qualified name of the UiService's Show RPC.
 	UiServiceShowProcedure = "/ui.v1.UiService/Show"
 	// UiServiceWatchShowProcedure is the fully-qualified name of the UiService's WatchShow RPC.
@@ -76,6 +78,10 @@ type UiServiceClient interface {
 	ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error)
 	// Open an HTTP or HTTPS link in the default browser.
 	OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error)
+	// Choose the global shortcut that brings the window forward from anywhere on the desktop; an empty chord turns it
+	// off. Kept in the data directory. Fails on a chord Djinn does not take; one the system refuses (another
+	// application holds it) is kept, and its problem said.
+	SetShortcut(context.Context, *connect.Request[v1.UiServiceSetShortcutRequest]) (*connect.Response[v1.UiServiceSetShortcutResponse], error)
 	// Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
 	// window shows them too. In browser mode, djinn up prints the address of the page again.
 	Show(context.Context, *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error)
@@ -140,6 +146,12 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(uiServiceMethods.ByName("OpenExternal")),
 			connect.WithClientOptions(opts...),
 		),
+		setShortcut: connect.NewClient[v1.UiServiceSetShortcutRequest, v1.UiServiceSetShortcutResponse](
+			httpClient,
+			baseURL+UiServiceSetShortcutProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("SetShortcut")),
+			connect.WithClientOptions(opts...),
+		),
 		show: connect.NewClient[v1.UiServiceShowRequest, v1.UiServiceShowResponse](
 			httpClient,
 			baseURL+UiServiceShowProcedure,
@@ -181,6 +193,7 @@ type uiServiceClient struct {
 	validateProject *connect.Client[v1.UiServiceValidateProjectRequest, v1.UiServiceValidateProjectResponse]
 	chooseDirectory *connect.Client[v1.UiServiceChooseDirectoryRequest, v1.UiServiceChooseDirectoryResponse]
 	openExternal    *connect.Client[v1.UiServiceOpenExternalRequest, v1.UiServiceOpenExternalResponse]
+	setShortcut     *connect.Client[v1.UiServiceSetShortcutRequest, v1.UiServiceSetShortcutResponse]
 	show            *connect.Client[v1.UiServiceShowRequest, v1.UiServiceShowResponse]
 	watchShow       *connect.Client[v1.UiServiceWatchShowRequest, v1.UiServiceWatchShowResponse]
 	watchUpdate     *connect.Client[v1.UiServiceWatchUpdateRequest, v1.UiServiceWatchUpdateResponse]
@@ -216,6 +229,11 @@ func (c *uiServiceClient) ChooseDirectory(ctx context.Context, req *connect.Requ
 // OpenExternal calls ui.v1.UiService.OpenExternal.
 func (c *uiServiceClient) OpenExternal(ctx context.Context, req *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error) {
 	return c.openExternal.CallUnary(ctx, req)
+}
+
+// SetShortcut calls ui.v1.UiService.SetShortcut.
+func (c *uiServiceClient) SetShortcut(ctx context.Context, req *connect.Request[v1.UiServiceSetShortcutRequest]) (*connect.Response[v1.UiServiceSetShortcutResponse], error) {
+	return c.setShortcut.CallUnary(ctx, req)
 }
 
 // Show calls ui.v1.UiService.Show.
@@ -258,6 +276,10 @@ type UiServiceHandler interface {
 	ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error)
 	// Open an HTTP or HTTPS link in the default browser.
 	OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error)
+	// Choose the global shortcut that brings the window forward from anywhere on the desktop; an empty chord turns it
+	// off. Kept in the data directory. Fails on a chord Djinn does not take; one the system refuses (another
+	// application holds it) is kept, and its problem said.
+	SetShortcut(context.Context, *connect.Request[v1.UiServiceSetShortcutRequest]) (*connect.Response[v1.UiServiceSetShortcutResponse], error)
 	// Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
 	// window shows them too. In browser mode, djinn up prints the address of the page again.
 	Show(context.Context, *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error)
@@ -318,6 +340,12 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(uiServiceMethods.ByName("OpenExternal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	uiServiceSetShortcutHandler := connect.NewUnaryHandler(
+		UiServiceSetShortcutProcedure,
+		svc.SetShortcut,
+		connect.WithSchema(uiServiceMethods.ByName("SetShortcut")),
+		connect.WithHandlerOptions(opts...),
+	)
 	uiServiceShowHandler := connect.NewUnaryHandler(
 		UiServiceShowProcedure,
 		svc.Show,
@@ -362,6 +390,8 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 			uiServiceChooseDirectoryHandler.ServeHTTP(w, r)
 		case UiServiceOpenExternalProcedure:
 			uiServiceOpenExternalHandler.ServeHTTP(w, r)
+		case UiServiceSetShortcutProcedure:
+			uiServiceSetShortcutHandler.ServeHTTP(w, r)
 		case UiServiceShowProcedure:
 			uiServiceShowHandler.ServeHTTP(w, r)
 		case UiServiceWatchShowProcedure:
@@ -403,6 +433,10 @@ func (UnimplementedUiServiceHandler) ChooseDirectory(context.Context, *connect.R
 
 func (UnimplementedUiServiceHandler) OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.OpenExternal is not implemented"))
+}
+
+func (UnimplementedUiServiceHandler) SetShortcut(context.Context, *connect.Request[v1.UiServiceSetShortcutRequest]) (*connect.Response[v1.UiServiceSetShortcutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.SetShortcut is not implemented"))
 }
 
 func (UnimplementedUiServiceHandler) Show(context.Context, *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error) {

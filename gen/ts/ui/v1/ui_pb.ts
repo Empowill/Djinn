@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0In8KH1VpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIQCghwbGF0Zm9ybRgCIAEoCRIiCglwcm92aWRlcnMYAyADKAsyDy51aS52MS5Qcm92aWRlchIVCg1mb2xkZXJfZGlhbG9nGAQgASgIIkgKCFByb3ZpZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB2NvbW1hbmQYBCABKAkiGwoZVWlTZXJ2aWNlTG9hZFN0YXRlUmVxdWVzdCIwChpVaVNlcnZpY2VMb2FkU3RhdGVSZXNwb25zZRISCgpzdGF0ZV9qc29uGAEgASgJIi8KGVVpU2VydmljZVNhdmVTdGF0ZVJlcXVlc3QSEgoKc3RhdGVfanNvbhgBIAEoCSIcChpVaVNlcnZpY2VTYXZlU3RhdGVSZXNwb25zZSI0Ch9VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXF1ZXN0EhEKCWRpcmVjdG9yeRgBIAEoCSJCCiBVaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXNwb25zZRIRCglkaXJlY3RvcnkYASABKAkSCwoDZ2l0GAIgASgIIlcKH1VpU2VydmljZUNob29zZURpcmVjdG9yeVJlcXVlc3QSFwoFdGl0bGUYASABKAlCCLpIBXIDGMgBEhsKCWRpcmVjdG9yeRgCIAEoCUIIukgFcgMYgCAiNQogVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2USEQoJZGlyZWN0b3J5GAEgASgJIisKHFVpU2VydmljZU9wZW5FeHRlcm5hbFJlcXVlc3QSCwoDdXJsGAEgASgJIiwKHVVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlEgsKA3VybBgBIAEoCSJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCI/ChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJIh0KG1VpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdCJTChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkiGAoWVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdCI9ChdVaVNlcnZpY2VVcGRhdGVSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhEKCXRlcm1pbmFscxgCIAEoBSIpChVVaVNlcnZpY2VXYXRjaFJlcXVlc3QSEAoIZnJvbV9zZXEYASABKAQiewoWVWlTZXJ2aWNlV2F0Y2hSZXNwb25zZRILCgNzZXEYASABKAQSIwoHcHJvamVjdBgCIAEoCzIQLnBsYW4udjEuUHJvamVjdEgAEiUKCHF1ZXN0aW9uGAMgASgLMhEucGxhbi52MS5RdWVzdGlvbkgAQggKBmVudGl0eTL3BwoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJWCglMb2FkU3RhdGUSIC51aS52MS5VaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlTG9hZFN0YXRlUmVzcG9uc2UiBMjzGAISVgoJU2F2ZVN0YXRlEiAudWkudjEuVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIgTI8xgCEmgKD1ZhbGlkYXRlUHJvamVjdBImLnVpLnYxLlVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJYCglXYXRjaFNob3cSIC51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2UiBMjzGAIwARJeCgtXYXRjaFVwZGF0ZRIiLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2UiBMjzGAIwARJNCgZVcGRhdGUSHS51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Gh4udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2UiBMjzGAISTAoFV2F0Y2gSHC51aS52MS5VaVNlcnZpY2VXYXRjaFJlcXVlc3QaHS51aS52MS5VaVNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgCMAFCdgoJY29tLnVpLnYxQgdVaVByb3RvUAFaK2dpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3VpL3YxO3VpdjGiAgNVWFiqAgVVaS5WMcoCBVVpXFYx4gIRVWlcVjFcR1BCTWV0YWRhdGHqAgZVaTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0IqIBCh9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCBIhCghzaG9ydGN1dBgFIAEoCzIPLnVpLnYxLlNob3J0Y3V0IlQKCFNob3J0Y3V0Eg0KBWNob3JkGAEgASgJEhUKDWRlZmF1bHRfY2hvcmQYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB3Byb2JsZW0YBCABKAkiLgoIU2V0dGluZ3MSFQoIc2hvcnRjdXQYASABKAlIAIgBAUILCglfc2hvcnRjdXQiSAoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCSIbChlVaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0IjAKGlVpU2VydmljZUxvYWRTdGF0ZVJlc3BvbnNlEhIKCnN0YXRlX2pzb24YASABKAkiLwoZVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBISCgpzdGF0ZV9qc29uGAEgASgJIhwKGlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIjQKH1VpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QSEQoJZGlyZWN0b3J5GAEgASgJIkIKIFVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCRILCgNnaXQYAiABKAgiVwofVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVxdWVzdBIXCgV0aXRsZRgBIAEoCUIIukgFcgMYyAESGwoJZGlyZWN0b3J5GAIgASgJQgi6SAVyAxiAICI1CiBVaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZRIRCglkaXJlY3RvcnkYASABKAkiKwocVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBILCgN1cmwYASABKAkiLAodVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2USCwoDdXJsGAEgASgJIjUKG1VpU2VydmljZVNldFNob3J0Y3V0UmVxdWVzdBIWCgVjaG9yZBgBIAEoCUIHukgEcgIYQCJBChxVaVNlcnZpY2VTZXRTaG9ydGN1dFJlc3BvbnNlEiEKCHNob3J0Y3V0GAEgASgLMg8udWkudjEuU2hvcnRjdXQiQgoUVWlTZXJ2aWNlU2hvd1JlcXVlc3QSDwoHd2lzaF9pZBgBIAEoCRIZCgh0ZXJtaW5hbBgCIAEoCUIHukgEcgIYQCInChVVaVNlcnZpY2VTaG93UmVzcG9uc2USDgoGd2luZG93GAEgASgIIhsKGVVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QiPwoaVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2USDwoHd2lzaF9pZBgBIAEoCRIQCgh0ZXJtaW5hbBgCIAEoCSIdChtVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlcXVlc3QiUwocVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZRIPCgdjdXJyZW50GAEgASgJEg0KBXJlYWR5GAIgASgJEhMKC25vdF9yZXN1bWVkGAMgAygJIhgKFlVpU2VydmljZVVwZGF0ZVJlcXVlc3QiPQoXVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIRCgl0ZXJtaW5hbHMYAiABKAUiKQoVVWlTZXJ2aWNlV2F0Y2hSZXF1ZXN0EhAKCGZyb21fc2VxGAEgASgEInsKFlVpU2VydmljZVdhdGNoUmVzcG9uc2USCwoDc2VxGAEgASgEEiMKB3Byb2plY3QYAiABKAsyEC5wbGFuLnYxLlByb2plY3RIABIlCghxdWVzdGlvbhgDIAEoCzIRLnBsYW4udjEuUXVlc3Rpb25IAEIICgZlbnRpdHky1QgKCVVpU2VydmljZRJlCg5HZXRFbnZpcm9ubWVudBIlLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVxdWVzdBomLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2UiBMjzGAISVgoJTG9hZFN0YXRlEiAudWkudjEuVWlTZXJ2aWNlTG9hZFN0YXRlUmVxdWVzdBohLnVpLnYxLlVpU2VydmljZUxvYWRTdGF0ZVJlc3BvbnNlIgTI8xgCElYKCVNhdmVTdGF0ZRIgLnVpLnYxLlVpU2VydmljZVNhdmVTdGF0ZVJlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VTYXZlU3RhdGVSZXNwb25zZSIEyPMYAhJoCg9WYWxpZGF0ZVByb2plY3QSJi51aS52MS5VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlVmFsaWRhdGVQcm9qZWN0UmVzcG9uc2UiBMjzGAISaAoPQ2hvb3NlRGlyZWN0b3J5EiYudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVxdWVzdBonLnVpLnYxLlVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlIgTI8xgCEl8KDE9wZW5FeHRlcm5hbBIjLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlcXVlc3QaJC51aS52MS5VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZSIEyPMYAhJcCgtTZXRTaG9ydGN1dBIiLnVpLnYxLlVpU2VydmljZVNldFNob3J0Y3V0UmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2UiBMjzGAISRwoEU2hvdxIbLnVpLnYxLlVpU2VydmljZVNob3dSZXF1ZXN0GhwudWkudjEuVWlTZXJ2aWNlU2hvd1Jlc3BvbnNlIgTI8xgCElgKCVdhdGNoU2hvdxIgLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZSIEyPMYAjABEl4KC1dhdGNoVXBkYXRlEiIudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZSIEyPMYAjABEk0KBlVwZGF0ZRIdLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlcXVlc3QaHi51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXNwb25zZSIEyPMYAhJMCgVXYXRjaBIcLnVpLnYxLlVpU2VydmljZVdhdGNoUmVxdWVzdBodLnVpLnYxLlVpU2VydmljZVdhdGNoUmVzcG9uc2UiBMjzGAIwAUJ2Cgljb20udWkudjFCB1VpUHJvdG9QAVorZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdWkvdjE7dWl2MaICA1VYWKoCBVVpLlYxygIFVWlcVjHiAhFVaVxWMVxHUEJNZXRhZGF0YeoCBlVpOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -62,6 +62,13 @@ export type UiServiceGetEnvironmentResponse = Message<"ui.v1.UiServiceGetEnviron
    * @generated from field: bool folder_dialog = 4;
    */
   folderDialog: boolean;
+
+  /**
+   * The global shortcut that brings the window forward.
+   *
+   * @generated from field: ui.v1.Shortcut shortcut = 5;
+   */
+  shortcut?: Shortcut | undefined;
 };
 
 /**
@@ -70,6 +77,72 @@ export type UiServiceGetEnvironmentResponse = Message<"ui.v1.UiServiceGetEnviron
  */
 export const UiServiceGetEnvironmentResponseSchema: GenMessage<UiServiceGetEnvironmentResponse> = /*@__PURE__*/
   messageDesc(file_ui_v1_ui, 1);
+
+/**
+ * The global shortcut that brings the window forward from anywhere on the desktop, on the wish with the newest open
+ * question, else on the flight plan.
+ *
+ * @generated from message ui.v1.Shortcut
+ */
+export type Shortcut = Message<"ui.v1.Shortcut"> & {
+  /**
+   * The chord in effect, such as Ctrl+Alt+Space; empty when off.
+   *
+   * @generated from field: string chord = 1;
+   */
+  chord: string;
+
+  /**
+   * The chord used until one is chosen.
+   *
+   * @generated from field: string default_chord = 2;
+   */
+  defaultChord: string;
+
+  /**
+   * This Djinn can take a global shortcut: a native window on a system that has them. False in the browser.
+   *
+   * @generated from field: bool available = 3;
+   */
+  available: boolean;
+
+  /**
+   * Why the chord does not work, as the system said, such as another application holding it; empty when it works or
+   * is off.
+   *
+   * @generated from field: string problem = 4;
+   */
+  problem: string;
+};
+
+/**
+ * Describes the message ui.v1.Shortcut.
+ * Use `create(ShortcutSchema)` to create a new message.
+ */
+export const ShortcutSchema: GenMessage<Shortcut> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 2);
+
+/**
+ * The window's settings that Djinn acts on, in settings.json of the data directory. The page keeps its own (the
+ * language, the theme).
+ *
+ * @generated from message ui.v1.Settings
+ */
+export type Settings = Message<"ui.v1.Settings"> & {
+  /**
+   * The global shortcut's chord. Unset: the default one. Empty: off.
+   *
+   * @generated from field: optional string shortcut = 1;
+   */
+  shortcut?: string | undefined;
+};
+
+/**
+ * Describes the message ui.v1.Settings.
+ * Use `create(SettingsSchema)` to create a new message.
+ */
+export const SettingsSchema: GenMessage<Settings> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 3);
 
 /**
  * An agent command line.
@@ -111,7 +184,7 @@ export type Provider = Message<"ui.v1.Provider"> & {
  * Use `create(ProviderSchema)` to create a new message.
  */
 export const ProviderSchema: GenMessage<Provider> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 2);
+  messageDesc(file_ui_v1_ui, 4);
 
 /**
  * @generated from message ui.v1.UiServiceLoadStateRequest
@@ -124,7 +197,7 @@ export type UiServiceLoadStateRequest = Message<"ui.v1.UiServiceLoadStateRequest
  * Use `create(UiServiceLoadStateRequestSchema)` to create a new message.
  */
 export const UiServiceLoadStateRequestSchema: GenMessage<UiServiceLoadStateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 3);
+  messageDesc(file_ui_v1_ui, 5);
 
 /**
  * @generated from message ui.v1.UiServiceLoadStateResponse
@@ -143,7 +216,7 @@ export type UiServiceLoadStateResponse = Message<"ui.v1.UiServiceLoadStateRespon
  * Use `create(UiServiceLoadStateResponseSchema)` to create a new message.
  */
 export const UiServiceLoadStateResponseSchema: GenMessage<UiServiceLoadStateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 4);
+  messageDesc(file_ui_v1_ui, 6);
 
 /**
  * @generated from message ui.v1.UiServiceSaveStateRequest
@@ -162,7 +235,7 @@ export type UiServiceSaveStateRequest = Message<"ui.v1.UiServiceSaveStateRequest
  * Use `create(UiServiceSaveStateRequestSchema)` to create a new message.
  */
 export const UiServiceSaveStateRequestSchema: GenMessage<UiServiceSaveStateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 5);
+  messageDesc(file_ui_v1_ui, 7);
 
 /**
  * @generated from message ui.v1.UiServiceSaveStateResponse
@@ -175,7 +248,7 @@ export type UiServiceSaveStateResponse = Message<"ui.v1.UiServiceSaveStateRespon
  * Use `create(UiServiceSaveStateResponseSchema)` to create a new message.
  */
 export const UiServiceSaveStateResponseSchema: GenMessage<UiServiceSaveStateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 6);
+  messageDesc(file_ui_v1_ui, 8);
 
 /**
  * @generated from message ui.v1.UiServiceValidateProjectRequest
@@ -194,7 +267,7 @@ export type UiServiceValidateProjectRequest = Message<"ui.v1.UiServiceValidatePr
  * Use `create(UiServiceValidateProjectRequestSchema)` to create a new message.
  */
 export const UiServiceValidateProjectRequestSchema: GenMessage<UiServiceValidateProjectRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 7);
+  messageDesc(file_ui_v1_ui, 9);
 
 /**
  * @generated from message ui.v1.UiServiceValidateProjectResponse
@@ -220,7 +293,7 @@ export type UiServiceValidateProjectResponse = Message<"ui.v1.UiServiceValidateP
  * Use `create(UiServiceValidateProjectResponseSchema)` to create a new message.
  */
 export const UiServiceValidateProjectResponseSchema: GenMessage<UiServiceValidateProjectResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 8);
+  messageDesc(file_ui_v1_ui, 10);
 
 /**
  * @generated from message ui.v1.UiServiceChooseDirectoryRequest
@@ -246,7 +319,7 @@ export type UiServiceChooseDirectoryRequest = Message<"ui.v1.UiServiceChooseDire
  * Use `create(UiServiceChooseDirectoryRequestSchema)` to create a new message.
  */
 export const UiServiceChooseDirectoryRequestSchema: GenMessage<UiServiceChooseDirectoryRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 9);
+  messageDesc(file_ui_v1_ui, 11);
 
 /**
  * @generated from message ui.v1.UiServiceChooseDirectoryResponse
@@ -265,7 +338,7 @@ export type UiServiceChooseDirectoryResponse = Message<"ui.v1.UiServiceChooseDir
  * Use `create(UiServiceChooseDirectoryResponseSchema)` to create a new message.
  */
 export const UiServiceChooseDirectoryResponseSchema: GenMessage<UiServiceChooseDirectoryResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 10);
+  messageDesc(file_ui_v1_ui, 12);
 
 /**
  * @generated from message ui.v1.UiServiceOpenExternalRequest
@@ -284,7 +357,7 @@ export type UiServiceOpenExternalRequest = Message<"ui.v1.UiServiceOpenExternalR
  * Use `create(UiServiceOpenExternalRequestSchema)` to create a new message.
  */
 export const UiServiceOpenExternalRequestSchema: GenMessage<UiServiceOpenExternalRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 11);
+  messageDesc(file_ui_v1_ui, 13);
 
 /**
  * @generated from message ui.v1.UiServiceOpenExternalResponse
@@ -303,7 +376,45 @@ export type UiServiceOpenExternalResponse = Message<"ui.v1.UiServiceOpenExternal
  * Use `create(UiServiceOpenExternalResponseSchema)` to create a new message.
  */
 export const UiServiceOpenExternalResponseSchema: GenMessage<UiServiceOpenExternalResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 12);
+  messageDesc(file_ui_v1_ui, 14);
+
+/**
+ * @generated from message ui.v1.UiServiceSetShortcutRequest
+ */
+export type UiServiceSetShortcutRequest = Message<"ui.v1.UiServiceSetShortcutRequest"> & {
+  /**
+   * The chord: modifiers then a key, joined by +, such as Ctrl+Alt+Space. Empty turns the shortcut off.
+   *
+   * @generated from field: string chord = 1;
+   */
+  chord: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceSetShortcutRequest.
+ * Use `create(UiServiceSetShortcutRequestSchema)` to create a new message.
+ */
+export const UiServiceSetShortcutRequestSchema: GenMessage<UiServiceSetShortcutRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 15);
+
+/**
+ * @generated from message ui.v1.UiServiceSetShortcutResponse
+ */
+export type UiServiceSetShortcutResponse = Message<"ui.v1.UiServiceSetShortcutResponse"> & {
+  /**
+   * The shortcut as it now is.
+   *
+   * @generated from field: ui.v1.Shortcut shortcut = 1;
+   */
+  shortcut?: Shortcut | undefined;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceSetShortcutResponse.
+ * Use `create(UiServiceSetShortcutResponseSchema)` to create a new message.
+ */
+export const UiServiceSetShortcutResponseSchema: GenMessage<UiServiceSetShortcutResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 16);
 
 /**
  * @generated from message ui.v1.UiServiceShowRequest
@@ -329,7 +440,7 @@ export type UiServiceShowRequest = Message<"ui.v1.UiServiceShowRequest"> & {
  * Use `create(UiServiceShowRequestSchema)` to create a new message.
  */
 export const UiServiceShowRequestSchema: GenMessage<UiServiceShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 13);
+  messageDesc(file_ui_v1_ui, 17);
 
 /**
  * @generated from message ui.v1.UiServiceShowResponse
@@ -348,7 +459,7 @@ export type UiServiceShowResponse = Message<"ui.v1.UiServiceShowResponse"> & {
  * Use `create(UiServiceShowResponseSchema)` to create a new message.
  */
 export const UiServiceShowResponseSchema: GenMessage<UiServiceShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 14);
+  messageDesc(file_ui_v1_ui, 18);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowRequest
@@ -361,7 +472,7 @@ export type UiServiceWatchShowRequest = Message<"ui.v1.UiServiceWatchShowRequest
  * Use `create(UiServiceWatchShowRequestSchema)` to create a new message.
  */
 export const UiServiceWatchShowRequestSchema: GenMessage<UiServiceWatchShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 15);
+  messageDesc(file_ui_v1_ui, 19);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowResponse
@@ -387,7 +498,7 @@ export type UiServiceWatchShowResponse = Message<"ui.v1.UiServiceWatchShowRespon
  * Use `create(UiServiceWatchShowResponseSchema)` to create a new message.
  */
 export const UiServiceWatchShowResponseSchema: GenMessage<UiServiceWatchShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 16);
+  messageDesc(file_ui_v1_ui, 20);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateRequest
@@ -400,7 +511,7 @@ export type UiServiceWatchUpdateRequest = Message<"ui.v1.UiServiceWatchUpdateReq
  * Use `create(UiServiceWatchUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateRequestSchema: GenMessage<UiServiceWatchUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 17);
+  messageDesc(file_ui_v1_ui, 21);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateResponse
@@ -433,7 +544,7 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
  * Use `create(UiServiceWatchUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 18);
+  messageDesc(file_ui_v1_ui, 22);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateRequest
@@ -446,7 +557,7 @@ export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
  * Use `create(UiServiceUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceUpdateRequestSchema: GenMessage<UiServiceUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 19);
+  messageDesc(file_ui_v1_ui, 23);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateResponse
@@ -472,7 +583,7 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
  * Use `create(UiServiceUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 20);
+  messageDesc(file_ui_v1_ui, 24);
 
 /**
  * @generated from message ui.v1.UiServiceWatchRequest
@@ -491,7 +602,7 @@ export type UiServiceWatchRequest = Message<"ui.v1.UiServiceWatchRequest"> & {
  * Use `create(UiServiceWatchRequestSchema)` to create a new message.
  */
 export const UiServiceWatchRequestSchema: GenMessage<UiServiceWatchRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 21);
+  messageDesc(file_ui_v1_ui, 25);
 
 /**
  * @generated from message ui.v1.UiServiceWatchResponse
@@ -533,7 +644,7 @@ export type UiServiceWatchResponse = Message<"ui.v1.UiServiceWatchResponse"> & {
  * Use `create(UiServiceWatchResponseSchema)` to create a new message.
  */
 export const UiServiceWatchResponseSchema: GenMessage<UiServiceWatchResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 22);
+  messageDesc(file_ui_v1_ui, 26);
 
 /**
  * What the window needs to show and follow the plan.
@@ -601,6 +712,18 @@ export const UiService: GenService<{
     methodKind: "unary";
     input: typeof UiServiceOpenExternalRequestSchema;
     output: typeof UiServiceOpenExternalResponseSchema;
+  },
+  /**
+   * Choose the global shortcut that brings the window forward from anywhere on the desktop; an empty chord turns it
+   * off. Kept in the data directory. Fails on a chord Djinn does not take; one the system refuses (another
+   * application holds it) is kept, and its problem said.
+   *
+   * @generated from rpc ui.v1.UiService.SetShortcut
+   */
+  setShortcut: {
+    methodKind: "unary";
+    input: typeof UiServiceSetShortcutRequestSchema;
+    output: typeof UiServiceSetShortcutResponseSchema;
   },
   /**
    * Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
