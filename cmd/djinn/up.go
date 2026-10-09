@@ -258,7 +258,14 @@ func services(
 ) map[string]http.Handler {
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
-	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}), plan.WithPages(pages))
+	language := render.SystemLanguage()
+	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}), plan.WithPages(pages),
+		plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher))
+	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a
+	// template.
+	wishes := &plan.Wishes{Store: db, Leads: leads{terminals, uiSvc}, Language: language}
+	h.TellLeads(wishes.Tell)
+	h.OnWatched(wishes.Watched)
 	out[demoPrefix] = demoHandler
 	out[uiPrefix] = uiHandler
 	taskPrefix, taskHandler := harness.Handler(h)

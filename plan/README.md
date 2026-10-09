@@ -31,6 +31,8 @@ other tracker and no cloud service. A new task is a new file here, with a fresh 
 | T21 | 2 | The lead's terminal, inside the app, by voice | [17ed4dcd-lead-terminal.md](17ed4dcd-lead-terminal.md) |
 | T22 | 2 | Workers that start fast, with the right context, and are measured | [1689571a-fast-workers.md](1689571a-fast-workers.md) |
 | T25 | 2 | Review and decide at a glance | [4a699d0f-review-at-a-glance.md](4a699d0f-review-at-a-glance.md) |
+| T26 | 2 | Every request finds its wish: routing | [e1210c5e-request-routing.md](e1210c5e-request-routing.md) |
+| T27 | 2 | Wish templates, drawn from skills | [bac5e018-wish-templates.md](bac5e018-wish-templates.md) |
 | T14 | 3 | Spend big models only where they matter | [8ce817da-cost.md](8ce817da-cost.md) |
 | T16 | 3 | Dispatch: plain Go code or a local model? | [263f074f-dispatch-bench.md](263f074f-dispatch-bench.md) |
 | T09 | 3 | Quality of life and clean-up | [3792046b-quality-of-life.md](3792046b-quality-of-life.md) |
@@ -38,6 +40,7 @@ other tracker and no cloud service. A new task is a new file here, with a fresh 
 | T20 | 3 | Backups, on a server of your choice | [9b71f059-backup.md](9b71f059-backup.md) |
 | T23 | 3 | Summon a skill from another project | [a5c284be-summon-skills.md](a5c284be-summon-skills.md) |
 | T24 | 3 | A wish online: sync now, collaborate later | [7dc376e9-wish-online.md](7dc376e9-wish-online.md) |
+| T28 | 3 | An inbox: what comes from outside becomes a proposed wish | [d6fb2417-inbox.md](d6fb2417-inbox.md) |
 
 **After v1**
 

@@ -59,6 +59,10 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question) {
 	if q.GetAnswer() == nil {
 		return
 	}
+	if routeOption(q) != nil {
+		w.tell(ctx, q, RoutedLine(q))
+		return
+	}
 	w.tell(ctx, q, AnswerLine(q))
 }
 

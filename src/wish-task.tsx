@@ -1,11 +1,13 @@
 // A task of a wish: its code, what it does, where it stands, what it spent, and, opened, its facts, its worker's
 // last word and its events as they come (TaskService.Watch), with a box to send the running worker an instruction
-// (TaskService.Send).
+// (TaskService.Send). A watcher (a command, no agent) shows the first line of its last paragraph, and pauses.
 import {
   Activity,
   AlertCircle,
   CheckCheck,
   ChevronDown,
+  CirclePause,
+  CirclePlay,
   CircleStop,
   FileText,
   Gauge,
@@ -65,6 +67,7 @@ const agentNames: Record<Provider, string> = {
   [Provider.FAKE]: "fake",
   [Provider.CODEX]: "codex",
   [Provider.ANTIGRAVITY]: "antigravity",
+  [Provider.WATCH]: "watch",
 };
 
 // agentOf names a task's agent, and its model when one was asked: "claude · haiku". A task stored before providers
@@ -82,6 +85,7 @@ export function WishTask({
   forkedAs = "",
   onStop,
   onSend,
+  onHold,
 }: {
   task: Task;
   project?: Project;
@@ -93,8 +97,16 @@ export function WishTask({
   forkedAs?: string;
   onStop: () => void;
   onSend: (text: string) => Promise<unknown>;
+  // Pauses the task's worker (true) or lets it go on (false): offered for a watcher.
+  onHold?: (pause: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const watcher = task.provider === Provider.WATCH;
+  const holdable =
+    watcher &&
+    !!onHold &&
+    (task.status === TaskStatus.RUNNING || task.status === TaskStatus.PAUSED);
+  const paused = task.status === TaskStatus.PAUSED;
   const stoppable =
     task.status === TaskStatus.RUNNING ||
     task.status === TaskStatus.PAUSED ||
@@ -127,6 +139,16 @@ export function WishTask({
           </span>
           <ChevronDown size={14} className={open ? "rotated" : ""} />
         </button>
+        {holdable && (
+          <button
+            className="icon-button"
+            onClick={() => onHold?.(!paused)}
+            title={t(paused ? "task.resume" : "task.pause")}
+            aria-label={t(paused ? "task.resume" : "task.pause")}
+          >
+            {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}
+          </button>
+        )}
         {stoppable && (
           <button
             className="icon-button"
@@ -138,9 +160,12 @@ export function WishTask({
           </button>
         )}
       </div>
-      {(task.waitReason || task.error || after.length > 0) && (
+      {(task.waitReason ||
+        task.error ||
+        after.length > 0 ||
+        (watcher && task.lastLine)) && (
         <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
-          {task.error || task.waitReason}
+          {task.error || task.waitReason || (watcher && task.lastLine)}
           {after.length > 0 && (
             <span className="wish-task-after">
               {t("page.after", { tasks: after.join(", ") })}
@@ -151,7 +176,7 @@ export function WishTask({
       {open && (
         <TaskBody task={task} forkOf={codes?.get(task.forkOf ?? "") ?? ""} />
       )}
-      {open && task.status === TaskStatus.RUNNING && (
+      {open && task.status === TaskStatus.RUNNING && !watcher && (
         <SendBox onSend={onSend} />
       )}
     </article>

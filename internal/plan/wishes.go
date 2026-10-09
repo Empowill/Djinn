@@ -166,14 +166,7 @@ func (w *Wishes) Grant(
 	ctx context.Context, req *connect.Request[planv1.WishServiceGrantRequest],
 ) (*connect.Response[planv1.WishServiceGrantResponse], error) {
 	wish, err := change(ctx, w, req.Spec(), req.Msg, func(tx *store.Tx, wish *planv1.Wish) error {
-		if wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
-			return nil
-		}
-		wish.State, wish.Rank, wish.GrantTime = planv1.WishState_WISH_STATE_GRANTED, 0, timestamppb.Now()
-		if err := tx.Put(wish); err != nil {
-			return err
-		}
-		return rerank(ctx, tx)
+		return grantWish(ctx, tx, wish)
 	})
 	if err != nil {
 		return nil, err
@@ -181,28 +174,45 @@ func (w *Wishes) Grant(
 	return connect.NewResponse(&planv1.WishServiceGrantResponse{Wish: wish}), nil
 }
 
+// grantWish grants wish in tx, and closes the gap it leaves in the ranks. A granted wish stays as it is.
+func grantWish(ctx context.Context, tx *store.Tx, wish *planv1.Wish) error {
+	if wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
+		return nil
+	}
+	wish.State, wish.Rank, wish.GrantTime = planv1.WishState_WISH_STATE_GRANTED, 0, timestamppb.Now()
+	if err := tx.Put(wish); err != nil {
+		return err
+	}
+	return rerank(ctx, tx)
+}
+
 // Pause sets an active wish aside: it keeps everything, and leaves its place to another one.
 func (w *Wishes) Pause(
 	ctx context.Context, req *connect.Request[planv1.WishServicePauseRequest],
 ) (*connect.Response[planv1.WishServicePauseResponse], error) {
 	wish, err := change(ctx, w, req.Spec(), req.Msg, func(tx *store.Tx, wish *planv1.Wish) error {
-		switch wish.GetState() {
-		case planv1.WishState_WISH_STATE_PAUSED:
-			return nil
-		case planv1.WishState_WISH_STATE_GRANTED:
-			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-				"wish %q is granted, not active: there is nothing to pause", wish.GetTitle()))
-		}
-		wish.State, wish.Rank = planv1.WishState_WISH_STATE_PAUSED, 0
-		if err := tx.Put(wish); err != nil {
-			return err
-		}
-		return rerank(ctx, tx)
+		return pauseWish(ctx, tx, wish)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.WishServicePauseResponse{Wish: wish}), nil
+}
+
+// pauseWish sets wish aside in tx, and closes the gap it leaves in the ranks. A paused wish stays as it is.
+func pauseWish(ctx context.Context, tx *store.Tx, wish *planv1.Wish) error {
+	switch wish.GetState() {
+	case planv1.WishState_WISH_STATE_PAUSED:
+		return nil
+	case planv1.WishState_WISH_STATE_GRANTED:
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"wish %q is granted, not active: there is nothing to pause", wish.GetTitle()))
+	}
+	wish.State, wish.Rank = planv1.WishState_WISH_STATE_PAUSED, 0
+	if err := tx.Put(wish); err != nil {
+		return err
+	}
+	return rerank(ctx, tx)
 }
 
 // Activate makes a paused or granted wish active again, last by rank, within the limit of three.

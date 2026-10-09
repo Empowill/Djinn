@@ -9,7 +9,7 @@ const f = await bundle(
   "flight",
   `export * from "@/src/data/flight.ts";
 export * from "@/src/data/journal.ts";
-export { taskTone } from "@/src/data/format.ts";
+export { taskStatusText, taskTone } from "@/src/data/format.ts";
 export { create } from "@bufbuild/protobuf";
 export { anyPack } from "@bufbuild/protobuf/wkt";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -257,4 +257,17 @@ test("the states Djinn handles by itself speak the window's status language", ()
   );
   assert.equal(f.taskTone({ status: S.INTERRUPTED }, "W5"), "stopped");
   assert.equal(f.taskTone({ status: S.INTERRUPTED }), "interrupted");
+});
+
+test("a watcher has its own tone while its command runs", () => {
+  const S = f.TaskStatus;
+  const watch = (status) => ({ status, provider: f.Provider.WATCH });
+  assert.equal(f.taskTone(watch(S.RUNNING)), "watching");
+  assert.equal(f.taskStatusText(watch(S.RUNNING)), "Watching");
+  assert.equal(f.taskTone(watch(S.PAUSED)), "paused");
+  assert.equal(f.taskTone(watch(S.DONE)), "done");
+  assert.equal(
+    f.taskTone({ status: S.RUNNING, provider: f.Provider.CLAUDE }),
+    "running",
+  );
 });

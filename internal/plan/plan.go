@@ -43,8 +43,14 @@ type Option func(*options)
 type options struct {
 	leads    Leads
 	pages    *Pages
+	language string
+	watchers SpawnWatcher
 	answered []func(context.Context, *planv1.Question)
 }
+
+// WithLanguage writes the texts Djinn puts in the plan for the developer, such as the question that routes a
+// request, in language; English by default.
+func WithLanguage(language string) Option { return func(o *options) { o.language = language } }
 
 // WithLeads gives the wishes the terminals of their leads, for WishService.Resume.
 func WithLeads(l Leads) Option { return func(o *options) { o.leads = l } }
@@ -65,13 +71,13 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	opt := connect.WithInterceptors(Validate)
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s}, opt)
 	out[p] = h
-	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages}
+	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers}
 	if o.leads != nil {
 		o.answered = append(o.answered, wishes.Answered) // The lead learns each answer, after the harness.
 	}
 	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
 	out[p] = h
-	questions := &Questions{Store: s, Answered: o.answered}
+	questions := &Questions{Store: s, Answered: o.answered, Settle: wishes.settle}
 	if o.leads != nil {
 		questions.Enlightened = wishes.Enlightened // The lead learns each request to investigate.
 	}
@@ -79,7 +85,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
 	out[p] = h
-	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered}, opt)
+	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Settle: wishes.settle}, opt)
 	out[p] = h
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
 	out[p] = h
@@ -253,6 +259,11 @@ type Wishes struct {
 	// Pages renders the wishes' pages and keeps the synced ones up to date; nil where djinn up does not run them,
 	// and Sync is then unavailable.
 	Pages *Pages
+	// Language of the texts Djinn writes in the plan for the developer; English when empty.
+	Language string
+	// Watchers starts the watcher of a wish made from a template; nil where djinn up does not run tasks, and the
+	// lead is then told to start it.
+	Watchers SpawnWatcher
 
 	watch watchers // the open Watch streams
 }
@@ -260,38 +271,47 @@ type Wishes struct {
 func (w *Wishes) Make(
 	ctx context.Context, req *connect.Request[planv1.WishServiceMakeRequest],
 ) (*connect.Response[planv1.WishServiceMakeResponse], error) {
-	wish := &planv1.Wish{Id: store.NewID(), Title: req.Msg.GetTitle(), CreateTime: timestamppb.Now()}
+	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-		for _, id := range req.Msg.GetProjectIds() {
-			project, err := store.Get[*planv1.Project](ctx, tx, id)
-			if err != nil {
-				return err
-			}
-			if !slices.Contains(wish.GetProjectIds(), project.GetId()) {
-				wish.ProjectIds = append(wish.ProjectIds, project.GetId())
-			}
-		}
-		if req.Msg.GetPaused() {
-			wish.State = planv1.WishState_WISH_STATE_PAUSED
-			return tx.Put(wish)
-		}
-		actives, err := ActiveWishes(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if len(actives) >= MaxActive {
-			return full(actives, ", or make this one paused (djinn wish make --paused)")
-		}
-		if err := renumber(tx, actives); err != nil {
-			return err
-		}
-		wish.State, wish.Rank = planv1.WishState_WISH_STATE_ACTIVE, int32(len(actives)+1)
-		return tx.Put(wish)
+		var err error
+		wish, err = makeWish(ctx, tx, req.Msg)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.WishServiceMakeResponse{Wish: wish}), nil
+}
+
+// makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused. The caller journals
+// the command.
+func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest) (*planv1.Wish, error) {
+	wish := &planv1.Wish{Id: store.NewID(), Title: req.GetTitle(), CreateTime: timestamppb.Now()}
+	for _, id := range req.GetProjectIds() {
+		project, err := store.Get[*planv1.Project](ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(wish.GetProjectIds(), project.GetId()) {
+			wish.ProjectIds = append(wish.ProjectIds, project.GetId())
+		}
+	}
+	if req.GetPaused() {
+		wish.State = planv1.WishState_WISH_STATE_PAUSED
+		return wish, tx.Put(wish)
+	}
+	actives, err := ActiveWishes(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if len(actives) >= MaxActive {
+		return nil, full(actives, ", or make this one paused (djinn wish make --paused)")
+	}
+	if err := renumber(tx, actives); err != nil {
+		return nil, err
+	}
+	wish.State, wish.Rank = planv1.WishState_WISH_STATE_ACTIVE, int32(len(actives)+1)
+	return wish, tx.Put(wish)
 }
 
 func (w *Wishes) List(
@@ -365,6 +385,21 @@ type Questions struct {
 	Answered []func(context.Context, *planv1.Question)
 	// Enlightened, when set, is called with a question once a request to investigate it is stored, with its note.
 	Enlightened func(ctx context.Context, q *planv1.Question, note string)
+	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
+	// stored, if anything: a question that routes a request files it, or makes its wish.
+	Settle Settle
+}
+
+// Settle acts on the answer of q in tx, the transaction that stores it, and may change q before it is stored. It
+// returns what follows once the answer is stored, if anything.
+type Settle func(ctx context.Context, tx *store.Tx, q *planv1.Question) (func(context.Context), error)
+
+// settled runs settle on q when there is one.
+func settled(ctx context.Context, settle Settle, tx *store.Tx, q *planv1.Question) (func(context.Context), error) {
+	if settle == nil {
+		return nil, nil
+	}
+	return settle(ctx, tx, q)
 }
 
 // maxCode is the last code a wish can give: the codes follow ^Q[0-9]{2,3}$.
@@ -415,20 +450,32 @@ func (q *Questions) Answer(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceAnswerRequest],
 ) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
 	var question *planv1.Question
+	var then func(context.Context)
 	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
 		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
 			return err
+		}
+		if question.GetRoute() != nil && question.GetAnswer() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"question %s has routed its request already: route it again (djinn wish route) to send it elsewhere",
+				question.GetCode()))
 		}
 		choice, err := resolve(question, req.Msg.GetChoice())
 		if err != nil {
 			return connect.NewError(connect.CodeInvalidArgument, err)
 		}
 		question.Answer = &planv1.Answer{Choice: choice, Note: req.Msg.GetNote(), CreateTime: timestamppb.Now()}
+		if then, err = settled(ctx, q.Settle, tx, question); err != nil {
+			return err
+		}
 		return tx.Put(question)
 	})
 	if err != nil {
 		return nil, err
+	}
+	if then != nil {
+		then(ctx)
 	}
 	for _, f := range q.Answered {
 		f(ctx, proto.CloneOf(question))

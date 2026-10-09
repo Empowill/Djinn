@@ -484,6 +484,9 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			}
 		}
 		wish.ProjectIds = projectIDs
+		if t := wish.GetTemplate(); t != nil {
+			t.ProjectId = local[t.GetProjectId()]
+		}
 		if lead := wish.GetLead(); lead != nil {
 			lead.Directory = localFolder(lead.GetDirectory(), folders)
 		}

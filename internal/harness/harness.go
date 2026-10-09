@@ -50,6 +50,7 @@ func Providers() map[planv1.Provider]Provider {
 		planv1.Provider_PROVIDER_FAKE:        Fake{},
 		planv1.Provider_PROVIDER_CODEX:       Codex{},
 		planv1.Provider_PROVIDER_ANTIGRAVITY: Antigravity{},
+		planv1.Provider_PROVIDER_WATCH:       Watch{},
 	}
 }
 
@@ -68,6 +69,9 @@ type Harness struct {
 	prefix []string // the command every worker runs under (WithPrefix)
 
 	clock func() time.Time // nil: the machine's (WithClock)
+
+	tell    TellFunc    // wakes the lead of a watcher's wish (TellLeads); guarded by mu
+	watched WatchedFunc // reads a watcher's new paragraph (OnWatched); guarded by mu
 
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
@@ -102,6 +106,7 @@ type run struct {
 	worker   Worker
 	stopping bool
 	paused   bool               // the worker holds still: it takes no slot
+	watcher  bool               // a watcher runs a command, and takes no slot
 	final    bool               // the task is getting its final status: an answer waits for done instead
 	answers  []*planv1.Question // answers to the task's edit question, for the pump to apply
 	subs     map[chan *planv1.TaskEvent]struct{}
@@ -123,7 +128,7 @@ func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 	r := &run{
 		id: task.GetId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
-		subs: map[chan *planv1.TaskEvent]struct{}{},
+		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -247,6 +252,14 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		return nil, plan.Status(err)
 	}
 	task.ProjectId = project.GetId()
+	if kind == planv1.Provider_PROVIDER_WATCH {
+		if project == nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a watcher runs its command in a project: the wish has none"))
+		}
+		task.Restart = req.GetRestart()
+	} else if req.GetRestart() {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--restart is for a watcher (--provider watch)"))
+	}
 	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), req.GetDependsOn()); err != nil {
 		return nil, plan.Status(err)
 	}
@@ -357,6 +370,11 @@ func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.
 	if task.Access, p.declared, err = decideAccess(project, task.GetProvider(), plan.AllowanceOf(wish, project.GetId())); err != nil {
 		return p, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
 	}
+	if task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING && watching(task) {
+		return p, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"a watcher runs a command, and %s lets no worker run one: it is outside Git, without agent configuration; "+
+				"list the command in its %s", project.GetName(), filepath.ToSlash(PermissionsFile)))
+	}
 	if task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING {
 		p.question = editQuestion(task, project)
 		if err := plan.Ask(ctx, tx, p.question); err != nil {
@@ -381,7 +399,11 @@ func (h *Harness) launch(
 		h.stopWarm(wk)
 		wk = nil
 	}
-	skills, skillsDir := h.summon(ctx, r, project)
+	var skills []Skill
+	var skillsDir string
+	if !r.watcher { // A command reads no skill.
+		skills, skillsDir = h.summon(ctx, r, project)
+	}
 	if wk != nil && len(skills) > 0 {
 		// A warm worker started without the project's summoned skills: the task starts cold, with them.
 		h.stopWarm(wk)
@@ -396,7 +418,7 @@ func (h *Harness) launch(
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: create its folder: %w", task.GetCode(), err))
 		}
 	}
-	if project.GetGit() {
+	if project.GetGit() && !r.watcher { // A watcher writes nothing: it runs in the project's folder.
 		task.Branch = branchName(task.GetCode(), task.GetTitle(), task.GetId())
 		task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
 		var err error
@@ -418,13 +440,16 @@ func (h *Harness) launch(
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: task.GetModel(),
 		MaxBudgetUSD: task.GetMaxBudgetUsd(), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
-		Skills: skills, SkillsDir: skillsDir,
+		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(),
 	}
 	if task.GetForkOf() != "" {
 		where += ", forked from " + forkText(task.GetForkOf())
 	}
 	text := "started " + short(task.GetProvider()) + " " + where + ", " + accessText(task, prep.question) +
 		skillsText(spec.Skills)
+	if r.watcher {
+		text = "started watch " + where + watchText(task)
+	}
 	var err error
 	if wk != nil {
 		err = h.adoptWarm(ctx, r, provider, wk, spec, text)
@@ -598,12 +623,18 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Limit != nil {
 		r.limit = ev.Limit
 	}
+	if w := ev.Watched; w != nil && w.First != "" {
+		r.task.LastLine, changed = clipRunes(w.First, watchLineMax), true
+	}
 	var task proto.Message
 	if changed {
 		task = r.task
 	}
 	h.acknowledge(r, ev)
 	h.write(r, actorWorker, methodEvent, task, ev)
+	if ev.Watched != nil {
+		h.wakeLead(r, ev.Watched, ev.Text)
+	}
 }
 
 // takeAnswers takes the answers waiting for the run.

@@ -38,6 +38,9 @@ import (
 // DJINN_FAKE_PREFIX, a file, makes it play a prefix instead (Spec.Prefix): it writes its arguments to the file,
 // then runs them as a command.
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == fakeWatchArg {
+		os.Exit(fakeWatch(os.Args[2:]))
+	}
 	if f := os.Getenv("DJINN_FAKE_PREFIX"); f != "" {
 		os.Exit(fakePrefix(f))
 	}

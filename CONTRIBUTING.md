@@ -151,6 +151,11 @@ To use Djinn, see the [README](README.md). To work on it:
 - `djinn wish set-lead <wish-id> <session-id> --directory <folder>` records a wish's lead session;
   `djinn wish resume <wish-id>` shows the wish and resumes its lead in the window's terminal,
   starting Djinn if needed. A second `djinn up` brings the window to the front.
+- `djinn wish route "<request>" --wish-id <wish-id> --ask`: a request that is not about the wish becomes a card, without a
+  model: file it in the closest wish, or open a new one whose lead starts on it in its own terminal
+  ([T26](plan/e1210c5e-request-routing.md)). A request that matches a skill's wish template (`metadata.djinn.wish` in its
+  `SKILL.md`) makes that skill's wish, its watcher started and its lead on the skill: `.agents/skills/babysit-pr` for a
+  GitHub pull request ([`docs/wish-templates.md`](docs/wish-templates.md)).
 - `djinn wish brief <wish-id>`: the brief a new lead starts from, when `djinn wish resume` finds no session.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
   --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)
@@ -186,7 +191,8 @@ their contributors.
   [godbus](https://github.com/godbus/dbus) and [go-toast](https://git.sr.ht/~jackmordaunt/go-toast) (the system
   notifications of the window, through Wails, on Linux and on Windows),
   [x/sys](https://github.com/golang/sys), [x/term](https://github.com/golang/term) (tests),
-  [x/mod](https://github.com/golang/mod) (release versions); as module tools,
+  [x/mod](https://github.com/golang/mod) (release versions),
+  [go-yaml](https://github.com/yaml/go-yaml) (the front matter of a skill's wish template); as module tools,
   [Task](https://github.com/go-task/task) and [buf](https://github.com/bufbuild/buf).
 - Interface: [React](https://github.com/react/react),
   [Connect for the web](https://github.com/connectrpc/connect-es) and

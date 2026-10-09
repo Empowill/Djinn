@@ -54,6 +54,8 @@ type Spec struct {
 	// Prefix is a command the worker's process runs under, its own command appended: a systemd scope that caps
 	// its CPU (djinn up --worker-cpu). Empty: the process runs as is.
 	Prefix []string
+	// Restart starts a watcher's command again after each exit, until it is stopped. Agents ignore it.
+	Restart bool
 }
 
 // Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.
@@ -111,6 +113,8 @@ type Event struct {
 	// Limit is the provider's usage limit, when the event says the worker hit it: the task waits for it to reset,
 	// should the worker then fail.
 	Limit *Limit
+	// Watched is set on a paragraph a watcher's command printed: the wish's lead is told its first line.
+	Watched *Watched
 }
 
 // Result is how a worker ended.

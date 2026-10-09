@@ -12,6 +12,7 @@
   --st-interrupted: #e9c45a;
   --st-stopped: #9a9a9a;
   --st-paused: #b4b4c8;
+  --st-watching: #4fd1c5;
   --lamp: #e9bf55;
   --lamp-ink: #2a1d00;
   --measure: 72ch;
@@ -39,6 +40,7 @@ html[data-theme="light"] {
   --st-interrupted: #7a4f00;
   --st-stopped: #57534e;
   --st-paused: #4b4b6b;
+  --st-watching: #0f6b63;
   --lamp: #f0c75e;
 }
 
@@ -69,6 +71,9 @@ html[data-theme="light"] {
 }
 .tone-paused {
   --tone: var(--st-paused);
+}
+.tone-watching {
+  --tone: var(--st-watching);
 }
 .status-badge,
 .count-pill {

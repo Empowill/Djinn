@@ -26,6 +26,8 @@ type Marks struct {
 	Store *store.Store
 	// Answered are called with a question once an approval has answered it.
 	Answered []func(context.Context, *planv1.Question)
+	// Settle, when set, acts on the answer an approval gives, as Questions.Settle.
+	Settle Settle
 }
 
 func (m *Marks) Put(
@@ -34,6 +36,7 @@ func (m *Marks) Put(
 	msg := req.Msg
 	var marked *planv1.Marked
 	var answered *planv1.Question
+	var then func(context.Context)
 	err := write(ctx, m.Store, req.Spec(), msg, func(tx *store.Tx) error {
 		question, block, err := target(ctx, tx, msg.GetTarget(), msg.GetWishId())
 		if err != nil {
@@ -50,6 +53,9 @@ func (m *Marks) Put(
 				}
 				question.Answer = &planv1.Answer{Choice: choice, CreateTime: mark.GetCreateTime()}
 				answered = question
+				if then, err = settled(ctx, m.Settle, tx, question); err != nil {
+					return err
+				}
 			}
 			question.Marks = setMark(question.GetMarks(), mark, msg.GetRemove())
 			marked = questionMarked(question, mark)
@@ -61,6 +67,9 @@ func (m *Marks) Put(
 	})
 	if err != nil {
 		return nil, err
+	}
+	if then != nil {
+		then(ctx)
 	}
 	if answered != nil {
 		for _, f := range m.Answered {
