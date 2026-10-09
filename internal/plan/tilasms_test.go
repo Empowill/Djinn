@@ -3,17 +3,20 @@ package plan
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/link"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -543,5 +546,57 @@ func TestTilasmOpenAndLinks(t *testing.T) {
 	}
 	if got := getTilasm(t, bare, "L01", 0); got.GetUrl() != "" || !strings.HasPrefix(got.GetLink(), "djinn://tilasm/") {
 		t.Fatalf("get without http: %v", got)
+	}
+}
+
+// refuseRenames makes the plan's renames refuse the first try of each move, as Windows refuses one while an
+// antivirus scans a file just written, and records the moves refused, by the paths they went to. It pauses no time.
+func refuseRenames(t *testing.T) *[]string {
+	t.Helper()
+	var refused []string
+	tried := map[string]bool{}
+	rename := func(oldpath, newpath string) error {
+		if move := oldpath + " -> " + newpath; !tried[move] {
+			tried[move] = true
+			refused = append(refused, newpath)
+			return errors.New("Access is denied")
+		}
+		return os.Rename(oldpath, newpath)
+	}
+	saved := renamer
+	renamer = fsx.Renamer{Func: rename, Wait: time.Second, Sleep: func(time.Duration) {}}
+	t.Cleanup(func() { renamer = saved })
+	return &refused
+}
+
+// TestTilasmMovesRetryARefusedRename: each move of the plan goes through though refused a moment: a tilasm's new
+// version put in place, a wish's export, and an import that replaces the tilasm's folder, moving the old one aside.
+func TestTilasmMovesRetryARefusedRename(t *testing.T) {
+	ctx := t.Context()
+	refused := refuseRenames(t)
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	wish := c.wish(t)
+	tilasm := putTilasm(t, c, &planv1.TilasmServicePutRequest{
+		Path: folder(t, map[string]string{"index.html": page("Model", "first version")}), Wish: wish,
+	}).GetTilasm()
+	file := filepath.Join(t.TempDir(), "wish.djinn")
+	export(t, c, wish, file)
+	if _, err := c.wishes.Import(ctx, connect.NewRequest(&planv1.WishServiceImportRequest{File: file, Replace: true})); err != nil {
+		t.Fatal(err)
+	}
+	dir := TilasmDir(home, tilasm.GetId())
+	var aside int
+	for _, p := range *refused {
+		if filepath.Base(p) == strings.ToLower(tilasm.GetId()) && filepath.Dir(p) != filepath.Dir(dir) {
+			aside++
+		}
+	}
+	if !slices.Contains(*refused, versionDir(home, tilasm.GetId(), 1)) || !slices.Contains(*refused, file) ||
+		!slices.Contains(*refused, dir) || aside != 1 {
+		t.Errorf("refused %v, want the version, the export, the folder aside and the folder in place", *refused)
+	}
+	if text := getTilasm(t, c, "L01", 1).GetText(); !strings.Contains(text, "first version") {
+		t.Errorf("L01 after the import = %q, want its first version", text)
 	}
 }

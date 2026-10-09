@@ -2,13 +2,11 @@ package plan
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -440,64 +438,5 @@ func TestExportKeepsClosure(t *testing.T) {
 	if tasks := snap.Msg.GetExport().GetTasks(); len(tasks) != 1 || !proto.Equal(tasks[0].GetClosed(), closed) ||
 		tasks[0].GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Errorf("tasks after import = %v, want W1 done with %v", tasks, closed)
-	}
-}
-
-// TestRenameRetrying: a rename that fails for a moment, as Windows' does over a file a browser holds open, is tried
-// again until it passes; one that keeps failing gives its error once the wait is over, and no wait means one try.
-func TestRenameRetrying(t *testing.T) {
-	held := errors.New("Access is denied")
-	failing := func(times int) (func(string, string) error, *int) {
-		tries := 0
-		return func(string, string) error {
-			tries++
-			if tries <= times {
-				return held
-			}
-			return nil
-		}, &tries
-	}
-	rename, tries := failing(3)
-	if err := renameRetrying(rename, "a", "b", 2*time.Second); err != nil || *tries != 4 {
-		t.Errorf("held 3 times: %v after %d tries, want nil after 4", err, *tries)
-	}
-	rename, tries = failing(1 << 30)
-	start := time.Now()
-	if err := renameRetrying(rename, "a", "b", 100*time.Millisecond); !errors.Is(err, held) || *tries < 2 {
-		t.Errorf("held for good: %v after %d tries, want the error after several", err, *tries)
-	}
-	if d := time.Since(start); d < 100*time.Millisecond || d > 2*time.Second {
-		t.Errorf("held for good: gave up after %v, want about 100ms", d)
-	}
-	rename, tries = failing(1)
-	if err := renameRetrying(rename, "a", "b", 0); !errors.Is(err, held) || *tries != 1 {
-		t.Errorf("no wait: %v after %d tries, want the error after 1", err, *tries)
-	}
-}
-
-// TestWriteFileWhileOpen: a page a reader holds open is replaced once the reader lets it go. Elsewhere than on
-// Windows the rename passes at once; on Windows it fails while the file is open, and writeFile tries again.
-func TestWriteFileWhileOpen(t *testing.T) {
-	file := filepath.Join(t.TempDir(), PageFile)
-	if err := os.WriteFile(file, []byte("old"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	reader, err := os.Open(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	released := make(chan struct{})
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		reader.Close()
-		close(released)
-	}()
-	err = writeFile(file, []byte("new"))
-	<-released
-	if err != nil {
-		t.Fatalf("write while a reader holds the file: %v", err)
-	}
-	if got, _ := os.ReadFile(file); string(got) != "new" {
-		t.Errorf("file = %q, want the new content", got)
 	}
 }
