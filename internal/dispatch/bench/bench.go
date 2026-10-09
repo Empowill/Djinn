@@ -42,7 +42,7 @@ type Case struct {
 	Tasks []Task `json:"tasks"`
 	// Gates held now. The Go scheduler does not read them: a worker waits for its gate when it runs the command.
 	Gates []Gate `json:"gates,omitempty"`
-	// Expect is the decision for each planned task, by code: start, wait or fail.
+	// Expect is the decision for each planned or resuming task, by code: start, wait or fail.
 	Expect map[string]string `json:"expect"`
 }
 
@@ -74,12 +74,14 @@ type Task struct {
 	Wish string `json:"wish"`
 	// Project; empty outside any project.
 	Project string `json:"project,omitempty"`
-	// Status: planned (pending, started by the scheduler), running, waiting (for its edit question), done, failed,
-	// stopped or interrupted.
+	// Status: planned (pending, started by the scheduler), resuming (cut short, started again by the scheduler),
+	// running, waiting (for its edit question), done, failed, stopped or interrupted.
 	Status    string   `json:"status"`
 	DependsOn []string `json:"depends_on,omitempty"`
 	// Scopes are the write scopes; none is the whole folder.
 	Scopes []string `json:"scopes,omitempty"`
+	// ForkOf is the code of the task this one forks: an interrupted task forked is resumed as its fork.
+	ForkOf string `json:"fork_of,omitempty"`
 }
 
 // Gate is a gate held in a case.
@@ -116,7 +118,7 @@ func (c Case) check() error {
 		if !slices.ContainsFunc(c.Wishes, func(w Wish) bool { return w.ID == t.Wish }) {
 			return fmt.Errorf("task %s: no wish %q", t.Code, t.Wish)
 		}
-		if _, ok := c.Expect[t.Code]; ok != (t.Status == "planned") {
+		if _, ok := c.Expect[t.Code]; ok != scheduled(t.Status) {
 			return fmt.Errorf("task %s: an expected decision for each planned task, and only for them", t.Code)
 		}
 	}
@@ -133,8 +135,12 @@ func (c Case) check() error {
 	return nil
 }
 
+// scheduled tells whether the scheduler decides for a task of that status: it starts it, or starts it again.
+func scheduled(status string) bool { return status == "planned" || status == "resuming" }
+
 var statuses = map[string]planv1.TaskStatus{
-	"planned": planv1.TaskStatus_TASK_STATUS_PENDING, "running": planv1.TaskStatus_TASK_STATUS_RUNNING,
+	"planned": planv1.TaskStatus_TASK_STATUS_PENDING, "resuming": planv1.TaskStatus_TASK_STATUS_RESUMING,
+	"running": planv1.TaskStatus_TASK_STATUS_RUNNING,
 	"waiting": planv1.TaskStatus_TASK_STATUS_WAITING, "done": planv1.TaskStatus_TASK_STATUS_DONE,
 	"failed": planv1.TaskStatus_TASK_STATUS_FAILED, "stopped": planv1.TaskStatus_TASK_STATUS_STOPPED,
 	"interrupted": planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
@@ -152,11 +158,10 @@ func (c Case) Situation() *dispatch.Situation {
 	for i, t := range c.Tasks {
 		task := &planv1.Task{
 			Id: t.Code, Code: t.Code, WishId: t.Wish, ProjectId: t.Project, Status: statuses[t.Status],
-			DependsOn: t.DependsOn, WriteScopes: t.Scopes, CreateTime: timestamppb.New(start.Add(time.Duration(i) * time.Second)),
+			DependsOn: t.DependsOn, WriteScopes: t.Scopes, ForkOf: t.ForkOf, CreateTime: timestamppb.New(start.Add(time.Duration(i) * time.Second)),
 		}
-		if t.Status == "planned" {
-			task.Scheduled = true
-		} else {
+		task.Scheduled = scheduled(t.Status)
+		if t.Status != "planned" {
 			task.StartTime = task.CreateTime
 		}
 		tasks = append(tasks, task)

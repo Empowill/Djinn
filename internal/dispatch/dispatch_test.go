@@ -78,3 +78,45 @@ func TestResumingFirst(t *testing.T) {
 		t.Errorf("after the reset: %v", got)
 	}
 }
+
+// TestDependencyResumes: a dependency Djinn resumes, interrupted or resuming, holds the task until it ends; one
+// resumed as a fork is its fork. A dependency failed (resumed maxResumes times among them) or stopped by a person
+// fails it.
+func TestDependencyResumes(t *testing.T) {
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE}
+	task := func(code string, s planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: code, WishId: "w", Code: code, Status: s, CreateTime: timestamppb.Now()}
+	}
+	for _, tt := range []struct {
+		name        string
+		dep         []*planv1.Task // the first is W1, the dependency
+		why, failed string
+	}{
+		{"interrupted", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED)}, "waits for W1 (interrupted)", ""},
+		{"resuming", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_RESUMING)}, "waits for W1 (resuming)", ""},
+		{"resumed 3 times", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED,
+			Error: "resumed 3 times without finishing"}}, "", "its dependency W1 ended failed"},
+		{"stopped", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_STOPPED)}, "", "its dependency W1 ended stopped"},
+		{"forked, running", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
+			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}},
+			"waits for W5 (running)", ""},
+		{"forked twice, done", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
+			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
+			{Id: "W6", WishId: "w", Code: "W6", ForkOf: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE}}, "", ""},
+		{"forked, failed", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
+			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED}},
+			"", "its dependency W1, resumed as W5, ended failed"},
+		{"forked in another wish", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
+			{Id: "W5", WishId: "other", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE}},
+			"waits for W1 (interrupted)", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			planned := task("W2", planv1.TaskStatus_TASK_STATUS_PENDING)
+			planned.Scheduled, planned.DependsOn = true, []string{"W1"}
+			why, failed := New(append(tt.dep, planned), []*planv1.Wish{wish}, nil, nil).Blocker(planned)
+			if why != tt.why || failed != tt.failed {
+				t.Errorf("Blocker = %q, %q; want %q, %q", why, failed, tt.why, tt.failed)
+			}
+		})
+	}
+}

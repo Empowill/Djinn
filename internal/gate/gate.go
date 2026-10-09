@@ -202,6 +202,20 @@ func (g *Gates) note(w *waiter, text string) {
 	g.tasks.Note(w.taskID, harness.Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_GATE, Text: "gate " + w.name + ": " + text})
 }
 
+// Held gives the names of the gates the task holds now, in order.
+func (g *Gates) Held(taskID string) []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var out []string
+	for name, h := range g.held {
+		if taskID != "" && h.taskID == taskID {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // State is a gate held or waited for.
 type State struct {
 	Name, Holder, HolderTaskID string

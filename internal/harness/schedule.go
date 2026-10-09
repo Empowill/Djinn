@@ -205,6 +205,14 @@ func (h *Harness) Describe(ctx context.Context, taskID string) (string, error) {
 	return t.GetCode() + " (" + t.GetTitle() + ")", nil
 }
 
+// HeldGates tells the harness which gates a task holds, by name: a worker holding one is not paused. djinn up gives
+// the gates' (gate.Gates.Held), once they exist.
+func (h *Harness) HeldGates(held func(taskID string) []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.gates = held
+}
+
 // setWaiting records why a planned task waits, when the reason changed, with an event.
 func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string) {
 	if t.GetWaitReason() == why {

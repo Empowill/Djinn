@@ -83,8 +83,9 @@ type Harness struct {
 
 	mu      sync.Mutex
 	closed  bool
-	runs    map[string]*run // by task id
-	changed chan struct{}   // closed at the next change of a task without worker (notifyLocked)
+	gates   func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
+	runs    map[string]*run              // by task id
+	changed chan struct{}                // closed at the next change of a task without worker (notifyLocked)
 }
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
@@ -859,6 +860,7 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 
 // Pause holds the task's worker where it is, without killing it, until Resume: the task is paused, and its slot
 // of the machine is free meanwhile. A worker whose provider cannot pause, or Windows, refuses.
+// A worker that holds a gate is not paused: the gate would stay held, frozen, for every other worker.
 func (h *Harness) Pause(ctx context.Context, procedure string, req *planv1.TaskServicePauseRequest) (*planv1.Task, error) {
 	return h.hold(ctx, procedure, req, req.GetTaskId(), true)
 }
@@ -879,6 +881,17 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 	if r == nil || r.worker == nil || r.stopping || r.final {
 		h.mu.Unlock()
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
+	}
+	if held := h.gates; pause && held != nil {
+		if names := held(id); len(names) > 0 {
+			h.mu.Unlock()
+			gate := "gate"
+			if len(names) > 1 {
+				gate = "gates"
+			}
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s holds the %s %s: wait or stop it",
+				task.GetCode(), gate, strings.Join(names, ", ")))
+		}
 	}
 	if r.paused == pause {
 		h.mu.Unlock()

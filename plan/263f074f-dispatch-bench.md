@@ -36,14 +36,17 @@ task starts now, on which worker, once its dependencies, write scopes and gates 
 - The scheduler's rules are a pure function, `internal/dispatch`: a `Situation` (tasks, wishes, projects in Git,
   the machine's slots, running workers and pressure) and a `Decision` per planned task (start, wait with its reason,
   fail). The harness acts on it; nothing else changed in what it decides.
-- The cases: `internal/dispatch/bench/cases.json`, 31 situations written by hand with the expected decision of each
-  planned task: dependencies (running, done, chains, failed, stopped, interrupted, gone, waiting for a question),
+- The cases: `internal/dispatch/bench/cases.json`, 35 situations written by hand with the expected decision of each
+  planned or resuming task: dependencies (running, done, chains, failed, stopped, interrupted or resuming and so
+  waited for, resumed as a fork that runs, is done or failed, gone, waiting for a question),
   write scopes (outside Git, in Git, the whole folder, case, another project, two planned writers), the machine
   (pressure, full, one slot for two), wish ranks (rank, then age, unranked, paused, granted), a busy gate. JSON, so
   that a model reads the same file.
 - `go tool task bench-dispatch` prints the table. `TestGo` checks that Go decides every case as expected.
 - First run (linux/amd64, 16 cores): 31 of 31 cases right, 42 of 42 decisions, about 7 µs per pass, the
   situation built included.
+- After the automatic resume (W60): an interrupted or resuming dependency is waited for, and a dependency resumed as
+  a fork is its fork. 35 of 35 cases right, 47 of 47 decisions, about 4 µs per pass.
 - What the cases show: Go has a rule for each of them. Gates are not a dispatch decision: a worker waits for its gate
   when it runs the command, so a busy gate holds no task. A question blocks only through its task's state (waiting).
 
