@@ -238,6 +238,21 @@ type projects struct {
 	*fake
 }
 
+type tasks struct {
+	planv1connect.UnimplementedTaskServiceHandler
+	*fake
+}
+
+// Get is a task done whose work a correction worker took over, its batch red.
+func (f tasks) Get(_ context.Context, req *connect.Request[planv1.TaskServiceGetRequest]) (*connect.Response[planv1.TaskServiceGetResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: &planv1.Task{
+		Id: req.Msg.GetTaskId(), Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE, Integration: &planv1.TaskIntegration{
+			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Branch: "feat/x", Reason: "test exited 1", CorrectedBy: "W9",
+		},
+	}}), nil
+}
+
 func (f questions) Answer(_ context.Context, req *connect.Request[planv1.QuestionServiceAnswerRequest]) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
 	f.record(req.Msg)
 	if req.Msg.GetQuestion().GetCode() == "Q99" {
@@ -270,6 +285,7 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux := http.NewServeMux()
 	mux.Handle(planv1connect.NewQuestionServiceHandler(questions{fake: f}))
 	mux.Handle(planv1connect.NewProjectServiceHandler(projects{fake: f}))
+	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return f, func(args ...string) (int, string, string) {
@@ -291,6 +307,8 @@ func TestRun(t *testing.T) {
 		{name: "prefixes", args: []string{"q", "ans", "Q03", "b"}, wantOut: "code: Q03", wantCalled: true},
 		{name: "text output", args: []string{"question", "answer", "Q03", "B", "--note", "ok"}, wantOut: "answer:\n  choice: b\n  note: ok\n", wantCalled: true},
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
+		{name: "where a task's work stands", args: []string{"task", "get", wishID}, wantOut: "status: done\n" +
+			"integration:\n  state: red\n  branch: feat/x\n  reason: test exited 1\n  corrected_by: W9\n", wantCalled: true},
 		{name: "list output", args: []string{"pr", "l"}, wantOut: "- id: " + projectID + "\n  name: api\n", wantCalled: true},
 		{name: "server error", args: []string{"q", "answer", "Q99", "a"}, wantCode: 1, wantErr: "not_found: no question Q99", wantCalled: true},
 		{name: "validation before sending", args: []string{"q", "answer"}, wantCode: 2, wantErr: "<question>: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\n  <choice>: value is required; expected one of yes, no, a, b, c, d"},

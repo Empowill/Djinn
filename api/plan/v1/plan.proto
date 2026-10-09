@@ -97,6 +97,11 @@ message ProjectSettings {
   // finished work of the project's tasks into their wish's integration branch only once it is set, and moves the
   // branch only when it passes. Its words are split on spaces, without a shell.
   optional string test = 7 [(buf.validate.field).string.max_len = 500];
+  // The command that installs the project's new build, run in the project's folder of the integration worktree at
+  // the commit: "go tool task install". Once a batch is committed, the window proposes it, with what changed and what
+  // to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are split on spaces, without
+  // a shell. Not set: nothing is proposed.
+  optional string install = 8 [(buf.validate.field).string.max_len = 500];
 }
 
 // SettingSource is where a project setting comes from.
@@ -113,7 +118,8 @@ enum SettingSource {
 
 // ProjectSetting is one setting of a project, as its workers get it.
 message ProjectSetting {
-  // Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test.
+  // Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,
+  // install.
   string name = 1;
   // Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The
   // generated globs are joined by commas.
@@ -442,6 +448,9 @@ message TaskIntegration {
   string reason = 4;
   // When it last changed.
   google.protobuf.Timestamp update_time = 5;
+  // For CONFLICT and RED, the task whose worker corrects the batch (W9), once one started: its work integrates the
+  // same way.
+  string corrected_by = 6;
 }
 
 // IntegrationState is where a task's finished work stands on its way into its wish's integration branch.

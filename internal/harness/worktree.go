@@ -93,6 +93,11 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 // addWorktree creates the worktree path of the repository holding dir, on a new branch from its HEAD. It returns
 // the folder the worker runs in: the project's own folder within the worktree.
 func addWorktree(ctx context.Context, dir, path, branch string) (string, error) {
+	return addWorktreeFrom(ctx, dir, path, branch, "HEAD")
+}
+
+// addWorktreeFrom is addWorktree, its branch starting from the commit from.
+func addWorktreeFrom(ctx context.Context, dir, path, branch, from string) (string, error) {
 	prefix, err := git(ctx, dir, "rev-parse", "--show-prefix")
 	if err != nil {
 		return "", err
@@ -100,10 +105,23 @@ func addWorktree(ctx context.Context, dir, path, branch string) (string, error) 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	if _, err := git(ctx, dir, "worktree", "add", "--quiet", "-b", branch, path, "HEAD"); err != nil {
+	if _, err := git(ctx, dir, "worktree", "add", "--quiet", "-b", branch, path, from); err != nil {
 		return "", err
 	}
 	return filepath.Join(path, filepath.FromSlash(prefix)), nil
+}
+
+// startPoint is the commit a task's worktree starts from in the repository holding dir: the tip of its wish's
+// integration branch there, integration, so that it builds on the work committed before it (T30); the checkout's
+// HEAD when the wish has none, or the branch is not in the repository. from is "" for HEAD.
+func startPoint(ctx context.Context, dir, integration string) (sha, from string, err error) {
+	if integration != "" {
+		if sha, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+integration+"^{commit}"); err == nil {
+			return sha, integration, nil
+		}
+	}
+	sha, err = git(ctx, dir, "rev-parse", "HEAD")
+	return sha, "", err
 }
 
 // removeWorktree removes the worktree path of the repository holding dir; its branch stays. Without force, git

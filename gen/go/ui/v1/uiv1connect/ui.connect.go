@@ -74,11 +74,12 @@ type UiServiceClient interface {
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchShowResponse], error)
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once.
+	// change. With the leads that a restart could not resume, once, and the last build committed that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchUpdateResponse], error)
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-	// sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
+	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
+	// newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
 }
 
@@ -216,11 +217,12 @@ type UiServiceHandler interface {
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest], *connect.ServerStream[v1.UiServiceWatchShowResponse]) error
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once.
+	// change. With the leads that a restart could not resume, once, and the last build committed that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest], *connect.ServerStream[v1.UiServiceWatchUpdateResponse]) error
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-	// sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
+	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
+	// newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
 }
 

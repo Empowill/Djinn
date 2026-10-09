@@ -285,3 +285,57 @@ func TestHandler(t *testing.T) {
 		t.Fatalf("GetEnvironment = %v", env.Msg)
 	}
 }
+
+// TestUpdateInstallsABuild: a build committed is proposed to the window; installing it runs its install command, then
+// restarts on the newer Djinn it installed, or restarts nothing when it installed none. Only the build proposed
+// installs.
+func TestUpdateInstallsABuild(t *testing.T) {
+	s, _ := newService(t)
+	var installed []string
+	newer, restarts := false, 0
+	s.Install = func(_ context.Context, b *uiv1.Build) (bool, error) {
+		installed = append(installed, b.GetSha())
+		return newer, nil
+	}
+	s.Restart = func() (string, int, error) { restarts++; return "v2", 1, nil }
+	s.SetBuild(&uiv1.Build{WishId: "w", ProjectId: "p", Branch: "feat/x", Sha: "abc", Changes: []string{"Work of W1"}})
+
+	path, handler := uiv1connect.NewUiServiceHandler(s)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := uiv1connect.NewUiServiceClient(server.Client(), server.URL)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	watch, err := client.WatchUpdate(ctx, connect.NewRequest(&uiv1.UiServiceWatchUpdateRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !watch.Receive() || watch.Msg().GetBuild().GetSha() != "abc" || watch.Msg().GetBuild().GetChanges()[0] != "Work of W1" {
+		t.Fatalf("the window is not proposed the build: %v, %v", watch.Msg(), watch.Err())
+	}
+
+	update := func(sha string) (*uiv1.UiServiceUpdateResponse, error) {
+		res, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: sha}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	if _, err := update("other"); code(err) != connect.CodeFailedPrecondition || len(installed) != 0 {
+		t.Errorf("a build not proposed: %v, installed %v", err, installed)
+	}
+	res, err := update("abc")
+	if err != nil || res.GetInstalled() != "abc" || res.GetVersion() != "" || restarts != 0 {
+		t.Errorf("a build that installed no newer Djinn: %v, %v, %d restarts", res, err, restarts)
+	}
+	if !watch.Receive() || watch.Msg().GetBuild() != nil {
+		t.Errorf("still proposed once installed: %v, %v", watch.Msg(), watch.Err())
+	}
+	newer = true
+	s.SetBuild(&uiv1.Build{Sha: "def"})
+	if res, err := update("def"); err != nil || res.GetInstalled() != "def" || res.GetVersion() != "v2" || restarts != 1 {
+		t.Errorf("a build that installed a newer Djinn: %v, %v, %d restarts", res, err, restarts)
+	}
+}

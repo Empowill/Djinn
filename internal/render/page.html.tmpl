@@ -91,7 +91,7 @@
       <tbody>
       {{- range .Finished}}
       <tr id="t-{{.Code}}">
-        <td data-label="{{index $.T "page.task"}}"><span class="code">{{.Code}}</span> {{.Title}}{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{if .Closed}}<p class="closed">{{.Closed}}</p>{{end}}</td>
+        <td data-label="{{index $.T "page.task"}}"><span class="code">{{.Code}}</span> {{.Title}}{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{if .Closed}}<p class="closed">{{.Closed}}</p>{{end}}{{if .Work}}<p class="work {{.WorkClass}}">{{.Work}}</p>{{end}}</td>
         <td data-label="{{index $.T "page.status"}}">{{template "st" (pair .StatusClass .Status)}}</td>
         <td data-label="{{index $.T "page.took"}}" class="num">{{.Time}}</td>
         <td data-label="{{index $.T "page.spent"}}" class="num">{{.Spent}}</td>
@@ -225,6 +225,7 @@
     {{- if .Time}}<span>{{.Time}}</span>{{end}}{{if .Spent}}<span>{{.Spent}}</span>{{end}}
     {{- if .After}}<span class="after">{{.After}}</span>{{end}}</p>
   {{- if .Wait}}<p class="reason">{{.Wait}}</p>{{end}}
+  {{- if .Work}}<p class="work {{.WorkClass}}">{{.Work}}</p>{{end}}
 {{- end}}
 {{- define "decisions"}}{{$ds := index . 0}}{{$T := index . 1}}
   <table class="tbl decisions stack">

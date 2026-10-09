@@ -141,6 +141,10 @@
 .wish-task-note.error {
   color: var(--danger);
 }
+/* Where the task's finished work stands on its way into the wish's branch: red when it is held. */
+.wish-task-work.work-failed {
+  color: var(--danger);
+}
 .wish-task-body {
   border-top: 1px solid var(--line);
   padding: var(--space-3) 14px;

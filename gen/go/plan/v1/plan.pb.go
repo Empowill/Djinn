@@ -1385,7 +1385,12 @@ type ProjectSettings struct {
 	// The command that tests the project, run in the project's folder: "go tool task test". Djinn integrates the
 	// finished work of the project's tasks into their wish's integration branch only once it is set, and moves the
 	// branch only when it passes. Its words are split on spaces, without a shell.
-	Test          *string `protobuf:"bytes,7,opt,name=test,proto3,oneof" json:"test,omitempty"`
+	Test *string `protobuf:"bytes,7,opt,name=test,proto3,oneof" json:"test,omitempty"`
+	// The command that installs the project's new build, run in the project's folder of the integration worktree at
+	// the commit: "go tool task install". Once a batch is committed, the window proposes it, with what changed and what
+	// to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are split on spaces, without
+	// a shell. Not set: nothing is proposed.
+	Install       *string `protobuf:"bytes,8,opt,name=install,proto3,oneof" json:"install,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1469,10 +1474,18 @@ func (x *ProjectSettings) GetTest() string {
 	return ""
 }
 
+func (x *ProjectSettings) GetInstall() string {
+	if x != nil && x.Install != nil {
+		return *x.Install
+	}
+	return ""
+}
+
 // ProjectSetting is one setting of a project, as its workers get it.
 type ProjectSetting struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test.
+	// Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,
+	// install.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The
 	// generated globs are joined by commas.
@@ -2474,7 +2487,10 @@ type TaskIntegration struct {
 	// For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch.
 	Reason string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
 	// When it last changed.
-	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
+	UpdateTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
+	// For CONFLICT and RED, the task whose worker corrects the batch (W9), once one started: its work integrates the
+	// same way.
+	CorrectedBy   string `protobuf:"bytes,6,opt,name=corrected_by,json=correctedBy,proto3" json:"corrected_by,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2542,6 +2558,13 @@ func (x *TaskIntegration) GetUpdateTime() *timestamppb.Timestamp {
 		return x.UpdateTime
 	}
 	return nil
+}
+
+func (x *TaskIntegration) GetCorrectedBy() string {
+	if x != nil {
+		return x.CorrectedBy
+	}
+	return ""
 }
 
 // IntegrationCommit is a batch of finished work committed into a wish's integration branch, as the journal records
@@ -10633,7 +10656,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\xa6\x04\n" +
+	"createTime\"\xdb\x04\n" +
 	"\x0fProjectSettings\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
 	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
@@ -10641,13 +10664,16 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06branch\x18\x04 \x01(\tBf\xbaHcra\x18d2T^([A-Za-z0-9]+|\\{(code|slug|uuid8)\\})([._/-]?([A-Za-z0-9]+|\\{(code|slug|uuid8)\\}))*$J\a{uuid8}H\x03R\x06branch\x88\x01\x01\x12/\n" +
 	"\tgenerated\x18\x05 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xc8\x01R\tgenerated\x12)\n" +
 	"\bgenerate\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x04R\bgenerate\x88\x01\x01\x12!\n" +
-	"\x04test\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x05R\x04test\x88\x01\x01B\v\n" +
+	"\x04test\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x05R\x04test\x88\x01\x01\x12'\n" +
+	"\ainstall\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x06R\ainstall\x88\x01\x01B\v\n" +
 	"\t_providerB\b\n" +
 	"\x06_modelB\x11\n" +
 	"\x0f_max_budget_usdB\t\n" +
 	"\a_branchB\v\n" +
 	"\t_generateB\a\n" +
-	"\x05_test\"j\n" +
+	"\x05_testB\n" +
+	"\n" +
+	"\b_install\"j\n" +
 	"\x0eProjectSetting\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12.\n" +
@@ -10751,14 +10777,15 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05azima\x18' \x01(\v2\x0e.plan.v1.AzimaR\x05azima\x12:\n" +
 	"\vintegration\x18( \x01(\v2\x18.plan.v1.TaskIntegrationR\vintegration:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
-	"\x04code\"\xc1\x01\n" +
+	"\x04code\"\xe4\x01\n" +
 	"\x0fTaskIntegration\x12/\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x19.plan.v1.IntegrationStateR\x05state\x12\x16\n" +
 	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x10\n" +
 	"\x03sha\x18\x03 \x01(\tR\x03sha\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12;\n" +
 	"\vupdate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\"\xb0\x01\n" +
+	"updateTime\x12!\n" +
+	"\fcorrected_by\x18\x06 \x01(\tR\vcorrectedBy\"\xb0\x01\n" +
 	"\x11IntegrationCommit\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
 	"\n" +

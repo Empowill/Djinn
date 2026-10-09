@@ -98,6 +98,8 @@ type Harness struct {
 	integrating   sync.Once
 	integrateDone chan struct{}     // closed when the integration has stopped; nil until Integrate
 	tested        map[string]tested // by wish/project; owned by the integration's pass
+	integrateMu   sync.Mutex        // held while a batch is integrated, or a build installed: they share a worktree
+	built         func(Built)       // nil: no build is proposed
 
 	// Warm workers (warm.go), guarded by sched.
 	warmOn bool
@@ -141,6 +143,7 @@ type run struct {
 	unread  []string      // messages the worker took on its input and has said nothing after yet
 	warm    *warm         // the warm worker the task takes, until launch
 	branch  string        // the branch template of the project's settings, for launch; empty: the default
+	from    string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
 	failure string        // the last error the current worker said: it never ends done
 	limit   *Limit        // the usage limit the current worker said it hit: it wins over failure
 }
@@ -381,7 +384,7 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		}
 		return nil, err
 	}
-	r.warm, r.branch = wk, settings.Branch
+	r.warm, r.branch, r.from = wk, settings.Branch, plan.IntegrationBranchOf(wish, project.GetId())
 	var prep prepared
 	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -528,14 +531,20 @@ func (h *Harness) launch(
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: create its folder: %w", task.GetCode(), err))
 		}
 	}
+	// The integration branch the worktree starts from, and its commit then, for the start event.
+	fromText := ""
 	if project.GetGit() && !r.watcher { // A watcher writes nothing: it runs in the project's folder.
 		task.Branch = branchName(r.branch, task.GetCode(), task.GetTitle(), task.GetId())
 		task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
 		var err error
+		var sha, from string
 		if wk != nil {
-			dir = wk.spec.Dir
-		} else {
-			dir, err = addWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch())
+			dir, sha, from = wk.spec.Dir, wk.base, wk.from
+		} else if sha, from, err = startPoint(ctx, project.GetDirectory(), r.from); err == nil {
+			dir, err = addWorktreeFrom(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), sha)
+		}
+		if from != "" {
+			fromText = ", from " + from + " at " + short8(sha)
 		}
 		if err != nil {
 			task.Branch, task.Worktree = "", ""
@@ -545,7 +554,7 @@ func (h *Harness) launch(
 	}
 	where := "in " + dir
 	if task.GetBranch() != "" {
-		where += ", on branch " + task.GetBranch()
+		where += ", on branch " + task.GetBranch() + fromText
 	}
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: task.GetModel(),

@@ -177,6 +177,7 @@ test("every class of the stylesheets is used by a component", () => {
     /^tone-/, // status.tsx and the task, wish and plan lines: tone-${tone}
     /^level-/, // attention.tsx: level-${item.level}
     /^kind-\d+$/, // wish-task.tsx: kind-${event.kind}, a TaskEvent kind
+    /^work-/, // wish-task.tsx: work-${work.tone}, where a task's work stands
   ];
   const components = fs
     .readdirSync(root, { recursive: true })

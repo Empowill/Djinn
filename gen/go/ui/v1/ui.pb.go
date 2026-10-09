@@ -851,7 +851,10 @@ type UiServiceWatchUpdateResponse struct {
 	NotResumed []string `protobuf:"bytes,3,rep,name=not_resumed,json=notResumed,proto3" json:"not_resumed,omitempty"`
 	// Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
 	// local install, which has none.
-	NotesUrl      string `protobuf:"bytes,4,opt,name=notes_url,json=notesUrl,proto3" json:"notes_url,omitempty"`
+	NotesUrl string `protobuf:"bytes,4,opt,name=notes_url,json=notesUrl,proto3" json:"notes_url,omitempty"`
+	// The last batch of finished work committed into a wish's integration branch, in a project whose settings name an
+	// install command, and not installed since: the window proposes to install it and restart on it. Unset for none.
+	Build         *Build `protobuf:"bytes,5,opt,name=build,proto3" json:"build,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -914,15 +917,149 @@ func (x *UiServiceWatchUpdateResponse) GetNotesUrl() string {
 	return ""
 }
 
+func (x *UiServiceWatchUpdateResponse) GetBuild() *Build {
+	if x != nil {
+		return x.Build
+	}
+	return nil
+}
+
+// Build is a batch of finished work committed into a wish's integration branch (T30), to install.
+type Build struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish, and its title.
+	WishId    string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	WishTitle string `protobuf:"bytes,2,opt,name=wish_title,json=wishTitle,proto3" json:"wish_title,omitempty"`
+	// The project, by its identifier and its name.
+	ProjectId string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Project   string `protobuf:"bytes,4,opt,name=project,proto3" json:"project,omitempty"`
+	// The integration branch, and the commit it moved to.
+	Branch string `protobuf:"bytes,5,opt,name=branch,proto3" json:"branch,omitempty"`
+	Sha    string `protobuf:"bytes,6,opt,name=sha,proto3" json:"sha,omitempty"`
+	// The tasks of the batch, by code: W5.
+	Tasks []string `protobuf:"bytes,7,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	// What changed: the titles of the commits the batch brought, the latest first.
+	Changes []string `protobuf:"bytes,8,rep,name=changes,proto3" json:"changes,omitempty"`
+	// What to check, one line per task: its code and title, then what its worker said last.
+	Checks []string `protobuf:"bytes,9,rep,name=checks,proto3" json:"checks,omitempty"`
+	// The command that installs it: go tool task install.
+	Install       string `protobuf:"bytes,10,opt,name=install,proto3" json:"install,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Build) Reset() {
+	*x = Build{}
+	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Build) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Build) ProtoMessage() {}
+
+func (x *Build) ProtoReflect() protoreflect.Message {
+	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Build.ProtoReflect.Descriptor instead.
+func (*Build) Descriptor() ([]byte, []int) {
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *Build) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *Build) GetWishTitle() string {
+	if x != nil {
+		return x.WishTitle
+	}
+	return ""
+}
+
+func (x *Build) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *Build) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *Build) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *Build) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *Build) GetTasks() []string {
+	if x != nil {
+		return x.Tasks
+	}
+	return nil
+}
+
+func (x *Build) GetChanges() []string {
+	if x != nil {
+		return x.Changes
+	}
+	return nil
+}
+
+func (x *Build) GetChecks() []string {
+	if x != nil {
+		return x.Checks
+	}
+	return nil
+}
+
+func (x *Build) GetInstall() string {
+	if x != nil {
+		return x.Install
+	}
+	return ""
+}
+
 type UiServiceUpdateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The commit of the build to install first, as WatchUpdate proposed it; empty to restart on the newer Djinn
+	// already installed. Refused when it is not the build proposed.
+	Build         string `protobuf:"bytes,1,opt,name=build,proto3" json:"build,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UiServiceUpdateRequest) Reset() {
 	*x = UiServiceUpdateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	mi := &file_ui_v1_ui_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -934,7 +1071,7 @@ func (x *UiServiceUpdateRequest) String() string {
 func (*UiServiceUpdateRequest) ProtoMessage() {}
 
 func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	mi := &file_ui_v1_ui_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -947,22 +1084,31 @@ func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{17}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *UiServiceUpdateRequest) GetBuild() string {
+	if x != nil {
+		return x.Build
+	}
+	return ""
 }
 
 type UiServiceUpdateResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Version Djinn restarts on.
+	// Version Djinn restarts on; empty when the build installed no newer Djinn: nothing restarts.
 	Version string `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
 	// How many terminals the new Djinn will run again.
-	Terminals     int32 `protobuf:"varint,2,opt,name=terminals,proto3" json:"terminals,omitempty"`
+	Terminals int32 `protobuf:"varint,2,opt,name=terminals,proto3" json:"terminals,omitempty"`
+	// The commit of the build installed, when one was.
+	Installed     string `protobuf:"bytes,3,opt,name=installed,proto3" json:"installed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UiServiceUpdateResponse) Reset() {
 	*x = UiServiceUpdateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[18]
+	mi := &file_ui_v1_ui_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -974,7 +1120,7 @@ func (x *UiServiceUpdateResponse) String() string {
 func (*UiServiceUpdateResponse) ProtoMessage() {}
 
 func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[18]
+	mi := &file_ui_v1_ui_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -987,7 +1133,7 @@ func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{18}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UiServiceUpdateResponse) GetVersion() string {
@@ -1002,6 +1148,13 @@ func (x *UiServiceUpdateResponse) GetTerminals() int32 {
 		return x.Terminals
 	}
 	return 0
+}
+
+func (x *UiServiceUpdateResponse) GetInstalled() string {
+	if x != nil {
+		return x.Installed
+	}
+	return ""
 }
 
 var File_ui_v1_ui_proto protoreflect.FileDescriptor
@@ -1051,17 +1204,34 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x1aUiServiceWatchShowResponse\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1a\n" +
 	"\bterminal\x18\x02 \x01(\tR\bterminal\"\x1d\n" +
-	"\x1bUiServiceWatchUpdateRequest\"\x8c\x01\n" +
+	"\x1bUiServiceWatchUpdateRequest\"\xb0\x01\n" +
 	"\x1cUiServiceWatchUpdateResponse\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\tR\acurrent\x12\x14\n" +
 	"\x05ready\x18\x02 \x01(\tR\x05ready\x12\x1f\n" +
 	"\vnot_resumed\x18\x03 \x03(\tR\n" +
 	"notResumed\x12\x1b\n" +
-	"\tnotes_url\x18\x04 \x01(\tR\bnotesUrl\"\x18\n" +
-	"\x16UiServiceUpdateRequest\"Q\n" +
+	"\tnotes_url\x18\x04 \x01(\tR\bnotesUrl\x12\"\n" +
+	"\x05build\x18\x05 \x01(\v2\f.ui.v1.BuildR\x05build\"\x84\x02\n" +
+	"\x05Build\x12\x17\n" +
+	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
+	"\n" +
+	"wish_title\x18\x02 \x01(\tR\twishTitle\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId\x12\x18\n" +
+	"\aproject\x18\x04 \x01(\tR\aproject\x12\x16\n" +
+	"\x06branch\x18\x05 \x01(\tR\x06branch\x12\x10\n" +
+	"\x03sha\x18\x06 \x01(\tR\x03sha\x12\x14\n" +
+	"\x05tasks\x18\a \x03(\tR\x05tasks\x12\x18\n" +
+	"\achanges\x18\b \x03(\tR\achanges\x12\x16\n" +
+	"\x06checks\x18\t \x03(\tR\x06checks\x12\x18\n" +
+	"\ainstall\x18\n" +
+	" \x01(\tR\ainstall\"7\n" +
+	"\x16UiServiceUpdateRequest\x12\x1d\n" +
+	"\x05build\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18@R\x05build\"o\n" +
 	"\x17UiServiceUpdateResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1c\n" +
-	"\tterminals\x18\x02 \x01(\x05R\tterminals2\xed\x05\n" +
+	"\tterminals\x18\x02 \x01(\x05R\tterminals\x12\x1c\n" +
+	"\tinstalled\x18\x03 \x01(\tR\tinstalled2\xed\x05\n" +
 	"\tUiService\x12e\n" +
 	"\x0eGetEnvironment\x12%.ui.v1.UiServiceGetEnvironmentRequest\x1a&.ui.v1.UiServiceGetEnvironmentResponse\"\x04\xc8\xf3\x18\x02\x12h\n" +
 	"\x0fChooseDirectory\x12&.ui.v1.UiServiceChooseDirectoryRequest\x1a'.ui.v1.UiServiceChooseDirectoryResponse\"\x04\xc8\xf3\x18\x02\x12_\n" +
@@ -1085,7 +1255,7 @@ func file_ui_v1_ui_proto_rawDescGZIP() []byte {
 	return file_ui_v1_ui_proto_rawDescData
 }
 
-var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_ui_v1_ui_proto_goTypes = []any{
 	(*UiServiceGetEnvironmentRequest)(nil),   // 0: ui.v1.UiServiceGetEnvironmentRequest
 	(*UiServiceGetEnvironmentResponse)(nil),  // 1: ui.v1.UiServiceGetEnvironmentResponse
@@ -1104,34 +1274,36 @@ var file_ui_v1_ui_proto_goTypes = []any{
 	(*UiServiceWatchShowResponse)(nil),       // 14: ui.v1.UiServiceWatchShowResponse
 	(*UiServiceWatchUpdateRequest)(nil),      // 15: ui.v1.UiServiceWatchUpdateRequest
 	(*UiServiceWatchUpdateResponse)(nil),     // 16: ui.v1.UiServiceWatchUpdateResponse
-	(*UiServiceUpdateRequest)(nil),           // 17: ui.v1.UiServiceUpdateRequest
-	(*UiServiceUpdateResponse)(nil),          // 18: ui.v1.UiServiceUpdateResponse
+	(*Build)(nil),                            // 17: ui.v1.Build
+	(*UiServiceUpdateRequest)(nil),           // 18: ui.v1.UiServiceUpdateRequest
+	(*UiServiceUpdateResponse)(nil),          // 19: ui.v1.UiServiceUpdateResponse
 }
 var file_ui_v1_ui_proto_depIdxs = []int32{
 	4,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
 	2,  // 1: ui.v1.UiServiceGetEnvironmentResponse.shortcut:type_name -> ui.v1.Shortcut
 	2,  // 2: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
-	0,  // 3: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
-	5,  // 4: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
-	7,  // 5: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
-	9,  // 6: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
-	11, // 7: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
-	13, // 8: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
-	15, // 9: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
-	17, // 10: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
-	1,  // 11: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	6,  // 12: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	8,  // 13: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	10, // 14: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	12, // 15: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	14, // 16: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	16, // 17: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	18, // 18: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	11, // [11:19] is the sub-list for method output_type
-	3,  // [3:11] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	17, // 3: ui.v1.UiServiceWatchUpdateResponse.build:type_name -> ui.v1.Build
+	0,  // 4: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
+	5,  // 5: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
+	7,  // 6: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
+	9,  // 7: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
+	11, // 8: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
+	13, // 9: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
+	15, // 10: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
+	18, // 11: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
+	1,  // 12: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	6,  // 13: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	8,  // 14: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	10, // 15: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	12, // 16: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	14, // 17: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	16, // 18: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	19, // 19: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	12, // [12:20] is the sub-list for method output_type
+	4,  // [4:12] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_ui_v1_ui_proto_init() }
@@ -1146,7 +1318,7 @@ func file_ui_v1_ui_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ui_v1_ui_proto_rawDesc), len(file_ui_v1_ui_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

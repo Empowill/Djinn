@@ -387,6 +387,12 @@
   "time.hm": "{h}h{m}m",
   "time.ms": "{m}m{s}s",
   "time.s": "{s}s",
+  "update.build": "{tasks} committed into {branch} of {project}",
+  "update.build_changes": "What changed",
+  "update.build_checks": "What to check",
+  "update.build_install": "Install and restart",
+  "update.build_installed": "Installed {sha}",
+  "update.build_installing": "Installing…",
   "update.dismiss": "Dismiss",
   "update.failed": "The update failed: {message}",
   "update.install": "Update",
@@ -451,5 +457,12 @@
   "wish.state_active": "Active · {rank}",
   "wish.state_granted": "Granted",
   "wish.state_paused": "Paused",
-  "wish.tasks": "Tasks"
+  "wish.tasks": "Tasks",
+  "work.committed": "Committed into {branch} as {sha}",
+  "work.conflict": "Conflict, not committed: {reason}",
+  "work.corrected_by": "corrected by {task}",
+  "work.integrating": "Being committed into {branch}",
+  "work.pending": "Done, waiting to be committed",
+  "work.pending_why": "Done, waiting to be committed: {reason}",
+  "work.red": "Red tests, not committed: {reason}"
 }

@@ -1241,7 +1241,7 @@
         "description": "ProjectSetting is one setting of a project, as its workers get it.",
         "properties": {
           "name": {
-            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test.",
+            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test, install.",
             "type": "string"
           },
           "source": {
@@ -2145,6 +2145,10 @@
         "properties": {
           "branch": {
             "description": "The integration branch, in the task's project.",
+            "type": "string"
+          },
+          "correctedBy": {
+            "description": "For CONFLICT and RED, the task whose worker corrects the batch (W9), once one started: its work integrates the same way.",
             "type": "string"
           },
           "reason": {

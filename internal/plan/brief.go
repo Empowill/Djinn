@@ -9,12 +9,15 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/locales"
 )
 
 // Brief is what starts an agent on a wish, written by Djinn from the store, without a model. Stable changes rarely:
@@ -370,6 +373,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			if as := render.ForkedAs(t, exp.GetTasks()); as != "" && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
 				word = "resumed as " + as
 			}
+			if work := workText(t); work != "" {
+				word = work
+			}
 			fmt.Fprintf(&b, "- **%s** %s: %s", t.GetCode(), clipLine(t.GetTitle()), word)
 			if c := t.GetClosed(); c != nil {
 				b.WriteString(", closed by the " + CloserWord(c.GetActor()))
@@ -524,6 +530,17 @@ func waitText(t *planv1.Task) string {
 		text += ", " + clipLine(t.GetError())
 	}
 	return text
+}
+
+// workText says where the finished work of t stands on its way into its wish's integration branch, as the page
+// says it, in lower case: "committed into feat/x as 1a2b3c4d"; "" for work Djinn does not integrate.
+func workText(t *planv1.Task) string {
+	text, _ := render.Work(t, render.Translator(locales.Source))
+	if text == "" {
+		return ""
+	}
+	r, n := utf8.DecodeRuneInString(text)
+	return clipLine(string(unicode.ToLower(r)) + text[n:])
 }
 
 // deciderText says who took a decision: the developer, by an answer or an approval, or an agent.

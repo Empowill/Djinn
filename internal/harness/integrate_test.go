@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -35,8 +36,8 @@ type integration struct {
 
 // integrating starts djinn up on a repository with app/README.md, app/gen/index.txt and app/src, a wish on it whose
 // integration branch is the one its checkout is on, and project settings that name gen/** as generated, "gen" as
-// the command that makes it, "test" as the test command.
-func integrating(t *testing.T) *integration {
+// the command that makes it, "test" as the test command. opts are djinn up's options beside these.
+func integrating(t *testing.T, opts ...Option) *integration {
 	t.Helper()
 	in := &integration{repo: gitRepo(t), now: time.Now()}
 	for _, args := range [][]string{{"config", "user.name", "Test"}, {"config", "user.email", "test@example.com"}} {
@@ -48,7 +49,7 @@ func integrating(t *testing.T) *integration {
 	writeFile(t, in.repo, "app/src/.keep", "")
 	in.git(t, in.repo, "add", ".")
 	in.git(t, in.repo, "commit", "--quiet", "-m", "Generated files")
-	in.env = up(t, t.TempDir(), WithClock(in.clock), WithCommands(in.run), WithGates(in.gate))
+	in.env = up(t, t.TempDir(), append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate)}, opts...)...)
 	in.wishID, in.projectID = in.wish(t, filepath.Join(in.repo, "app"))
 	in.branch = plan.CheckedOutBranch(t.Context(), in.repo)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
@@ -92,18 +93,25 @@ func (in *integration) run(_ context.Context, dir string, args []string) (string
 		return "", 0, os.WriteFile(filepath.Join(dir, "gen", "index.txt"), []byte(strings.Join(names, "\n")+"\n"), 0o600)
 	case "test":
 		return in.testOut, in.testCode, nil
+	case "install":
+		b, err := os.ReadFile(filepath.Join(dir, "src", "a.txt"))
+		return "installed " + string(b), 0, err
 	}
 	return "unknown command", 127, nil
 }
 
 func (in *integration) gate(ctx context.Context, name, taskID, what, dir string) (func(), error) {
-	task, err := store.Get[*planv1.Task](ctx, in.db, taskID)
-	if err != nil {
-		return nil, err
+	code := "-" // Taken for no task.
+	if taskID != "" {
+		task, err := store.Get[*planv1.Task](ctx, in.db, taskID)
+		if err != nil {
+			return nil, err
+		}
+		code = task.GetCode()
 	}
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	in.gates = append(in.gates, name+" "+task.GetCode())
+	in.gates = append(in.gates, name+" "+code)
 	return func() {}, nil
 }
 
@@ -571,5 +579,95 @@ func TestMatchGlob(t *testing.T) {
 		if got := matchGlob(c.pattern, c.name); got != c.want {
 			t.Errorf("matchGlob(%q, %q) = %v", c.pattern, c.name, got)
 		}
+	}
+}
+
+// TestADependentStartsFromTheCommit: a task that waits for another whose work Djinn integrates waits for that work to
+// be committed, not only done; the work is committed at once, alone, and the task then starts from the integration
+// branch, its worktree holding the dependency's change, even when the person's checkout is on another branch.
+func TestADependentStartsFromTheCommit(t *testing.T) {
+	in := integrating(t, WithTick(time.Hour)) // Only the commit wakes the scheduler.
+	in.git(t, in.repo, "checkout", "--quiet", "-b", "elsewhere")
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	w2 := in.mustSpawn(t, in.wishID, "Second", "wait\ntext two", &planv1.TaskServiceSpawnRequest{DependsOn: []string{"W1"}})
+	if w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || w2.GetWaitReason() != "waits for W1 to be committed" {
+		t.Fatalf("W2 = %v", w2)
+	}
+
+	in.pass(t, 0)
+	tip := in.tip(t)
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("a task another waits for is committed at once: %s", got)
+	}
+	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	if b, err := os.ReadFile(filepath.Join(w2.GetWorktree(), "app", "src", "a.txt")); err != nil || string(b) != "a\n" {
+		t.Errorf("W2's worktree does not hold W1's work: %q, %v", b, err)
+	}
+	if base := in.git(t, in.repo, "rev-parse", w2.GetBranch()); base != tip {
+		t.Errorf("W2's branch starts at %s; the integration branch is at %s", base, tip)
+	}
+	// The person's checkout stays where it was.
+	if _, err := os.Stat(filepath.Join(in.repo, "app", "src", "a.txt")); !os.IsNotExist(err) {
+		t.Errorf("the checkout on another branch got W1's work: %v", err)
+	}
+	in.release(t, w2.GetId())
+	in.ended(t, w2.GetId())
+	events, err := store.List[*planv1.TaskEvent](t.Context(), in.db, store.Where{"task_id": w2.GetId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := eventTexts(events)
+	from := ", on branch " + w2.GetBranch() + ", from " + in.branch + " at " + tip[:8] + ","
+	if !slices.Contains(texts, "waiting: waits for W1 to be committed") ||
+		!slices.ContainsFunc(texts, func(s string) bool { return strings.HasPrefix(s, "started fake") && strings.Contains(s, from) }) {
+		t.Errorf("W2's events, without %q: %q", from, texts)
+	}
+}
+
+// TestABuildIsProposed: once a batch is committed in a project whose settings name an install command, djinn up is
+// told what to propose: the commits' titles, and what to check, from what each worker said last. Installing it runs
+// the command in the integration worktree at that commit, under the install gate, never in the person's checkout.
+func TestABuildIsProposed(t *testing.T) {
+	var built []Built
+	in := integrating(t, WithBuilt(func(b Built) { built = append(built, b) }))
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ninstall: \"install\"\n")
+	if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+		WishId: in.wishID, CommitAfterTasks: 1,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "said", w1); err != nil {
+			return err
+		}
+		return tx.Put(newEvent(w1.GetId(), 2, Event{
+			Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "Done: a.txt holds a.\n\nTo check: the  window\nshows a.",
+		}))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	in.pass(t, time.Hour)
+	in.pass(t, 3*time.Hour) // Nothing left: nothing more to propose.
+	tip := in.tip(t)
+	want := Built{
+		WishID: in.wishID, WishTitle: "Run Djinn on itself", ProjectID: in.projectID, Project: "app", Branch: in.branch, Sha: tip,
+		Tasks: []string{"W1"}, Changes: []string{"Work of W1"}, Checks: []string{"W1 Work of W1: To check: the window shows a."},
+		Install: "install",
+	}
+	if len(built) != 1 || !reflect.DeepEqual(built[0], want) {
+		t.Fatalf("built %+v; want %+v", built, want)
+	}
+
+	in.git(t, in.repo, "checkout", "--quiet", "--detach", "HEAD~1") // The person's checkout is elsewhere: no matter.
+	out, err := in.h.Install(t.Context(), in.wishID, in.projectID, tip)
+	wt := filepath.Join(integrationDir(in.home, in.projectID, in.wishID), "app")
+	if err != nil || out != "installed a\n" || in.runs[len(in.runs)-1] != "install in "+wt || in.gates[len(in.gates)-1] != "install -" {
+		t.Errorf("install: %q, %v; runs %v, gates %v", out, err, in.runs, in.gates)
+	}
+	// Only a build of the wish's integration branch installs.
+	if _, err := in.h.Install(t.Context(), in.wishID, in.projectID, in.git(t, w1.GetWorktree(), "rev-parse", "HEAD~1")+"0"); err == nil {
+		t.Error("a commit that is not one installed")
 	}
 }

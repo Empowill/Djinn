@@ -30,6 +30,7 @@ import {
 
 import {
   Closer,
+  IntegrationState,
   type Project,
   Provider,
   type Task,
@@ -148,6 +149,7 @@ export function WishTask({
   // How long it runs comes first: ticking while it runs, how long it ran once ended.
   const now = useNow(!taskFinished(task.status) && !!task.startTime);
   const time = taskTime(task, now);
+  const work = taskWork(task);
   return (
     <article
       className={`wish-task tone-${tone} ${open ? "open" : ""} ${focused ? "focused" : ""}`}
@@ -244,6 +246,11 @@ export function WishTask({
           )}
         </p>
       )}
+      {work && (
+        <p className={`wish-task-note wish-task-work work-${work.tone}`}>
+          {work.text}
+        </p>
+      )}
       {(task.waitReason ||
         task.error ||
         after.length > 0 ||
@@ -265,6 +272,54 @@ export function WishTask({
       )}
     </article>
   );
+}
+
+// taskWork says where the finished work of a task stands on its way into its wish's integration branch (T30), as the
+// page says it, and its tone: undefined for work Djinn does not integrate.
+export function taskWork(
+  task: Task,
+):
+  | { text: string; tone: "waiting" | "running" | "done" | "failed" }
+  | undefined {
+  const work = task.integration;
+  const sha = (work?.sha ?? "").slice(0, 8);
+  let out: { text: string; tone: "waiting" | "running" | "done" | "failed" };
+  switch (work?.state) {
+    case IntegrationState.PENDING:
+      out = {
+        text: work.reason
+          ? t("work.pending_why", { reason: work.reason })
+          : t("work.pending"),
+        tone: "waiting",
+      };
+      break;
+    case IntegrationState.INTEGRATING:
+      out = {
+        text: t("work.integrating", { branch: work.branch }),
+        tone: "running",
+      };
+      break;
+    case IntegrationState.COMMITTED:
+      out = {
+        text: t("work.committed", { branch: work.branch, sha }),
+        tone: "done",
+      };
+      break;
+    case IntegrationState.CONFLICT:
+      out = {
+        text: t("work.conflict", { reason: work.reason }),
+        tone: "failed",
+      };
+      break;
+    case IntegrationState.RED:
+      out = { text: t("work.red", { reason: work.reason }), tone: "failed" };
+      break;
+    default:
+      return undefined;
+  }
+  if (work.correctedBy)
+    out.text += `, ${t("work.corrected_by", { task: work.correctedBy })}`;
+  return out;
 }
 
 // TaskLink is a task of the wish by its code: a click shows its card. A code no card holds stays text.

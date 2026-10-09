@@ -98,11 +98,11 @@ type Settings struct {
 	MaxBudgetUSD float64
 	Branch       string // a template: {code}, {slug}, {uuid8}
 	// How Djinn integrates the project's finished work (T30): the generated files as globs, the command that makes
-	// them, and the command that tests the project; empty when not set.
-	Generated      []string
-	Generate, Test string
+	// them, the command that tests the project, and the one that installs its new build; empty when not set.
+	Generated               []string
+	Generate, Test, Install string
 
-	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, TestFrom planv1.SettingSource
+	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, TestFrom, InstallFrom planv1.SettingSource
 }
 
 // ResolveSettings merges the repository's settings and the developer's, either nil when there is none. The
@@ -113,7 +113,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 	s := Settings{
 		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch,
 		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
-		TestFrom: def,
+		TestFrom: def, InstallFrom: def,
 	}
 	for _, f := range []struct {
 		settings *planv1.ProjectSettings
@@ -143,6 +143,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.Test != nil {
 			s.Test, s.TestFrom = f.settings.GetTest(), f.from
+		}
+		if f.settings.Install != nil {
+			s.Install, s.InstallFrom = f.settings.GetInstall(), f.from
 		}
 	}
 	return s
@@ -201,5 +204,6 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "generated", Value: strings.Join(s.Generated, ","), Source: s.GeneratedFrom},
 		{Name: "generate", Value: s.Generate, Source: s.GenerateFrom},
 		{Name: "test", Value: s.Test, Source: s.TestFrom},
+		{Name: "install", Value: s.Install, Source: s.InstallFrom},
 	}
 }

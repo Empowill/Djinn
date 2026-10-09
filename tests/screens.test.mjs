@@ -997,3 +997,129 @@ test("the update banner links the release notes of a newer release, and only a w
   // Nothing waits: no banner, whatever the notes.
   assert.equal(banner({ ready: "", notesUrl: "https://example.com" }), "");
 });
+
+test("the Tasks tab says where each task's work stands on its way into the wish's branch", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const work = (state, extra = {}) => ({
+    state,
+    branch: "feat/x",
+    sha: "1a2b3c4d5e6f",
+    reason: "",
+    correctedBy: "",
+    ...extra,
+  });
+  const tasks = [
+    ["W1", undefined],
+    ["W2", work(s.IntegrationState.PENDING)],
+    ["W3", work(s.IntegrationState.COMMITTED)],
+    [
+      "W4",
+      work(s.IntegrationState.CONFLICT, {
+        reason: "W4 conflicts with feat/x in a.go",
+        correctedBy: "W9",
+      }),
+    ],
+    ["W5", work(s.IntegrationState.RED, { reason: "test exited 1" })],
+    ["W6", work(s.IntegrationState.INTEGRATING)],
+  ].map(([code, integration], i) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status: s.TaskStatus.DONE,
+    createTime: at(1),
+    endTime: at(10 - i),
+    integration,
+  }));
+  const card = (task) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, { task, onStop() {}, async onSend() {} }),
+    );
+  const notes = tasks.map((task) => {
+    const m = card(task).match(
+      /<p class="wish-task-note wish-task-work work-([a-z]+)">([^<]*)<\/p>/,
+    );
+    return m ? `${task.code} ${m[1]}: ${m[2]}` : `${task.code} done`;
+  });
+  assert.deepEqual(notes, [
+    "W1 done",
+    "W2 waiting: Done, waiting to be committed",
+    "W3 done: Committed into feat/x as 1a2b3c4d",
+    "W4 failed: Conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9",
+    "W5 failed: Red tests, not committed: test exited 1",
+    "W6 running: Being committed into feat/x",
+  ]);
+  // A task that waits for another's work to be committed says so.
+  const waits = card({
+    id: "W7",
+    code: "W7",
+    title: "Next",
+    status: s.TaskStatus.PENDING,
+    createTime: at(1),
+    waitReason: "waits for W2 to be committed",
+  });
+  assert.match(waits, /waits for W2 to be committed/);
+});
+
+test("the update banner proposes to install a build committed, with what changed and what to check", () => {
+  const build = {
+    wishTitle: "Run Djinn on itself",
+    project: "djinn",
+    branch: "feat/wails-go",
+    sha: "1a2b3c4d5e6f",
+    tasks: ["W5", "W6"],
+    changes: ["Work of W6", "Work of W5"],
+    checks: ["W5 Work of W5: To check: the banner shows the build."],
+  };
+  const banner = (phase = { kind: "idle" }, dismissedBuild = "") =>
+    s.renderToStaticMarkup(
+      h(s.UpdateBannerView, {
+        state: {
+          current: "v1",
+          ready: "",
+          notResumed: [],
+          notesUrl: "",
+          build,
+        },
+        phase,
+        dismissed: false,
+        dismissedBuild,
+        onInstall() {},
+        onDismiss() {},
+        onNotes() {},
+      }),
+    );
+  const html = banner();
+  assert.match(
+    html,
+    /W5, W6 committed into feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
+  );
+  assert.match(
+    html,
+    /What changed<\/strong><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul>/,
+  );
+  assert.match(
+    html,
+    /What to check<\/strong><ul><li>W5 Work of W5: To check: the banner shows the build.<\/li><\/ul>/,
+  );
+  assert.match(html, /<button type="button">Install and restart<\/button>/);
+  // While it installs, the buttons go.
+  const installing = banner({ kind: "installing" });
+  assert.match(installing, /Installing…/);
+  assert.doesNotMatch(installing, /<button/);
+  // Dismissed, that build no longer shows.
+  assert.equal(banner({ kind: "idle" }, build.sha), "");
+  // A build that installed no newer Djinn says it is installed, and restarts nothing.
+  assert.match(
+    s.renderToStaticMarkup(
+      h(s.UpdateBannerView, {
+        state: { current: "v1", ready: "", notResumed: [], notesUrl: "" },
+        phase: { kind: "installed", sha: build.sha },
+        dismissed: false,
+        onInstall() {},
+        onDismiss() {},
+        onNotes() {},
+      }),
+    ),
+    /Installed 1a2b3c4d/,
+  );
+});

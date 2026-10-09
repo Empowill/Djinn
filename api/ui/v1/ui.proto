@@ -38,13 +38,14 @@ service UiService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-  // change. With the leads that a restart could not resume, once.
+  // change. With the leads that a restart could not resume, once, and the last build committed that is not installed.
   rpc WatchUpdate(UiServiceWatchUpdateRequest) returns (stream UiServiceWatchUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
   // as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-  // sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
+  // sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
+  // newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
   rpc Update(UiServiceUpdateRequest) returns (UiServiceUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
@@ -163,13 +164,43 @@ message UiServiceWatchUpdateResponse {
   // Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
   // local install, which has none.
   string notes_url = 4;
+  // The last batch of finished work committed into a wish's integration branch, in a project whose settings name an
+  // install command, and not installed since: the window proposes to install it and restart on it. Unset for none.
+  Build build = 5;
 }
 
-message UiServiceUpdateRequest {}
+// Build is a batch of finished work committed into a wish's integration branch (T30), to install.
+message Build {
+  // The wish, and its title.
+  string wish_id = 1;
+  string wish_title = 2;
+  // The project, by its identifier and its name.
+  string project_id = 3;
+  string project = 4;
+  // The integration branch, and the commit it moved to.
+  string branch = 5;
+  string sha = 6;
+  // The tasks of the batch, by code: W5.
+  repeated string tasks = 7;
+  // What changed: the titles of the commits the batch brought, the latest first.
+  repeated string changes = 8;
+  // What to check, one line per task: its code and title, then what its worker said last.
+  repeated string checks = 9;
+  // The command that installs it: go tool task install.
+  string install = 10;
+}
+
+message UiServiceUpdateRequest {
+  // The commit of the build to install first, as WatchUpdate proposed it; empty to restart on the newer Djinn
+  // already installed. Refused when it is not the build proposed.
+  string build = 1 [(buf.validate.field).string.max_len = 64];
+}
 
 message UiServiceUpdateResponse {
-  // Version Djinn restarts on.
+  // Version Djinn restarts on; empty when the build installed no newer Djinn: nothing restarts.
   string version = 1;
   // How many terminals the new Djinn will run again.
   int32 terminals = 2;
+  // The commit of the build installed, when one was.
+  string installed = 3;
 }
