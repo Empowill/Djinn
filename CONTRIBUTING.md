@@ -168,7 +168,10 @@ To use Djinn, see the [README](README.md). To work on it:
   (`tilasms/<id>/v<n>/`), never in a project; `--code L01` puts a new version of it. `djinn tilasm get L01` gives an
   agent its text and the folder of its files; `history`, `restore <version>`, `export` (a `.zip` with `tilasm.json`)
   and `import <zip> --wish <wish-id>` follow, and `djinn wish export` carries them. A tilasm holds 50 MiB at most.
-  `djinn talisman …` is the same command ([T29](plan/eee91edb-tilasms.md)).
+  `djinn talisman …` is the same command ([T29](plan/eee91edb-tilasms.md)). Djinn serves each one's latest version at
+  `/tilasm/<id>/`, with a content security policy of its own: its scripts and files run, the network and Djinn stay
+  out of reach. The wish's *Tilasms* tab lists them, opens one in a sandboxed frame, searches their titles and text,
+  restores a version and exports one; a folder or a `.zip` dropped on it becomes a tilasm.
 - `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
   `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
 - `djinn gate run <name> -- <command>` runs a command under a gate and records what it cost in its project (CPU

@@ -1300,6 +1300,132 @@ func (x *TilasmServiceImportResponse) GetTilasm() *Tilasm {
 	return nil
 }
 
+type TilasmServicePutDataRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish to put it into.
+	Wish string `protobuf:"bytes,1,opt,name=wish,proto3" json:"wish,omitempty"`
+	// The name of what was dropped, the folder's or the .zip's: the title when its index.html has none.
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// The files, by their paths in the folder (version 0); or one file, the .zip.
+	Files []*TilasmFile `protobuf:"bytes,3,rep,name=files,proto3" json:"files,omitempty"`
+	// Who puts it; the developer by default.
+	Author        string `protobuf:"bytes,4,opt,name=author,proto3" json:"author,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TilasmServicePutDataRequest) Reset() {
+	*x = TilasmServicePutDataRequest{}
+	mi := &file_plan_v1_tilasm_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TilasmServicePutDataRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TilasmServicePutDataRequest) ProtoMessage() {}
+
+func (x *TilasmServicePutDataRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_tilasm_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TilasmServicePutDataRequest.ProtoReflect.Descriptor instead.
+func (*TilasmServicePutDataRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *TilasmServicePutDataRequest) GetWish() string {
+	if x != nil {
+		return x.Wish
+	}
+	return ""
+}
+
+func (x *TilasmServicePutDataRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *TilasmServicePutDataRequest) GetFiles() []*TilasmFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *TilasmServicePutDataRequest) GetAuthor() string {
+	if x != nil {
+		return x.Author
+	}
+	return ""
+}
+
+type TilasmServicePutDataResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tilasm, its new version last.
+	Tilasm *Tilasm `protobuf:"bytes,1,opt,name=tilasm,proto3" json:"tilasm,omitempty"`
+	// The .zip was a tilasm's export: it was imported.
+	Imported      bool `protobuf:"varint,2,opt,name=imported,proto3" json:"imported,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TilasmServicePutDataResponse) Reset() {
+	*x = TilasmServicePutDataResponse{}
+	mi := &file_plan_v1_tilasm_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TilasmServicePutDataResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TilasmServicePutDataResponse) ProtoMessage() {}
+
+func (x *TilasmServicePutDataResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_tilasm_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TilasmServicePutDataResponse.ProtoReflect.Descriptor instead.
+func (*TilasmServicePutDataResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *TilasmServicePutDataResponse) GetTilasm() *Tilasm {
+	if x != nil {
+		return x.Tilasm
+	}
+	return nil
+}
+
+func (x *TilasmServicePutDataResponse) GetImported() bool {
+	if x != nil {
+		return x.Imported
+	}
+	return false
+}
+
 var File_plan_v1_tilasm_proto protoreflect.FileDescriptor
 
 const file_plan_v1_tilasm_proto_rawDesc = "" +
@@ -1395,7 +1521,15 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\x04wish\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x04wish\x12\x1f\n" +
 	"\x06author\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x18dR\x06author\"F\n" +
 	"\x1bTilasmServiceImportResponse\x12'\n" +
-	"\x06tilasm\x18\x01 \x01(\v2\x0f.plan.v1.TilasmR\x06tilasm2\xa1\x05\n" +
+	"\x06tilasm\x18\x01 \x01(\v2\x0f.plan.v1.TilasmR\x06tilasm\"\xb5\x01\n" +
+	"\x1bTilasmServicePutDataRequest\x12\x1f\n" +
+	"\x04wish\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x04wish\x12\x1c\n" +
+	"\x04name\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xe8\aR\x04name\x126\n" +
+	"\x05files\x18\x03 \x03(\v2\x13.plan.v1.TilasmFileB\v\xbaH\b\x92\x01\x05\b\x01\x10\x90NR\x05files\x12\x1f\n" +
+	"\x06author\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18dR\x06author\"c\n" +
+	"\x1cTilasmServicePutDataResponse\x12'\n" +
+	"\x06tilasm\x18\x01 \x01(\v2\x0f.plan.v1.TilasmR\x06tilasm\x12\x1a\n" +
+	"\bimported\x18\x02 \x01(\bR\bimported2\x83\x06\n" +
 	"\rTilasmService\x12T\n" +
 	"\x03Put\x12 .plan.v1.TilasmServicePutRequest\x1a!.plan.v1.TilasmServicePutResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
 	"\x04List\x12!.plan.v1.TilasmServiceListRequest\x1a\".plan.v1.TilasmServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12S\n" +
@@ -1403,7 +1537,8 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\aHistory\x12$.plan.v1.TilasmServiceHistoryRequest\x1a%.plan.v1.TilasmServiceHistoryResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12`\n" +
 	"\aRestore\x12$.plan.v1.TilasmServiceRestoreRequest\x1a%.plan.v1.TilasmServiceRestoreResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12]\n" +
 	"\x06Export\x12#.plan.v1.TilasmServiceExportRequest\x1a$.plan.v1.TilasmServiceExportResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12]\n" +
-	"\x06Import\x12#.plan.v1.TilasmServiceImportRequest\x1a$.plan.v1.TilasmServiceImportResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x1a\f\xea\xf3\x18\btalismanB\x88\x01\n" +
+	"\x06Import\x12#.plan.v1.TilasmServiceImportRequest\x1a$.plan.v1.TilasmServiceImportResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12`\n" +
+	"\aPutData\x12$.plan.v1.TilasmServicePutDataRequest\x1a%.plan.v1.TilasmServicePutDataResponse\"\b\xc8\xf3\x18\x02\xe0\xf3\x18\x01\x1a\f\xea\xf3\x18\btalismanB\x88\x01\n" +
 	"\vcom.plan.v1B\vTilasmProtoP\x01Z/github.com/empowill/djinn/gen/go/plan/v1;planv1\xa2\x02\x03PXX\xaa\x02\aPlan.V1\xca\x02\aPlan\\V1\xe2\x02\x13Plan\\V1\\GPBMetadata\xea\x02\bPlan::V1b\x06proto3"
 
 var (
@@ -1418,7 +1553,7 @@ func file_plan_v1_tilasm_proto_rawDescGZIP() []byte {
 	return file_plan_v1_tilasm_proto_rawDescData
 }
 
-var file_plan_v1_tilasm_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_plan_v1_tilasm_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_plan_v1_tilasm_proto_goTypes = []any{
 	(*Tilasm)(nil),                       // 0: plan.v1.Tilasm
 	(*TilasmVersion)(nil),                // 1: plan.v1.TilasmVersion
@@ -1439,13 +1574,15 @@ var file_plan_v1_tilasm_proto_goTypes = []any{
 	(*TilasmServiceExportResponse)(nil),  // 16: plan.v1.TilasmServiceExportResponse
 	(*TilasmServiceImportRequest)(nil),   // 17: plan.v1.TilasmServiceImportRequest
 	(*TilasmServiceImportResponse)(nil),  // 18: plan.v1.TilasmServiceImportResponse
-	(*timestamppb.Timestamp)(nil),        // 19: google.protobuf.Timestamp
+	(*TilasmServicePutDataRequest)(nil),  // 19: plan.v1.TilasmServicePutDataRequest
+	(*TilasmServicePutDataResponse)(nil), // 20: plan.v1.TilasmServicePutDataResponse
+	(*timestamppb.Timestamp)(nil),        // 21: google.protobuf.Timestamp
 }
 var file_plan_v1_tilasm_proto_depIdxs = []int32{
 	1,  // 0: plan.v1.Tilasm.versions:type_name -> plan.v1.TilasmVersion
-	19, // 1: plan.v1.Tilasm.create_time:type_name -> google.protobuf.Timestamp
-	19, // 2: plan.v1.Tilasm.update_time:type_name -> google.protobuf.Timestamp
-	19, // 3: plan.v1.TilasmVersion.create_time:type_name -> google.protobuf.Timestamp
+	21, // 1: plan.v1.Tilasm.create_time:type_name -> google.protobuf.Timestamp
+	21, // 2: plan.v1.Tilasm.update_time:type_name -> google.protobuf.Timestamp
+	21, // 3: plan.v1.TilasmVersion.create_time:type_name -> google.protobuf.Timestamp
 	0,  // 4: plan.v1.TilasmExport.tilasm:type_name -> plan.v1.Tilasm
 	4,  // 5: plan.v1.TilasmExport.files:type_name -> plan.v1.TilasmFile
 	0,  // 6: plan.v1.TilasmServicePutResponse.tilasm:type_name -> plan.v1.Tilasm
@@ -1458,25 +1595,29 @@ var file_plan_v1_tilasm_proto_depIdxs = []int32{
 	0,  // 13: plan.v1.TilasmServiceRestoreResponse.tilasm:type_name -> plan.v1.Tilasm
 	2,  // 14: plan.v1.TilasmServiceExportRequest.tilasm:type_name -> plan.v1.TilasmRef
 	0,  // 15: plan.v1.TilasmServiceImportResponse.tilasm:type_name -> plan.v1.Tilasm
-	5,  // 16: plan.v1.TilasmService.Put:input_type -> plan.v1.TilasmServicePutRequest
-	7,  // 17: plan.v1.TilasmService.List:input_type -> plan.v1.TilasmServiceListRequest
-	9,  // 18: plan.v1.TilasmService.Get:input_type -> plan.v1.TilasmServiceGetRequest
-	11, // 19: plan.v1.TilasmService.History:input_type -> plan.v1.TilasmServiceHistoryRequest
-	13, // 20: plan.v1.TilasmService.Restore:input_type -> plan.v1.TilasmServiceRestoreRequest
-	15, // 21: plan.v1.TilasmService.Export:input_type -> plan.v1.TilasmServiceExportRequest
-	17, // 22: plan.v1.TilasmService.Import:input_type -> plan.v1.TilasmServiceImportRequest
-	6,  // 23: plan.v1.TilasmService.Put:output_type -> plan.v1.TilasmServicePutResponse
-	8,  // 24: plan.v1.TilasmService.List:output_type -> plan.v1.TilasmServiceListResponse
-	10, // 25: plan.v1.TilasmService.Get:output_type -> plan.v1.TilasmServiceGetResponse
-	12, // 26: plan.v1.TilasmService.History:output_type -> plan.v1.TilasmServiceHistoryResponse
-	14, // 27: plan.v1.TilasmService.Restore:output_type -> plan.v1.TilasmServiceRestoreResponse
-	16, // 28: plan.v1.TilasmService.Export:output_type -> plan.v1.TilasmServiceExportResponse
-	18, // 29: plan.v1.TilasmService.Import:output_type -> plan.v1.TilasmServiceImportResponse
-	23, // [23:30] is the sub-list for method output_type
-	16, // [16:23] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	4,  // 16: plan.v1.TilasmServicePutDataRequest.files:type_name -> plan.v1.TilasmFile
+	0,  // 17: plan.v1.TilasmServicePutDataResponse.tilasm:type_name -> plan.v1.Tilasm
+	5,  // 18: plan.v1.TilasmService.Put:input_type -> plan.v1.TilasmServicePutRequest
+	7,  // 19: plan.v1.TilasmService.List:input_type -> plan.v1.TilasmServiceListRequest
+	9,  // 20: plan.v1.TilasmService.Get:input_type -> plan.v1.TilasmServiceGetRequest
+	11, // 21: plan.v1.TilasmService.History:input_type -> plan.v1.TilasmServiceHistoryRequest
+	13, // 22: plan.v1.TilasmService.Restore:input_type -> plan.v1.TilasmServiceRestoreRequest
+	15, // 23: plan.v1.TilasmService.Export:input_type -> plan.v1.TilasmServiceExportRequest
+	17, // 24: plan.v1.TilasmService.Import:input_type -> plan.v1.TilasmServiceImportRequest
+	19, // 25: plan.v1.TilasmService.PutData:input_type -> plan.v1.TilasmServicePutDataRequest
+	6,  // 26: plan.v1.TilasmService.Put:output_type -> plan.v1.TilasmServicePutResponse
+	8,  // 27: plan.v1.TilasmService.List:output_type -> plan.v1.TilasmServiceListResponse
+	10, // 28: plan.v1.TilasmService.Get:output_type -> plan.v1.TilasmServiceGetResponse
+	12, // 29: plan.v1.TilasmService.History:output_type -> plan.v1.TilasmServiceHistoryResponse
+	14, // 30: plan.v1.TilasmService.Restore:output_type -> plan.v1.TilasmServiceRestoreResponse
+	16, // 31: plan.v1.TilasmService.Export:output_type -> plan.v1.TilasmServiceExportResponse
+	18, // 32: plan.v1.TilasmService.Import:output_type -> plan.v1.TilasmServiceImportResponse
+	20, // 33: plan.v1.TilasmService.PutData:output_type -> plan.v1.TilasmServicePutDataResponse
+	26, // [26:34] is the sub-list for method output_type
+	18, // [18:26] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_plan_v1_tilasm_proto_init() }
@@ -1494,7 +1635,7 @@ func file_plan_v1_tilasm_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plan_v1_tilasm_proto_rawDesc), len(file_plan_v1_tilasm_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

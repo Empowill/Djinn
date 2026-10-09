@@ -52,8 +52,17 @@ be referenced by simple links that open it natively in the app from anywhere."
   `TestTilasmPutReplaceHistoryRestore` (put, a put by code is a new version, get with the text, history, restore, the
   journal), `TestTilasmExportImport` (a `.zip` with `tilasm.json`, imported into its wish, another wish, another
   machine), `TestTilasmCeiling` (50 MiB, a field, refused beyond, saying so), `TestTilasmSearch`.
-- [ ] The *Tilasms* tab of a wish: list, open in an isolated frame (scripts run, the network is refused), search,
-  history, export, import by drop. (needs: a screens test and an e2e)
+- [x] The *Tilasms* tab of a wish: list, open in an isolated frame (scripts run, the network is refused), search,
+  history, export, import by drop. (needs: a screens test and an e2e) — 09/10: `/tilasm/<id>/` serves the latest
+  version with `TilasmPolicy` (`TestTilasmFilesServeTheLatestVersionWithTheirPolicy`: `connect-src 'none'`,
+  `default-src 'none'`, `sandbox allow-scripts`, a new version at the same address); in the browser the frame's
+  files load from an address with a key of their own, the frame's opaque origin carrying no cookie
+  (`TestGuardTilasmFrame`); a drop goes through `PutData` (`TestTilasmPutData`: a folder, a `.zip`, an export
+  imported). Screens: "the Tilasms tab lists each tilasm…", "a wish's view has a Tilasms tab…", "a folder dropped on
+  the Tilasms tab is read…". e2e `tilasms.spec.ts`: put by the CLI, opened in the tab (its script runs, a fetch is
+  refused by `connect-src`, the parent page is out of reach), searched ("talisman" too), a version restored. Export
+  and a real drop are not clicked in the e2e (export writes to the Downloads folder); the native window is not
+  checked yet (`go tool task e2e-native`).
 - [ ] `djinn://tilasm/<id>` opens the app on the tilasm from outside, Djinn running or not, on Linux (a desktop entry
   for `x-scheme-handler/djinn`), macOS (`CFBundleURLTypes` in Djinn.app) and Windows (the registry, by the
   installer). (needs: Linux by test; a Mac and a Windows machine by hand)

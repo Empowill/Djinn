@@ -208,6 +208,58 @@ func TestGuardOrigin(t *testing.T) {
 	}
 }
 
+// TestGuardTilasmFrame: a tilasm's frame has an opaque origin, so the browser sends the cookie for its page only. That
+// page goes to an address with the tilasm's key, from which its files load, with no cookie and Origin null.
+func TestGuardTilasmFrame(t *testing.T) {
+	const origin = "http://127.0.0.1:4000"
+	const id = "01a1223a-ae45-728f-8c37-c005eee91edb"
+	var served []string
+	files := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { served = append(served, r.URL.Path) })
+	h := server.Guard(files, token, origin)
+	key := server.FrameKey(token, id)
+	cookie := "djinn_token_4000=" + token
+
+	// The page, opened in the frame with the cookie: sent to the address with the key.
+	rec, _ := get(t, h, "/tilasm/"+id+"/docs/?x=1", http.Header{"Cookie": {cookie}, "Sec-Fetch-Mode": {"navigate"}})
+	if want := "/tilasm/" + id + "/@" + key + "/docs/?x=1"; rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != want {
+		t.Fatalf("page: %d to %q, want %q", rec.Code, rec.Header().Get("Location"), want)
+	}
+	// Its files, with the key: no cookie, Origin null for a module script; served at their own path.
+	rec, _ = get(t, h, "/tilasm/"+id+"/@"+key+"/js/app.mjs", http.Header{"Origin": {"null"}})
+	if rec.Code != http.StatusOK || len(served) != 1 || served[0] != "/tilasm/"+id+"/js/app.mjs" {
+		t.Fatalf("file with the key: %d, served %v", rec.Code, served)
+	}
+	// Another tilasm's key, a wrong key, or a write: refused.
+	for _, target := range []string{
+		"/tilasm/01a1223a-ae45-728f-8c37-c005eee91ede/@" + key + "/index.html",
+		"/tilasm/" + id + "/@" + strings.Repeat("0", 32) + "/index.html",
+		"/tilasm/" + id + "/@/index.html",
+	} {
+		if rec, _ := get(t, h, target, nil); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s: %d, want 401", target, rec.Code)
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/tilasm/"+id+"/@"+key+"/index.html", nil)
+	rec = httptest.NewRecorder()
+	if h.ServeHTTP(rec, req); rec.Code != http.StatusUnauthorized {
+		t.Errorf("POST with the key: %d, want 401", rec.Code)
+	}
+	// Without the key nor a credential, nothing; a program with its bearer token reads the files where they are.
+	if rec, _ := get(t, h, "/tilasm/"+id+"/index.html", http.Header{"Origin": {"null"}}); rec.Code != http.StatusForbidden {
+		t.Errorf("no key, Origin null: %d, want 403", rec.Code)
+	}
+	if rec, _ := get(t, h, "/tilasm/"+id+"/index.html", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("no key, no credential: %d, want 401", rec.Code)
+	}
+	if rec, _ := get(t, h, "/tilasm/"+id+"/index.html", http.Header{"Authorization": {"Bearer " + token}}); rec.Code != http.StatusOK ||
+		served[len(served)-1] != "/tilasm/"+id+"/index.html" {
+		t.Errorf("bearer: %d, served %v", rec.Code, served)
+	}
+	if server.FrameKey(token, id) != server.FrameKey(token, strings.ToUpper(id)) || server.FrameKey("other", id) == key {
+		t.Error("the key follows the token and the tilasm, case ignored")
+	}
+}
+
 // TestStream runs the count through a real HTTP server and the guard, as the browser mode does.
 func TestStream(t *testing.T) {
 	srv := httptest.NewUnstartedServer(nil)

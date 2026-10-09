@@ -1,6 +1,7 @@
 // The screen of one wish, read from the services: what waits for you first (its open questions, the blocking ones
 // first, its workers that wait, and "My wish is granted" once Djinn proposes it), its decisions, its blocks, its
-// journal and the rights its workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent.
+// journal and the rights its workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, and
+// its tilasms another (tilasms.tsx).
 // Djinn proposes; only the user grants.
 import {
   ChevronDown,
@@ -75,6 +76,7 @@ import { DecisionLog } from "./decision-log";
 import { CountPill, StatusBadge } from "./status";
 import { AzimaCard } from "./azima";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
+import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
@@ -394,8 +396,18 @@ export function WishView({
             main={t("tabs.wish")}
             tasks={workCount(detail.tasks)}
             decisions={decisions.length}
+            tilasms={detail.tilasms.length}
             onView={(to) => show(to)}
           />
+          {view === "tilasms" && (
+            <TilasmsTab
+              key={wish.id}
+              wishId={wish.id}
+              tilasms={detail.tilasms}
+              tasks={detail.tasks}
+              onToast={onToast}
+            />
+          )}
           {view === "decisions" && (
             <DecisionLog
               items={decisions.map((item) => ({ item }))}

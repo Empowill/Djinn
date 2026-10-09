@@ -27,6 +27,9 @@ export { AzimaCard } from "@/src/azima.tsx";
 export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
 export { memory, resourcesDetail } from "@/src/usage.tsx";
+export { TilasmList } from "@/src/tilasms.tsx";
+export { readDrop } from "@/src/data/tilasms.ts";
+export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -996,4 +999,211 @@ test("the update banner links the release notes of a newer release, and only a w
   );
   // Nothing waits: no banner, whatever the notes.
   assert.equal(banner({ ready: "", notesUrl: "https://example.com" }), "");
+});
+
+const stamp = (iso) => ({
+  seconds: BigInt(Date.parse(iso) / 1000),
+  nanos: 0,
+});
+
+const tilasm = (id, code, title, extra = {}) => ({
+  id,
+  wishId: "w1",
+  code,
+  title,
+  author: "lead",
+  cites: [],
+  versions: [
+    {
+      number: 1,
+      author: "lead",
+      files: 3,
+      size: 2048n,
+      restoredFrom: 0,
+      createTime: stamp("2026-10-09T10:00:00Z"),
+    },
+  ],
+  updateTime: stamp("2026-10-09T10:00:00Z"),
+  ...extra,
+});
+
+test("the Tilasms tab lists each tilasm with its code, title, author, date and what it cites, and opens one in a sandboxed frame", () => {
+  const model = tilasm(
+    "01a1223a-ae45-728f-8c37-c005eee91edb",
+    "L01",
+    "The objects in the database",
+    {
+      cites: ["t29", "gone-1234-5678"],
+      author: "W12",
+      versions: [
+        {
+          number: 1,
+          author: "W12",
+          files: 3,
+          size: 2048n,
+          restoredFrom: 0,
+          createTime: stamp("2026-10-09T10:00:00Z"),
+        },
+        {
+          number: 2,
+          author: "lead",
+          files: 1,
+          size: 512n,
+          restoredFrom: 0,
+          createTime: stamp("2026-10-09T11:00:00Z"),
+        },
+        {
+          number: 3,
+          author: "developer",
+          files: 3,
+          size: 2048n,
+          restoredFrom: 1,
+          createTime: stamp("2026-10-09T12:00:00Z"),
+        },
+      ],
+    },
+  );
+  const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
+  const props = {
+    tilasms: [model, flows],
+    count: 2,
+    codes: new Map([["t29", "T29"]]),
+    search: "",
+    onSearch() {},
+    onOpen() {},
+    history: "",
+    onHistory() {},
+    onRestore() {},
+    onExport() {},
+    onDrop() {},
+  };
+  const html = s.renderToStaticMarkup(h(s.TilasmList, props));
+  assert.match(html, /role="tabpanel" aria-labelledby="view-tab-tilasms"/);
+  assert.match(
+    html,
+    /placeholder="Search the tilasms \(talismans\) of this wish"/,
+  );
+  assert.match(
+    html,
+    /Drop a folder with an index.html, or a .zip, to add a tilasm/,
+  );
+  // A row per tilasm, by code: its title opens it; who made it and when; what it cites, by code.
+  assert.ok(html.indexOf("L01") < html.indexOf("L02"));
+  assert.match(
+    html,
+    /tilasm-title"[^>]*>The objects in the database<\/button>/,
+  );
+  assert.match(html, /W12 · /);
+  assert.match(
+    html,
+    /Explains <span class="tilasm-code">T29<\/span><span class="tilasm-code">gone-123<\/span>/,
+  );
+  // Nothing open: no frame; the history folded.
+  assert.doesNotMatch(html, /<iframe/);
+  assert.doesNotMatch(html, /Restore this version/);
+
+  // Open: a frame served by Djinn at the tilasm's address, scripts only, never Djinn's origin.
+  const open = s.renderToStaticMarkup(
+    h(s.TilasmList, { ...props, open: model, history: model.id }),
+  );
+  const frame = open.match(/<iframe[^>]*>/)[0];
+  assert.match(frame, /src="\/tilasm\/01a1223a-ae45-728f-8c37-c005eee91edb\/"/);
+  assert.match(frame, /sandbox="allow-scripts"/);
+  assert.doesNotMatch(frame, /allow-same-origin/);
+  assert.match(frame, /title="L01 · The objects in the database"/);
+  assert.match(
+    open,
+    /<section class="tilasm-view" aria-label="The objects in the database">.*v3/,
+  );
+  assert.match(open, /tilasm-row open/);
+  // The history: the latest first, each with who and when, its files and size; an earlier one restores.
+  const versions = open.match(/<ol class="tilasm-history"[\s\S]*?<\/ol>/)[0];
+  assert.ok(versions.indexOf("v3") < versions.indexOf("v2"));
+  assert.match(versions, /developer · .* · 3 files · 2 kB · restores v1/);
+  assert.match(versions, /1 file · 512 byte/);
+  assert.equal(versions.match(/Restore this version/g).length, 2);
+
+  // A search that finds nothing says so; a wish without tilasms says how to make one.
+  assert.match(
+    s.renderToStaticMarkup(
+      h(s.TilasmList, { ...props, tilasms: [], search: "lamp" }),
+    ),
+    /No tilasm holds “lamp”/,
+  );
+  assert.match(
+    s.renderToStaticMarkup(
+      h(s.TilasmList, { ...props, tilasms: [], count: 0 }),
+    ),
+    /No tilasm yet: .*djinn tilasm put/,
+  );
+});
+
+test("a wish's view has a Tilasms tab beside Tasks and Decisions, with its count", async () => {
+  const wishId = "01a11833-a440-7479-a067-52615c91da71";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+    service(s.TaskService, { list: () => ({ tasks: [] }) });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+    service(s.TilasmService, {
+      list: (req) => ({
+        tilasms: req.wish === wishId ? [tilasm("x1", "L01", "Model")] : [],
+      }),
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.TILASM]);
+  close();
+  assert.equal(djinn.store.getState().error, "");
+  const html = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
+  );
+  assert.match(
+    html,
+    /id="view-tab-decisions".*id="view-tab-tilasms" aria-selected="false" class="">Tilasms<span class="count">1<\/span>/,
+  );
+});
+
+test("a folder dropped on the Tilasms tab is read with its files by their paths in it, hidden files left out", async () => {
+  const file = (name, text) => ({
+    name,
+    isFile: true,
+    isDirectory: false,
+    file: (ok) => ok(new Blob([text])),
+  });
+  const folder = (name, children) => {
+    let read = false;
+    return {
+      name,
+      isFile: false,
+      isDirectory: true,
+      // readEntries gives a batch, then an empty one.
+      createReader: () => ({
+        readEntries: (ok) => ok(read ? [] : ((read = true), children)),
+      }),
+    };
+  };
+  const dropped = await s.readDrop([
+    folder("Data model", [
+      file("index.html", "<p>model</p>"),
+      file(".DS_Store", "x"),
+      folder("css", [file("a.css", "p{}")]),
+    ]),
+  ]);
+  assert.equal(dropped.name, "Data model");
+  assert.deepEqual(
+    dropped.files.map((f) => [f.path, new TextDecoder().decode(f.content)]),
+    [
+      ["index.html", "<p>model</p>"],
+      ["css/a.css", "p{}"],
+    ],
+  );
+  const zip = await s.readDrop([file("model.zip", "PK")]);
+  assert.equal(zip.name, "model.zip");
+  assert.deepEqual(
+    zip.files.map((f) => f.path),
+    ["model.zip"],
+  );
 });

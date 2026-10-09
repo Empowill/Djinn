@@ -47,6 +47,8 @@ const (
 	TilasmServiceExportProcedure = "/plan.v1.TilasmService/Export"
 	// TilasmServiceImportProcedure is the fully-qualified name of the TilasmService's Import RPC.
 	TilasmServiceImportProcedure = "/plan.v1.TilasmService/Import"
+	// TilasmServicePutDataProcedure is the fully-qualified name of the TilasmService's PutData RPC.
+	TilasmServicePutDataProcedure = "/plan.v1.TilasmService/PutData"
 )
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
@@ -66,6 +68,9 @@ type TilasmServiceClient interface {
 	Export(context.Context, *connect.Request[v1.TilasmServiceExportRequest]) (*connect.Response[v1.TilasmServiceExportResponse], error)
 	// Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.
 	Import(context.Context, *connect.Request[v1.TilasmServiceImportRequest]) (*connect.Response[v1.TilasmServiceImportResponse], error)
+	// Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
+	// export wrote is imported, as Import; any other is put, as Put.
+	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
 }
 
 // NewTilasmServiceClient constructs a client for the plan.v1.TilasmService service. By default, it
@@ -124,6 +129,12 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(tilasmServiceMethods.ByName("Import")),
 			connect.WithClientOptions(opts...),
 		),
+		putData: connect.NewClient[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse](
+			httpClient,
+			baseURL+TilasmServicePutDataProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("PutData")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -136,6 +147,7 @@ type tilasmServiceClient struct {
 	restore *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
 	export  *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
 	_import *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
+	putData *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
 }
 
 // Put calls plan.v1.TilasmService.Put.
@@ -173,6 +185,11 @@ func (c *tilasmServiceClient) Import(ctx context.Context, req *connect.Request[v
 	return c._import.CallUnary(ctx, req)
 }
 
+// PutData calls plan.v1.TilasmService.PutData.
+func (c *tilasmServiceClient) PutData(ctx context.Context, req *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error) {
+	return c.putData.CallUnary(ctx, req)
+}
+
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
 	// Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
@@ -190,6 +207,9 @@ type TilasmServiceHandler interface {
 	Export(context.Context, *connect.Request[v1.TilasmServiceExportRequest]) (*connect.Response[v1.TilasmServiceExportResponse], error)
 	// Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.
 	Import(context.Context, *connect.Request[v1.TilasmServiceImportRequest]) (*connect.Response[v1.TilasmServiceImportResponse], error)
+	// Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
+	// export wrote is imported, as Import; any other is put, as Put.
+	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
 }
 
 // NewTilasmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -244,6 +264,12 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(tilasmServiceMethods.ByName("Import")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServicePutDataHandler := connect.NewUnaryHandler(
+		TilasmServicePutDataProcedure,
+		svc.PutData,
+		connect.WithSchema(tilasmServiceMethods.ByName("PutData")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TilasmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TilasmServicePutProcedure:
@@ -260,6 +286,8 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceExportHandler.ServeHTTP(w, r)
 		case TilasmServiceImportProcedure:
 			tilasmServiceImportHandler.ServeHTTP(w, r)
+		case TilasmServicePutDataProcedure:
+			tilasmServicePutDataHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -295,4 +323,8 @@ func (UnimplementedTilasmServiceHandler) Export(context.Context, *connect.Reques
 
 func (UnimplementedTilasmServiceHandler) Import(context.Context, *connect.Request[v1.TilasmServiceImportRequest]) (*connect.Response[v1.TilasmServiceImportResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Import is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.PutData is not implemented"))
 }
