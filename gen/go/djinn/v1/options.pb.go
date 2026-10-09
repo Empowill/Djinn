@@ -219,6 +219,14 @@ var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Tag:           "bytes,51002,rep,name=unique",
 		Filename:      "djinn/v1/options.proto",
 	},
+	{
+		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
+		ExtensionType: (*string)(nil),
+		Field:         51006,
+		Name:          "djinn.v1.env",
+		Tag:           "bytes,51006,opt,name=env",
+		Filename:      "djinn/v1/options.proto",
+	},
 }
 
 // Extension fields to descriptorpb.MethodOptions.
@@ -255,6 +263,15 @@ var (
 	E_Unique = &file_djinn_v1_options_proto_extTypes[4]
 )
 
+// Extension fields to descriptorpb.FieldOptions.
+var (
+	// The command line and djinn mcp fill the field from this environment variable when the caller leaves it empty:
+	// a worker's commands name its task by $DJINN_TASK_ID, which Djinn sets for every worker.
+	//
+	// optional string env = 51006;
+	E_Env = &file_djinn_v1_options_proto_extTypes[5]
+)
+
 var File_djinn_v1_options_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_options_proto_rawDesc = "" +
@@ -277,7 +294,8 @@ const file_djinn_v1_options_proto_rawDesc = "" +
 	"\tautostart\x12\x1e.google.protobuf.MethodOptions\x18\xbb\x8e\x03 \x01(\bR\tautostart:J\n" +
 	"\x06writes\x12\x1e.google.protobuf.MethodOptions\x18\xbc\x8e\x03 \x01(\x0e2\x10.djinn.v1.WritesR\x06writes:7\n" +
 	"\x05alias\x12\x1f.google.protobuf.ServiceOptions\x18\xbd\x8e\x03 \x03(\tR\x05alias:K\n" +
-	"\x06unique\x12\x1f.google.protobuf.MessageOptions\x18\xba\x8e\x03 \x03(\v2\x10.djinn.v1.UniqueR\x06uniqueB\x90\x01\n" +
+	"\x06unique\x12\x1f.google.protobuf.MessageOptions\x18\xba\x8e\x03 \x03(\v2\x10.djinn.v1.UniqueR\x06unique:1\n" +
+	"\x03env\x12\x1d.google.protobuf.FieldOptions\x18\xbe\x8e\x03 \x01(\tR\x03envB\x90\x01\n" +
 	"\fcom.djinn.v1B\fOptionsProtoP\x01Z1github.com/empowill/djinn/gen/go/djinn/v1;djinnv1\xa2\x02\x03DXX\xaa\x02\bDjinn.V1\xca\x02\bDjinn\\V1\xe2\x02\x14Djinn\\V1\\GPBMetadata\xea\x02\tDjinn::V1b\x06proto3"
 
 var (
@@ -301,6 +319,7 @@ var file_djinn_v1_options_proto_goTypes = []any{
 	(*descriptorpb.MethodOptions)(nil),  // 3: google.protobuf.MethodOptions
 	(*descriptorpb.ServiceOptions)(nil), // 4: google.protobuf.ServiceOptions
 	(*descriptorpb.MessageOptions)(nil), // 5: google.protobuf.MessageOptions
+	(*descriptorpb.FieldOptions)(nil),   // 6: google.protobuf.FieldOptions
 }
 var file_djinn_v1_options_proto_depIdxs = []int32{
 	3, // 0: djinn.v1.visibility:extendee -> google.protobuf.MethodOptions
@@ -308,13 +327,14 @@ var file_djinn_v1_options_proto_depIdxs = []int32{
 	3, // 2: djinn.v1.writes:extendee -> google.protobuf.MethodOptions
 	4, // 3: djinn.v1.alias:extendee -> google.protobuf.ServiceOptions
 	5, // 4: djinn.v1.unique:extendee -> google.protobuf.MessageOptions
-	0, // 5: djinn.v1.visibility:type_name -> djinn.v1.Visibility
-	1, // 6: djinn.v1.writes:type_name -> djinn.v1.Writes
-	2, // 7: djinn.v1.unique:type_name -> djinn.v1.Unique
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	5, // [5:8] is the sub-list for extension type_name
-	0, // [0:5] is the sub-list for extension extendee
+	6, // 5: djinn.v1.env:extendee -> google.protobuf.FieldOptions
+	0, // 6: djinn.v1.visibility:type_name -> djinn.v1.Visibility
+	1, // 7: djinn.v1.writes:type_name -> djinn.v1.Writes
+	2, // 8: djinn.v1.unique:type_name -> djinn.v1.Unique
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	6, // [6:9] is the sub-list for extension type_name
+	0, // [0:6] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
 }
 
@@ -330,7 +350,7 @@ func file_djinn_v1_options_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_options_proto_rawDesc), len(file_djinn_v1_options_proto_rawDesc)),
 			NumEnums:      2,
 			NumMessages:   1,
-			NumExtensions: 5,
+			NumExtensions: 6,
 			NumServices:   0,
 		},
 		GoTypes:           file_djinn_v1_options_proto_goTypes,

@@ -503,8 +503,8 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
   notesUrl: string;
 
   /**
-   * The last batch of finished work committed into a wish's integration branch, in a project whose settings name an
-   * install command, and not installed since: the window proposes to install it and restart on it. Unset for none.
+   * The last push of a wish's integration branch, in a project whose settings name an install command, and not
+   * installed since: the window proposes to install it and restart on it. Unset for none.
    *
    * @generated from field: ui.v1.Build build = 5;
    */
@@ -519,7 +519,7 @@ export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdate
   messageDesc(file_ui_v1_ui, 18);
 
 /**
- * Build is a batch of finished work committed into a wish's integration branch (T30), to install.
+ * Build is a wish's integration branch as Djinn pushed it (T30), to install.
  *
  * @generated from message ui.v1.Build
  */
@@ -549,7 +549,7 @@ export type Build = Message<"ui.v1.Build"> & {
   project: string;
 
   /**
-   * The integration branch, and the commit it moved to.
+   * The integration branch, and the commit pushed.
    *
    * @generated from field: string branch = 5;
    */
@@ -561,14 +561,14 @@ export type Build = Message<"ui.v1.Build"> & {
   sha: string;
 
   /**
-   * The tasks of the batch, by code: W5.
+   * The tasks whose work the push brought, by code: W5.
    *
    * @generated from field: repeated string tasks = 7;
    */
   tasks: string[];
 
   /**
-   * What changed: the titles of the commits the batch brought, the latest first.
+   * What changed: the titles of the commits the push brought, the latest first.
    *
    * @generated from field: repeated string changes = 8;
    */
@@ -734,7 +734,7 @@ export const UiService: GenService<{
   },
   /**
    * Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-   * change. With the leads that a restart could not resume, once, and the last build committed that is not installed.
+   * change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
    *
    * @generated from rpc ui.v1.UiService.WatchUpdate
    */

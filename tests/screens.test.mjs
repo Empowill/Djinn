@@ -27,6 +27,7 @@ export {
 export { AzimaCard } from "@/src/azima.tsx";
 export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
 export {
+  LastPushes,
   LeadButton,
   LeadMenu,
   WishDescription,
@@ -51,6 +52,7 @@ const wish = (id, title, state, rank, extra = {}) => ({
   rank,
   projectIds: [],
   allowances: [],
+  pushes: [],
   ...extra,
 });
 
@@ -907,7 +909,12 @@ test("the inbox shows each item with its proposed route, the recommended destina
     service(s.ProjectService, {
       list: () => ({ projects: [{ id: "p1", name: "gong" }] }),
     });
-    service(s.InboxService, { list: () => ({ items: [item] }) });
+    service(s.InboxService, {
+      list: () => ({ items: [item] }),
+      sources: () => ({
+        sources: [{ name: "gong/babysit-mr", skill: "babysit-mr" }],
+      }),
+    });
     service(s.TaskService, { list: () => ({ tasks: [] }) });
     service(s.QuestionService, { list: () => ({ questions: [] }) });
     service(s.BlockService, { list: () => ({ blocks: [] }) });
@@ -935,6 +942,94 @@ test("the inbox shows each item with its proposed route, the recommended destina
   assert.ok(made > 0 && filed > made);
   assert.match(html, /Rub the lamp/);
   assert.match(html, /Dismiss/);
+  // The sources fold under the items.
+  assert.match(
+    html,
+    /<details class="inbox-sources-fold"><summary>Sources \(1\)<\/summary>/,
+  );
+});
+
+test("the empty inbox lists the sources the skills declare, each with Plug in or Unplug; without any, it is hidden", async () => {
+  const lamp = wish(
+    "01a11833-a440-7479-a067-52615c91da71",
+    "Ship the lamp",
+    s.WishState.ACTIVE,
+    1,
+  );
+  const render = async (sources) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.ProjectService, { list: () => ({ projects: [] }) });
+      service(s.InboxService, {
+        list: () => ({ items: [] }),
+        sources: () => ({ sources }),
+      });
+      service(s.TaskService, { list: () => ({ tasks: [] }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    await djinn.store.changed("", [
+      s.Change.WISH,
+      s.Change.PROJECT,
+      s.Change.INBOX,
+    ]);
+    return s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+      ),
+    );
+  };
+
+  assert.doesNotMatch(await render([]), /Inbox/);
+
+  const html = await render([
+    {
+      name: "djinn/babysit-pr",
+      skill: "babysit-pr",
+      project: "djinn",
+      watch: "sh .agents/skills/babysit-pr/inbox.sh",
+      every: "5m0s",
+    },
+    {
+      name: "gong/mentions",
+      skill: "mentions",
+      project: "gong",
+      watch: "mentions --new",
+      every: "1h0m0s",
+      plugged: true,
+    },
+    {
+      name: "gong/noisy",
+      skill: "noisy",
+      project: "gong",
+      error: "metadata.djinn.source.every: 10s is too often",
+    },
+  ]);
+  assert.match(html, /Inbox/);
+  assert.match(
+    html,
+    /Djinn reads only the sources you plug in, on this machine/,
+  );
+  const rows = html
+    .split('<li class="inbox-source-row">')
+    .slice(1)
+    .map((row) => row.slice(0, row.indexOf("</li>")));
+  assert.equal(rows.length, 3);
+  assert.match(rows[0], /djinn\/babysit-pr/);
+  assert.match(
+    rows[0],
+    /<code>sh .agents\/skills\/babysit-pr\/inbox.sh<\/code>/,
+  );
+  assert.match(rows[0], /Unplugged: runs nothing/);
+  assert.match(rows[0], />Plug in<\/button>/);
+  assert.match(rows[1], /Plugged in, every 1h/);
+  assert.match(rows[1], />Unplug<\/button>/);
+  // A source that cannot run says why, and offers nothing to plug in.
+  assert.match(rows[2], /10s is too often/);
+  assert.doesNotMatch(rows[2], /<button/);
 });
 
 test("the folder of a new project has a folder dialog's button only when the window has one", () => {
@@ -1440,7 +1535,7 @@ test("the update banner proposes to install a build committed, with what changed
   const html = banner();
   assert.match(
     html,
-    /W5, W6 committed into feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
+    /W5, W6 pushed with feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
   );
   assert.match(
     html,
@@ -1742,4 +1837,52 @@ test("the attention bar says how much each question holds up: blocking, before X
       ["ready-w1", "ready", undefined],
     ],
   );
+});
+
+test("the wish's head says where Djinn last pushed its integration branch, and a push refused", () => {
+  const last = {
+    branch: "feat/x",
+    remote: "origin",
+    count: 3,
+    commits: ["Work of W3", "Work of W2", "Work of W1"],
+    pushTime: { seconds: 1791640800n, nanos: 0 },
+  };
+  const one = s.renderToStaticMarkup(
+    h(s.LastPushes, {
+      pushes: [{ projectId: "p1", last, refused: "" }],
+      projects: [{ id: "p1", name: "app" }],
+    }),
+  );
+  assert.match(
+    one,
+    /<span class="wish-push"><svg[^]*?<\/svg><span title="Work of W3\nWork of W2\nWork of W1">Pushed feat\/x to origin, 3 commits, [^<]+<\/span><\/span>/,
+  );
+  assert.doesNotMatch(one, /<b>app<\/b>/);
+  // Several projects: each push names its project; one the remote refused says so; none yet, nothing.
+  const two = s.renderToStaticMarkup(
+    h(s.LastPushes, {
+      pushes: [
+        { projectId: "p1", last: { ...last, count: 1 }, refused: "" },
+        {
+          projectId: "p2",
+          refused: "its branch has commits that this one does not",
+        },
+        { projectId: "p3", refused: "" },
+      ],
+      projects: [
+        { id: "p1", name: "app" },
+        { id: "p2", name: "api" },
+        { id: "p3", name: "web" },
+      ],
+    }),
+  );
+  assert.match(
+    two,
+    /<b>app<\/b><span title="[^"]*">Pushed feat\/x to origin, 1 commit, /,
+  );
+  assert.match(
+    two,
+    /<b>api<\/b><span class="wish-push-refused" title="its branch has commits that this one does not">The remote refused the last push: Djinn asks you<\/span>/,
+  );
+  assert.doesNotMatch(two, /web/);
 });

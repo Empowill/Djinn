@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	"github.com/empowill/djinn/locales"
 )
 
@@ -473,4 +474,24 @@ func split(name, sep string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// envName is the environment variable the field defaults to ((djinn.v1.env)); "" when it has none.
+func envName(fd protoreflect.FieldDescriptor) string {
+	name, _ := proto.GetExtension(fd.Options(), djinnv1.E_Env).(string)
+	return name
+}
+
+// fromEnv fills each field of msg left empty from the environment variable it defaults to, read with getenv: a
+// worker's djinn block put names its task by $DJINN_TASK_ID.
+func fromEnv(msg *dynamicpb.Message, getenv func(string) string) {
+	for _, fd := range byNumber(msg.Descriptor()) {
+		name := envName(fd)
+		if name == "" || fd.IsList() || fd.Kind() != protoreflect.StringKind || msg.Has(fd) {
+			continue
+		}
+		if v := getenv(name); v != "" {
+			msg.Set(fd, protoreflect.ValueOfString(v))
+		}
+	}
 }

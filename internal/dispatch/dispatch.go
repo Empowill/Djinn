@@ -45,6 +45,7 @@ type Situation struct {
 	git     map[string]bool
 	machine *Machine
 	started map[string]bool
+	reading map[string]bool // the question workers started in this pass: they take memory, no slot
 	now     time.Time
 	// The first task the memory held in this pass, and why: the tasks after it wait for it.
 	short    *planv1.Task
@@ -57,7 +58,8 @@ type Situation struct {
 func New(tasks []*planv1.Task, wishes []*planv1.Wish, git map[string]bool, machine *Machine) *Situation {
 	s := &Situation{
 		tasks: tasks, byID: make(map[string]*planv1.Task, len(tasks)), wishes: make(map[string]*planv1.Wish, len(wishes)),
-		rank: map[string]int{}, git: git, machine: machine, started: map[string]bool{}, now: time.Now(),
+		rank: map[string]int{}, git: git, machine: machine, started: map[string]bool{}, reading: map[string]bool{},
+		now: time.Now(),
 	}
 	for _, t := range tasks {
 		s.byID[t.GetId()] = t
@@ -109,6 +111,14 @@ func Planned(t *planv1.Task) bool {
 // the machine nor the write scopes hold it, and it holds no other task.
 func Watcher(t *planv1.Task) bool { return t.GetProvider() == planv1.Provider_PROVIDER_WATCH }
 
+// QuestionWorker tells whether Djinn started the task on a question (Task.role): it reads and runs djinn's commands,
+// no build nor gate, so it takes no slot and holds no write scope; an agent all the same, it waits while the machine is
+// under pressure or its memory would not hold it.
+func QuestionWorker(t *planv1.Task) bool { return t.GetRole() != planv1.TaskRole_TASK_ROLE_UNSPECIFIED }
+
+// Light tells whether the task takes no slot of the machine: a watcher, or a question worker.
+func Light(t *planv1.Task) bool { return Watcher(t) || QuestionWorker(t) }
+
 // Resuming tells whether the task is one Djinn resumes.
 func Resuming(t *planv1.Task) bool { return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING }
 
@@ -154,9 +164,13 @@ func (s *Situation) Order() []*planv1.Task {
 	return out
 }
 
-// Start counts the task as started: it writes in its project, and takes a slot. A watcher does neither.
+// Start counts the task as started: it writes in its project, takes a slot and memory. A question worker only takes
+// memory; a watcher, nothing.
 func (s *Situation) Start(t *planv1.Task) {
-	if !Watcher(t) {
+	switch {
+	case QuestionWorker(t):
+		s.reading[t.GetId()] = true
+	case !Watcher(t):
 		s.started[t.GetId()] = true
 	}
 }
@@ -164,7 +178,7 @@ func (s *Situation) Start(t *planv1.Task) {
 // writing tells whether a task writes in its project now: its worker runs or is paused, it was just started, or it waits for
 // the answer to its edit question and may start again any time.
 func (s *Situation) writing(t *planv1.Task) bool {
-	if Watcher(t) {
+	if Light(t) {
 		return false
 	}
 	switch t.GetStatus() {
@@ -176,7 +190,8 @@ func (s *Situation) writing(t *planv1.Task) bool {
 
 // Blocker says why the task cannot start now (why), or why it never will (failed); both empty when it can start.
 // Its wish must be active (not paused nor granted); then come the dependencies, its provider's usage limit, the write
-// scopes, and the machine; a watcher only waits for its wish and its dependencies.
+// scopes, and the machine; a watcher only waits for its wish and its dependencies, a question worker for the machine's
+// pressure and memory too.
 // A wish the situation does not know does not hold the task.
 func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 	if wish, ok := s.wishes[t.GetWishId()]; ok && !plan.Active(wish) {
@@ -221,8 +236,8 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 	if Watcher(t) {
 		return "", "" // It sleeps until its command prints: no slot, and it writes nothing.
 	}
-	// In Git, worktrees separate the writers.
-	if id := t.GetProjectId(); id != "" && !s.git[id] {
+	// In Git, worktrees separate the writers; a question worker writes nothing.
+	if id := t.GetProjectId(); id != "" && !s.git[id] && !QuestionWorker(t) {
 		for _, o := range s.tasks {
 			if o.GetId() == t.GetId() || o.GetProjectId() != id || !s.writing(o) {
 				continue
@@ -313,8 +328,8 @@ func provider(t *planv1.Task) string {
 	return strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 }
 
-// full says why the task's worker may not start now, or "" when it may: a slot is free, and the memory holds a
-// worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
+// full says why the task's worker may not start now, or "" when it may: a slot is free (a question worker takes none),
+// and the memory holds a worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
 func (s *Situation) full(t *planv1.Task) string {
 	m := s.machine
 	if m == nil {
@@ -324,7 +339,7 @@ func (s *Situation) full(t *planv1.Task) string {
 		return "the machine is under pressure: " + m.Pressure
 	}
 	// A slot each for the workers running and the gates held outside them.
-	if running := m.Running + len(s.started); running+m.Gates >= m.Slots {
+	if running := m.Running + len(s.started); running+m.Gates >= m.Slots && !QuestionWorker(t) {
 		workers := "1 worker runs"
 		if running != 1 {
 			workers = fmt.Sprintf("%d workers run", running)
@@ -375,12 +390,13 @@ func (s *Situation) typical(name string) (uint64, int) {
 }
 
 // growing is the memory the workers running may still take: for each, the typical peak of its provider less what it
-// uses now (all of it before its first reading), and in full for each worker this pass started.
+// uses now (all of it before its first reading), and in full for each worker this pass started, question workers
+// included.
 func (s *Situation) growing() uint64 {
 	var sum uint64
 	for _, t := range s.tasks {
 		running := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && !Watcher(t)
-		if !running && !s.started[t.GetId()] {
+		if !running && !s.started[t.GetId()] && !s.reading[t.GetId()] {
 			continue
 		}
 		peak, _ := s.typical(provider(t))

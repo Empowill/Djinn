@@ -194,7 +194,7 @@ func (t *Tilasms) addVersion(
 	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		return "", err
 	}
-	if err := os.Rename(files.dir, dir); err != nil {
+	if err := renamer.Rename(files.dir, dir); err != nil {
 		return "", err
 	}
 	files.dir = ""
@@ -1101,7 +1101,7 @@ func (f *tilasmFolders) aside(id string) error {
 			return err
 		}
 	}
-	if err := os.Rename(dir, filepath.Join(f.trash, strings.ToLower(id))); err != nil {
+	if err := renamer.Rename(dir, filepath.Join(f.trash, strings.ToLower(id))); err != nil {
 		return err
 	}
 	f.moved = append(f.moved, id)
@@ -1121,7 +1121,7 @@ func (f *tilasmFolders) place(tilasms []*planv1.TilasmExport) error {
 				return err
 			}
 		}
-		if err := os.Rename(src, TilasmDir(f.home, id)); err != nil {
+		if err := renamer.Rename(src, TilasmDir(f.home, id)); err != nil {
 			return err
 		}
 		f.placed = append(f.placed, id)
@@ -1136,7 +1136,7 @@ func (f *tilasmFolders) done(committed bool) {
 			os.RemoveAll(TilasmDir(f.home, id))
 		}
 		for _, id := range f.moved {
-			os.Rename(filepath.Join(f.trash, strings.ToLower(id)), TilasmDir(f.home, id)) //nolint:errcheck // Best effort: the transaction's own error is the one reported.
+			renamer.Rename(filepath.Join(f.trash, strings.ToLower(id)), TilasmDir(f.home, id)) //nolint:errcheck // Best effort: the transaction's own error is the one reported.
 		}
 	}
 	removeIf(f.trash)

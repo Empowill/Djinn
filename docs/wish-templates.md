@@ -127,6 +127,13 @@ what comes from outside. Djinn runs it, and each item it prints becomes a card i
 plan, with the route Djinn proposes, as for a request handed over: a wish to file it in, or a new one, from the
 skill's template when the item matches it. Nothing is made until you click; "Dismiss" sets an item aside.
 
+**A source runs only once you plug it in, on your machine.** Declaring one in a skill runs nothing: a clone of the
+repository polls no forge by itself. The empty inbox lists the sources your projects' skills declare, each with its
+command and a "Plug in" button ("Unplug" once plugged in); `djinn inbox sources`, `djinn inbox plug <source>` and
+`djinn inbox unplug <source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or
+by its skill alone when one project holds it. Whether it is plugged in lives in Djinn's data on this machine, never in
+the repository. Unplugged, its command stops; the items it brought stay.
+
 ```yaml
 ---
 name: babysit-mr
@@ -170,12 +177,17 @@ tool (`glab auth login`, `gh auth login`, a Slack or Notion command line). It ru
 projects hold or summon, and no other: one skill summoned by several projects runs once.
 
 From the command line: `djinn inbox list` (`--all` for the routed and dismissed ones), `djinn inbox route <item>
-<letter>`, `djinn inbox dismiss <item>`. `djinn skill list` shows each source's command, or why it cannot be used.
+<letter>`, `djinn inbox dismiss <item>`, `djinn inbox sources`, `djinn inbox plug <source>`, `djinn inbox unplug
+<source>`. `djinn skill list` shows each source's command, or why it cannot be used.
+
+Djinn's own `babysit-pr` declares one, `sh .agents/skills/babysit-pr/inbox.sh`: the open pull requests of the
+repository assigned to you (`Babysit PR #12: …`, which proposes the skill's wish) or that request your review, each
+with its link, read with `gh pr list`. Unplugged until you plug it in: `djinn inbox plug babysit-pr`.
 
 Tests: `TestReadTemplate`, `TestFillQuotes`, `TestDoneLine`, `TestRouteTemplate`, `TestTemplateWish`,
 `TestTemplateWithoutWatchers`, `TestSkillListTemplate` (`internal/plan/templates_test.go`), `TestWatcherDoneLine`,
 `TestWatcherFinishes` (`internal/harness/watch_test.go`), `TestBabysitMRReadsOnly`
 (`internal/harness/babysit_mr_test.go`: babysit-mr's template and watcher, a fake `glab` on the `PATH`), and `e2e/wish-template.spec.ts` (a fake watcher). The
-inbox: `TestReadSource`, `TestSources`, `TestInbox`, `TestItemKey` (`internal/plan/inbox_test.go`),
-`TestSourceReadsOnly`, `TestSourceRefused` (`internal/harness/watch_source_test.go`), and `e2e/inbox.spec.ts` (a fake
-source).
+inbox: `TestReadSource`, `TestSources`, `TestOwnSource`, `TestInbox`, `TestItemKey` (`internal/plan/inbox_test.go`),
+`TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceUnplugged` (`internal/harness/watch_source_test.go`),
+`TestInboxPlug` (`cmd/djinn/inbox_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from the inbox).

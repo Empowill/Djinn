@@ -30,7 +30,7 @@ import (
 func Entities() []proto.Message {
 	return []proto.Message{
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
-		&planv1.InboxItem{}, &machinev1.CommandCost{}, &planv1.Tilasm{},
+		&planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{},
 	}
 }
 
@@ -51,6 +51,7 @@ type options struct {
 	answered []func(context.Context, *planv1.Question)
 	show     func(wishID, tilasmID string) bool
 	url      func(id string) string
+	enlight  []func(context.Context, *planv1.Question, string)
 }
 
 // WithShowTilasm gives TilasmService.Open the window: show shows a tilasm in its wish's Tilasms tab, and tells whether
@@ -82,6 +83,12 @@ func WithAnswered(f func(context.Context, *planv1.Question)) Option {
 	return func(o *options) { o.answered = append(o.answered, f) }
 }
 
+// WithEnlightened calls f with a question and the developer's note once a request to investigate it is stored: the
+// harness starts its investigator. With WithLeads, the wish's lead is told next (Wishes.Enlightened).
+func WithEnlightened(f func(context.Context, *planv1.Question, string)) Option {
+	return func(o *options) { o.enlight = append(o.enlight, f) }
+}
+
 // Handlers returns the Connect handlers of the plan services, by path prefix.
 func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	var o options
@@ -99,10 +106,10 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	}
 	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
 	out[p] = h
-	questions := &Questions{Store: s, Answered: o.answered, Settle: wishes.settle}
 	if o.leads != nil {
-		questions.Enlightened = wishes.Enlightened // The lead learns each request to investigate.
+		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
+	questions := &Questions{Store: s, Answered: o.answered, Enlightened: o.enlight, Settle: wishes.settle}
 	p, h = planv1connect.NewQuestionServiceHandler(questions, opt)
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
@@ -467,8 +474,8 @@ type Questions struct {
 	Store *store.Store
 	// Answered are called with a question once its answer is stored.
 	Answered []func(context.Context, *planv1.Question)
-	// Enlightened, when set, is called with a question once a request to investigate it is stored, with its note.
-	Enlightened func(ctx context.Context, q *planv1.Question, note string)
+	// Enlightened are called with a question once a request to investigate it is stored, with its note.
+	Enlightened []func(ctx context.Context, q *planv1.Question, note string)
 	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
 	// stored, if anything: a question that routes a request files it, or makes its wish.
 	Settle Settle
@@ -495,13 +502,16 @@ func (q *Questions) Ask(
 	question := &planv1.Question{
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
 		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
-		Icon: req.Msg.GetIcon(), Before: strings.TrimSpace(req.Msg.GetBefore()),
+		Icon: req.Msg.GetIcon(), TaskId: req.Msg.GetTaskId(), Before: strings.TrimSpace(req.Msg.GetBefore()),
 	}
 	if err := checkIcon(question.GetIcon()); err != nil {
 		return nil, err
 	}
 	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		if _, err := store.Get[*planv1.Wish](ctx, tx, question.GetWishId()); err != nil {
+			return err
+		}
+		if err := taskOfWish(ctx, tx, question.GetWishId(), question.GetTaskId()); err != nil {
 			return err
 		}
 		return Ask(ctx, tx, question)

@@ -67,6 +67,14 @@ Djinn decides when it spawns a task, and records the outcome in the task's `acce
    mode. Only the first answer counts; a task stopped on request stays stopped. An agent that cannot run
    read-only (Antigravity) does not start before the answer.
 
+**A question worker** (`Task.role`, the converter or the investigator Djinn starts on a question, see the [agent
+protocol](agent-protocol.md)) skips these rules: its access is `DJINN`, the same everywhere. It reads, in its
+project's folder without a worktree (or an empty folder of its own outside any project), and runs only djinn's
+commands to read the wish and plan from the question (`wish brief`, `task list`, `task get`, `question list`, `block
+list`, `mark list`, `tilasm list`, `tilasm get`, `task spawn`, `question ask`, `question revise`, `block put`) and
+Git's to read the history; no edit, no gate, no network, in the listed mode (Claude's `dontAsk`). Djinn translates
+this list as it does a project's file.
+
 **What counts as agent configuration** (rule 4), at the root of the project's folder, file names compared without
 regard to case: for every agent, `AGENTS.md` and an `.agents` folder; for Claude, `CLAUDE.md`, `CLAUDE.local.md`,
 `.claude/CLAUDE.md`, `.claude/settings.json`, `.claude/settings.local.json`; for Codex, `AGENTS.override.md` and a

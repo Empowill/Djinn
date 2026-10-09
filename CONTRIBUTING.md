@@ -61,8 +61,8 @@ Each one is a decision. Changing one is a discussion first.
   through the running Djinn, one at a time: `djinn gate run <name> -- go tool task test`. `.agents/`
   allows no heavy command directly; light ones (`lint`, `test-pkg` on a package) run as they are.
 - **Workers never commit.** A worker edits its worktree; `.agents/` gives it no `git commit` and no
-  `git push`. The lead reviews each diff, commits in batches and pushes once: fewer commits, one CI
-  run instead of one per worker.
+  `git push`. Djinn commits each task's work as it ends, tested, and pushes the branch on a cadence: one CI
+  run per push instead of one per worker.
 - **Two words from the theme, no more.** You make a *wish*; you *summon* a skill. Everything
   else is plain.
 - **Names ignore case.** Two names that differ only by case are one name.
@@ -143,6 +143,10 @@ To use Djinn, see the [README](README.md). To work on it:
   `djinn up` runs (delete it to stop); the lead republishes that file. `djinn wish render <wish-id>` writes it once.
 - `djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app, without a copy: they
   follow the source. `djinn skill list` shows the skills; `djinn skill unsummon app/babysit-mr --from infra` stops it.
+- An inbox source a project's skill declares runs only once you plug it in, on your machine: `djinn inbox sources`
+  lists them, `djinn inbox plug babysit-pr` runs Djinn's own (the pull requests assigned to you or that request your
+  review, read with `gh`), `djinn inbox unplug <source>` stops one; the empty inbox does the same with its buttons
+  ([T28](plan/d6fb2417-inbox.md)).
 - Three wishes are active at most; the others wait, paused. `djinn wish pause <wish-id>` sets one aside and stops its
   workers; `djinn wish activate <wish-id>` takes it back, its workers resumed, in the last place (three being active,
   the third wish is paused); `djinn wish move <wish-id> --to 1` gives one priority, active or not;
@@ -153,10 +157,11 @@ To use Djinn, see the [README](README.md). To work on it:
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. Not on Windows
   yet.
 - In a project whose settings name a test command ([`docs/team-settings.md`](docs/team-settings.md#integration)), Djinn
-  integrates finished work by itself: at an azima's end, or after an hour and three tasks done, it merges the tasks'
-  branches in a worktree of its own, makes the generated files again on a conflict only in them, runs the tests
-  through a gate, and moves the wish's branch when they pass ([T30](plan/43303f46-integration.md)). `djinn wish
-  set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or red tests, start a correction
+  integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own,
+  makes the generated files again on a conflict only in them, runs the tests through a gate, moves the wish's branch
+  when they pass, and removes the task's worktree when clean ([T30](plan/43303f46-integration.md)). It pushes the
+  branch, never forcing, at an azima's end or once three tasks are committed and an hour has passed since the last
+  push; `--push-mode ask` asks first. `djinn wish set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or red tests, start a correction
   worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task waits for
   its dependencies' work to be committed, and its worktree starts from that branch; once a batch is committed, the
   window proposes to install it (the `install` setting) and restart on it.
@@ -242,6 +247,11 @@ To use Djinn, see the [README](README.md). To work on it:
   … --icon 🧱` give it its subject's emoji (one emoji); `djinn task spawn … --decision Q43` (a question's code, or a
   decision block's id) says which decision a task comes from. The window lists them in a "Decisions" tab, read only:
   who took each one (you, the lead, a worker) and the tasks it led to; the page and the brief follow.
+- An answer starts a question worker, "Q43 → tasks", that turns the decision into tasks (`--decision Q43`); "Enlighten
+  me" starts "Q43: enlighten", which revises the question. They read, take no slot (only memory), and tell the lead what they did.
+  `question_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md)) or `djinn up
+  --question-workers=false` turns them off. A worker's `djinn block put`, `question ask` and `revise` name its task from
+  `$DJINN_TASK_ID`: the decision log says "By W12".
 - An open question is blocking when a task waits for its answer, red; `djinn question ask … --before "before the merge"`
   makes it orange under those words; without them it can wait, grey. `djinn question revise … --before …` changes them,
   `--before ""` lets it wait. Everywhere, blocking comes first, then before X, then can wait.

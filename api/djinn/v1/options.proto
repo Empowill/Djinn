@@ -53,3 +53,9 @@ extend google.protobuf.MessageOptions {
   // Groups of fields that must be unique among stored messages of this type.
   repeated Unique unique = 51002;
 }
+
+extend google.protobuf.FieldOptions {
+  // The command line and djinn mcp fill the field from this environment variable when the caller leaves it empty:
+  // a worker's commands name its task by $DJINN_TASK_ID, which Djinn sets for every worker.
+  string env = 51006;
+}

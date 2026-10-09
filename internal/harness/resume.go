@@ -45,6 +45,10 @@ const (
 	byContinue   = "continued" // djinn task continue: its worker takes the new prompt on its session
 )
 
+// whyStoppedFirst is why a planned task waits that djinn up stopped before its worker started (its worktree being
+// made): it starts at the next start, as planned.
+const whyStoppedFirst = "djinn up stopped before its worker started"
+
 // WithClock gives the harness its time: when a usage limit resets is compared with it. Tests set a fake one.
 func WithClock(now func() time.Time) Option { return func(h *Harness) { h.clock = now } }
 
@@ -99,7 +103,7 @@ func resumable(t *planv1.Task, tasks []*planv1.Task, wish *planv1.Wish, project 
 	if !t.GetScheduled() || wish == nil || wish.GetState() == planv1.WishState_WISH_STATE_GRANTED || render.ForkedAs(t, tasks) != "" {
 		return false
 	}
-	if project.GetGit() && !watching(t) { // A watcher runs in the project's folder.
+	if project.GetGit() && !light(t) { // A watcher or a question worker runs in the project's folder.
 		if t.GetWorktree() == "" {
 			return false
 		}
@@ -210,8 +214,9 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 		}
 		switch t.GetAccess() {
 		case planv1.TaskAccess_TASK_ACCESS_ASKING, planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED,
-			planv1.TaskAccess_TASK_ACCESS_EDIT_REFUSED, planv1.TaskAccess_TASK_ACCESS_READ_ONLY:
-			// Decided by the developer's answer, or outside any project: it stays.
+			planv1.TaskAccess_TASK_ACCESS_EDIT_REFUSED, planv1.TaskAccess_TASK_ACCESS_READ_ONLY,
+			planv1.TaskAccess_TASK_ACCESS_DJINN:
+			// Decided by the developer's answer, outside any project, or by the task's role: it stays.
 		default:
 			access, declared, err := decideAccess(project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
 			if err != nil {
@@ -264,7 +269,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		if _, err := os.Stat(dir); err != nil {
 			return errors.New("its worktree is gone: it cannot be resumed")
 		}
-	case project.GetGit():
+	case project.GetGit() && !r.light: // A question worker reads in the project's folder.
 		return errors.New("its worktree is gone: it cannot be resumed")
 	}
 	budget := t.GetMaxBudgetUsd()

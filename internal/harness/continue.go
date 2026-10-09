@@ -156,7 +156,7 @@ func (h *Harness) continuable(ctx context.Context, t *planv1.Task, running bool)
 	if err != nil {
 		return plan.Status(err)
 	}
-	if project.GetGit() {
+	if project.GetGit() && !questionWorker(t) { // A question worker reads in the project's folder.
 		if t.GetWorktree() == "" {
 			return refuse("has no worktree any more: fork it to start from its context (djinn task spawn --fork %s)", t.GetCode())
 		}

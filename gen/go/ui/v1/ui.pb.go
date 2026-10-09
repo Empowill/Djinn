@@ -979,8 +979,8 @@ type UiServiceWatchUpdateResponse struct {
 	// Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
 	// local install, which has none.
 	NotesUrl string `protobuf:"bytes,4,opt,name=notes_url,json=notesUrl,proto3" json:"notes_url,omitempty"`
-	// The last batch of finished work committed into a wish's integration branch, in a project whose settings name an
-	// install command, and not installed since: the window proposes to install it and restart on it. Unset for none.
+	// The last push of a wish's integration branch, in a project whose settings name an install command, and not
+	// installed since: the window proposes to install it and restart on it. Unset for none.
 	Build         *Build `protobuf:"bytes,5,opt,name=build,proto3" json:"build,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1051,7 +1051,7 @@ func (x *UiServiceWatchUpdateResponse) GetBuild() *Build {
 	return nil
 }
 
-// Build is a batch of finished work committed into a wish's integration branch (T30), to install.
+// Build is a wish's integration branch as Djinn pushed it (T30), to install.
 type Build struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The wish, and its title.
@@ -1060,12 +1060,12 @@ type Build struct {
 	// The project, by its identifier and its name.
 	ProjectId string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	Project   string `protobuf:"bytes,4,opt,name=project,proto3" json:"project,omitempty"`
-	// The integration branch, and the commit it moved to.
+	// The integration branch, and the commit pushed.
 	Branch string `protobuf:"bytes,5,opt,name=branch,proto3" json:"branch,omitempty"`
 	Sha    string `protobuf:"bytes,6,opt,name=sha,proto3" json:"sha,omitempty"`
-	// The tasks of the batch, by code: W5.
+	// The tasks whose work the push brought, by code: W5.
 	Tasks []string `protobuf:"bytes,7,rep,name=tasks,proto3" json:"tasks,omitempty"`
-	// What changed: the titles of the commits the batch brought, the latest first.
+	// What changed: the titles of the commits the push brought, the latest first.
 	Changes []string `protobuf:"bytes,8,rep,name=changes,proto3" json:"changes,omitempty"`
 	// What to check, one line per task: its code and title, then what its worker said last.
 	Checks []string `protobuf:"bytes,9,rep,name=checks,proto3" json:"checks,omitempty"`

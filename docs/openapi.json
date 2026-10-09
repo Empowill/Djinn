@@ -991,7 +991,7 @@
             "type": "string",
             "title": "task_id",
             "format": "uuid",
-            "description": "Task the block is about."
+            "description": "Task the block is about, whose worker wrote it: the decision log says \"by W12\". By default $DJINN_TASK_ID,\n which Djinn sets for every worker; empty for the lead."
           },
           "position": {
             "type": "string",
@@ -1238,6 +1238,39 @@
         "title": "InboxServiceListResponse",
         "additionalProperties": false
       },
+      "plan.v1.InboxServicePlugRequest": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "source",
+            "maxLength": 300,
+            "pattern": "^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "description": "The source, as \u003cproject\u003e/\u003cskill\u003e, or the skill alone when one project holds it. Case ignored."
+          }
+        },
+        "title": "InboxServicePlugRequest",
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.InboxServicePlugResponse": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.InboxSource"
+              }
+            ],
+            "title": "source",
+            "description": "The source, plugged in."
+          }
+        },
+        "title": "InboxServicePlugResponse",
+        "additionalProperties": false
+      },
       "plan.v1.InboxServiceRouteRequest": {
         "type": "object",
         "properties": {
@@ -1285,6 +1318,102 @@
         },
         "title": "InboxServiceRouteResponse",
         "additionalProperties": false
+      },
+      "plan.v1.InboxServiceSourcesRequest": {
+        "type": "object",
+        "title": "InboxServiceSourcesRequest",
+        "additionalProperties": false
+      },
+      "plan.v1.InboxServiceSourcesResponse": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.InboxSource"
+            },
+            "title": "sources",
+            "description": "The sources, by project then skill."
+          }
+        },
+        "title": "InboxServiceSourcesResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.InboxServiceUnplugRequest": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "source",
+            "maxLength": 300,
+            "pattern": "^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "description": "The source, as \u003cproject\u003e/\u003cskill\u003e, or the skill alone when one project holds it. Case ignored."
+          }
+        },
+        "title": "InboxServiceUnplugRequest",
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.InboxServiceUnplugResponse": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.InboxSource"
+              }
+            ],
+            "title": "source",
+            "description": "The source, unplugged."
+          }
+        },
+        "title": "InboxServiceUnplugResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.InboxSource": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "name",
+            "description": "The source, as \u003cproject\u003e/\u003cskill\u003e: the project that holds the skill, then its folder name."
+          },
+          "skill": {
+            "type": "string",
+            "title": "skill",
+            "description": "The skill's folder name."
+          },
+          "project": {
+            "type": "string",
+            "title": "project",
+            "description": "The project that holds the skill, by name."
+          },
+          "watch": {
+            "type": "string",
+            "title": "watch",
+            "description": "The command line it runs, without a shell, in the folder of the project that uses it."
+          },
+          "every": {
+            "type": "string",
+            "title": "every",
+            "description": "The least time between two starts of its command, as 5m0s."
+          },
+          "plugged": {
+            "type": "boolean",
+            "title": "plugged",
+            "description": "Whether it is plugged in on this machine: only then does its command run."
+          },
+          "error": {
+            "type": "string",
+            "title": "error",
+            "description": "Why it cannot be used; empty when it can."
+          }
+        },
+        "title": "InboxSource",
+        "additionalProperties": false,
+        "description": "An inbox source a project's skill declares (metadata.djinn.source), as this machine sees it."
       },
       "plan.v1.InboxState": {
         "type": "string",
@@ -1371,6 +1500,71 @@
         "title": "IntegrationFailure",
         "additionalProperties": false,
         "description": "IntegrationFailure is a batch's merge or tests that failed, as a correction worker starts from it."
+      },
+      "plan.v1.IntegrationPush": {
+        "type": "object",
+        "properties": {
+          "wishId": {
+            "type": "string",
+            "title": "wish_id",
+            "description": "The wish, and the project whose branch was pushed."
+          },
+          "projectId": {
+            "type": "string",
+            "title": "project_id"
+          },
+          "branch": {
+            "type": "string",
+            "title": "branch",
+            "description": "The branch, and the remote it went to: origin."
+          },
+          "remote": {
+            "type": "string",
+            "title": "remote"
+          },
+          "oldSha": {
+            "type": "string",
+            "title": "old_sha",
+            "description": "Where the remote's branch was before (empty when it had none), and the commit pushed."
+          },
+          "newSha": {
+            "type": "string",
+            "title": "new_sha"
+          },
+          "count": {
+            "type": "integer",
+            "title": "count",
+            "format": "int32",
+            "description": "How many commits the push brought, and the titles of the latest of them, the latest first."
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "commits"
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "task_ids",
+            "description": "The tasks whose work it brought, by identifier."
+          },
+          "pushTime": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/google.protobuf.Timestamp"
+              }
+            ],
+            "title": "push_time",
+            "description": "When it was pushed."
+          }
+        },
+        "title": "IntegrationPush",
+        "additionalProperties": false,
+        "description": "IntegrationPush is a push of a wish's integration branch to its remote, as the journal records it and the wish shows\n the last one."
       },
       "plan.v1.IntegrationState": {
         "type": "string",
@@ -2093,6 +2287,16 @@
         ],
         "description": "Provider is the kind of agent a worker runs."
       },
+      "plan.v1.PushMode": {
+        "type": "string",
+        "title": "PushMode",
+        "enum": [
+          "PUSH_MODE_UNSPECIFIED",
+          "PUSH_MODE_AUTO",
+          "PUSH_MODE_ASK"
+        ],
+        "description": "PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due."
+      },
       "plan.v1.Question": {
         "type": "object",
         "properties": {
@@ -2194,6 +2398,11 @@
             "title": "icon",
             "maxLength": 16,
             "description": "One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.\n Empty: a default by kind."
+          },
+          "taskId": {
+            "type": "string",
+            "title": "task_id",
+            "description": "The task whose worker asked it; empty when the lead did."
           },
           "before": {
             "type": "string",
@@ -2388,6 +2597,12 @@
             "maxLength": 16,
             "description": "One emoji for the subject, like 🔒: the decision log shows it once the question is answered."
           },
+          "taskId": {
+            "type": "string",
+            "title": "task_id",
+            "format": "uuid",
+            "description": "The task whose worker asks; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead."
+          },
           "before": {
             "type": "string",
             "title": "before",
@@ -2547,6 +2762,12 @@
             "format": "uuid",
             "description": "Wish of the question, needed only when its code exists in several wishes."
           },
+          "taskId": {
+            "type": "string",
+            "title": "task_id",
+            "format": "uuid",
+            "description": "The task whose worker revises; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead."
+          },
           "before": {
             "type": [
               "string",
@@ -2674,6 +2895,11 @@
             "type": "string",
             "title": "recommendation",
             "description": "For a revision, the recommendation before it."
+          },
+          "taskId": {
+            "type": "string",
+            "title": "task_id",
+            "description": "For a revision, the task whose worker revised it; empty when the lead did."
           }
         },
         "title": "Round",
@@ -3281,6 +3507,21 @@
             },
             "title": "proof_needs",
             "description": "For an azima read from a plan file (djinn plan sync): its Done-when boxes left unchecked for a proof no worker can\n give, box by box, when nothing else is left in them: every unchecked box says \"(needs: …)\", or holds boxes that\n do. Empty while a box without needs is unchecked (work is left), when every box is checked, and for a file\n without a Done-when section."
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TaskRole"
+              }
+            ],
+            "title": "role",
+            "description": "What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A\n question worker takes no slot of the machine and runs in its project's folder, reading."
+          },
+          "question": {
+            "type": "string",
+            "title": "question",
+            "maxLength": 64,
+            "description": "The code of the question a question worker works on (Q52); empty for any other task."
           }
         },
         "title": "Task",
@@ -3299,7 +3540,8 @@
           "TASK_ACCESS_EDIT_GRANTED",
           "TASK_ACCESS_EDIT_REFUSED",
           "TASK_ACCESS_WISH_EDIT",
-          "TASK_ACCESS_WISH_AUTO"
+          "TASK_ACCESS_WISH_AUTO",
+          "TASK_ACCESS_DJINN"
         ],
         "description": "TaskAccess says where the rights of a task's worker come from (docs/providers.md, \"What a worker may do\")."
       },
@@ -3500,7 +3742,7 @@
         },
         "title": "TaskIntegration",
         "additionalProperties": false,
-        "description": "TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a\n worker ends done, Djinn commits its worktree on its branch, merges it with the batch into the integration branch in\n a worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,\n and moves the branch when it passes."
+        "description": "TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a\n worker ends done, Djinn commits its worktree on its branch, merges it alone into the integration branch in a\n worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,\n and moves the branch when it passes; its worktree is then removed when clean."
       },
       "plan.v1.TaskKind": {
         "type": "string",
@@ -3511,6 +3753,16 @@
           "TASK_KIND_AZIMA"
         ],
         "description": "TaskKind says what a task is."
+      },
+      "plan.v1.TaskRole": {
+        "type": "string",
+        "title": "TaskRole",
+        "enum": [
+          "TASK_ROLE_UNSPECIFIED",
+          "TASK_ROLE_CONVERTER",
+          "TASK_ROLE_INVESTIGATOR"
+        ],
+        "description": "TaskRole says what a task Djinn started by itself on a question does. A task the lead or the developer spawned has\n none."
       },
       "plan.v1.TaskServiceCleanRequest": {
         "type": "object",
@@ -4985,17 +5237,17 @@
             "title": "integration_branches",
             "description": "The branch each Git project of the wish integrates its tasks' finished work into: by default the branch the\n project's checkout was on when the wish was made, or, for a wish made before Djinn recorded it, when its first\n task's work was to integrate (djinn wish set-integration)."
           },
-          "commitAfterMinutes": {
+          "pushAfterMinutes": {
             "type": "integer",
-            "title": "commit_after_minutes",
+            "title": "push_after_minutes",
             "maximum": 10080,
             "minimum": 0,
             "format": "int32",
-            "description": "Djinn commits the finished work into the integration branch when an azima ends, or once this many minutes have\n passed and commit_after_tasks tasks are done since the last commit, whichever comes first; a task another task\n waits for is committed at once, alone. 0: 60 minutes, 3 tasks."
+            "description": "Each task's finished work is committed into the integration branch as soon as it ends, alone. Djinn pushes the\n branch to its remote, checked each time a task's merge ends: when an azima ends (its last part committed), or once\n push_after_tasks tasks are committed since the last push and more than this many minutes have passed since it.\n 0: 60 minutes, 3 tasks."
           },
-          "commitAfterTasks": {
+          "pushAfterTasks": {
             "type": "integer",
-            "title": "commit_after_tasks",
+            "title": "push_after_tasks",
             "maximum": 100,
             "minimum": 0,
             "format": "int32"
@@ -5004,11 +5256,65 @@
             "type": "string",
             "title": "description",
             "description": "A few lines that say what the wish is for, its scope and where it goes: djinn wish describe sets it, the person\n edits it in the wish's head, and the brief opens with it. Empty until someone writes one: the title stands for\n it."
+          },
+          "pushMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.PushMode"
+              }
+            ],
+            "title": "push_mode",
+            "description": "Whether Djinn pushes the integration branch by itself when a push is due, or asks first. Unset: auto."
+          },
+          "pushes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.WishPush"
+            },
+            "title": "pushes",
+            "description": "Where the push of each Git project's integration branch stands: its last push, and the question Djinn asks about\n the next one."
           }
         },
         "title": "Wish",
         "additionalProperties": false,
         "description": "A wish is what you ask Djinn for, and what it works to grant. It may span several projects."
+      },
+      "plan.v1.WishPush": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "title": "project_id",
+            "description": "The project."
+          },
+          "last": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.IntegrationPush"
+              }
+            ],
+            "title": "last",
+            "description": "The last push; unset before the first."
+          },
+          "questionId": {
+            "type": "string",
+            "title": "question_id",
+            "description": "The question Djinn asked about the next push, while it is open: in ask mode, or once the remote refused one.\n No push is due meanwhile."
+          },
+          "refused": {
+            "type": "string",
+            "title": "refused",
+            "description": "Why the remote refused the last push Djinn tried, in git's words; empty once one passes."
+          },
+          "approved": {
+            "type": "boolean",
+            "title": "approved",
+            "description": "The person said to push (an answer to the question): Djinn pushes at its next pass, whatever the cadence."
+          }
+        },
+        "title": "WishPush",
+        "additionalProperties": false,
+        "description": "WishPush is where the push of a wish's integration branch to its remote stands, in one of its projects. Only Djinn\n pushes it, through git with the person's own credentials, never forcing; agents never push."
       },
       "plan.v1.WishServiceActivateRequest": {
         "type": "object",
@@ -5696,21 +6002,30 @@
             "pattern": "^([A-Za-z0-9_]+([./-][A-Za-z0-9_]+)*)?$",
             "description": "The branch the project's finished work goes to, without refs/heads/: feat/wails-go."
           },
-          "commitAfterMinutes": {
+          "pushAfterMinutes": {
             "type": "integer",
-            "title": "commit_after_minutes",
+            "title": "push_after_minutes",
             "maximum": 10080,
             "minimum": 0,
             "format": "int32",
-            "description": "Commit once this many minutes have passed since the last commit, with commit_after_tasks tasks done."
+            "description": "Push once more than this many minutes have passed since the last push, with push_after_tasks tasks committed."
           },
-          "commitAfterTasks": {
+          "pushAfterTasks": {
             "type": "integer",
-            "title": "commit_after_tasks",
+            "title": "push_after_tasks",
             "maximum": 100,
             "minimum": 0,
             "format": "int32",
-            "description": "Commit once this many tasks are done since the last commit, the minutes having passed."
+            "description": "Push once this many tasks are committed since the last push, the minutes having passed."
+          },
+          "pushMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.PushMode"
+              }
+            ],
+            "title": "push_mode",
+            "description": "auto: Djinn pushes by itself; ask: it asks first. Unset: unchanged.\nenum.defined_only = true\n"
           }
         },
         "title": "WishServiceSetIntegrationRequest",
@@ -7060,6 +7375,68 @@
         }
       }
     },
+    "/plan.v1.InboxService/Plug": {
+      "post": {
+        "tags": [
+          "InboxService"
+        ],
+        "summary": "Plug",
+        "description": "Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.",
+        "operationId": "InboxService_Plug",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InboxServicePlugRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServicePlugResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/plan.v1.InboxService/Route": {
       "post": {
         "tags": [
@@ -7115,6 +7492,230 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/plan.v1.InboxServiceRouteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.InboxService/Sources": {
+      "get": {
+        "tags": [
+          "InboxService"
+        ],
+        "summary": "Sources",
+        "description": "List the sources the projects' skills declare, plugged in or not on this machine.",
+        "operationId": "InboxService_Sources.get",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          },
+          {
+            "name": "message",
+            "in": "query",
+            "description": "The URL-encoded message query parameter contains the JSON or binary serialized request message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceSourcesRequest"
+                }
+              }
+            }
+          },
+          {
+            "name": "encoding",
+            "in": "query",
+            "description": "Define which encoding or 'Message-Codec' to use",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/encoding"
+            },
+            "example": "json"
+          },
+          {
+            "name": "base64",
+            "in": "query",
+            "description": "Specifies if the message query param is base64 encoded, which may be required for binary data",
+            "schema": {
+              "$ref": "#/components/schemas/base64"
+            },
+            "example": false
+          },
+          {
+            "name": "compression",
+            "in": "query",
+            "description": "Which compression algorithm to use for this request",
+            "schema": {
+              "$ref": "#/components/schemas/compression"
+            },
+            "example": "gzip"
+          },
+          {
+            "name": "connect",
+            "in": "query",
+            "description": "Define the version of the Connect protocol",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect"
+            },
+            "example": "v1"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceSourcesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "InboxService"
+        ],
+        "summary": "Sources",
+        "description": "List the sources the projects' skills declare, plugged in or not on this machine.",
+        "operationId": "InboxService_Sources",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InboxServiceSourcesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceSourcesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.InboxService/Unplug": {
+      "post": {
+        "tags": [
+          "InboxService"
+        ],
+        "summary": "Unplug",
+        "description": "Unplug a source, on this machine: its command stops and runs no more. Its items stay.",
+        "operationId": "InboxService_Unplug",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InboxServiceUnplugRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceUnplugResponse"
                 }
               }
             }
@@ -11595,7 +12196,7 @@
           "WishService"
         ],
         "summary": "SetIntegration",
-        "description": "Set where and when the wish's finished work is committed: the integration branch of one of its projects, and\n how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.",
+        "description": "Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its\n projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by\n itself or asks first. Only what is given changes.",
         "operationId": "WishService_SetIntegration",
         "parameters": [
           {
@@ -11962,7 +12563,7 @@
     },
     {
       "name": "InboxService",
-      "description": "The inbox: what comes from outside, proposed as requests. A source is a command a skill declares in its SKILL.md\n (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. Each paragraph it\n prints becomes an item with its proposed route; nothing is made until you answer."
+      "description": "The inbox: what comes from outside, proposed as requests. A source is a command a skill declares in its SKILL.md\n (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. A source runs only\n once you plug it in, on this machine. Each paragraph it prints becomes an item with its proposed route; nothing is\n made until you answer."
     },
     {
       "name": "WishService",

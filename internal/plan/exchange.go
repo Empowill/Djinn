@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -24,6 +23,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -426,28 +426,9 @@ func decode(data []byte) (*planv1.WishExport, error) {
 	return exp, nil
 }
 
-// renameWait is how long writeFile tries again to put its file in place. Windows refuses to replace a file another
-// process holds open ("Access is denied"): a browser reading the page, an antivirus scanning it, each for a moment.
-// Elsewhere a rename replaces an open file, and fails for good when it fails.
-var renameWait = func() time.Duration {
-	if runtime.GOOS == "windows" {
-		return 500 * time.Millisecond
-	}
-	return 0
-}()
-
-// renameRetrying moves oldpath over newpath with rename, trying again for wait while it fails. Windows names the
-// cause of a held file loosely (access denied, sharing violation): any error is tried again.
-func renameRetrying(rename func(oldpath, newpath string) error, oldpath, newpath string, wait time.Duration) error {
-	deadline := time.Now().Add(wait)
-	for {
-		err := rename(oldpath, newpath)
-		if err == nil || !time.Now().Before(deadline) {
-			return err
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
+// renamer puts in place what the plan writes: pages, exports and tilasms' folders. It tries again a moment on
+// Windows, where a browser reading a page or an antivirus scanning a file refuses the rename. A test swaps it.
+var renamer = fsx.OS()
 
 // writeFile writes data to file through a temporary file, so that a failed export leaves no half file and a reader
 // sees the old content or the new one.
@@ -464,7 +445,7 @@ func writeFile(file string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return renameRetrying(os.Rename, tmp.Name(), file, renameWait)
+	return renamer.Rename(tmp.Name(), file)
 }
 
 // load imports an export in one transaction, journaled as ImportData with the content itself: the journal then

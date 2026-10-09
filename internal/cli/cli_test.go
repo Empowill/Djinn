@@ -293,6 +293,11 @@ func (f questions) Answer(_ context.Context, req *connect.Request[planv1.Questio
 	return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: q}), nil
 }
 
+func (f questions) Ask(_ context.Context, req *connect.Request[planv1.QuestionServiceAskRequest]) (*connect.Response[planv1.QuestionServiceAskResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.QuestionServiceAskResponse{Question: question()}), nil
+}
+
 func (f projects) List(_ context.Context, req *connect.Request[planv1.ProjectServiceListRequest]) (*connect.Response[planv1.ProjectServiceListResponse], error) {
 	f.record(req.Msg)
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: []*planv1.Project{
@@ -321,7 +326,9 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	t.Cleanup(srv.Close)
 	return f, func(args ...string) (int, string, string) {
 		var out, errs bytes.Buffer
-		code := Run(context.Background(), args, Config{Version: "test", Addr: srv.URL, HTTP: srv.Client(), Stdout: &out, Stderr: &errs})
+		code := Run(context.Background(), args, Config{
+			Version: "test", Addr: srv.URL, HTTP: srv.Client(), Stdout: &out, Stderr: &errs, Getenv: noEnv,
+		})
 		return code, out.String(), errs.String()
 	}
 }
@@ -369,6 +376,49 @@ func TestRun(t *testing.T) {
 				t.Errorf("server called = %v, want %v", called, tt.wantCalled)
 			}
 		})
+	}
+}
+
+// noEnv is an environment without any variable: a test run by a Djinn worker does not see its $DJINN_TASK_ID.
+func noEnv(string) string { return "" }
+
+// TestFromEnv: a field that defaults to an environment variable takes it when the command line leaves it empty, so
+// that a worker's block or question is attributed to its task; a value given wins, and a field without the option
+// (a filter) never takes it.
+func TestFromEnv(t *testing.T) {
+	const task, other = "01a120ea-554a-716c-8e66-43516f2f04c9", "01a120ea-554a-716c-8e66-43516f2f0000"
+	env := func(name string) string {
+		if name == "DJINN_TASK_ID" {
+			return task
+		}
+		return ""
+	}
+	for _, c := range []struct {
+		msg  proto.Message
+		args []string
+		want string
+	}{
+		{&planv1.BlockServicePutRequest{}, []string{wishID, "--kind", "decision"}, task},
+		{&planv1.BlockServicePutRequest{}, []string{wishID, "--task-id", other}, other},
+		{&planv1.QuestionServiceAskRequest{}, []string{"Which?", wishID}, task},
+		{&planv1.QuestionServiceReviseRequest{}, []string{"Q03", "--context", "found"}, task},
+		{&planv1.BlockServiceListRequest{}, []string{wishID}, ""},
+	} {
+		md := local(t, c.msg)
+		req, err := parse(md, c.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fromEnv(req, env)
+		if got := req.Get(md.Fields().ByName("task_id")).String(); got != c.want {
+			t.Errorf("%s %v: task_id %q, want %q", md.Name(), c.args, got, c.want)
+		}
+	}
+	// djinn mcp reads the same variable.
+	f, _ := mcpSessionEnv(t, env, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"question_ask",`+
+		`"arguments":{"text":"Which?","wish_id":"`+wishID+`"}}}`)
+	if seen := f.seen(); len(seen) != 1 || seen[0].(*planv1.QuestionServiceAskRequest).GetTaskId() != task {
+		t.Errorf("djinn mcp sent %v, want the task of $DJINN_TASK_ID", seen)
 	}
 }
 

@@ -16,8 +16,9 @@ limits, and they are the project's first rule:
 - **Three wishes at a time.** Never more: one Djinn holds three active wishes at most, and as many set aside as
   you like.
 
-**Workers never commit.** They edit their worktree; the lead reviews each diff, commits in batches and pushes
-once. Fewer, clearer commits, and one CI run instead of one per worker: the Git runners breathe.
+**Workers never commit.** They edit their worktree; Djinn commits each one's work as it ends, tested, and pushes on
+a cadence: at an azima's end, or after three tasks and an hour. One CI run per push instead of one per worker: the Git
+runners breathe.
 
 > **ALPHA — NOT USABLE AS IS.** Djinn is an experimental project under development. It is not ready to be used, neither for real work nor in production. The features described below show the project's goal and its state of development; they are no guarantee that it works.
 
@@ -103,8 +104,9 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
   its own worktree. Three wishes are active at most; the flight plan shows them together.
 - **A visible team.** Each task shows its worker, its status, its live events and what it cost. Send it an instruction
   while it works, or stop it. Talk to the lead in a terminal inside the window.
-- **You decide.** A question comes with its options and the lead's recommendation: **Rub the lamp** takes it,
-  **Enlighten me** sends the lead to dig first. A system notification answers it from anywhere.
+- **You decide.** A question comes with its options and the lead's recommendation: **Rub the lamp** takes it, and a
+  small worker turns your decision into tasks; **Enlighten me** sends one to dig first, then revise the question. The
+  lead hears what each did. A system notification answers it from anywhere.
 - **The lead's notes stay in the wish.** Markdown and Mermaid diagrams: mark what you read, approve what may go on
   as it is. One HTML page shares the wish; `djinn wish export` hands it over whole, in one file.
 - **Nothing is lost.** Stopping Djinn interrupts the workers, never loses them: the next start resumes each one in

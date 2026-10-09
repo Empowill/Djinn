@@ -108,9 +108,23 @@ type Settings struct {
 	// How many correction workers Djinn starts for a batch that conflicts in code or tests red, before it asks.
 	CorrectionAttempts int
 
+	// QuestionWorkers says whether Djinn starts a question worker after an answer or a request to investigate, with
+	// QuestionModel and QuestionBudgetUSD.
+	QuestionWorkers   bool
+	QuestionModel     string
+	QuestionBudgetUSD float64
+
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, TestFrom planv1.SettingSource
 	AttemptsFrom, InstallFrom                                                              planv1.SettingSource
+	QuestionWorkersFrom, QuestionModelFrom, QuestionBudgetFrom                             planv1.SettingSource
 }
+
+// Defaults of the question workers: a cheaper model is enough to turn a decision into tasks, or to read and revise a
+// question; and a cap, so that one never runs long.
+const (
+	DefaultQuestionModel     = "sonnet" // for claude; another provider's own default
+	DefaultQuestionBudgetUSD = 2.0
+)
 
 // ResolveSettings merges the repository's settings and the developer's, either nil when there is none. The
 // developer's win, setting by setting; a file that sets the provider sets the model with it, so that a model never
@@ -121,7 +135,10 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch, CorrectionAttempts: DefaultCorrectionAttempts,
 		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
 		TestFrom: def, InstallFrom: def, AttemptsFrom: def,
+		QuestionWorkers: true, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
+		QuestionWorkersFrom: def, QuestionModelFrom: def, QuestionBudgetFrom: def,
 	}
+	questionModel := false // a file set it
 	for _, f := range []struct {
 		settings *planv1.ProjectSettings
 		from     planv1.SettingSource
@@ -132,6 +149,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.Provider != nil {
 			s.Provider, s.ProviderFrom = f.settings.GetProvider(), f.from
 			s.Model, s.ModelFrom = "", f.from
+			s.QuestionModel, s.QuestionModelFrom, questionModel = "", def, false
 		}
 		if f.settings.Model != nil {
 			s.Model, s.ModelFrom = f.settings.GetModel(), f.from
@@ -157,6 +175,18 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.Install != nil {
 			s.Install, s.InstallFrom = f.settings.GetInstall(), f.from
 		}
+		if f.settings.QuestionWorkers != nil {
+			s.QuestionWorkers, s.QuestionWorkersFrom = f.settings.GetQuestionWorkers(), f.from
+		}
+		if f.settings.QuestionModel != nil {
+			s.QuestionModel, s.QuestionModelFrom, questionModel = f.settings.GetQuestionModel(), f.from, true
+		}
+		if f.settings.QuestionBudgetUsd != nil {
+			s.QuestionBudgetUSD, s.QuestionBudgetFrom = f.settings.GetQuestionBudgetUsd(), f.from
+		}
+	}
+	if !questionModel && s.Provider == planv1.Provider_PROVIDER_CLAUDE {
+		s.QuestionModel = DefaultQuestionModel
 	}
 	return s
 }
@@ -202,19 +232,24 @@ func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.Proje
 
 // Rows are the settings as djinn project show lists them.
 func (s Settings) Rows() []*planv1.ProjectSetting {
-	budget := ""
-	if s.MaxBudgetUSD > 0 {
-		budget = strconv.FormatFloat(s.MaxBudgetUSD, 'f', -1, 64)
+	usd := func(v float64) string {
+		if v > 0 {
+			return strconv.FormatFloat(v, 'f', -1, 64)
+		}
+		return ""
 	}
 	return []*planv1.ProjectSetting{
 		{Name: "provider", Value: providerName(s.Provider), Source: s.ProviderFrom},
 		{Name: "model", Value: s.Model, Source: s.ModelFrom},
-		{Name: "max_budget_usd", Value: budget, Source: s.BudgetFrom},
+		{Name: "max_budget_usd", Value: usd(s.MaxBudgetUSD), Source: s.BudgetFrom},
 		{Name: "branch", Value: s.Branch, Source: s.BranchFrom},
 		{Name: "generated", Value: strings.Join(s.Generated, ","), Source: s.GeneratedFrom},
 		{Name: "generate", Value: s.Generate, Source: s.GenerateFrom},
 		{Name: "test", Value: s.Test, Source: s.TestFrom},
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
+		{Name: "question_workers", Value: strconv.FormatBool(s.QuestionWorkers), Source: s.QuestionWorkersFrom},
+		{Name: "question_model", Value: s.QuestionModel, Source: s.QuestionModelFrom},
+		{Name: "question_budget_usd", Value: usd(s.QuestionBudgetUSD), Source: s.QuestionBudgetFrom},
 	}
 }

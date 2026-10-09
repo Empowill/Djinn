@@ -55,6 +55,20 @@ func editOnly() *djinnv1.Permissions {
 	return &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_LISTED}
 }
 
+// djinnCommands are the commands a question worker may run: djinn's, to read the wish and to plan from a question,
+// and Git's to read the history. No gate, no build, no task stopped or continued.
+var djinnCommands = []string{
+	"djinn wish brief", "djinn task list", "djinn task get", "djinn question list", "djinn block list",
+	"djinn mark list", "djinn tilasm list", "djinn tilasm get", "djinn task spawn", "djinn question ask",
+	"djinn question revise", "djinn block put",
+	"git log", "git show", "git diff", "git status",
+}
+
+// djinnOnly is what a question worker gets (TASK_ACCESS_DJINN): reading, and djinnCommands; no edit, no network.
+func djinnOnly() *djinnv1.Permissions {
+	return &djinnv1.Permissions{Commands: djinnCommands, Mode: djinnv1.Mode_MODE_LISTED}
+}
+
 // matchesPrefix tells whether command starts with one of the prefixes, on a word boundary.
 func matchesPrefix(command string, prefixes []string) bool {
 	command = strings.Join(strings.Fields(command), " ")
@@ -162,6 +176,8 @@ func accessSpec(access planv1.TaskAccess, perms *djinnv1.Permissions) (readOnly 
 		return false, nil
 	case planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED:
 		return false, editOnly()
+	case planv1.TaskAccess_TASK_ACCESS_DJINN:
+		return false, djinnOnly()
 	}
 	return true, nil
 }

@@ -20,6 +20,8 @@ commands: "git log"
 # The watchers of the babysit skills: they read a pull request with gh, a merge request with glab, and change nothing.
 commands: "sh .agents/skills/babysit-pr/watch.sh"
 commands: "sh .agents/skills/babysit-mr/watch.sh"
+# Its inbox source, once plugged in: it lists pull requests with gh, and changes nothing.
+commands: "sh .agents/skills/babysit-pr/inbox.sh"
 
 # Never push; no network.
 denied_commands: "git push"

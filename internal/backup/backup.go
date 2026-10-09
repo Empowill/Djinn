@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	backupv1 "github.com/empowill/djinn/gen/go/backup/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
@@ -59,6 +60,12 @@ func DefaultFile(now time.Time) (string, error) {
 // Create writes the data folder home into the archive file, replacing it, and returns what it wrote. snapshot
 // copies the database; the other files are read as they are. The archive appears whole or not at all.
 func Create(ctx context.Context, home, file, version string, snapshot Snapshot) (*backupv1.BackupServiceCreateResponse, error) {
+	return create(ctx, home, file, version, snapshot, fsx.OS())
+}
+
+func create(
+	ctx context.Context, home, file, version string, snapshot Snapshot, r fsx.Renamer,
+) (*backupv1.BackupServiceCreateResponse, error) {
 	zipped, err := zipFile(file)
 	if err != nil {
 		return nil, err
@@ -95,7 +102,7 @@ func Create(ctx context.Context, home, file, version string, snapshot Snapshot) 
 	if err = errors.Join(err, partial.Close()); err != nil {
 		return nil, fmt.Errorf("write %s: %w", file, err)
 	}
-	if err := os.Rename(partial.Name(), file); err != nil {
+	if err := r.Rename(partial.Name(), file); err != nil {
 		return nil, err
 	}
 	info, err := os.Stat(file)

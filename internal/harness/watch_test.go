@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -292,20 +293,22 @@ func TestWatcher(t *testing.T) {
 		t.Errorf("the agent waits: %v", agent)
 	}
 
-	// Paused, it holds still; resumed, it goes on.
-	if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: task.GetId()})); err != nil {
-		t.Fatal(err)
+	// Paused, it holds still; resumed, it goes on. Windows cannot pause a worker yet (pause_test.go).
+	if runtime.GOOS != "windows" {
+		if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: task.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(200 * time.Millisecond) // Runs start 50 ms apart (fastWatch): none while paused.
+		paused := e.get(t, task.GetId())
+		time.Sleep(200 * time.Millisecond)
+		if again := e.get(t, task.GetId()); paused.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED || again.GetLastLine() != paused.GetLastLine() {
+			t.Errorf("paused, it went on: %q then %q", paused.GetLastLine(), again.GetLastLine())
+		}
+		if _, err := e.tasks.Resume(t.Context(), connect.NewRequest(&planv1.TaskServiceResumeRequest{TaskId: task.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+		e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() != paused.GetLastLine() })
 	}
-	time.Sleep(200 * time.Millisecond) // Runs start 50 ms apart (fastWatch): none while paused.
-	paused := e.get(t, task.GetId())
-	time.Sleep(200 * time.Millisecond)
-	if again := e.get(t, task.GetId()); paused.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED || again.GetLastLine() != paused.GetLastLine() {
-		t.Errorf("paused, it went on: %q then %q", paused.GetLastLine(), again.GetLastLine())
-	}
-	if _, err := e.tasks.Resume(t.Context(), connect.NewRequest(&planv1.TaskServiceResumeRequest{TaskId: task.GetId()})); err != nil {
-		t.Fatal(err)
-	}
-	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() != paused.GetLastLine() })
 
 	// A message is refused: no model reads it.
 	if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: task.GetId(), Text: "hi"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {

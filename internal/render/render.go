@@ -336,7 +336,11 @@ func build(in Input) (*view, error) {
 			if r.GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
 				label = "page.round_enlighten"
 			}
-			cq.Rounds = append(cq.Rounds, round{At: at(r.GetCreateTime()), Label: tr(label), Note: r.GetNote()})
+			text := tr(label)
+			if by := tasks[r.GetTaskId()]; by != nil && r.GetKind() == planv1.RoundKind_ROUND_KIND_REVISE {
+				text = tr("page.round_revise_by", "task", by.GetCode())
+			}
+			cq.Rounds = append(cq.Rounds, round{At: at(r.GetCreateTime()), Label: text, Note: r.GetNote()})
 		}
 		if rounds := q.GetRounds(); len(rounds) > 0 && rounds[len(rounds)-1].GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
 			cq.Investigating = true

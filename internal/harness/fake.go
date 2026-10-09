@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -26,6 +28,8 @@ import (
 //	wait                  it works until a message comes (Send), which it says back at the end as the others
 //	fail no tests         it fails with this reason
 //	exit 2                its process exits with this code
+//	djinn task list       it runs Djinn's command line, as an agent does: this djinn, in its folder, with its task's
+//	                      environment ($DJINN_TASK_ID); "…" and '…' quote an argument
 //
 // Any other line is said back as text. It runs in Djinn's process: stopping it ends its script at once, pausing it
 // holds its script before the next step until it is resumed.
@@ -192,6 +196,14 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 				w.res = stopped
 				return
 			}
+		case "djinn":
+			call := Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, Text: "Bash " + raw, Raw: raw}
+			if !emit(call) {
+				w.res = stopped
+				return
+			}
+			ev = fakeDjinn(ctx, spec, rest)
+			ev.Raw = raw
 		case "fail":
 			emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: rest, Raw: raw})
 			w.res = Result{ExitCode: 1, Err: errors.New(rest)}
@@ -241,6 +253,65 @@ func fakeWrite(spec Spec, args string) Event {
 		return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: "write: " + err.Error()}
 	}
 	return call
+}
+
+// fakeDjinn runs this djinn's command line with args, in the worker's folder and environment, and gives what it
+// printed as the tool's result.
+func fakeDjinn(ctx context.Context, spec Spec, args string) Event {
+	// In a test, this program is the test binary: it would run the tests again, not djinn.
+	if testing.Testing() {
+		return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: "djinn: no djinn command in a test"}
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: "djinn: " + err.Error()}
+	}
+	words, err := splitWords(args)
+	if err != nil {
+		return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: "djinn: " + err.Error()}
+	}
+	cmd := exec.CommandContext(ctx, exe, words...)
+	cmd.Dir, cmd.Env = spec.Dir, append(os.Environ(), spec.Env...)
+	out, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(string(out))
+	if err != nil {
+		text = strings.TrimSpace(text + "\n" + err.Error())
+	}
+	return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, Text: text}
+}
+
+// splitWords splits a command line into its words, as a shell would without expanding anything: blanks separate
+// words, double or single quotes hold one.
+func splitWords(s string) ([]string, error) {
+	var words []string
+	var word strings.Builder
+	inWord := false
+	var quote rune
+	for _, r := range s {
+		switch {
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote != 0:
+			word.WriteRune(r)
+		case r == '"' || r == '\'':
+			quote, inWord = r, true
+		case r == ' ' || r == '\t':
+			if inWord {
+				words, inWord = append(words, word.String()), false
+				word.Reset()
+			}
+		default:
+			word.WriteRune(r)
+			inWord = true
+		}
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unclosed %c in %s", quote, s)
+	}
+	if inWord {
+		words = append(words, word.String())
+	}
+	return words, nil
 }
 
 // fakeUsage reads "input output [cost]".

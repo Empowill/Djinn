@@ -77,6 +77,7 @@ function server(data) {
     });
     service(InboxService, {
       list: () => (count("inbox"), { items: data.inbox }),
+      sources: () => (count("sources"), { sources: data.sources }),
     });
   });
   return { clients: createClients(transport), reads, watch };
@@ -90,6 +91,7 @@ function sample() {
     questions: [{ id: "q1", wishId, code: "Q01", text: "Oil?" }],
     blocks: [{ id: "b1", wishId, title: "Lexicon", content: "A wick." }],
     inbox: [{ id: "i1", source: "babysit-mr", text: "Babysit !12" }],
+    sources: [{ name: "lamp/babysit-mr", skill: "babysit-mr", plugged: true }],
     events: [
       { id: "e1", taskId, seq: 1n, kind: 1, text: "Polish the brass" },
       { id: "e2", taskId, seq: 2n, kind: 2, text: "Done." },
@@ -214,7 +216,7 @@ test("a write the page made is read at once", async () => {
   assert.equal(reads.blocks, 2);
 });
 
-test("a change of the inbox reads it again, and nothing else", async () => {
+test("a change of the inbox reads it and its sources again, and nothing else", async () => {
   const data = sample();
   const { clients, reads, watch } = server(data);
   const store = createStore(clients, 10);
@@ -222,12 +224,15 @@ test("a change of the inbox reads it again, and nothing else", async () => {
   watch.push({ wishId: "", changes: [...everything, Change.INBOX] });
   const state = await until(store, (s) => s.loaded && s.inbox.length === 1);
   assert.equal(state.inbox[0].source, "babysit-mr");
+  assert.equal(state.sources[0].name, "lamp/babysit-mr");
+  assert.equal(state.error, "");
   const before = { ...reads };
   data.inbox = [];
   watch.push({ wishId: "", changes: [Change.INBOX] });
   await until(store, (s) => s.inbox.length === 0);
   stop();
   assert.equal(reads.inbox, before.inbox + 1);
+  assert.equal(reads.sources, before.sources + 1);
   assert.equal(reads.wishes, before.wishes);
   assert.equal(reads.projects, before.projects);
 });

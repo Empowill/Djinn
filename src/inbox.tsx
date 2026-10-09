@@ -1,13 +1,16 @@
 // The inbox: what the sources of the projects' skills printed (a merge request assigned to you, a mention), each
 // item a card with the route Djinn proposes, the recommended destination first. Nothing is made until you click: a
 // destination files the item or makes its wish, "Rub the lamp" takes the recommended one, "Dismiss" sets it aside.
-// Djinn never answers the source. Empty means hidden.
-import { Inbox as InboxIcon, Lamp, X } from "lucide-react";
+// Djinn never answers the source. A source runs only once plugged in on this machine: empty, the inbox lists the
+// sources the skills declare, each with "Plug in" or "Unplug"; with items, they fold under them. Without items nor
+// sources, it is hidden.
+import { Inbox as InboxIcon, Lamp, Plug, Unplug, X } from "lucide-react";
 import { useState } from "react";
 
 import {
   Change,
   type InboxItem,
+  type InboxSource,
   type RouteOption,
   RouteKind,
 } from "../gen/ts/plan/v1/plan_pb";
@@ -26,14 +29,15 @@ export function Inbox({
   onToast: (text: string) => void;
 }) {
   const items = useData((s) => s.inbox);
-  if (!items.length) return null;
+  const sources = useData((s) => s.sources);
+  if (!items.length && !sources.length) return null;
   return (
     <section className="inbox" aria-label={t("inbox.title")}>
       <div className="section-title">
         <h2>
           <InboxIcon size={17} aria-hidden="true" />
           {t("inbox.title")}
-          <span className="count">{items.length}</span>
+          {items.length > 0 && <span className="count">{items.length}</span>}
         </h2>
         <p>{t("inbox.detail")}</p>
       </div>
@@ -45,7 +49,96 @@ export function Inbox({
           onToast={onToast}
         />
       ))}
+      {items.length === 0 ? (
+        <article className="question-card open inbox-empty">
+          <p className="inbox-empty-text">{t("inbox.empty")}</p>
+          <InboxSources sources={sources} onToast={onToast} />
+        </article>
+      ) : (
+        sources.length > 0 && (
+          <details className="inbox-sources-fold">
+            <summary>
+              {t("inbox.sources", { count: String(sources.length) })}
+            </summary>
+            <InboxSources sources={sources} onToast={onToast} />
+          </details>
+        )
+      )}
     </section>
+  );
+}
+
+// every is how often a source runs, as Go writes a duration, made short: 5m0s is 5m, 1h0m0s is 1h.
+function every(duration: string): string {
+  return duration.replace(/(\D)0s$/, "$1").replace(/(\D)0m$/, "$1");
+}
+
+// InboxSources lists the sources the skills declare, each with what it runs and a button that plugs it in or
+// unplugs it, on this machine.
+function InboxSources({
+  sources,
+  onToast,
+}: {
+  sources: InboxSource[];
+  onToast: (text: string) => void;
+}) {
+  const clients = useClients();
+  const store = useStore();
+  const [busy, setBusy] = useState("");
+  const toggle = async (src: InboxSource) => {
+    setBusy(src.name);
+    try {
+      if (src.plugged) {
+        await clients.inbox.unplug({ source: src.name });
+        onToast(t("inbox.unplugged_toast", { source: src.name }));
+      } else {
+        await clients.inbox.plug({ source: src.name });
+        onToast(t("inbox.plugged_toast", { source: src.name }));
+      }
+    } catch (error) {
+      onToast(message(error));
+    } finally {
+      setBusy("");
+      void store.changed("", [Change.INBOX]);
+    }
+  };
+  return (
+    <ul className="inbox-sources" aria-label={t("inbox.sources_label")}>
+      {sources.map((src) => (
+        <li key={src.name} className="inbox-source-row">
+          <div className="inbox-source-text">
+            <strong>{src.name}</strong>
+            {src.watch && <code>{src.watch}</code>}
+            {src.error ? (
+              <span className="inbox-source-error">{src.error}</span>
+            ) : (
+              <span
+                className={`inbox-source-state ${src.plugged ? "plugged" : ""}`}
+              >
+                {src.plugged
+                  ? t("inbox.plugged", { every: every(src.every) })
+                  : t("inbox.unplugged")}
+              </span>
+            )}
+          </div>
+          {(src.plugged || !src.error) && (
+            <button
+              className={`button small ${src.plugged ? "secondary" : "accent"}`}
+              disabled={busy === src.name}
+              title={
+                src.plugged
+                  ? t("inbox.unplug_detail")
+                  : t("inbox.plug_detail", { every: every(src.every) })
+              }
+              onClick={() => void toggle(src)}
+            >
+              {src.plugged ? <Unplug size={14} /> : <Plug size={14} />}
+              {src.plugged ? t("inbox.unplug") : t("inbox.plug")}
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

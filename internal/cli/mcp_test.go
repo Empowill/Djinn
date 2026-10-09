@@ -21,6 +21,12 @@ import (
 // by request id.
 func mcpSession(t *testing.T, requests ...string) (*fake, map[string]rpcMessage) {
 	t.Helper()
+	return mcpSessionEnv(t, noEnv, requests...)
+}
+
+// mcpSessionEnv is mcpSession in the environment getenv reads.
+func mcpSessionEnv(t *testing.T, getenv func(string) string, requests ...string) (*fake, map[string]rpcMessage) {
+	t.Helper()
 	f := &fake{}
 	mux := http.NewServeMux()
 	mux.Handle(planv1connect.NewQuestionServiceHandler(questions{fake: f}))
@@ -29,7 +35,7 @@ func mcpSession(t *testing.T, requests ...string) (*fake, map[string]rpcMessage)
 	t.Cleanup(srv.Close)
 	var out, errs bytes.Buffer
 	in := strings.NewReader(strings.Join(requests, "\n") + "\n")
-	cfg := Config{Version: "test", Addr: srv.URL, HTTP: srv.Client(), Stdin: in, Stdout: &out, Stderr: &errs}
+	cfg := Config{Version: "test", Addr: srv.URL, HTTP: srv.Client(), Stdin: in, Stdout: &out, Stderr: &errs, Getenv: getenv}
 	if code := Run(context.Background(), []string{"mcp"}, cfg); code != 0 {
 		t.Fatalf("djinn mcp exited with %d: %s", code, errs.String())
 	}

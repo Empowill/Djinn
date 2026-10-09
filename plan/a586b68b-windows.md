@@ -30,9 +30,13 @@ checked against Windows first, because it is where the constraints are.
   (`internal/terminal/pty_windows.go`), maintained by the Go team, in place of Charm's `x/conpty` (experimental, no
   promises). Two pipes, `CreatePseudoConsole`, the program started suspended with a `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`
   attribute list, put in a Job Object, then resumed: a hangup closes the console (CTRL_CLOSE_EVENT), a kill ends the
-  job, the program and what it started. The job has no kill-on-close limit: a window started from the terminal
-  outlives it. Once no process of the job is left, the console closes at once and its output ends, without the
-  second left to a child holding the terminal.
+  job, the program and what it started. The job kills its processes once its last handle closes: djinn ending without
+  closing its terminals (a crash, the e2e's kill) ends their programs, as the kernel hangs up a pseudo-terminal on
+  Unix, and nothing keeps their folder (W131: the e2e's teardown failed on `EBUSY … shell`). A hung-up terminal ends
+  what is left of its job when it closes, a child that outlived its program on CTRL_CLOSE_EVENT included; a program
+  that ended by itself leaves a window it started apart running (the limit is lifted before the job closes). Once no
+  process of the job is left, the console closes at once and its output ends, without the second left to a child
+  holding the terminal.
 
 ## To check on Windows
 - The Wails v3 window on WebView2, built with or without CGO (to confirm).
@@ -42,11 +46,14 @@ checked against Windows first, because it is where the constraints are.
   CPU and memory accounting, limits and kill-the-whole-tree; pausing a worker has no simple
   equivalent to `SIGSTOP`.
 - Atomic writes: renaming over a file another process holds open fails on Windows ("Access is denied", seen by W72
-  in the CI log of `TestSync`). A browser reading `page.html`, or an antivirus scanning it, holds it a moment. The
-  plan's `writeFile` (`internal/plan/exchange.go`: pages and exports) tries the rename again for 500 ms on Windows
-  only (`TestRenameRetrying` with an injected rename; `TestWriteFileWhileOpen` holds the file open, which only
-  Windows refuses). `ui.WriteAtomic` (state, settings, crash notes) and the backup's rename do not retry yet: files
-  only Djinn reads.
+  in the CI log of `TestSync`), and so does moving a folder with such a file. A browser reading `page.html`, or an
+  antivirus scanning `settings.json` or a tilasm just written, holds it a moment. Every rename of Djinn's own files
+  goes through `fsx.OS()` (`internal/fsx`, W89 ported by W138), which tries again every 20 ms for 500 ms on Windows
+  only: the plan's `writeFile` (pages, wish and tilasm exports), a tilasm's new version and an import's tilasm folders
+  (`internal/plan/tilasms.go`), `ui.WriteAtomic` (settings, crash notes), the backup's archive and the restore's
+  moves. `TestRenameWhileOpen` holds the file open, which only Windows refuses: its proof is the CI's Windows job.
+  Left apart: `swapexe`, which moves a running executable aside on Windows by design, and the release's move of a
+  binary `go install` just wrote.
 - End-to-end on the native window: WebView2 accepts a remote debugging port, so Playwright can
   drive the real window there.
 
@@ -55,9 +62,17 @@ checked against Windows first, because it is where the constraints are.
   machine; `GOOS=windows go vet -tags headless ./...` passes on Linux, 08/10)
 - [ ] `task test` and `task e2e` pass on Windows. (needs: the CI's Windows job green. It runs test-go, test-ui and e2e
   since 09/10, still `continue-on-error`; the failures of its first run (09/10) are fixed but not yet seen green: W72
-  checked each one again against the log of run 37913958476)
+  checked each one again against the log of run 37913958476. W131 fixed the three of run 37997257519 (10/10), proof
+  pending the next push: TestWatcher paused a watcher on Windows; TestRestartResumesInOrder lost F0, which the first
+  harness's scheduler started after its 2 s tick, slower test set-up on Windows, and whose `git worktree add` djinn up
+  stopping cut short, leaving it interrupted without a worktree, never resumed (now such a task waits again, as
+  planned; the test writes the left-over tasks while djinn is down); the e2e's `EBUSY`, see the terminal above)
 - [ ] A worker runs in a worktree on Windows, with its CPU and memory measured. (needs: a Windows machine, and the
   per-worker measure, not built: Job Objects, T17)
+- [x] An atomic write a held file refuses a moment goes through: every rename of Djinn's files tries again, with a
+  rename that refuses each first try injected (`TestRenameRetrying`, `TestWriteAtomicRetriesARefusedRename`,
+  `TestCreateRetriesARefusedRename`, `TestRestoreRetriesARefusedRename`, `TestTilasmMovesRetryARefusedRename`). W138,
+  10/10.
 
 ## How we test on Windows
 - The unit tests run on Windows (`go tool task test`). Cross-checks from Linux:
@@ -67,8 +82,9 @@ checked against Windows first, because it is where the constraints are.
   On a branch without a pull request, once the workflow's `workflow_dispatch` is on main:
   `gh workflow run ci.yml --ref <branch>`.
 - The terminal's own tests on Windows (`internal/terminal/pty_windows_test.go`): read and write through `cmd.exe`, the
-  exit code, the folder and environment, a resize seen by the program, and a close that kills a program holding on
-  through CTRL_CLOSE_EVENT with its child. From Linux, `GOOS=windows go vet -tags headless ./...` and `GOOS=windows go
+  exit code, the folder and environment, a resize seen by the program, a close that kills a program holding on
+  through CTRL_CLOSE_EVENT with its child, a hangup that ends the child of a program that ended on it, and the
+  programs of a terminal ending with a djinn killed without closing it. From Linux, `GOOS=windows go vet -tags headless ./...` and `GOOS=windows go
   test -c` only compile them: the proof is their run in the CI's Windows job (`test-go`), not yet seen green.
 - What only Unix can run skips on Windows and says why: tests that stop djinn with a signal or run a shell script
   (`//go:build !windows` files, with their reason), the terminal specs that drive a POSIX shell, pausing a worker.

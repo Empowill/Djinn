@@ -105,10 +105,25 @@ message ProjectSettings {
     lte: 10
   }];
   // The command that installs the project's new build, run in the project's folder of the integration worktree at
-  // the commit: "go tool task install". Once a batch is committed, the window proposes it, with what changed and what
-  // to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are split on spaces, without
-  // a shell. Not set: nothing is proposed.
+  // the commit: "go tool task install". Once Djinn has pushed the integration branch, the window proposes it, with
+  // what changed and what to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are
+  // split on spaces, without a shell. Not set: nothing is proposed.
   optional string install = 9 [(buf.validate.field).string.max_len = 500];
+  // Djinn starts a small worker on each question of a wish's lead: after an answer, one that turns the decision into
+  // tasks; after "Enlighten me", one that investigates and revises the question. Not set: on. false: the lead is told
+  // to act on the answer itself, as before.
+  optional bool question_workers = 10;
+  // Model of those question workers, a model of the workers' provider. Not set: sonnet for claude, the provider's own
+  // default for another; empty: the provider's own default.
+  optional string question_model = 11 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+  ];
+  // Most a question worker may spend, in US dollars, when its provider can enforce it. Not set: 2. 0: no limit.
+  optional double question_budget_usd = 12 [(buf.validate.field).double = {
+    gte: 0
+    lte: 10000
+  }];
 }
 
 // SettingSource is where a project setting comes from.
@@ -164,14 +179,15 @@ message Wish {
   // project's checkout was on when the wish was made, or, for a wish made before Djinn recorded it, when its first
   // task's work was to integrate (djinn wish set-integration).
   repeated IntegrationBranch integration_branches = 12;
-  // Djinn commits the finished work into the integration branch when an azima ends, or once this many minutes have
-  // passed and commit_after_tasks tasks are done since the last commit, whichever comes first; a task another task
-  // waits for is committed at once, alone. 0: 60 minutes, 3 tasks.
-  int32 commit_after_minutes = 13 [(buf.validate.field).int32 = {
+  // Each task's finished work is committed into the integration branch as soon as it ends, alone. Djinn pushes the
+  // branch to its remote, checked each time a task's merge ends: when an azima ends (its last part committed), or once
+  // push_after_tasks tasks are committed since the last push and more than this many minutes have passed since it.
+  // 0: 60 minutes, 3 tasks.
+  int32 push_after_minutes = 13 [(buf.validate.field).int32 = {
     gte: 0
     lte: 10080
   }];
-  int32 commit_after_tasks = 14 [(buf.validate.field).int32 = {
+  int32 push_after_tasks = 14 [(buf.validate.field).int32 = {
     gte: 0
     lte: 100
   }];
@@ -179,6 +195,58 @@ message Wish {
   // edits it in the wish's head, and the brief opens with it. Empty until someone writes one: the title stands for
   // it.
   string description = 15;
+  // Whether Djinn pushes the integration branch by itself when a push is due, or asks first. Unset: auto.
+  PushMode push_mode = 16;
+  // Where the push of each Git project's integration branch stands: its last push, and the question Djinn asks about
+  // the next one.
+  repeated WishPush pushes = 17;
+}
+
+// PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
+enum PushMode {
+  // Not set: auto.
+  PUSH_MODE_UNSPECIFIED = 0;
+  // Djinn pushes by itself, never forcing.
+  PUSH_MODE_AUTO = 1;
+  // Djinn asks first: "Push feat/x to origin?", pushed in one click.
+  PUSH_MODE_ASK = 2;
+}
+
+// WishPush is where the push of a wish's integration branch to its remote stands, in one of its projects. Only Djinn
+// pushes it, through git with the person's own credentials, never forcing; agents never push.
+message WishPush {
+  // The project.
+  string project_id = 1;
+  // The last push; unset before the first.
+  IntegrationPush last = 2;
+  // The question Djinn asked about the next push, while it is open: in ask mode, or once the remote refused one.
+  // No push is due meanwhile.
+  string question_id = 3;
+  // Why the remote refused the last push Djinn tried, in git's words; empty once one passes.
+  string refused = 4;
+  // The person said to push (an answer to the question): Djinn pushes at its next pass, whatever the cadence.
+  bool approved = 5;
+}
+
+// IntegrationPush is a push of a wish's integration branch to its remote, as the journal records it and the wish shows
+// the last one.
+message IntegrationPush {
+  // The wish, and the project whose branch was pushed.
+  string wish_id = 1;
+  string project_id = 2;
+  // The branch, and the remote it went to: origin.
+  string branch = 3;
+  string remote = 4;
+  // Where the remote's branch was before (empty when it had none), and the commit pushed.
+  string old_sha = 5;
+  string new_sha = 6;
+  // How many commits the push brought, and the titles of the latest of them, the latest first.
+  int32 count = 7;
+  repeated string commits = 8;
+  // The tasks whose work it brought, by identifier.
+  repeated string task_ids = 9;
+  // When it was pushed.
+  google.protobuf.Timestamp push_time = 10;
 }
 
 // IntegrationBranch is the branch a wish integrates its finished work into, in one of its projects.
@@ -304,6 +372,22 @@ enum TaskAccess {
   TASK_ACCESS_WISH_EDIT = 7;
   // The wish allows the auto mode in the project: the worker may edit, in its agent's auto mode.
   TASK_ACCESS_WISH_AUTO = 8;
+  // A question worker (Task.role): it reads, and runs only the djinn commands its job needs; it edits nothing and
+  // runs no gate.
+  TASK_ACCESS_DJINN = 9;
+}
+
+// TaskRole says what a task Djinn started by itself on a question does. A task the lead or the developer spawned has
+// none.
+enum TaskRole {
+  // A worker spawned by the lead or the developer.
+  TASK_ROLE_UNSPECIFIED = 0;
+  // Djinn started it once the developer answered Task.question ("Rub the lamp"): it turns the decision into tasks
+  // (djinn task spawn --decision), or asks what the answer leaves open.
+  TASK_ROLE_CONVERTER = 1;
+  // Djinn started it once the developer asked to know more about Task.question ("Enlighten me"): it reads, then
+  // revises the question so that it waits for the developer again.
+  TASK_ROLE_INVESTIGATOR = 2;
 }
 
 // Provider is the kind of agent a worker runs.
@@ -314,7 +398,7 @@ enum Provider {
   PROVIDER_CLAUDE = 1;
   // A fake agent that plays a script, to try Djinn without a paid model: each line of the prompt is a step,
   // like "text Hello", "tool Bash ls", "result ok", "usage 1200 300 0.02", "write notes.md Hi" (when it may edit),
-  // "sleep 5s", "fail why" or "exit 2";
+  // "sleep 5s", "fail why", "exit 2", or "djinn task list" (it runs Djinn's command line, as an agent does);
   // any other line is said back as text.
   PROVIDER_FAKE = 2;
   // Codex, the codex command, driven through its app-server (JSON-RPC on stdio).
@@ -453,6 +537,11 @@ message Task {
   // do. Empty while a box without needs is unchecked (work is left), when every box is checked, and for a file
   // without a Done-when section.
   repeated ProofNeed proof_needs = 43;
+  // What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
+  // question worker takes no slot of the machine and runs in its project's folder, reading.
+  TaskRole role = 44;
+  // The code of the question a question worker works on (Q52); empty for any other task.
+  string question = 45 [(buf.validate.field).string.max_len = 64];
 }
 
 // TaskCorrection is what a correction worker corrects.
@@ -485,9 +574,9 @@ message IntegrationFailure {
 }
 
 // TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a
-// worker ends done, Djinn commits its worktree on its branch, merges it with the batch into the integration branch in
-// a worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,
-// and moves the branch when it passes.
+// worker ends done, Djinn commits its worktree on its branch, merges it alone into the integration branch in a
+// worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,
+// and moves the branch when it passes; its worktree is then removed when clean.
 message TaskIntegration {
   // Where it stands.
   IntegrationState state = 1;
@@ -515,7 +604,7 @@ message TaskIntegration {
 enum IntegrationState {
   // Not set: Djinn does not integrate the task's work.
   INTEGRATION_STATE_UNSPECIFIED = 0;
-  // Done, waiting for its batch: an azima's end, or an hour and three tasks done since the last commit.
+  // Done, waiting to be merged: at once, unless something else holds it (its reason says what).
   INTEGRATION_STATE_PENDING = 1;
   // Its batch is being merged and tested.
   INTEGRATION_STATE_INTEGRATING = 2;
@@ -771,10 +860,12 @@ message Question {
   // One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.
   // Empty: a default by kind.
   string icon = 15 [(buf.validate.field).string.max_len = 16];
+  // The task whose worker asked it; empty when the lead did.
+  string task_id = 16;
   // What the answer is needed before, in a few words, set by the asker (djinn question ask --before "before the
   // merge"): the question waits for the developer, orange, under those words. Empty: it can wait. A question a waiting
   // task needs is blocking whatever this says: Djinn computes that from the tasks.
-  string before = 16 [(buf.validate.field).string.max_len = 100];
+  string before = 17 [(buf.validate.field).string.max_len = 100];
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -840,6 +931,8 @@ message Round {
   repeated string options = 6;
   // For a revision, the recommendation before it.
   string recommendation = 7;
+  // For a revision, the task whose worker revised it; empty when the lead did.
+  string task_id = 8;
 }
 
 // What a round is.
@@ -958,9 +1051,15 @@ message QuestionServiceReviseRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // The task whose worker revises; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+  string task_id = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
   // What the answer is needed before now, like "before the merge"; the former words when not given, none when given
   // empty (--before ""): the question can wait.
-  optional string before = 6 [(buf.validate.field).string.max_len = 100];
+  optional string before = 7 [(buf.validate.field).string.max_len = 100];
 }
 
 message QuestionServiceReviseResponse {
@@ -990,9 +1089,15 @@ message QuestionServiceAskRequest {
   string recommendation = 5 [(buf.validate.field).string.max_len = 20000];
   // One emoji for the subject, like 🔒: the decision log shows it once the question is answered.
   string icon = 6 [(buf.validate.field).string.max_len = 16];
+  // The task whose worker asks; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+  string task_id = 7 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
   // What the answer is needed before, in a few words, like "before the merge": the question waits for the developer
   // under those words. Empty: it can wait.
-  string before = 7 [(buf.validate.field).string.max_len = 100];
+  string before = 8 [(buf.validate.field).string.max_len = 100];
 }
 
 message QuestionServiceAskResponse {
@@ -1239,9 +1344,43 @@ enum InboxState {
   INBOX_STATE_DISMISSED = 3;
 }
 
+// An inbox source a project's skill declares (metadata.djinn.source), as this machine sees it.
+message InboxSource {
+  // The source, as <project>/<skill>: the project that holds the skill, then its folder name.
+  string name = 1;
+  // The skill's folder name.
+  string skill = 2;
+  // The project that holds the skill, by name.
+  string project = 3;
+  // The command line it runs, without a shell, in the folder of the project that uses it.
+  string watch = 4;
+  // The least time between two starts of its command, as 5m0s.
+  string every = 5;
+  // Whether it is plugged in on this machine: only then does its command run.
+  bool plugged = 6;
+  // Why it cannot be used; empty when it can.
+  string error = 7;
+}
+
+// A source plugged in on this machine. It lives in Djinn's data, never in a repository: a clone of a project whose
+// skill declares a source runs nothing until you plug it in.
+message PluggedSource {
+  option (djinn.v1.unique) = {fields: ["project_id", "skill"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project that holds the skill.
+  string project_id = 2;
+  // The skill's folder name.
+  string skill = 3;
+  // When it was plugged in.
+  google.protobuf.Timestamp create_time = 4;
+}
+
 // The inbox: what comes from outside, proposed as requests. A source is a command a skill declares in its SKILL.md
-// (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. Each paragraph it
-// prints becomes an item with its proposed route; nothing is made until you answer.
+// (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. A source runs only
+// once you plug it in, on this machine. Each paragraph it prints becomes an item with its proposed route; nothing is
+// made until you answer.
 service InboxService {
   // List the inbox, the newest first: the items that wait for an answer, or every one with --all.
   rpc List(InboxServiceListRequest) returns (InboxServiceListResponse) {
@@ -1259,6 +1398,56 @@ service InboxService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // List the sources the projects' skills declare, plugged in or not on this machine.
+  rpc Sources(InboxServiceSourcesRequest) returns (InboxServiceSourcesResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+  rpc Plug(InboxServicePlugRequest) returns (InboxServicePlugResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+  rpc Unplug(InboxServiceUnplugRequest) returns (InboxServiceUnplugResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
+  }
+}
+
+message InboxServiceSourcesRequest {}
+
+message InboxServiceSourcesResponse {
+  // The sources, by project then skill.
+  repeated InboxSource sources = 1;
+}
+
+message InboxServicePlugRequest {
+  // The source, as <project>/<skill>, or the skill alone when one project holds it. Case ignored.
+  string source = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 300,
+    (buf.validate.field).string.pattern = "^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
+  ];
+}
+
+message InboxServicePlugResponse {
+  // The source, plugged in.
+  InboxSource source = 1;
+}
+
+message InboxServiceUnplugRequest {
+  // The source, as <project>/<skill>, or the skill alone when one project holds it. Case ignored.
+  string source = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 300,
+    (buf.validate.field).string.pattern = "^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
+  ];
+}
+
+message InboxServiceUnplugResponse {
+  // The source, unplugged.
+  InboxSource source = 1;
 }
 
 message InboxServiceListRequest {
@@ -1384,8 +1573,9 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Set where and when the wish's finished work is committed: the integration branch of one of its projects, and
-  // how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.
+  // Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
+  // projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
+  // itself or asks first. Only what is given changes.
   rpc SetIntegration(WishServiceSetIntegrationRequest) returns (WishServiceSetIntegrationResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -1512,7 +1702,7 @@ enum Change {
   CHANGE_BLOCK = 4;
   // The projects: one added or changed.
   CHANGE_PROJECT = 5;
-  // The inbox: an item came, or was routed or dismissed.
+  // The inbox: an item came, or was routed or dismissed; a source was plugged in or unplugged, or a project added.
   CHANGE_INBOX = 6;
   // Its tilasms: one put, restored or imported.
   CHANGE_TILASM = 7;
@@ -1588,16 +1778,18 @@ message WishServiceSetIntegrationRequest {
     (buf.validate.field).string.max_len = 200,
     (buf.validate.field).string.pattern = "^([A-Za-z0-9_]+([./-][A-Za-z0-9_]+)*)?$"
   ];
-  // Commit once this many minutes have passed since the last commit, with commit_after_tasks tasks done.
-  int32 commit_after_minutes = 4 [(buf.validate.field).int32 = {
+  // Push once more than this many minutes have passed since the last push, with push_after_tasks tasks committed.
+  int32 push_after_minutes = 4 [(buf.validate.field).int32 = {
     gte: 0
     lte: 10080
   }];
-  // Commit once this many tasks are done since the last commit, the minutes having passed.
-  int32 commit_after_tasks = 5 [(buf.validate.field).int32 = {
+  // Push once this many tasks are committed since the last push, the minutes having passed.
+  int32 push_after_tasks = 5 [(buf.validate.field).int32 = {
     gte: 0
     lte: 100
   }];
+  // auto: Djinn pushes by itself; ask: it asks first. Unset: unchanged.
+  PushMode push_mode = 6 [(buf.validate.field).enum.defined_only = true];
 }
 
 message WishServiceSetIntegrationResponse {
@@ -2024,10 +2216,12 @@ message BlockServicePutRequest {
   string content = 5 [(buf.validate.field).string.max_len = 1000000];
   // Media type of the content, like application/json; text/markdown by default.
   string media_type = 6 [(buf.validate.field).string.max_len = 200];
-  // Task the block is about.
+  // Task the block is about, whose worker wrote it: the decision log says "by W12". By default $DJINN_TASK_ID,
+  // which Djinn sets for every worker; empty for the lead.
   string task_id = 7 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
-    (buf.validate.field).string.uuid = true
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
   ];
   // Order within the wish; by default 1000 after the last block, for a new one.
   int64 position = 8;

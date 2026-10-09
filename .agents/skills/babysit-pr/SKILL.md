@@ -10,6 +10,8 @@ metadata:
       match: '(?i)\bbabysit\w*\b.*?(?:/pull/|#|\bpr\s*#?)(?P<pr>\d+)'
       watch: "sh .agents/skills/babysit-pr/watch.sh {pr}"
       done_when: MERGED
+    source:
+      watch: "sh .agents/skills/babysit-pr/inbox.sh"
 ---
 
 # Babysit a pull request
@@ -23,6 +25,13 @@ You lead a wish made for one pull request: bring it to a merge, and nothing else
   `Djinn: W1's watcher says: PR #12 · checks: 1 fail, 4 pass (failed: lint) · mergeable: MERGEABLE · …`.
 - When the pull request is merged, the watcher prints `MERGED` and stops. Djinn then asks the developer whether to
   grant the wish. Never grant it yourself.
+
+## Where such a wish comes from
+
+`djinn wish route "babysit PR #12"`, or the inbox. The skill declares an inbox source,
+`sh .agents/skills/babysit-pr/inbox.sh`: the open pull requests of this repository assigned to the developer or that
+request their review, one paragraph each with its link. It runs only once the developer plugs it in on their machine
+(`djinn inbox plug babysit-pr`, or "Plug in" in the inbox); a clone polls nothing by itself. It only reads.
 
 ## Each time the watcher speaks
 

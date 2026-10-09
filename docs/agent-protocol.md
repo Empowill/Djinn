@@ -37,15 +37,35 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   its option's letter (`B: …`): the developer applies it in one click, "Rub the lamp". `--before "before the merge"`
   says what the answer is needed before; without it the question can wait. A question a waiting task needs is
   blocking whatever it says: the window, the page and the brief list blocking, then before X, then can wait.
-- **Investigations.** "Enlighten me" in the window (`djinn question enlighten <question> --note …`) asks the lead to
-  find out more before deciding: the question waits for the lead, and the brief lists it under "To investigate". The
-  lead answers with `djinn question revise <question> --context … --recommendation …`; the question keeps each round,
-  dated, and waits for the developer again. A decision may take several rounds.
+- **Investigations.** "Enlighten me" in the window (`djinn question enlighten <question> --note …`) asks to find out
+  more before deciding: the question waits for a revision, and the brief lists it under "To investigate". Its
+  question worker (below), or else the lead, answers with `djinn question revise <question> --context …
+  --recommendation …`; the question keeps each round, dated, with who revised it, and waits for the developer again.
+  A decision may take several rounds.
 - **Marks.** What the developer read or approved as it is, from the window: `djinn mark list <wish>`, and the brief's
   "Marked by the developer". An approved block or decision is a go.
+- **Question workers act on the developer's word; the lead stays informed.** When the developer answers a question
+  ("Rub the lamp", or an answer) that Djinn does not settle itself (an edit question, a question on work that failed
+  to integrate, a routed request, a grant), Djinn starts a small task in the wish, `Q43 → tasks`, a *converter*: its
+  prompt holds the question, its options, the answer, the developer's note and where the wish stands, and one job, to
+  turn the decision into tasks (`djinn task spawn … --decision Q43`, with `--part-of`, `--after`, a clear title and a
+  self-contained prompt each), or to ask what the answer leaves open (`djinn question ask`: an answered question is a
+  decision, it is not revised). "Enlighten me" starts `Q43: enlighten`, an *investigator*: it reads the code and the
+  brief, then revises the question. A question worker writes no code and runs no gate: Djinn gives it
+  `TASK_ACCESS_DJINN`, reading plus a short list of `djinn` and read-only `git` commands
+  (`internal/harness/permissions.go`), in its project's folder, without a worktree. It takes no slot of the machine,
+  like a watcher, but waits while the machine is under pressure or its memory would not hold it, like any agent. One
+  works on a question at a time: a second answer while the converter works is sent to it (`djinn task send`), not
+  given to a second one. Its model and budget are project settings, `question_model` (default `sonnet` for claude, the
+  provider's own default otherwise) and `question_budget_usd` (default $2); `question_workers: false` in a project's
+  settings, or `djinn up --question-workers=false` (`DJINN_QUESTION_WORKERS=off`), turns them off
+  (`docs/team-settings.md`).
 - **An answer reaches the lead.** When the developer answers a question, Djinn types one line in the terminal of
-  the wish's lead, then Enter: `Djinn: Q43 answered B — "<option>". Note: "<note>". Act on it: djinn wish brief
-  <wish> has the context.` The agent reads it as a message, queued while it works. The line waits until the
+  the wish's lead, then Enter: `Djinn: Q43 answered B — "<option>". Note: "<note>". W12 turns it into tasks; you
+  will hear when it ends.` When the converter ends, a second line says what it did: `Djinn: W12 (Q43 → tasks) ended:
+  spawned W13, W14 from Q43; asked Q44.`, or what is left to the lead when it did nothing or failed. Without question
+  workers the first line ends `Act on it: djinn wish brief <wish> has the context.` The agent reads each line as a
+  message, queued while it works. The line waits until the
   developer has not typed in that terminal for three seconds, and lines go out in order. A lead that does not run is
   reopened on its session first, as `djinn wish resume` does, without taking the window; only an active wish's.
   A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
@@ -86,6 +106,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   that comes back.
 - **Blocks.** What Djinn does not compute (an analysis, a decision taken outside a question) is a block:
   `djinn block put`. Djinn shows it as written.
+- **Who did it.** `djinn block put`, `djinn question ask` and `djinn question revise` take `--task-id`, by default
+  `$DJINN_TASK_ID`, which Djinn sets for every worker (`(djinn.v1.env)` in the protos): a worker's decision block
+  reads "By W12" in the decision log, its revision "Revised by W12" on the page; the lead's, run without the
+  variable, stay the lead's.
 - **The page.** `djinn wish sync <wish>` renders the wish's page in Go and prints its file, kept up to date. The lead
   republishes that file as it is; it never writes the HTML.
 - **The developer's word.** `djinn wish grant <wish>` says a wish is done. Only the developer says it.

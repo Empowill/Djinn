@@ -80,6 +80,12 @@ const (
 	InboxServiceDismissProcedure = "/plan.v1.InboxService/Dismiss"
 	// InboxServiceRouteProcedure is the fully-qualified name of the InboxService's Route RPC.
 	InboxServiceRouteProcedure = "/plan.v1.InboxService/Route"
+	// InboxServiceSourcesProcedure is the fully-qualified name of the InboxService's Sources RPC.
+	InboxServiceSourcesProcedure = "/plan.v1.InboxService/Sources"
+	// InboxServicePlugProcedure is the fully-qualified name of the InboxService's Plug RPC.
+	InboxServicePlugProcedure = "/plan.v1.InboxService/Plug"
+	// InboxServiceUnplugProcedure is the fully-qualified name of the InboxService's Unplug RPC.
+	InboxServiceUnplugProcedure = "/plan.v1.InboxService/Unplug"
 	// WishServiceMakeProcedure is the fully-qualified name of the WishService's Make RPC.
 	WishServiceMakeProcedure = "/plan.v1.WishService/Make"
 	// WishServiceListProcedure is the fully-qualified name of the WishService's List RPC.
@@ -628,6 +634,12 @@ type InboxServiceClient interface {
 	// Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
 	// one matched, and start its watcher and its lead. Nothing is sent to its source.
 	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
+	// List the sources the projects' skills declare, plugged in or not on this machine.
+	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
+	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+	Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error)
+	// Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+	Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error)
 }
 
 // NewInboxServiceClient constructs a client for the plan.v1.InboxService service. By default, it
@@ -660,6 +672,25 @@ func NewInboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(inboxServiceMethods.ByName("Route")),
 			connect.WithClientOptions(opts...),
 		),
+		sources: connect.NewClient[v1.InboxServiceSourcesRequest, v1.InboxServiceSourcesResponse](
+			httpClient,
+			baseURL+InboxServiceSourcesProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Sources")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		plug: connect.NewClient[v1.InboxServicePlugRequest, v1.InboxServicePlugResponse](
+			httpClient,
+			baseURL+InboxServicePlugProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Plug")),
+			connect.WithClientOptions(opts...),
+		),
+		unplug: connect.NewClient[v1.InboxServiceUnplugRequest, v1.InboxServiceUnplugResponse](
+			httpClient,
+			baseURL+InboxServiceUnplugProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Unplug")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -668,6 +699,9 @@ type inboxServiceClient struct {
 	list    *connect.Client[v1.InboxServiceListRequest, v1.InboxServiceListResponse]
 	dismiss *connect.Client[v1.InboxServiceDismissRequest, v1.InboxServiceDismissResponse]
 	route   *connect.Client[v1.InboxServiceRouteRequest, v1.InboxServiceRouteResponse]
+	sources *connect.Client[v1.InboxServiceSourcesRequest, v1.InboxServiceSourcesResponse]
+	plug    *connect.Client[v1.InboxServicePlugRequest, v1.InboxServicePlugResponse]
+	unplug  *connect.Client[v1.InboxServiceUnplugRequest, v1.InboxServiceUnplugResponse]
 }
 
 // List calls plan.v1.InboxService.List.
@@ -685,6 +719,21 @@ func (c *inboxServiceClient) Route(ctx context.Context, req *connect.Request[v1.
 	return c.route.CallUnary(ctx, req)
 }
 
+// Sources calls plan.v1.InboxService.Sources.
+func (c *inboxServiceClient) Sources(ctx context.Context, req *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error) {
+	return c.sources.CallUnary(ctx, req)
+}
+
+// Plug calls plan.v1.InboxService.Plug.
+func (c *inboxServiceClient) Plug(ctx context.Context, req *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error) {
+	return c.plug.CallUnary(ctx, req)
+}
+
+// Unplug calls plan.v1.InboxService.Unplug.
+func (c *inboxServiceClient) Unplug(ctx context.Context, req *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error) {
+	return c.unplug.CallUnary(ctx, req)
+}
+
 // InboxServiceHandler is an implementation of the plan.v1.InboxService service.
 type InboxServiceHandler interface {
 	// List the inbox, the newest first: the items that wait for an answer, or every one with --all.
@@ -694,6 +743,12 @@ type InboxServiceHandler interface {
 	// Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
 	// one matched, and start its watcher and its lead. Nothing is sent to its source.
 	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
+	// List the sources the projects' skills declare, plugged in or not on this machine.
+	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
+	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+	Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error)
+	// Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+	Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error)
 }
 
 // NewInboxServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -722,6 +777,25 @@ func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(inboxServiceMethods.ByName("Route")),
 		connect.WithHandlerOptions(opts...),
 	)
+	inboxServiceSourcesHandler := connect.NewUnaryHandler(
+		InboxServiceSourcesProcedure,
+		svc.Sources,
+		connect.WithSchema(inboxServiceMethods.ByName("Sources")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServicePlugHandler := connect.NewUnaryHandler(
+		InboxServicePlugProcedure,
+		svc.Plug,
+		connect.WithSchema(inboxServiceMethods.ByName("Plug")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceUnplugHandler := connect.NewUnaryHandler(
+		InboxServiceUnplugProcedure,
+		svc.Unplug,
+		connect.WithSchema(inboxServiceMethods.ByName("Unplug")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.InboxService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case InboxServiceListProcedure:
@@ -730,6 +804,12 @@ func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOpti
 			inboxServiceDismissHandler.ServeHTTP(w, r)
 		case InboxServiceRouteProcedure:
 			inboxServiceRouteHandler.ServeHTTP(w, r)
+		case InboxServiceSourcesProcedure:
+			inboxServiceSourcesHandler.ServeHTTP(w, r)
+		case InboxServicePlugProcedure:
+			inboxServicePlugHandler.ServeHTTP(w, r)
+		case InboxServiceUnplugProcedure:
+			inboxServiceUnplugHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -749,6 +829,18 @@ func (UnimplementedInboxServiceHandler) Dismiss(context.Context, *connect.Reques
 
 func (UnimplementedInboxServiceHandler) Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Route is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Sources is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Plug is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Unplug is not implemented"))
 }
 
 // WishServiceClient is a client for the plan.v1.WishService service.
@@ -793,8 +885,9 @@ type WishServiceClient interface {
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
-	// Set where and when the wish's finished work is committed: the integration branch of one of its projects, and
-	// how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.
+	// Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
+	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
+	// itself or asks first. Only what is given changes.
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
@@ -1148,8 +1241,9 @@ type WishServiceHandler interface {
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
-	// Set where and when the wish's finished work is committed: the integration branch of one of its projects, and
-	// how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.
+	// Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
+	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
+	// itself or asks first. Only what is given changes.
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.

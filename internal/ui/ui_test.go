@@ -16,6 +16,7 @@ import (
 
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/link"
 )
 
@@ -439,5 +440,28 @@ func TestEnvironmentProviders(t *testing.T) {
 	}
 	if p := got["claude"]; p.GetAvailable() || p.GetCommand() != "claude" {
 		t.Errorf("claude = %v, want missing from this PATH", p)
+	}
+}
+
+// TestWriteAtomicRetriesARefusedRename: a rename refused for a moment, as Windows refuses one while an antivirus
+// scans settings.json, is tried again, and the new content lands.
+func TestWriteAtomicRetriesARefusedRename(t *testing.T) {
+	path := filepath.Join(t.TempDir(), settingsFile)
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tries := 0
+	refused := func(oldpath, newpath string) error {
+		if tries++; tries <= 2 {
+			return errors.New("Access is denied")
+		}
+		return os.Rename(oldpath, newpath)
+	}
+	r := fsx.Renamer{Func: refused, Wait: time.Second, Sleep: func(time.Duration) {}}
+	if err := writeAtomic(path, []byte("new"), r); err != nil || tries != 3 {
+		t.Fatalf("writeAtomic = %v after %d tries, want nil after 3", err, tries)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "new" {
+		t.Errorf("file = %q, want the new content", got)
 	}
 }

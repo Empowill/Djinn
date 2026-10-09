@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -37,10 +38,19 @@ type Config struct {
 	HTTP connect.HTTPClient // built from Addr when nil
 	// Start starts djinn up in the background and returns its address once it answers, for the methods marked
 	// autostart when no server answers. Nil leaves them failing as the others do.
-	Start  func(ctx context.Context) (addr string, err error)
+	Start func(ctx context.Context) (addr string, err error)
+	// Getenv reads the variables some fields default to, such as $DJINN_TASK_ID ((djinn.v1.env)); os.Getenv when nil.
+	Getenv func(string) string
 	Stdin  io.Reader // djinn mcp reads its requests here
 	Stdout io.Writer
 	Stderr io.Writer
+}
+
+func (cfg Config) getenv() func(string) string {
+	if cfg.Getenv != nil {
+		return cfg.Getenv
+	}
+	return os.Getenv
 }
 
 // usageError is an error in the command line itself: exit code 2.
@@ -139,6 +149,7 @@ func run(ctx context.Context, args []string, cfg Config) error {
 
 	req, err := parse(md.Input(), rest[2:])
 	if err == nil {
+		fromEnv(req, cfg.getenv())
 		err = check(req, label)
 	}
 	if err != nil {

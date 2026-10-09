@@ -1,11 +1,12 @@
 // The wish's head, around its title: its description, a few lines the person edits in place (a click, saved when the
-// field is left), and the Lead button, split: Lead resumes the recorded lead, the arrow beside it lists the agents
-// found on this machine, to start a lead of another one from the brief.
-import { Check, ChevronDown, Terminal } from "lucide-react";
+// field is left), the Lead button, split: Lead resumes the recorded lead, the arrow beside it lists the agents found on
+// this machine, to start a lead of another one from the brief; and where Djinn last pushed its integration branches.
+import { Check, ChevronDown, CloudUpload, Terminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { type Lead, Provider } from "../gen/ts/plan/v1/plan_pb";
+import { type Lead, Provider, type WishPush } from "../gen/ts/plan/v1/plan_pb";
 import type { Provider as Agent } from "../gen/ts/ui/v1/ui_pb";
+import { when } from "./data/format";
 import { t } from "./i18n";
 
 // The agents a lead runs, in the order the menu lists them, by their identifier in UiService.GetEnvironment.
@@ -200,5 +201,50 @@ export function LeadMenu({
         );
       })}
     </div>
+  );
+}
+
+// LastPushes says, for each project of the wish, when Djinn last pushed its integration branch and how many commits it
+// brought, their titles on hover; and a push the remote refused, until one passes. Names the project when the wish has
+// several.
+export function LastPushes({
+  pushes,
+  projects,
+}: {
+  pushes: WishPush[];
+  projects: { id: string; name: string }[];
+}) {
+  return (
+    <>
+      {pushes.map((push) => {
+        const last = push.last;
+        if (!last && !push.refused) return null;
+        const project =
+          projects.length > 1
+            ? projects.find((p) => p.id === push.projectId)?.name
+            : undefined;
+        return (
+          <span key={push.projectId} className="wish-push">
+            <CloudUpload size={13} />
+            {project && <b>{project}</b>}
+            {last && (
+              <span title={last.commits.join("\n")}>
+                {t("wish.pushed", {
+                  count: last.count,
+                  branch: last.branch,
+                  remote: last.remote,
+                  when: when(last.pushTime),
+                })}
+              </span>
+            )}
+            {push.refused && (
+              <span className="wish-push-refused" title={push.refused}>
+                {t("wish.push_refused")}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </>
   );
 }
