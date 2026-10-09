@@ -293,6 +293,7 @@
   "task.budget": "budget {cost}",
   "task.closed_by_lead": "Fermée par le lead, {when}",
   "task.closed_by_you": "Fermée par vous, {when}",
+  "task.continued_in": "continuée dans",
   "task.done_note": "Pourquoi, en quelques mots (facultatif)",
   "task.ended": "fini le {when}",
   "task.events.one": "{count} événement",

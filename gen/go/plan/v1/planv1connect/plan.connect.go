@@ -134,6 +134,8 @@ const (
 	TaskServiceDeleteProcedure = "/plan.v1.TaskService/Delete"
 	// TaskServiceDoneProcedure is the fully-qualified name of the TaskService's Done RPC.
 	TaskServiceDoneProcedure = "/plan.v1.TaskService/Done"
+	// TaskServiceContinueProcedure is the fully-qualified name of the TaskService's Continue RPC.
+	TaskServiceContinueProcedure = "/plan.v1.TaskService/Continue"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
 )
@@ -1428,6 +1430,11 @@ type TaskServiceClient interface {
 	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
 	// done already is refused.
 	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
+	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
+	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
+	// Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
+	// task from its context, fork it instead (djinn task spawn --fork).
+	Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
@@ -1506,6 +1513,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Done")),
 			connect.WithClientOptions(opts...),
 		),
+		_continue: connect.NewClient[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse](
+			httpClient,
+			baseURL+TaskServiceContinueProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Continue")),
+			connect.WithClientOptions(opts...),
+		),
 		send: connect.NewClient[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse](
 			httpClient,
 			baseURL+TaskServiceSendProcedure,
@@ -1517,17 +1530,18 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // taskServiceClient implements TaskServiceClient.
 type taskServiceClient struct {
-	spawn  *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
-	list   *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
-	get    *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
-	stop   *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
-	pause  *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
-	resume *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
-	watch  *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
-	clean  *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
-	delete *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
-	done   *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
-	send   *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
+	spawn     *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
+	list      *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
+	get       *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
+	stop      *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
+	pause     *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
+	resume    *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
+	watch     *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
+	clean     *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
+	delete    *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
+	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
+	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
+	send      *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -1580,6 +1594,11 @@ func (c *taskServiceClient) Done(ctx context.Context, req *connect.Request[v1.Ta
 	return c.done.CallUnary(ctx, req)
 }
 
+// Continue calls plan.v1.TaskService.Continue.
+func (c *taskServiceClient) Continue(ctx context.Context, req *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error) {
+	return c._continue.CallUnary(ctx, req)
+}
+
 // Send calls plan.v1.TaskService.Send.
 func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
 	return c.send.CallUnary(ctx, req)
@@ -1615,6 +1634,11 @@ type TaskServiceHandler interface {
 	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
 	// done already is refused.
 	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
+	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
+	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
+	// Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
+	// task from its context, fork it instead (djinn task spawn --fork).
+	Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
@@ -1689,6 +1713,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Done")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceContinueHandler := connect.NewUnaryHandler(
+		TaskServiceContinueProcedure,
+		svc.Continue,
+		connect.WithSchema(taskServiceMethods.ByName("Continue")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceSendHandler := connect.NewUnaryHandler(
 		TaskServiceSendProcedure,
 		svc.Send,
@@ -1717,6 +1747,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceDeleteHandler.ServeHTTP(w, r)
 		case TaskServiceDoneProcedure:
 			taskServiceDoneHandler.ServeHTTP(w, r)
+		case TaskServiceContinueProcedure:
+			taskServiceContinueHandler.ServeHTTP(w, r)
 		case TaskServiceSendProcedure:
 			taskServiceSendHandler.ServeHTTP(w, r)
 		default:
@@ -1766,6 +1798,10 @@ func (UnimplementedTaskServiceHandler) Delete(context.Context, *connect.Request[
 
 func (UnimplementedTaskServiceHandler) Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Done is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Continue is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {

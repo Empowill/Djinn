@@ -93,6 +93,7 @@ func TestBrief(t *testing.T) {
 		"`djinn wish sync <wish>`", "republish that file as it is, in one call",
 		"**W3** Reopen the leads: resuming by itself, the account's session limit, resets at 07:20",
 		"**W4** Pause a worker: resumed as W5",
+		"**To follow up on a task, continue it**", "Fork it only to start a different task from its context",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the brief lacks %q:\n%s", want, text)

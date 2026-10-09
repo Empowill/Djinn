@@ -296,8 +296,12 @@ message Task {
   // The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an
   // agent.
   string last_line = 30;
-  // Who marked the task done by hand, when and why (TaskService.Done). Empty for a task its worker finished.
+  // Who marked the task done by hand, when and why (TaskService.Done), or which fork continues it. Empty for a task
+  // its worker finished.
   Closure closed = 31;
+  // The task was continued (TaskService.Continue): its next worker resumes its own session on the last prompt of its
+  // events, instead of being told Djinn restarted. Cleared as that worker starts.
+  bool continuing = 32;
 }
 
 // Closure records a task marked done by hand: its worker's own done records none.
@@ -308,9 +312,12 @@ message Closure {
   google.protobuf.Timestamp create_time = 2;
   // Why, in a few words; may be empty.
   string note = 3;
+  // The task that continues this one, by code (W57): a fork of its session, spawned once it was cut short, failed or
+  // stopped. The scheduler follows it: a task that depends on this one waits for the fork.
+  string continued_in = 4;
 }
 
-// Closer says who marked a task done by hand.
+// Closer says who marked a task done by hand, or continued it.
 enum Closer {
   // Not set.
   CLOSER_UNSPECIFIED = 0;
@@ -1576,6 +1583,14 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
+  // session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
+  // Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
+  // task from its context, fork it instead (djinn task spawn --fork).
+  rpc Continue(TaskServiceContinueRequest) returns (TaskServiceContinueResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Send a message to a running worker: an instruction added while it works. The message is an event of the task,
   // and a "received" event follows once the worker says something after it.
   rpc Send(TaskServiceSendRequest) returns (TaskServiceSendResponse) {
@@ -1786,5 +1801,25 @@ message TaskServiceDoneRequest {
 
 message TaskServiceDoneResponse {
   // The task, done.
+  Task task = 1;
+}
+
+message TaskServiceContinueRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What to ask its worker now, on its session.
+  string prompt = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 200000
+  ];
+  // Who continues it; by default the lead. The window says developer.
+  Closer by = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+message TaskServiceContinueResponse {
+  // The task, planned again: running, or waiting with its reason.
   Task task = 1;
 }

@@ -80,7 +80,7 @@ func TestResumingFirst(t *testing.T) {
 }
 
 // TestDependencyResumes: a dependency Djinn resumes, interrupted or resuming, holds the task until it ends; one
-// resumed as a fork is its fork. A dependency failed (resumed maxResumes times among them) or stopped by a person
+// resumed as a fork, or closed as continued in one, is its fork. A dependency failed (resumed maxResumes times among them) or stopped by a person
 // fails it.
 func TestDependencyResumes(t *testing.T) {
 	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE}
@@ -106,6 +106,17 @@ func TestDependencyResumes(t *testing.T) {
 		{"forked, failed", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED}},
 			"", "its dependency W1, resumed as W5, ended failed"},
+		{"closed as continued, running", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			Closed: &planv1.Closure{ContinuedIn: "W5"}},
+			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}},
+			"waits for W5 (running)", ""},
+		{"closed as continued, failed", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			Closed: &planv1.Closure{ContinuedIn: "W5"}},
+			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED}},
+			"", "its dependency W1, resumed as W5, ended failed"},
+		{"closed by hand, a fork done meanwhile", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			Closed: &planv1.Closure{Note: "merged"}},
+			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}}, "", ""},
 		{"forked in another wish", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
 			{Id: "W5", WishId: "other", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE}},
 			"waits for W1 (interrupted)", ""},

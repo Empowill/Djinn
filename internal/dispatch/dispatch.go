@@ -210,12 +210,15 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 }
 
 // forkedAs is the task that took over d: d itself, or, when d was cut short and resumed as a fork of its session
-// (render.ForkedAs), that fork, followed to the last one.
+// (render.ForkedAs), or closed as continued in a fork (Closure.continued_in), that fork, followed to the last one.
 func (s *Situation) forkedAs(d *planv1.Task) *planv1.Task {
 	seen := map[string]bool{}
-	for d.GetStatus() == planv1.TaskStatus_TASK_STATUS_INTERRUPTED && !seen[d.GetId()] {
+	for !seen[d.GetId()] {
 		seen[d.GetId()] = true
-		code := render.ForkedAs(d, s.tasks)
+		code := d.GetClosed().GetContinuedIn()
+		if d.GetStatus() == planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+			code = render.ForkedAs(d, s.tasks)
+		}
 		i := slices.IndexFunc(s.tasks, func(o *planv1.Task) bool { return o.GetWishId() == d.GetWishId() && o.GetCode() == code })
 		if code == "" || i < 0 {
 			break

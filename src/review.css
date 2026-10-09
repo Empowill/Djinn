@@ -649,6 +649,14 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
 .review .wish-task-closed {
   color: var(--st-done);
 }
+.review .wish-task-closed .task-link {
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+}
+.review .wish-task-closed .task-link:hover {
+  color: var(--accent);
+}
 .wish-task-done {
   align-items: center;
 }

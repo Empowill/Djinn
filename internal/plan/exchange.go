@@ -515,7 +515,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			t.ProjectId = local[t.GetProjectId()]
 			t.Worktree, t.SessionId, t.ForkSession = "", "", ""
 			// Planned on the other machine: this one's scheduler never starts it by itself.
-			t.Scheduled = false
+			t.Scheduled, t.Continuing = false, false
 			if s := t.GetStatus(); s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED ||
 				s == planv1.TaskStatus_TASK_STATUS_RESUMING {
 				// Its worker runs on the machine that exported it, not here.

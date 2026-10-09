@@ -51,6 +51,10 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- **Workers start from a short prompt.** Say what to do, in which project, and how to check it. " +
 	"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
 	"again at every turn, so use them only when the whole context is needed.\n" +
+	"- **To follow up on a task, continue it**: `djinn task continue <task> --prompt \"…\"` gives a task that " +
+	"ended, failed, stopped or was cut short a new turn of its own session, in its worktree, as the same task. " +
+	"Fork it only to start a different task from its context: a fork of a task cut short closes it, " +
+	"\"continued in\" the fork.\n" +
 	"- **What Djinn does not compute is a block**: a decision taken outside a question, an analysis, a hand-off.\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
@@ -64,8 +68,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\"` (`--project-id`, `--depends-on W1`, `--later`, " +
 	"`--fork W1`, `--from-lead`); `djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
 	"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
-	"`djinn task stop <task>`; `djinn task done <task> --note \"…\"` closes a task no worker runs (planned, " +
-	"cut short, failed, stopped, imported) once its work is done elsewhere.\n" +
+	"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task done <task> --note " +
+	"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done " +
+	"elsewhere.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\"`; `djinn block list <wish>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for your " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, after you investigated.\n" +

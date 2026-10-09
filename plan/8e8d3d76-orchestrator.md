@@ -59,6 +59,11 @@ status: in-progress
   (`TestDependencyResumes` in `internal/dispatch`, `TestGo` in `internal/dispatch/bench`, `TestReady` in
   `internal/plan`, `TestPauseHoldingGate` in `internal/harness`, `TestOneAtATime` and `TestWaiting` in
   `internal/gate`)
+- [x] A task is continued in place, never copied: `djinn task continue` gives a task no worker runs a new turn of its
+  own session, in its worktree, through the scheduler; a fork of a task cut short closes it, continued in the fork.
+  (`TestContinue`, `TestContinueWaitsForASlot`, `TestContinueRefused`, `TestForkClosesParent`, `TestContinueCommand`
+  in `internal/harness`; `TestDependencyResumes` in `internal/dispatch`; `e2e/task-continue.spec.ts`: an interrupted
+  task continued from the command line shows once in the Tasks tab)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -157,6 +162,19 @@ status: in-progress
 - **Nor is a worker that waits for a gate** (W60's question, A): paused, it would get the gate in its turn and hold
   it frozen. The pause is refused, saying "W1 waits for the gate test: wait or stop it" (`gate.Gates.Waiting`, given
   with `Held`). A worker that holds one gate and waits for another is told it holds.
+- **A follow-up continues the task, it does not copy it** (W83: every resume through a fork left a duplicate):
+  `djinn task continue <task> --prompt "…"` (`TaskService.Continue`) makes a done, failed, stopped or interrupted task
+  `resuming` again, `Task.continuing` set: the scheduler starts it like any task (slots, dependencies, pressure, the
+  resumed ones first), on its own session with the new prompt, in its worktree and branch. Its events say "continued
+  by the lead, was …: <the prompt's first line>", the prompt, then "continued: started …, resuming its session". Its
+  usage sums, its automatic resumes count again from none. Refused while it runs, waits for its edit question or has
+  not started; when it continues in a fork; when its worktree is gone (fork it instead); for Antigravity and a watcher,
+  which resume no session, a task without session, one imported, one whose budget is spent, or one of a granted wish.
+- **A fork of a task cut short continues it**: `djinn task spawn --fork W55` on an interrupted, resuming, failed or
+  stopped task closes it in the same transaction, done, `Task.closed` with the lead, the note "continued in W57" and
+  `Closure.continued_in`, which the scheduler follows: a task that depends on W55 waits for W57. The Tasks tab shows
+  it finished, with W57 as a link to its card. A fork of a running or done task leaves it as it is. The lead's brief
+  says it: to follow up on a task, continue it; fork only to start a different task from its context.
 - **Not built yet**: per-worker measures (gopsutil), cgroups (T17).
 
 ## Open questions

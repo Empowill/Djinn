@@ -404,6 +404,37 @@ test("a task no worker runs can be marked done; a task closed by hand says who c
   assert.match(byLead, /wish-task-closed">Closed by the lead, [^<]+<\/p>/);
 });
 
+test("a task a fork continues links to its fork; a code no card holds stays text", () => {
+  const card = (codes) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Trim the wick",
+          status: s.TaskStatus.DONE,
+          closed: {
+            actor: s.Closer.LEAD,
+            createTime: { seconds: 1760000000n, nanos: 0 },
+            note: "continued in W2",
+            continuedIn: "W2",
+          },
+        },
+        codes,
+        onStop() {},
+        async onSend() {},
+      }),
+    );
+  assert.match(
+    card(new Map([["t2", "W2"]])),
+    /Closed by the lead, [^<]+: continued in <button type="button" class="text-button agent-code task-link">W2<\/button><\/p>/,
+  );
+  assert.match(
+    card(new Map()),
+    /: continued in <span class="agent-code">W2<\/span><\/p>/,
+  );
+});
+
 test("the Tasks tab lists what moves or waits by status, then the finished tasks, the latest first", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const tasks = [

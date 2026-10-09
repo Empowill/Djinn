@@ -141,6 +141,11 @@ To use Djinn, see the [README](README.md). To work on it:
 - `djinn task done <task-id> --note "…"` closes a task no worker runs (planned, cut short, failed, stopped,
   imported) once its work is done, with who closed it and why; "Mark done" on its card does it in the window.
   `djinn task delete` stays for a task made by mistake.
+- `djinn task continue <task-id> --prompt "…"` gives a task no worker runs (done, failed, stopped, cut short) a new
+  turn of its own session, in its own worktree and branch: the same task, back through the scheduler, its usage
+  summed. Refused while it runs, once its worktree is gone, or for an agent that cannot resume a session (Antigravity,
+  a watcher). `djinn task spawn --fork` starts another task from a task's context; forking a task cut short, failed or
+  stopped closes it, "continued in" the fork.
 - `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
   `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
 - `djinn gate run <name> -- <command>` runs a command under a gate and records what it cost in its project (CPU

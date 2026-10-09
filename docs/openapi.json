@@ -475,7 +475,7 @@
         "type": "string"
       },
       "plan.v1.Closer": {
-        "description": "Closer says who marked a task done by hand.",
+        "description": "Closer says who marked a task done by hand, or continued it.",
         "enum": [
           "CLOSER_UNSPECIFIED",
           "CLOSER_LEAD",
@@ -489,6 +489,10 @@
           "actor": {
             "$ref": "#/components/schemas/plan.v1.Closer",
             "description": "Who closed it."
+          },
+          "continuedIn": {
+            "description": "The task that continues this one, by code (W57): a fork of its session, spawned once it was cut short, failed or stopped. The scheduler follows it: a task that depends on this one waits for the fork.",
+            "type": "string"
           },
           "createTime": {
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
@@ -1332,11 +1336,15 @@
           },
           "closed": {
             "$ref": "#/components/schemas/plan.v1.Closure",
-            "description": "Who marked the task done by hand, when and why (TaskService.Done). Empty for a task its worker finished."
+            "description": "Who marked the task done by hand, when and why (TaskService.Done), or which fork continues it. Empty for a task its worker finished."
           },
           "code": {
             "description": "Short code to dictate, like W2, unique within the wish.",
             "type": "string"
+          },
+          "continuing": {
+            "description": "The task was continued (TaskService.Continue): its next worker resumes its own session on the last prompt of its events, instead of being told Djinn restarted. Cleared as that worker starts.",
+            "type": "boolean"
           },
           "createTime": {
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
@@ -1557,6 +1565,38 @@
           "task": {
             "$ref": "#/components/schemas/plan.v1.Task",
             "description": "The task, without its worktree."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TaskServiceContinueRequest": {
+        "properties": {
+          "by": {
+            "$ref": "#/components/schemas/plan.v1.Closer",
+            "description": "Who continues it; by default the lead. The window says developer."
+          },
+          "prompt": {
+            "description": "What to ask its worker now, on its session.",
+            "maxLength": 200000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceContinueResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, planned again: running, or waiting with its reason."
           }
         },
         "type": "object"
@@ -3198,6 +3238,44 @@
           }
         },
         "summary": "djinn task clean",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Continue": {
+      "post": {
+        "description": "Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task. Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another task from its context, fork it instead (djinn task spawn --fork).",
+        "operationId": "TaskService_Continue",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceContinueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceContinueResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task continue",
         "tags": [
           "TaskService"
         ]
