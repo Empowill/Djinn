@@ -3,10 +3,13 @@
 //
 //	icons gen                        writes build/icon.ico (Windows), build/icon.icns (macOS) and build/icon-256.png
 //	                                 (the window's on Linux: GTK 3 drops a window icon of 512 px or more)
-//	icons desktop --exec <djinn>     on Linux, puts the icon and a .desktop file in the user's folders
+//	icons desktop --exec <djinn>     on Linux, puts the icon and a .desktop file in the user's folders, the handler of
+//	                                 djinn:// links; on Windows, registers the links (link.Register)
 //
 // desktop needs no sudo: it writes $XDG_DATA_HOME (~/.local/share by default), icons/hicolor/<size>/apps/djinn.png
-// and applications/djinn.desktop. Elsewhere it does nothing: macOS and Windows take the icon from the build.
+// and applications/djinn.desktop, then makes that entry the user's handler of djinn:// links with xdg-mime. On
+// Windows it writes the handler of the links in the user's registry, HKEY_CURRENT_USER. macOS takes the icon and the
+// links from the build (Djinn.app's Info.plist).
 //
 // build/icon.png is build/icon.svg, drawn by hand, rendered at 1024 px; the interface shows the SVG itself
 // (src/frame.tsx). After a change to the SVG, render it with any SVG renderer, then run icons gen; with Inkscape
@@ -30,6 +33,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/empowill/djinn/internal/link"
 )
 
 // source is the drawing, relative to the root of the module.
@@ -65,15 +70,28 @@ func main() {
 		if *exe == "" {
 			usage()
 		}
-		if runtime.GOOS != "linux" {
-			return // macOS and Windows: the icon comes with the build.
-		}
-		var dir string
-		if dir, err = dataHome(); err == nil {
-			err = desktop(".", dir, *exe)
-		}
-		if err == nil {
-			fmt.Printf("Djinn's icon and menu entry are in %s.\n", dir)
+		switch runtime.GOOS {
+		case "windows":
+			// The icon comes with the build; the links are the user's registry's.
+			var abs string
+			if abs, err = filepath.Abs(*exe); err == nil {
+				err = link.Register(abs)
+			}
+			if err == nil {
+				fmt.Printf("djinn:// links open %s.\n", abs)
+			}
+		case "linux":
+			var dir string
+			if dir, err = dataHome(); err == nil {
+				err = desktop(".", dir, *exe)
+			}
+			if err == nil {
+				fmt.Printf("Djinn's icon and menu entry are in %s.\n", dir)
+				if err := handleLinks(filepath.Join(dir, "applications"), os.Environ()); err != nil {
+					fmt.Fprintf(os.Stderr, "icons: djinn:// links will not open Djinn: %v\n", err)
+				}
+				err = nil
+			}
 		}
 	default:
 		usage()
@@ -169,10 +187,38 @@ func desktop(root, dir, exe string) error {
 	if err := os.MkdirAll(apps, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(apps, "djinn.desktop"), []byte(entry(exe)), 0o644)
+	return os.WriteFile(filepath.Join(apps, entryFile), []byte(entry(exe)), 0o644)
 }
 
-// entry is the menu entry that starts exe. StartupWMClass is the window's WM_CLASS, and its Wayland app_id: the
+// handleLinks makes the entry djinn.desktop the user's handler of djinn:// links, as env says where the user's folders
+// are: xdg-mime writes it in the user's mimeapps.list (no sudo), and update-desktop-database refreshes the cache of
+// the types the entries in apps take, when it is installed.
+func handleLinks(apps string, env []string) error {
+	xdgMime, err := exec.LookPath("xdg-mime")
+	if err != nil {
+		return fmt.Errorf("xdg-mime (xdg-utils) is not installed: %w", err)
+	}
+	if tool, err := exec.LookPath("update-desktop-database"); err == nil {
+		cmd := exec.Command(tool, "--quiet", apps)
+		cmd.Env = env
+		_ = cmd.Run()
+	}
+	cmd := exec.Command(xdgMime, "default", entryFile, linkType)
+	cmd.Env = env
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("xdg-mime default: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// entryFile is the name of Djinn's menu entry, in the applications folder.
+const entryFile = "djinn.desktop"
+
+// linkType is the type of the djinn:// links for the desktop: the entry that takes it opens them.
+const linkType = "x-scheme-handler/" + link.Scheme
+
+// entry is the menu entry that starts exe, and that the desktop runs for a djinn:// link: djinn open <link>, which
+// hands it to the running Djinn; from the menu, with no link, djinn open is djinn up. StartupWMClass is the window's WM_CLASS, and its Wayland app_id: the
 // program name the window sets (Linux.ProgramName in cmd/djinn/window.go). The dock matches the window to the entry
 // by it, and shows the entry's icon.
 func entry(exe string) string {
@@ -180,11 +226,12 @@ func entry(exe string) string {
 		"Type=Application\n" +
 		"Name=Djinn\n" +
 		"Comment=A wisp of smoke to work your will\n" +
-		"Exec=" + execArg(exe) + " up\n" +
+		"Exec=" + execArg(exe) + " open %u\n" +
 		"Icon=djinn\n" +
 		"Terminal=false\n" +
 		"Categories=Development;\n" +
-		"StartupWMClass=djinn\n"
+		"StartupWMClass=djinn\n" +
+		"MimeType=" + linkType + ";\n"
 }
 
 // execArg quotes a path for the Exec key, as the Desktop Entry Specification says: in double quotes when it holds a

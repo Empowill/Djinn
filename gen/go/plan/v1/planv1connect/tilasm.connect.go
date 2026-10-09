@@ -39,6 +39,8 @@ const (
 	TilasmServiceListProcedure = "/plan.v1.TilasmService/List"
 	// TilasmServiceGetProcedure is the fully-qualified name of the TilasmService's Get RPC.
 	TilasmServiceGetProcedure = "/plan.v1.TilasmService/Get"
+	// TilasmServiceOpenProcedure is the fully-qualified name of the TilasmService's Open RPC.
+	TilasmServiceOpenProcedure = "/plan.v1.TilasmService/Open"
 	// TilasmServiceHistoryProcedure is the fully-qualified name of the TilasmService's History RPC.
 	TilasmServiceHistoryProcedure = "/plan.v1.TilasmService/History"
 	// TilasmServiceRestoreProcedure is the fully-qualified name of the TilasmService's Restore RPC.
@@ -60,6 +62,9 @@ type TilasmServiceClient interface {
 	List(context.Context, *connect.Request[v1.TilasmServiceListRequest]) (*connect.Response[v1.TilasmServiceListResponse], error)
 	// Read a tilasm: its manifest, the text of its index.html without the tags, and the folder of its files.
 	Get(context.Context, *connect.Request[v1.TilasmServiceGetRequest]) (*connect.Response[v1.TilasmServiceGetResponse], error)
+	// Show a tilasm in the window, in its wish's Tilasms tab, starting Djinn when it does not run: what its link
+	// djinn://tilasm/<id> does from anywhere.
+	Open(context.Context, *connect.Request[v1.TilasmServiceOpenRequest]) (*connect.Response[v1.TilasmServiceOpenResponse], error)
 	// The versions of a tilasm, the first first, with their folders.
 	History(context.Context, *connect.Request[v1.TilasmServiceHistoryRequest]) (*connect.Response[v1.TilasmServiceHistoryResponse], error)
 	// Restore an earlier version: it comes back as a new version, and the others stay.
@@ -104,6 +109,12 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		open: connect.NewClient[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse](
+			httpClient,
+			baseURL+TilasmServiceOpenProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Open")),
+			connect.WithClientOptions(opts...),
+		),
 		history: connect.NewClient[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse](
 			httpClient,
 			baseURL+TilasmServiceHistoryProcedure,
@@ -143,6 +154,7 @@ type tilasmServiceClient struct {
 	put     *connect.Client[v1.TilasmServicePutRequest, v1.TilasmServicePutResponse]
 	list    *connect.Client[v1.TilasmServiceListRequest, v1.TilasmServiceListResponse]
 	get     *connect.Client[v1.TilasmServiceGetRequest, v1.TilasmServiceGetResponse]
+	open    *connect.Client[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse]
 	history *connect.Client[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse]
 	restore *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
 	export  *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
@@ -163,6 +175,11 @@ func (c *tilasmServiceClient) List(ctx context.Context, req *connect.Request[v1.
 // Get calls plan.v1.TilasmService.Get.
 func (c *tilasmServiceClient) Get(ctx context.Context, req *connect.Request[v1.TilasmServiceGetRequest]) (*connect.Response[v1.TilasmServiceGetResponse], error) {
 	return c.get.CallUnary(ctx, req)
+}
+
+// Open calls plan.v1.TilasmService.Open.
+func (c *tilasmServiceClient) Open(ctx context.Context, req *connect.Request[v1.TilasmServiceOpenRequest]) (*connect.Response[v1.TilasmServiceOpenResponse], error) {
+	return c.open.CallUnary(ctx, req)
 }
 
 // History calls plan.v1.TilasmService.History.
@@ -199,6 +216,9 @@ type TilasmServiceHandler interface {
 	List(context.Context, *connect.Request[v1.TilasmServiceListRequest]) (*connect.Response[v1.TilasmServiceListResponse], error)
 	// Read a tilasm: its manifest, the text of its index.html without the tags, and the folder of its files.
 	Get(context.Context, *connect.Request[v1.TilasmServiceGetRequest]) (*connect.Response[v1.TilasmServiceGetResponse], error)
+	// Show a tilasm in the window, in its wish's Tilasms tab, starting Djinn when it does not run: what its link
+	// djinn://tilasm/<id> does from anywhere.
+	Open(context.Context, *connect.Request[v1.TilasmServiceOpenRequest]) (*connect.Response[v1.TilasmServiceOpenResponse], error)
 	// The versions of a tilasm, the first first, with their folders.
 	History(context.Context, *connect.Request[v1.TilasmServiceHistoryRequest]) (*connect.Response[v1.TilasmServiceHistoryResponse], error)
 	// Restore an earlier version: it comes back as a new version, and the others stay.
@@ -237,6 +257,12 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		svc.Get,
 		connect.WithSchema(tilasmServiceMethods.ByName("Get")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceOpenHandler := connect.NewUnaryHandler(
+		TilasmServiceOpenProcedure,
+		svc.Open,
+		connect.WithSchema(tilasmServiceMethods.ByName("Open")),
 		connect.WithHandlerOptions(opts...),
 	)
 	tilasmServiceHistoryHandler := connect.NewUnaryHandler(
@@ -278,6 +304,8 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceListHandler.ServeHTTP(w, r)
 		case TilasmServiceGetProcedure:
 			tilasmServiceGetHandler.ServeHTTP(w, r)
+		case TilasmServiceOpenProcedure:
+			tilasmServiceOpenHandler.ServeHTTP(w, r)
 		case TilasmServiceHistoryProcedure:
 			tilasmServiceHistoryHandler.ServeHTTP(w, r)
 		case TilasmServiceRestoreProcedure:
@@ -307,6 +335,10 @@ func (UnimplementedTilasmServiceHandler) List(context.Context, *connect.Request[
 
 func (UnimplementedTilasmServiceHandler) Get(context.Context, *connect.Request[v1.TilasmServiceGetRequest]) (*connect.Response[v1.TilasmServiceGetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Get is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Open(context.Context, *connect.Request[v1.TilasmServiceOpenRequest]) (*connect.Response[v1.TilasmServiceOpenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Open is not implemented"))
 }
 
 func (UnimplementedTilasmServiceHandler) History(context.Context, *connect.Request[v1.TilasmServiceHistoryRequest]) (*connect.Response[v1.TilasmServiceHistoryResponse], error) {

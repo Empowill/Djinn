@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"github.com/empowill/djinn/internal/demo"
 	"github.com/empowill/djinn/internal/gate"
 	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/link"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/render"
@@ -176,6 +178,9 @@ func runUp(args []string) (restart bool, err error) {
 	if err != nil {
 		return false, err
 	}
+	// A djinn:// link shows the tilasm's wish, or the wish.
+	uiSvc.Linked = func(ctx context.Context, l link.Link) (string, error) { return plan.Linked(ctx, db, l) }
+	registerLinks(os.Stderr)
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
 	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
 	// Then the lead of the first active wish, unless a lead came back already.
@@ -215,7 +220,22 @@ func runUp(args []string) (restart bool, err error) {
 	// The pages of the synced wishes follow every change, until djinn up stops.
 	pages := plan.NewPages(db, home, version)
 	go pages.Run(ctx)
-	svc := services(db, home, workers, terminals, uiSvc, pages)
+	// The http server's origin and token, once it listens: a tilasm's local address, for a browser or an agent.
+	var httpOrigin, httpToken string
+	tilasmURL := func(id string) string {
+		if httpToken == "" {
+			return ""
+		}
+		return server.TilasmAddress(httpOrigin, httpToken, id)
+	}
+	showTilasm := func(wishID, tilasmID string) bool {
+		if uiSvc.Raise != nil {
+			uiSvc.Raise()
+		}
+		uiSvc.PresentTilasm(wishID, tilasmID)
+		return uiSvc.Window
+	}
+	svc := services(db, home, workers, terminals, uiSvc, pages, plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL))
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
@@ -240,6 +260,7 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		origin := "http://" + ln.Addr().String()
 		token := server.NewToken()
+		httpOrigin, httpToken = origin, token // Before the server serves: its handlers read them.
 		url = origin + "/?token=" + token
 		addr = url
 		h = server.Guard(h, token, origin)
@@ -261,15 +282,21 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	go notices.Run(ctx)
 
+	// A link macOS gives the app, clicked anywhere: the window shows it, or says it does not know it.
+	openLinks := func(raw string) {
+		if _, err := uiSvc.OpenLink(ctx, connect.NewRequest(&uiv1.UiServiceOpenLinkRequest{Url: raw})); err != nil {
+			log.Printf("djinn: open %s: %v", raw, err)
+		}
+	}
 	switch {
 	case *browser:
 		fmt.Println("djinn: open", url)
 		err = <-served
 	default:
 		if transport == server.Wails {
-			err = openWindow(ctx, "", h, raise, notices, shortcuts)
+			err = openWindow(ctx, "", h, raise, notices, shortcuts, openLinks)
 		} else {
-			err = openWindow(ctx, url, nil, raise, notices, shortcuts)
+			err = openWindow(ctx, url, nil, raise, notices, shortcuts, openLinks)
 		}
 		stop() // The window is closed: stop the server too.
 		err = errors.Join(err, <-served)
@@ -283,13 +310,14 @@ func runUp(args []string) (restart bool, err error) {
 // folder home, the tasks' on the harness, and the terminals'.
 func services(
 	db *store.Store, home string, h *harness.Harness, terminals *terminal.Manager, uiSvc *ui.Service, pages *plan.Pages,
+	more ...plan.Option,
 ) map[string]http.Handler {
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
 	language := render.SystemLanguage()
-	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}), plan.WithPages(pages),
-		plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home),
-		plan.WithWorkers(h))
+	out := plan.Handlers(db, append([]plan.Option{plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}),
+		plan.WithPages(pages), plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home),
+		plan.WithWorkers(h)}, more...)...)
 	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a
 	// template.
 	wishes := &plan.Wishes{Store: db, Leads: leads{terminals, uiSvc}, Language: language, Workers: h}
@@ -372,6 +400,25 @@ func showRunning(addr string, flags *flag.FlagSet) error {
 	}
 	fmt.Println("djinn is already running: open " + addr + ignored)
 	return nil
+}
+
+// registerLinks makes this djinn the handler of djinn:// links for the user, on Windows, when there is none: a release
+// installed by hand has no installer to do it. A development build never does: it must not take the links of the
+// Djinn you use. Elsewhere the install registers them (tools/icons, tools/macapp).
+func registerLinks(w io.Writer) {
+	if ui.Develop {
+		return
+	}
+	if ok, err := link.Registered(); err != nil || ok {
+		return
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		err = link.Register(exe)
+	}
+	if err != nil {
+		fmt.Fprintf(w, "djinn: djinn:// links will not open Djinn: %v\n", err)
+	}
 }
 
 // workerScopes are the systemd scopes the workers run in, one each, their CPU capped at cpu percent of a core and

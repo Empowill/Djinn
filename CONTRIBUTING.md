@@ -172,6 +172,14 @@ To use Djinn, see the [README](README.md). To work on it:
   `/tilasm/<id>/`, with a content security policy of its own: its scripts and files run, the network and Djinn stay
   out of reach. The wish's *Tilasms* tab lists them, opens one in a sandboxed frame, searches their titles and text,
   restores a version and exports one; a folder or a `.zip` dropped on it becomes a tilasm.
+- A tilasm's link, `djinn://tilasm/<id>` (`djinn tilasm get` gives it, and its local http address while Djinn serves
+  http: `--browser`, Windows), opens the app on it from a browser, a chat, a terminal or a Markdown file; so does
+  `djinn://wish/<id>`. The system runs `djinn open <link>`, which hands it to the running Djinn, starting it when none
+  runs; the window shows the wish's *Tilasms* tab on that tilasm, or says it does not know the link. `djinn tilasm
+  open L01` does the same. Inside the app, such a link in a block, a question, a decision or the brief opens in place.
+  The scheme is registered without sudo: on Linux `go tool task install` adds it to the menu entry
+  (`MimeType=x-scheme-handler/djinn`, `xdg-mime default`); on macOS `Djinn.app` declares it (`CFBundleURLTypes`);
+  on Windows the install, or else `djinn up`, writes it in the user's registry (`HKCU\Software\Classes\djinn`).
 - `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
   `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
 - `djinn gate run <name> -- <command>` runs a command under a gate and records what it cost in its project (CPU

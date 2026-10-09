@@ -59,7 +59,7 @@ func plistDict(t *testing.T, data []byte) (keys []string, values map[string]stri
 		switch v.XMLName.Local {
 		case "string":
 			values[k.Text] = v.Text
-		case "true", "false":
+		case "true", "false", "array":
 			values[k.Text] = v.XMLName.Local
 		default:
 			t.Fatalf("%s holds a <%s>", k.Text, v.XMLName.Local)
@@ -163,6 +163,32 @@ func TestBundleLayout(t *testing.T) {
 	}
 	if !slices.IsSorted(keys) {
 		t.Errorf("Info.plist keys are not sorted: %v", keys)
+	}
+	// djinn:// links open the app: one URL type, the scheme djinn.
+	var types struct {
+		Dicts []struct {
+			Items []struct {
+				XMLName xml.Name
+				Text    string   `xml:",chardata"`
+				Strings []string `xml:"string"`
+			} `xml:",any"`
+		} `xml:"dict>array>dict"`
+	}
+	if err := xml.Unmarshal(read("Contents/Info.plist"), &types); err != nil || plist["CFBundleURLTypes"] != "array" ||
+		len(types.Dicts) != 1 {
+		t.Fatalf("CFBundleURLTypes: %v, %d types", err, len(types.Dicts))
+	}
+	urlType := map[string]string{}
+	items := types.Dicts[0].Items
+	for i := 0; i+1 < len(items); i += 2 {
+		urlType[items[i].Text] = items[i+1].Text
+		if items[i+1].XMLName.Local == "array" {
+			urlType[items[i].Text] = strings.Join(items[i+1].Strings, ",")
+		}
+	}
+	if urlType["CFBundleURLSchemes"] != "djinn" || urlType["CFBundleURLName"] != "io.github.empowill.djinn" ||
+		urlType["CFBundleTypeRole"] != "Viewer" {
+		t.Errorf("CFBundleURLTypes = %v", urlType)
 	}
 	// What Info.plist names is in the bundle.
 	if _, err := os.Stat(filepath.Join(app, "Contents", "MacOS", plist["CFBundleExecutable"])); err != nil {

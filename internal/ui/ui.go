@@ -18,6 +18,7 @@ import (
 
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
+	"github.com/empowill/djinn/internal/link"
 )
 
 // Service implements uiv1connect.UiServiceHandler.
@@ -43,6 +44,9 @@ type Service struct {
 	ChooseFolder func(title, directory string) (string, error)
 	// Shortcuts is the global shortcut that brings the window forward. Nil: SetShortcut is unavailable.
 	Shortcuts *Shortcuts
+	// Linked is the wish a link shows: the tilasm's, or the wish itself; an error of code NotFound when it is not on
+	// this machine. Nil: OpenLink is unavailable.
+	Linked func(ctx context.Context, l link.Link) (wishID string, err error)
 
 	dialogs sync.Mutex // One folder dialog at a time.
 
@@ -248,10 +252,54 @@ func (s *Service) Show(
 	return connect.NewResponse(&uiv1.UiServiceShowResponse{Window: s.Window}), nil
 }
 
+func (s *Service) OpenLink(
+	ctx context.Context, req *connect.Request[uiv1.UiServiceOpenLinkRequest],
+) (*connect.Response[uiv1.UiServiceOpenLinkResponse], error) {
+	if s.Linked == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn opens no link"))
+	}
+	wishID, l, err := s.linked(ctx, req.Msg.GetUrl())
+	if s.Raise != nil {
+		s.Raise()
+	}
+	if err != nil {
+		// The window says so too: the link came from a click, where nobody reads what djinn open prints.
+		s.present(&uiv1.UiServiceWatchShowResponse{UnknownLink: req.Msg.GetUrl()})
+		return nil, err
+	}
+	res := &uiv1.UiServiceOpenLinkResponse{WishId: wishID, Window: s.Window}
+	if l.Kind == link.Tilasm {
+		res.TilasmId = l.ID
+	}
+	s.present(&uiv1.UiServiceWatchShowResponse{WishId: wishID, TilasmId: res.TilasmId})
+	return connect.NewResponse(res), nil
+}
+
+// linked reads a link and finds the wish it shows.
+func (s *Service) linked(ctx context.Context, raw string) (string, link.Link, error) {
+	l, err := link.Parse(raw)
+	if err != nil {
+		return "", l, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	wishID, err := s.Linked(ctx, l)
+	if err != nil {
+		return "", l, err
+	}
+	return wishID, l, nil
+}
+
+// PresentTilasm asks the windows to show a tilasm, in its wish's Tilasms tab, as Present does a wish.
+func (s *Service) PresentTilasm(wishID, tilasmID string) {
+	s.present(&uiv1.UiServiceWatchShowResponse{WishId: wishID, TilasmId: tilasmID})
+}
+
 // Present asks the windows to show a wish and a terminal: the ones watching now, and one that starts watching
 // within a minute.
 func (s *Service) Present(wishID, terminal string) {
-	msg := &uiv1.UiServiceWatchShowResponse{WishId: wishID, Terminal: terminal}
+	s.present(&uiv1.UiServiceWatchShowResponse{WishId: wishID, Terminal: terminal})
+}
+
+func (s *Service) present(msg *uiv1.UiServiceWatchShowResponse) {
 	s.shows.Lock()
 	defer s.shows.Unlock()
 	s.lastShow, s.lastAt = msg, time.Now()

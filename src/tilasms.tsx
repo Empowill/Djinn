@@ -32,11 +32,14 @@ const latest = (tilasm: Tilasm) => tilasm.versions.at(-1)?.number ?? 0;
 
 export function TilasmsTab({
   wishId,
+  opening,
   tilasms,
   tasks,
   onToast,
 }: {
   wishId: string;
+  // The tilasm a djinn:// link asks to show: opened in the frame, again at each new request.
+  opening?: { tilasmId: string };
   // The wish's tilasms, by code.
   tilasms: readonly Tilasm[];
   tasks: readonly Task[];
@@ -47,7 +50,10 @@ export function TilasmsTab({
   const [search, setSearch] = useState("");
   // What the search found, by the server; null without a search.
   const [found, setFound] = useState<Tilasm[] | null>(null);
-  const [openId, setOpenId] = useState("");
+  const [openId, setOpenId] = useState(opening?.tilasmId ?? "");
+  useEffect(() => {
+    if (opening) setOpenId(opening.tilasmId);
+  }, [opening]);
   const [history, setHistory] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {

@@ -14,6 +14,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/link"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -467,5 +468,72 @@ tasks.</p><ul><li>Task</li><li>Tilasm &amp; its versions</li></ul><table><tr><td
 	want := "Entities\nA wish holds tasks.\nTask\nTilasm & its versions\nid UUID"
 	if title != "Model" || text != want {
 		t.Errorf("htmlText = %q, %q; want %q, %q", title, text, "Model", want)
+	}
+}
+
+func TestTilasmOpenAndLinks(t *testing.T) {
+	ctx := t.Context()
+	var shown []string
+	window := true
+	c := serve(t, WithHome(t.TempDir()),
+		WithShowTilasm(func(wishID, tilasmID string) bool { shown = append(shown, wishID+"/"+tilasmID); return window }),
+		WithTilasmURL(func(id string) string { return "http://127.0.0.1:1234/tilasm/" + id + "/@key/" }))
+	wish := c.wish(t)
+	tilasm := putTilasm(t, c, &planv1.TilasmServicePutRequest{
+		Path: folder(t, map[string]string{"index.html": page("A concept", "drawn")}), Wish: wish,
+	}).GetTilasm()
+
+	// get gives its two links: djinn:// for anywhere, the local http address for a browser or an agent.
+	got := getTilasm(t, c, "L01", 0)
+	if got.GetLink() != "djinn://tilasm/"+tilasm.GetId() || got.GetUrl() != "http://127.0.0.1:1234/tilasm/"+tilasm.GetId()+"/@key/" {
+		t.Fatalf("get: link %q, url %q", got.GetLink(), got.GetUrl())
+	}
+	if l, err := link.Parse(got.GetLink()); err != nil || l.ID != tilasm.GetId() || l.Kind != link.Tilasm {
+		t.Fatalf("the link read back: %v, %v", l, err)
+	}
+
+	// open shows it in its wish's Tilasms tab, by its code or its identifier.
+	for _, r := range []*planv1.TilasmRef{ref("l01"), {Ref: &planv1.TilasmRef_Id{Id: tilasm.GetId()}}} {
+		res, err := c.tilasms.Open(ctx, connect.NewRequest(&planv1.TilasmServiceOpenRequest{Tilasm: r}))
+		if err != nil || res.Msg.GetTilasm().GetId() != tilasm.GetId() || res.Msg.GetLink() != got.GetLink() || !res.Msg.GetWindow() {
+			t.Fatalf("open %v: %v, %v", r, res, err)
+		}
+	}
+	if want := wish + "/" + tilasm.GetId(); len(shown) != 2 || shown[0] != want || shown[1] != want {
+		t.Fatalf("shown %v, want %s twice", shown, want)
+	}
+	if _, err := c.tilasms.Open(ctx, connect.NewRequest(&planv1.TilasmServiceOpenRequest{Tilasm: ref("L09")})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("open L09: %v", err)
+	}
+
+	// A link resolves to the wish it shows; one not on this machine says so.
+	for _, c2 := range []struct {
+		l    link.Link
+		wish string
+		code connect.Code
+	}{
+		{link.Link{Kind: link.Tilasm, ID: tilasm.GetId()}, wish, 0},
+		{link.Link{Kind: link.Wish, ID: wish}, wish, 0},
+		{link.Link{Kind: link.Tilasm, ID: store.NewID()}, "", connect.CodeNotFound},
+		{link.Link{Kind: link.Wish, ID: store.NewID()}, "", connect.CodeNotFound},
+	} {
+		got, err := Linked(ctx, c.store, c2.l)
+		if got != c2.wish || (c2.code == 0) != (err == nil) || err != nil && connect.CodeOf(err) != c2.code {
+			t.Errorf("Linked(%v) = %q, %v", c2.l, got, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), "on this machine") {
+			t.Errorf("Linked(%v): %v, want it to say it is not on this machine", c2.l, err)
+		}
+	}
+
+	// Without a window, open says so; without http, get gives no address.
+	bare := serve(t, WithHome(t.TempDir()))
+	wish = bare.wish(t)
+	putTilasm(t, bare, &planv1.TilasmServicePutRequest{Path: folder(t, map[string]string{"index.html": page("B", "b")}), Wish: wish})
+	if _, err := bare.tilasms.Open(ctx, connect.NewRequest(&planv1.TilasmServiceOpenRequest{Tilasm: ref("L01")})); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("open without a window: %v", err)
+	}
+	if got := getTilasm(t, bare, "L01", 0); got.GetUrl() != "" || !strings.HasPrefix(got.GetLink(), "djinn://tilasm/") {
+		t.Fatalf("get without http: %v", got)
 	}
 }

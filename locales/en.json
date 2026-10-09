@@ -52,6 +52,7 @@
   "inbox.rub_detail": "Send it where Djinn recommends",
   "inbox.title": "Inbox",
   "language.name": "English",
+  "link.unknown": "Djinn does not know this link, or what it names is not on this machine: {link}",
   "make.eyebrow": "NEW WISH",
   "make.full": "{max} wishes are active already: this one waits, paused, until you resume it.",
   "make.projects": "Projects it works on",

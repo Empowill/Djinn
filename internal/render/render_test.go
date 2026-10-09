@@ -190,6 +190,18 @@ func TestPageIsSafe(t *testing.T) {
 	}
 }
 
+// TestPageKeepsDjinnLinks: a djinn:// link keeps its target on the page, where the system opens it with djinn open.
+func TestPageKeepsDjinnLinks(t *testing.T) {
+	const link = "djinn://tilasm/01a1223a-ae45-728f-8c37-c005eee91edb"
+	exp := &planv1.WishExport{
+		Wish:   &planv1.Wish{Id: "w", Title: "Explain"},
+		Blocks: []*planv1.Block{{Id: "b1", WishId: "w", Title: "md", Content: "See [L01](" + link + ")."}},
+	}
+	if html := page(t, Input{Export: exp}); !strings.Contains(html, `<a href="`+link+`">L01</a>`) {
+		t.Errorf("the page lost the link:\n%s", html)
+	}
+}
+
 // french is the text of key in French, as the page escapes it. The French itself stays in locales/fr.json.
 func french(t *testing.T, key string, params map[string]string) string {
 	t.Helper()

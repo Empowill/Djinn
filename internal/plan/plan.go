@@ -49,7 +49,19 @@ type options struct {
 	watchers SpawnWatcher
 	workers  WishWorkers
 	answered []func(context.Context, *planv1.Question)
+	show     func(wishID, tilasmID string) bool
+	url      func(id string) string
 }
+
+// WithShowTilasm gives TilasmService.Open the window: show shows a tilasm in its wish's Tilasms tab, and tells whether
+// a native window came to the front.
+func WithShowTilasm(show func(wishID, tilasmID string) bool) Option {
+	return func(o *options) { o.show = show }
+}
+
+// WithTilasmURL gives TilasmService.Get the local http address of a tilasm's files, by its identifier; empty while
+// Djinn serves no http.
+func WithTilasmURL(url func(id string) string) Option { return func(o *options) { o.url = url } }
 
 // WithWorkers gives the wishes their workers: a paused wish stops them (Wishes.Workers).
 func WithWorkers(w WishWorkers) Option { return func(o *options) { o.workers = w } }
@@ -101,7 +113,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h
-	tilasms := &Tilasms{Store: s, Home: o.home}
+	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url}
 	p, h = planv1connect.NewTilasmServiceHandler(tilasms, opt)
 	out[p] = h
 	out[server.TilasmPrefix] = tilasms.Files()

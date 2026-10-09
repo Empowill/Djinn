@@ -81,11 +81,20 @@ import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
 
+// Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
+export interface Opening {
+  wishId: string;
+  tilasmId: string;
+}
+
 export function WishView({
   wish,
+  opening,
   onToast,
 }: {
   wish: Wish;
+  // A tilasm of the wish to show now, in its Tilasms tab.
+  opening?: Opening;
   onToast: (text: string) => void;
 }) {
   const allProjects = useData((s) => s.projects);
@@ -107,11 +116,18 @@ export function WishView({
   const azimaProgress = azimasDone(detail.tasks);
   const work = workCount(detail.tasks);
   const granted = wish.state === WishState.GRANTED;
-  const [view, setView] = useState<View>("main");
+  const [view, setView] = useState<View>(opening ? "tilasms" : "main");
   const [deleting, setDeleting] = useState(false);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
   const show = (to: View, id = "") => (setView(to), setFocus(id));
+  // The tilasm a link opened: the Tilasms tab shows it, again at each new request.
+  const [opened, setOpened] = useState(opening);
+  useEffect(() => {
+    if (!opening) return;
+    setView("tilasms");
+    setOpened(opening);
+  }, [opening]);
   const moving = movingTasks(detail.tasks);
   const finished = finishedTasks(detail.tasks);
   const azimas = azimaGroups(detail.tasks);
@@ -387,6 +403,7 @@ export function WishView({
             <TilasmsTab
               key={wish.id}
               wishId={wish.id}
+              opening={opened}
               tilasms={detail.tilasms}
               tasks={detail.tasks}
               onToast={onToast}

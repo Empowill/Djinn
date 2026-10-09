@@ -2732,6 +2732,10 @@
             },
             "type": "array"
           },
+          "link": {
+            "description": "Its link, djinn://tilasm/<id>: it opens the tilasm in the app from a browser, a chat, a terminal or a Markdown file. Cite it so.",
+            "type": "string"
+          },
           "text": {
             "description": "The text of its index.html, without tags, scripts nor styles.",
             "type": "string"
@@ -2739,6 +2743,10 @@
           "tilasm": {
             "$ref": "#/components/schemas/plan.v1.Tilasm",
             "description": "The tilasm."
+          },
+          "url": {
+            "description": "The local http address of its latest version, for a browser or an agent that wants the HTML, while this Djinn runs: given when djinn up serves http (--browser, and on Windows). Empty while it listens on a socket only (the window on macOS and Linux): read the files in its folder then.",
+            "type": "string"
           },
           "version": {
             "description": "The version read.",
@@ -2836,6 +2844,40 @@
               "$ref": "#/components/schemas/plan.v1.Tilasm"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceOpenRequest": {
+        "properties": {
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.TilasmRef",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
+          "wish": {
+            "description": "The wish, when a code is given and several wishes have it.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tilasm"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceOpenResponse": {
+        "properties": {
+          "link": {
+            "description": "Its link, djinn://tilasm/<id>.",
+            "type": "string"
+          },
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.Tilasm",
+            "description": "The tilasm shown."
+          },
+          "window": {
+            "description": "A native window was brought to the front; false in browser mode, where the page shows it.",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -5219,6 +5261,44 @@
           "TilasmService"
         ],
         "x-read-only": true
+      }
+    },
+    "/plan.v1.TilasmService/Open": {
+      "post": {
+        "description": "Show a tilasm in the window, in its wish's Tilasms tab, starting Djinn when it does not run: what its link djinn://tilasm/<id> does from anywhere.",
+        "operationId": "TilasmService_Open",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceOpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceOpenResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn tilasm open",
+        "tags": [
+          "TilasmService"
+        ]
       }
     },
     "/plan.v1.TilasmService/Put": {

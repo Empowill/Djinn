@@ -26,6 +26,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/link"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -55,6 +56,12 @@ type Tilasms struct {
 	Home string
 	// MaxBytes is the ceiling of a new tilasm, in bytes; 0: DefaultTilasmBytes.
 	MaxBytes int64
+	// Show shows a tilasm in the window, in its wish's Tilasms tab, and tells whether a native window came to the
+	// front. Nil: Open is unavailable.
+	Show func(wishID, tilasmID string) bool
+	// URL is the local http address of a tilasm's latest version, by its identifier; empty, or nil, while Djinn serves
+	// no http.
+	URL func(id string) string
 }
 
 // TilasmDir is the folder of a tilasm in the data folder home: version n is in its folder v<n>.
@@ -573,7 +580,12 @@ func (t *Tilasms) Get(
 		return nil, err
 	}
 	dir := versionDir(t.Home, tilasm.GetId(), n)
-	res := &planv1.TilasmServiceGetResponse{Tilasm: tilasm, Version: n, Directory: dir}
+	res := &planv1.TilasmServiceGetResponse{
+		Tilasm: tilasm, Version: n, Directory: dir, Link: link.Of(link.Tilasm, tilasm.GetId()),
+	}
+	if t.URL != nil {
+		res.Url = t.URL(tilasm.GetId())
+	}
 	if f, err := os.Open(filepath.Join(dir, tilasmIndex)); err == nil {
 		_, res.Text = htmlText(f)
 		f.Close()
@@ -590,6 +602,47 @@ func (t *Tilasms) Get(
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("read the files of %s: %w", tilasm.GetCode(), err))
 	}
 	return connect.NewResponse(res), nil
+}
+
+func (t *Tilasms) Open(
+	ctx context.Context, req *connect.Request[planv1.TilasmServiceOpenRequest],
+) (*connect.Response[planv1.TilasmServiceOpenResponse], error) {
+	if t.Show == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("this server has no window: run djinn up"))
+	}
+	tilasm, err := findTilasm(ctx, t.Store, req.Msg.GetTilasm(), req.Msg.GetWish())
+	if err != nil {
+		return nil, Status(err)
+	}
+	window := t.Show(tilasm.GetWishId(), tilasm.GetId())
+	return connect.NewResponse(&planv1.TilasmServiceOpenResponse{
+		Tilasm: tilasm, Link: link.Of(link.Tilasm, tilasm.GetId()), Window: window,
+	}), nil
+}
+
+// Linked is the wish a link shows: the tilasm's, or the wish itself. One not on this machine is an error of code
+// NotFound.
+func Linked(ctx context.Context, r store.Reader, l link.Link) (string, error) {
+	var wishID string
+	var err error
+	switch l.Kind {
+	case link.Tilasm:
+		var tilasm *planv1.Tilasm
+		if tilasm, err = store.Get[*planv1.Tilasm](ctx, r, l.ID); err == nil {
+			wishID = tilasm.GetWishId()
+		}
+	case link.Wish:
+		var wish *planv1.Wish
+		if wish, err = store.Get[*planv1.Wish](ctx, r, l.ID); err == nil {
+			wishID = wish.GetId()
+		}
+	default:
+		return "", connect.NewError(connect.CodeInvalidArgument, link.UnknownError{URL: l.String()})
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		return "", connect.NewError(connect.CodeNotFound, fmt.Errorf("no %s %s on this machine", l.Kind, l.ID))
+	}
+	return wishID, err
 }
 
 // pickVersion is version n of the tilasm, or its latest for 0.
