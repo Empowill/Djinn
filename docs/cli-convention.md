@@ -10,6 +10,9 @@ service adds a command, with its help, its arguments and their validation.
   `VISIBILITY_INTERNAL` methods (the window's `UiService`) never do.
 - The command is the service name without `Service`, then the method, both in kebab-case:
   `QuestionService.Answer` is `djinn question answer`.
+- A service may name another word for its command, `option (djinn.v1.alias) = "talisman"`: `djinn talisman list` is
+  `djinn tilasm list`. An alias answers in full, or by a prefix no command's own name takes (`djinn t` stays
+  ambiguous); the help lists it, and MCP and OpenAPI know the command's own name only.
 - A unique prefix is enough: `djinn q answer`, `djinn pr l`. An ambiguous one is an error that lists the
   candidates (`djinn question a` matches `ask` and `answer`).
 - `djinn version` prints the version.
@@ -51,6 +54,7 @@ The arguments are the fields of the request.
 | a message of a required string, then a repeated string | One input `key=a,b`: `--also W6=W5,W3`; `W7=` for an empty list |
 | `string directory` or `*_directory`         | A folder: a relative path is made absolute, from the current directory, before sending |
 | `string file` or `*_file`                   | A file, made absolute the same way: the server reads or writes it on this machine |
+| `string path` or `*_path`                   | A folder or a file, made absolute the same way: `djinn tilasm put` takes either |
 
 A pair is how `djinn task depend --also` sets several tasks in one call: `TaskAfter` has `task` (required) then
 `after`, so `W6=W5,W3` fills both. In MCP it is a string read the same way.

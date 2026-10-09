@@ -29,7 +29,7 @@ import (
 func Entities() []proto.Message {
 	return []proto.Message{
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
-		&planv1.InboxItem{}, &machinev1.CommandCost{},
+		&planv1.InboxItem{}, &machinev1.CommandCost{}, &planv1.Tilasm{},
 	}
 }
 
@@ -57,7 +57,7 @@ func WithWorkers(w WishWorkers) Option { return func(o *options) { o.workers = w
 // request, in language; English by default.
 func WithLanguage(language string) Option { return func(o *options) { o.language = language } }
 
-// WithHome gives the projects Djinn's data folder, where each developer keeps their own settings of a project.
+// WithHome gives the services Djinn's data folder: each developer's own settings of a project, and the tilasms' files.
 func WithHome(home string) Option { return func(o *options) { o.home = home } }
 
 // WithLeads gives the wishes the terminals of their leads, for WishService.Resume.
@@ -80,7 +80,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
-		Workers: o.workers}
+		Workers: o.workers, Home: o.home}
 	if o.leads != nil {
 		o.answered = append(o.answered, wishes.Answered) // The lead learns each answer, after the harness.
 	}
@@ -99,6 +99,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
+	out[p] = h
+	p, h = planv1connect.NewTilasmServiceHandler(&Tilasms{Store: s, Home: o.home}, opt)
 	out[p] = h
 	return out
 }
@@ -298,6 +300,9 @@ type Wishes struct {
 	// Workers stops the workers of a paused wish, and wakes the scheduler for an active one; nil where djinn up does
 	// not run tasks.
 	Workers WishWorkers
+	// Home is Djinn's data folder, which holds the tilasms' files; empty: a wish with tilasms neither exports nor
+	// imports.
+	Home string
 
 	watch watchers // the open Watch streams
 }

@@ -3916,6 +3916,583 @@
         ],
         "description": "TaskStatus is where a task stands."
       },
+      "plan.v1.Tilasm": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "id",
+            "format": "uuid",
+            "description": "Identifier, a UUIDv7. Its links name it: djinn://tilasm/\u003cid\u003e."
+          },
+          "wishId": {
+            "type": "string",
+            "title": "wish_id",
+            "description": "Wish the tilasm belongs to."
+          },
+          "code": {
+            "type": "string",
+            "title": "code",
+            "pattern": "^L[0-9]{2,3}$",
+            "description": "Short code to dictate, like L01, unique within the wish."
+          },
+          "title": {
+            "type": "string",
+            "title": "title",
+            "maxLength": 1000,
+            "description": "Title, in a line."
+          },
+          "author": {
+            "type": "string",
+            "title": "author",
+            "maxLength": 100,
+            "description": "Who made it: a task's code (W12), the lead, the developer."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.TilasmVersion"
+            },
+            "title": "versions",
+            "description": "Its versions, the first first; the last one is the tilasm as its links show it."
+          },
+          "cites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "cites",
+            "description": "The azimas and tasks of the wish it explains, by identifier."
+          },
+          "createTime": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/google.protobuf.Timestamp"
+              }
+            ],
+            "title": "create_time",
+            "description": "When it was made."
+          },
+          "updateTime": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/google.protobuf.Timestamp"
+              }
+            ],
+            "title": "update_time",
+            "description": "When its last version was put."
+          },
+          "maxBytes": {
+            "type": "string",
+            "title": "max_bytes",
+            "format": "int64",
+            "description": "Most a version may hold, in bytes, its files summed: a put beyond it is refused, saying so."
+          }
+        },
+        "title": "Tilasm",
+        "additionalProperties": false,
+        "description": "A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out.\n A folder with an index.html and its sources, kept in Djinn's data folder, tilasms/\u003cid\u003e/v\u003cn\u003e/, never in a project.\n Putting it again adds a version; the latest is what its links show. The word comes from the Arabic ṭilasm, the\n origin of \"talisman\"."
+      },
+      "plan.v1.TilasmRef": {
+        "type": "object",
+        "allOf": [
+          {
+            "oneOf": [
+              {
+                "required": [
+                  "code"
+                ]
+              },
+              {
+                "required": [
+                  "id"
+                ]
+              }
+            ]
+          }
+        ],
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "title": "code",
+                "pattern": "^[Ll][0-9]{2,3}$",
+                "description": "Short code, like L01."
+              }
+            },
+            "title": "code"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "title": "id",
+                "format": "uuid",
+                "description": "Identifier, a UUID."
+              }
+            },
+            "title": "id"
+          }
+        ],
+        "unevaluatedProperties": false,
+        "not": {
+          "allOf": [
+            {
+              "anyOf": [
+                {
+                  "required": [
+                    "code"
+                  ]
+                },
+                {
+                  "required": [
+                    "id"
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "oneOf": [
+                  {
+                    "required": [
+                      "code"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "id"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "title": "TilasmRef",
+        "description": "TilasmRef points to a tilasm by its code or by its identifier."
+      },
+      "plan.v1.TilasmServiceExportRequest": {
+        "type": "object",
+        "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TilasmRef"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
+          "wish": {
+            "type": "string",
+            "title": "wish",
+            "format": "uuid",
+            "description": "The wish, when a code is given and several wishes have it."
+          },
+          "file": {
+            "type": "string",
+            "title": "file",
+            "maxLength": 4096,
+            "description": "The .zip to write; a relative path starts from the current directory. By default, the tilasm's title with .zip in\n the Downloads folder."
+          }
+        },
+        "title": "TilasmServiceExportRequest",
+        "required": [
+          "tilasm"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceExportResponse": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "title": "file",
+            "description": "The file written."
+          },
+          "size": {
+            "type": "string",
+            "title": "size",
+            "format": "int64",
+            "description": "Its size, in bytes."
+          }
+        },
+        "title": "TilasmServiceExportResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceGetRequest": {
+        "type": "object",
+        "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TilasmRef"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
+          "wish": {
+            "type": "string",
+            "title": "wish",
+            "format": "uuid",
+            "description": "The wish, when a code is given and several wishes have it."
+          },
+          "version": {
+            "type": "integer",
+            "title": "version",
+            "minimum": 0,
+            "format": "int32",
+            "description": "An earlier version to read; by default the latest."
+          }
+        },
+        "title": "TilasmServiceGetRequest",
+        "required": [
+          "tilasm"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceGetResponse": {
+        "type": "object",
+        "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.Tilasm"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm."
+          },
+          "version": {
+            "type": "integer",
+            "title": "version",
+            "format": "int32",
+            "description": "The version read."
+          },
+          "text": {
+            "type": "string",
+            "title": "text",
+            "description": "The text of its index.html, without tags, scripts nor styles."
+          },
+          "directory": {
+            "type": "string",
+            "title": "directory",
+            "description": "The folder of the version's files."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "files",
+            "description": "Its files, relative to that folder, with forward slashes."
+          }
+        },
+        "title": "TilasmServiceGetResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceHistoryRequest": {
+        "type": "object",
+        "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TilasmRef"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
+          "wish": {
+            "type": "string",
+            "title": "wish",
+            "format": "uuid",
+            "description": "The wish, when a code is given and several wishes have it."
+          }
+        },
+        "title": "TilasmServiceHistoryRequest",
+        "required": [
+          "tilasm"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.TilasmVersion"
+            },
+            "title": "versions",
+            "description": "The versions, the first first."
+          },
+          "directory": {
+            "type": "string",
+            "title": "directory",
+            "description": "The tilasm's folder: version n is in its folder v\u003cn\u003e."
+          }
+        },
+        "title": "TilasmServiceHistoryResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceImportRequest": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "title": "file",
+            "maxLength": 4096,
+            "description": "The .zip to import, as djinn tilasm export writes it; a relative path starts from the current directory."
+          },
+          "wish": {
+            "type": "string",
+            "title": "wish",
+            "format": "uuid",
+            "description": "The wish to import it into."
+          },
+          "author": {
+            "type": "string",
+            "title": "author",
+            "maxLength": 100,
+            "description": "Who imports it; the author of the file's tilasm by default."
+          }
+        },
+        "title": "TilasmServiceImportRequest",
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceImportResponse": {
+        "type": "object",
+        "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.Tilasm"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm, its new version last."
+          }
+        },
+        "title": "TilasmServiceImportResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceListRequest": {
+        "type": "object",
+        "properties": {
+          "wish": {
+            "type": "string",
+            "title": "wish",
+            "format": "uuid",
+            "description": "Only the tilasms of this wish."
+          },
+          "search": {
+            "type": "string",
+            "title": "search",
+            "maxLength": 1000,
+            "description": "Words to find, case ignored, in the code, the title or the text of the latest version; \"talisman\" or \"tilasm\"\n alone finds them all."
+          }
+        },
+        "title": "TilasmServiceListRequest",
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceListResponse": {
+        "type": "object",
+        "properties": {
+          "tilasms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Tilasm"
+            },
+            "title": "tilasms",
+            "description": "The tilasms, by wish then code."
+          }
+        },
+        "title": "TilasmServiceListResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServicePutRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "path",
+            "maxLength": 4096,
+            "description": "The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory."
+          },
+          "wish": {
+            "type": "string",
+            "title": "wish",
+            "format": "uuid",
+            "description": "The wish it explains."
+          },
+          "title": {
+            "type": "string",
+            "title": "title",
+            "maxLength": 1000,
+            "description": "Title, in a line; by default the \u003ctitle\u003e of its index.html, or the folder's name. A new version keeps the title\n it had unless one is given."
+          },
+          "code": {
+            "type": "string",
+            "title": "code",
+            "pattern": "^[Ll][0-9]{2,3}$",
+            "description": "The tilasm to put again, by its code (L01): a new version of it. Without it, a new tilasm with the next code."
+          },
+          "cites": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "minLength": 1
+            },
+            "title": "cites",
+            "maxItems": 100,
+            "description": "An azima or a task of the wish it explains, by code (T29, W12) or identifier; repeat it for each. A new version\n keeps what it cited unless some are given."
+          },
+          "author": {
+            "type": "string",
+            "title": "author",
+            "maxLength": 100,
+            "description": "Who makes it: your task's code (W12) for a worker; lead by default."
+          }
+        },
+        "title": "TilasmServicePutRequest",
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServicePutResponse": {
+        "type": "object",
+        "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.Tilasm"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm, its new version last."
+          },
+          "directory": {
+            "type": "string",
+            "title": "directory",
+            "description": "The folder of the version put."
+          }
+        },
+        "title": "TilasmServicePutResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceRestoreRequest": {
+        "type": "object",
+        "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TilasmRef"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
+          "version": {
+            "type": "integer",
+            "title": "version",
+            "minimum": 1,
+            "format": "int32",
+            "description": "The version to restore."
+          },
+          "wish": {
+            "type": "string",
+            "title": "wish",
+            "format": "uuid",
+            "description": "The wish, when a code is given and several wishes have it."
+          },
+          "author": {
+            "type": "string",
+            "title": "author",
+            "maxLength": 100,
+            "description": "Who restores it; lead by default."
+          }
+        },
+        "title": "TilasmServiceRestoreRequest",
+        "required": [
+          "tilasm",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServiceRestoreResponse": {
+        "type": "object",
+        "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.Tilasm"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm, the restored version last."
+          }
+        },
+        "title": "TilasmServiceRestoreResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmVersion": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "number",
+            "format": "int32",
+            "description": "Its number, from 1."
+          },
+          "createTime": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/google.protobuf.Timestamp"
+              }
+            ],
+            "title": "create_time",
+            "description": "When it was put."
+          },
+          "author": {
+            "type": "string",
+            "title": "author",
+            "maxLength": 100,
+            "description": "Who put it."
+          },
+          "size": {
+            "type": "string",
+            "title": "size",
+            "format": "int64",
+            "description": "Its files summed, in bytes."
+          },
+          "files": {
+            "type": "integer",
+            "title": "files",
+            "format": "int32",
+            "description": "How many files it holds."
+          },
+          "restoredFrom": {
+            "type": "integer",
+            "title": "restored_from",
+            "format": "int32",
+            "description": "The version it copies, when it was restored from an earlier one; 0 otherwise."
+          }
+        },
+        "title": "TilasmVersion",
+        "additionalProperties": false,
+        "description": "TilasmVersion is one put of a tilasm: its files stay in tilasms/\u003cid\u003e/v\u003cnumber\u003e/."
+      },
       "plan.v1.Usage": {
         "type": "object",
         "properties": {
@@ -8599,6 +9176,740 @@
         }
       }
     },
+    "/plan.v1.TilasmService/Export": {
+      "post": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "Export",
+        "description": "Export a tilasm as a .zip: the files of its latest version, and its manifest, tilasm.json.",
+        "operationId": "TilasmService_Export",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceExportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.TilasmService/Get": {
+      "get": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "Get",
+        "description": "Read a tilasm: its manifest, the text of its index.html without the tags, and the folder of its files.",
+        "operationId": "TilasmService_Get.get",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          },
+          {
+            "name": "message",
+            "in": "query",
+            "description": "The URL-encoded message query parameter contains the JSON or binary serialized request message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceGetRequest"
+                }
+              }
+            }
+          },
+          {
+            "name": "encoding",
+            "in": "query",
+            "description": "Define which encoding or 'Message-Codec' to use",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/encoding"
+            },
+            "example": "json"
+          },
+          {
+            "name": "base64",
+            "in": "query",
+            "description": "Specifies if the message query param is base64 encoded, which may be required for binary data",
+            "schema": {
+              "$ref": "#/components/schemas/base64"
+            },
+            "example": false
+          },
+          {
+            "name": "compression",
+            "in": "query",
+            "description": "Which compression algorithm to use for this request",
+            "schema": {
+              "$ref": "#/components/schemas/compression"
+            },
+            "example": "gzip"
+          },
+          {
+            "name": "connect",
+            "in": "query",
+            "description": "Define the version of the Connect protocol",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect"
+            },
+            "example": "v1"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceGetResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "Get",
+        "description": "Read a tilasm: its manifest, the text of its index.html without the tags, and the folder of its files.",
+        "operationId": "TilasmService_Get",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceGetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceGetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.TilasmService/History": {
+      "get": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "History",
+        "description": "The versions of a tilasm, the first first, with their folders.",
+        "operationId": "TilasmService_History.get",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          },
+          {
+            "name": "message",
+            "in": "query",
+            "description": "The URL-encoded message query parameter contains the JSON or binary serialized request message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceHistoryRequest"
+                }
+              }
+            }
+          },
+          {
+            "name": "encoding",
+            "in": "query",
+            "description": "Define which encoding or 'Message-Codec' to use",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/encoding"
+            },
+            "example": "json"
+          },
+          {
+            "name": "base64",
+            "in": "query",
+            "description": "Specifies if the message query param is base64 encoded, which may be required for binary data",
+            "schema": {
+              "$ref": "#/components/schemas/base64"
+            },
+            "example": false
+          },
+          {
+            "name": "compression",
+            "in": "query",
+            "description": "Which compression algorithm to use for this request",
+            "schema": {
+              "$ref": "#/components/schemas/compression"
+            },
+            "example": "gzip"
+          },
+          {
+            "name": "connect",
+            "in": "query",
+            "description": "Define the version of the Connect protocol",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect"
+            },
+            "example": "v1"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "History",
+        "description": "The versions of a tilasm, the first first, with their folders.",
+        "operationId": "TilasmService_History",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceHistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.TilasmService/Import": {
+      "post": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "Import",
+        "description": "Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.",
+        "operationId": "TilasmService_Import",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceImportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.TilasmService/List": {
+      "get": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "List",
+        "description": "List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.",
+        "operationId": "TilasmService_List.get",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          },
+          {
+            "name": "message",
+            "in": "query",
+            "description": "The URL-encoded message query parameter contains the JSON or binary serialized request message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceListRequest"
+                }
+              }
+            }
+          },
+          {
+            "name": "encoding",
+            "in": "query",
+            "description": "Define which encoding or 'Message-Codec' to use",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/encoding"
+            },
+            "example": "json"
+          },
+          {
+            "name": "base64",
+            "in": "query",
+            "description": "Specifies if the message query param is base64 encoded, which may be required for binary data",
+            "schema": {
+              "$ref": "#/components/schemas/base64"
+            },
+            "example": false
+          },
+          {
+            "name": "compression",
+            "in": "query",
+            "description": "Which compression algorithm to use for this request",
+            "schema": {
+              "$ref": "#/components/schemas/compression"
+            },
+            "example": "gzip"
+          },
+          {
+            "name": "connect",
+            "in": "query",
+            "description": "Define the version of the Connect protocol",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect"
+            },
+            "example": "v1"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "List",
+        "description": "List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.",
+        "operationId": "TilasmService_List",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.TilasmService/Put": {
+      "post": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "Put",
+        "description": "Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new\n version of that one, its links unchanged.",
+        "operationId": "TilasmService_Put",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServicePutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServicePutResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.TilasmService/Restore": {
+      "post": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "Restore",
+        "description": "Restore an earlier version: it comes back as a new version, and the others stay.",
+        "operationId": "TilasmService_Restore",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceRestoreResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/plan.v1.WishService/Activate": {
       "post": {
         "tags": [
@@ -9960,6 +11271,10 @@
     }
   },
   "tags": [
+    {
+      "name": "TilasmService",
+      "description": "Tilasms, or talismans: the material that explains a wish, kept on this machine and linked from anywhere. A put\n replaces a tilasm with a new version, and the earlier ones can be read and restored."
+    },
     {
       "name": "QuestionService",
       "description": "Questions agents ask, and the decisions taken."

@@ -102,8 +102,8 @@ func TestOpenAPI(t *testing.T) {
 		t.Errorf("%s is described and is no method of the protos: run go tool task gen", path)
 	}
 	// The public methods, streams included, as the command line has them.
-	if count != 55 {
-		t.Errorf("%d public methods, want 55", count)
+	if count != 62 {
+		t.Errorf("%d public methods, want 62", count)
 	}
 }
 

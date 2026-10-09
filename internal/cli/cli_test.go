@@ -145,6 +145,12 @@ func TestConvention(t *testing.T) {
 			parseOnly: true,
 		},
 		{
+			name:      "a relative path starts from the current directory, and a flag repeats",
+			args:      []string{"notes", "--wish", wishID, "--cites", "T29", "--cites", "W12"},
+			want:      &planv1.TilasmServicePutRequest{Path: filepath.Join(filepath.Dir(dir), "notes"), Wish: wishID, Cites: []string{"T29", "W12"}},
+			parseOnly: true,
+		},
+		{
 			name:      "-- ends the flags",
 			args:      []string{"--", "--verbose?"},
 			want:      &planv1.QuestionServiceAskRequest{Text: "--verbose?"},
@@ -233,6 +239,18 @@ type questions struct {
 	*fake
 }
 
+type tilasms struct {
+	planv1connect.UnimplementedTilasmServiceHandler
+	*fake
+}
+
+func (f tilasms) List(_ context.Context, req *connect.Request[planv1.TilasmServiceListRequest]) (*connect.Response[planv1.TilasmServiceListResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TilasmServiceListResponse{Tilasms: []*planv1.Tilasm{
+		{Id: questionID, WishId: wishID, Code: "L01", Title: "The objects in the database"},
+	}}), nil
+}
+
 type projects struct {
 	planv1connect.UnimplementedProjectServiceHandler
 	*fake
@@ -270,6 +288,7 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux := http.NewServeMux()
 	mux.Handle(planv1connect.NewQuestionServiceHandler(questions{fake: f}))
 	mux.Handle(planv1connect.NewProjectServiceHandler(projects{fake: f}))
+	mux.Handle(planv1connect.NewTilasmServiceHandler(tilasms{fake: f}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return f, func(args ...string) (int, string, string) {
@@ -298,9 +317,13 @@ func TestRun(t *testing.T) {
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
 		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},
 		{name: "ambiguous method", args: []string{"question", "a"}, wantCode: 2, wantErr: `question method "a" is ambiguous: ask, answer`},
-		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, machine, mark, plan, project, question, skill, task, wish`},
+		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, machine, mark, plan, project, question, skill, task, tilasm, wish`},
 		{name: "internal service is hidden", args: []string{"ui", "get-environment"}, wantCode: 2, wantErr: `unknown command "ui"`},
 		{name: "version", args: []string{"v"}, wantOut: "djinn test\n"},
+		{name: "talisman answers as tilasm", args: []string{"talisman", "list", "--search", "model"}, wantOut: "code: L01", wantCalled: true},
+		{name: "an alias by a prefix no command takes", args: []string{"tali", "l"}, wantOut: "code: L01", wantCalled: true},
+		{name: "a prefix a command takes is not an alias's", args: []string{"t", "list"}, wantCode: 2, wantErr: `command "t" is ambiguous: task, tilasm`},
+		{name: "help names the alias", args: []string{"help"}, wantOut: "  tilasm, talisman "},
 		{name: "help comes from the proto comments", args: []string{"q", "answer", "--help"}, wantOut: "Usage: djinn question answer <question> <choice> [flags]\n\nAnswer a question, which turns it into a decision."},
 		{name: "help command", args: []string{"help", "pr"}, wantOut: "Methods:\n  add    Add a folder as a project."},
 	}
@@ -338,8 +361,8 @@ func TestEveryPublicMethodIsExpressible(t *testing.T) {
 			}
 		}
 	}
-	if methods != 55 {
-		t.Errorf("found %d public methods, want 55", methods)
+	if methods != 62 {
+		t.Errorf("found %d public methods, want 62", methods)
 	}
 }
 
