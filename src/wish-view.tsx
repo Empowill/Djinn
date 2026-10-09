@@ -49,6 +49,7 @@ import {
   openQuestions,
   spent,
   waitingTasks,
+  azimasDone,
   workCount,
 } from "./data/flight";
 import {
@@ -101,6 +102,9 @@ export function WishView({
   const done = detail.tasks.filter(
     (task) => task.status === TaskStatus.DONE && !isAzima(task),
   ).length;
+  // The azimas' progress, then the work's: the azimas are not counted as tasks.
+  const azimaProgress = azimasDone(detail.tasks);
+  const work = workCount(detail.tasks);
   const granted = wish.state === WishState.GRANTED;
   const [view, setView] = useState<View>("main");
   const [deleting, setDeleting] = useState(false);
@@ -350,16 +354,25 @@ export function WishView({
                   {t("pill.running")}
                 </CountPill>
               )}
-              {detail.tasks.length > 0 && (
+              {azimaProgress.count > 0 && (
+                <CountPill
+                  tone="done"
+                  count={azimaProgress.done}
+                  label={t("pill.azimas_detail", {
+                    done: azimaProgress.done,
+                    count: azimaProgress.count,
+                  })}
+                >
+                  / {azimaProgress.count} {t("pill.azimas")}
+                </CountPill>
+              )}
+              {work > 0 && (
                 <CountPill
                   tone="done"
                   count={done}
-                  label={t("pill.done_detail", {
-                    done,
-                    count: detail.tasks.length,
-                  })}
+                  label={t("pill.done_detail", { done, count: work })}
                 >
-                  / {detail.tasks.length} {t("pill.done")}
+                  / {work} {t("pill.done")}
                 </CountPill>
               )}
             </div>

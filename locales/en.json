@@ -189,6 +189,8 @@
   "panels.recommendation": "Recommendation",
   "panels.your_move": "Your move",
   "panels.your_move_detail": "What the lead and the workers wait for, the most blocking first.",
+  "pill.azimas": "azimas",
+  "pill.azimas_detail": "{done} of {count} azimas done",
   "pill.calm": "Nothing waits",
   "pill.done": "done",
   "pill.done_detail": "{done} of {count} tasks done",

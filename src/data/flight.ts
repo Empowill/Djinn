@@ -95,6 +95,18 @@ function loose(tasks: readonly Task[]): Task[] {
   return tasks.filter((x) => !isAzima(x) && !azimas.has(x.partOf));
 }
 
+// azimasDone is how many azimas are done, and how many there are: their progress, as the work's is in tasks.
+export function azimasDone(tasks: readonly Task[]): {
+  done: number;
+  count: number;
+} {
+  const azimas = tasks.filter(isAzima);
+  const done = azimas.filter(
+    (x) => x.azima?.state === AzimaState.DONE || x.status === TaskStatus.DONE,
+  ).length;
+  return { done, count: azimas.length };
+}
+
 // workCount is how many tasks of work there are: the azimas are the plan, not work.
 export function workCount(tasks: readonly Task[]): number {
   return tasks.filter((x) => !isAzima(x)).length;

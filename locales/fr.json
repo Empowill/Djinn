@@ -189,6 +189,8 @@
   "panels.recommendation": "Recommandation",
   "panels.your_move": "À toi de jouer",
   "panels.your_move_detail": "Ce que le lead et les workers attendent, le plus bloquant d'abord.",
+  "pill.azimas": "azimas",
+  "pill.azimas_detail": "{done} azimas faites sur {count}",
   "pill.calm": "Rien n'attend",
   "pill.done": "faites",
   "pill.done_detail": "{done} tâches faites sur {count}",
