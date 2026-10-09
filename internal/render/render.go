@@ -388,8 +388,9 @@ func build(in Input) (*view, error) {
 	}
 
 	// What waits for the user, as the lamp knows it: a worker that asks to edit, one that Djinn's stop cut
-	// short, a project to bring to this machine. A worker that waits on an open question is in the bar by its
-	// question already.
+	// short and will not resume by itself, a project to bring to this machine. A worker that waits on an open
+	// question is in the bar by its question already. A task Djinn resumes, or one resumed as another task, is not
+	// the user's move: its status says so.
 	addAction := func(class, level, text, bar string) {
 		v.Actions = append(v.Actions, action{Class: class, Level: level, Text: text})
 		if bar != "" {
@@ -407,6 +408,9 @@ func build(in Input) (*view, error) {
 					tr("page.bar_waiting", "task", t.GetCode()))
 			}
 		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			if ForkedAs(t, exp.GetTasks()) != "" {
+				continue
+			}
 			addAction("wait", waiting, tr("page.action_interrupted", "task", t.GetCode()), "")
 			cutShort = append(cutShort, t.GetCode())
 		}
@@ -458,12 +462,24 @@ func build(in Input) (*view, error) {
 	v.Events, v.EarlierEv = events[:min(len(events), shownEvents)], events[min(len(events), shownEvents):]
 
 	byStatus := map[planv1.TaskStatus]int{}
+	forkedCount := 0
 	for _, t := range exp.GetTasks() {
 		ct := task{
 			Code: t.GetCode(), Title: t.GetTitle(), Project: projects[t.GetProjectId()], Error: t.GetError(),
 			LastWord: cut(lastWord[t.GetId()].text, maxLastWord), LastAt: lastWord[t.GetId()].at,
 		}
 		ct.Status, ct.StatusClass = status(t.GetStatus(), tr)
+		forked := ""
+		switch t.GetStatus() {
+		case planv1.TaskStatus_TASK_STATUS_RESUMING:
+			if t.GetResumeAfter() != nil {
+				ct.Status, ct.StatusClass = tr("page.status_limit"), "pause"
+			}
+		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			if forked = ForkedAs(t, exp.GetTasks()); forked != "" {
+				ct.Status, ct.StatusClass, ct.Error = tr("page.status_forked", "task", forked), "stop", ""
+			}
+		}
 		var after []string
 		for _, id := range t.GetDependsOn() {
 			if d := tasks[id]; d != nil {
@@ -491,13 +507,19 @@ func build(in Input) (*view, error) {
 		} else if s != nil {
 			ct.Time = tr("page.started", "time", at(s))
 		}
+		if forked != "" {
+			// Resumed as another task: finished, as far as the user is concerned.
+			forkedCount++
+			v.Finished = append(v.Finished, ct)
+			continue
+		}
 		byStatus[t.GetStatus()]++
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING:
 			v.Planned = append(v.Planned, ct)
 		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
 			v.Finished = append(v.Finished, ct)
-		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
+		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_RESUMING:
 			v.Running = append(v.Running, ct)
 		case planv1.TaskStatus_TASK_STATUS_WAITING:
 			// Its error only says it waits: the status and the actions say it better.
@@ -512,18 +534,22 @@ func build(in Input) (*view, error) {
 	for _, s := range []planv1.TaskStatus{
 		planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_FAILED,
 		planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_RUNNING,
-		planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
+		planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE,
+		planv1.TaskStatus_TASK_STATUS_STOPPED,
 	} {
 		if n := byStatus[s]; n > 0 {
 			delete(byStatus, s)
 			label, class := status(s, tr)
 			href := "#tasks"
 			if s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_DONE ||
-				s == planv1.TaskStatus_TASK_STATUS_STOPPED {
+				s == planv1.TaskStatus_TASK_STATUS_STOPPED || s == planv1.TaskStatus_TASK_STATUS_RESUMING {
 				href = "#running"
 			}
 			v.Counts = append(v.Counts, count{Class: class, Label: label, Href: href, Count: n})
 		}
+	}
+	if forkedCount > 0 {
+		v.Counts = append(v.Counts, count{Class: "stop", Label: tr("page.count_forked"), Href: "#running", Count: forkedCount})
 	}
 	// A status this Djinn does not name yet, last.
 	for _, s := range slices.Sorted(maps.Keys(byStatus)) {
@@ -704,6 +730,17 @@ func state(w *planv1.Wish, at func(interface{ AsTime() time.Time }) string, tr f
 	return tr("page.state_active"), "run"
 }
 
+// ForkedAs is the code of the task that took over t once it was cut short: a task of its wish forked from its
+// session (Task.fork_of); "" when none did.
+func ForkedAs(t *planv1.Task, tasks []*planv1.Task) string {
+	for _, o := range tasks {
+		if o.GetId() != t.GetId() && o.GetWishId() == t.GetWishId() && o.GetForkOf() != "" && o.GetForkOf() == t.GetCode() {
+			return o.GetCode()
+		}
+	}
+	return ""
+}
+
 // status names a task's status, with the class that colours it and gives its icon.
 func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, string) {
 	keys := map[planv1.TaskStatus][2]string{
@@ -715,6 +752,7 @@ func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, str
 		planv1.TaskStatus_TASK_STATUS_INTERRUPTED: {"page.status_interrupted", "amber"},
 		planv1.TaskStatus_TASK_STATUS_WAITING:     {"page.status_waiting", "wait"},
 		planv1.TaskStatus_TASK_STATUS_PAUSED:      {"page.status_paused", "pause"},
+		planv1.TaskStatus_TASK_STATUS_RESUMING:    {"page.status_resuming", "run"},
 	}
 	if k, ok := keys[s]; ok {
 		return tr(k[0]), k[1]

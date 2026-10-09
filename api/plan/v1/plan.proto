@@ -128,7 +128,8 @@ enum TaskStatus {
   // Stopped on request.
   TASK_STATUS_STOPPED = 5;
   // Cut short because djinn up stopped or crashed while its worker ran. The task keeps its provider, session and
-  // worktree, to be resumed; nothing restarts it by itself.
+  // worktree; the next djinn up resumes it (RESUMING) unless it cannot: imported, its worktree gone, its wish
+  // granted, or already resumed as another task (Task.fork_of).
   TASK_STATUS_INTERRUPTED = 6;
   // Its worker ended read-only, and the task waits for the developer's answer to its edit question
   // (Task.edit_question_id): a yes starts the worker again, allowed to edit the project's files.
@@ -136,6 +137,10 @@ enum TaskStatus {
   // Its worker holds still on request, without losing anything, until it is resumed. It takes no slot of the
   // machine meanwhile.
   TASK_STATUS_PAUSED = 8;
+  // Djinn resumes its worker by itself, in the same task, worktree and session: djinn up restarted while it ran, or
+  // its provider's usage limit stopped it. The scheduler starts it again like a planned task, first, once
+  // Task.resume_after has passed. Not the person's move.
+  TASK_STATUS_RESUMING = 9;
 }
 
 // TaskAccess says where the rights of a task's worker come from (docs/providers.md, "What a worker may do").
@@ -257,6 +262,11 @@ message Task {
   string fork_session = 25;
   // Where the fork comes from, for a reader: the code of the task (W1), or "lead".
   string fork_of = 26;
+  // When a RESUMING task may start again: after its provider's usage limit resets. While it is ahead, no new worker
+  // of that provider starts. Unset: as soon as the scheduler can.
+  google.protobuf.Timestamp resume_after = 27;
+  // How many times Djinn resumed the task by itself. At 3, a task cut short again fails instead.
+  int32 resumes = 28;
 }
 
 // TaskEventKind says what a worker event is. Its content stays free text.

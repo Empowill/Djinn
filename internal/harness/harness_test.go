@@ -306,7 +306,8 @@ func TestStopLongWorker(t *testing.T) {
 }
 
 // TestNothingLostOnShutdown: djinn up stops while a worker runs; its task is interrupted, keeps what resuming it
-// needs, and its events survive the restart. A task a crash left running is interrupted at the next start.
+// needs, and its events survive the restart. The next start resumes it, in the same task, worktree and session, and
+// it finishes. A task a crash left running is resumed the same way.
 func TestNothingLostOnShutdown(t *testing.T) {
 	repo := gitRepo(t)
 	home := t.TempDir()
@@ -325,55 +326,85 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	cancel()
 	s.Close()
 	e.down()
+	before, worktree := storedTask(t, home, task.GetId()), ""
+	if before.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED || before.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
+		before.GetSessionId() != task.GetId() || before.GetWorktree() == "" || before.GetUsage().GetCostUsd() != 0.01 {
+		t.Errorf("after the stop: %v", before)
+	}
+	worktree = before.GetWorktree()
 
 	e = up(t, home)
+	events := e.watch(t.Context(), t, task.GetId(), 0)
 	got := e.get(t, task.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED || got.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
-		got.GetSessionId() != task.GetId() || got.GetWorktree() == "" || got.GetUsage().GetCostUsd() != 0.01 {
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetWorktree() != worktree || got.GetSessionId() != task.GetId() ||
+		got.GetUsage().GetCostUsd() != 0.01 || got.GetResumes() != 1 {
 		t.Errorf("after the restart: %v", got)
 	}
 	if _, err := os.Stat(got.GetWorktree()); err != nil {
 		t.Errorf("the worktree is gone: %v", err)
 	}
-	events := e.watch(t.Context(), t, task.GetId(), 0)
-	want := []string{"PROMPT", "STATUS", "STATUS", "TEXT", "USAGE", "STATUS"}
+	want := []string{"PROMPT", "STATUS", "STATUS", "TEXT", "USAGE", "STATUS", "STATUS", "STATUS", "STATUS", "TEXT", "STATUS"}
 	if got := eventKinds(events); !slices.Equal(got, want) {
 		t.Fatalf("events = %v, want %v", got, want)
 	}
 	checkSeqs(t, events, 1)
-	if !strings.HasPrefix(events[len(events)-1].GetText(), "interrupted") {
-		t.Errorf("last event %q", events[len(events)-1].GetText())
+	for i, prefix := range map[int]string{
+		5: "interrupted", 6: "resuming: djinn restarted while the worker ran", 7: "resumed after djinn restarted (1 of 3)",
+		9: restartedLine, 10: "done",
+	} {
+		if !strings.HasPrefix(events[i].GetText(), prefix) {
+			t.Errorf("event %d = %q, want %q", i+1, events[i].GetText(), prefix)
+		}
+	}
+	if list := e.list(t, wishID); len(list) != 1 {
+		t.Errorf("%d tasks in the wish, want the one resumed", len(list))
 	}
 
-	// A crash leaves a task running in the store: the next start marks it interrupted, and nothing restarts it.
+	// A crash leaves a task running in the store: the next start marks it interrupted, then resumes it.
 	crashed := proto.CloneOf(got)
 	crashed.Id, crashed.Code, crashed.Status = store.NewID(), "W9", planv1.TaskStatus_TASK_STATUS_RUNNING
-	crashed.EndTime, crashed.Error = nil, ""
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "crash", crashed); err != nil {
-			return err
-		}
-		if err := tx.Put(crashed); err != nil {
-			return err
-		}
-		return tx.Put(newEvent(crashed.GetId(), 1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: "x"}))
-	}); err != nil {
-		t.Fatal(err)
-	}
+	crashed.EndTime, crashed.Error, crashed.Resumes = nil, "", 0
+	putTask(t, e.db, crashed, "x")
 	e.down()
 	e = up(t, home)
+	events = e.watch(t.Context(), t, crashed.GetId(), 0)
 	after := e.get(t, crashed.GetId())
-	if after.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED || after.GetSessionId() != crashed.GetSessionId() {
+	if after.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || after.GetWorktree() != crashed.GetWorktree() || after.GetResumes() != 1 {
 		t.Errorf("crashed task after the restart: %v", after)
 	}
-	if events := e.watch(t.Context(), t, crashed.GetId(), 0); len(events) != 2 || events[1].GetSeq() != 2 {
-		t.Errorf("crashed task events: %v", eventKinds(events))
+	if got := eventKinds(events); !slices.Equal(got, []string{"PROMPT", "STATUS", "STATUS", "STATUS", "STATUS", "TEXT", "STATUS"}) {
+		t.Errorf("crashed task events: %v", got)
 	}
-	e.h.mu.Lock()
-	running := len(e.h.runs)
-	e.h.mu.Unlock()
-	if running != 0 {
-		t.Errorf("%d workers restarted by themselves", running)
+}
+
+// storedTask reads a task from the store of a djinn up that is down.
+func storedTask(t *testing.T, home, id string) *planv1.Task {
+	t.Helper()
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	got, err := store.Get[*planv1.Task](t.Context(), db, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// putTask writes a task as a previous djinn up left it, with its prompt as its first event.
+func putTask(t *testing.T, db *store.Store, task *planv1.Task, prompt string) {
+	t.Helper()
+	if err := db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "crash", task); err != nil {
+			return err
+		}
+		if err := tx.Put(task); err != nil {
+			return err
+		}
+		return tx.Put(newEvent(task.GetId(), 1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt}))
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

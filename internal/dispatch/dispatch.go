@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
@@ -35,6 +36,7 @@ type Situation struct {
 	git     map[string]bool
 	machine *Machine
 	started map[string]bool
+	now     time.Time
 }
 
 // New is the situation of tasks and wishes, all of them as the store lists them (oldest first), the projects in Git being git (a project not in it is
@@ -42,7 +44,7 @@ type Situation struct {
 func New(tasks []*planv1.Task, wishes []*planv1.Wish, git map[string]bool, machine *Machine) *Situation {
 	s := &Situation{
 		tasks: tasks, byID: make(map[string]*planv1.Task, len(tasks)), wishes: make(map[string]*planv1.Wish, len(wishes)),
-		rank: map[string]int{}, git: git, machine: machine, started: map[string]bool{},
+		rank: map[string]int{}, git: git, machine: machine, started: map[string]bool{}, now: time.Now(),
 	}
 	for _, t := range tasks {
 		s.byID[t.GetId()] = t
@@ -56,6 +58,12 @@ func New(tasks []*planv1.Task, wishes []*planv1.Wish, git map[string]bool, machi
 	return s
 }
 
+// At sets the time the situation is read at, which a usage limit's reset is compared with: the harness's clock.
+func (s *Situation) At(now time.Time) *Situation {
+	s.now = now
+	return s
+}
+
 // Decision is what a pass decides for one planned task. Why and Failed both empty: it starts now.
 type Decision struct {
 	Task *planv1.Task
@@ -65,10 +73,20 @@ type Decision struct {
 	Failed string
 }
 
-// Planned tells whether Djinn starts the task by itself, once it is ready.
+// Planned tells whether Djinn starts the task by itself, once it is ready: a task planned on this machine, or one
+// whose worker Djinn resumes (cut short by a restart, or by its provider's usage limit).
 func Planned(t *planv1.Task) bool {
-	return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING && t.GetScheduled() && t.GetStartTime() == nil
+	switch t.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_PENDING:
+		return t.GetScheduled() && t.GetStartTime() == nil
+	case planv1.TaskStatus_TASK_STATUS_RESUMING:
+		return t.GetScheduled()
+	}
+	return false
 }
+
+// Resuming tells whether the task is one Djinn resumes.
+func Resuming(t *planv1.Task) bool { return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING }
 
 // Pass decides for every planned task, the first wish of the rank first, then the oldest: each task it starts
 // counts as writing and takes a slot for the ones after it.
@@ -84,8 +102,8 @@ func (s *Situation) Pass() []Decision {
 	return out
 }
 
-// Order is the planned tasks, by the rank of their wish, then the oldest first. The tasks of a wish that is not
-// active come last; Blocker keeps them waiting.
+// Order is the planned tasks: the ones Djinn resumes first, as they ran before; then by the rank of their wish, then
+// the oldest first. The tasks of a wish that is not active come last; Blocker keeps them waiting.
 func (s *Situation) Order() []*planv1.Task {
 	var out []*planv1.Task
 	for _, t := range s.tasks {
@@ -99,8 +117,14 @@ func (s *Situation) Order() []*planv1.Task {
 		}
 		return len(s.rank)
 	}
+	first := func(t *planv1.Task) int {
+		if Resuming(t) {
+			return 0
+		}
+		return 1
+	}
 	slices.SortStableFunc(out, func(a, b *planv1.Task) int {
-		return cmp.Or(cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())),
+		return cmp.Or(cmp.Compare(first(a), first(b)), cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())),
 			a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime()), strings.Compare(a.GetId(), b.GetId()))
 	})
 	return out
@@ -120,7 +144,8 @@ func (s *Situation) writing(t *planv1.Task) bool {
 }
 
 // Blocker says why the task cannot start now (why), or why it never will (failed); both empty when it can start.
-// Its wish must be active (not paused nor granted); then come the dependencies, the write scopes, and the machine.
+// Its wish must be active (not paused nor granted); then come the dependencies, its provider's usage limit, the write
+// scopes, and the machine.
 // A wish the situation does not know does not hold the task.
 func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 	if wish, ok := s.wishes[t.GetWishId()]; ok && !plan.Active(wish) {
@@ -144,6 +169,9 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 	if why != "" {
 		return why, ""
 	}
+	if why := s.limited(t); why != "" {
+		return why, ""
+	}
 	// In Git, worktrees separate the writers.
 	if id := t.GetProjectId(); id != "" && !s.git[id] {
 		for _, o := range s.tasks {
@@ -157,6 +185,36 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 		}
 	}
 	return s.full(), ""
+}
+
+// limited says why the task waits for a usage limit: its own, until it resets, or its provider's, which a task
+// waiting for it holds; "" when none holds.
+func (s *Situation) limited(t *planv1.Task) string {
+	if Resuming(t) && t.GetResumeAfter() != nil && t.GetResumeAfter().AsTime().After(s.now) {
+		return cmp.Or(t.GetWaitReason(), "its provider's usage limit")
+	}
+	var holder *planv1.Task
+	for _, o := range s.tasks {
+		if o.GetId() == t.GetId() || !Resuming(o) || o.GetResumeAfter() == nil || !o.GetResumeAfter().AsTime().After(s.now) ||
+			provider(o) != provider(t) {
+			continue
+		}
+		if holder == nil || o.GetResumeAfter().AsTime().After(holder.GetResumeAfter().AsTime()) {
+			holder = o
+		}
+	}
+	if holder == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s waits for %s", provider(t), cmp.Or(holder.GetWaitReason(), "its usage limit"))
+}
+
+// provider names the task's agent; none is claude.
+func provider(t *planv1.Task) string {
+	if t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED {
+		return "claude"
+	}
+	return strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 }
 
 // full says why no worker may start now, or "" when one may.

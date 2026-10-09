@@ -9,6 +9,7 @@ const f = await bundle(
   "flight",
   `export * from "@/src/data/flight.ts";
 export * from "@/src/data/journal.ts";
+export { taskTone } from "@/src/data/format.ts";
 export { create } from "@bufbuild/protobuf";
 export { anyPack } from "@bufbuild/protobuf/wkt";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -209,4 +210,51 @@ test("the journal reads its commands from their requests, with the log blocks, t
     f.commandName("/plan.v1.SkillService/Unsummon"),
     "skill unsummon",
   );
+});
+
+test("a task Djinn resumes, or one resumed as another task, is not the user's move", () => {
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const tasks = [
+    { id: "t1", wishId: "w1", code: "W1", status: f.TaskStatus.RESUMING },
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      status: f.TaskStatus.RESUMING,
+      resumeAfter: at(100),
+    },
+    { id: "t3", wishId: "w1", code: "W3", status: f.TaskStatus.INTERRUPTED },
+    { id: "t4", wishId: "w1", code: "W4", status: f.TaskStatus.INTERRUPTED },
+    {
+      id: "t5",
+      wishId: "w1",
+      code: "W5",
+      status: f.TaskStatus.RUNNING,
+      forkOf: "W3",
+    },
+  ];
+  const plan = f.flightPlan([lamp], { w1: detail(tasks, []) });
+  // Only W4 waits for the user: cut short, and nothing took it over.
+  assert.deepEqual(
+    plan.waiting.map((w) => w.item.code),
+    ["W4"],
+  );
+  assert.equal(f.forkedAs(tasks[2], tasks), "W5");
+  assert.equal(f.forkedAs(tasks[3], tasks), "");
+  // The ones Djinn resumes show among the running ones.
+  assert.deepEqual(
+    plan.running.map((r) => r.item.code),
+    ["W1", "W2", "W5"],
+  );
+});
+
+test("the states Djinn handles by itself speak the window's status language", () => {
+  const S = f.TaskStatus;
+  assert.equal(f.taskTone({ status: S.RESUMING }), "running");
+  assert.equal(
+    f.taskTone({ status: S.RESUMING, resumeAfter: at(100) }),
+    "paused",
+  );
+  assert.equal(f.taskTone({ status: S.INTERRUPTED }, "W5"), "stopped");
+  assert.equal(f.taskTone({ status: S.INTERRUPTED }), "interrupted");
 });

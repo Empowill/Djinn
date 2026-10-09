@@ -79,6 +79,7 @@ export function WishTask({
   project,
   codes,
   origin,
+  forkedAs = "",
   onStop,
   onSend,
 }: {
@@ -88,6 +89,8 @@ export function WishTask({
   codes?: ReadonlyMap<string, string>;
   // Where the task comes from, in the flight plan of several wishes: its wish.
   origin?: ReactNode;
+  // The task that took over this one, cut short: its code.
+  forkedAs?: string;
   onStop: () => void;
   onSend: (text: string) => Promise<unknown>;
 }) {
@@ -95,13 +98,14 @@ export function WishTask({
   const stoppable =
     task.status === TaskStatus.RUNNING ||
     task.status === TaskStatus.PAUSED ||
-    task.status === TaskStatus.PENDING;
+    task.status === TaskStatus.PENDING ||
+    task.status === TaskStatus.RESUMING;
   const after = taskFinished(task.status)
     ? []
     : (task.dependsOn ?? [])
         .map((id) => codes?.get(id))
         .filter((code): code is string => !!code);
-  const tone = taskTone(task.status);
+  const tone = taskTone(task, forkedAs);
   return (
     <article
       className={`wish-task tone-${tone} ${open ? "open" : ""}`}
@@ -113,7 +117,7 @@ export function WishTask({
           onClick={() => setOpen(!open)}
           aria-expanded={open}
         >
-          <StatusBadge tone={tone} label={taskStatusText(task.status)} />
+          <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
           <span className="agent-code">{task.code}</span>
           <strong>{task.title}</strong>
           <span className="wish-task-meta">

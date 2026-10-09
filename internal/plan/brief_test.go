@@ -38,11 +38,29 @@ func TestBrief(t *testing.T) {
 		Id: store.NewID(), WishId: wish.GetId(), Code: "W2", Title: "Write the docs", Status: planv1.TaskStatus_TASK_STATUS_FAILED,
 		Error: "create the worktree: " + repo + " is locked", CreateTime: timestamppb.Now(),
 	}
+	// One Djinn resumes by itself, and one cut short that another task took over: neither is the lead's move.
+	resuming := &planv1.Task{
+		Id: store.NewID(), WishId: wish.GetId(), Code: "W3", Title: "Reopen the leads", Status: planv1.TaskStatus_TASK_STATUS_RESUMING,
+		WaitReason: "the account's session limit, resets at 07:20", CreateTime: timestamppb.Now(),
+	}
+	cut := &planv1.Task{
+		Id: store.NewID(), WishId: wish.GetId(), Code: "W4", Title: "Pause a worker", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
+		Error: "djinn up ended while the worker ran", CreateTime: timestamppb.Now(), EndTime: timestamppb.Now(),
+	}
+	fork := &planv1.Task{
+		Id: store.NewID(), WishId: wish.GetId(), Code: "W5", Title: "Pause a worker, again", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		ForkOf: "W4", CreateTime: timestamppb.Now(), EndTime: timestamppb.Now(),
+	}
 	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(actor, "test/put", failed); err != nil {
-			return err
+		for _, task := range []*planv1.Task{failed, resuming, cut, fork} {
+			if err := tx.Journal(actor, "test/put", task); err != nil {
+				return err
+			}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
 		}
-		return tx.Put(failed)
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -71,6 +89,8 @@ func TestBrief(t *testing.T) {
 		wish.GetId(), "**Q01** Which store? → A: SQLite", "**W1** Write the store (claude", "**W2** Write the docs: failed",
 		"### No CGO (decision)", "In api/internal", "https://example.com/acme.git",
 		"`djinn wish sync <wish>`", "republish that file as it is, in one call",
+		"**W3** Reopen the leads: resuming by itself, the account's session limit, resets at 07:20",
+		"**W4** Pause a worker: resumed as W5",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the brief lacks %q:\n%s", want, text)

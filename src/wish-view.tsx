@@ -37,6 +37,7 @@ import { message } from "./data/client";
 import { useClients, useData, useWishDetail } from "./data/djinn";
 import {
   type OpenQuestion,
+  forkedAs,
   investigatingQuestions,
   openQuestions,
   spent,
@@ -365,6 +366,7 @@ export function WishView({
                   key={task.id}
                   task={task}
                   codes={codes}
+                  forkedAs={forkedAs(task, detail.tasks)}
                   project={allProjects.find((p) => p.id === task.projectId)}
                   onStop={() =>
                     quiet(
@@ -560,10 +562,7 @@ export function WaitingTasks({
       </div>
       {waiting.map(({ item, question, wish }) => (
         <p className="plan-line" key={item.id} id={`waiting-${item.id}`}>
-          <StatusBadge
-            tone={taskTone(item.status)}
-            label={taskStatusText(item.status)}
-          />
+          <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
           {origin && <WishOrigin wish={wish} />}
           <span>
             {item.status === TaskStatus.INTERRUPTED

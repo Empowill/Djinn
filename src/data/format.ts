@@ -9,6 +9,7 @@ import {
   type Project,
   type Question,
   RoundKind,
+  type Task,
   TaskStatus,
   type Wish,
   WishState,
@@ -57,10 +58,20 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
   [TaskStatus.INTERRUPTED]: "task.status_interrupted",
   [TaskStatus.WAITING]: "task.status_waiting",
   [TaskStatus.PAUSED]: "task.status_paused",
+  [TaskStatus.RESUMING]: "task.status_resuming",
 };
 
-export function taskStatusText(status: TaskStatus): string {
-  return t(taskStatusKeys[status]);
+// taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the
+// limit; one cut short and resumed as another task (forkedAs) says which.
+export function taskStatusText(
+  task: Pick<Task, "status" | "resumeAfter">,
+  forkedAs = "",
+): string {
+  if (task.status === TaskStatus.RESUMING && task.resumeAfter)
+    return t("task.status_limit");
+  if (task.status === TaskStatus.INTERRUPTED && forkedAs)
+    return t("task.status_forked", { task: forkedAs });
+  return t(taskStatusKeys[task.status]);
 }
 
 // Tone is a state in the window's status language: each has its colour, its icon and its word (src/status.tsx).
@@ -75,9 +86,19 @@ export type Tone =
   | "stopped"
   | "paused";
 
-export function taskTone(status: TaskStatus): Tone {
+// taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
+// reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
+// None of them is the person's move.
+export function taskTone(
+  task: Pick<Task, "status" | "resumeAfter">,
+  forkedAs = "",
+): Tone {
+  const status = task.status;
+  if (status === TaskStatus.RESUMING && task.resumeAfter) return "paused";
+  if (status === TaskStatus.INTERRUPTED && forkedAs) return "stopped";
   switch (status) {
     case TaskStatus.RUNNING:
+    case TaskStatus.RESUMING:
       return "running";
     case TaskStatus.DONE:
       return "done";

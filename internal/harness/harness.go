@@ -19,6 +19,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -66,6 +67,8 @@ type Harness struct {
 
 	prefix []string // the command every worker runs under (WithPrefix)
 
+	clock func() time.Time // nil: the machine's (WithClock)
+
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
 	tick       time.Duration // a pass at least this often
@@ -109,6 +112,7 @@ type run struct {
 	unread  []string      // messages the worker took on its input and has said nothing after yet
 	warm    *warm         // the warm worker the task takes, until launch
 	failure string        // the last error the current worker said: it never ends done
+	limit   *Limit        // the usage limit the current worker said it hit: it wins over failure
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
@@ -162,7 +166,8 @@ func (h *Harness) Close() {
 }
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
-// what resuming them needs (provider, session, worktree); nothing restarts them.
+// what resuming them needs (provider, session, worktree). Then every interrupted task Djinn may resume waits for the
+// scheduler to resume it (queueInterrupted).
 func (h *Harness) Recover(ctx context.Context) error {
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
@@ -197,7 +202,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
-	return nil
+	return h.queueInterrupted(ctx, tasks)
 }
 
 // Spawn creates a task and starts its worker: in a Git project, in a new worktree on its own branch. procedure
@@ -446,7 +451,7 @@ func (h *Harness) launch(
 func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error {
 	t := r.task
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
-	r.failure = ""
+	r.failure, r.limit = "", nil
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
@@ -588,6 +593,9 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
 	}
+	if ev.Limit != nil {
+		r.limit = ev.Limit
+	}
 	var task proto.Message
 	if changed {
 		task = r.task
@@ -652,7 +660,8 @@ func (h *Harness) finish(r *run, res Result) {
 // end gives the task its final status, then lets its watchers go. A task whose worker read while it asks whether
 // it may edit waits for the answer. A task is done only when its worker ended without an error, whatever its
 // provider: an error it reported, an exit code other than 0, or an error it said on the way, even when its
-// process then exited 0, fails the task with the reason.
+// process then exited 0, fails the task with the reason. But a failure its provider's usage limit caused is no
+// failure: the task waits for the limit to reset, and resumes.
 func (h *Harness) end(r *run, res Result) {
 	for flushed := false; !flushed; {
 		select {
@@ -683,8 +692,15 @@ func (h *Harness) end(r *run, res Result) {
 	default:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_DONE, ""
 	}
+	why := t.GetError()
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
+		h.limited(r, t)
+	}
 	text := short(t.GetStatus())
-	if t.GetError() != "" {
+	switch {
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
+		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
+	case t.GetError() != "":
 		text += ": " + t.GetError()
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
@@ -830,7 +846,11 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 		h.sched.Unlock()
 		return h.Stop(ctx, procedure, req)
 	}
-	task.Status, task.Error, task.WaitReason, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request before it started", "", timestamppb.Now()
+	why := "stopped on request before it started"
+	if dispatch.Resuming(task) {
+		why = "stopped on request while it waited to resume"
+	}
+	task.Status, task.Error, task.WaitReason, task.ResumeAfter, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", nil, timestamppb.Now()
 	h.writeAlone(ctx, actorLocal, procedure, req, task.GetId(), task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "stopped: " + task.GetError()})
 	h.sched.Unlock()
 	h.wake() // Its dependents fail in turn.

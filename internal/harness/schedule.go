@@ -173,7 +173,7 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		m = &dispatch.Machine{Running: h.Running()}
 		m.Slots, m.Rule, m.Pressure = h.capacity()
 	}
-	return dispatch.New(tasks, wishes, git, m), nil
+	return dispatch.New(tasks, wishes, git, m).At(h.now()), nil
 }
 
 // Ranks gives the position of each task's wish among the active wishes, the first served first; the task of a wish
@@ -255,6 +255,9 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 // launchPlanned starts the worker of a planned task that is ready: its access is decided now, with the wish's
 // grants and the project's configuration as they are, and it may ask its edit question.
 func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
+	if dispatch.Resuming(t) {
+		return h.relaunch(ctx, t)
+	}
 	t = proto.CloneOf(t)
 	t.WaitReason = ""
 	provider, ok := h.providers[t.GetProvider()]

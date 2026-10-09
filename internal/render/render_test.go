@@ -488,6 +488,39 @@ func TestBar(t *testing.T) {
 	}
 }
 
+// TestResumingNotYourMove: a task Djinn resumes by itself, one waiting for its provider's limit, and one cut short
+// but resumed as another task are not the user's move: the bar and the actions leave them, their status says it.
+func TestResumingNotYourMove(t *testing.T) {
+	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Resumes"}, Tasks: []*planv1.Task{
+		{Id: "t1", WishId: "w", Code: "W1", Title: "Cut short", Status: planv1.TaskStatus_TASK_STATUS_RESUMING,
+			WaitReason: "djinn restarted while the worker ran"},
+		{Id: "t2", WishId: "w", Code: "W2", Title: "Limited", Status: planv1.TaskStatus_TASK_STATUS_RESUMING,
+			WaitReason: "the account's session limit, resets at 07:20", ResumeAfter: ts(60)},
+		{Id: "t3", WishId: "w", Code: "W3", Title: "Taken over", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
+			Error: "djinn up ended while the worker ran"},
+		{Id: "t4", WishId: "w", Code: "W4", Title: "Fork", Status: planv1.TaskStatus_TASK_STATUS_RUNNING, ForkOf: "W3"},
+	}}
+	html := page(t, Input{Export: exp, Language: "en"})
+	if bar := between(html, `<aside class="bar"`, "</aside>"); strings.Contains(bar, `<a class="line`) {
+		t.Errorf("the bar lists what Djinn does by itself:\n%s", bar)
+	}
+	if strings.Contains(html, `id="actions"`) && strings.Contains(between(html, `id="actions"`, "</section>"), "W") {
+		t.Errorf("the actions list what Djinn does by itself")
+	}
+	seen := map[string]bool{}
+	for _, m := range pill.FindAllStringSubmatch(html, -1) {
+		seen[m[1]+" "+m[3]] = true
+	}
+	for _, s := range []string{"run Resuming", "pause Waiting for the limit", "stop Resumed as W4"} {
+		if !seen[s] {
+			t.Errorf("the page lacks the pill %q; it has %v", s, seen)
+		}
+	}
+	if strings.Contains(html, "Interrupted") {
+		t.Error("a task resumed as another one still reads interrupted")
+	}
+}
+
 var pill = regexp.MustCompile(`<(?:span|a) class="st ([a-z]+)"[^>]*><i aria-hidden="true">([^<]*)</i>([^<]*?)(?: <b>\d+</b>)?</(?:span|a)>`)
 
 // TestColourLanguage: every status shows its colour, its icon and its word, never its colour alone; the header

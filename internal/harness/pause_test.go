@@ -146,8 +146,9 @@ func TestPauseResume(t *testing.T) {
 	}
 }
 
-// TestPausedInterrupted: a task paused when djinn up stops is interrupted, its worker stopped; one left paused in the
-// store by a crash is interrupted at the next start, as a running one.
+// TestPausedInterrupted: a task paused when djinn up stops is interrupted, its worker stopped, and the next start
+// resumes it; one left paused in the store by a crash is interrupted at the next start, as a running one, then
+// resumed.
 func TestPausedInterrupted(t *testing.T) {
 	home := t.TempDir()
 	e := up(t, home)
@@ -159,26 +160,20 @@ func TestPausedInterrupted(t *testing.T) {
 	if d := time.Since(start); d > 2*time.Second {
 		t.Errorf("stopping djinn up with a paused worker took %v", d)
 	}
-	e = up(t, home)
-	got := e.get(t, long.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+	if got := storedTask(t, home, long.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
 		t.Errorf("paused task after djinn up stopped = %v", got)
 	}
+	e = up(t, home)
+	got := e.until(t, long.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 
 	crashed := proto.CloneOf(got)
 	crashed.Id, crashed.Code, crashed.Status = store.NewID(), "W9", planv1.TaskStatus_TASK_STATUS_PAUSED
-	crashed.EndTime, crashed.Error = nil, ""
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "crash", crashed); err != nil {
-			return err
-		}
-		return tx.Put(crashed)
-	}); err != nil {
-		t.Fatal(err)
-	}
+	crashed.EndTime, crashed.Error, crashed.Resumes = nil, "", 0
+	putTask(t, e.db, crashed, "x")
 	e.down()
 	e = up(t, home)
-	if after := e.get(t, crashed.GetId()); after.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
-		t.Errorf("task left paused by a crash, after the restart: %v", after)
+	e.until(t, crashed.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if !hasText(e.watch(t.Context(), t, crashed.GetId(), 0), "interrupted: djinn up ended while the worker ran") {
+		t.Errorf("the task left paused by a crash was not interrupted first")
 	}
 }

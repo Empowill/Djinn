@@ -39,7 +39,8 @@ Each one is a decision. Changing one is a discussion first.
 - **Protos are the source of truth.** API, command line, storage and config come from `api/`.
   The command line follows a [convention](docs/cli-convention.md), with no code per command.
 - **Nothing is lost.** Every write is a transaction with its journal entry, durable through a
-  power cut. Stopping Djinn interrupts workers; it never loses them.
+  power cut. Stopping Djinn interrupts workers; it never loses them: the next start resumes them by itself, in the
+  same task, worktree and session. A worker stopped by its provider's usage limit waits for the reset, then resumes.
 - **No secret, ever.** Djinn may pass one to a process. It never stores, logs or reads one.
 - **A measured transport.** How the window, the browser and the CLI reach the server:
   [`docs/transport.md`](docs/transport.md). Measure before changing it.
