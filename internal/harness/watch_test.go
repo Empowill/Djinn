@@ -28,6 +28,10 @@ import (
 //	count:<file>   it counts its runs in file, and prints "run N"
 //	exit:2         it exits with this code
 //	wait           it waits until it is stopped
+//
+// wait sleeps, it does not block on an empty select: in a test binary without cgo, as on macOS and Windows, the
+// runtime sees every goroutine asleep and ends the process with exit code 2, and a watcher that restarts its command
+// runs it again.
 const fakeWatchArg = "djinn-fake-watch"
 
 func fakeWatch(steps []string) int {
@@ -51,7 +55,7 @@ func fakeWatch(steps []string) int {
 			n, _ := strconv.Atoi(arg)
 			return n
 		case "wait":
-			select {}
+			time.Sleep(time.Hour)
 		}
 	}
 	return 0
@@ -186,6 +190,11 @@ func TestWatchLine(t *testing.T) {
 	if !strings.HasSuffix(got, "… mrwatch -watch has ended.") || strings.Count(got, "\u00e9") != watchLineMax-1 {
 		t.Errorf("line = %q", got)
 	}
+	long := strings.Repeat("x", 300)
+	if got := WatchLine("W70", &Watched{First: "ok", Command: long, Watching: true}); got !=
+		"Djinn: W70's watcher says: ok. "+long[:watchCommandMax-1]+"… is still watching." {
+		t.Errorf("line of a long command = %q", got)
+	}
 	if got := cleanLine("\x1b]0;title\x07\x1b[1;32mok\x1b[0m\tdone\x00\r"); got != "ok done" {
 		t.Errorf("cleanLine = %q", got)
 	}
@@ -252,7 +261,8 @@ func TestWatcher(t *testing.T) {
 	if len(lines) < 3 {
 		t.Fatalf("the lead was told %q", lines)
 	}
-	want := wishID + ": Djinn: W1's watcher says: run 1. " + cmd + " is still watching."
+	// The command is clipped in the line: the test binary's path is long on macOS and Windows.
+	want := wishID + ": Djinn: W1's watcher says: run 1. " + clipRunes(cmd, watchCommandMax) + " is still watching."
 	if lines[0] != want {
 		t.Errorf("the lead was told %q\nwant %q", lines[0], want)
 	}
@@ -335,10 +345,11 @@ func TestWatcherEnds(t *testing.T) {
 }
 
 // TestWatcherResumes: a watcher djinn up cut short is resumed on its command at the next start, however many times,
-// in its project's folder.
+// in its project's folder, on a full machine under pressure.
 func TestWatcherResumes(t *testing.T) {
 	home := t.TempDir()
-	e := up(t, home, WithTick(20*time.Millisecond))
+	l := &limit{slots: 0, pressure: "simulated"}
+	e := up(t, home, WithTick(20*time.Millisecond), WithCapacity(l.capacity))
 	wishID, _ := e.wish(t, gitRepo(t))
 	counter := filepath.Join(t.TempDir(), "runs")
 	task, err := e.spawnWatch(t, wishID, watchCommand("count:"+counter, "wait"), true)
@@ -348,7 +359,7 @@ func TestWatcherResumes(t *testing.T) {
 	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 1" })
 	for i := 2; i <= maxResumes+2; i++ {
 		e.down()
-		e = up(t, home, WithTick(20*time.Millisecond))
+		e = up(t, home, WithTick(20*time.Millisecond), WithCapacity(l.capacity))
 		got := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == fmt.Sprintf("run %d", i) })
 		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || got.GetWorktree() != "" {
 			t.Fatalf("after restart %d: %v", i-1, got)
