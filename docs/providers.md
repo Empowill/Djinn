@@ -105,10 +105,19 @@ What is verified and what is supposed:
   `bash -lc` does not match a prefix, and is declined); that an accepted command may run outside the sandbox when
   codex asked for that. **Lost:** codex takes no list of commands at launch: in LISTED, Djinn answers its
   approvals; in AUTO, its reviewer decides every approval, denied commands included.
-- **Antigravity**, from `agy --help` (1.3.0) and the documentation in its binary: `--mode` takes `accept-edits` or
-  `plan`; `--sandbox` restricts the terminal. **Supposed:** that `--sandbox` blocks the network; that agy 1.3.0 has
-  no auto mode reachable from its command line (its binary mentions one, without a flag). **Lost:** commands (its
-  headless runs do not apply allow rules: "Settings allow-rules do not apply"), denied commands, AUTO.
+- **Antigravity**, from `agy --help` (1.3.1), the documentation in its binary, its public documentation (terminal
+  sandbox, permissions, headless mode, read 2026-10-08) and three real runs (2026-10-08): `--mode` takes only
+  `accept-edits` or `plan` (`--mode auto` is refused with a warning); `--sandbox` turns the sandbox on, off by
+  default in the CLI (`enableTerminalSandbox: false`). On Linux it is kernel namespaces, seccomp and a filtering
+  HTTP proxy. **Verified in the sandbox, with `--dangerously-skip-permissions`:** the home folder is read-only,
+  `~/.ssh` is hidden, `~/.gitconfig` is readable, `/tmp` is the host's and writable, host processes are hidden, DNS
+  and raw TCP are cut, but HTTPS through its proxy went out (`curl https://example.com` gave 200, `git ls-remote
+  https://github.com/...` worked); and a command run with `BypassSandbox: true` ran on the host without any prompt (a
+  file created in the home folder). So `--dangerously-skip-permissions` approves both the network asks and the way
+  out of the sandbox: with it, `--sandbox` is no limit. **Supposed:** that `toolPermission: proceed-in-sandbox` in
+  agy's settings runs sandboxed commands headless and soft-denies the way out (documented, not tried); whether
+  allow rules apply headless (its documentation says yes, its binary's notice says "Settings allow-rules do not
+  apply"). **Lost:** commands at launch (no flag), denied commands, AUTO.
 
 ### Instructions: every agent reads `AGENTS.md`
 
@@ -176,7 +185,7 @@ branch the source project has checked out. A skill can carry scripts: summoning 
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude      | `--restricted --tools Read,Glob,Grep --permission-mode plan --strict-mcp-config`: reading tools only, no settings files, no MCP server, no hook |
 | Codex       | `sandbox: read-only`, `approvalPolicy: never`, turn `sandboxPolicy: readOnly` without network; it reads with commands confined there (Q37)      |
-| Antigravity | refused: plan mode is not read-only and what `--sandbox` blocks is undocumented; allowed once a real capture proves it                          |
+| Antigravity | refused: plan mode is not read-only, and `--sandbox` lets HTTPS out and the agent leave it once permissions are skipped; allowed once proven    |
 
 The same applies to a worker of rule 5 before the answer. In a project without `.agents/permissions.txtpb` nor
 allowance, nothing above is passed: Claude gets `--permission-prompts none` (anything that would prompt is denied),

@@ -73,6 +73,18 @@ Codex, within what Google's terms allow.
 - Nine cases replayed by `TestCatalog`, all **written from the documentation and the binary, none captured**:
   [`docs/providers.md`](../docs/providers.md#antigravity).
 
+## Investigated (Q43): auto mode with `--sandbox --dangerously-skip-permissions`
+Three real runs on 8 October 2026, agy 1.3.1, a Flash model, each in an empty temporary folder. Details in
+[`docs/providers.md`](../docs/providers.md#how-each-agent-receives-it) (Antigravity, verified and supposed).
+- The sandbox holds files: home read-only, `~/.ssh` hidden, host processes hidden, DNS and raw TCP cut. `/tmp` is the
+  host's, writable.
+- It does not hold the network once permissions are skipped: HTTPS went out through its proxy (`curl`, `git
+  ls-remote`).
+- It does not hold the agent: a command asked with `BypassSandbox: true` ran on the host without a prompt.
+- The cleaner door, documented and not tried: `"enableTerminalSandbox": true, "toolPermission":
+  "proceed-in-sandbox"` in agy's settings, without `--dangerously-skip-permissions`. Djinn writes no agy settings: the
+  developer would set them, or a dedicated agy project would carry them.
+
 ## Done when
 - [x] A worker can be started with `agy` in a worktree (`djinn task spawn --provider antigravity`), its
   stream-json events shown like Claude's. Not yet run against a real model.
