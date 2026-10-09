@@ -65,12 +65,15 @@ export function CountPill({
   tone,
   count,
   label,
+  icon: Icon,
   children,
 }: {
   tone: Tone;
   count: number;
   // What the count is, in words: "2 questions wait for your answer".
   label: string;
+  // What it counts, when the state's icon does not say it: the inbox.
+  icon?: LucideIcon;
   // The words shown beside the number; only the icon and the number when none.
   children?: ReactNode;
 }) {
@@ -81,7 +84,11 @@ export function CountPill({
       aria-label={label}
       role="img"
     >
-      <ToneIcon tone={tone} size={12} />
+      {Icon ? (
+        <Icon size={12} aria-hidden="true" />
+      ) : (
+        <ToneIcon tone={tone} size={12} />
+      )}
       <b>{count}</b>
       {children}
     </span>

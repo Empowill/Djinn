@@ -56,6 +56,7 @@ export function WishApp() {
   const loaded = useData((s) => s.loaded);
   const live = useData((s) => s.live);
   const error = useData((s) => s.error);
+  const inbox = useData((s) => s.inbox.length);
   const [selected, setSelected] = useState(() => stored("djinn.wish"));
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.sidebar.collapsed") === "1",
@@ -159,6 +160,7 @@ export function WishApp() {
           wishes={wishes}
           projects={projects}
           counts={counts}
+          inbox={inbox}
           planSelected={plan}
           onSelectPlan={() => setSelected(PLAN)}
           selectedWishId={wish?.id ?? ""}
