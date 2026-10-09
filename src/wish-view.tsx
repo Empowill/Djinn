@@ -15,6 +15,7 @@ import {
   ScrollText,
   Sparkles,
   Terminal,
+  Trash2,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -48,6 +49,7 @@ import {
 } from "./data/flight";
 import {
   allowanceOf,
+  MAX_ACTIVE,
   isActive,
   projectsOf,
   taskStatusText,
@@ -59,6 +61,7 @@ import {
 import { type Entry, isLog, journal } from "./data/journal";
 import { t } from "./i18n";
 import { AttentionBar, attentionOf } from "./attention";
+import { ModalFrame } from "./frame";
 import { MarkButtons, type OnMark, useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { useKeepPlace } from "./scroll-anchor";
@@ -94,6 +97,7 @@ export function WishView({
   ).length;
   const granted = wish.state === WishState.GRANTED;
   const [view, setView] = useState<View>("main");
+  const [deleting, setDeleting] = useState(false);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
   const show = (to: View, id = "") => (setView(to), setFocus(id));
@@ -132,6 +136,54 @@ export function WishView({
           <strong>{wish.title}</strong>
         </div>
         <div className="topbar-actions">
+          {granted ? (
+            <button
+              className="button secondary small"
+              onClick={() =>
+                quiet(
+                  act(
+                    () => clients.wishes.activate({ wishId: wish.id }),
+                    [Change.WISH],
+                  ),
+                )
+              }
+            >
+              <Play size={14} />
+              <span>{t("wish.reopen")}</span>
+            </button>
+          ) : isActive(wish) ? (
+            <button
+              className="button secondary small"
+              title={t("wish.pause_detail")}
+              onClick={() =>
+                quiet(
+                  act(
+                    () => clients.wishes.pause({ wishId: wish.id }),
+                    [Change.WISH],
+                  ),
+                )
+              }
+            >
+              <Pause size={14} />
+              <span>{t("wish.pause")}</span>
+            </button>
+          ) : (
+            <button
+              className="button accent small"
+              title={t("wish.activate_detail", { max: MAX_ACTIVE })}
+              onClick={() =>
+                quiet(
+                  act(
+                    () => clients.wishes.activate({ wishId: wish.id }),
+                    [Change.WISH],
+                  ),
+                )
+              }
+            >
+              <Play size={14} />
+              <span>{t("wish.activate")}</span>
+            </button>
+          )}
           <button
             className="button secondary small"
             title={t("wish.resume_detail")}
@@ -176,8 +228,34 @@ export function WishView({
             <Download size={14} />
             <span>{t("app.share")}</span>
           </button>
+          <button
+            className="icon-button danger"
+            title={t("wish.delete")}
+            aria-label={t("wish.delete")}
+            onClick={() => setDeleting(true)}
+          >
+            <Trash2 size={15} />
+          </button>
         </div>
       </header>
+      {deleting && (
+        <DeleteWish
+          wish={wish}
+          tasks={detail.tasks.length}
+          running={running}
+          onClose={() => setDeleting(false)}
+          onDelete={() => {
+            setDeleting(false);
+            quiet(
+              act(
+                () => clients.wishes.delete({ wishId: wish.id }),
+                [Change.WISH],
+                t("wish.deleted_toast", { title: wish.title }),
+              ),
+            );
+          }}
+        />
+      )}
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />
         <div className="hero mission-header review-head">
@@ -235,52 +313,6 @@ export function WishView({
                 <Clock3 size={13} />
                 {when(wish.createTime)}
               </span>
-              {granted ? (
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    quiet(
-                      act(
-                        () => clients.wishes.activate({ wishId: wish.id }),
-                        [Change.WISH],
-                      ),
-                    )
-                  }
-                >
-                  <Play size={13} />
-                  {t("wish.reopen")}
-                </button>
-              ) : isActive(wish) ? (
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    quiet(
-                      act(
-                        () => clients.wishes.pause({ wishId: wish.id }),
-                        [Change.WISH],
-                      ),
-                    )
-                  }
-                >
-                  <Pause size={13} />
-                  {t("wish.pause")}
-                </button>
-              ) : (
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    quiet(
-                      act(
-                        () => clients.wishes.activate({ wishId: wish.id }),
-                        [Change.WISH],
-                      ),
-                    )
-                  }
-                >
-                  <Play size={13} />
-                  {t("wish.activate")}
-                </button>
-              )}
             </div>
           </div>
           <div className="hero-visual">
@@ -787,5 +819,52 @@ function Rights({
         </div>
       ))}
     </section>
+  );
+}
+
+// DeleteWish asks before a wish goes for good, with its tasks, their events, its questions and its blocks
+// (WishService.Delete). Its workers stop first; the worktrees and branches they made stay in the project.
+function DeleteWish({
+  wish,
+  tasks,
+  running,
+  onDelete,
+  onClose,
+}: {
+  wish: Wish;
+  tasks: number;
+  running: number;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <ModalFrame
+      title={t("wish.delete_title", { title: wish.title })}
+      eyebrow={t("wish.delete_eyebrow")}
+      onClose={onClose}
+    >
+      <div className="form-fields">
+        <p>{t("wish.delete_what", { count: tasks })}</p>
+        {running > 0 && (
+          <p className="login-message">
+            {t("wish.delete_running", { count: running })}
+          </p>
+        )}
+        <p className="form-tip">{t("wish.delete_kept")}</p>
+        <div className="modal-footer">
+          <button type="button" className="button secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            className="button danger-button"
+            onClick={onDelete}
+          >
+            <Trash2 size={14} />
+            {t("wish.delete_confirm")}
+          </button>
+        </div>
+      </div>
+    </ModalFrame>
   );
 }

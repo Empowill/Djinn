@@ -668,6 +668,7 @@ func (w *Wishes) routeTo(
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("no such destination"))
 	}
+	var paused *planv1.Wish // the wish that makes room: its workers stop
 	if opt.GetKind() == planv1.RouteKind_ROUTE_KIND_SWAP {
 		pause := &planv1.WishServicePauseRequest{WishId: opt.GetPauseWishId()}
 		if err := tx.Journal(actor, planv1connect.WishServicePauseProcedure, pause); err != nil {
@@ -680,6 +681,7 @@ func (w *Wishes) routeTo(
 		if err := pauseWish(ctx, tx, wish); err != nil {
 			return nil, err
 		}
+		paused = wish
 	}
 	makeReq := &planv1.WishServiceMakeRequest{
 		Title: opt.GetTitle(), ProjectIds: opt.GetProjectIds(), Paused: opt.GetKind() == planv1.RouteKind_ROUTE_KIND_QUEUE,
@@ -706,6 +708,9 @@ func (w *Wishes) routeTo(
 		return func(ctx context.Context) { w.startTemplate(ctx, wish) }, nil
 	}
 	return func(ctx context.Context) {
+		if paused != nil {
+			w.shelve(ctx, paused)
+		}
 		// The watcher first: the lead's first line says what it runs, or why it did not start.
 		w.startLead(ctx, wish.GetId(), from.provider, from.first+w.startTemplate(ctx, wish))
 	}, nil

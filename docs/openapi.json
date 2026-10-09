@@ -2249,6 +2249,13 @@
       },
       "plan.v1.WishServiceActivateResponse": {
         "properties": {
+          "paused": {
+            "description": "The wish that left its place to it, paused: three were active.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Wish"
+            },
+            "type": "array"
+          },
           "wish": {
             "$ref": "#/components/schemas/plan.v1.Wish",
             "description": "The wish, active."
@@ -2305,6 +2312,43 @@
           "text": {
             "description": "The brief, in Markdown: the stable part, then the part that moves.",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceDeleteRequest": {
+        "properties": {
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceDeleteResponse": {
+        "properties": {
+          "blocks": {
+            "description": "How many blocks went with it.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "questions": {
+            "description": "How many questions went with it.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "tasks": {
+            "description": "How many tasks went with it.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish, as it was."
           }
         },
         "type": "object"
@@ -2422,7 +2466,7 @@
       "plan.v1.WishServiceMakeRequest": {
         "properties": {
           "paused": {
-            "description": "Make it paused: it waits, out of the three active wishes.",
+            "description": "Make it paused: it waits, out of the three active wishes. Three being active, it is made paused anyway.",
             "type": "boolean"
           },
           "projectIds": {
@@ -2455,7 +2499,7 @@
       "plan.v1.WishServiceMoveRequest": {
         "properties": {
           "to": {
-            "description": "Its new rank, from 1 for the first; beyond the last, it goes last.",
+            "description": "Its new rank, from 1 for the first; beyond the last, it goes last, the third place at most.",
             "format": "int32",
             "type": "integer"
           },
@@ -2472,6 +2516,13 @@
       },
       "plan.v1.WishServiceMoveResponse": {
         "properties": {
+          "paused": {
+            "description": "The wish pushed past the third place, paused.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Wish"
+            },
+            "type": "array"
+          },
           "wishes": {
             "description": "The active wishes, by rank.",
             "items": {
@@ -4018,7 +4069,7 @@
     },
     "/plan.v1.WishService/Activate": {
       "post": {
-        "description": "Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one first.",
+        "description": "Make a paused or granted wish active again, last by rank; its stopped workers start again. Three wishes are active at most: when three are, it takes the third place, and the third wish is paused.",
         "operationId": "WishService_Activate",
         "requestBody": {
           "content": {
@@ -4129,6 +4180,44 @@
           "WishService"
         ],
         "x-read-only": true
+      }
+    },
+    "/plan.v1.WishService/Delete": {
+      "post": {
+        "description": "Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers stop first. The worktrees and branches its workers made stay in the project. It cannot be undone.",
+        "operationId": "WishService_Delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceDeleteResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish delete",
+        "tags": [
+          "WishService"
+        ]
       }
     },
     "/plan.v1.WishService/Export": {
@@ -4324,7 +4413,7 @@
     },
     "/plan.v1.WishService/Move": {
       "post": {
-        "description": "Move an active wish to another rank: --to 1 gives it priority over the others.",
+        "description": "Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active there, the third place at most, and the wish it pushes past the third place is paused.",
         "operationId": "WishService_Move",
         "requestBody": {
           "content": {
@@ -4362,7 +4451,7 @@
     },
     "/plan.v1.WishService/Pause": {
       "post": {
-        "description": "Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.",
+        "description": "Pause a wish: it keeps everything, its workers stop and wait to resume with it, and it leaves its place among the three active wishes to another one.",
         "operationId": "WishService_Pause",
         "requestBody": {
           "content": {

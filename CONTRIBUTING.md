@@ -54,8 +54,9 @@ Each one is a decision. Changing one is a discussion first.
 - **A worker's rights come from where it runs.** Outside any project: read only. In a project:
   the wish's allowance, then `.agents/`, then the agent's own config. In a folder outside Git with
   none, the worker reads until you say it may edit ([order](docs/providers.md#the-order-of-decision)).
-- **Three wishes at a time, never more.** A djinn grants three wishes. It guards your
-  attention, not the machine: the machine sets how many workers run.
+- **Three wishes at a time, never more.** A djinn grants three wishes: three are active at most,
+  and the others wait, set aside, as many as you like. It guards your attention, not the machine:
+  the machine sets how many workers run.
 - **Heavy runs take a gate.** Workers share one machine: tests, e2e, code generation and builds run
   through the running Djinn, one at a time: `djinn gate run <name> -- go tool task test`. `.agents/`
   allows no heavy command directly; light ones (`lint`, `test-pkg` on a package) run as they are.
@@ -132,8 +133,10 @@ To use Djinn, see the [README](README.md). To work on it:
   `djinn up` runs (delete it to stop); the lead republishes that file. `djinn wish render <wish-id>` writes it once.
 - `djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app, without a copy: they
   follow the source. `djinn skill list` shows the skills; `djinn skill unsummon app/babysit-mr --from infra` stops it.
-- Three wishes are active at most. `djinn wish pause <wish-id>` and `djinn wish activate <wish-id>` free and take a
-  place; `djinn wish move <wish-id> --to 1` gives one priority; `djinn wish grant <wish-id>` says it is done.
+- Three wishes are active at most; the others wait, paused. `djinn wish pause <wish-id>` sets one aside and stops its
+  workers; `djinn wish activate <wish-id>` takes it back, its workers resumed, in the last place (three being active,
+  the third wish is paused); `djinn wish move <wish-id> --to 1` gives one priority, active or not;
+  `djinn wish grant <wish-id>` says it is done; `djinn wish delete <wish-id>` deletes it with its tasks.
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
 - `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. Not on Windows

@@ -13,7 +13,8 @@ limits, and they are the project's first rule:
   claim comes with its evidence.
 - **No wishing for more wishes.** It never grants itself more than it was given: no extra budget,
   no wider access, and no secret it stores or reads.
-- **Three wishes at a time.** Never more: one Djinn holds three active wishes at most.
+- **Three wishes at a time.** Never more: one Djinn holds three active wishes at most, and as many set aside as
+  you like.
 
 **Workers never commit.** They edit their worktree; the lead reviews each diff, commits in batches and pushes
 once. Fewer, clearer commits, and one CI run instead of one per worker: the Git runners breathe.

@@ -96,6 +96,7 @@ type Harness struct {
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
 type run struct {
 	id    string
+	wish  string             // the task's wish, which never changes
 	done  chan struct{}      // closed once the task has its final status
 	wake  chan struct{}      // an answer waits in answers
 	notes chan Event         // events from outside the worker (a gate), for the pump to write
@@ -105,6 +106,7 @@ type run struct {
 	// Guarded by Harness.mu.
 	worker   Worker
 	stopping bool
+	shelved  bool               // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
 	paused   bool               // the worker holds still: it takes no slot
 	watcher  bool               // a watcher runs a command, and takes no slot
 	final    bool               // the task is getting its final status: an answer waits for done instead
@@ -126,7 +128,7 @@ type run struct {
 // It fails when Djinn is stopping, or when the task already runs.
 func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 	r := &run{
-		id: task.GetId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
+		id: task.GetId(), wish: task.GetWishId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
 	}
@@ -533,7 +535,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	}
 	h.mu.Lock()
 	r.worker = w
-	if r.stopping {
+	if r.stopping || r.shelved {
 		w.Stop()
 	}
 	h.mu.Unlock()
@@ -707,7 +709,7 @@ func (h *Harness) settle(r *run, res Result) bool {
 			}
 			continue
 		}
-		restart := r.restart && !r.stopping && h.ctx.Err() == nil
+		restart := r.restart && !r.stopping && !r.shelved && h.ctx.Err() == nil
 		r.restart, r.paused = false, false // A worker started again starts unpaused.
 		if !restart {
 			r.final = true
@@ -749,13 +751,15 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	h.mu.Lock()
-	stopping := r.stopping
+	stopping, shelved := r.stopping, r.shelved
 	h.mu.Unlock()
 	t := r.task
 	t.EndTime, t.ExitCode = timestamppb.Now(), int32(res.ExitCode)
 	switch {
 	case stopping:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request"
+	case shelved:
+		shelve(t)
 	case h.ctx.Err() != nil:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up stopped while the worker ran"
 	case res.Err != nil:
@@ -775,6 +779,8 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	text := short(t.GetStatus())
 	switch {
+	case shelved:
+		text = "resuming: " + whyWishPaused
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
 		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
 	case t.GetError() != "":

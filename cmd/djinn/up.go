@@ -260,10 +260,11 @@ func services(
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
 	language := render.SystemLanguage()
 	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}), plan.WithPages(pages),
-		plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home))
+		plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home),
+		plan.WithWorkers(h))
 	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a
 	// template.
-	wishes := &plan.Wishes{Store: db, Leads: leads{terminals, uiSvc}, Language: language}
+	wishes := &plan.Wishes{Store: db, Leads: leads{terminals, uiSvc}, Language: language, Workers: h}
 	h.TellLeads(wishes.Tell)
 	h.OnWatched(wishes.Watched)
 	// The inbox sources of the projects' skills run until djinn up stops; what they print waits for a click.

@@ -1087,18 +1087,26 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.
+  // Pause a wish: it keeps everything, its workers stop and wait to resume with it, and it leaves its place among the
+  // three active wishes to another one.
   rpc Pause(WishServicePauseRequest) returns (WishServicePauseResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one
-  // first.
+  // Make a paused or granted wish active again, last by rank; its stopped workers start again. Three wishes are
+  // active at most: when three are, it takes the third place, and the third wish is paused.
   rpc Activate(WishServiceActivateRequest) returns (WishServiceActivateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Move an active wish to another rank: --to 1 gives it priority over the others.
+  // Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
+  // stop first. The worktrees and branches its workers made stay in the project. It cannot be undone.
+  rpc Delete(WishServiceDeleteRequest) returns (WishServiceDeleteResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
+  }
+  // Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
+  // there, the third place at most, and the wish it pushes past the third place is paused.
   rpc Move(WishServiceMoveRequest) returns (WishServiceMoveResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -1293,6 +1301,27 @@ message WishServiceActivateRequest {
 message WishServiceActivateResponse {
   // The wish, active.
   Wish wish = 1;
+  // The wish that left its place to it, paused: three were active.
+  repeated Wish paused = 2;
+}
+
+message WishServiceDeleteRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message WishServiceDeleteResponse {
+  // The wish, as it was.
+  Wish wish = 1;
+  // How many tasks went with it.
+  int32 tasks = 2;
+  // How many questions went with it.
+  int32 questions = 3;
+  // How many blocks went with it.
+  int32 blocks = 4;
 }
 
 message WishServiceMoveRequest {
@@ -1301,13 +1330,15 @@ message WishServiceMoveRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  // Its new rank, from 1 for the first; beyond the last, it goes last.
+  // Its new rank, from 1 for the first; beyond the last, it goes last, the third place at most.
   int32 to = 2 [(buf.validate.field).int32.gte = 1];
 }
 
 message WishServiceMoveResponse {
   // The active wishes, by rank.
   repeated Wish wishes = 1;
+  // The wish pushed past the third place, paused.
+  repeated Wish paused = 2;
 }
 
 message WishServiceMakeRequest {
@@ -1318,7 +1349,7 @@ message WishServiceMakeRequest {
   ];
   // A project the wish works on; repeat for each one.
   repeated string project_ids = 2 [(buf.validate.field).repeated.items.string.uuid = true];
-  // Make it paused: it waits, out of the three active wishes.
+  // Make it paused: it waits, out of the three active wishes. Three being active, it is made paused anyway.
   bool paused = 3;
 }
 

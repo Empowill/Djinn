@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -160,12 +161,16 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 		by = byContinue
 	case t.GetResumeAfter() != nil:
 		by = byLimit
+	case strings.HasPrefix(t.GetWaitReason(), whyWishPaused):
+		by = byWish
 	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
 	t.Status, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", nil
-	if by == byContinue {
+	switch by {
+	case byContinue:
 		t.Continuing = false // Cut short again, it resumes as any task does.
-	} else {
+	case byWish: // The developer paused it: no resume spent.
+	default:
 		t.Resumes++
 	}
 	provider, ok := h.providers[t.GetProvider()]
@@ -270,6 +275,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	switch by {
 	case byLimit:
 		line = limitLine
+	case byWish:
+		line = wishLine
 	case byContinue:
 		line = prompt
 	}
@@ -295,6 +302,10 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	}
 	text := fmt.Sprintf("resumed %s (%d of %d): started %s %s%s, %s%s", by, t.GetResumes(), maxResumes,
 		short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
+	if by == byWish {
+		text = fmt.Sprintf("resumed %s: started %s %s%s, %s%s", by, short(t.GetProvider()), where, how,
+			accessText(t, nil), skillsText(spec.Skills))
+	}
 	if by == byContinue {
 		text = fmt.Sprintf("continued: started %s %s%s, %s%s", short(t.GetProvider()), where, how, accessText(t, nil),
 			skillsText(spec.Skills))

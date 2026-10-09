@@ -1,7 +1,9 @@
 // The side panel's lists, read from the services: the wishes, the active ones by rank (drag one up or down, or
 // Alt+Arrow) and how many of the three places they take, then the paused ones and the granted ones; and the
-// projects.
+// projects. The wishes' list shows three rows and scrolls under the pointer. A paused wish dragged onto an active
+// one, or sent first with its button, becomes active there: the wish pushed past the third place is paused.
 import {
+  ArrowUpToLine,
   ChevronDown,
   ChevronRight,
   FolderOpen,
@@ -49,7 +51,7 @@ export function WishSidebar({
   collapsed: boolean;
   onSelectWish: (id: string) => void;
   onSelectProject: (id: string) => void;
-  // Moves an active wish to a rank, from 1.
+  // Moves a wish to a rank, from 1: a paused one becomes active there.
   onMove: (wishId: string, to: number) => void;
   onNewProject: () => void;
 }) {
@@ -70,7 +72,7 @@ export function WishSidebar({
       else return;
       event.preventDefault();
     };
-    return (
+    const row = (
       <button
         key={wish.id}
         className={`mission-nav wish-nav ${wish.id === selectedWishId ? "selected" : ""} ${dragged === wish.id ? "dragged" : ""}`}
@@ -81,7 +83,7 @@ export function WishSidebar({
             ? t("sidebar.wish_rank", { rank, title: wish.title })
             : wish.title
         }
-        draggable={!!rank}
+        draggable={!!rank || wish.state === WishState.PAUSED}
         onDragStart={(event) => {
           event.dataTransfer.setData("text/plain", wish.id);
           event.dataTransfer.effectAllowed = "move";
@@ -127,6 +129,20 @@ export function WishSidebar({
           </>
         )}
       </button>
+    );
+    if (wish.state !== WishState.PAUSED || collapsed) return row;
+    return (
+      <div key={wish.id} className="wish-row">
+        {row}
+        <button
+          className="icon-button wish-first"
+          title={t("sidebar.to_first")}
+          aria-label={t("sidebar.to_first")}
+          onClick={() => onMove(wish.id, 1)}
+        >
+          <ArrowUpToLine size={13} />
+        </button>
+      </div>
     );
   };
 

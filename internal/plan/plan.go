@@ -46,8 +46,12 @@ type options struct {
 	language string
 	home     string
 	watchers SpawnWatcher
+	workers  WishWorkers
 	answered []func(context.Context, *planv1.Question)
 }
+
+// WithWorkers gives the wishes their workers: a paused wish stops them (Wishes.Workers).
+func WithWorkers(w WishWorkers) Option { return func(o *options) { o.workers = w } }
 
 // WithLanguage writes the texts Djinn puts in the plan for the developer, such as the question that routes a
 // request, in language; English by default.
@@ -75,7 +79,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	opt := connect.WithInterceptors(Validate)
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home}, opt)
 	out[p] = h
-	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers}
+	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
+		Workers: o.workers}
 	if o.leads != nil {
 		o.answered = append(o.answered, wishes.Answered) // The lead learns each answer, after the harness.
 	}
@@ -288,6 +293,9 @@ type Wishes struct {
 	// Watchers starts the watcher of a wish made from a template; nil where djinn up does not run tasks, and the
 	// lead is then told to start it.
 	Watchers SpawnWatcher
+	// Workers stops the workers of a paused wish, and wakes the scheduler for an active one; nil where djinn up does
+	// not run tasks.
+	Workers WishWorkers
 
 	watch watchers // the open Watch streams
 }
@@ -329,7 +337,9 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 		return nil, err
 	}
 	if len(actives) >= MaxActive {
-		return nil, full(actives, ", or make this one paused (djinn wish make --paused)")
+		// Three wishes are active: the new one waits, paused, until you make it active.
+		wish.State = planv1.WishState_WISH_STATE_PAUSED
+		return wish, tx.Put(wish)
 	}
 	if err := renumber(tx, actives); err != nil {
 		return nil, err
