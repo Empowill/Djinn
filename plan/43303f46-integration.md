@@ -34,6 +34,9 @@ lead spends its tokens on mechanical work.
   an azima ends, or once an hour has passed **and** three tasks are done since the last commit, whichever comes first.
   A task done waits for that batch, its work tested with the others'. One exception, so that the graph never stalls:
   a task another task waits for is committed at once, alone. The hour and the count are settings of the wish.
+- **A task done without its work committed is not done.** W94 ended "done" with its whole change staged in its
+  worktree and no commit: integration finds a branch with nothing new, or a worktree with changes, and says so (the
+  task is not done: its work waits, uncommitted), rather than counting it.
 - **A task waits for its dependencies to be integrated**, not only done, and its worktree starts from the integration
   branch, so it builds on their work.
 - **The person decides what is theirs**: to install and restart on the new build (Djinn proposes it, with what
