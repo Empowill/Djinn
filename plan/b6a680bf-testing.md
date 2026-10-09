@@ -22,6 +22,26 @@ status: done
   Wails runs in dev mode (DOM queries, clicks, typing in the real window), or a WebDriver
   bridge on Linux.
 
+- **Tests stay fast.** A Go test takes under a second: fake clocks (`WithClock`), short ticks (`WithTick`), fake
+  workers that wait for a message (the fake's `wait` step) instead of sleeping, waits on events, `t.Parallel` where
+  tests share nothing. `test-go` pipes `go test -json` to `tools/slowtests`, which fails on any test over 2 s; its
+  allowlist stays empty, or says why.
+
+## Timings
+Linux, 16 cores, `go test -tags headless -count=1`, under a gate.
+
+| | Before (09/10) | After (09/10) |
+|---|---|---|
+| `internal/harness` alone | 44.4 s (103 tests, one after the other) | 3.7 s |
+| All Go packages, wall time | 56.7 s | 11.3 s |
+| Slowest Go test, all packages at once | 7.44 s (`TestUpdateFromRelease`) | 1.76 s |
+| Slowest Go test, one package at a time (`-p 1`) | 7.44 s | 1.46 s (`TestUpdateFromRelease`) |
+| Go tests over 1 s, one package at a time | 19 | 4 (`TestUpdateFromRelease`, `TestRestartResumesInOrder`, `TestWatcherResumes`, `TestWatcher`: 1.1 to 1.5 s) |
+| `go tool task test` (Go, interface, 31 e2e specs) | about 3 min (not measured here) | 1 min 55 s (e2e 1.3 min) |
+
+Run together, the packages share the cores: a test then takes up to twice its time alone, under the 2 s of the guard.
+What remains is mostly the store's durable writes (`synchronous(FULL)`, kept: nothing is lost) and real processes.
+
 ## Done when
 - [x] `task test` runs in seconds and needs nothing running. (08/10, Linux: `test-go` 23 s uncached, `test-ui`
   1.4 s, `e2e` 18 s, all pass; e2e starts its own djinn in a temporary folder)

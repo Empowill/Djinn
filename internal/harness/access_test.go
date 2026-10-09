@@ -71,6 +71,7 @@ func hasText(events []*planv1.TaskEvent, prefix string) bool {
 // whether it may edit. Without an answer nothing is written and the task waits; "no" leaves it read-only and done;
 // "yes" starts the worker again, allowed to edit.
 func TestAskToEdit(t *testing.T) {
+	t.Parallel()
 	const script = "text reading\nwrite notes.md hello"
 	e := up(t, t.TempDir())
 
@@ -139,6 +140,7 @@ func TestAskToEdit(t *testing.T) {
 // TestAskToEditWhileRunning: a yes while the read-only worker runs stops it, and starts it again allowed to edit;
 // the task's watchers follow both workers in one stream.
 func TestAskToEditWhileRunning(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	dir := folder(t)
 	wishID, _ := e.wish(t, dir)
@@ -179,6 +181,7 @@ func TestAskToEditWhileRunning(t *testing.T) {
 // TestAskToEditUnableToRead: an agent that cannot be kept from writing does not start before the answer; a yes
 // starts it, allowed to edit.
 func TestAskToEditUnableToRead(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	e.h.providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = Antigravity{Command: "djinn-no-such-agy"}
 	wishID, _ := e.wish(t, folder(t))
@@ -205,6 +208,7 @@ func TestAskToEditUnableToRead(t *testing.T) {
 // TestAskToEditWaitsForASlot: a yes to the edit question of a task no worker runs goes through the scheduler: on a
 // full machine the task waits, resuming, and says why; it starts once a slot frees, allowed to edit.
 func TestAskToEditWaitsForASlot(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 1}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity))
 	dir := folder(t)
@@ -253,6 +257,7 @@ func TestAskToEditWaitsForASlot(t *testing.T) {
 
 // TestSpawnAccess: what the worker is started with, by where it runs.
 func TestSpawnAccess(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	rec := recorder{specs: make(chan Spec, 1)}
 	e.h.providers[planv1.Provider_PROVIDER_CLAUDE] = rec
@@ -310,6 +315,7 @@ func TestSpawnAccess(t *testing.T) {
 // TestWishAllow: a wish's allowance applies to every task of that wish in that project, over the project's
 // configuration, and to no other wish.
 func TestWishAllow(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	rec := recorder{specs: make(chan Spec, 1)}
 	e.h.providers[planv1.Provider_PROVIDER_CLAUDE] = rec

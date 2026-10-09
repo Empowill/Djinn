@@ -7,6 +7,7 @@ import (
 
 // TestLimitIn reads the providers' own messages: which limit, and when it resets.
 func TestLimitIn(t *testing.T) {
+	t.Parallel()
 	paris, err := time.LoadLocation("Europe/Paris")
 	if err != nil {
 		t.Skip("no time zone database")
@@ -40,6 +41,7 @@ func TestLimitIn(t *testing.T) {
 }
 
 func TestLimitBackoff(t *testing.T) {
+	t.Parallel()
 	for resumes, want := range []time.Duration{15 * time.Minute, 30 * time.Minute, time.Hour, 2 * time.Hour, 2 * time.Hour} {
 		if got := limitBackoff(int32(resumes)); got != want {
 			t.Errorf("limitBackoff(%d) = %v, want %v", resumes, got, want)

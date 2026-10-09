@@ -119,7 +119,11 @@ exec /bin/sh -c "$cmd" "$@"
 	if _, err := loginPath(t.Context(), shell("mute", "exit 0\n")); err == nil {
 		t.Error("a shell that printed nothing gave a PATH")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	// Its sleep keeps the output open once the shell is killed: the wait delay cuts it too.
+	delay := loginWaitDelay
+	loginWaitDelay = 50 * time.Millisecond
+	t.Cleanup(func() { loginWaitDelay = delay })
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
 	if _, err := loginPath(ctx, shell("hangs", "sleep 30\n")); err == nil {

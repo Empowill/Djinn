@@ -11,6 +11,7 @@ import (
 
 // TestDelete: a task no worker ran goes, with its events; a task a worker ran stays.
 func TestDelete(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
 	planned := &planv1.Task{Id: "01a118d0-0000-7000-8000-0000000000d1", WishId: wishID, Code: "T01", Title: "a plan item",

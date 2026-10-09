@@ -24,19 +24,23 @@ import (
 )
 
 // releaseCheckForTests is releaseCheck in a djinn of the tests that serves a fake release (TestMain).
-const releaseCheckForTests = 150 * time.Millisecond
+const releaseCheckForTests = 30 * time.Millisecond
 
 // trailerMark ends a copy of the test binary with the version it plays: two copies of one binary, two versions.
 const trailerMark = "\ndjinn-test-version="
 
-// withVersion is the test binary, playing version.
-func withVersion(t *testing.T, version string) []byte {
+// withVersions are copies of the test binary, each playing one of versions.
+func withVersions(t *testing.T, versions ...string) [][]byte {
 	t.Helper()
 	b, err := os.ReadFile(os.Args[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	return append(b, trailerMark+version+"\n"...)
+	out := make([][]byte, len(versions))
+	for i, v := range versions {
+		out[i] = append(b[:len(b):len(b)], trailerMark+v+"\n"...)
+	}
+	return out
 }
 
 // trailerVersion is the version a copy of the test binary plays; empty for the test binary itself.
@@ -68,7 +72,8 @@ func TestUpdateFromRelease(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
 	fake := newFakeRelease(t)
-	v1, v2 := withVersion(t, "v1.0.0"), withVersion(t, "v2.0.0")
+	vs := withVersions(t, "v1.0.0", "v2.0.0")
+	v1, v2 := vs[0], vs[1]
 	dir := t.TempDir()
 	djinnPath := filepath.Join(dir, "djinn")
 	if err := os.WriteFile(djinnPath, v1, 0o755); err != nil {
@@ -159,7 +164,7 @@ func TestUpdateFromRelease(t *testing.T) {
 	if _, downloads := fake.counts(); downloads != 1 {
 		t.Fatalf("downloads after the click: %d, want 1", downloads)
 	}
-	time.Sleep(2 * restartDelay)
+	time.Sleep(2 * restartDelayForTests)
 	alive("wrong sum")
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Fatalf("a refused release left files beside djinn: %v", entries)

@@ -69,6 +69,7 @@ func (e *env) resume(t *testing.T, id string) *planv1.Task {
 
 // TestPauseResume: a paused worker says nothing and frees its slot, goes on when resumed, and stops while paused.
 func TestPauseResume(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(20*time.Millisecond))
 	wishID, _ := e.wish(t, gitRepo(t))
 	long := e.mustSpawn(t, wishID, "Long", ticks(), nil)
@@ -84,7 +85,7 @@ func TestPauseResume(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond) // A tick already on its way may still land.
 	before := e.tickCount(t, id)
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond) // Several ticks, were it not paused.
 	if after := e.tickCount(t, id); after != before {
 		t.Errorf("%d ticks while paused", after-before)
 	}
@@ -152,6 +153,7 @@ func TestPauseResume(t *testing.T) {
 // worker, nor one that waits for a gate, which would hold it frozen once its turn comes; it is once it has given the
 // gate back.
 func TestPauseHoldingGate(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))
 	long := e.mustSpawn(t, wishID, "Long", ticks(), nil)
@@ -207,6 +209,7 @@ func TestPauseHoldingGate(t *testing.T) {
 // resumes it; one left paused in the store by a crash is interrupted at the next start, as a running one, then
 // resumed.
 func TestPausedInterrupted(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	wishID, _ := e.wish(t, gitRepo(t))

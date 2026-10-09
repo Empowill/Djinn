@@ -96,58 +96,66 @@ func watchEvents(t *testing.T, w Worker) ([]Event, Result) {
 // line, but one that says again what the last one said; and the lead learns when the command has ended, whether its
 // last paragraph came with its exit or before it (a slow machine).
 func TestWatchParagraphs(t *testing.T) {
-	quiet := 300 * time.Millisecond
-	cmd := watchCommand("say:CI \x1b[31mred\x1b[0m on !12", "sleep:50ms", "err:job lint", "sleep:900ms", "say:CI",
-		"sleep:900ms", "say:CI", "say:merged")
-	w, err := Watch{Quiet: quiet}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: cmd})
-	if err != nil {
-		t.Fatal(err)
-	}
-	events, res := watchEvents(t, w)
-	if res.ExitCode != 0 || res.Err != nil {
-		t.Fatalf("result = %+v", res)
-	}
-	var got, told []string
-	for _, ev := range events {
-		if ev.Watched == nil {
-			t.Fatalf("event %+v", ev)
+	t.Parallel()
+	quiet := 100 * time.Millisecond
+	t.Run("paragraphs", func(t *testing.T) {
+		t.Parallel()
+		cmd := watchCommand("say:CI \x1b[31mred\x1b[0m on !12", "sleep:10ms", "err:job lint", "sleep:300ms", "say:CI",
+			"sleep:300ms", "say:CI", "say:merged")
+		w, err := Watch{Quiet: quiet}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: cmd})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT {
-			got = append(got, fmt.Sprintf("%q first=%q wake=%v", ev.Text, ev.Watched.First, ev.Watched.Wake))
+		events, res := watchEvents(t, w)
+		if res.ExitCode != 0 || res.Err != nil {
+			t.Fatalf("result = %+v", res)
 		}
-		if ev.Watched.Wake {
-			told = append(told, WatchLine("W1", ev.Watched))
+		var got, told []string
+		for _, ev := range events {
+			if ev.Watched == nil {
+				t.Fatalf("event %+v", ev)
+			}
+			if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT {
+				got = append(got, fmt.Sprintf("%q first=%q wake=%v", ev.Text, ev.Watched.First, ev.Watched.Wake))
+			}
+			if ev.Watched.Wake {
+				told = append(told, WatchLine("W1", ev.Watched))
+			}
 		}
-	}
-	want := []string{
-		`"CI red on !12\njob lint" first="CI red on !12" wake=true`,
-		`"CI" first="CI" wake=true`,
-		`"CI\nmerged" first="CI" wake=true`,
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("paragraphs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
-	}
-	if len(told) < 3 || !strings.HasSuffix(told[0], "is still watching.") || !strings.HasSuffix(told[len(told)-1], "has ended.") {
-		t.Errorf("the lead was told %q", told)
-	}
-	if !strings.Contains(events[0].Raw, "\x1b[31m") {
-		t.Errorf("the raw line lost its colours: %q", events[0].Raw)
-	}
+		want := []string{
+			`"CI red on !12\njob lint" first="CI red on !12" wake=true`,
+			`"CI" first="CI" wake=true`,
+			`"CI\nmerged" first="CI" wake=true`,
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("paragraphs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+		}
+		if len(told) < 3 || !strings.HasSuffix(told[0], "is still watching.") || !strings.HasSuffix(told[len(told)-1], "has ended.") {
+			t.Errorf("the lead was told %q", told)
+		}
+		if !strings.Contains(events[0].Raw, "\x1b[31m") {
+			t.Errorf("the raw line lost its colours: %q", events[0].Raw)
+		}
+	})
 
 	// The same paragraph again does not wake the lead; its end does.
-	cmd = watchCommand("say:nothing new", "sleep:900ms", "say:nothing new")
-	w, err = Watch{Quiet: quiet}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: cmd})
-	if err != nil {
-		t.Fatal(err)
-	}
-	events, _ = watchEvents(t, w)
-	if len(events) != 3 || !events[0].Watched.Wake || events[1].Watched.Wake || !events[2].Watched.Wake || events[2].Watched.First != "" {
-		t.Errorf("a paragraph said twice: %+v", events)
-	}
+	t.Run("again", func(t *testing.T) {
+		t.Parallel()
+		cmd := watchCommand("say:nothing new", "sleep:300ms", "say:nothing new")
+		w, err := Watch{Quiet: quiet}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: cmd})
+		if err != nil {
+			t.Fatal(err)
+		}
+		events, _ := watchEvents(t, w)
+		if len(events) != 3 || !events[0].Watched.Wake || events[1].Watched.Wake || !events[2].Watched.Wake || events[2].Watched.First != "" {
+			t.Errorf("a paragraph said twice: %+v", events)
+		}
+	})
 }
 
 // TestWatchRefuses: no command, a quote left open, read-only, or a command the project's permissions do not list.
 func TestWatchRefuses(t *testing.T) {
+	t.Parallel()
 	for _, spec := range []Spec{
 		{Prompt: "  "},
 		{Prompt: `mrwatch "-watch`},
@@ -169,6 +177,7 @@ func TestWatchRefuses(t *testing.T) {
 }
 
 func TestSplitCommand(t *testing.T) {
+	t.Parallel()
 	for line, want := range map[string][]string{
 		`mrwatch -watch 41`:                {"mrwatch", "-watch", "41"},
 		`  a   "b c"  'd "e"' f\ g`:        {"a", "b c", `d "e"`, "f g"},
@@ -185,6 +194,7 @@ func TestSplitCommand(t *testing.T) {
 }
 
 func TestWatchLine(t *testing.T) {
+	t.Parallel()
 	w := &Watched{First: "New thread on !41: please rename.", Command: "mrwatch -watch", Watching: true}
 	if got, want := WatchLine("W70", w), "Djinn: W70's watcher says: New thread on !41: please rename. mrwatch -watch is still watching."; got != want {
 		t.Errorf("line = %q\nwant %q", got, want)
@@ -241,6 +251,7 @@ func (e *env) spawnWatch(t *testing.T, wishID, command string, restart bool) (*p
 // TestWatcher: a watcher starts on a full machine under pressure, takes no slot, runs its command again after each
 // exit, tells the wish's lead each paragraph in one line, keeps the last one on its task, pauses, and stops.
 func TestWatcher(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 1, pressure: "simulated"}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	lead := &told{}
@@ -285,9 +296,9 @@ func TestWatcher(t *testing.T) {
 	if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: task.GetId()})); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(1500 * time.Millisecond) // A run lasts a second at least (watchGap): no run while paused.
+	time.Sleep(200 * time.Millisecond) // Runs start 50 ms apart (fastWatch): none while paused.
 	paused := e.get(t, task.GetId())
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	if again := e.get(t, task.GetId()); paused.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED || again.GetLastLine() != paused.GetLastLine() {
 		t.Errorf("paused, it went on: %q then %q", paused.GetLastLine(), again.GetLastLine())
 	}
@@ -313,6 +324,7 @@ func TestWatcher(t *testing.T) {
 // TestWatcherEnds: without --restart, the watcher ends with its command, and the lead learns it has ended; a failing
 // command fails the task. --restart is for a watcher only, and a watcher needs a project.
 func TestWatcherEnds(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
 	lead := &told{}
 	e.h.TellLeads(lead.tell)
@@ -354,6 +366,7 @@ func TestWatcherEnds(t *testing.T) {
 // TestWatcherResumes: a watcher djinn up cut short is resumed on its command at the next start, however many times,
 // in its project's folder, on a full machine under pressure.
 func TestWatcherResumes(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	l := &limit{slots: 0, pressure: "simulated"}
 	e := up(t, home, WithTick(20*time.Millisecond), WithCapacity(l.capacity))
@@ -379,6 +392,7 @@ func TestWatcherResumes(t *testing.T) {
 
 // TestWatcherPermissions: where the project lists its commands, a watcher runs only one of them.
 func TestWatcherPermissions(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
 	repo := gitRepo(t)
 	if err := os.MkdirAll(filepath.Join(repo, ".agents"), 0o700); err != nil {
@@ -398,6 +412,7 @@ func TestWatcherPermissions(t *testing.T) {
 // paragraph reaches plan.Wishes.Watched, and its done line asks the developer whether to grant the wish. Djinn
 // grants nothing itself.
 func TestWatcherDoneLine(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
 	wishes := &plan.Wishes{Store: e.db, Language: "en"}
 	var mu sync.Mutex
@@ -425,7 +440,7 @@ func TestWatcherDoneLine(t *testing.T) {
 	}
 
 	code, err := e.h.SpawnWatcher(t.Context(), wishID, projectID, "Watch, for the skill babysit",
-		watchCommand("say:checks pending", "sleep:1500ms", "say:MERGED: PR #12 is merged."), false)
+		watchCommand("say:checks pending", "sleep:300ms", "say:MERGED: PR #12 is merged."), false)
 	if err != nil || code != "W1" {
 		t.Fatalf("SpawnWatcher = %q, %v", code, err)
 	}
@@ -452,6 +467,7 @@ func TestWatcherDoneLine(t *testing.T) {
 // TestWatcherFinishes: a watcher that restarts its command ends, done, on its template's done line; one stopped on
 // request still ends stopped.
 func TestWatcherFinishes(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
 	e.h.OnWatched(func(_ context.Context, _ *planv1.Task, text string) (bool, error) {
 		return strings.Contains(text, "MERGED"), nil

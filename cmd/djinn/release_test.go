@@ -104,6 +104,7 @@ func packRelease(t *testing.T, variant string, exe []byte) (name string, archive
 		body []byte
 	}{{variant + "/" + exeName(), exe}, {variant + "/LICENSE", []byte("Apache-2.0")}}
 	var b bytes.Buffer
+	b.Grow(len(exe) + 1<<16) // Once: the test binary is large.
 	if runtime.GOOS == "windows" {
 		zw := zip.NewWriter(&b)
 		for _, f := range files {
@@ -118,7 +119,11 @@ func packRelease(t *testing.T, variant string, exe []byte) (name string, archive
 		}
 		return variant + ".zip", b.Bytes()
 	}
-	gz := gzip.NewWriter(&b)
+	// Stored, not compressed: a gzip reader reads any level, and the test binary takes seconds to deflate.
+	gz, err := gzip.NewWriterLevel(&b, gzip.NoCompression)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tw := tar.NewWriter(gz)
 	for _, f := range files {
 		if err := tw.WriteHeader(&tar.Header{Name: f.name, Mode: 0o755, Size: int64(len(f.body)), Typeflag: tar.TypeReg}); err != nil {

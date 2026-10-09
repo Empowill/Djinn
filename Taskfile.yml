@@ -76,10 +76,11 @@ tasks:
       - node --test tests/*.test.mjs
 
   test-go:
-    desc: Run the Go unit tests (builds the interface first if it changed)
+    desc: "Run the Go unit tests (builds the interface first if it changed); fails on any test over 2 s (tools/slowtests)"
     deps: [ui]
+    set: [pipefail]
     cmds:
-      - go test -tags headless ./...
+      - go test -tags headless -json ./... | go run ./tools/slowtests
 
   test-race:
     desc: "Run the Go unit tests under the race detector (builds the interface first if it changed); pass go test arguments after --, e.g. -- -run TestCloseHangsUp ./internal/terminal"

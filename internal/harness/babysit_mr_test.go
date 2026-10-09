@@ -51,6 +51,7 @@ exec jq -r "$expr" "$file"
 // request (the same look twice prints nothing) and its done line on the merge, then exits. A fake glab on the PATH
 // serves the merge request: the watcher only reads it, and the project's folder is as it was.
 func TestBabysitMRReadsOnly(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the watcher is a POSIX shell script: on Windows the sh of Git for Windows runs it")
 	}
@@ -117,11 +118,11 @@ func TestBabysitMRReadsOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("GLAB_DATA", data)
+	// The command's own environment, as a worker's: the test's stays as it is, and the other tests run beside it.
+	env := []string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "GLAB_DATA=" + data}
 
-	// One look every 300 ms instead of every minute: the script's second argument, still allowed.
-	w, err := Watch{Quiet: 100 * time.Millisecond}.Start(t.Context(), Spec{Dir: dir, Prompt: watch + " 0.3", Permissions: perms})
+	// One look every 150 ms instead of every minute: the script's second argument, still allowed.
+	w, err := Watch{Quiet: 50 * time.Millisecond}.Start(t.Context(), Spec{Dir: dir, Prompt: watch + " 0.15", Permissions: perms, Env: env})
 	if err != nil {
 		t.Fatal(err)
 	}

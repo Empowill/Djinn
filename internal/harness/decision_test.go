@@ -12,6 +12,7 @@ import (
 // TestSpawnDecision: djinn task spawn --decision stores the decision the task comes from, as the question's code or
 // the block's id; an open question or a block that is no decision is refused, and no task is made.
 func TestSpawnDecision(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
 	questions := planv1connect.NewQuestionServiceClient(e.srv.Client(), e.srv.URL)

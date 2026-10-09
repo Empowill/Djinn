@@ -40,6 +40,7 @@ func (e *env) group(t *testing.T, task *planv1.Task, azima string) (*planv1.Task
 // TestAzimasAreNeverScheduled: an azima is never started nor said to wait; work part of an azima that is not ready
 // runs at once, its azima under way; work that depends on an azima waits until it is marked done.
 func TestAzimasAreNeverScheduled(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	e := up(t, t.TempDir(), WithTick(5*time.Millisecond))
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -111,6 +112,7 @@ func TestAzimasAreNeverScheduled(t *testing.T) {
 // TestGroupRefusesCycles: a task's azima is set and cleared after it was made; one that would close a cycle through
 // what the tasks depend on and the azimas they are part of is refused, naming it, and so is Depend's.
 func TestGroupRefusesCycles(t *testing.T) {
+	t.Parallel()
 	// No slot: the work only waits, nothing runs.
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -153,6 +155,7 @@ func TestGroupRefusesCycles(t *testing.T) {
 // TestMigrateAzimas: djinn up marks as azimas the T tasks a wish imported from its plan before tasks had kinds; a task
 // a worker ran stays work.
 func TestMigrateAzimas(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
 	if err != nil {
@@ -218,6 +221,7 @@ func copyPlan(t *testing.T) string {
 // line; every file then says what its azima depends on; a file's status closes and opens its azima; a second sync
 // changes nothing.
 func TestSyncPlan(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	dir := copyPlan(t)
 	files, err := plan.ReadAzimaFiles(dir)

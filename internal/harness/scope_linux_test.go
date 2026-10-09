@@ -18,6 +18,7 @@ import (
 // stopping the worker take that child too. Where systemd gives the user the memory controller, the scope holds its
 // ceiling.
 func TestScopeTakesTheTree(t *testing.T) {
+	t.Parallel()
 	scopes, _, err := machine.ProbeScopes(t.Context(), 0, 512<<20)
 	if err != nil {
 		t.Skip(err)

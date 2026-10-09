@@ -225,8 +225,12 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
-// updatePollForTests is updatePoll in the djinn the tests run (TestMain).
-const updatePollForTests = 100 * time.Millisecond
+const (
+	// updatePollForTests is updatePoll in the djinn the tests run (TestMain).
+	updatePollForTests = 20 * time.Millisecond
+	// restartDelayForTests is restartDelay there: the server's shutdown lets the response leave, on loopback.
+	restartDelayForTests = 50 * time.Millisecond
+)
 
 // TestUpdateWithoutDjinn says that no djinn runs, and starts none.
 func TestUpdateWithoutDjinn(t *testing.T) {

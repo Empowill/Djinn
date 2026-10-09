@@ -24,7 +24,7 @@ type counting struct {
 }
 
 func (c *counting) Start(ctx context.Context, spec Spec) (Worker, error) {
-	spec.Prompt = "sleep 150ms\n" + spec.Prompt
+	spec.Prompt = "sleep 50ms\n" + spec.Prompt
 	w, err := Fake{}.Start(ctx, spec)
 	if err != nil {
 		return nil, err
@@ -63,7 +63,7 @@ func (w *counted) Wait() Result {
 // countingProviders are the providers, the fake one counting its workers.
 func countingProviders() (map[planv1.Provider]Provider, *counting) {
 	c := &counting{}
-	providers := Providers()
+	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_FAKE] = c
 	return providers, c
 }
@@ -102,6 +102,7 @@ func leftRunning(t *testing.T, db *store.Store, wishID, projectID, code, worktre
 // second's, each in its own order, then the planned one, never more than 2 at once, the others waiting for a slot and
 // saying so; all end done, each worker started once. The paused wish's tasks wait for it, and resume once it is active.
 func TestRestartResumesInOrder(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	second, secondProject := e.wish(t, gitRepo(t))
@@ -218,6 +219,7 @@ func TestRestartResumesInOrder(t *testing.T) {
 // TestRestartBeforeNewSpawn: a task spawned as a slot frees after a restart does not take it from a task Djinn
 // resumes: it waits, and starts once the resumed one is done.
 func TestRestartBeforeNewSpawn(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	wishID, projectID := e.wish(t, gitRepo(t))

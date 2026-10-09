@@ -9,6 +9,7 @@ import (
 
 // TestMeasureWorker reads a real worker from /proc: a fake claude, measured as djinn up measures it.
 func TestMeasureWorker(t *testing.T) {
+	t.Parallel()
 	e, task := measuredClaude(t, machine.ReadWorker)
 	var got *planv1.Resources
 	waitFor(t, "a reading of the worker", func() bool {

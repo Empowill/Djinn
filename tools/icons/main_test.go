@@ -17,6 +17,7 @@ const root = "../.."
 
 // The icons in build/ are the drawing's: run `go run ./tools/icons gen` after changing build/icon.png.
 func TestBuildIconsFollowTheDrawing(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(tmp, "build"), 0o755); err != nil {
 		t.Fatal(err)
@@ -44,6 +45,7 @@ func TestBuildIconsFollowTheDrawing(t *testing.T) {
 }
 
 func TestICOAndICNSHoldEverySize(t *testing.T) {
+	t.Parallel()
 	img, err := load(root)
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +87,7 @@ func TestICOAndICNSHoldEverySize(t *testing.T) {
 }
 
 func TestDesktopPutsTheIconAndTheEntryInTheUsersFolder(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the desktop entry is for Linux (the command does nothing elsewhere), and its paths are POSIX ones")
 	}
@@ -113,6 +116,7 @@ func TestDesktopPutsTheIconAndTheEntryInTheUsersFolder(t *testing.T) {
 }
 
 func TestExecArgQuotesAsTheSpecificationSays(t *testing.T) {
+	t.Parallel()
 	for path, want := range map[string]string{
 		"/home/ada/go/bin/djinn": "/home/ada/go/bin/djinn",
 		"/home/ada/my bin/djinn": `"/home/ada/my bin/djinn"`,
@@ -126,6 +130,7 @@ func TestExecArgQuotesAsTheSpecificationSays(t *testing.T) {
 }
 
 func TestScaleKeepsColoursAndTransparency(t *testing.T) {
+	t.Parallel()
 	img := image.NewNRGBA(image.Rect(0, 0, 100, 100))
 	for y := 0; y < 100; y++ {
 		for x := 0; x < 100; x++ {

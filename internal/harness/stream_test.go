@@ -21,6 +21,7 @@ func (unsaidQueue) stdout(raw string) ([]Event, *turnEnd) {
 // TestStreamQuietAfterResult: a message folded into the running turn gets no result of its own. When the result
 // does not say so, the worker still ends once the agent has said nothing for a while, and that is no failure.
 func TestStreamQuietAfterResult(t *testing.T) {
+	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "mid-turn-message"}.env(t)
 	spec := Spec{TaskID: "t1", Dir: t.TempDir(), Prompt: "x", Env: env}
 	a := streamAgent{name: "claude", parser: unsaidQueue{}, encode: claudeMessageLine, quiet: 200 * time.Millisecond}

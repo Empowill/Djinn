@@ -45,11 +45,12 @@ func TestSayTypesOneLineAndEnter(t *testing.T) {
 }
 
 func TestSayWaitsWhileThePersonTypes(t *testing.T) {
-	fastVoice(t, 400*time.Millisecond, 50*time.Millisecond, 2*time.Second)
+	fastVoice(t, 250*time.Millisecond, 50*time.Millisecond, 2*time.Second)
 	m := NewManager(Config{})
 	term := sh(t, m, "lead-w1", "-c", echoes)
 	output(t, term, 0, contains("ready"))
-	// The person types a line of their own, a key at a time: Djinn's line waits until they are quiet, then follows.
+	// The person types a line of their own, a key at a time, well under quiet apart: Djinn's line waits until they are
+	// quiet, then follows.
 	if err := term.Write([]byte("m")); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +59,7 @@ func TestSayWaitsWhileThePersonTypes(t *testing.T) {
 	}
 	var last time.Time
 	for _, k := range "ine\r" {
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(75 * time.Millisecond)
 		if err := term.Write([]byte(string(k))); err != nil {
 			t.Fatal(err)
 		}
@@ -74,27 +75,28 @@ func TestSayWaitsWhileThePersonTypes(t *testing.T) {
 }
 
 func TestSayWaitsForAProgramJustStarted(t *testing.T) {
-	fastVoice(t, 0, 300*time.Millisecond, 1500*time.Millisecond)
+	fastVoice(t, 0, 150*time.Millisecond, 600*time.Millisecond)
 	m := NewManager(Config{})
-	// Silent: the line waits for warmup.
+	// Both start at once. Silent: the line waits for warmup. Drawn: the line goes once the output paused for settle,
+	// well before.
 	silent := sh(t, m, "silent", "-c", `while read -r l; do printf 'got[%s]\n' "$l"; done`)
-	start := time.Now()
+	silentStart := time.Now()
 	if err := silent.Say("hello"); err != nil {
 		t.Fatal(err)
 	}
-	output(t, silent, 0, contains("got[hello]"))
-	if took := time.Since(start); took < warmup {
-		t.Errorf("a silent program got the line after %v, want at least %v", took, warmup)
-	}
-	// Drawn: the line goes once the output paused for settle.
 	drawn := sh(t, m, "drawn", "-c", echoes)
-	start = time.Now()
+	drawnStart := time.Now()
 	if err := drawn.Say("hello"); err != nil {
 		t.Fatal(err)
 	}
 	output(t, drawn, 0, contains("got[hello]"))
-	if took := time.Since(start); took < settle || took >= warmup {
+	if took := time.Since(drawnStart); took < settle || took >= warmup {
 		t.Errorf("a program that drew got the line after %v, want between %v and %v", took, settle, warmup)
+	}
+	// Read after the drawn one, which came before warmup: a line to the silent one before warmup still shows.
+	output(t, silent, 0, contains("got[hello]"))
+	if took := time.Since(silentStart); took < warmup {
+		t.Errorf("a silent program got the line after %v, want at least %v", took, warmup)
 	}
 }
 

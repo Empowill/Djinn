@@ -3,13 +3,16 @@ package locales
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -49,34 +52,60 @@ func TestNoFrench(t *testing.T) {
 	if err != nil {
 		t.Fatalf("git ls-files: %v", err)
 	}
-	for name := range strings.SplitSeq(strings.TrimRight(string(out), "\x00"), "\x00") {
-		if _, ok := frenchAllowed[name]; ok || skipFrench.MatchString(name) {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join("..", filepath.FromSlash(name)))
-		if os.IsNotExist(err) {
-			continue // Deleted, not yet staged.
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		if bytes.IndexByte(data, 0) >= 0 {
-			continue // Binary.
-		}
-		var quoted []string
-		for pattern, words := range frenchQuoted {
-			if ok, _ := path.Match(pattern, name); ok || pattern == "*" {
-				quoted = append(quoted, words...)
+	// The files are read in parallel: the regular expressions take most of a second on one core.
+	names := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
+	found := make([][]string, len(names))
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for range runtime.GOMAXPROCS(0) {
+		wg.Go(func() {
+			for i := range next {
+				found[i] = frenchIn(names[i])
 			}
-		}
-		lines := bufio.NewScanner(bytes.NewReader(data))
-		lines.Buffer(nil, len(data)+1)
-		for number := 1; lines.Scan(); number++ {
-			if sign := french(lines.Text(), quoted); sign != "" {
-				t.Errorf("%s:%d: French (%s); English here, French in locales/fr.json", name, number, sign)
-			}
+		})
+	}
+	for i := range names {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	for _, lines := range found {
+		for _, line := range lines {
+			t.Error(line)
 		}
 	}
+}
+
+// frenchIn are the lines of French in the file name of the repository, one message each.
+func frenchIn(name string) []string {
+	if _, ok := frenchAllowed[name]; ok || skipFrench.MatchString(name) {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join("..", filepath.FromSlash(name)))
+	if os.IsNotExist(err) {
+		return nil // Deleted, not yet staged.
+	}
+	if err != nil {
+		return []string{err.Error()}
+	}
+	if bytes.IndexByte(data, 0) >= 0 {
+		return nil // Binary.
+	}
+	var quoted []string
+	for pattern, words := range frenchQuoted {
+		if ok, _ := path.Match(pattern, name); ok || pattern == "*" {
+			quoted = append(quoted, words...)
+		}
+	}
+	var found []string
+	lines := bufio.NewScanner(bytes.NewReader(data))
+	lines.Buffer(nil, len(data)+1)
+	for number := 1; lines.Scan(); number++ {
+		if sign := french(lines.Text(), quoted); sign != "" {
+			found = append(found, fmt.Sprintf("%s:%d: French (%s); English here, French in locales/fr.json", name, number, sign))
+		}
+	}
+	return found
 }
 
 // french is the sign of French on a line, or "" for none.

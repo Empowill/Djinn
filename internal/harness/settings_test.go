@@ -12,6 +12,7 @@ import (
 )
 
 func TestSpawnTakesTheProjectSettings(t *testing.T) {
+	t.Parallel()
 	home, dir := t.TempDir(), t.TempDir()
 	writeFile(t, dir, ".agents/settings.txtpb", "provider: PROVIDER_FAKE\nmodel: \"team-model\"\nmax_budget_usd: 2\n")
 	e := up(t, home)
@@ -69,6 +70,7 @@ func TestSpawnTakesTheProjectSettings(t *testing.T) {
 // TestBranchFromSettings: a worker's branch follows the project's template, the developer's over the team's; a
 // planned task takes it when it starts.
 func TestBranchFromSettings(t *testing.T) {
+	t.Parallel()
 	home, repo := t.TempDir(), gitRepo(t)
 	writeFile(t, repo, ".agents/settings.txtpb", "branch: \"djinn/{code}-{uuid8}\"\n")
 	e := up(t, home, WithTick(20*time.Millisecond))

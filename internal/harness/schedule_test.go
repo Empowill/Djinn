@@ -41,6 +41,24 @@ func (e *env) mustSpawn(t *testing.T, wishID, title, prompt string, req *planv1.
 	return task
 }
 
+// release sends a message to the task's fake worker, which waits for one (its wait step): it goes on at once.
+func (e *env) release(t *testing.T, id string) {
+	t.Helper()
+	e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: id, Text: "go on"}))
+		if err == nil {
+			return
+		}
+		// Running, its worker may not be there yet.
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || time.Now().After(deadline) {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // ended waits until the task has ended, and returns it.
 func (e *env) ended(t *testing.T, id string) *planv1.Task {
 	t.Helper()
@@ -85,15 +103,17 @@ func (l *limit) set(slots int, pressure string) {
 // TestDependsOn: a task waits for its dependencies, says so, and starts once they are done; a task whose
 // dependency failed fails too, and so do its own dependents.
 func TestDependsOn(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour)) // Only a task that ends wakes the scheduler.
 	wishID, _ := e.wish(t, gitRepo(t))
 
-	first := e.mustSpawn(t, wishID, "First", "sleep 300ms\ntext one", nil)
+	first := e.mustSpawn(t, wishID, "First", "wait\ntext one", nil)
 	second := e.mustSpawn(t, wishID, "Second", "text two", &planv1.TaskServiceSpawnRequest{DependsOn: []string{"w1"}})
 	if second.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || second.GetWaitReason() != "waits for W1 (running)" ||
 		!slices.Equal(second.GetDependsOn(), []string{first.GetId()}) || second.GetStartTime() != nil {
 		t.Fatalf("second = %v", second)
 	}
+	e.release(t, first.GetId())
 	// Watching a planned task follows it from its plan to its end.
 	events := e.watch(t.Context(), t, second.GetId(), 0)
 	checkSeqs(t, events, 1)
@@ -109,9 +129,10 @@ func TestDependsOn(t *testing.T) {
 	}
 
 	// A dependency that fails takes its dependents with it, down the chain.
-	failing := e.mustSpawn(t, wishID, "Failing", "sleep 200ms\nfail boom", nil)
+	failing := e.mustSpawn(t, wishID, "Failing", "wait\nfail boom", nil)
 	child := e.mustSpawn(t, wishID, "Child", "text never", &planv1.TaskServiceSpawnRequest{DependsOn: []string{failing.GetCode()}})
 	grandchild := e.mustSpawn(t, wishID, "Grandchild", "text never", &planv1.TaskServiceSpawnRequest{DependsOn: []string{child.GetId()}})
+	e.release(t, failing.GetId())
 	if got := e.ended(t, grandchild.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
 		got.GetError() != "its dependency "+child.GetCode()+" ended failed" || got.GetStartTime() != nil {
 		t.Errorf("grandchild = %v", got)
@@ -135,6 +156,7 @@ func TestDependsOn(t *testing.T) {
 // on a full machine a new worker waits, saying so, and starts once the gate is given back, woken with no tick. A
 // running worker holds its own gates in its slot (Works).
 func TestGateHeldOutside(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 2}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	var outside atomic.Int32
@@ -164,13 +186,14 @@ func TestGateHeldOutside(t *testing.T) {
 // TestSlots: never more workers than the slots, the next planned task starts as soon as one frees, and a planned
 // task waits while the machine is under pressure.
 func TestSlots(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 2}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, gitRepo(t))
 
 	var tasks []*planv1.Task
 	for i := range 4 {
-		tasks = append(tasks, e.mustSpawn(t, wishID, "Busy", "sleep 400ms", nil))
+		tasks = append(tasks, e.mustSpawn(t, wishID, "Busy", "wait", nil))
 		if want := i < 2; (tasks[i].GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING) != want {
 			t.Fatalf("task %d: %v", i+1, tasks[i])
 		}
@@ -180,7 +203,9 @@ func TestSlots(t *testing.T) {
 	}
 	type span struct{ start, end time.Time }
 	var spans []span
+	// Each ends once told to: the first frees a slot for the third, the second for the fourth.
 	for _, task := range tasks {
+		e.release(t, task.GetId())
 		got := e.ended(t, task.GetId())
 		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 			t.Fatalf("%s: %v", got.GetCode(), got)
@@ -229,6 +254,7 @@ func TestSlots(t *testing.T) {
 // peak of a worker and the memory free; once the memory frees, it starts, the first one still running. The fake
 // worker runs in Djinn's process, never measured: its typical peak is the policy's default.
 func TestMemoryHoldsWorker(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	free := uint64(2 * machine.GiB)
 	available := func() uint64 {
@@ -268,6 +294,7 @@ func TestMemoryHoldsWorker(t *testing.T) {
 
 // TestPlannedSurvivesRestart: a task planned for later waits across a restart of djinn up, then starts.
 func TestPlannedSurvivesRestart(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	l := &limit{slots: 1, pressure: "simulated"}
 	e := up(t, home, WithCapacity(l.capacity), WithTick(20*time.Millisecond))
@@ -286,6 +313,7 @@ func TestPlannedSurvivesRestart(t *testing.T) {
 
 // TestStopPlanned: a planned task stops at once, and its dependents fail.
 func TestStopPlanned(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 0}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -305,12 +333,13 @@ func TestStopPlanned(t *testing.T) {
 
 // TestWriteScopes: outside Git, tasks whose write scopes overlap never run together; in Git they do.
 func TestWriteScopes(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
 	wishID, _ := e.wish(t, nativeFolder(t))
 
-	src := e.mustSpawn(t, wishID, "Src", "sleep 400ms", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"src/"}})
+	src := e.mustSpawn(t, wishID, "Src", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"src/"}})
 	app := e.mustSpawn(t, wishID, "App", "text app", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"./src/app"}})
-	docs := e.mustSpawn(t, wishID, "Docs", "sleep 100ms", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"docs"}})
+	docs := e.mustSpawn(t, wishID, "Docs", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"docs"}})
 	if src.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || docs.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Fatalf("separate scopes: %v, %v", src, docs)
 	}
@@ -321,8 +350,10 @@ func TestWriteScopes(t *testing.T) {
 	if whole.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
 		t.Fatalf("the whole folder ran beside a scope: %v", whole)
 	}
+	e.release(t, src.GetId())
 	srcDone := e.ended(t, src.GetId())
 	appDone := e.ended(t, app.GetId())
+	e.release(t, docs.GetId())
 	docsDone := e.ended(t, docs.GetId())
 	wholeDone := e.ended(t, whole.GetId())
 	if appDone.GetStartTime().AsTime().Before(srcDone.GetEndTime().AsTime()) {
@@ -337,11 +368,12 @@ func TestWriteScopes(t *testing.T) {
 
 	// In Git each task has its worktree: overlapping scopes run together.
 	wishID, _ = e.wish(t, gitRepo(t))
-	a := e.mustSpawn(t, wishID, "A", "sleep 300ms", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"app"}})
+	a := e.mustSpawn(t, wishID, "A", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"app"}})
 	b := e.mustSpawn(t, wishID, "B", "text b", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"app"}})
 	if a.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || b.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Errorf("in Git: %v, %v", a, b)
 	}
+	e.release(t, a.GetId())
 	e.ended(t, a.GetId())
 
 	if _, err := e.spawnReq(t, wishID, "Out", "x", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"../other"}}); connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -350,6 +382,7 @@ func TestWriteScopes(t *testing.T) {
 }
 
 func TestScopes(t *testing.T) {
+	t.Parallel()
 	got, err := cleanScopes([]string{"src/", "./docs/../docs", "src", "b"})
 	if err != nil || !slices.Equal(got, []string{"b", "docs", "src"}) {
 		t.Errorf("cleanScopes = %v, %v", got, err)
@@ -367,10 +400,11 @@ func TestScopes(t *testing.T) {
 // TestRank: when a slot frees, the first wish of the rank is served first, whatever was planned first; the
 // tasks of a paused wish wait until it is active again.
 func TestRank(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(50*time.Millisecond))
 	repo := gitRepo(t)
 	older, _ := e.wish(t, repo)
-	busy := e.mustSpawn(t, older, "Busy", "sleep 300ms", nil)
+	busy := e.mustSpawn(t, older, "Busy", "wait", nil)
 	olderNext := e.mustSpawn(t, older, "Older", "text older", nil)
 	w, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Newer", ProjectIds: []string{busy.GetProjectId()}}))
 	if err != nil {
@@ -380,7 +414,8 @@ func TestRank(t *testing.T) {
 	if _, err := e.wishes.Move(t.Context(), connect.NewRequest(&planv1.WishServiceMoveRequest{WishId: newer, To: 1})); err != nil {
 		t.Fatal(err)
 	}
-	newerNext := e.mustSpawn(t, newer, "Newer", "sleep 200ms", nil)
+	newerNext := e.mustSpawn(t, newer, "Newer", "text newer", nil)
+	e.release(t, busy.GetId())
 	a, b := e.ended(t, olderNext.GetId()), e.ended(t, newerNext.GetId())
 	if !b.GetStartTime().AsTime().Before(a.GetStartTime().AsTime()) {
 		t.Errorf("the newer wish, ranked first, started at %v, after the older one at %v", b.GetStartTime().AsTime(), a.GetStartTime().AsTime())
@@ -408,6 +443,7 @@ func TestRank(t *testing.T) {
 
 // TestNote: an event from outside the worker reaches the task's events, whether its worker runs or not.
 func TestNote(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))
 	task := e.mustSpawn(t, wishID, "Gated", "sleep 300ms", nil)
