@@ -38,6 +38,12 @@ be referenced by simple links that open it natively in the app from anywhere."
   `djinn tilasm get <code>` gives an agent the text and the path of the files; a tilasm cites the azimas and tasks it
   explains, and each of them shows its tilasms.
 
+- **"Talisman" counts too**: the word the developer may use, in English and French. `djinn talisman …` is a synonym
+  of `djinn tilasm …`, the tab's search finds "talisman", and the lead understands both.
+- **The first tilasm** shows the objects stored in the database, drawn from the protos (`api/plan/v1/plan.proto` and
+  the others): each entity, its fields and their meaning, and how they link (wish, azima, task, question, block,
+  tilasm…). It is made once the tilasms work, and proves them.
+
 ## Done when
 
 - [ ] `djinn tilasm put|list|get|open|history|restore|export|import` (`TilasmService`), journaled; a put replaces,
@@ -49,6 +55,8 @@ be referenced by simple links that open it natively in the app from anywhere."
   installer). (needs: Linux by test; a Mac and a Windows machine by hand)
 - [ ] Links inside the app (blocks, questions, decisions, the brief) open the tilasm in place.
 - [ ] `djinn wish export` and import carry the tilasms.
+- [ ] `djinn talisman` answers as `djinn tilasm`, and the search finds "talisman".
+- [ ] The first tilasm, the objects in the database drawn from the protos, is put and opens from its link.
 - [ ] The brief lists the wish's tilasms, and the rules tell the lead to make one to explain a concept, and to cite
   it.
 
