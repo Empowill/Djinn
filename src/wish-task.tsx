@@ -315,11 +315,16 @@ export function taskWork(
     case IntegrationState.RED:
       out = { text: t("work.red", { reason: work.reason }), tone: "failed" };
       break;
+    case IntegrationState.UNCOMMITTED:
+      out = { text: t("work.uncommitted"), tone: "waiting" };
+      break;
     default:
       return undefined;
   }
   if (work.correctedBy)
     out.text += `, ${t("work.corrected_by", { task: codes?.get(work.correctedBy) ?? work.correctedBy })}`;
+  if (work.reviewedBy)
+    out.text += `, ${t("work.reviewed_by", { task: codes?.get(work.reviewedBy) ?? work.reviewedBy })}`;
   return out;
 }
 

@@ -375,6 +375,7 @@ func TestWaitsForTheCommit(t *testing.T) {
 		{planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, "waits for W5 to be committed"},
 		{planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, "waits for W5 to be committed (conflict)"},
 		{planv1.IntegrationState_INTEGRATION_STATE_RED, "waits for W5 to be committed (red)"},
+		{planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED, "waits for W5 to be committed (uncommitted)"},
 		{planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, ""},
 	} {
 		dep := &planv1.Task{Id: "d", WishId: "w", Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE}

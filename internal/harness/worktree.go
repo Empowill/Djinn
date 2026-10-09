@@ -79,6 +79,12 @@ func slug(s string, n int) string {
 
 // git runs git in dir and returns its output, trimmed.
 func git(ctx context.Context, dir string, args ...string) (string, error) {
+	out, err := gitRaw(ctx, dir, args...)
+	return strings.TrimSpace(out), err
+}
+
+// gitRaw runs git in dir and returns its output as it is: a status's first column may be a space.
+func gitRaw(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
@@ -89,7 +95,7 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 		}
 		return "", fmt.Errorf("git %s: %s", args[0], msg)
 	}
-	return strings.TrimSpace(out.String()), nil
+	return out.String(), nil
 }
 
 // addWorktree creates the worktree path of the repository holding dir, on a new branch from its HEAD. It returns
@@ -111,6 +117,20 @@ func addWorktreeFrom(ctx context.Context, dir, path, branch, from string) (strin
 		return "", err
 	}
 	return filepath.Join(path, filepath.FromSlash(prefix)), nil
+}
+
+// reviewWorktree is the folder a review worker runs in: the project's folder within path, the worktree of the task
+// whose work it reviews, which must still be there.
+func reviewWorktree(ctx context.Context, dir, path string) (string, error) {
+	prefix, err := git(ctx, dir, "rev-parse", "--show-prefix")
+	if err != nil {
+		return "", err
+	}
+	in := filepath.Join(path, filepath.FromSlash(prefix))
+	if _, err := os.Stat(in); err != nil {
+		return "", fmt.Errorf("the worktree it reviews is gone: %w", err)
+	}
+	return in, nil
 }
 
 // correctionWorktree adds the worktree path of a correction worker to the repository holding dir, on a new branch from

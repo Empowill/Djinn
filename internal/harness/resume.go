@@ -290,6 +290,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		line = editLine + prompt
 	}
 	readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
+	perms = withCommit(t, perms)
 	spec := Spec{
 		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: t.GetModel(), MaxBudgetUSD: budget,
 		Resume: t.GetSessionId(), Prompt: line,

@@ -804,8 +804,8 @@ func TestMovingByStatus(t *testing.T) {
 }
 
 // TestWorkStands: each finished task says where its work stands on its way into the wish's integration branch: done
-// and waiting to be committed, committed with its short commit, a conflict or red tests and who corrects them; a task
-// whose work Djinn does not integrate says only done.
+// and waiting to be committed, committed with its short commit, a conflict or red tests and who corrects them, changes
+// not committed and who reviews them; a task whose work Djinn does not integrate says only done.
 func TestWorkStands(t *testing.T) {
 	done := planv1.TaskStatus_TASK_STATUS_DONE
 	in := func(state planv1.IntegrationState, reason, by string) *planv1.TaskIntegration {
@@ -819,6 +819,10 @@ func TestWorkStands(t *testing.T) {
 			Integration: in(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, "W4 conflicts with feat/x in a.go", "W9")},
 		{Id: "t5", WishId: "w", Code: "W5", Title: "Red", Status: done, Integration: in(planv1.IntegrationState_INTEGRATION_STATE_RED, "test exited 1", "")},
 		{Id: "t6", WishId: "w", Code: "W6", Title: "Merging", Status: done, Integration: in(planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, "", "")},
+		{Id: "t7", WishId: "w", Code: "W7", Title: "Left", Status: done, Integration: &planv1.TaskIntegration{
+			State: planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED, Branch: "feat/x", Reason: "uncommitted: reviewed by W8", ReviewedBy: "t8",
+		}},
+		{Id: "t8", WishId: "w", Code: "W8", Title: "Review", Status: done, Integration: in(planv1.IntegrationState_INTEGRATION_STATE_PENDING, "", "")},
 	}}
 	html := page(t, Input{Export: exp, Language: "en"})
 	for code, want := range map[string]string{
@@ -827,6 +831,7 @@ func TestWorkStands(t *testing.T) {
 		"W4": `<p class="work fail">Conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9</p>`,
 		"W5": `<p class="work fail">Red tests, not committed: test exited 1</p>`,
 		"W6": `<p class="work run">Being committed into feat/x</p>`,
+		"W7": `<p class="work pause">Changes not committed, not merged, reviewed by W8</p>`,
 	} {
 		if row := between(html, `<tr id="t-`+code+`">`, "</tr>"); !strings.Contains(row, want) {
 			t.Errorf("%s's row lacks %s:\n%s", code, want, row)

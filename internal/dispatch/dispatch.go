@@ -265,8 +265,8 @@ func (s *Situation) awaitsCommit(t *planv1.Task) bool {
 }
 
 // uncommitted tells whether the work of d, a task done, waits to be committed into its wish's integration branch:
-// not when it is committed, nor when Djinn does not integrate it. state is " (conflict)" or " (red)" when its batch
-// met one, "" while it waits for its batch or is being committed.
+// not when it is committed, nor when Djinn does not integrate it. state is " (conflict)" or " (red)" when its merge
+// met one, " (uncommitted)" while its worktree holds changes not committed, "" while it waits or is being committed.
 func uncommitted(d *planv1.Task) (waits bool, state string) {
 	switch d.GetIntegration().GetState() {
 	case planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED, planv1.IntegrationState_INTEGRATION_STATE_COMMITTED:
@@ -275,6 +275,8 @@ func uncommitted(d *planv1.Task) (waits bool, state string) {
 		return true, " (conflict)"
 	case planv1.IntegrationState_INTEGRATION_STATE_RED:
 		return true, " (red)"
+	case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+		return true, " (uncommitted)"
 	}
 	return true, ""
 }

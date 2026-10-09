@@ -87,6 +87,7 @@ func TestCorrectACodeConflict(t *testing.T) {
 		b, _ := os.ReadFile(filepath.Join(dir, "README.md"))
 		conflict = string(b)
 		writeFile(t, dir, "README.md", "# One and Two\n")
+		commitAll(t, dir, "Settle the readme") // Which concludes the merge.
 		return ""
 	})
 
