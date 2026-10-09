@@ -3,24 +3,15 @@ import { AnimatePresence, motion } from "motion/react";
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 
+import icon from "../build/icon.svg";
 import { t } from "./i18n";
 
+// The mark is the app's icon, the one drawing the dock and the window show (build/icon.svg).
 export function Brand({ small = false }: { small?: boolean }) {
   return (
     <span className={`brand ${small ? "small" : ""}`}>
       <span className="brand-mark">
-        <svg viewBox="0 0 30 30" fill="none">
-          <path
-            d="M15 2 28 9.5v11L15 28 2 20.5v-11Z"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <path
-            d="m8 11 7-4 7 4v8l-7 4-7-4Zm7-4v16M8 11l14 8m0-8L8 19"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-        </svg>
+        <img src={icon} alt="" />
       </span>
       {!small && (
         <>

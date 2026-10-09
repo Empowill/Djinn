@@ -30,6 +30,13 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   each system.
   - [x] One drawing, `build/icon.png`; `tools/icons` makes every size from it (`go run ./tools/icons gen`
     for `build/icon.ico`, `icon.icns`, `icon-256.png`; a test checks they follow the drawing).
+  - [x] The lamp and the smoke, in place of the grey hexagon. `build/icon.svg`, drawn by hand in SVG paths: a brass
+    lamp of lines and exact arcs, symmetric about its axis, and violet smoke of free curves, gradients and
+    transparency rising from its spout and curling back over it, on the dark rounded square. Inkscape renders it to
+    `build/icon.png` at 1024 px (the command is in `tools/icons`), then `icons gen`; looked at 16, 32, 64, 256 and
+    1024 px: at 16 the lamp's silhouette carries it. The interface's brand mark is the same file (`src/frame.tsx`).
+    Two alternatives wait for a choice: `build/icon-alt-plume.svg` (the smoke rises in a plume, a wisp reaching out)
+    and `build/icon-alt-silver.svg` (silver smoke).
   - [x] Linux: `go tool task install` puts `hicolor/<size>/apps/djinn.png` (16 to 512) and
     `applications/djinn.desktop` (`Exec=<binary> up`, `StartupWMClass=djinn`, the window's `WM_CLASS`
     `djinn, Djinn`) in `$XDG_DATA_HOME`. An install elsewhere (`TO=`) leaves them alone, unless
