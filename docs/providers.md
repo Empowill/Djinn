@@ -212,17 +212,28 @@ ends the process. A message sent during a turn may be taken into that turn: clau
 both, and nothing in its output says so (real runs, claude 2.1.294, 2026-10-08). After a result that leaves
 messages without one, Djinn waits `ClaudeSettle` (one minute): a text, a tool call or a tool result means a turn of
 their own is under way, and the input stays open; silence means they were answered, and the input is closed. A
-message sent meanwhile cancels the wait. **Supposed:** a wait closed too early loses nothing, since claude answers
+message sent meanwhile cancels the wait, as does a line of the turn: text, a tool, or thinking (a
+`thinking_tokens` progress line, a thinking block shown or withheld), since a turn may think for minutes before it
+writes. **Supposed:** a wait closed too early loses nothing, since claude answers
 what it read before its input closed (as when stream-json messages are piped from a file). A warm worker
 (`djinn up --warm-workers`) is the same command started before its task: it waits for its first message, which is
 the task's prompt.
 
 **Finding claude.** An app started from the Finder or a desktop menu gets a bare PATH: the shell's startup files
 that add `~/.local/bin` (where Claude Code's installer puts `claude`) are never read, not even by the login shell
-that runs a lead (`zsh -l -c` reads `.zprofile`, not `.zshrc`). `djinn up` appends to its own PATH the folders that
-exist among `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.npm-global/bin` and `~/.bun/bin`, after the
-inherited ones, which keep their place (`machine.ExtendPath`, `TestExtendPathFindsClaude`). Workers, leads and gates
-inherit it. Not on Windows, where installers set the user's PATH.
+that runs a lead (`zsh -l -c` reads `.zprofile`, not `.zshrc`). One resolver, `machine.ExtendPath`, appends to
+Djinn's own PATH, after the inherited folders, which keep their place: the PATH of the user's interactive login
+shell (asked once), the folders that exist among `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`,
+`~/.npm-global/bin`, `~/.volta/bin` and `~/.bun/bin` (on Windows `%LOCALAPPDATA%\agy\bin`, `%APPDATA%\npm` and
+`~/.local/bin`, which an installer adds to the user's PATH after Djinn started), and the folder of a `codex` only the
+ChatGPT or Codex application ships. It runs again before each worker and each lead starts, and when the agents' panel
+checks them, which looks on that PATH alone: what the panel finds is what they run, and an agent installed from the
+panel, in a folder created meanwhile, is found without a restart (`TestExtendPathAfterAnInstall`,
+`TestPanelAndLaunchAgree`). Gates inherit it from the worker that runs them.
+
+**Installing from the panel on Windows.** A terminal's line runs as `cmd.exe /s /c "<line>"`, the line passed as
+typed: cmd.exe does not read the C runtime's `\"`. Claude Code and Antigravity install from PowerShell
+(`irm … | iex`), so their Windows install line names it: `powershell -NoProfile -Command "irm … | iex"`.
 
 **The lead.** A lead runs `claude` interactive in the window's terminal, not `-p`. Claude Code skips its workspace
 trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet (a

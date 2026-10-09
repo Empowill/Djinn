@@ -195,6 +195,27 @@ type claudeParser struct{}
 
 func (claudeParser) stdout(raw string) ([]Event, *turnEnd) { return parseClaude(raw) }
 
+// thinking tells a thinking_tokens progress line, or a message of thinking blocks: claude at work in a turn, though
+// such a line gives no event, or an OTHER one.
+func (claudeParser) thinking(raw string) bool {
+	if !strings.Contains(raw, "thinking") {
+		return false
+	}
+	var m claudeMessage
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return false
+	}
+	switch m.Type {
+	case "system":
+		return m.Subtype == "thinking_tokens"
+	case "assistant":
+		return slices.ContainsFunc(blocks(m.Message), func(b claudeBlock) bool {
+			return b.Type == "thinking" || b.Type == "redacted_thinking"
+		})
+	}
+	return false
+}
+
 func (claudeParser) stderr(raw string) []Event {
 	return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: raw, Raw: raw}}
 }

@@ -48,6 +48,9 @@ type Config struct {
 	// Changed, when set, runs once a program started and once one ended, outside the manager's lock: Running
 	// tells what runs then. Calls may overlap.
 	Changed func()
+	// BeforeStart, when set, runs before a program starts, outside the manager's lock: djinn up brings its PATH up
+	// to date there (machine.ExtendPath), so that a lead finds the agent the window's panel found.
+	BeforeStart func()
 }
 
 // Manager holds the terminals of a djinn up.
@@ -122,6 +125,9 @@ func (m *Manager) Open(name string, command []string, dir string, cols, rows int
 func (m *Manager) OpenExclusive(
 	name string, command []string, dir string, cols, rows int, exclusive string,
 ) (t *Terminal, attached bool, err error) {
+	if m.cfg.BeforeStart != nil {
+		m.cfg.BeforeStart()
+	}
 	started := false
 	defer func() { // After the unlock below: deferred calls run last first.
 		if started {

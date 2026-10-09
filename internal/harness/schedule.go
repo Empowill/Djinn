@@ -42,6 +42,10 @@ func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c 
 // that caps the worker's CPU (machine.CPULimit).
 func WithPrefix(prefix []string) Option { return func(h *Harness) { h.prefix = prefix } }
 
+// WithBeforeStart runs f before each worker's process starts, warm ones included: djinn up brings its PATH up to
+// date there (machine.ExtendPath), so that a worker finds the agent the window's panel found.
+func WithBeforeStart(f func()) Option { return func(h *Harness) { h.beforeStart = f } }
+
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
 // machine falls without telling anyone.
 func WithTick(d time.Duration) Option { return func(h *Harness) { h.tick = d } }

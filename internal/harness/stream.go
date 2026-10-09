@@ -23,6 +23,12 @@ type streamParser interface {
 	flush() []Event
 }
 
+// thinker is a parser that tells a line where the agent thinks in a turn: a thinking block, shown or withheld, or a
+// progress line of the thinking, which may give no event to show. A turn may think for minutes before it writes.
+type thinker interface {
+	thinking(raw string) bool
+}
+
 // turnEnd is what the result line of a turn says.
 type turnEnd struct {
 	failure string // why the turn failed, when it did
@@ -190,6 +196,12 @@ func ofTurn(events []Event) bool {
 	})
 }
 
+// thinks says whether raw shows the agent thinking in a turn, when its parser can tell.
+func (w *streamWorker) thinks(raw string) bool {
+	t, ok := w.a.parser.(thinker)
+	return ok && t.thinking(raw)
+}
+
 // read turns the process's lines into events. Once every message sent has its result, or the agent settled after
 // one (settle), the input is closed and the agent exits. A worker that said an error fails with it, even when every turn ended and the process exited 0.
 func (w *streamWorker) read() {
@@ -212,7 +224,7 @@ func (w *streamWorker) read() {
 		events, end := w.a.parser.stdout(l.text)
 		send(events)
 		if end == nil {
-			if ofTurn(events) {
+			if ofTurn(events) || w.thinks(l.text) {
 				w.mu.Lock()
 				w.active, w.settling = true, 0
 				w.mu.Unlock()

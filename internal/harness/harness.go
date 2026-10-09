@@ -64,7 +64,8 @@ type Harness struct {
 
 	answering sync.Mutex // one answer to an edit question at a time
 
-	prefix []string // the command every worker runs under (WithPrefix)
+	prefix      []string // the command every worker runs under (WithPrefix)
+	beforeStart func()   // runs before a worker's process starts (WithBeforeStart); nil: nothing
 
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
@@ -455,6 +456,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
 	spec.Prefix = h.prefix
+	h.prepare()
 	w, err := provider.Start(h.ctx, spec)
 	if err != nil {
 		return err

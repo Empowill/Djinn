@@ -43,9 +43,8 @@ type Service struct {
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
 	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
 	Restart func() (version string, terminals int, err error)
-	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: searchPath, which adds
-	// the login shell's PATH and the installers' folders to Djinn's own, then the applications that ship an agent.
-	// Tests replace it.
+	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: Djinn's own, brought
+	// up to date by machine.ExtendPath, which the workers and the leads get too. Tests replace it.
 	AgentPath func() string
 	// ChooseFolder opens the system's folder dialog over the window, titled title and open in directory, and returns
 	// the folder chosen, or empty when the user cancelled. Nil: the page has no folder dialog (the browser).
@@ -117,9 +116,9 @@ func (s *Service) GetEnvironment(
 	}
 	if req.Msg.GetAgents() {
 		if s.AgentPath != nil {
-			res.Providers = checkAgents(ctx, s.AgentPath(), false)
+			res.Providers = checkAgents(ctx, s.AgentPath())
 		} else {
-			res.Providers = checkAgents(ctx, searchPath(), true)
+			res.Providers = checkAgents(ctx, launchPath())
 		}
 	}
 	return connect.NewResponse(res), nil

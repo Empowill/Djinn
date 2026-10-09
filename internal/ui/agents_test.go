@@ -5,6 +5,7 @@ package ui
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -129,83 +130,26 @@ func TestGetEnvironmentWithoutAgents(t *testing.T) {
 	}
 }
 
-// A command an application ships is found when the search path has none.
-func TestAgentFromAnApplication(t *testing.T) {
-	app := t.TempDir()
-	fake(t, app, "codex", `[ "$1" = "--version" ] && echo "codex-cli 0.1.0"; exit 0
-`)
-	a := agents[1]
-	a.apps = []string{filepath.Join(t.TempDir(), "codex"), filepath.Join(app, "codex")}
-	p := checkAgent(context.Background(), a, t.TempDir())
-	if p.GetCommand() != filepath.Join(app, "codex") || p.GetState() != uiv1.ProviderState_PROVIDER_STATE_READY ||
-		p.GetVersion() != "0.1.0" {
-		t.Errorf("codex = %v; want the application's, ready", p)
-	}
-}
-
-// Only an executable file in an absolute folder counts.
-func TestLookPath(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte("not executable"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(dir, "claude"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	fake(t, dir, "agy", "")
-	t.Chdir(dir)
-	for _, name := range []string{"codex", "claude"} {
-		if got, err := lookPath(name, dir); err == nil {
-			t.Errorf("lookPath(%s) = %s; want not found", name, got)
-		}
-	}
-	if got, err := lookPath("agy", "."+string(os.PathListSeparator)+dir); err != nil || got != filepath.Join(dir, "agy") {
-		t.Errorf("lookPath(agy) = %s, %v; want the one of the absolute folder", got, err)
-	}
-	if _, err := lookPath("agy", "."); err == nil {
-		t.Error("lookPath(agy) in . found it; want relative folders skipped")
-	}
-}
-
-// The login shell's PATH is read from what env prints, whatever the shell prints before it.
-func TestLoginShellPath(t *testing.T) {
-	dir := t.TempDir()
-	fake(t, dir, "shell", `[ "$1 $2 $3 $4" = "-i -l -c /usr/bin/env" ] || exit 1
-echo "Welcome"
-echo "HOME=/home/someone"
-echo "PATH=/opt/homebrew/bin:/usr/bin"
-`)
-	if got := loginShellPath(filepath.Join(dir, "shell")); got != "/opt/homebrew/bin:/usr/bin" {
-		t.Errorf("loginShellPath = %q; want the shell's PATH", got)
-	}
-	fake(t, dir, "broken", "exit 1\n")
-	if got := loginShellPath(filepath.Join(dir, "broken")); got != "" {
-		t.Errorf("loginShellPath of a failing shell = %q; want empty", got)
-	}
-	if got := loginShellPath(""); got != "" {
-		t.Errorf("loginShellPath without a shell = %q; want empty", got)
-	}
-}
-
-// The search path keeps Djinn's PATH first and adds the usual folders, each once.
-func TestSearchPath(t *testing.T) {
-	if got := joinPaths("/a:/b", "/b:/c", ":/a:/d"); got != "/a:/b:/c:/d" {
-		t.Errorf("joinPaths = %q; want /a:/b:/c:/d", got)
-	}
+// The panel looks where the workers and the leads run from: Djinn's PATH, brought up to date by machine.ExtendPath.
+// An agent installed after Djinn started, in a folder that did not exist then, is ready in the panel and found by a
+// worker (exec.LookPath) at the same path.
+func TestPanelAndLaunchAgree(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATH", "/usr/bin:/bin")
-	got := filepath.SplitList(searchPath())
-	if len(got) < 2 || got[0] != "/usr/bin" || got[1] != "/bin" {
-		t.Errorf("searchPath = %v; want Djinn's PATH first", got)
+	t.Setenv("SHELL", "")
+	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+	bin := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	for _, want := range []string{filepath.Join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"} {
-		found := false
-		for _, dir := range got {
-			found = found || dir == want
-		}
-		if !found {
-			t.Errorf("searchPath = %v; want %s", got, want)
-		}
+	fake(t, bin, "claude", `[ "$1" = "--version" ] && echo "2.1.294 (Claude Code)"; exit 0
+`)
+	// Claude alone: the installers' folders of this machine may hold real agents, which no test runs.
+	claude := checkAgent(context.Background(), agents[0], launchPath())
+	if claude.GetState() != uiv1.ProviderState_PROVIDER_STATE_READY || claude.GetCommand() != filepath.Join(bin, "claude") {
+		t.Fatalf("claude = %v; want ready in %s", claude, bin)
+	}
+	if got, err := exec.LookPath("claude"); err != nil || got != claude.GetCommand() {
+		t.Errorf("a worker finds claude at %q, %v; the panel says %s", got, err, claude.GetCommand())
 	}
 }

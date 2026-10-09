@@ -477,3 +477,16 @@ func TestServiceRunsALine(t *testing.T) {
 		t.Fatalf("output %q, exit %d: %v", out.String(), code, stream.Err())
 	}
 }
+
+// BeforeStart runs before the program starts, and what it sets is what the program gets: djinn up brings its PATH
+// up to date there, so that a lead finds an agent installed from the window meanwhile.
+func TestBeforeStartRunsBeforeTheProgram(t *testing.T) {
+	t.Setenv("DJINN_BEFORE_START", "")
+	m := NewManager(Config{BeforeStart: func() { _ = os.Setenv("DJINN_BEFORE_START", "set") }})
+	t.Cleanup(m.Close)
+	term, _, err := m.Open("main", []string{"/bin/sh", "-c", `echo "got $DJINN_BEFORE_START"`}, t.TempDir(), 80, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output(t, term, 0, contains("got set"))
+}

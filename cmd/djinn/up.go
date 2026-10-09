@@ -93,7 +93,9 @@ func runUp(args []string) (restart bool, err error) {
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
 	}
 	// Started from the Finder or a desktop menu, Djinn has a bare PATH: its workers and leads would not find claude.
-	machine.ExtendPath()
+	// The workers and the leads bring it up to date before they start (WithBeforeStart, BeforeStart), as the agents'
+	// panel does; this first pass, which asks the login shell, does not hold the start.
+	go machine.ExtendPath()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
@@ -105,7 +107,7 @@ func runUp(args []string) (restart bool, err error) {
 	policy := machine.DefaultPolicy()
 	policy.Workers = *maxWorkers
 	monitor := machine.NewMonitor(policy, nil)
-	opts := []harness.Option{harness.WithCapacity(monitor.Capacity)}
+	opts := []harness.Option{harness.WithCapacity(monitor.Capacity), harness.WithBeforeStart(machine.ExtendPath)}
 	if *warmWorkers {
 		opts = append(opts, harness.WithWarm())
 	}
@@ -134,7 +136,7 @@ func runUp(args []string) (restart bool, err error) {
 	leadNotes := newLeadNote(home, os.Stderr)
 	var leadsMoved atomic.Pointer[func()] // what follows the leads that run (plan.Leads.Watch)
 	terminals := terminal.NewManager(terminal.Config{
-		Command: terminal.ShellCommand(*term), Dir: *termDir, Changed: func() {
+		Command: terminal.ShellCommand(*term), Dir: *termDir, BeforeStart: machine.ExtendPath, Changed: func() {
 			leadNotes.update()
 			if f := leadsMoved.Load(); f != nil {
 				(*f)()

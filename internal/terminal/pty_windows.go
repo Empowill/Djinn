@@ -29,7 +29,11 @@ func start(command []string, dir string, env []string, cols, rows int) (proc, er
 	if err != nil {
 		return nil, err
 	}
-	pid, handle, err := c.Spawn(path, command, &syscall.ProcAttr{Dir: dir, Env: env})
+	attr := &syscall.ProcAttr{Dir: dir, Env: env}
+	if line, ok := cmdLine(command); ok {
+		attr.Sys = &syscall.SysProcAttr{CmdLine: line}
+	}
+	pid, handle, err := c.Spawn(path, command, attr)
 	if err != nil {
 		c.Close()
 		return nil, err
@@ -71,11 +75,13 @@ func Shell() []string {
 }
 
 // ShellCommand returns the command line that runs line through the command interpreter; nil for an empty line.
+// start gives cmd.exe the line as it is (cmdLine): a PowerShell installer runs as
+// powershell -NoProfile -Command "irm … | iex", its quotes and its pipe left to cmd.exe.
 func ShellCommand(line string) []string {
 	if line == "" {
 		return nil
 	}
-	return []string{comspec(), "/c", line}
+	return []string{comspec(), "/s", "/c", line}
 }
 
 func comspec() string {

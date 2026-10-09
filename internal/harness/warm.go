@@ -35,6 +35,13 @@ type Warmer interface {
 // that still carries it after a crash is a leftover: Recover removes it with its worktree.
 const warmBranchPrefix = "djinn-warm-"
 
+// prepare runs WithBeforeStart's function, if any.
+func (h *Harness) prepare() {
+	if h.beforeStart != nil {
+		h.beforeStart()
+	}
+}
+
 // WithWarm keeps a warm worker ready for each project of each active wish, within the machine's limit: djinn up
 // --warm-workers. Off by default.
 func WithWarm() Option { return func(h *Harness) { h.warmOn = true } }
@@ -174,6 +181,7 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 		TaskID: id, Dir: dir, ReadOnly: ww.readOnly, Permissions: ww.perms,
 		Env: []string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID}, Prefix: h.prefix,
 	}
+	h.prepare()
 	worker, err := h.warmer().Warm(h.ctx, w.spec)
 	if err != nil {
 		log.Printf("djinn: warm worker for %s: %v", ww.project.GetName(), err)
