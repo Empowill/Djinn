@@ -1,8 +1,9 @@
 // A question of a wish, on Clément's question card, laid out to decide at a glance: its title, the recommendation
 // boxed first, the options as buttons, then what is at stake. Two lamp buttons: "Rub the lamp" answers with the
 // recommended option in one click (a mark the lamp turns into the answer), "Enlighten me" asks the lead to find out
-// more first (QuestionService.Enlighten). Answered, it is a decision: no mark asks to read or approve it again, and
-// the decision log shows it. Its rounds, each request and each revision, fold below.
+// more first (QuestionService.Enlighten). Open, it says how much it holds up: red when a task waits for it, orange under
+// its before words ("before the merge"), grey when it can wait. Answered, it is a decision: no mark asks to read or
+// approve it again, and the decision log shows it. Its rounds, each request and each revision, fold below.
 import {
   ArrowRight,
   Check,
@@ -91,9 +92,19 @@ export function WishQuestion({
       tone="failed"
       label={t("page.blocking", { tasks: blocking.join(", ") })}
     />
+  ) : q.before ? (
+    <StatusBadge tone="waiting" label={q.before} />
   ) : (
-    <StatusBadge tone="waiting" label={t("question.open")} />
+    <StatusBadge tone="later" label={t("question.can_wait")} />
   );
+  const level =
+    answered || digging
+      ? ""
+      : blocking.length
+        ? "is-blocking"
+        : q.before
+          ? ""
+          : "can-wait";
   const heading = (
     <>
       <span className="question-id">
@@ -118,7 +129,7 @@ export function WishQuestion({
   return (
     <motion.article
       id={`question-${q.id}`}
-      className={`question-card ${answered ? "answered" : digging ? "investigating" : "open"} ${blocking.length ? "is-blocking" : ""}`}
+      className={`question-card ${answered ? "answered" : digging ? "investigating" : "open"} ${level}`}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: 30 }}

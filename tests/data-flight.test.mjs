@@ -437,3 +437,76 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
   assert.deepEqual(f.azimasDone(tasks), { done: 2, proof: 1, count: 4 });
   assert.equal(f.workCount(tasks), 2);
 });
+
+test("open questions come blocking, then before X, then can wait, across the wishes", () => {
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const oil = wish("w2", "Find the oil", 2);
+  const plan = f.flightPlan([lamp, oil], {
+    w1: detail(
+      [],
+      [
+        { id: "q1", code: "Q01", text: "Brass?" },
+        { id: "q2", code: "Q02", text: "Wick?", before: "before the merge" },
+      ],
+    ),
+    w2: detail(
+      [
+        {
+          id: "t1",
+          code: "W1",
+          status: f.TaskStatus.WAITING,
+          editQuestionId: "q5",
+        },
+      ],
+      [
+        { id: "q3", code: "Q01", text: "Olive?" },
+        { id: "q4", code: "Q02", text: "Glass?", before: "before the demo" },
+        {
+          id: "q5",
+          code: "Q03",
+          text: "May W1 edit?",
+          before: "before the demo",
+        },
+      ],
+    ),
+  });
+  assert.deepEqual(
+    plan.questions.map((q) => [q.item.id, f.urgency(q)]),
+    [
+      ["q5", 0],
+      ["q2", 1],
+      ["q4", 1],
+      ["q1", 2],
+      ["q3", 2],
+    ],
+  );
+  // One wish alone sorts the same way.
+  assert.deepEqual(
+    f
+      .openQuestions(
+        oil,
+        detail(
+          [
+            {
+              id: "t1",
+              code: "W1",
+              status: f.TaskStatus.WAITING,
+              editQuestionId: "q5",
+            },
+          ],
+          [
+            { id: "q3", code: "Q01", text: "Olive?" },
+            {
+              id: "q4",
+              code: "Q02",
+              text: "Glass?",
+              before: "before the demo",
+            },
+            { id: "q5", code: "Q03", text: "May W1 edit?" },
+          ],
+        ),
+      )
+      .map((q) => q.item.id),
+    ["q5", "q4", "q3"],
+  );
+});

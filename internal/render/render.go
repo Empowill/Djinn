@@ -176,7 +176,8 @@ type question struct {
 	Options   []option
 	// Blocking names the tasks that wait for the answer: such a question is open, and comes first.
 	Blocking string
-	// Class and Level say how urgent it is: blocking, or waiting for the user.
+	// Urgency orders it: blocking, then before X, then can wait. Class and Level say it in a colour and words.
+	Urgency      Urgency
 	Class, Level string
 	// Open questions are unfolded: a blocking one, or the only one.
 	Open bool
@@ -300,28 +301,29 @@ func build(in Input) (*view, error) {
 	}
 
 	// A question a waiting task needs answered blocks it: it comes first, open.
-	blocking := map[string][]string{}
-	for _, t := range exp.GetTasks() {
-		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING && t.GetEditQuestionId() != "" {
-			blocking[t.GetEditQuestionId()] = append(blocking[t.GetEditQuestionId()], t.GetCode())
-		}
-	}
+	blocking := Blocked(exp.GetTasks())
 
-	// Open questions, the blocking ones first, then in the order they were asked. Decisions, the latest first.
+	// Open questions, the blocking ones first, then those needed before something, then those that can wait; each in
+	// the order they were asked. Decisions, the latest first.
 	for _, q := range exp.GetQuestions() {
 		if q.GetAnswer() != nil {
 			continue
 		}
 		cq := question{
 			Code: q.GetCode(), Text: q.GetText(), Context: md(q.GetContext()), Recom: md(q.GetRecommendation()),
-			Class: "wait", Level: tr("page.status_waiting"),
+			Urgency: UrgencyOf(q, blocking),
 		}
 		if line := firstLine(q.GetRecommendation(), 160); line != "" {
 			cq.RecomLine = tr("page.recommended", "text", line)
 		}
-		if codes := blocking[q.GetId()]; len(codes) > 0 {
-			cq.Blocking = tr("page.blocking", "tasks", strings.Join(codes, ", "))
+		switch cq.Urgency {
+		case Blocking:
+			cq.Blocking = tr("page.blocking", "tasks", strings.Join(blocking[q.GetId()], ", "))
 			cq.Class, cq.Level, cq.Open = "bad", cq.Blocking, true
+		case Before:
+			cq.Class, cq.Level = "wait", q.GetBefore()
+		default:
+			cq.Class, cq.Level = "later", tr("page.level_later")
 		}
 		for i, o := range q.GetOptions() {
 			cq.Options = append(cq.Options, option{Letter: string(rune('A' + i)), Text: o})
@@ -346,9 +348,7 @@ func build(in Input) (*view, error) {
 		}
 		v.Questions = append(v.Questions, cq)
 	}
-	slices.SortStableFunc(v.Questions, func(a, b question) int {
-		return cmp.Compare(b2i(a.Blocking == ""), b2i(b.Blocking == ""))
-	})
+	slices.SortStableFunc(v.Questions, func(a, b question) int { return cmp.Compare(a.Urgency, b.Urgency) })
 	if len(v.Questions) == 1 {
 		v.Questions[0].Open = true
 	}
@@ -379,30 +379,47 @@ func build(in Input) (*view, error) {
 		}
 	}
 
-	// The bar: each blocking question a line; the other questions too while they are few, else one line for them all.
+	// The bar: each blocking question a line; the other questions too while they are few, else one line for those
+	// needed before something and one for those that can wait.
 	waiting, blocked, later := tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
-	var others []string
-	var asked []question
+	var others []question
 	for _, q := range v.Questions {
-		if !q.Investigating {
-			asked = append(asked, q)
-		}
-	}
-	for _, q := range asked {
-		if q.Blocking != "" {
+		switch {
+		case q.Investigating:
+		case q.Urgency == Blocking:
 			v.Bar = append(v.Bar, barLine{
 				Class: q.Class, Level: blocked, Text: q.Code + " · " + cut(q.Text, 140) + " · " + q.Blocking, Href: "#q-" + q.Code,
 			})
-		} else {
-			others = append(others, q.Code)
+		default:
+			others = append(others, q)
 		}
 	}
-	if len(others) > barQuestions {
-		v.Bar = append(v.Bar, barLine{Class: "wait", Level: waiting, Href: "#questions",
-			Text: tr("page.bar_questions", "count", fmt.Sprint(len(others)), "codes", strings.Join(others, ", "))})
+	line := func(q question) barLine {
+		return barLine{Class: q.Class, Level: q.Level, Text: q.Code + " · " + cut(q.Text, 140), Href: "#q-" + q.Code}
+	}
+	if len(others) <= barQuestions {
+		for _, q := range others {
+			v.Bar = append(v.Bar, line(q))
+		}
 	} else {
-		for _, q := range asked[len(asked)-len(others):] {
-			v.Bar = append(v.Bar, barLine{Class: q.Class, Level: waiting, Text: q.Code + " · " + cut(q.Text, 140), Href: "#q-" + q.Code})
+		for _, level := range []struct {
+			urgency            Urgency
+			class, level, text string
+		}{{Before, "wait", waiting, "page.bar_questions"}, {Later, "later", later, "page.bar_later"}} {
+			var group []question
+			var codes []string
+			for _, q := range others {
+				if q.Urgency == level.urgency {
+					group, codes = append(group, q), append(codes, q.Code)
+				}
+			}
+			switch {
+			case len(group) == 1:
+				v.Bar = append(v.Bar, line(group[0]))
+			case len(group) > 1:
+				v.Bar = append(v.Bar, barLine{Class: level.class, Level: level.level, Href: "#questions",
+					Text: tr(level.text, "count", fmt.Sprint(len(group)), "codes", strings.Join(codes, ", "))})
+			}
 		}
 	}
 
@@ -707,13 +724,6 @@ func firstLine(source string, n int) string {
 		}
 	}
 	return ""
-}
-
-func b2i(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 // md renders Markdown, without raw HTML.

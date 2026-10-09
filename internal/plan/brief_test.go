@@ -67,11 +67,21 @@ func TestBrief(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Asked last, needed before the merge: it comes before the question that can wait.
+	if _, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		Text: "Which cache?", WishId: wish.GetId(), Before: "before the merge",
+	})); err != nil {
+		t.Fatal(err)
+	}
+
 	brief, err := BuildBrief(ctx, c.store, home, wish.GetId())
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := brief.Text()
+	if i, j := strings.Index(text, "Which cache? (before the merge)\n"), strings.Index(text, "Which store? (can wait)\n"); i < 0 || j < i {
+		t.Errorf("the open questions come before X, then can wait:\n%s", text)
+	}
 	// The wish first, where it stands; then how to lead it: Djinn's rules, then the projects' own.
 	order := []string{"# The wish: Ship the API", "## Running", "## Waiting", "## Open questions", "## Latest decisions",
 		"## Latest blocks", "# Leading a wish in Djinn", "## Commands", "## The projects' rules"}

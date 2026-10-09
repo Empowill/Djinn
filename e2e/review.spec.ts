@@ -98,6 +98,8 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "A: it smells good, and the wick lasts.",
     "--context",
     "## What it changes\n\nThe oil sets how long the lamp burns.\n\n- Olive: softer light.\n- Paraffin: brighter, smells.",
+    "--before",
+    "before the first light",
   );
   djinn(
     "question",
@@ -123,11 +125,14 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await page.setViewportSize({ width: 1440, height: 2200 });
   await page.goto(process.env.DJINN_URL!);
   await expect(page.locator(".hero h1")).toHaveText("Flight plan");
-  // The bar of what waits: one line per question, a click goes there. W3, cut short and not resumed by Djinn, asks
-  // nothing: it is history.
+  // The bar of what waits: one line per question, a click goes there; the one needed before the first light under
+  // those words, the other that can wait. W3, cut short and not resumed by Djinn, asks nothing: it is history.
   const bar = page.locator(".attention-bar");
   await expect(bar).toContainText("2 things wait for you");
-  await expect(bar.locator(".attention-item")).toHaveCount(2);
+  await expect(bar.locator(".attention-level")).toHaveText([
+    "before the first light",
+    "Can wait",
+  ]);
   await expect(bar).not.toContainText("W3");
   await expect(
     page.locator(".plan-wish").filter({ hasText: title }),

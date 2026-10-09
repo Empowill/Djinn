@@ -202,7 +202,9 @@ question or the brief opens in place.
 ## Questions
 
 The lead asks you through Djinn, never by guessing. A question card, coded `Q01`, `Q02`…, gives the lead's
-recommendation first, then the options A to D, then what is at stake.
+recommendation first, then the options A to D, then what is at stake. Its colour says how much it holds up: red
+when a task waits for the answer, orange under the words the lead gave ("before the merge"), grey when it **Can wait**.
+The cards, the bar of what waits for you and the brief list them in that order.
 
 - Pick an option, add a note if you like, then **Confirm this choice**. A question without options takes a
   written answer.

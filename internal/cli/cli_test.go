@@ -126,6 +126,13 @@ func TestConvention(t *testing.T) {
 			parseOnly: true,
 		},
 		{
+			name: "an optional flag given empty is present",
+			args: []string{"Q03", "--before", ""},
+			want: &planv1.QuestionServiceReviseRequest{
+				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, Before: proto.String(""),
+			},
+		},
+		{
 			name:      "enum ignores case and accepts its full name",
 			args:      []string{"--note=later", "Q03", "CHOICE_c"},
 			want:      &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, Choice: planv1.Choice_CHOICE_C, Note: "later"},

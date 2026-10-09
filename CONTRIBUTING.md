@@ -256,6 +256,9 @@ To use Djinn, see the [README](README.md). To work on it:
   `question_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md)) or `djinn up
   --question-workers=false` turns them off. A worker's `djinn block put`, `question ask` and `revise` name its task from
   `$DJINN_TASK_ID`: the decision log says "By W12".
+- An open question is blocking when a task waits for its answer, red; `djinn question ask … --before "before the merge"`
+  makes it orange under those words; without them it can wait, grey. `djinn question revise … --before …` changes them,
+  `--before ""` lets it wait. Everywhere, blocking comes first, then before X, then can wait.
 - With the window, a question asked in an active wish shows as a system notification: a click shows the wish, a
   button answers it. A new inbox item shows as one too, and the side panel counts the new ones on the flight plan. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it

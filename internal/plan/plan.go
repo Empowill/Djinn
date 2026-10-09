@@ -502,7 +502,7 @@ func (q *Questions) Ask(
 	question := &planv1.Question{
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
 		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
-		Icon: req.Msg.GetIcon(), TaskId: req.Msg.GetTaskId(),
+		Icon: req.Msg.GetIcon(), TaskId: req.Msg.GetTaskId(), Before: strings.TrimSpace(req.Msg.GetBefore()),
 	}
 	if err := checkIcon(question.GetIcon()); err != nil {
 		return nil, err

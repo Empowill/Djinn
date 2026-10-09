@@ -27,6 +27,18 @@ export interface OpenQuestion extends Item<Question> {
 }
 
 // Something that waits for the user and is not a question: a worker that waits for an answer, one cut short.
+// urgency is how much an open question holds up, as the lamp computes it (internal/render.UrgencyOf): 0 blocking, a
+// task waits for it; 1 needed before something, its before words; 2 it can wait.
+export function urgency(question: OpenQuestion): number {
+  if (question.blocking.length) return 0;
+  return question.item.before ? 1 : 2;
+}
+
+// byUrgency orders open questions: blocking, then before X, then can wait. A sort keeps the order within a level.
+export function byUrgency(a: OpenQuestion, b: OpenQuestion): number {
+  return urgency(a) - urgency(b);
+}
+
 export interface Waiting extends Item<Task> {
   // The code of the question the task waits for, when it is open.
   question: string;
@@ -238,8 +250,9 @@ export function movingTasks(tasks: readonly Task[]): Task[] {
     .sort(byMotion);
 }
 
-// openQuestions are a wish's questions that wait for your answer, the blocking ones first, then in the order they were
-// asked. Those being investigated wait for the lead: investigatingQuestions.
+// openQuestions are a wish's questions that wait for your answer, the blocking ones first, then those needed before
+// something, then those that can wait; each level in the order they were asked. Those being investigated wait for the
+// lead: investigatingQuestions.
 export function openQuestions(wish: Wish, detail: WishDetail): OpenQuestion[] {
   return questionsWhere(wish, detail, waitsForYou);
 }
@@ -260,7 +273,7 @@ function questionsWhere(
   return detail.questions
     .filter(keep)
     .map((item) => ({ wish, item, blocking: blocks.get(item.id) ?? [] }))
-    .sort((a, b) => Number(!a.blocking.length) - Number(!b.blocking.length));
+    .sort(byUrgency);
 }
 
 // forkedAs is the code of the task that took over one cut short: a task of its wish forked from its session; "" when
@@ -340,10 +353,8 @@ export function flightPlan(
     ))
       plan.decisions.push({ wish, item });
   }
-  // Blocking first across every wish; otherwise each keeps its wish's rank and its own order.
-  plan.questions.sort(
-    (a, b) => Number(!a.blocking.length) - Number(!b.blocking.length),
-  );
+  // Blocking, then before X, then can wait across every wish; within a level each keeps its wish's rank and its order.
+  plan.questions.sort(byUrgency);
   plan.decisions.sort((a, b) => later(a.item.at, b.item.at));
   plan.moving.sort((a, b) => byMotion(a.item, b.item));
   plan.finished.sort((a, b) => newestEnded(a.item, b.item));

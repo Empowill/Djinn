@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -57,6 +58,9 @@ func (q *Questions) Revise(
 			}
 			if m.GetRecommendation() != "" {
 				question.Recommendation = m.GetRecommendation()
+			}
+			if m.Before != nil {
+				question.Before = strings.TrimSpace(m.GetBefore())
 			}
 			question.Revision++
 		})

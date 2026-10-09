@@ -2404,6 +2404,12 @@
             "type": "string",
             "title": "task_id",
             "description": "The task whose worker asked it; empty when the lead did."
+          },
+          "before": {
+            "type": "string",
+            "title": "before",
+            "maxLength": 100,
+            "description": "What the answer is needed before, in a few words, set by the asker (djinn question ask --before \"before the\n merge\"): the question waits for the developer, orange, under those words. Empty: it can wait. A question a waiting\n task needs is blocking whatever this says: Djinn computes that from the tasks."
           }
         },
         "title": "Question",
@@ -2597,6 +2603,12 @@
             "title": "task_id",
             "format": "uuid",
             "description": "The task whose worker asks; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead."
+          },
+          "before": {
+            "type": "string",
+            "title": "before",
+            "maxLength": 100,
+            "description": "What the answer is needed before, in a few words, like \"before the merge\": the question waits for the developer\n under those words. Empty: it can wait."
           }
         },
         "title": "QuestionServiceAskRequest",
@@ -2756,6 +2768,15 @@
             "title": "task_id",
             "format": "uuid",
             "description": "The task whose worker revises; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead."
+          },
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "before",
+            "maxLength": 100,
+            "description": "What the answer is needed before now, like \"before the merge\"; the former words when not given, none when given\n empty (--before \"\"): the question can wait."
           }
         },
         "title": "QuestionServiceReviseRequest",

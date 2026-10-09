@@ -34,7 +34,9 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   project. With no project, no lead starts, and the error says to create one (`internal/plan/lead.go`).
 - **Questions.** `djinn question ask` offers up to four options, answered by letter, or none for a yes. An answered
   question is a decision. On options that say yes and no, `yes` and `no` pick them too. Start a recommendation with
-  its option's letter (`B: …`): the developer applies it in one click, "Rub the lamp".
+  its option's letter (`B: …`): the developer applies it in one click, "Rub the lamp". `--before "before the merge"`
+  says what the answer is needed before; without it the question can wait. A question a waiting task needs is
+  blocking whatever it says: the window, the page and the brief list blocking, then before X, then can wait.
 - **Investigations.** "Enlighten me" in the window (`djinn question enlighten <question> --note …`) asks to find out
   more before deciding: the question waits for a revision, and the brief lists it under "To investigate". Its
   question worker (below), or else the lead, answers with `djinn question revise <question> --context …

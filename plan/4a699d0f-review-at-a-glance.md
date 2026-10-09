@@ -30,6 +30,13 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   --decision` (an answered question's code, or a decision block's id), links a task to its decision. Who decided is
   computed (`render.Decisions`): the developer for an answered question or an approved block (the tone *human*),
   else the worker the block is about, else the lead. Marks stay on open questions and on the other blocks only.
+- **Three levels for an open question** (W88, ported by W134; W40's answer A): *blocking* is computed, a waiting task
+  needs the answer (`render.UrgencyOf`), red; *before X* is `Question.before` (17), a few words set with `djinn
+  question ask --before "before the merge"` and changed with `djinn question revise --before …` (`--before ""` clears
+  it), orange under those words; empty, the question *can wait*, grey with a clock (tone `later`). Every list orders
+  them blocking, before X, can wait (`render.ByUrgency`, `byUrgency` in `src/data/flight.ts`); in the attention bars
+  a question that can wait comes after a worker that asks to edit. Questions asked before have no words: they can
+  wait.
 
 ## Done when
 
@@ -68,6 +75,11 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   `TestBrief`; data "the decisions are the answered questions and the decision blocks…", "the Decisions tab lists
   them without a button…", "a task links back to the decision it comes from"; "the status colours keep their
   contrast…"; e2e `decision-log.spec.ts`, screens `test-results/e2e/decision-log-*.png`)
+- [x] Three levels for an open question: blocking, before X, can wait, in that order on the cards, the attention bar,
+  the page and the brief. (`TestBefore`, `TestByUrgency`, `TestBusyPage`, `TestBar`, `TestBrief`, `TestConvention`
+  "an optional flag given empty is present"; data "open questions come blocking, then before X, then can wait…";
+  screens "a question shows its options…", "the attention bar says how much each question holds up…"; e2e
+  `question-levels.spec.ts`, `review.spec.ts`)
 - [x] ~~Clément has reviewed the layout and the visual language.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
 - [x] The light theme on the dialogs, the agent chat and the terminal, then the system's theme by default. (tokens
   in `src/theme.css`; tests "the theme's tokens keep their contrast in the dark and the light theme" and "the
