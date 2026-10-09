@@ -82,7 +82,6 @@ func TestSetupOncePerWorktree(t *testing.T) {
 	if runs, _ := in.ran(); !slices.Equal(runs, []string{"lint"}) {
 		t.Errorf("W2, no lock file changed: %q; want lint only", runs)
 	}
-
 }
 
 // TestSetupAgain: the setup runs again when a lock file changes, and in an integration worktree made anew.
