@@ -1,0 +1,120 @@
+/* The Tilasms tab: a search and the drop's hint on a line, the tilasm open in its frame, then a row per tilasm. The
+   whole tab takes a drop: it shows it with the accent's outline. */
+.tilasms {
+  border-radius: 8px;
+  outline: 2px dashed transparent;
+  outline-offset: 4px;
+}
+.tilasms.dropping {
+  outline-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.tilasm-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+.tilasm-search {
+  position: relative;
+  display: flex;
+  flex: 1 1 280px;
+  align-items: center;
+  color: var(--muted);
+}
+.tilasm-search svg {
+  position: absolute;
+  left: 11px;
+  pointer-events: none;
+}
+.tilasm-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px 8px 32px;
+  font-size: var(--font-size-body);
+}
+.tilasm-drop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.tilasm-view {
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.tilasm-view-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.tilasm-view-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The frame's page draws its own ground: a white one, as a browser shows a page that sets none. */
+.tilasm-frame {
+  display: block;
+  width: 100%;
+  height: min(70vh, 720px);
+  border: 0;
+  background: white;
+}
+.tilasm-list,
+.tilasm-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tilasm-row {
+  margin-bottom: 8px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.tilasm-row.open {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+.tilasm-line,
+.tilasm-history li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.tilasm-code {
+  font-family: var(--mono);
+  font-size: var(--font-size-body);
+  color: var(--muted);
+}
+.tilasm-cites .tilasm-code + .tilasm-code {
+  margin-left: 6px;
+}
+.tilasm-title {
+  font-weight: 600;
+  text-align: left;
+}
+.tilasm-meta,
+.tilasm-cites {
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.tilasm-actions {
+  display: inline-flex;
+  margin-left: auto;
+}
+.tilasm-history {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}

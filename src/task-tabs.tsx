@@ -2,18 +2,19 @@
 // top what moves or waits for someone, by status (running, cut short and failed first, then waiting and paused, the
 // planned ones last); then the azimas of the plan, each with the work part of it (src/azima.tsx); at the bottom every
 // finished task, the latest ended first. The decisions have the next tab
-// (src/decision-log.tsx).
+// (src/decision-log.tsx), and a wish's tilasms the last (src/tilasms.tsx).
 import { type ReactNode } from "react";
 
 import { t } from "./i18n";
 
-export type View = "main" | "tasks" | "decisions";
+export type View = "main" | "tasks" | "decisions" | "tilasms";
 
 export function ViewTabs({
   view,
   main,
   tasks,
   decisions,
+  tilasms,
   onView,
 }: {
   view: View;
@@ -23,13 +24,17 @@ export function ViewTabs({
   tasks: number;
   // How many decisions the Decisions tab holds.
   decisions: number;
+  // How many tilasms the Tilasms tab holds; without it, a view with no such tab (the flight plan).
+  tilasms?: number;
   onView: (view: View) => void;
 }) {
-  const tabs = [
+  const tabs: { id: View; label: string; count: number }[] = [
     { id: "main", label: main, count: -1 },
     { id: "tasks", label: t("wish.tasks"), count: tasks },
     { id: "decisions", label: t("tabs.decisions"), count: decisions },
-  ] as const;
+  ];
+  if (tilasms !== undefined)
+    tabs.push({ id: "tilasms", label: t("tabs.tilasms"), count: tilasms });
   return (
     <div className="view-tabs" role="tablist">
       {tabs.map(({ id, label, count }) => (

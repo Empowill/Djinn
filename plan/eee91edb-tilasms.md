@@ -48,15 +48,31 @@ be referenced by simple links that open it natively in the app from anywhere."
 ## Done when
 
 - [ ] `djinn tilasm put|list|get|open|history|restore|export|import` (`TilasmService`), journaled; a put replaces,
-  keeping the earlier version. (needs: the tests)
-- [ ] The *Tilasms* tab of a wish: list, open in an isolated frame (scripts run, the network is refused), search,
-  history, export, import by drop. (needs: a screens test and an e2e)
+  keeping the earlier version. (needs: the tests) — 09/10: all but `open`, which waits for the tab and the links.
+  `TestTilasmPutReplaceHistoryRestore` (put, a put by code is a new version, get with the text, history, restore, the
+  journal), `TestTilasmExportImport` (a `.zip` with `tilasm.json`, imported into its wish, another wish, another
+  machine), `TestTilasmCeiling` (50 MiB, a field, refused beyond, saying so), `TestTilasmSearch`.
+- [x] The *Tilasms* tab of a wish: list, open in an isolated frame (scripts run, the network is refused), search,
+  history, export, import by drop. (needs: a screens test and an e2e) — 09/10: `/tilasm/<id>/` serves the latest
+  version with `TilasmPolicy` (`TestTilasmFilesServeTheLatestVersionWithTheirPolicy`: `connect-src 'none'`,
+  `default-src 'none'`, `sandbox allow-scripts`, a new version at the same address); in the browser the frame's
+  files load from an address with a key of their own, the frame's opaque origin carrying no cookie
+  (`TestGuardTilasmFrame`); a drop goes through `PutData` (`TestTilasmPutData`: a folder, a `.zip`, an export
+  imported). Screens: "the Tilasms tab lists each tilasm…", "a wish's view has a Tilasms tab…", "a folder dropped on
+  the Tilasms tab is read…". e2e `tilasms.spec.ts`: put by the CLI, opened in the tab (its script runs, a fetch is
+  refused by `connect-src`, the parent page is out of reach), searched ("talisman" too), a version restored. Export
+  and a real drop are not clicked in the e2e (export writes to the Downloads folder); the native window is not
+  checked yet (`go tool task e2e-native`).
 - [ ] `djinn://tilasm/<id>` opens the app on the tilasm from outside, Djinn running or not, on Linux (a desktop entry
   for `x-scheme-handler/djinn`), macOS (`CFBundleURLTypes` in Djinn.app) and Windows (the registry, by the
   installer). (needs: Linux by test; a Mac and a Windows machine by hand)
 - [ ] Links inside the app (blocks, questions, decisions, the brief) open the tilasm in place.
-- [ ] `djinn wish export` and import carry the tilasms.
-- [ ] `djinn talisman` answers as `djinn tilasm`, and the search finds "talisman".
+- [x] `djinn wish export` and import carry the tilasms. (09/10, `TestWishExportCarriesTilasms`: every version's files
+  in the export, back on another machine under the same identifiers; the journal keeps the manifests, not the files; a
+  replace leaves only the file's tilasms; a deleted wish takes its tilasms' folders.)
+- [x] `djinn talisman` answers as `djinn tilasm`, and the search finds "talisman". (09/10, `TestRun`: "talisman
+  answers as tilasm", "an alias by a prefix no command takes", from `option (djinn.v1.alias)`; `TestTilasmSearch`:
+  "talisman" or "tilasm", in English or French, finds them all, the search the tab will call.)
 - [ ] The first tilasm, the objects in the database drawn from the protos, is put and opens from its link.
 - [ ] The brief lists the wish's tilasms, and the rules tell the lead to make one to explain a concept, and to cite
   it.
@@ -67,6 +83,7 @@ No real sleep, fake clocks, milliseconds: a test over 1 s is a bug.
 
 ## Open questions
 
-- Size: a ceiling per tilasm (say 50 MiB), and what about large binary files (videos)?
+- Size: a ceiling per tilasm, 50 MiB (`Tilasm.max_bytes`, decided 09/10); large binary files (videos) are refused past
+  it, saying so. A way to raise one tilasm's ceiling is still open.
 - A tilasm shared by several wishes: a link from one wish to another's tilasm is enough for now; a library across
   wishes could come later.

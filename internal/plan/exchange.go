@@ -30,8 +30,8 @@ import (
 // formatVersion is the version of WishExport this Djinn writes, and the only one it reads.
 const formatVersion = 1
 
-// maxExport bounds the file an import reads.
-const maxExport = 100 << 20
+// maxExport bounds the file an import reads: tilasms make it large, up to 50 MiB each, every version carried.
+const maxExport = 512 << 20
 
 // near is how close in time a journal entry and the entity it made must be, to tie a command that names no
 // identifier (a wish made, a question answered by its code) to its wish.
@@ -52,6 +52,15 @@ func (w *Wishes) Export(
 		return nil, Status(err)
 	}
 	exp = portable(exp, newScrubber(all))
+	// The files of the tilasms travel as they are: a scrubber does not rewrite what they hold.
+	for _, t := range exp.GetTilasms() {
+		if w.Home == "" {
+			return nil, connect.NewError(connect.CodeUnavailable, errors.New("this server keeps no tilasms: run djinn up"))
+		}
+		if t.Files, err = tilasmFiles(w.Home, t.GetTilasm()); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+	}
 	file := req.Msg.GetFile()
 	if file == "" {
 		dir, err := Downloads()
@@ -151,6 +160,9 @@ func collect(ctx context.Context, r store.Reader, wishID string) (*planv1.WishEx
 		return nil, nil, err
 	}
 	sortBlocks(exp.Blocks)
+	if exp.Tilasms, err = tilasmsOf(ctx, r, wishID); err != nil {
+		return nil, nil, err
+	}
 
 	ids := slices.Clone(wish.GetProjectIds())
 	for _, t := range exp.GetTasks() {
@@ -194,6 +206,9 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	}
 	for _, b := range exp.GetBlocks() {
 		ids[strings.ToLower(b.GetId())] = true
+	}
+	for _, t := range exp.GetTilasms() {
+		ids[strings.ToLower(t.GetTilasm().GetId())] = true
 	}
 	var out []*planv1.Command
 	var failed error
@@ -462,6 +477,13 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 	if err := check(exp); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid export: %w", err))
 	}
+	// The tilasms' files go to the data folder; the journal keeps the rest of the export.
+	placed, err := stageTilasms(w.Home, exp)
+	if err != nil {
+		return nil, Status(err)
+	}
+	committed := false
+	defer func() { placed.done(committed) }()
 	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(exp)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -482,6 +504,13 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			}
 			if Active(old) && old.GetRank() > 0 {
 				place = int(old.GetRank()) - 1
+			}
+			tilasms, err := store.List[*planv1.Tilasm](ctx, tx, store.Where{"wish_id": old.GetId()})
+			if err != nil {
+				return err
+			}
+			if err := placed.replace(tilasms); err != nil {
+				return err
 			}
 			if err := forget(ctx, tx, old.GetId()); err != nil {
 				return err
@@ -556,15 +585,16 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 				return err
 			}
 		}
-		return nil
+		return placed.place(exp.GetTilasms())
 	})
 	if err != nil {
 		return nil, Status(err)
 	}
+	committed = true
 	return res, nil
 }
 
-// entities are the events, questions and blocks of an export, which an import writes as they are.
+// entities are the events, questions, blocks and tilasms of an export, which an import writes as they are.
 func entities(exp *planv1.WishExport) []proto.Message {
 	var out []proto.Message
 	for _, e := range exp.GetEvents() {
@@ -575,6 +605,9 @@ func entities(exp *planv1.WishExport) []proto.Message {
 	}
 	for _, b := range exp.GetBlocks() {
 		out = append(out, b)
+	}
+	for _, t := range exp.GetTilasms() {
+		out = append(out, t.GetTilasm())
 	}
 	return out
 }
@@ -667,7 +700,7 @@ func check(exp *planv1.WishExport) error {
 			return fmt.Errorf("block %s: it needs an id, and its task must be in the export", b.GetId())
 		}
 	}
-	return nil
+	return checkTilasms(exp, tasks, valid)
 }
 
 // free refuses an export whose identifiers are already taken here by something else than its wish.
@@ -695,6 +728,10 @@ func free(ctx context.Context, tx *store.Tx, exp *planv1.WishExport) error {
 	for _, b := range exp.GetBlocks() {
 		errs = append(errs, check("block", b.GetId(), func() error { _, err := store.Get[*planv1.Block](ctx, tx, b.GetId()); return err }))
 	}
+	for _, t := range exp.GetTilasms() {
+		id := t.GetTilasm().GetId()
+		errs = append(errs, check("tilasm", id, func() error { _, err := store.Get[*planv1.Tilasm](ctx, tx, id); return err }))
+	}
 	for _, err := range errs {
 		if err != nil {
 			return err
@@ -703,7 +740,8 @@ func free(ctx context.Context, tx *store.Tx, exp *planv1.WishExport) error {
 	return nil
 }
 
-// forget deletes a wish and everything it holds, before an import replaces it. Its projects stay.
+// forget deletes a wish and everything it holds, before an import replaces it; the caller moves its tilasms' folders.
+// Its projects stay.
 func forget(ctx context.Context, tx *store.Tx, wishID string) error {
 	where := store.Where{"wish_id": wishID}
 	tasks, err := store.List[*planv1.Task](ctx, tx, where)
@@ -734,6 +772,13 @@ func forget(ctx context.Context, tx *store.Tx, wishID string) error {
 	}
 	for _, b := range blocks {
 		all = append(all, b)
+	}
+	tilasms, err := store.List[*planv1.Tilasm](ctx, tx, where)
+	if err != nil {
+		return err
+	}
+	for _, t := range tilasms {
+		all = append(all, t)
 	}
 	all = append(all, &planv1.Wish{Id: wishID})
 	for _, m := range all {

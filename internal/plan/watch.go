@@ -20,7 +20,7 @@ var watchInterval = 100 * time.Millisecond
 // everything is what the first message of a stream names: read it all.
 var everything = []planv1.Change{
 	planv1.Change_CHANGE_WISH, planv1.Change_CHANGE_TASK, planv1.Change_CHANGE_QUESTION,
-	planv1.Change_CHANGE_BLOCK, planv1.Change_CHANGE_PROJECT, planv1.Change_CHANGE_INBOX,
+	planv1.Change_CHANGE_BLOCK, planv1.Change_CHANGE_PROJECT, planv1.Change_CHANGE_INBOX, planv1.Change_CHANGE_TILASM,
 }
 
 // watchers fans the committed changes of the store out to the open Watch streams. Its zero value is ready: it
@@ -111,6 +111,8 @@ func (ws *watchers) changed(ms []proto.Message) {
 				change{m.GetWishId(), planv1.Change_CHANGE_WISH})
 		case *planv1.Block:
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_BLOCK})
+		case *planv1.Tilasm:
+			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM})
 		case *planv1.Project:
 			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT})
 		case *planv1.InboxItem:

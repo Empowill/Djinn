@@ -12,6 +12,7 @@ import {
   type TaskEvent,
   type Wish,
 } from "../../gen/ts/plan/v1/plan_pb";
+import type { Tilasm } from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound } from "./client";
 
 // What the page shows of one wish, read while a screen shows it.
@@ -19,6 +20,8 @@ export interface WishDetail {
   tasks: Task[];
   questions: Question[];
   blocks: Block[];
+  // Its tilasms, by code.
+  tilasms: Tilasm[];
   // Read at least once.
   loaded: boolean;
 }
@@ -48,7 +51,7 @@ export interface Store {
   subscribe(listener: () => void): () => void;
   // Follows djinn until the returned function is called: reads everything, then what changes.
   start(): () => void;
-  // Reads a wish's tasks, questions and blocks, and again when they change, until the returned function is called.
+  // Reads a wish's tasks, questions, blocks and tilasms, and again when they change, until the returned function is called.
   open(wishId: string): () => void;
   // Follows a task's events until the returned function is called, or the task ends.
   follow(taskId: string): () => void;
@@ -64,6 +67,7 @@ const EMPTY_DETAIL: WishDetail = {
   tasks: [],
   questions: [],
   blocks: [],
+  tilasms: [],
   loaded: false,
 };
 
@@ -106,7 +110,8 @@ export function createStore(clients: Clients, retry = 1000): Store {
       if (
         change !== Change.TASK &&
         change !== Change.QUESTION &&
-        change !== Change.BLOCK
+        change !== Change.BLOCK &&
+        change !== Change.TILASM
       )
         continue;
       // Without a wish, every wish shown; a wish not shown is read when it is.
@@ -158,6 +163,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
       if (kinds.has(Change.BLOCK))
         attempt(async () => {
           into.blocks = (await clients.blocks.list({ wishId })).blocks;
+        });
+      if (kinds.has(Change.TILASM))
+        attempt(async () => {
+          into.tilasms = (await clients.tilasms.list({ wish: wishId })).tilasms;
         });
     }
     await Promise.all(reads);
@@ -271,7 +280,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
     },
     open(wishId) {
       opened.set(wishId, (opened.get(wishId) ?? 0) + 1);
-      mark(wishId, [Change.TASK, Change.QUESTION, Change.BLOCK]);
+      mark(wishId, [Change.TASK, Change.QUESTION, Change.BLOCK, Change.TILASM]);
       void flush();
       return () => {
         const count = (opened.get(wishId) ?? 1) - 1;
