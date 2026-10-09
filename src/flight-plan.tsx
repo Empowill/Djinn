@@ -1,6 +1,7 @@
 // The flight plan of the active wishes, merged (T13): a bar at the top while something waits for you, then each
 // wish at a glance, then what waits for you (the open questions of every wish, the blocking ones first, the workers
-// that wait, the wishes Djinn proposes to grant), and the questions you asked to investigate. The tasks of every wish
+// that wait, the wishes Djinn proposes to grant, the proofs you can give of the azimas whose work is done), and the
+// questions you asked to investigate. The tasks of every wish
 // have a tab of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
 import { type CSSProperties, useRef, useState } from "react";
@@ -23,7 +24,7 @@ import { Inbox } from "./inbox";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
-import { AzimaCard } from "./azima";
+import { AzimaCard, proofWords } from "./azima";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -52,7 +53,11 @@ export function FlightPlan({
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
   const { clients, act, quiet, answer, enlighten, mark } = useWrites(onToast);
-  const waits = plan.questions.length + plan.waiting.length + plan.ready.length;
+  const waits =
+    plan.questions.length +
+    plan.waiting.length +
+    plan.ready.length +
+    plan.proofs.length;
   const attention = attentionOf(
     plan.questions,
     plan.waiting,
@@ -332,6 +337,32 @@ export function FlightPlan({
                   )}
                   {plan.waiting.length > 0 && (
                     <WaitingTasks waiting={plan.waiting} origin />
+                  )}
+                  {plan.proofs.length > 0 && (
+                    <section className="plan-waiting">
+                      <div className="section-heading">
+                        <h3>
+                          {t("plan.proofs")}
+                          <span className="count">{plan.proofs.length}</span>
+                        </h3>
+                      </div>
+                      {plan.proofs.map(({ wish, item }, i) => (
+                        <p className="plan-line" key={`${item.azima.id}-${i}`}>
+                          <StatusBadge
+                            tone="proof"
+                            label={proofWords([item.need])}
+                            title={t("azima.needs", { needs: item.need.needs })}
+                          />
+                          <WishOrigin wish={wish} />
+                          <span>
+                            {t("plan.proof_line", {
+                              azima: item.azima.code,
+                              box: item.need.box,
+                            })}
+                          </span>
+                        </p>
+                      ))}
+                    </section>
                   )}
                   {plan.ready.map((wish) => (
                     <GrantCard

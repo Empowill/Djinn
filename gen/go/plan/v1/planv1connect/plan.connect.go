@@ -2143,7 +2143,9 @@ func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1
 type PlanServiceClient interface {
 	// Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the
 	// title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on.
-	// A file whose status is done marks its azima done; read not done again, an azima it closed opens again. Then
+	// A file whose status is done, or whose Done-when boxes are all checked (reported in all_checked), marks its azima
+	// done; read not done again, an azima it closed opens again. The unchecked boxes that wait for a proof no worker can
+	// give, "(needs: …)", are kept on the azima (Task.proof_needs) when no other box is left. Then
 	// write what each azima depends on back into its file's front matter, as "after: T02 T05", so that Git carries the
 	// graph. The store stays the source of truth: an azima made here takes its file's after line, once.
 	Sync(context.Context, *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error)
@@ -2183,7 +2185,9 @@ func (c *planServiceClient) Sync(ctx context.Context, req *connect.Request[v1.Pl
 type PlanServiceHandler interface {
 	// Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the
 	// title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on.
-	// A file whose status is done marks its azima done; read not done again, an azima it closed opens again. Then
+	// A file whose status is done, or whose Done-when boxes are all checked (reported in all_checked), marks its azima
+	// done; read not done again, an azima it closed opens again. The unchecked boxes that wait for a proof no worker can
+	// give, "(needs: …)", are kept on the azima (Task.proof_needs) when no other box is left. Then
 	// write what each azima depends on back into its file's front matter, as "after: T02 T05", so that Git carries the
 	// graph. The store stays the source of truth: an azima made here takes its file's after line, once.
 	Sync(context.Context, *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error)

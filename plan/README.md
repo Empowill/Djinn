@@ -9,7 +9,10 @@ depends on, from Djinn's store. Change the graph with `djinn task depend`, never
 **Status**: `open` when no "Done when" box is checked, `in-progress` when some are, `done` when all are. A box is
 checked only with its proof in parentheses (a named test, a command's output); a box that needs a person, a machine
 or a real model stays unchecked and says so (`needs: …`). The README checks a task when it is `done`, and marks it
-"(in progress)" when it is `in-progress`.
+"(in progress)" when it is `in-progress`. `djinn plan sync` reads the "Done when" boxes (nested ones too; a box struck
+through with `~~…~~` no longer counts): once the azima's work is finished and every unchecked box says
+`(needs: …)`, it awaits its proof; a box without needs is work left. A file whose boxes are all checked closes its
+azima whatever its status line says, and the sync reports it: set its status to `done`.
 
 The checklist in the main [README](../README.md#roadmap-to-v1) tracks progress; there is no
 other tracker and no cloud service. A new task is a new file here, with a fresh UUIDv7.

@@ -444,6 +444,11 @@ message Task {
   // For a correction worker, which Djinn starts by itself when a batch's merge conflicts in code or its tests fail:
   // what it corrects. Its worktree starts on the failed merge, and its branch integrates like any task's.
   TaskCorrection correction = 42;
+  // For an azima read from a plan file (djinn plan sync): its Done-when boxes left unchecked for a proof no worker can
+  // give, box by box, when nothing else is left in them: every unchecked box says "(needs: …)", or holds boxes that
+  // do. Empty while a box without needs is unchecked (work is left), when every box is checked, and for a file
+  // without a Done-when section.
+  repeated ProofNeed proof_needs = 43;
 }
 
 // TaskCorrection is what a correction worker corrects.
@@ -532,6 +537,39 @@ message IntegrationCommit {
   repeated string task_ids = 6;
 }
 
+// ProofNeed is a Done-when box of a plan file left unchecked for a proof no worker can give: a person, a machine, a
+// release or a real model gives it.
+message ProofNeed {
+  // The box's text, without its needs.
+  string box = 1;
+  // What it needs, as the file says: "a Mac, and a person to compare the rendering with Linux".
+  string needs = 2;
+  // Who or what gives the proof, read from the words of its needs, no model; at least one.
+  repeated Prover provers = 3;
+  // The person whose review it needs ("Clément's review"); empty for none.
+  string reviewer = 4;
+}
+
+// Prover says who or what gives a proof that no worker can, as the words of a box's needs name it.
+enum Prover {
+  // Not set.
+  PROVER_UNSPECIFIED = 0;
+  // A Mac: macOS by hand, or a command run there.
+  PROVER_MAC = 1;
+  // A Windows machine.
+  PROVER_WINDOWS = 2;
+  // A review by a named person (ProofNeed.reviewer).
+  PROVER_REVIEW = 3;
+  // A published release, or a tag pushed.
+  PROVER_RELEASE = 4;
+  // A real model: a real run, a real lead, a paid bench.
+  PROVER_REAL_MODEL = 5;
+  // A person: by hand, by voice, a maintainer, a decision.
+  PROVER_PERSON = 6;
+  // None of these: the needs say what, in their own words.
+  PROVER_OTHER = 7;
+}
+
 // TaskKind says what a task is.
 enum TaskKind {
   // Not set: work, as every task was before kinds.
@@ -547,7 +585,7 @@ enum TaskKind {
 
 // Azima is where an azima stands, computed on every read from the tasks of its wish; never stored.
 message Azima {
-  // Open, in progress or done.
+  // Open, in progress, awaiting its proof, or done.
   AzimaState state = 1;
   // Every task it depends on is done: its work may go.
   bool ready = 2;
@@ -566,8 +604,13 @@ enum AzimaState {
   AZIMA_STATE_OPEN = 1;
   // One of its parts runs or is done, or an azima part of it is under way.
   AZIMA_STATE_IN_PROGRESS = 2;
-  // Marked done, or its plan file says done.
+  // Marked done, or its plan file says done, or every Done-when box of its plan file is checked.
   AZIMA_STATE_DONE = 3;
+  // Under way, its work finished, and nothing left for Djinn to do: every work task part of it is finished (done,
+  // stopped, or cut short for good), every azima part of it done or awaiting its proof too, and every unchecked
+  // Done-when box of its plan file waits for a proof no worker can give (Task.proof_needs). It waits for a person, a
+  // machine, a release or a real model, never for work.
+  AZIMA_STATE_AWAITING_PROOF = 4;
 }
 
 // Resources is what a task's worker uses of the machine: its process group and every process it started, even one
@@ -2482,7 +2525,9 @@ message TaskServiceContinueResponse {
 service PlanService {
   // Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the
   // title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on.
-  // A file whose status is done marks its azima done; read not done again, an azima it closed opens again. Then
+  // A file whose status is done, or whose Done-when boxes are all checked (reported in all_checked), marks its azima
+  // done; read not done again, an azima it closed opens again. The unchecked boxes that wait for a proof no worker can
+  // give, "(needs: …)", are kept on the azima (Task.proof_needs) when no other box is left. Then
   // write what each azima depends on back into its file's front matter, as "after: T02 T05", so that Git carries the
   // graph. The store stays the source of truth: an azima made here takes its file's after line, once.
   rpc Sync(PlanServiceSyncRequest) returns (PlanServiceSyncResponse) {
@@ -2512,4 +2557,7 @@ message PlanServiceSyncResponse {
   repeated string changed = 3;
   // The files whose after line was written, as their project names them.
   repeated string written = 4;
+  // The files whose status says not done while every box of their Done-when section is checked: their azimas count
+  // as done. Set their status to done.
+  repeated string all_checked = 5;
 }

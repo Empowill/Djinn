@@ -14,6 +14,7 @@
   --st-paused: #b4b4c8;
   --st-watching: #4fd1c5;
   --st-human: #f590b8;
+  --st-proof: #b8cf6a;
   --lamp: #e9bf55;
   --lamp-ink: #2a1d00;
   --measure: 72ch;
@@ -43,6 +44,7 @@ html[data-theme="light"] {
   --st-paused: #4b4b6b;
   --st-watching: #0f6b63;
   --st-human: #a8235a;
+  --st-proof: #4f6212;
   --lamp: #f0c75e;
 }
 
@@ -79,6 +81,9 @@ html[data-theme="light"] {
 }
 .tone-human {
   --tone: var(--st-human);
+}
+.tone-proof {
+  --tone: var(--st-proof);
 }
 .status-badge,
 .count-pill {

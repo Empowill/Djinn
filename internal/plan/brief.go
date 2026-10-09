@@ -64,7 +64,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"for the developer on it. Work is part of an azima and waits only for what it depends on, so plan it as a graph, " +
 	"never a line: spawn each task `--part-of <azima>`, and `--after` only the tasks whose result it needs, " +
 	"several if need be. Two tasks that do not need each other run side by side. Work on the ready azimas first; an " +
-	"azima is done when you mark it done (`djinn task done`) or its plan file says so. `djinn task depend` and " +
+	"azima is done when you mark it done (`djinn task done`) or its plan file says so. One whose work is done and " +
+	"whose plan file's unchecked boxes all say `(needs: …)` waits for its proof, from a person, a machine, a release " +
+	"or a real model: spawn no work for it. `djinn task depend` and " +
 	"`djinn task group` re-sequence the plan as it learns; Djinn refuses a cycle.\n" +
 	"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
 	"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
@@ -426,22 +428,24 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 }
 
 // azimasBrief writes the plan's azimas as a graph: the ready ones first, under way before open, then the blocked ones
-// with what they wait for, then the done ones on one line; each with the tilasms that explain it. Nothing without an
-// azima.
+// with what they wait for, then those whose work is done and that wait for their proof, with who gives it, then the
+// done ones on one line; each with the tilasms that explain it. Nothing without an azima.
 func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string, tilasms []*planv1.Tilasm) {
-	var ready, blocked, done []*planv1.Task
+	var ready, blocked, proof, done []*planv1.Task
 	for _, t := range WithAzimas(tasks) {
 		switch e := t.GetAzima(); {
 		case !IsAzima(t):
 		case e.GetState() == planv1.AzimaState_AZIMA_STATE_DONE:
 			done = append(done, t)
+		case e.GetState() == planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF:
+			proof = append(proof, t)
 		case e.GetReady():
 			ready = append(ready, t)
 		default:
 			blocked = append(blocked, t)
 		}
 	}
-	if len(ready)+len(blocked)+len(done) == 0 {
+	if len(ready)+len(blocked)+len(proof)+len(done) == 0 {
 		return
 	}
 	byCode := func(a, b *planv1.Task) int { return CompareCodes(a.GetCode(), b.GetCode()) }
@@ -452,6 +456,7 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 		return cmp.Or(cmp.Compare(under(a), under(b)), byCode(a, b))
 	})
 	slices.SortFunc(blocked, byCode)
+	slices.SortFunc(proof, byCode)
 	slices.SortFunc(done, byCode)
 	b.WriteString("\n## Azimas\n\n")
 	b.WriteString("The plan as a graph, the ready azimas first. Spawn their work `--part-of <azima>`.\n\n")
@@ -499,6 +504,17 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 			b.WriteString(" (after " + strings.Join(all, ", ") + ")")
 		}
 		b.WriteString("; " + status[t] + "\n")
+	}
+	if len(proof) > 0 {
+		// No work is left in them: a person, a machine, a release or a real model gives the proof.
+		needs := make([]string, len(proof))
+		for i, t := range proof {
+			needs[i] = t.GetCode() + " needs " + NeedsWords(t.GetProofNeeds())
+			if ls := citing(tilasms, t.GetId()); len(ls) > 0 {
+				needs[i] += " (explained by " + strings.Join(ls, ", ") + ")"
+			}
+		}
+		fmt.Fprintf(b, "- Work done, waiting for its proof: %s.\n", strings.Join(needs, "; "))
 	}
 	if len(done) > 0 {
 		names := make([]string, len(done))

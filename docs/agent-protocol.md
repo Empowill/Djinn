@@ -46,7 +46,13 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
     scheduler starts W5 in between. Never spawn, then depend: that leaves the gap. `--blocks` is refused on a task
     that has started (running, paused, done…), saying which, and on one that would close a cycle;
   - work on the ready azimas first, the brief's "Azimas" section: an azima is ready once every task it depends on is
-    done, in progress once a part runs or is done, done once marked done (`djinn task done`) or its file says so;
+    done, in progress once a part runs or is done, done once marked done (`djinn task done`), its file says so, or
+    every Done-when box of its file is checked (`djinn plan sync` reports a file whose status line lags);
+  - an azima under way awaits its proof (`AWAITING_PROOF`) once its work is finished (done, stopped, or cut short for
+    good) and every unchecked Done-when box of its file says `(needs: …)`, or holds boxes that do: a person, a
+    machine, a release or a real model gives the proof, never a worker. The brief lists these apart ("Work done,
+    waiting for its proof: T01 needs a Mac, a person"); spawn no work for them. A box without needs is work left, and
+    keeps its azima in progress;
   - re-sequence as the plan learns: `djinn task depend <task> --after … --also W6=W5,W3` replaces what several
     tasks wait for at once, all or none, `djinn task group <task> --part-of T07` its azima. Djinn refuses a cycle,
     through dependencies and azimas together, naming it, and then changes nothing. `--depends-on` is the former
