@@ -19,6 +19,10 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   - [ ] What "received" proves with a real agent: the agent said something after the message reached its input,
     not that the model read it. Claude may answer it only at the end of its turn. (needs: a recorded claude stream
     with a message sent mid-turn)
+  - [x] A message sent mid-turn no longer leaves a claude worker running forever: claude folds it into the running
+    turn and writes one result, so the worker takes `queued_turn_count` as the messages still waiting, and closes
+    its input at 0. Without that count (older claude, agy), ten quiet minutes after a result end the wait, with a
+    `STATUS`. (`TestCatalog/claude/mid-turn-message`, which hung on the old code; `TestStreamQuietAfterResult`)
 - [ ] **Djinn's own icon in the system.** The logo shown in the window is also the app's icon:
   the dock, the task bar, the window switcher. Linux: an icon and a `.desktop` file in the
   user's folders (no sudo). macOS and Windows: the icon embedded in the build. Simple, tested on

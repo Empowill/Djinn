@@ -22,7 +22,8 @@ import (
 // (testdata/<provider>/<case>.jsonl):
 //
 //	DJINN_FAKE_PROVIDER  claude, antigravity or codex: how it reads its input
-//	DJINN_FAKE_FIXTURE   the fixture: its lines go to the output, but those starting with # (comments)
+//	DJINN_FAKE_FIXTURE   the fixture: its lines go to the output, but those starting with # (comments); a
+//	                     #< line is no comment: there claude and antigravity read a message sent during the turn
 //	DJINN_FAKE_STDERR    a file whose lines go to the error output first, when set
 //	DJINN_FAKE_ARGS      a file the arguments are written to, one per line, when set
 //	DJINN_FAKE_INPUT     a file each input line is written to, when set
@@ -116,7 +117,7 @@ func fakeProvider(provider string) int {
 	}
 	var lines []string
 	for l := range strings.Lines(string(b)) {
-		if l = strings.TrimRight(l, "\r\n"); l != "" && !strings.HasPrefix(l, "#") {
+		if l = strings.TrimRight(l, "\r\n"); l == fakeReadMark || l != "" && !strings.HasPrefix(l, "#") {
 			lines = append(lines, l)
 		}
 	}
@@ -158,6 +159,9 @@ func fakeProvider(provider string) int {
 	return 0
 }
 
+// fakeReadMark is the fixture line where a stream-json fake reads a message sent during its turn.
+const fakeReadMark = "#<"
+
 // fakeStream plays a stream-json agent: a message in, the lines of its turn out.
 func fakeStream(provider string, lines []string, next func() (map[string]any, bool)) int {
 	read := func() bool {
@@ -175,6 +179,12 @@ func fakeStream(provider string, lines []string, next func() (map[string]any, bo
 		return 3
 	}
 	for i, l := range lines {
+		if l == fakeReadMark {
+			if !read() {
+				return 3
+			}
+			continue
+		}
 		fmt.Println(l)
 		var m map[string]any
 		_ = json.Unmarshal([]byte(l), &m)

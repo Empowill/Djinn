@@ -204,7 +204,10 @@ type claudeMessage struct {
 		ToolName  string          `json:"tool_name"`
 		ToolInput json.RawMessage `json:"tool_input"`
 	} `json:"permission_denials"`
-	Usage *struct {
+	// QueuedTurnCount is how many messages claude still holds for later turns: a message sent during a turn is
+	// folded into it, and gets no result of its own. Seen on a real run (W59); older versions may omit it.
+	QueuedTurnCount *int `json:"queued_turn_count"`
+	Usage           *struct {
 		InputTokens              int64 `json:"input_tokens"`
 		OutputTokens             int64 `json:"output_tokens"`
 		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
@@ -308,7 +311,7 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 			}
 		}
 	case "result":
-		res = &turnEnd{}
+		res = &turnEnd{queued: m.QueuedTurnCount}
 		// An error subtype (error_max_turns, error_during_execution…) fails the turn even when is_error is false.
 		if m.IsError || m.Subtype != "" && m.Subtype != "success" {
 			res.failure = strings.Join(m.Errors, "; ")
