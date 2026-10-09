@@ -15,7 +15,7 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { AttentionBar, attentionOf } from "./attention";
 import { decisionOf } from "./data/decisions";
-import { useData, useWishDetails } from "./data/djinn";
+import { useData, usePausable, useWishDetails } from "./data/djinn";
 import { flightPlan, spent } from "./data/flight";
 import { investigating, waitsForYou, wishTone } from "./data/format";
 import { DecisionLog } from "./decision-log";
@@ -48,6 +48,7 @@ export function FlightPlan({
   onToast: (text: string) => void;
 }) {
   const projects = useData((s) => s.projects);
+  const pausable = usePausable();
   const details = useWishDetails(wishes.map((w) => w.id));
   const plan = flightPlan(wishes, details);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -95,17 +96,20 @@ export function FlightPlan({
       onSend={(text) =>
         act(wish.id, () => clients.tasks.send({ taskId: item.id, text }), [])
       }
-      onHold={(pause) =>
-        quiet(
-          act(
-            wish.id,
-            () =>
-              pause
-                ? clients.tasks.pause({ taskId: item.id })
-                : clients.tasks.resume({ taskId: item.id }),
-            [Change.TASK],
-          ),
-        )
+      onHold={
+        pausable
+          ? (pause) =>
+              quiet(
+                act(
+                  wish.id,
+                  () =>
+                    pause
+                      ? clients.tasks.pause({ taskId: item.id })
+                      : clients.tasks.resume({ taskId: item.id }),
+                  [Change.TASK],
+                ),
+              )
+          : undefined
       }
       onDone={(note) =>
         act(

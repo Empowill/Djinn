@@ -1,7 +1,7 @@
 // A task of a wish: its code, what it does, where it stands, what it spent, and, opened, its facts, its worker's
 // last word and its events as they come (TaskService.Watch), with a box to send the running worker an instruction
-// (TaskService.Send). A watcher (a command, no agent) shows the first line of its last paragraph, and pauses. A task
-// that comes from a decision links back to it.
+// (TaskService.Send). A running worker pauses, and a paused one goes on (TaskService.Pause and Resume). A watcher (a
+// command, no agent) shows the first line of its last paragraph. A task that comes from a decision links back to it.
 import {
   Activity,
   AlertCircle,
@@ -114,7 +114,7 @@ export function WishTask({
   focused?: boolean;
   onStop: () => void;
   onSend: (text: string) => Promise<unknown>;
-  // Pauses the task's worker (true) or lets it go on (false): offered for a watcher.
+  // Pauses the task's worker (true) or lets it go on (false); none where djinn cannot pause one (Windows).
   onHold?: (pause: boolean) => void;
   onDecision?: () => void;
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
@@ -131,7 +131,6 @@ export function WishTask({
   }, [focused, task.id]);
   const watcher = task.provider === Provider.WATCH;
   const holdable =
-    watcher &&
     !!onHold &&
     (task.status === TaskStatus.RUNNING || task.status === TaskStatus.PAUSED);
   const paused = task.status === TaskStatus.PAUSED;
@@ -191,7 +190,7 @@ export function WishTask({
           <button
             className="icon-button"
             onClick={() => onHold?.(!paused)}
-            title={t(paused ? "task.resume" : "task.pause")}
+            title={t(paused ? "task.resume_detail" : "task.pause_detail")}
             aria-label={t(paused ? "task.resume" : "task.pause")}
           >
             {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}

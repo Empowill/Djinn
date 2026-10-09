@@ -35,7 +35,7 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
-import { useClients, useData, useWishDetail } from "./data/djinn";
+import { useClients, useData, usePausable, useWishDetail } from "./data/djinn";
 import {
   type OpenQuestion,
   azimaGroups,
@@ -102,6 +102,7 @@ export function WishView({
   onToast: (text: string) => void;
 }) {
   const allProjects = useData((s) => s.projects);
+  const pausable = usePausable();
   const detail = useWishDetail(wish.id);
   const projects = projectsOf(wish, allProjects);
   const open = openQuestions(wish, detail);
@@ -168,16 +169,19 @@ export function WishView({
       onSend={(text) =>
         act(() => clients.tasks.send({ taskId: task.id, text }), [])
       }
-      onHold={(pause) =>
-        quiet(
-          act(
-            () =>
-              pause
-                ? clients.tasks.pause({ taskId: task.id })
-                : clients.tasks.resume({ taskId: task.id }),
-            [Change.TASK],
-          ),
-        )
+      onHold={
+        pausable
+          ? (pause) =>
+              quiet(
+                act(
+                  () =>
+                    pause
+                      ? clients.tasks.pause({ taskId: task.id })
+                      : clients.tasks.resume({ taskId: task.id }),
+                  [Change.TASK],
+                ),
+              )
+          : undefined
       }
       onDone={(note) =>
         act(

@@ -116,6 +116,12 @@ export function useMachine(every = 5000) {
   return useData((state) => state.machine);
 }
 
+// usePausable tells whether djinn can pause a worker: not on Windows, where no signal stops a process tree. Until the
+// machine is read, it says yes; djinn's refusal would say why.
+export function usePausable(): boolean {
+  return useData((state) => state.machine?.os !== "windows");
+}
+
 export function useClients(): Clients {
   return useRequiredDjinn().clients;
 }

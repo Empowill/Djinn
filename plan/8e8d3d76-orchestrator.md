@@ -102,6 +102,10 @@ after: T08 T17
   `TestWorkerAttribution`, `TestQuestionSettings`, `TestProjectShow` in `internal/plan`; `TestFromEnv` in
   `internal/cli`; `TestOnOff` in `cmd/djinn`; `e2e/question-workers.spec.ts`: "Rub the lamp" in the window, the
   converter ends with W2 spawned with `--decision Q01`)
+- [x] The window pauses and resumes a worker from its card in the Tasks tab, any worker, not only a watcher: running, a
+  pause button; paused, a resume button; none in a task no worker runs, and none on Windows, where the pause is refused.
+  (`a running worker pauses from its card…` in `tests/screens.test.mjs`; `e2e/task-pause.spec.ts`: a fake worker
+  paused from the window shows paused, then resumed)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -223,6 +227,10 @@ after: T08 T17
   SIGCONT, so a paused worker stops at once; `djinn up` stopping or crashing interrupts it like a running one. What
   the worker wrote just before the pause may still land after the `paused` event. On Windows the call refuses, saying
   why: no signal stops a process tree there; it would take suspending each thread, or a job object (T17).
+- **The window pauses too** (W49's question, yes): a button on every running or paused task's card, a worker or a
+  watcher, calls `Pause` or `Resume`; a refusal (a gate held or awaited, a worker that cannot pause) shows as a toast.
+  The window hides it when `Machine.os` is windows (`usePausable` in `src/data/djinn.tsx`). The wish's own Pause, in its
+  head, stays as it is: it sets the whole wish aside.
 - **A worker that holds a gate is not paused** (W49's question, A): the gate would stay held, frozen, for every other
   worker. The pause is refused, saying "W1 holds the gate test: wait or stop it" (`gate.Gates.Held`, given to the
   harness by `djinn up`).
