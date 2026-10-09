@@ -3,6 +3,7 @@ id: 01a1184f-cf1a-7ae3-a231-dabcb81b5d99
 code: T06
 phase: 1
 status: in-progress
+after: T01 T05
 ---
 
 # T06 · End-to-end tests on the native window

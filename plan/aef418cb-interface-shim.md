@@ -3,6 +3,7 @@ id: 01a1184f-cf17-786b-a218-3485aef418cb
 code: T03
 phase: 1
 status: in-progress
+after: T01 T02
 ---
 
 # T03 · Keep the interface working: the `window.djinn` shim

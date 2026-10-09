@@ -17,7 +17,13 @@ export { WishView } from "@/src/wish-view.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
-export { finishedTasks, movingTasks } from "@/src/data/flight.ts";
+export {
+  azimaGroups,
+  finishedTasks,
+  flightPlan,
+  movingTasks,
+} from "@/src/data/flight.ts";
+export { AzimaCard } from "@/src/azima.tsx";
 export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
 export { memory, resourcesDetail } from "@/src/usage.tsx";
@@ -569,6 +575,111 @@ test("the Tasks tab lists what moves or waits by status, then the finished tasks
   assert.match(html, /Moving or waiting<span class="count">5<\/span>/);
   assert.match(html, /Finished<span class="count">4<\/span>/);
   assert.match(html, /Closed by you, [^<]+: merged/);
+});
+
+test("the Tasks tab groups work under its azima, which says what it waits for and its progress, and never waits", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const azima = (code, title, extra) => ({
+    id: code,
+    code,
+    title,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    createTime: at(1),
+    ...extra,
+  });
+  const work = (code, status, partOf, end) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    partOf,
+    dependsOn: [],
+    createTime: at(1),
+    endTime: end ? at(end) : undefined,
+  });
+  const tasks = [
+    azima("T1", "Lay the ground", {
+      status: s.TaskStatus.DONE,
+      azima: { state: s.AzimaState.DONE, ready: true },
+    }),
+    azima("T2", "The orchestrator", {
+      dependsOn: ["T1"],
+      azima: {
+        state: s.AzimaState.IN_PROGRESS,
+        ready: true,
+        parts: 3,
+        partsDone: 1,
+        partsRunning: 1,
+      },
+    }),
+    azima("T10", "Spread the work", {
+      dependsOn: ["T1", "T2"],
+      azima: { state: s.AzimaState.OPEN, ready: false },
+    }),
+    work("W1", s.TaskStatus.DONE, "T2", 10),
+    work("W2", s.TaskStatus.RUNNING, "T2"),
+    work("W3", s.TaskStatus.PENDING, "T2"),
+    work("W4", s.TaskStatus.PENDING, ""),
+    work("W5", s.TaskStatus.DONE, "", 20),
+  ];
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const card = (task) =>
+    h(s.WishTask, {
+      key: task.id,
+      task,
+      onStop() {},
+      async onSend() {},
+      async onDone() {},
+    });
+  const html = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(tasks),
+      finished: s.finishedTasks(tasks),
+      azimas: s.azimaGroups(tasks),
+      renderAzima: ({ azima, parts }) =>
+        h(s.AzimaCard, {
+          key: azima.id,
+          azima,
+          parts,
+          tasks: byId,
+          render: card,
+        }),
+      render: card,
+    }),
+  );
+  const order = [...html.matchAll(/<span class="agent-code">([TW]\d+)</g)].map(
+    (m) => m[1],
+  );
+  // Work of no azima moves or waits on its own; T2, under way, opened on its parts (running, planned, then done);
+  // T10 waits; T1, done, folded; the finished work of no azima last.
+  assert.deepEqual(order, ["W4", "T2", "W2", "W3", "W1", "T10", "T1", "W5"]);
+  assert.match(html, /Moving or waiting<span class="count">1<\/span>/);
+  assert.match(html, /Azimas<span class="count">3<\/span>/);
+  assert.match(html, /Finished<span class="count">1<\/span>/);
+  assert.match(html, /Waits for T2</);
+  assert.match(html, /after T1</);
+  assert.match(html, /1\/3/);
+  assert.match(html, /In progress/);
+  // No azima is ever said to wait for you.
+  assert.doesNotMatch(html, /Waits for your answer/);
+  assert.doesNotMatch(html, /tone-waiting/);
+
+  // Nor does the flight plan: an azima neither waits for you nor moves.
+  const wish = { id: "w1", title: "Lamp", state: s.WishState.ACTIVE, rank: 1 };
+  const plan = s.flightPlan([wish], {
+    w1: { tasks, questions: [], blocks: [], loaded: true },
+  });
+  assert.equal(plan.waiting.length, 0);
+  assert.deepEqual(
+    plan.moving.map((x) => x.item.code),
+    ["W4"],
+  );
+  assert.deepEqual(
+    plan.azimas.map((x) => x.item.azima.code),
+    ["T2", "T10", "T1"],
+  );
 });
 
 // two wishes, a question each, a worker running in the second, read from in-memory services.

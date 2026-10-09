@@ -37,6 +37,9 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 			fmt.Errorf("task %s is %s: stop it first (djinn task stop)", task.GetCode(), short(s)))
 	}
 	by := req.GetBy()
+	if by == planv1.Closer_CLOSER_PLAN_FILE {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("only djinn plan sync closes a task for its plan file"))
+	}
 	if by == planv1.Closer_CLOSER_UNSPECIFIED {
 		by = planv1.Closer_CLOSER_LEAD
 	}

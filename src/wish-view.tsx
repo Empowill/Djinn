@@ -40,13 +40,16 @@ import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
 import { useClients, useData, useWishDetail } from "./data/djinn";
 import {
   type OpenQuestion,
+  azimaGroups,
   forkedAs,
   finishedTasks,
   investigatingQuestions,
+  isAzima,
   movingTasks,
   openQuestions,
   spent,
   waitingTasks,
+  workCount,
 } from "./data/flight";
 import {
   allowanceOf,
@@ -69,6 +72,7 @@ import { MarkdownBody } from "./markdown-body";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
 import { CountPill, StatusBadge } from "./status";
+import { AzimaCard } from "./azima";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -95,7 +99,7 @@ export function WishView({
     (task) => task.status === TaskStatus.RUNNING,
   ).length;
   const done = detail.tasks.filter(
-    (task) => task.status === TaskStatus.DONE,
+    (task) => task.status === TaskStatus.DONE && !isAzima(task),
   ).length;
   const granted = wish.state === WishState.GRANTED;
   const [view, setView] = useState<View>("main");
@@ -105,6 +109,8 @@ export function WishView({
   const show = (to: View, id = "") => (setView(to), setFocus(id));
   const moving = movingTasks(detail.tasks);
   const finished = finishedTasks(detail.tasks);
+  const azimas = azimaGroups(detail.tasks);
+  const byId = new Map(detail.tasks.map((task) => [task.id, task]));
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
@@ -121,6 +127,47 @@ export function WishView({
     changes: Change[],
     done?: string | (() => string),
   ) => write(wish.id, run, changes, done);
+  const renderTask = (task: Task) => (
+    <WishTask
+      key={task.id}
+      task={task}
+      codes={codes}
+      forkedAs={forkedAs(task, detail.tasks)}
+      decision={decisionOf(task, decisions)}
+      focused={focus === task.id}
+      onDecision={() => show("decisions", decisionOf(task, decisions)?.id)}
+      project={allProjects.find((p) => p.id === task.projectId)}
+      onStop={() =>
+        quiet(act(() => clients.tasks.stop({ taskId: task.id }), [Change.TASK]))
+      }
+      onSend={(text) =>
+        act(() => clients.tasks.send({ taskId: task.id, text }), [])
+      }
+      onHold={(pause) =>
+        quiet(
+          act(
+            () =>
+              pause
+                ? clients.tasks.pause({ taskId: task.id })
+                : clients.tasks.resume({ taskId: task.id }),
+            [Change.TASK],
+          ),
+        )
+      }
+      onDone={(note) =>
+        act(
+          () =>
+            clients.tasks.done({
+              taskId: task.id,
+              note,
+              by: Closer.DEVELOPER,
+            }),
+          [Change.TASK],
+          t("task.marked_done", { task: task.code }),
+        )
+      }
+    />
+  );
   const attention = attentionOf(open, waiting, wish.ready ? [wish] : []);
   const tone = wishTone(wish, open.length, running);
 
@@ -332,7 +379,7 @@ export function WishView({
           <ViewTabs
             view={view}
             main={t("tabs.wish")}
-            tasks={detail.tasks.length}
+            tasks={workCount(detail.tasks)}
             decisions={decisions.length}
             onView={(to) => show(to)}
           />
@@ -352,58 +399,18 @@ export function WishView({
               <TaskSections
                 moving={moving}
                 finished={finished}
-                aside={<SpentLine spent={spent(detail.tasks)} />}
-                render={(task) => (
-                  <WishTask
-                    key={task.id}
-                    task={task}
-                    codes={codes}
-                    forkedAs={forkedAs(task, detail.tasks)}
-                    decision={decisionOf(task, decisions)}
-                    focused={focus === task.id}
-                    onDecision={() =>
-                      show("decisions", decisionOf(task, decisions)?.id)
-                    }
-                    project={allProjects.find((p) => p.id === task.projectId)}
-                    onStop={() =>
-                      quiet(
-                        act(
-                          () => clients.tasks.stop({ taskId: task.id }),
-                          [Change.TASK],
-                        ),
-                      )
-                    }
-                    onSend={(text) =>
-                      act(
-                        () => clients.tasks.send({ taskId: task.id, text }),
-                        [],
-                      )
-                    }
-                    onHold={(pause) =>
-                      quiet(
-                        act(
-                          () =>
-                            pause
-                              ? clients.tasks.pause({ taskId: task.id })
-                              : clients.tasks.resume({ taskId: task.id }),
-                          [Change.TASK],
-                        ),
-                      )
-                    }
-                    onDone={(note) =>
-                      act(
-                        () =>
-                          clients.tasks.done({
-                            taskId: task.id,
-                            note,
-                            by: Closer.DEVELOPER,
-                          }),
-                        [Change.TASK],
-                        t("task.marked_done", { task: task.code }),
-                      )
-                    }
+                azimas={azimas}
+                renderAzima={({ azima, parts }) => (
+                  <AzimaCard
+                    key={azima.id}
+                    azima={azima}
+                    parts={parts}
+                    tasks={byId}
+                    render={renderTask}
                   />
                 )}
+                aside={<SpentLine spent={spent(detail.tasks)} />}
+                render={renderTask}
               />
             ))}
           {view === "main" && (

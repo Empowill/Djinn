@@ -23,6 +23,7 @@ import { Inbox } from "./inbox";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
+import { AzimaCard } from "./azima";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -70,6 +71,56 @@ export function FlightPlan({
       plan.decisions.filter((d) => d.wish.id === wish.id).map((d) => d.item),
     );
 
+  const renderTask = (wish: Wish, item: Task) => (
+    <WishTask
+      key={item.id}
+      task={item}
+      origin={<WishOrigin wish={wish} />}
+      decision={decisionOfTask(item, wish)}
+      focused={focus === item.id}
+      onDecision={() => show("decisions", decisionOfTask(item, wish)?.id)}
+      project={projects.find((p) => p.id === item.projectId)}
+      onStop={() =>
+        quiet(
+          act(wish.id, () => clients.tasks.stop({ taskId: item.id }), [
+            Change.TASK,
+          ]),
+        )
+      }
+      onSend={(text) =>
+        act(wish.id, () => clients.tasks.send({ taskId: item.id, text }), [])
+      }
+      onHold={(pause) =>
+        quiet(
+          act(
+            wish.id,
+            () =>
+              pause
+                ? clients.tasks.pause({ taskId: item.id })
+                : clients.tasks.resume({ taskId: item.id }),
+            [Change.TASK],
+          ),
+        )
+      }
+      onDone={(note) =>
+        act(
+          wish.id,
+          () =>
+            clients.tasks.done({
+              taskId: item.id,
+              note,
+              by: Closer.DEVELOPER,
+            }),
+          [Change.TASK],
+          t("task.marked_done", { task: item.code }),
+        )
+      }
+    />
+  );
+  // The tasks of a wish, by id: what an azima waits for.
+  const tasksOf = (wish: Wish) =>
+    new Map((details[wish.id]?.tasks ?? []).map((task) => [task.id, task]));
+
   return (
     <div className="wish-view flight-plan review">
       <header className="topbar">
@@ -98,7 +149,11 @@ export function FlightPlan({
           <ViewTabs
             view={view}
             main={t("plan.title")}
-            tasks={plan.moving.length + plan.finished.length}
+            tasks={
+              plan.moving.length +
+              plan.finished.length +
+              plan.azimas.reduce((n, { item }) => n + item.parts.length, 0)
+            }
             decisions={plan.decisions.length}
             onView={(to) => show(to)}
           />
@@ -114,60 +169,18 @@ export function FlightPlan({
             <TaskSections
               moving={plan.moving}
               finished={plan.finished}
-              render={({ wish, item }) => (
-                <WishTask
-                  key={item.id}
-                  task={item}
+              azimas={plan.azimas}
+              renderAzima={({ wish, item }) => (
+                <AzimaCard
+                  key={item.azima.id}
+                  azima={item.azima}
+                  parts={item.parts}
+                  tasks={tasksOf(wish)}
                   origin={<WishOrigin wish={wish} />}
-                  decision={decisionOfTask(item, wish)}
-                  focused={focus === item.id}
-                  onDecision={() =>
-                    show("decisions", decisionOfTask(item, wish)?.id)
-                  }
-                  project={projects.find((p) => p.id === item.projectId)}
-                  onStop={() =>
-                    quiet(
-                      act(
-                        wish.id,
-                        () => clients.tasks.stop({ taskId: item.id }),
-                        [Change.TASK],
-                      ),
-                    )
-                  }
-                  onSend={(text) =>
-                    act(
-                      wish.id,
-                      () => clients.tasks.send({ taskId: item.id, text }),
-                      [],
-                    )
-                  }
-                  onHold={(pause) =>
-                    quiet(
-                      act(
-                        wish.id,
-                        () =>
-                          pause
-                            ? clients.tasks.pause({ taskId: item.id })
-                            : clients.tasks.resume({ taskId: item.id }),
-                        [Change.TASK],
-                      ),
-                    )
-                  }
-                  onDone={(note) =>
-                    act(
-                      wish.id,
-                      () =>
-                        clients.tasks.done({
-                          taskId: item.id,
-                          note,
-                          by: Closer.DEVELOPER,
-                        }),
-                      [Change.TASK],
-                      t("task.marked_done", { task: item.code }),
-                    )
-                  }
+                  render={(task) => renderTask(wish, task)}
                 />
               )}
+              render={({ wish, item }) => renderTask(wish, item)}
             />
           )}
           {view === "main" && <Inbox onOpen={onOpen} onToast={onToast} />}

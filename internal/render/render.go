@@ -472,6 +472,9 @@ func build(in Input) (*view, error) {
 	byStatus := map[planv1.TaskStatus]int{}
 	forkedCount := 0
 	for _, t := range exp.GetTasks() {
+		if t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
+			continue // An azima is the plan, not work: no worker runs it, and it never waits for the person.
+		}
 		ct := task{
 			Code: t.GetCode(), Title: t.GetTitle(), Project: projects[t.GetProjectId()], Error: t.GetError(),
 			LastWord: cut(lastWord[t.GetId()].text, maxLastWord), LastAt: lastWord[t.GetId()].at, src: t,
