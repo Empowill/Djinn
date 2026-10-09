@@ -1,5 +1,5 @@
-import { useState, isValidElement, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import { memo, useState, isValidElement, type ReactNode } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useDjinn } from "./data/djinn";
 import { MermaidDiagram } from "./mermaid-diagram";
@@ -50,40 +50,58 @@ function MarkdownCode({ children }: { children?: ReactNode }) {
     </div>
   );
 }
-export function MarkdownBody({ text }: { text: string }) {
+// A link: in the window, the system's browser opens it; anything but http(s) stays text.
+function MarkdownLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children?: ReactNode;
+}) {
   const djinn = useDjinn();
+  if (!href || !/^https?:\/\//i.test(href)) return <span>{children}</span>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => {
+        if (!djinn) return;
+        e.preventDefault();
+        void djinn.clients.ui
+          .openExternal({ url: href })
+          .catch(() => window.open(href, "_blank", "noopener"));
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+// Stable across renders: a components object made in the render gives react-markdown a new component type each time,
+// so every code block and every Mermaid frame below it was unmounted and mounted again at each render of the card,
+// at each key typed in its comment box.
+const plugins = [remarkGfm];
+const components: Components = {
+  pre: ({ children }) => <MarkdownCode>{children}</MarkdownCode>,
+  a: ({ href, children }) => (
+    <MarkdownLink href={href}>{children}</MarkdownLink>
+  ),
+  img: ({ alt }) => <span>Image{alt ? ` : ${alt}` : ""}</span>,
+};
+
+// Markdown as the agents write it. Memoised: a card that re-renders (a key typed in its comment box) does not parse
+// its text again.
+export const MarkdownBody = memo(function MarkdownBody({
+  text,
+}: {
+  text: string;
+}) {
   return (
     <div className="ac-markdown">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        skipHtml
-        components={{
-          pre: ({ children }) => <MarkdownCode>{children}</MarkdownCode>,
-          a: ({ href, children }) =>
-            !href || !/^https?:\/\//i.test(href) ? (
-              <span>{children}</span>
-            ) : (
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => {
-                  // In the window, the system's browser opens the link.
-                  if (!djinn) return;
-                  e.preventDefault();
-                  void djinn.clients.ui
-                    .openExternal({ url: href })
-                    .catch(() => window.open(href, "_blank", "noopener"));
-                }}
-              >
-                {children}
-              </a>
-            ),
-          img: ({ alt }) => <span>Image{alt ? ` : ${alt}` : ""}</span>,
-        }}
-      >
+      <ReactMarkdown remarkPlugins={plugins} skipHtml components={components}>
         {text}
       </ReactMarkdown>
     </div>
   );
-}
+});
