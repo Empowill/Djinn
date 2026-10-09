@@ -48,7 +48,7 @@ func uncompressed(h http.Handler) http.Handler {
 }
 
 // answered gives a response that h left unwritten the status 200, as net/http does on its own. A unary Connect
-// method whose response is empty in binary Protobuf, as LoadState with nothing saved or SaveState, writes neither a
+// method whose response is empty in binary Protobuf, as TerminalService.Write or Resize, writes neither a
 // header nor a byte; the Wails asset server, behind the native window, answers such a request 501 Not Implemented.
 func answered(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

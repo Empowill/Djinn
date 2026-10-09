@@ -3,11 +3,8 @@ package ui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -23,9 +20,7 @@ import (
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 )
 
-const stateFile = "state.json"
-
-// Service implements uiv1connect.UiServiceHandler. Watch is not implemented here.
+// Service implements uiv1connect.UiServiceHandler.
 type Service struct {
 	uiv1connect.UnimplementedUiServiceHandler
 
@@ -49,7 +44,6 @@ type Service struct {
 	// Shortcuts is the global shortcut that brings the window forward. Nil: SetShortcut is unavailable.
 	Shortcuts *Shortcuts
 
-	mu      sync.Mutex // Serializes the writes of the state.
 	dialogs sync.Mutex // One folder dialog at a time.
 
 	shows    sync.Mutex
@@ -146,34 +140,6 @@ func (s *Service) SetShortcut(
 	return connect.NewResponse(&uiv1.UiServiceSetShortcutResponse{Shortcut: shortcut}), nil
 }
 
-func (s *Service) LoadState(
-	context.Context, *connect.Request[uiv1.UiServiceLoadStateRequest],
-) (*connect.Response[uiv1.UiServiceLoadStateResponse], error) {
-	data, err := os.ReadFile(filepath.Join(s.Home, stateFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		return connect.NewResponse(&uiv1.UiServiceLoadStateResponse{}), nil
-	}
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("read the state: %w", err))
-	}
-	return connect.NewResponse(&uiv1.UiServiceLoadStateResponse{StateJson: string(data)}), nil
-}
-
-func (s *Service) SaveState(
-	_ context.Context, req *connect.Request[uiv1.UiServiceSaveStateRequest],
-) (*connect.Response[uiv1.UiServiceSaveStateResponse], error) {
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(req.Msg.GetStateJson()), &object); err != nil || object == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("the state must be a JSON object"))
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := WriteAtomic(filepath.Join(s.Home, stateFile), []byte(req.Msg.GetStateJson())); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("save the state: %w", err))
-	}
-	return connect.NewResponse(&uiv1.UiServiceSaveStateResponse{}), nil
-}
-
 // WriteAtomic writes a temporary file next to path, readable by the owner only, then renames it over path: a
 // reader sees the old content or the new one, never a part of it.
 func WriteAtomic(path string, data []byte) error {
@@ -202,56 +168,6 @@ func WriteAtomic(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
-}
-
-func (s *Service) ValidateProject(
-	_ context.Context, req *connect.Request[uiv1.UiServiceValidateProjectRequest],
-) (*connect.Response[uiv1.UiServiceValidateProjectResponse], error) {
-	invalid := func(err error) error {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("project directory: %w", err))
-	}
-	dir := req.Msg.GetDirectory()
-	if dir == "" {
-		return nil, invalid(errors.New("associate this project with a local directory first"))
-	}
-	if !filepath.IsAbs(dir) {
-		return nil, invalid(errors.New("the path must be absolute"))
-	}
-	root, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return nil, invalid(err)
-	}
-	f, err := os.Open(root)
-	if err != nil {
-		return nil, invalid(err)
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, invalid(err)
-	}
-	if !info.IsDir() {
-		return nil, invalid(errors.New("not a directory"))
-	}
-	if _, err := f.Readdirnames(1); err != nil && !errors.Is(err, io.EOF) {
-		return nil, invalid(err)
-	}
-	return connect.NewResponse(&uiv1.UiServiceValidateProjectResponse{Directory: root, Git: inGit(root)}), nil
-}
-
-// inGit tells whether dir is inside a Git repository: dir or a parent holds .git, a directory or, in a worktree
-// or a submodule, a file.
-func inGit(dir string) bool {
-	for {
-		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
-			return true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return false
-		}
-		dir = parent
-	}
 }
 
 func (s *Service) ChooseDirectory(

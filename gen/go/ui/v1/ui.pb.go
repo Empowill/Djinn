@@ -11,7 +11,6 @@ package uiv1
 import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/empowill/djinn/gen/go/djinn/v1"
-	v1 "github.com/empowill/djinn/gen/go/plan/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -338,267 +337,6 @@ func (x *Provider) GetCommand() string {
 	return ""
 }
 
-type UiServiceLoadStateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UiServiceLoadStateRequest) Reset() {
-	*x = UiServiceLoadStateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UiServiceLoadStateRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UiServiceLoadStateRequest) ProtoMessage() {}
-
-func (x *UiServiceLoadStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UiServiceLoadStateRequest.ProtoReflect.Descriptor instead.
-func (*UiServiceLoadStateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{5}
-}
-
-type UiServiceLoadStateResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The state as JSON, exactly as saved; empty when nothing was saved yet.
-	StateJson     string `protobuf:"bytes,1,opt,name=state_json,json=stateJson,proto3" json:"state_json,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UiServiceLoadStateResponse) Reset() {
-	*x = UiServiceLoadStateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UiServiceLoadStateResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UiServiceLoadStateResponse) ProtoMessage() {}
-
-func (x *UiServiceLoadStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UiServiceLoadStateResponse.ProtoReflect.Descriptor instead.
-func (*UiServiceLoadStateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *UiServiceLoadStateResponse) GetStateJson() string {
-	if x != nil {
-		return x.StateJson
-	}
-	return ""
-}
-
-type UiServiceSaveStateRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The state as JSON. It must be a JSON object.
-	StateJson     string `protobuf:"bytes,1,opt,name=state_json,json=stateJson,proto3" json:"state_json,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UiServiceSaveStateRequest) Reset() {
-	*x = UiServiceSaveStateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UiServiceSaveStateRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UiServiceSaveStateRequest) ProtoMessage() {}
-
-func (x *UiServiceSaveStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UiServiceSaveStateRequest.ProtoReflect.Descriptor instead.
-func (*UiServiceSaveStateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *UiServiceSaveStateRequest) GetStateJson() string {
-	if x != nil {
-		return x.StateJson
-	}
-	return ""
-}
-
-type UiServiceSaveStateResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UiServiceSaveStateResponse) Reset() {
-	*x = UiServiceSaveStateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UiServiceSaveStateResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UiServiceSaveStateResponse) ProtoMessage() {}
-
-func (x *UiServiceSaveStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UiServiceSaveStateResponse.ProtoReflect.Descriptor instead.
-func (*UiServiceSaveStateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{8}
-}
-
-type UiServiceValidateProjectRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Path of the project directory.
-	Directory     string `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UiServiceValidateProjectRequest) Reset() {
-	*x = UiServiceValidateProjectRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UiServiceValidateProjectRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UiServiceValidateProjectRequest) ProtoMessage() {}
-
-func (x *UiServiceValidateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UiServiceValidateProjectRequest.ProtoReflect.Descriptor instead.
-func (*UiServiceValidateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *UiServiceValidateProjectRequest) GetDirectory() string {
-	if x != nil {
-		return x.Directory
-	}
-	return ""
-}
-
-type UiServiceValidateProjectResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Absolute path of the directory, with symbolic links resolved.
-	Directory string `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
-	// The directory is inside a Git repository.
-	Git           bool `protobuf:"varint,2,opt,name=git,proto3" json:"git,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UiServiceValidateProjectResponse) Reset() {
-	*x = UiServiceValidateProjectResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UiServiceValidateProjectResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UiServiceValidateProjectResponse) ProtoMessage() {}
-
-func (x *UiServiceValidateProjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UiServiceValidateProjectResponse.ProtoReflect.Descriptor instead.
-func (*UiServiceValidateProjectResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *UiServiceValidateProjectResponse) GetDirectory() string {
-	if x != nil {
-		return x.Directory
-	}
-	return ""
-}
-
-func (x *UiServiceValidateProjectResponse) GetGit() bool {
-	if x != nil {
-		return x.Git
-	}
-	return false
-}
-
 type UiServiceChooseDirectoryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Title of the dialog.
@@ -611,7 +349,7 @@ type UiServiceChooseDirectoryRequest struct {
 
 func (x *UiServiceChooseDirectoryRequest) Reset() {
 	*x = UiServiceChooseDirectoryRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[11]
+	mi := &file_ui_v1_ui_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -623,7 +361,7 @@ func (x *UiServiceChooseDirectoryRequest) String() string {
 func (*UiServiceChooseDirectoryRequest) ProtoMessage() {}
 
 func (x *UiServiceChooseDirectoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[11]
+	mi := &file_ui_v1_ui_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -636,7 +374,7 @@ func (x *UiServiceChooseDirectoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceChooseDirectoryRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceChooseDirectoryRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{11}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *UiServiceChooseDirectoryRequest) GetTitle() string {
@@ -663,7 +401,7 @@ type UiServiceChooseDirectoryResponse struct {
 
 func (x *UiServiceChooseDirectoryResponse) Reset() {
 	*x = UiServiceChooseDirectoryResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[12]
+	mi := &file_ui_v1_ui_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -675,7 +413,7 @@ func (x *UiServiceChooseDirectoryResponse) String() string {
 func (*UiServiceChooseDirectoryResponse) ProtoMessage() {}
 
 func (x *UiServiceChooseDirectoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[12]
+	mi := &file_ui_v1_ui_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -688,7 +426,7 @@ func (x *UiServiceChooseDirectoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceChooseDirectoryResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceChooseDirectoryResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{12}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *UiServiceChooseDirectoryResponse) GetDirectory() string {
@@ -708,7 +446,7 @@ type UiServiceOpenExternalRequest struct {
 
 func (x *UiServiceOpenExternalRequest) Reset() {
 	*x = UiServiceOpenExternalRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[13]
+	mi := &file_ui_v1_ui_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -720,7 +458,7 @@ func (x *UiServiceOpenExternalRequest) String() string {
 func (*UiServiceOpenExternalRequest) ProtoMessage() {}
 
 func (x *UiServiceOpenExternalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[13]
+	mi := &file_ui_v1_ui_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -733,7 +471,7 @@ func (x *UiServiceOpenExternalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceOpenExternalRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceOpenExternalRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{13}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *UiServiceOpenExternalRequest) GetUrl() string {
@@ -753,7 +491,7 @@ type UiServiceOpenExternalResponse struct {
 
 func (x *UiServiceOpenExternalResponse) Reset() {
 	*x = UiServiceOpenExternalResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[14]
+	mi := &file_ui_v1_ui_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +503,7 @@ func (x *UiServiceOpenExternalResponse) String() string {
 func (*UiServiceOpenExternalResponse) ProtoMessage() {}
 
 func (x *UiServiceOpenExternalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[14]
+	mi := &file_ui_v1_ui_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +516,7 @@ func (x *UiServiceOpenExternalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceOpenExternalResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceOpenExternalResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{14}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *UiServiceOpenExternalResponse) GetUrl() string {
@@ -798,7 +536,7 @@ type UiServiceSetShortcutRequest struct {
 
 func (x *UiServiceSetShortcutRequest) Reset() {
 	*x = UiServiceSetShortcutRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[15]
+	mi := &file_ui_v1_ui_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -810,7 +548,7 @@ func (x *UiServiceSetShortcutRequest) String() string {
 func (*UiServiceSetShortcutRequest) ProtoMessage() {}
 
 func (x *UiServiceSetShortcutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[15]
+	mi := &file_ui_v1_ui_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -823,7 +561,7 @@ func (x *UiServiceSetShortcutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceSetShortcutRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceSetShortcutRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{15}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *UiServiceSetShortcutRequest) GetChord() string {
@@ -843,7 +581,7 @@ type UiServiceSetShortcutResponse struct {
 
 func (x *UiServiceSetShortcutResponse) Reset() {
 	*x = UiServiceSetShortcutResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[16]
+	mi := &file_ui_v1_ui_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -855,7 +593,7 @@ func (x *UiServiceSetShortcutResponse) String() string {
 func (*UiServiceSetShortcutResponse) ProtoMessage() {}
 
 func (x *UiServiceSetShortcutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[16]
+	mi := &file_ui_v1_ui_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -868,7 +606,7 @@ func (x *UiServiceSetShortcutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceSetShortcutResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceSetShortcutResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{16}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UiServiceSetShortcutResponse) GetShortcut() *Shortcut {
@@ -890,7 +628,7 @@ type UiServiceShowRequest struct {
 
 func (x *UiServiceShowRequest) Reset() {
 	*x = UiServiceShowRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	mi := &file_ui_v1_ui_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -902,7 +640,7 @@ func (x *UiServiceShowRequest) String() string {
 func (*UiServiceShowRequest) ProtoMessage() {}
 
 func (x *UiServiceShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	mi := &file_ui_v1_ui_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -915,7 +653,7 @@ func (x *UiServiceShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceShowRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceShowRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{17}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UiServiceShowRequest) GetWishId() string {
@@ -942,7 +680,7 @@ type UiServiceShowResponse struct {
 
 func (x *UiServiceShowResponse) Reset() {
 	*x = UiServiceShowResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[18]
+	mi := &file_ui_v1_ui_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -954,7 +692,7 @@ func (x *UiServiceShowResponse) String() string {
 func (*UiServiceShowResponse) ProtoMessage() {}
 
 func (x *UiServiceShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[18]
+	mi := &file_ui_v1_ui_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -967,7 +705,7 @@ func (x *UiServiceShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceShowResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceShowResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{18}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UiServiceShowResponse) GetWindow() bool {
@@ -985,7 +723,7 @@ type UiServiceWatchShowRequest struct {
 
 func (x *UiServiceWatchShowRequest) Reset() {
 	*x = UiServiceWatchShowRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[19]
+	mi := &file_ui_v1_ui_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -997,7 +735,7 @@ func (x *UiServiceWatchShowRequest) String() string {
 func (*UiServiceWatchShowRequest) ProtoMessage() {}
 
 func (x *UiServiceWatchShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[19]
+	mi := &file_ui_v1_ui_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1010,7 +748,7 @@ func (x *UiServiceWatchShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchShowRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchShowRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{19}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{13}
 }
 
 type UiServiceWatchShowResponse struct {
@@ -1025,7 +763,7 @@ type UiServiceWatchShowResponse struct {
 
 func (x *UiServiceWatchShowResponse) Reset() {
 	*x = UiServiceWatchShowResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[20]
+	mi := &file_ui_v1_ui_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1037,7 +775,7 @@ func (x *UiServiceWatchShowResponse) String() string {
 func (*UiServiceWatchShowResponse) ProtoMessage() {}
 
 func (x *UiServiceWatchShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[20]
+	mi := &file_ui_v1_ui_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1050,7 +788,7 @@ func (x *UiServiceWatchShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchShowResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchShowResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{20}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UiServiceWatchShowResponse) GetWishId() string {
@@ -1075,7 +813,7 @@ type UiServiceWatchUpdateRequest struct {
 
 func (x *UiServiceWatchUpdateRequest) Reset() {
 	*x = UiServiceWatchUpdateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[21]
+	mi := &file_ui_v1_ui_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1087,7 +825,7 @@ func (x *UiServiceWatchUpdateRequest) String() string {
 func (*UiServiceWatchUpdateRequest) ProtoMessage() {}
 
 func (x *UiServiceWatchUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[21]
+	mi := &file_ui_v1_ui_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1100,7 +838,7 @@ func (x *UiServiceWatchUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchUpdateRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{21}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{15}
 }
 
 type UiServiceWatchUpdateResponse struct {
@@ -1120,7 +858,7 @@ type UiServiceWatchUpdateResponse struct {
 
 func (x *UiServiceWatchUpdateResponse) Reset() {
 	*x = UiServiceWatchUpdateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[22]
+	mi := &file_ui_v1_ui_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1132,7 +870,7 @@ func (x *UiServiceWatchUpdateResponse) String() string {
 func (*UiServiceWatchUpdateResponse) ProtoMessage() {}
 
 func (x *UiServiceWatchUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[22]
+	mi := &file_ui_v1_ui_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1145,7 +883,7 @@ func (x *UiServiceWatchUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchUpdateResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{22}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UiServiceWatchUpdateResponse) GetCurrent() string {
@@ -1184,7 +922,7 @@ type UiServiceUpdateRequest struct {
 
 func (x *UiServiceUpdateRequest) Reset() {
 	*x = UiServiceUpdateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[23]
+	mi := &file_ui_v1_ui_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1196,7 +934,7 @@ func (x *UiServiceUpdateRequest) String() string {
 func (*UiServiceUpdateRequest) ProtoMessage() {}
 
 func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[23]
+	mi := &file_ui_v1_ui_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1209,7 +947,7 @@ func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{23}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{17}
 }
 
 type UiServiceUpdateResponse struct {
@@ -1224,7 +962,7 @@ type UiServiceUpdateResponse struct {
 
 func (x *UiServiceUpdateResponse) Reset() {
 	*x = UiServiceUpdateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[24]
+	mi := &file_ui_v1_ui_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1236,7 +974,7 @@ func (x *UiServiceUpdateResponse) String() string {
 func (*UiServiceUpdateResponse) ProtoMessage() {}
 
 func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[24]
+	mi := &file_ui_v1_ui_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1249,7 +987,7 @@ func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{24}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *UiServiceUpdateResponse) GetVersion() string {
@@ -1266,151 +1004,11 @@ func (x *UiServiceUpdateResponse) GetTerminals() int32 {
 	return 0
 }
 
-type UiServiceWatchRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// First sequence number to send; 0 sends everything still kept.
-	FromSeq       uint64 `protobuf:"varint,1,opt,name=from_seq,json=fromSeq,proto3" json:"from_seq,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UiServiceWatchRequest) Reset() {
-	*x = UiServiceWatchRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[25]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UiServiceWatchRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UiServiceWatchRequest) ProtoMessage() {}
-
-func (x *UiServiceWatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[25]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UiServiceWatchRequest.ProtoReflect.Descriptor instead.
-func (*UiServiceWatchRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{25}
-}
-
-func (x *UiServiceWatchRequest) GetFromSeq() uint64 {
-	if x != nil {
-		return x.FromSeq
-	}
-	return 0
-}
-
-type UiServiceWatchResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Sequence number of the change, strictly increasing.
-	Seq uint64 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	// The entity as it is after the change.
-	//
-	// Types that are valid to be assigned to Entity:
-	//
-	//	*UiServiceWatchResponse_Project
-	//	*UiServiceWatchResponse_Question
-	Entity        isUiServiceWatchResponse_Entity `protobuf_oneof:"entity"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UiServiceWatchResponse) Reset() {
-	*x = UiServiceWatchResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[26]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UiServiceWatchResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UiServiceWatchResponse) ProtoMessage() {}
-
-func (x *UiServiceWatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[26]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UiServiceWatchResponse.ProtoReflect.Descriptor instead.
-func (*UiServiceWatchResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{26}
-}
-
-func (x *UiServiceWatchResponse) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
-}
-
-func (x *UiServiceWatchResponse) GetEntity() isUiServiceWatchResponse_Entity {
-	if x != nil {
-		return x.Entity
-	}
-	return nil
-}
-
-func (x *UiServiceWatchResponse) GetProject() *v1.Project {
-	if x != nil {
-		if x, ok := x.Entity.(*UiServiceWatchResponse_Project); ok {
-			return x.Project
-		}
-	}
-	return nil
-}
-
-func (x *UiServiceWatchResponse) GetQuestion() *v1.Question {
-	if x != nil {
-		if x, ok := x.Entity.(*UiServiceWatchResponse_Question); ok {
-			return x.Question
-		}
-	}
-	return nil
-}
-
-type isUiServiceWatchResponse_Entity interface {
-	isUiServiceWatchResponse_Entity()
-}
-
-type UiServiceWatchResponse_Project struct {
-	// A project added or changed.
-	Project *v1.Project `protobuf:"bytes,2,opt,name=project,proto3,oneof"`
-}
-
-type UiServiceWatchResponse_Question struct {
-	// A question asked or answered.
-	Question *v1.Question `protobuf:"bytes,3,opt,name=question,proto3,oneof"`
-}
-
-func (*UiServiceWatchResponse_Project) isUiServiceWatchResponse_Entity() {}
-
-func (*UiServiceWatchResponse_Question) isUiServiceWatchResponse_Entity() {}
-
 var File_ui_v1_ui_proto protoreflect.FileDescriptor
 
 const file_ui_v1_ui_proto_rawDesc = "" +
 	"\n" +
-	"\x0eui/v1/ui.proto\x12\x05ui.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\x1a\x12plan/v1/plan.proto\" \n" +
+	"\x0eui/v1/ui.proto\x12\x05ui.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\" \n" +
 	"\x1eUiServiceGetEnvironmentRequest\"\xd8\x01\n" +
 	"\x1fUiServiceGetEnvironmentResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1a\n" +
@@ -1430,20 +1028,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x18\n" +
-	"\acommand\x18\x04 \x01(\tR\acommand\"\x1b\n" +
-	"\x19UiServiceLoadStateRequest\";\n" +
-	"\x1aUiServiceLoadStateResponse\x12\x1d\n" +
-	"\n" +
-	"state_json\x18\x01 \x01(\tR\tstateJson\":\n" +
-	"\x19UiServiceSaveStateRequest\x12\x1d\n" +
-	"\n" +
-	"state_json\x18\x01 \x01(\tR\tstateJson\"\x1c\n" +
-	"\x1aUiServiceSaveStateResponse\"?\n" +
-	"\x1fUiServiceValidateProjectRequest\x12\x1c\n" +
-	"\tdirectory\x18\x01 \x01(\tR\tdirectory\"R\n" +
-	" UiServiceValidateProjectResponse\x12\x1c\n" +
-	"\tdirectory\x18\x01 \x01(\tR\tdirectory\x12\x10\n" +
-	"\x03git\x18\x02 \x01(\bR\x03git\"i\n" +
+	"\acommand\x18\x04 \x01(\tR\acommand\"i\n" +
 	"\x1fUiServiceChooseDirectoryRequest\x12\x1e\n" +
 	"\x05title\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x05title\x12&\n" +
 	"\tdirectory\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\tdirectory\"@\n" +
@@ -1476,27 +1061,16 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x16UiServiceUpdateRequest\"Q\n" +
 	"\x17UiServiceUpdateResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1c\n" +
-	"\tterminals\x18\x02 \x01(\x05R\tterminals\"2\n" +
-	"\x15UiServiceWatchRequest\x12\x19\n" +
-	"\bfrom_seq\x18\x01 \x01(\x04R\afromSeq\"\x93\x01\n" +
-	"\x16UiServiceWatchResponse\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12,\n" +
-	"\aproject\x18\x02 \x01(\v2\x10.plan.v1.ProjectH\x00R\aproject\x12/\n" +
-	"\bquestion\x18\x03 \x01(\v2\x11.plan.v1.QuestionH\x00R\bquestionB\b\n" +
-	"\x06entity2\xd5\b\n" +
+	"\tterminals\x18\x02 \x01(\x05R\tterminals2\xed\x05\n" +
 	"\tUiService\x12e\n" +
-	"\x0eGetEnvironment\x12%.ui.v1.UiServiceGetEnvironmentRequest\x1a&.ui.v1.UiServiceGetEnvironmentResponse\"\x04\xc8\xf3\x18\x02\x12V\n" +
-	"\tLoadState\x12 .ui.v1.UiServiceLoadStateRequest\x1a!.ui.v1.UiServiceLoadStateResponse\"\x04\xc8\xf3\x18\x02\x12V\n" +
-	"\tSaveState\x12 .ui.v1.UiServiceSaveStateRequest\x1a!.ui.v1.UiServiceSaveStateResponse\"\x04\xc8\xf3\x18\x02\x12h\n" +
-	"\x0fValidateProject\x12&.ui.v1.UiServiceValidateProjectRequest\x1a'.ui.v1.UiServiceValidateProjectResponse\"\x04\xc8\xf3\x18\x02\x12h\n" +
+	"\x0eGetEnvironment\x12%.ui.v1.UiServiceGetEnvironmentRequest\x1a&.ui.v1.UiServiceGetEnvironmentResponse\"\x04\xc8\xf3\x18\x02\x12h\n" +
 	"\x0fChooseDirectory\x12&.ui.v1.UiServiceChooseDirectoryRequest\x1a'.ui.v1.UiServiceChooseDirectoryResponse\"\x04\xc8\xf3\x18\x02\x12_\n" +
 	"\fOpenExternal\x12#.ui.v1.UiServiceOpenExternalRequest\x1a$.ui.v1.UiServiceOpenExternalResponse\"\x04\xc8\xf3\x18\x02\x12\\\n" +
 	"\vSetShortcut\x12\".ui.v1.UiServiceSetShortcutRequest\x1a#.ui.v1.UiServiceSetShortcutResponse\"\x04\xc8\xf3\x18\x02\x12G\n" +
 	"\x04Show\x12\x1b.ui.v1.UiServiceShowRequest\x1a\x1c.ui.v1.UiServiceShowResponse\"\x04\xc8\xf3\x18\x02\x12X\n" +
 	"\tWatchShow\x12 .ui.v1.UiServiceWatchShowRequest\x1a!.ui.v1.UiServiceWatchShowResponse\"\x04\xc8\xf3\x18\x020\x01\x12^\n" +
 	"\vWatchUpdate\x12\".ui.v1.UiServiceWatchUpdateRequest\x1a#.ui.v1.UiServiceWatchUpdateResponse\"\x04\xc8\xf3\x18\x020\x01\x12M\n" +
-	"\x06Update\x12\x1d.ui.v1.UiServiceUpdateRequest\x1a\x1e.ui.v1.UiServiceUpdateResponse\"\x04\xc8\xf3\x18\x02\x12L\n" +
-	"\x05Watch\x12\x1c.ui.v1.UiServiceWatchRequest\x1a\x1d.ui.v1.UiServiceWatchResponse\"\x04\xc8\xf3\x18\x020\x01Bv\n" +
+	"\x06Update\x12\x1d.ui.v1.UiServiceUpdateRequest\x1a\x1e.ui.v1.UiServiceUpdateResponse\"\x04\xc8\xf3\x18\x02Bv\n" +
 	"\tcom.ui.v1B\aUiProtoP\x01Z+github.com/empowill/djinn/gen/go/ui/v1;uiv1\xa2\x02\x03UXX\xaa\x02\x05Ui.V1\xca\x02\x05Ui\\V1\xe2\x02\x11Ui\\V1\\GPBMetadata\xea\x02\x06Ui::V1b\x06proto3"
 
 var (
@@ -1511,73 +1085,53 @@ func file_ui_v1_ui_proto_rawDescGZIP() []byte {
 	return file_ui_v1_ui_proto_rawDescData
 }
 
-var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_ui_v1_ui_proto_goTypes = []any{
 	(*UiServiceGetEnvironmentRequest)(nil),   // 0: ui.v1.UiServiceGetEnvironmentRequest
 	(*UiServiceGetEnvironmentResponse)(nil),  // 1: ui.v1.UiServiceGetEnvironmentResponse
 	(*Shortcut)(nil),                         // 2: ui.v1.Shortcut
 	(*Settings)(nil),                         // 3: ui.v1.Settings
 	(*Provider)(nil),                         // 4: ui.v1.Provider
-	(*UiServiceLoadStateRequest)(nil),        // 5: ui.v1.UiServiceLoadStateRequest
-	(*UiServiceLoadStateResponse)(nil),       // 6: ui.v1.UiServiceLoadStateResponse
-	(*UiServiceSaveStateRequest)(nil),        // 7: ui.v1.UiServiceSaveStateRequest
-	(*UiServiceSaveStateResponse)(nil),       // 8: ui.v1.UiServiceSaveStateResponse
-	(*UiServiceValidateProjectRequest)(nil),  // 9: ui.v1.UiServiceValidateProjectRequest
-	(*UiServiceValidateProjectResponse)(nil), // 10: ui.v1.UiServiceValidateProjectResponse
-	(*UiServiceChooseDirectoryRequest)(nil),  // 11: ui.v1.UiServiceChooseDirectoryRequest
-	(*UiServiceChooseDirectoryResponse)(nil), // 12: ui.v1.UiServiceChooseDirectoryResponse
-	(*UiServiceOpenExternalRequest)(nil),     // 13: ui.v1.UiServiceOpenExternalRequest
-	(*UiServiceOpenExternalResponse)(nil),    // 14: ui.v1.UiServiceOpenExternalResponse
-	(*UiServiceSetShortcutRequest)(nil),      // 15: ui.v1.UiServiceSetShortcutRequest
-	(*UiServiceSetShortcutResponse)(nil),     // 16: ui.v1.UiServiceSetShortcutResponse
-	(*UiServiceShowRequest)(nil),             // 17: ui.v1.UiServiceShowRequest
-	(*UiServiceShowResponse)(nil),            // 18: ui.v1.UiServiceShowResponse
-	(*UiServiceWatchShowRequest)(nil),        // 19: ui.v1.UiServiceWatchShowRequest
-	(*UiServiceWatchShowResponse)(nil),       // 20: ui.v1.UiServiceWatchShowResponse
-	(*UiServiceWatchUpdateRequest)(nil),      // 21: ui.v1.UiServiceWatchUpdateRequest
-	(*UiServiceWatchUpdateResponse)(nil),     // 22: ui.v1.UiServiceWatchUpdateResponse
-	(*UiServiceUpdateRequest)(nil),           // 23: ui.v1.UiServiceUpdateRequest
-	(*UiServiceUpdateResponse)(nil),          // 24: ui.v1.UiServiceUpdateResponse
-	(*UiServiceWatchRequest)(nil),            // 25: ui.v1.UiServiceWatchRequest
-	(*UiServiceWatchResponse)(nil),           // 26: ui.v1.UiServiceWatchResponse
-	(*v1.Project)(nil),                       // 27: plan.v1.Project
-	(*v1.Question)(nil),                      // 28: plan.v1.Question
+	(*UiServiceChooseDirectoryRequest)(nil),  // 5: ui.v1.UiServiceChooseDirectoryRequest
+	(*UiServiceChooseDirectoryResponse)(nil), // 6: ui.v1.UiServiceChooseDirectoryResponse
+	(*UiServiceOpenExternalRequest)(nil),     // 7: ui.v1.UiServiceOpenExternalRequest
+	(*UiServiceOpenExternalResponse)(nil),    // 8: ui.v1.UiServiceOpenExternalResponse
+	(*UiServiceSetShortcutRequest)(nil),      // 9: ui.v1.UiServiceSetShortcutRequest
+	(*UiServiceSetShortcutResponse)(nil),     // 10: ui.v1.UiServiceSetShortcutResponse
+	(*UiServiceShowRequest)(nil),             // 11: ui.v1.UiServiceShowRequest
+	(*UiServiceShowResponse)(nil),            // 12: ui.v1.UiServiceShowResponse
+	(*UiServiceWatchShowRequest)(nil),        // 13: ui.v1.UiServiceWatchShowRequest
+	(*UiServiceWatchShowResponse)(nil),       // 14: ui.v1.UiServiceWatchShowResponse
+	(*UiServiceWatchUpdateRequest)(nil),      // 15: ui.v1.UiServiceWatchUpdateRequest
+	(*UiServiceWatchUpdateResponse)(nil),     // 16: ui.v1.UiServiceWatchUpdateResponse
+	(*UiServiceUpdateRequest)(nil),           // 17: ui.v1.UiServiceUpdateRequest
+	(*UiServiceUpdateResponse)(nil),          // 18: ui.v1.UiServiceUpdateResponse
 }
 var file_ui_v1_ui_proto_depIdxs = []int32{
 	4,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
 	2,  // 1: ui.v1.UiServiceGetEnvironmentResponse.shortcut:type_name -> ui.v1.Shortcut
 	2,  // 2: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
-	27, // 3: ui.v1.UiServiceWatchResponse.project:type_name -> plan.v1.Project
-	28, // 4: ui.v1.UiServiceWatchResponse.question:type_name -> plan.v1.Question
-	0,  // 5: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
-	5,  // 6: ui.v1.UiService.LoadState:input_type -> ui.v1.UiServiceLoadStateRequest
-	7,  // 7: ui.v1.UiService.SaveState:input_type -> ui.v1.UiServiceSaveStateRequest
-	9,  // 8: ui.v1.UiService.ValidateProject:input_type -> ui.v1.UiServiceValidateProjectRequest
-	11, // 9: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
-	13, // 10: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
-	15, // 11: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
-	17, // 12: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
-	19, // 13: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
-	21, // 14: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
-	23, // 15: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
-	25, // 16: ui.v1.UiService.Watch:input_type -> ui.v1.UiServiceWatchRequest
-	1,  // 17: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	6,  // 18: ui.v1.UiService.LoadState:output_type -> ui.v1.UiServiceLoadStateResponse
-	8,  // 19: ui.v1.UiService.SaveState:output_type -> ui.v1.UiServiceSaveStateResponse
-	10, // 20: ui.v1.UiService.ValidateProject:output_type -> ui.v1.UiServiceValidateProjectResponse
-	12, // 21: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	14, // 22: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	16, // 23: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	18, // 24: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	20, // 25: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	22, // 26: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	24, // 27: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	26, // 28: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
-	17, // [17:29] is the sub-list for method output_type
-	5,  // [5:17] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	0,  // 3: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
+	5,  // 4: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
+	7,  // 5: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
+	9,  // 6: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
+	11, // 7: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
+	13, // 8: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
+	15, // 9: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
+	17, // 10: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
+	1,  // 11: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	6,  // 12: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	8,  // 13: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	10, // 14: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	12, // 15: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	14, // 16: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	16, // 17: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	18, // 18: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	11, // [11:19] is the sub-list for method output_type
+	3,  // [3:11] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_ui_v1_ui_proto_init() }
@@ -1586,17 +1140,13 @@ func file_ui_v1_ui_proto_init() {
 		return
 	}
 	file_ui_v1_ui_proto_msgTypes[3].OneofWrappers = []any{}
-	file_ui_v1_ui_proto_msgTypes[26].OneofWrappers = []any{
-		(*UiServiceWatchResponse_Project)(nil),
-		(*UiServiceWatchResponse_Question)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ui_v1_ui_proto_rawDesc), len(file_ui_v1_ui_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

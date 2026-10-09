@@ -33,8 +33,8 @@ fastest path their webview and kernel allow; Windows gets a path that works.
   or to `didReceiveData` (macOS), and `Flush` has nothing to do. connect-go writes a message in two writes (5-byte
   prefix, then payload), but the page reads them together: 100 values took 100 reads. Nothing to buffer there.
   It answers 501 to a request whose handler wrote neither a header nor a byte, where net/http answers 200; an empty
-  message in binary Protobuf is no byte at all, and connect-go then writes nothing (`LoadState` with nothing saved,
-  `SaveState`). `server.Handler` writes the 200 itself for the services.
+  message in binary Protobuf is no byte at all, and connect-go then writes nothing (`TerminalService.Write`,
+  `Resize`). `server.Handler` writes the 200 itself for the services.
 
 ## Measurements
 

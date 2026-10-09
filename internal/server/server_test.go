@@ -131,8 +131,8 @@ func (w *strictWriter) Write(b []byte) (int, error) {
 	return w.body.Write(b)
 }
 
-// TestEmptyResponseIsAnswered checks that a unary method whose response is empty in binary Protobuf (LoadState
-// with nothing saved, SaveState) still gets its 200: connect-go writes nothing for it.
+// TestEmptyResponseIsAnswered checks that a unary method whose response is empty in binary Protobuf
+// (TerminalService.Write, Resize) still gets its 200: connect-go writes nothing for it.
 func TestEmptyResponseIsAnswered(t *testing.T) {
 	const procedure = "/test.v1.EmptyService/Call"
 	h := server.Handler(ui, map[string]http.Handler{
