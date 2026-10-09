@@ -30,6 +30,11 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   --decision` (an answered question's code, or a decision block's id), links a task to its decision. Who decided is
   computed (`render.Decisions`): the developer for an answered question or an approved block (the tone *human*),
   else the worker the block is about, else the lead. Marks stay on open questions and on the other blocks only.
+- **Two gestures on an open question** (Q52, A): "Enlighten me" on the left digs further; "Rub the lamp", in the
+  lamp's yellow, answers with the option selected and the note (`QuestionService.Answer`). The recommended option is
+  selected first; picking another changes what the lamp sends; with no option named, the lamp waits for a pick.
+  "Confirm the choice" is gone. The window no longer approves a question by a mark; `djinn mark put Q03 approved`
+  still does.
 
 ## Done when
 
@@ -41,11 +46,11 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   waiting, workers running) and counts in pills. Contrast 4.5:1 at least in both themes. (`src/status.tsx`; test
   "the status colours keep their contrast in the dark and the light theme"; screens "the side panel ranks…")
 - [x] Question cards: title, the recommendation boxed first, options as buttons, context with headings below,
-  "Rub the lamp" (apply the recommendation), "Enlighten me", a read mark. (screens "a question shows its options by
-  letter…"; e2e `review.spec.ts`)
+  "Enlighten me", "Rub the lamp" (answer with the option selected), a read mark. (screens "a question shows its
+  options by letter…"; e2e `review.spec.ts`)
 - [x] Read marks and approvals in the lamp, read by the lead with `djinn mark list` and in the brief. (`TestMarks`,
-  `TestRecommended`; e2e: Rub the lamp read back with `djinn question list` and `djinn mark list`, a block marked
-  read seen in `djinn wish brief`)
+  `TestRecommended`; e2e: Rub the lamp read back with `djinn question list`, a block marked read seen in
+  `djinn wish brief`)
 - [x] Enlighten and Revise, with their history, in the brief and on the page. (`TestRounds` in `internal/plan` and in
   `internal/render`; e2e: enlighten with a note, read in the brief, revised from the CLI, the revised card rubbed)
 - [x] Titles, subtitles, a readable measure; the blocks in Markdown typography; logs, events and rounds as compact
@@ -68,6 +73,11 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   `TestBrief`; data "the decisions are the answered questions and the decision blocks…", "the Decisions tab lists
   them without a button…", "a task links back to the decision it comes from"; "the status colours keep their
   contrast…"; e2e `decision-log.spec.ts`, screens `test-results/e2e/decision-log-*.png`)
+- [x] Two gestures only on an open question, wherever the card is drawn: Enlighten on the left, Rub the lamp
+  confirming the option selected, the note with it; no "Confirm the choice". (screens "a question shows its options
+  by letter…"; e2e `wish-live.spec.ts`: B picked over the recommended A, rubbed, read back as `CHOICE_B` with its
+  note; `decision-log.spec.ts`, `flight-plan.spec.ts`, `wish-scroll.spec.ts`; screens
+  `test-results/e2e/question-card-dark.png` and `question-card-light.png`)
 - [x] ~~Clément has reviewed the layout and the visual language.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
 - [x] The light theme on the dialogs, the agent chat and the terminal, then the system's theme by default. (tokens
   in `src/theme.css`; tests "the theme's tokens keep their contrast in the dark and the light theme" and "the

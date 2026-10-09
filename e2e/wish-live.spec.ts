@@ -1,6 +1,7 @@
 // The window and the command line on one djinn (see global-setup.ts): a wish made by the command line shows in the
-// window as it is made, and a question answered in the window reads as answered by the command line.
-import { expect, test } from "@playwright/test";
+// window as it is made, and a question answered in the window, option B picked over the recommended A and the lamp
+// rubbed, reads as answered by the command line. Shots of the card, dark and light, go to test-results/e2e/.
+import { type Page, expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -15,6 +16,19 @@ function djinn(...args: string[]): string {
     env: { ...process.env, DJINN_HOME: process.env.DJINN_E2E_HOME },
     encoding: "utf8",
   });
+}
+
+// theme switches the page to a theme, "" for the default dark one; the page reloads.
+async function theme(page: Page, value: "" | "light") {
+  await page.evaluate((v) => {
+    if (v) localStorage.setItem("djinn.theme", v);
+    else localStorage.removeItem("djinn.theme");
+  }, value);
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-theme",
+    value || "dark",
+  );
 }
 
 test("a wish made by the command line shows live, and its question is answered from the window", async ({
@@ -45,18 +59,37 @@ test("a wish made by the command line shows live, and its question is answered f
     "--options",
     "Glass — the new one",
     "--recommendation",
-    "**B**: it is lighter.",
+    "**A**: it is tested.",
   );
   const card = page
     .locator(".question-card")
     .filter({ hasText: "Which lamp first?" });
   await expect(card).toBeVisible();
-  await expect(card.getByText("it is lighter.")).toBeVisible();
+  await expect(card.getByText("it is tested.")).toBeVisible();
+  // Two gestures only: Enlighten on the left, the lamp; nothing else confirms.
+  await expect(card.locator(".question-actions button")).toHaveText([
+    "Enlighten me",
+    "Rub the lamp",
+  ]);
 
-  // Answered in the window: B, with a note.
-  await card.getByRole("button", { name: /Glass — the new one/ }).click();
-  await card.getByLabel("Note with the answer").fill("Glass, then brass.");
-  await card.getByRole("button", { name: "Confirm this choice" }).click();
+  // B picked over the recommended A, with a note: the lamp sends that.
+  const brass = card.getByRole("button", { name: /Brass — the old one/ });
+  const glass = card.getByRole("button", { name: /Glass — the new one/ });
+  const pick = async () => {
+    await expect(brass).toHaveAttribute("aria-pressed", "true");
+    await glass.click();
+    await expect(glass).toHaveAttribute("aria-pressed", "true");
+    await expect(brass).toHaveAttribute("aria-pressed", "false");
+    await card.getByLabel("Note with the answer").fill("Glass, then brass.");
+    await expect(card).toHaveCSS("opacity", "1");
+  };
+  const shots = path.join(__dirname, "../test-results/e2e");
+  await pick();
+  await card.screenshot({ path: path.join(shots, "question-card-dark.png") });
+  await theme(page, "light");
+  await pick();
+  await card.screenshot({ path: path.join(shots, "question-card-light.png") });
+  await card.getByRole("button", { name: "Rub the lamp" }).click();
   await expect(page.locator(".decisions-section")).toHaveCount(0);
   // It is a decision now, in its own tab.
   await expect(page.getByRole("tab", { name: /^Decisions/ })).toHaveText(
@@ -73,5 +106,6 @@ test("a wish made by the command line shows live, and its question is answered f
   await page.screenshot({
     path: path.join(__dirname, "../test-results/e2e/wish-live.png"),
   });
+  await theme(page, "");
   expect(errors).toEqual([]);
 });

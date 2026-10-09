@@ -1,11 +1,11 @@
 // A question of a wish, on Clément's question card, laid out to decide at a glance: its title, the recommendation
-// boxed first, the options as buttons, then what is at stake. Two lamp buttons: "Rub the lamp" answers with the
-// recommended option in one click (a mark the lamp turns into the answer), "Enlighten me" asks the lead to find out
-// more first (QuestionService.Enlighten). Answered, it is a decision: no mark asks to read or approve it again, and
-// the decision log shows it. Djinn types each answer in the lead's terminal; a wish without a lead session has no
-// lead to tell, and the card says so. Its rounds, each request and each revision, fold below.
+// boxed first, the options as buttons, then what is at stake. Two gestures: "Enlighten me", on the left, asks the
+// lead to find out more first (QuestionService.Enlighten); "Rub the lamp", in the lamp's yellow, answers with the
+// option selected, the recommended one until you pick another, and the note with it. Answered, it is a decision: no
+// mark asks to read or approve it again, and the decision log shows it. Djinn types each answer in the lead's
+// terminal; a wish without a lead session has no lead to tell, and the card says so. Its rounds, each request and each
+// revision, fold below.
 import {
-  ArrowRight,
   Check,
   ChevronDown,
   CornerDownRight,
@@ -16,12 +16,7 @@ import {
 import { motion } from "motion/react";
 import { type ReactNode, useState } from "react";
 
-import {
-  Choice,
-  MarkKind,
-  type Question,
-  RoundKind,
-} from "../gen/ts/plan/v1/plan_pb";
+import { Choice, type Question, RoundKind } from "../gen/ts/plan/v1/plan_pb";
 import {
   answerText,
   choiceOf,
@@ -56,7 +51,7 @@ export function WishQuestion({
   noLead?: boolean;
   // Answers the question; resolves once djinn has it. A rejection keeps the card open.
   onAnswer: (choice: Choice, note: string) => Promise<void>;
-  // Marks an open question read, or approves it, which answers it with the recommended option.
+  // Marks an open question read.
   onMark?: OnMark;
   // Asks the lead to investigate before deciding.
   onEnlighten?: (note: string) => Promise<void>;
@@ -66,12 +61,11 @@ export function WishQuestion({
   const rounds = q.rounds ?? [];
   const digging = investigating(q);
   const recommended = answered ? undefined : recommendedChoice(q);
-  const rubbable = !!q.recommendation && recommended !== undefined;
   const [expanded, setExpanded] = useState(open);
-  // The recommended option is chosen until you pick one: a revision that recommends another moves it.
+  // The recommended option is selected until you pick one: a revision that recommends another moves it. With no
+  // option named, nothing is selected: rubbing the lamp waits for your pick.
   const [picked, setPicked] = useState<Choice>();
-  const choice =
-    picked ?? (q.options.length ? (recommended ?? Choice.A) : Choice.YES);
+  const choice = picked ?? (q.options.length ? recommended : Choice.YES);
   const [note, setNote] = useState("");
   const [asking, setAsking] = useState(false);
   const [dig, setDig] = useState("");
@@ -224,19 +218,6 @@ export function WishQuestion({
                 aria-label={t("question.note_label")}
               />
               <div className="question-actions">
-                {rubbable && onMark && (
-                  <button
-                    className="button accent lamp-rub"
-                    title={t("question.rub_detail")}
-                    disabled={sending}
-                    onClick={() =>
-                      void busy(() => onMark(MarkKind.APPROVED, false))
-                    }
-                  >
-                    <Lamp size={14} />
-                    {t("question.rub")}
-                  </button>
-                )}
                 {onEnlighten && !digging && (
                   <button
                     className="button secondary lamp-enlighten"
@@ -250,14 +231,20 @@ export function WishQuestion({
                 )}
                 <span className="spacer" />
                 <button
-                  className="button secondary small"
-                  disabled={sending || choice === Choice.UNSPECIFIED}
-                  onClick={() => void busy(() => onAnswer(choice, note.trim()))}
+                  className="button accent lamp-rub"
+                  title={
+                    choice === undefined
+                      ? t("question.rub_pick")
+                      : t("question.rub_detail")
+                  }
+                  disabled={sending || choice === undefined}
+                  onClick={() => {
+                    if (choice !== undefined)
+                      void busy(() => onAnswer(choice, note.trim()));
+                  }}
                 >
-                  {q.options.length
-                    ? t("panels.confirm_choice")
-                    : t("panels.confirm_answer")}
-                  <ArrowRight size={14} />
+                  <Lamp size={14} />
+                  {t("question.rub")}
                 </button>
               </div>
               {asking && onEnlighten && (
