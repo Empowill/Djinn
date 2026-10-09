@@ -100,6 +100,61 @@ whether to grant the wish. Another project summons the skill (`djinn skill summo
 use the same template: the watcher runs in infra's folder, so its command must be on the `PATH` there, not a path
 inside the skill's project.
 
+## The inbox: what comes from outside
+
+A merge request assigned to you, a mention in a thread: a skill may also declare a **source**, a command that prints
+what comes from outside. Djinn runs it, and each item it prints becomes a card in the inbox, at the top of the flight
+plan, with the route Djinn proposes, as for a request handed over: a wish to file it in, or a new one, from the
+skill's template when the item matches it. Nothing is made until you click; "Dismiss" sets an item aside.
+
+```yaml
+---
+name: babysit-mr
+description: Babysit a GitLab merge request until it is merged.
+metadata:
+  djinn:
+    wish:
+      title: "Babysit !{mr}"
+      match: '(?i)\bbabysit\w*\b.*?(?:/merge_requests/|!)(?P<mr>\d+)'
+      watch: "mrwatch -mr {mr} -watch"
+      restart: true
+      done_when: MERGED
+    source:
+      watch: "sh .agents/skills/babysit-mr/assigned.sh"
+      every: 10m
+---
+```
+
+- `watch` (required): the command line, run without a shell in the folder of the project that holds or summons the
+  skill, like a watcher. It has no placeholder: no request fills it. Where the project lists its commands
+  (`.agents/permissions.txtpb`), it must be one of them.
+- `every`: the least time between two starts of the command, 5 minutes by default, 1 minute at least. A command that
+  waits on its own (a stream) runs as long as it likes; when it exits, Djinn starts it again `every` after its start.
+
+**What it prints.** One item per paragraph: lines separated by an empty line, or by a second of silence. Write each
+item as a request you would hand over, its link on a line: the template's `match` then reads it as it reads a request.
+For the merge requests assigned to you, `assigned.sh` could be:
+
+```sh
+glab mr list --assignee=@me --output json |
+  jq -r '.[] | "Babysit !\(.iid) · \(.title), by \(.author.username)\n\(.web_url)\n"'
+```
+
+It may print every item each time: Djinn keeps the first link of an item (else its first line) and never proposes the
+same one twice, whether it waits, was routed or was dismissed, nor one whose link a wish already holds in its title or
+its blocks.
+
+**What Djinn never does.** It never writes to the source: the command's input is closed, and no answer runs a command.
+It never comments, reacts, marks as read nor replies on your behalf. It stores no token: the command logs in by its own
+tool (`glab auth login`, `gh auth login`, a Slack or Notion command line). It runs the sources of the skills your
+projects hold or summon, and no other: one skill summoned by several projects runs once.
+
+From the command line: `djinn inbox list` (`--all` for the routed and dismissed ones), `djinn inbox route <item>
+<letter>`, `djinn inbox dismiss <item>`. `djinn skill list` shows each source's command, or why it cannot be used.
+
 Tests: `TestReadTemplate`, `TestFillQuotes`, `TestDoneLine`, `TestRouteTemplate`, `TestTemplateWish`,
 `TestTemplateWithoutWatchers`, `TestSkillListTemplate` (`internal/plan/templates_test.go`), `TestWatcherDoneLine`,
-`TestWatcherFinishes` (`internal/harness/watch_test.go`), and `e2e/wish-template.spec.ts` (a fake watcher).
+`TestWatcherFinishes` (`internal/harness/watch_test.go`), and `e2e/wish-template.spec.ts` (a fake watcher). The
+inbox: `TestReadSource`, `TestSources`, `TestInbox`, `TestItemKey` (`internal/plan/inbox_test.go`),
+`TestSourceReadsOnly`, `TestSourceRefused` (`internal/harness/watch_source_test.go`), and `e2e/inbox.spec.ts` (a fake
+source).

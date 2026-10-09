@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,6 +27,7 @@ import (
 //	err:oops       it prints oops on its error output
 //	sleep:300ms    it waits
 //	count:<file>   it counts its runs in file, and prints "run N"
+//	input:<file>   it reads its input to the end, and adds a line to file: how many bytes it read
 //	exit:2         it exits with this code
 //	wait           it waits until it is stopped
 //
@@ -51,6 +53,11 @@ func fakeWatch(steps []string) int {
 			n++
 			_ = os.WriteFile(arg, []byte(strconv.Itoa(n)), 0o600)
 			fmt.Printf("run %d\n", n)
+		case "input":
+			b, _ := io.ReadAll(os.Stdin)
+			f, _ := os.OpenFile(arg, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			fmt.Fprintf(f, "read %d bytes\n", len(b))
+			f.Close()
 		case "exit":
 			n, _ := strconv.Atoi(arg)
 			return n

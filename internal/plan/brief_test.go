@@ -198,6 +198,7 @@ func serveLeads(t *testing.T, home string, opts ...Option) (clients, *fakeLeads)
 		questions: planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL),
 		blocks:    planv1connect.NewBlockServiceClient(srv.Client(), srv.URL),
 		marks:     planv1connect.NewMarkServiceClient(srv.Client(), srv.URL),
+		inbox:     planv1connect.NewInboxServiceClient(srv.Client(), srv.URL),
 		store:     s,
 	}, leads
 }

@@ -5,6 +5,7 @@ import type { Gate, Machine } from "../../gen/ts/machine/v1/machine_pb";
 import {
   type Block,
   Change,
+  type InboxItem,
   type Project,
   type Question,
   type Task,
@@ -33,6 +34,8 @@ export interface State {
   // As WishService.List gives them: the active ones by rank, then the paused ones, then the granted ones.
   wishes: Wish[];
   details: Readonly<Record<string, WishDetail>>;
+  // The inbox items that wait for an answer, the newest first.
+  inbox: InboxItem[];
   // The events of the tasks followed, oldest first.
   events: Readonly<Record<string, TaskEvent[]>>;
   machine?: Machine;
@@ -74,6 +77,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
     projects: [],
     wishes: [],
     details: {},
+    inbox: [],
     events: {},
     gates: [],
   };
@@ -87,6 +91,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
   const pending = {
     wishes: false,
     projects: false,
+    inbox: false,
     details: new Map<string, Set<Change>>(),
   };
   const opened = new Map<string, number>();
@@ -97,6 +102,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
     for (const change of changes) {
       if (change === Change.PROJECT) pending.projects = true;
       if (change === Change.WISH) pending.wishes = true;
+      if (change === Change.INBOX) pending.inbox = true;
       if (
         change !== Change.TASK &&
         change !== Change.QUESTION &&
@@ -117,8 +123,9 @@ export function createStore(clients: Clients, retry = 1000): Store {
   async function read() {
     const wishes = pending.wishes;
     const projects = pending.projects;
+    const inbox = pending.inbox;
     const details = [...pending.details];
-    pending.wishes = pending.projects = false;
+    pending.wishes = pending.projects = pending.inbox = false;
     pending.details.clear();
     const patch: Partial<State> = {};
     const errors: string[] = [];
@@ -132,6 +139,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
     if (projects)
       attempt(async () => {
         patch.projects = (await clients.projects.list({})).projects;
+      });
+    if (inbox)
+      attempt(async () => {
+        patch.inbox = (await clients.inbox.list({})).items;
       });
     const read: Record<string, Partial<WishDetail>> = {};
     for (const [wishId, kinds] of details) {

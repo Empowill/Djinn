@@ -1,0 +1,28 @@
+/* The inbox, above the flight plan: its cards are question cards (review.css), with where the item comes from. */
+.inbox {
+  margin-bottom: 36px;
+}
+.inbox .section-title h2 .count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.inbox-card + .inbox-card {
+  margin-top: 12px;
+}
+.inbox-source {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--st-watching);
+}
+.inbox-when {
+  font-size: 12px;
+  color: var(--muted);
+}
+.inbox-rest {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

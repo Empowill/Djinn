@@ -14,6 +14,7 @@ import {
 } from "../../gen/ts/machine/v1/machine_pb";
 import {
   BlockService,
+  InboxService,
   MarkService,
   ProjectService,
   QuestionService,
@@ -41,6 +42,7 @@ export function createClients(transport: Transport) {
     blocks: createClient(BlockService, transport),
     marks: createClient(MarkService, transport),
     skills: createClient(SkillService, transport),
+    inbox: createClient(InboxService, transport),
     machine: createClient(MachineService, transport),
     gates: createClient(GateService, transport),
     ui: createClient(UiService, transport),

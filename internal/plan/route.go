@@ -328,6 +328,7 @@ type routeInput struct {
 	blocks   map[string][]*planv1.Block
 	title    string   // the title asked for a new wish
 	newIDs   []string // the projects asked for a new wish
+	home     []string // the projects of a new wish when the request points to none, nor comes from a wish
 	// templates are the wish templates of the skills the projects use, each with its project
 	templates []*Template
 }
@@ -352,6 +353,9 @@ func propose(in routeInput) *planv1.Route {
 	}
 	if len(ids) == 0 {
 		ids = in.from.GetProjectIds()
+	}
+	if len(ids) == 0 {
+		ids = in.home
 	}
 	why := locales.T(in.lang, "route.why_new_none", nil)
 	if len(candidates) > 0 {
@@ -467,6 +471,37 @@ func skillText(lang string, opt *planv1.RouteOption) string {
 	return ""
 }
 
+// readRoute reads what a route is computed from into in: the wishes, the projects, the blocks and the templates. It
+// returns the names of the projects and the titles of the wishes, by identifier.
+func readRoute(ctx context.Context, r store.Reader, in *routeInput) (map[string]string, error) {
+	in.blocks = map[string][]*planv1.Block{}
+	var err error
+	if in.wishes, err = store.List[*planv1.Wish](ctx, r, nil); err != nil {
+		return nil, err
+	}
+	if in.projects, err = store.List[*planv1.Project](ctx, r, nil); err != nil {
+		return nil, err
+	}
+	blocks, err := store.List[*planv1.Block](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range blocks {
+		in.blocks[b.GetWishId()] = append(in.blocks[b.GetWishId()], b)
+	}
+	names := map[string]string{}
+	for _, p := range in.projects {
+		names[p.GetId()] = p.GetName()
+	}
+	for _, wish := range in.wishes {
+		names[wish.GetId()] = wish.GetTitle()
+	}
+	if in.templates, err = Templates(ctx, r, in.projects); err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
 // Route proposes where a request goes; with ask, it asks it as a question on the wish the request came to.
 func (w *Wishes) Route(
 	ctx context.Context, req *connect.Request[planv1.WishServiceRouteRequest],
@@ -478,7 +513,7 @@ func (w *Wishes) Route(
 	}
 	lang := cmp.Or(w.Language, locales.Source)
 	compute := func(r store.Reader) (*planv1.Route, map[string]string, error) {
-		in := routeInput{lang: lang, text: m.GetRequest(), title: m.GetTitle(), blocks: map[string][]*planv1.Block{}}
+		in := routeInput{lang: lang, text: m.GetRequest(), title: m.GetTitle()}
 		var err error
 		if id := m.GetWishId(); id != "" {
 			if in.from, err = store.Get[*planv1.Wish](ctx, r, id); err != nil {
@@ -494,27 +529,8 @@ func (w *Wishes) Route(
 				in.newIDs = append(in.newIDs, p.GetId())
 			}
 		}
-		if in.wishes, err = store.List[*planv1.Wish](ctx, r, nil); err != nil {
-			return nil, nil, err
-		}
-		if in.projects, err = store.List[*planv1.Project](ctx, r, nil); err != nil {
-			return nil, nil, err
-		}
-		blocks, err := store.List[*planv1.Block](ctx, r, nil)
+		names, err := readRoute(ctx, r, &in)
 		if err != nil {
-			return nil, nil, err
-		}
-		for _, b := range blocks {
-			in.blocks[b.GetWishId()] = append(in.blocks[b.GetWishId()], b)
-		}
-		names := map[string]string{}
-		for _, p := range in.projects {
-			names[p.GetId()] = p.GetName()
-		}
-		for _, wish := range in.wishes {
-			names[wish.GetId()] = wish.GetTitle()
-		}
-		if in.templates, err = Templates(ctx, r, in.projects); err != nil {
 			return nil, nil, err
 		}
 		return propose(in), names, nil
@@ -555,21 +571,40 @@ func (w *Wishes) settle(ctx context.Context, tx *store.Tx, q *planv1.Question) (
 		return nil, nil
 	}
 	i := int(q.GetAnswer().GetChoice() - planv1.Choice_CHOICE_A)
-	if i < 0 || i >= len(route.GetOptions()) {
+	if i < 0 || i >= len(route.GetOptions()) || !routable(route.GetOptions()[i]) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
 			"question %s routes a request: answer with the letter of a destination", q.GetCode()))
 	}
-	opt := route.GetOptions()[i]
 	lang := cmp.Or(w.Language, locales.Source)
 	from, err := store.Get[*planv1.Wish](ctx, tx, route.GetFromWishId())
 	if err != nil {
 		return nil, err
 	}
+	return w.routeTo(ctx, tx, route.GetOptions()[i], route.GetRequest(), origin{
+		block:    locales.T(lang, "route.block_title", map[string]string{"wish": from.GetTitle()}),
+		first:    FirstLine(from.GetTitle(), route.GetRequest()),
+		filed:    func(wishID string) string { return FiledLine(wishID, from.GetTitle(), route.GetRequest()) },
+		provider: from.GetLead().GetProvider(),
+	})
+}
+
+// origin is where a routed request comes from, as the wish it goes to says it: a wish whose lead handed it over, or
+// the inbox.
+type origin struct {
+	block    string                     // the title of the block that holds the request
+	first    string                     // the first line of a new wish's lead
+	filed    func(wishID string) string // the line that tells the lead of the wish wishID it was filed there
+	provider planv1.Provider            // the provider of a new wish's lead; claude when unset
+}
+
+// routeTo sends request where opt says, in tx: it files it in the wish, or makes the new wish, pausing the one that
+// makes room. Each change is journaled as the command that would make it. It records the new wish in opt, and
+// returns what follows once tx is committed: tell the lead of the wish, or start the new wish's watcher and lead.
+func (w *Wishes) routeTo(
+	ctx context.Context, tx *store.Tx, opt *planv1.RouteOption, request string, from origin,
+) (func(context.Context), error) {
 	put := func(wishID string) error {
-		block := &planv1.BlockServicePutRequest{
-			WishId: wishID, Kind: routeKindBlock, Content: route.GetRequest(),
-			Title: locales.T(lang, "route.block_title", map[string]string{"wish": from.GetTitle()}),
-		}
+		block := &planv1.BlockServicePutRequest{WishId: wishID, Kind: routeKindBlock, Content: request, Title: from.block}
 		if err := tx.Journal(actor, planv1connect.BlockServicePutProcedure, block); err != nil {
 			return err
 		}
@@ -589,7 +624,7 @@ func (w *Wishes) settle(ctx context.Context, tx *store.Tx, q *planv1.Question) (
 		if err := put(wish.GetId()); err != nil {
 			return nil, err
 		}
-		line := FiledLine(wish.GetId(), from.GetTitle(), route.GetRequest())
+		line := from.filed(wish.GetId())
 		return func(ctx context.Context) {
 			if err := w.Tell(ctx, wish.GetId(), line); err != nil && !errors.Is(err, ErrNoLead) {
 				log.Printf("djinn: wish %s: tell the lead about a request filed: %v", wish.GetId(), err)
@@ -597,7 +632,7 @@ func (w *Wishes) settle(ctx context.Context, tx *store.Tx, q *planv1.Question) (
 		}, nil
 	case planv1.RouteKind_ROUTE_KIND_NEW, planv1.RouteKind_ROUTE_KIND_QUEUE, planv1.RouteKind_ROUTE_KIND_SWAP:
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("question %s: no such destination", q.GetCode()))
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("no such destination"))
 	}
 	if opt.GetKind() == planv1.RouteKind_ROUTE_KIND_SWAP {
 		pause := &planv1.WishServicePauseRequest{WishId: opt.GetPauseWishId()}
@@ -636,11 +671,15 @@ func (w *Wishes) settle(ctx context.Context, tx *store.Tx, q *planv1.Question) (
 		// Its watcher waits with it; its lead starts when the wish is resumed.
 		return func(ctx context.Context) { w.startTemplate(ctx, wish) }, nil
 	}
-	provider, first := from.GetLead().GetProvider(), FirstLine(from.GetTitle(), route.GetRequest())
 	return func(ctx context.Context) {
 		// The watcher first: the lead's first line says what it runs, or why it did not start.
-		w.startLead(ctx, wish.GetId(), provider, first+w.startTemplate(ctx, wish))
+		w.startLead(ctx, wish.GetId(), from.provider, from.first+w.startTemplate(ctx, wish))
 	}, nil
+}
+
+// routable tells whether opt is a destination routeTo knows.
+func routable(opt *planv1.RouteOption) bool {
+	return opt.GetKind() >= planv1.RouteKind_ROUTE_KIND_FILE && opt.GetKind() <= planv1.RouteKind_ROUTE_KIND_SWAP
 }
 
 // startLead starts the lead of a wish made for a request: a new session from the wish's brief, whose first line is

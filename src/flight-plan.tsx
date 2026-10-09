@@ -19,6 +19,7 @@ import { flightPlan, spent } from "./data/flight";
 import { investigating, waitsForYou, wishTone } from "./data/format";
 import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
+import { Inbox } from "./inbox";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
@@ -169,6 +170,7 @@ export function FlightPlan({
               )}
             />
           )}
+          {view === "main" && <Inbox onOpen={onOpen} onToast={onToast} />}
           {view === "main" && (
             <>
               {wishes.length > 0 && (

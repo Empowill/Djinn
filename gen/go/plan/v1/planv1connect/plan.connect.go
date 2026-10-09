@@ -29,6 +29,8 @@ const (
 	ProjectServiceName = "plan.v1.ProjectService"
 	// SkillServiceName is the fully-qualified name of the SkillService service.
 	SkillServiceName = "plan.v1.SkillService"
+	// InboxServiceName is the fully-qualified name of the InboxService service.
+	InboxServiceName = "plan.v1.InboxService"
 	// WishServiceName is the fully-qualified name of the WishService service.
 	WishServiceName = "plan.v1.WishService"
 	// BlockServiceName is the fully-qualified name of the BlockService service.
@@ -70,6 +72,12 @@ const (
 	SkillServiceListProcedure = "/plan.v1.SkillService/List"
 	// SkillServiceUnsummonProcedure is the fully-qualified name of the SkillService's Unsummon RPC.
 	SkillServiceUnsummonProcedure = "/plan.v1.SkillService/Unsummon"
+	// InboxServiceListProcedure is the fully-qualified name of the InboxService's List RPC.
+	InboxServiceListProcedure = "/plan.v1.InboxService/List"
+	// InboxServiceDismissProcedure is the fully-qualified name of the InboxService's Dismiss RPC.
+	InboxServiceDismissProcedure = "/plan.v1.InboxService/Dismiss"
+	// InboxServiceRouteProcedure is the fully-qualified name of the InboxService's Route RPC.
+	InboxServiceRouteProcedure = "/plan.v1.InboxService/Route"
 	// WishServiceMakeProcedure is the fully-qualified name of the WishService's Make RPC.
 	WishServiceMakeProcedure = "/plan.v1.WishService/Make"
 	// WishServiceListProcedure is the fully-qualified name of the WishService's List RPC.
@@ -594,6 +602,138 @@ func (UnimplementedSkillServiceHandler) List(context.Context, *connect.Request[v
 
 func (UnimplementedSkillServiceHandler) Unsummon(context.Context, *connect.Request[v1.SkillServiceUnsummonRequest]) (*connect.Response[v1.SkillServiceUnsummonResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.SkillService.Unsummon is not implemented"))
+}
+
+// InboxServiceClient is a client for the plan.v1.InboxService service.
+type InboxServiceClient interface {
+	// List the inbox, the newest first: the items that wait for an answer, or every one with --all.
+	List(context.Context, *connect.Request[v1.InboxServiceListRequest]) (*connect.Response[v1.InboxServiceListResponse], error)
+	// Set an item aside: it is not proposed again. Nothing is sent to its source.
+	Dismiss(context.Context, *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error)
+	// Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
+	// one matched, and start its watcher and its lead. Nothing is sent to its source.
+	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
+}
+
+// NewInboxServiceClient constructs a client for the plan.v1.InboxService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewInboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) InboxServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	inboxServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("InboxService").Methods()
+	return &inboxServiceClient{
+		list: connect.NewClient[v1.InboxServiceListRequest, v1.InboxServiceListResponse](
+			httpClient,
+			baseURL+InboxServiceListProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		dismiss: connect.NewClient[v1.InboxServiceDismissRequest, v1.InboxServiceDismissResponse](
+			httpClient,
+			baseURL+InboxServiceDismissProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Dismiss")),
+			connect.WithClientOptions(opts...),
+		),
+		route: connect.NewClient[v1.InboxServiceRouteRequest, v1.InboxServiceRouteResponse](
+			httpClient,
+			baseURL+InboxServiceRouteProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Route")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// inboxServiceClient implements InboxServiceClient.
+type inboxServiceClient struct {
+	list    *connect.Client[v1.InboxServiceListRequest, v1.InboxServiceListResponse]
+	dismiss *connect.Client[v1.InboxServiceDismissRequest, v1.InboxServiceDismissResponse]
+	route   *connect.Client[v1.InboxServiceRouteRequest, v1.InboxServiceRouteResponse]
+}
+
+// List calls plan.v1.InboxService.List.
+func (c *inboxServiceClient) List(ctx context.Context, req *connect.Request[v1.InboxServiceListRequest]) (*connect.Response[v1.InboxServiceListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
+// Dismiss calls plan.v1.InboxService.Dismiss.
+func (c *inboxServiceClient) Dismiss(ctx context.Context, req *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error) {
+	return c.dismiss.CallUnary(ctx, req)
+}
+
+// Route calls plan.v1.InboxService.Route.
+func (c *inboxServiceClient) Route(ctx context.Context, req *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error) {
+	return c.route.CallUnary(ctx, req)
+}
+
+// InboxServiceHandler is an implementation of the plan.v1.InboxService service.
+type InboxServiceHandler interface {
+	// List the inbox, the newest first: the items that wait for an answer, or every one with --all.
+	List(context.Context, *connect.Request[v1.InboxServiceListRequest]) (*connect.Response[v1.InboxServiceListResponse], error)
+	// Set an item aside: it is not proposed again. Nothing is sent to its source.
+	Dismiss(context.Context, *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error)
+	// Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
+	// one matched, and start its watcher and its lead. Nothing is sent to its source.
+	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
+}
+
+// NewInboxServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	inboxServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("InboxService").Methods()
+	inboxServiceListHandler := connect.NewUnaryHandler(
+		InboxServiceListProcedure,
+		svc.List,
+		connect.WithSchema(inboxServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceDismissHandler := connect.NewUnaryHandler(
+		InboxServiceDismissProcedure,
+		svc.Dismiss,
+		connect.WithSchema(inboxServiceMethods.ByName("Dismiss")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceRouteHandler := connect.NewUnaryHandler(
+		InboxServiceRouteProcedure,
+		svc.Route,
+		connect.WithSchema(inboxServiceMethods.ByName("Route")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.InboxService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case InboxServiceListProcedure:
+			inboxServiceListHandler.ServeHTTP(w, r)
+		case InboxServiceDismissProcedure:
+			inboxServiceDismissHandler.ServeHTTP(w, r)
+		case InboxServiceRouteProcedure:
+			inboxServiceRouteHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedInboxServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedInboxServiceHandler struct{}
+
+func (UnimplementedInboxServiceHandler) List(context.Context, *connect.Request[v1.InboxServiceListRequest]) (*connect.Response[v1.InboxServiceListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.List is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Dismiss(context.Context, *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Dismiss is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Route is not implemented"))
 }
 
 // WishServiceClient is a client for the plan.v1.WishService service.

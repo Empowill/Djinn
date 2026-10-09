@@ -515,6 +515,133 @@
         },
         "type": "object"
       },
+      "plan.v1.InboxItem": {
+        "description": "An item of the inbox: a paragraph a source printed, such as a merge request assigned to you or a mention, proposed as a request. Only your answer files it or makes its wish. Djinn reads the source; it never sends anything back.",
+        "properties": {
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When it came."
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "key": {
+            "description": "What makes it the same item when a source prints it again: its first link, else its first line. An item is never proposed twice, nor one whose link a wish holds already.",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "The project the source ran in: a new wish works there when the item points to no project.",
+            "type": "string"
+          },
+          "route": {
+            "$ref": "#/components/schemas/plan.v1.Route",
+            "description": "Where Djinn proposes it goes, computed without a model when it came: the recommended destination first."
+          },
+          "settleTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When it was routed or dismissed."
+          },
+          "source": {
+            "description": "The skill whose source printed it.",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/plan.v1.InboxState",
+            "description": "Where it stands: new, routed or dismissed."
+          },
+          "text": {
+            "description": "What the source printed, as it printed it.",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish it went to, once routed.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InboxServiceDismissRequest": {
+        "properties": {
+          "itemId": {
+            "description": "The item.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.InboxServiceDismissResponse": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/plan.v1.InboxItem",
+            "description": "The item, dismissed."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InboxServiceListRequest": {
+        "properties": {
+          "all": {
+            "description": "Every item: routed and dismissed ones too.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InboxServiceListResponse": {
+        "properties": {
+          "items": {
+            "description": "The items, the newest first.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.InboxItem"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InboxServiceRouteRequest": {
+        "properties": {
+          "choice": {
+            "$ref": "#/components/schemas/plan.v1.Choice",
+            "description": "The letter of the destination, in its route's order: A is the recommended one."
+          },
+          "itemId": {
+            "description": "The item.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "choice"
+        ],
+        "type": "object"
+      },
+      "plan.v1.InboxServiceRouteResponse": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/plan.v1.InboxItem",
+            "description": "The item, routed: its wish_id is where it went."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.InboxState": {
+        "description": "InboxState is where an inbox item stands.",
+        "enum": [
+          "INBOX_STATE_UNSPECIFIED",
+          "INBOX_STATE_NEW",
+          "INBOX_STATE_ROUTED",
+          "INBOX_STATE_DISMISSED"
+        ],
+        "type": "string"
+      },
       "plan.v1.Lead": {
         "description": "The lead of a wish: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and the session's identifier, which the agent's own command line resumes.",
         "properties": {
@@ -1288,6 +1415,14 @@
           },
           "directory": {
             "description": "Its folder on this machine, in the project that holds it.",
+            "type": "string"
+          },
+          "inboxSource": {
+            "description": "The command line of the inbox source its SKILL.md declares (metadata.djinn.source); empty without one.",
+            "type": "string"
+          },
+          "inboxSourceError": {
+            "description": "Why its inbox source cannot be used; empty when it can, or without one.",
             "type": "string"
           },
           "missing": {
@@ -2847,6 +2982,121 @@
         ]
       }
     },
+    "/plan.v1.InboxService/Dismiss": {
+      "post": {
+        "description": "Set an item aside: it is not proposed again. Nothing is sent to its source.",
+        "operationId": "InboxService_Dismiss",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InboxServiceDismissRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceDismissResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn inbox dismiss",
+        "tags": [
+          "InboxService"
+        ]
+      }
+    },
+    "/plan.v1.InboxService/List": {
+      "post": {
+        "description": "List the inbox, the newest first: the items that wait for an answer, or every one with --all.",
+        "operationId": "InboxService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InboxServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn inbox list",
+        "tags": [
+          "InboxService"
+        ],
+        "x-read-only": true
+      }
+    },
+    "/plan.v1.InboxService/Route": {
+      "post": {
+        "description": "Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when one matched, and start its watcher and its lead. Nothing is sent to its source.",
+        "operationId": "InboxService_Route",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InboxServiceRouteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceRouteResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn inbox route",
+        "tags": [
+          "InboxService"
+        ]
+      }
+    },
     "/plan.v1.MarkService/List": {
       "post": {
         "description": "List the marks of a wish, the latest last.",
@@ -4363,6 +4613,10 @@
     {
       "description": "GateService grants the gates: shared resources, such as code generation (codegen), the local stack (stack), an end-to-end run (e2e) or a paid model run (paid), each held by one holder at a time, and granted only while the machine is not under pressure. To run a command under a gate: djinn gate run <name> -- <command>.",
       "name": "GateService"
+    },
+    {
+      "description": "The inbox: what comes from outside, proposed as requests. A source is a command a skill declares in its SKILL.md (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. Each paragraph it prints becomes an item with its proposed route; nothing is made until you answer.",
+      "name": "InboxService"
     },
     {
       "description": "MachineService says what the machine has, how loaded it is, and how many workers Djinn runs on it.",

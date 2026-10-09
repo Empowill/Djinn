@@ -14,6 +14,7 @@ const {
   TaskService,
   QuestionService,
   BlockService,
+  InboxService,
 } = await bundle(
   "store",
   `export { createStore } from "@/src/data/store.ts";
@@ -74,6 +75,9 @@ function server(data) {
     service(BlockService, {
       list: () => (count("blocks"), { blocks: data.blocks }),
     });
+    service(InboxService, {
+      list: () => (count("inbox"), { items: data.inbox }),
+    });
   });
   return { clients: createClients(transport), reads, watch };
 }
@@ -85,6 +89,7 @@ function sample() {
     tasks: [{ id: taskId, wishId, code: "T01", title: "Polish", status: 2 }],
     questions: [{ id: "q1", wishId, code: "Q01", text: "Oil?" }],
     blocks: [{ id: "b1", wishId, title: "Lexicon", content: "A wick." }],
+    inbox: [{ id: "i1", source: "babysit-mr", text: "Babysit !12" }],
     events: [
       { id: "e1", taskId, seq: 1n, kind: 1, text: "Polish the brass" },
       { id: "e2", taskId, seq: 2n, kind: 2, text: "Done." },
@@ -209,4 +214,22 @@ test("a write the page made is read at once", async () => {
   await store.changed(wishId, [Change.BLOCK]);
   assert.deepEqual(store.getState().details[wishId].blocks, []);
   assert.equal(reads.blocks, 2);
+});
+
+test("a change of the inbox reads it again, and nothing else", async () => {
+  const data = sample();
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: [...everything, Change.INBOX] });
+  let state = await until(store, (s) => s.loaded && s.inbox.length === 1);
+  assert.equal(state.inbox[0].source, "babysit-mr");
+  const before = { ...reads };
+  data.inbox = [];
+  watch.push({ wishId: "", changes: [Change.INBOX] });
+  state = await until(store, (s) => s.inbox.length === 0);
+  stop();
+  assert.equal(reads.inbox, before.inbox + 1);
+  assert.equal(reads.wishes, before.wishes);
+  assert.equal(reads.projects, before.projects);
 });

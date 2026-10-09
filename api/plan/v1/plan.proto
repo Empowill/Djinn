@@ -853,6 +853,10 @@ message Skill {
   string template = 7;
   // Why its wish template cannot be used; empty when it can, or without one.
   string template_error = 8;
+  // The command line of the inbox source its SKILL.md declares (metadata.djinn.source); empty without one.
+  string inbox_source = 9;
+  // Why its inbox source cannot be used; empty when it can, or without one.
+  string inbox_source_error = 10;
 }
 
 message SkillServiceSummonRequest {
@@ -901,6 +905,116 @@ message SkillServiceUnsummonRequest {
 message SkillServiceUnsummonResponse {
   // The project, without the skill.
   Project project = 1;
+}
+
+// An item of the inbox: a paragraph a source printed, such as a merge request assigned to you or a mention, proposed
+// as a request. Only your answer files it or makes its wish. Djinn reads the source; it never sends anything back.
+message InboxItem {
+  option (djinn.v1.unique) = {fields: ["key"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The skill whose source printed it.
+  string source = 2;
+  // The project the source ran in: a new wish works there when the item points to no project.
+  string project_id = 3;
+  // What makes it the same item when a source prints it again: its first link, else its first line. An item is
+  // never proposed twice, nor one whose link a wish holds already.
+  string key = 4;
+  // What the source printed, as it printed it.
+  string text = 5;
+  // Where it stands: new, routed or dismissed.
+  InboxState state = 6;
+  // When it came.
+  google.protobuf.Timestamp create_time = 7;
+  // Where Djinn proposes it goes, computed without a model when it came: the recommended destination first.
+  Route route = 8;
+  // The wish it went to, once routed.
+  string wish_id = 9;
+  // When it was routed or dismissed.
+  google.protobuf.Timestamp settle_time = 10;
+}
+
+// InboxState is where an inbox item stands.
+enum InboxState {
+  // Not set.
+  INBOX_STATE_UNSPECIFIED = 0;
+  // It waits for your answer.
+  INBOX_STATE_NEW = 1;
+  // You sent it to a wish: filed, or made into a new one.
+  INBOX_STATE_ROUTED = 2;
+  // You set it aside: it is not proposed again.
+  INBOX_STATE_DISMISSED = 3;
+}
+
+// The inbox: what comes from outside, proposed as requests. A source is a command a skill declares in its SKILL.md
+// (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. Each paragraph it
+// prints becomes an item with its proposed route; nothing is made until you answer.
+service InboxService {
+  // List the inbox, the newest first: the items that wait for an answer, or every one with --all.
+  rpc List(InboxServiceListRequest) returns (InboxServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Set an item aside: it is not proposed again. Nothing is sent to its source.
+  rpc Dismiss(InboxServiceDismissRequest) returns (InboxServiceDismissResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
+  // one matched, and start its watcher and its lead. Nothing is sent to its source.
+  rpc Route(InboxServiceRouteRequest) returns (InboxServiceRouteResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+message InboxServiceListRequest {
+  // Every item: routed and dismissed ones too.
+  bool all = 1;
+}
+
+message InboxServiceListResponse {
+  // The items, the newest first.
+  repeated InboxItem items = 1;
+}
+
+message InboxServiceDismissRequest {
+  // The item.
+  string item_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message InboxServiceDismissResponse {
+  // The item, dismissed.
+  InboxItem item = 1;
+}
+
+message InboxServiceRouteRequest {
+  // The item.
+  string item_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The letter of the destination, in its route's order: A is the recommended one.
+  Choice choice = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum = {
+      in: [
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  ];
+}
+
+message InboxServiceRouteResponse {
+  // The item, routed: its wish_id is where it went.
+  InboxItem item = 1;
 }
 
 // Wishes: what you ask Djinn for, across projects.
@@ -1079,6 +1193,8 @@ enum Change {
   CHANGE_BLOCK = 4;
   // The projects: one added or changed.
   CHANGE_PROJECT = 5;
+  // The inbox: an item came, or was routed or dismissed.
+  CHANGE_INBOX = 6;
 }
 
 message WishServiceRenderRequest {

@@ -56,31 +56,41 @@ var placeholders = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
 // ReadTemplate reads the wish template of the skill in dir: nil without one, an error when it cannot be used.
 func ReadTemplate(dir string) (*Template, error) {
+	djinn, err := readDjinn(dir)
+	if err != nil || djinn.Wish == nil {
+		return nil, err
+	}
+	return parseTemplate(filepath.Base(dir), dir, *djinn.Wish)
+}
+
+// djinnYAML is what a skill's SKILL.md declares for Djinn, under metadata.djinn.
+type djinnYAML struct {
+	Wish   *templateYAML `yaml:"wish"`
+	Source *sourceYAML   `yaml:"source"`
+}
+
+// readDjinn reads metadata.djinn in the SKILL.md of the skill in dir: empty without it.
+func readDjinn(dir string) (djinnYAML, error) {
 	front, err := frontMatter(filepath.Join(dir, SkillFile))
 	if err != nil || front == "" {
-		return nil, err
+		return djinnYAML{}, err
 	}
 	// Agent Skills lets a skill hold extra metadata; Djinn reads its own key only, and ignores the rest.
 	var doc struct {
 		Metadata map[string]yaml.Node `yaml:"metadata"`
 	}
 	if err := yaml.Unmarshal([]byte(front), &doc); err != nil {
-		return nil, fmt.Errorf("%s: its front matter is not YAML: %w", SkillFile, err)
+		return djinnYAML{}, fmt.Errorf("%s: its front matter is not YAML: %w", SkillFile, err)
 	}
 	node, ok := doc.Metadata["djinn"]
 	if !ok {
-		return nil, nil
+		return djinnYAML{}, nil
 	}
-	var djinn struct {
-		Wish *templateYAML `yaml:"wish"`
-	}
+	var djinn djinnYAML
 	if err := node.Decode(&djinn); err != nil {
-		return nil, fmt.Errorf("%s: metadata.djinn: %w", SkillFile, err)
+		return djinnYAML{}, fmt.Errorf("%s: metadata.djinn: %w", SkillFile, err)
 	}
-	if djinn.Wish == nil {
-		return nil, nil
-	}
-	return parseTemplate(filepath.Base(dir), dir, *djinn.Wish)
+	return djinn, nil
 }
 
 // parseTemplate checks a template: a title and a match are required, the match must compile, every placeholder
@@ -165,15 +175,9 @@ func quoteWord(s string) string {
 func Templates(ctx context.Context, r store.Reader, projects []*planv1.Project) ([]*Template, error) {
 	var out []*Template
 	for _, p := range projects {
-		dirs := ProjectSkills(p.GetDirectory())
-		summoned, err := SummonedSkills(ctx, r, p)
+		dirs, err := usedSkills(ctx, r, p)
 		if err != nil {
 			return nil, err
-		}
-		for _, s := range summoned {
-			if s.Missing == "" {
-				dirs = append(dirs, s.SkillDir)
-			}
 		}
 		for _, s := range dirs {
 			if t, err := ReadTemplate(s.Dir); err == nil && t != nil {
