@@ -66,7 +66,13 @@ checked against Windows first, because it is where the constraints are.
   pending the next push: TestWatcher paused a watcher on Windows; TestRestartResumesInOrder lost F0, which the first
   harness's scheduler started after its 2 s tick, slower test set-up on Windows, and whose `git worktree add` djinn up
   stopping cut short, leaving it interrupted without a worktree, never resumed (now such a task waits again, as
-  planned; the test writes the left-over tasks while djinn is down); the e2e's `EBUSY`, see the terminal above)
+  planned; the test writes the left-over tasks while djinn is down); the e2e's `EBUSY`, see the terminal above. W142 fixed
+  the three of run 38003905612 (10/10), proof pending the next push: TestRestartResumesInOrder saw one worker at a
+  time on Windows, each worker's 50 ms of work ending before the scheduler had started the next (a `git rev-parse`
+  and the store's fsyncs cost more there), so each counted worker now keeps its slot until another runs beside it;
+  TestWatcher waited for the transient "run 3", a 50 ms line its poll missed behind the store's writes (one
+  connection), and now waits for the fourth run or later; macOS's TestWishPauseStopsItsWorkers waited for RUNNING,
+  which the resumed fake left after 1.5 ms, and now waits for DONE and reads the events)
 - [ ] A worker runs in a worktree on Windows, with its CPU and memory measured. (needs: a Windows machine, and the
   per-worker measure, not built: Job Objects, T17)
 - [x] An atomic write a held file refuses a moment goes through: every rename of Djinn's files tries again, with a
@@ -88,6 +94,9 @@ checked against Windows first, because it is where the constraints are.
   test -c` only compile them: the proof is their run in the CI's Windows job (`test-go`), not yet seen green.
 - What only Unix can run skips on Windows and says why: tests that stop djinn with a signal or run a shell script
   (`//go:build !windows` files, with their reason), the terminal specs that drive a POSIX shell, pausing a worker.
+- A test waits for a state that stays, never one that passes: a poll of the store queues behind its writes (one
+  connection, an fsync each), slow on Windows, and a fast fake leaves RUNNING in a millisecond on macOS. A count
+  ("run 4 or later"), an end status and the events, a worker held until the test has seen what it proves (W142).
 - Windows' temporary folder has a short 8.3 name (`RUNNER~1`); djinn stores a project's folder resolved, so a test
   comparing folders resolves its own (`filepath.EvalSymlinks`).
 - `djinn gate run` counts a command's children through a Job Object on Windows (CPU time and peak memory).

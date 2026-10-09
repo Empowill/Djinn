@@ -269,7 +269,12 @@ func TestWatcher(t *testing.T) {
 	if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || task.GetWorktree() != "" || task.GetBranch() != "" || !task.GetRestart() {
 		t.Fatalf("watcher = %v", task)
 	}
-	task = e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 3" })
+	// A run's line lasts until the next run, 50 ms later: a poll can miss it, slowed by the store's writes (Windows).
+	// The fourth's comes once the lead was told the third's.
+	task = e.until(t, task.GetId(), func(t *planv1.Task) bool {
+		n, _ := strconv.Atoi(strings.TrimPrefix(t.GetLastLine(), "run "))
+		return n >= 4
+	})
 	if n := e.h.Running(); n != 0 {
 		t.Errorf("Running() = %d with a watcher", n)
 	}
