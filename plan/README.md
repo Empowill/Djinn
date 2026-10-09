@@ -33,6 +33,7 @@ other tracker and no cloud service. A new task is a new file here, with a fresh 
 | T25 | 2 | Review and decide at a glance | [4a699d0f-review-at-a-glance.md](4a699d0f-review-at-a-glance.md) |
 | T26 | 2 | Every request finds its wish: routing | [e1210c5e-request-routing.md](e1210c5e-request-routing.md) |
 | T27 | 2 | Wish templates, drawn from skills | [bac5e018-wish-templates.md](bac5e018-wish-templates.md) |
+| T29 | 2 | Tilasms: what explains a wish, kept, linked, opened anywhere | [eee91edb-tilasms.md](eee91edb-tilasms.md) |
 | T14 | 3 | Spend big models only where they matter | [8ce817da-cost.md](8ce817da-cost.md) |
 | T16 | 3 | Dispatch: plain Go code or a local model? | [263f074f-dispatch-bench.md](263f074f-dispatch-bench.md) |
 | T09 | 3 | Quality of life and clean-up | [3792046b-quality-of-life.md](3792046b-quality-of-life.md) |

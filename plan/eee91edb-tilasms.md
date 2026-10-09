@@ -1,0 +1,63 @@
+---
+id: 01a1223a-ae45-728f-8c37-c005eee91edb
+code: T29
+phase: 2
+status: open
+---
+
+# T29 · Tilasms: what explains a wish, kept, linked, opened anywhere
+
+**Goal.** A wish keeps the material that explains it: a concept drawn, a data model walked through, a comparison
+laid out. A tilasm (Arabic ṭilasm, the engraved object that holds a power; the origin of "talisman") is a folder with
+an `index.html` and its sources, kept on this machine, in its own tab of the wish. It is research material: the
+developer and the agents read it, link to it, and a link opens it in the app from anywhere.
+
+**The developer's words.** "A tab with tilasms (artifacts): files or folders with an HTML file and other sources,
+saved on the machine, to explain the concepts, exportable and importable. It will be research material, and it must
+be referenced by simple links that open it natively in the app from anywhere."
+
+## Decided (09/10/2026, the developer's answers)
+
+- **A tilasm belongs to a wish**: a tab *Tilasms* in the wish, beside Tasks and Decisions. Its code is `L01`, `L02`…
+  in the wish (T is the azimas').
+- **Stored in Djinn's data folder**: `~/.config/djinn/tilasms/<id>/`, the folder as given (`index.html` and its
+  sources) and a manifest (title, wish, author, dates, what it cites). Nothing goes into a project's repository.
+- **Two links**: `djinn://tilasm/<id>`, a scheme registered with the system on Linux, macOS and Windows, opens Djinn
+  on the tilasm (starting Djinn if it does not run) from a browser, Slack, a terminal or a Markdown file; and a local
+  http address of the same tilasm, for a browser or an agent that wants the HTML. `djinn tilasm open <code>` too.
+- **Scripts, no network**: a tilasm opens in an isolated frame, as the Mermaid diagrams do (a policy of its own,
+  served by Djinn): its own scripts and local files run; no network, no access to Djinn nor its data.
+- **The agents and the developer make them**: the lead and the workers with `djinn tilasm put <folder> --wish …`;
+  the developer by importing, or dropping a folder or a `.zip` on the tab.
+- **Exported with the wish**: `djinn wish export` carries its tilasms, and its import brings them back; a tilasm
+  also exports alone, as a `.zip` (the folder and its manifest), and imports into the wish shown.
+- **Replaced, with a history**: putting a tilasm again replaces it; its link stays and shows the latest version;
+  the earlier versions can be read and restored.
+- **Research material**: a `djinn://tilasm/…` link in a block, a question, a decision or the brief opens in the app;
+  the brief lists the wish's tilasms; a full-text search in the tab, on titles and text, within the wish;
+  `djinn tilasm get <code>` gives an agent the text and the path of the files; a tilasm cites the azimas and tasks it
+  explains, and each of them shows its tilasms.
+
+## Done when
+
+- [ ] `djinn tilasm put|list|get|open|history|restore|export|import` (`TilasmService`), journaled; a put replaces,
+  keeping the earlier version. (needs: the tests)
+- [ ] The *Tilasms* tab of a wish: list, open in an isolated frame (scripts run, the network is refused), search,
+  history, export, import by drop. (needs: a screens test and an e2e)
+- [ ] `djinn://tilasm/<id>` opens the app on the tilasm from outside, Djinn running or not, on Linux (a desktop entry
+  for `x-scheme-handler/djinn`), macOS (`CFBundleURLTypes` in Djinn.app) and Windows (the registry, by the
+  installer). (needs: Linux by test; a Mac and a Windows machine by hand)
+- [ ] Links inside the app (blocks, questions, decisions, the brief) open the tilasm in place.
+- [ ] `djinn wish export` and import carry the tilasms.
+- [ ] The brief lists the wish's tilasms, and the rules tell the lead to make one to explain a concept, and to cite
+  it.
+
+## Tests must be fast
+
+No real sleep, fake clocks, milliseconds: a test over 1 s is a bug.
+
+## Open questions
+
+- Size: a ceiling per tilasm (say 50 MiB), and what about large binary files (videos)?
+- A tilasm shared by several wishes: a link from one wish to another's tilasm is enough for now; a library across
+  wishes could come later.

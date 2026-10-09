@@ -78,6 +78,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [ ] [T13 · Sessions across projects](plan/58ae4a59-cross-project-sessions.md) (in progress)
 - [ ] [T26 · Every request finds its wish: routing](plan/e1210c5e-request-routing.md) (in progress)
 - [ ] [T27 · Wish templates, drawn from skills](plan/bac5e018-wish-templates.md) (in progress)
+- [ ] [T29 · Tilasms: what explains a wish, kept, linked, opened anywhere](plan/eee91edb-tilasms.md)
 
 **Phase 3 · Comfort**
 
