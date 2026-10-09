@@ -88,11 +88,12 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   with the terminal as controlling terminal (job control works).
 - **Stopping**: closing a terminal or stopping `djinn up` sends SIGHUP to the program's group and to
   the terminal's foreground group (a shell's job), and SIGKILL after 3 s. On Windows the
-  pseudo-console is closed (CTRL_CLOSE_EVENT), then the process is killed.
+  pseudo-console is closed (CTRL_CLOSE_EVENT), then the program's Job Object is killed: the program and what it
+  started.
 - **Libraries**: [creack/pty](https://github.com/creack/pty) (MIT) on macOS and Linux, its master
   side switched to non-blocking so a close ends a pending read;
-  [charmbracelet/x/conpty](https://github.com/charmbracelet/x) (MIT) on Windows (ConPTY, Windows
-  10 1809+); [xterm.js](https://github.com/xtermjs/xterm.js) 6 (MIT) with its fit and web-links
+  ConPTY (Windows 10 1809+) written on [golang.org/x/sys/windows](https://github.com/golang/sys) on
+  Windows (`internal/terminal/pty_windows.go`); [xterm.js](https://github.com/xtermjs/xterm.js) 6 (MIT) with its fit and web-links
   addons. All pure Go: `CGO_ENABLED=0` still builds.
 - **Interface**: `src/lead-terminal.tsx` wraps the app (`main.tsx`) only when the shim provides
   `window.djinnTerminal`, i.e. when djinn serves the page: the Vite preview and Electron are

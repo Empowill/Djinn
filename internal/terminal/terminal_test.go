@@ -1,7 +1,7 @@
 //go:build !windows
 
-// The pseudo-terminal tests drive /bin/sh, so they run on macOS and Linux; on Windows the terminal is checked by hand
-// in the window (see the T21 task file).
+// The pseudo-terminal tests drive /bin/sh, so they run on macOS and Linux; Windows has its own in
+// pty_windows_test.go.
 package terminal
 
 import (
@@ -34,51 +34,6 @@ func sh(t *testing.T, m *Manager, name string, args ...string) *Terminal {
 	}
 	t.Cleanup(m.Close)
 	return term
-}
-
-// output follows the output of term from offset from, and returns all of it once match finds what it looks for.
-func output(t *testing.T, term *Terminal, from uint64, match func(string) bool) string {
-	t.Helper()
-	var out bytes.Buffer
-	stop := make(chan struct{})
-	read := make(chan bool)
-	go func() {
-		found := false
-		_ = term.Read(from, stop, func(o Output) error {
-			out.Write(o.Data)
-			if found = match(out.String()); found {
-				return errors.New("found")
-			}
-			return nil
-		})
-		read <- found
-	}()
-	timeout := time.AfterFunc(5*time.Second, func() { close(stop) })
-	found := <-read
-	timeout.Stop()
-	if !found {
-		t.Fatalf("not found in the output of the terminal:\n%q", out.String())
-	}
-	return out.String()
-}
-
-func contains(s string) func(string) bool {
-	return func(out string) bool { return strings.Contains(out, s) }
-}
-
-// end waits for the program of term to end and returns its exit code.
-func end(t *testing.T, term *Terminal) int {
-	t.Helper()
-	select {
-	case <-term.Done():
-	case <-time.After(5 * time.Second):
-		t.Fatal("the program did not end")
-	}
-	_, _, exited, code := term.State()
-	if !exited {
-		t.Fatal("ended but not exited")
-	}
-	return code
 }
 
 func TestWriteThenRead(t *testing.T) {
@@ -385,8 +340,6 @@ func TestHeldSpaceArrivesAsRepeats(t *testing.T) {
 	}
 	t.Logf("%d spaces in %d ms, one read each", repeats, prev)
 }
-
-const helperEnv = "DJINN_TERMINAL_HELPER"
 
 // TestHelperProcess is the program the tests run in a terminal, not a test: with spaces, it puts its terminal in raw
 // mode, as Claude Code does, and reports each read until it has read 20 spaces.
