@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -75,7 +74,7 @@ func (in *integration) answer(t *testing.T, q *planv1.Question, choice planv1.Ch
 
 // TestCorrectACodeConflict: a conflict in code starts a correction worker by itself, part of the azima, of the failed
 // task's provider, in a worktree on the failed merge, the conflict in its first prompt; its success commits its work
-// and the failed task's, which says it was corrected.
+// and the failed task's, which says it was corrected. The task committed before stays as it went in.
 func TestCorrectACodeConflict(t *testing.T) {
 	in := integrating(t)
 	old := in.tip(t)
@@ -91,7 +90,7 @@ func TestCorrectACodeConflict(t *testing.T) {
 		return ""
 	})
 
-	in.pass(t, time.Minute) // The azima's last part done.
+	in.pass(t, 0) // W1 goes in; W2 conflicts with it.
 	w3 := in.correction(t, w2)
 	got, texts := in.integration(t, w2)
 	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_CONFLICT || got.GetAttempts() != 1 ||
@@ -103,8 +102,8 @@ func TestCorrectACodeConflict(t *testing.T) {
 	if texts[len(texts)-1] != want {
 		t.Errorf("W2's last event %q; want %q", texts[len(texts)-1], want)
 	}
-	if w1, _ := in.integration(t, w1); w1.GetCorrectedBy() != w3.GetId() {
-		t.Errorf("W1, merged before W2 in the batch, is not corrected with it: %v", w1)
+	if w1, _ := in.integration(t, w1); w1.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w1.GetCorrectedBy() != "" {
+		t.Errorf("W1, committed before W2 alone: %v", w1)
 	}
 	// The correction worker: work part of the azima, of W2's provider, Djinn's own, its first prompt saying the
 	// conflict, its worktree on W1 merged and W2's merge under way.
@@ -116,7 +115,7 @@ func TestCorrectACodeConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"could not integrate the work of W1, W2 into " + in.branch, "the merge of " + w2.GetBranch() +
+	for _, s := range []string{"could not integrate the work of W2 into " + in.branch, "the merge of " + w2.GetBranch() +
 		" is under way", "- app/README.md", "Settle each conflict", "the tests (`test`)", "run `gen` once the code is settled"} {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("W3's prompt lacks %q:\n%s", s, prompt)
@@ -129,7 +128,7 @@ func TestCorrectACodeConflict(t *testing.T) {
 		t.Fatalf("W3's work: %v", got)
 	}
 
-	// Its work integrates at once, alone, like any task's: its success commits W1's and W2's with it.
+	// Its work integrates at once, alone, like any task's: its success commits W2's with it.
 	in.pass(t, time.Second)
 	if got := in.states(t, w1, w2, w3); got != "W1 COMMITTED, W2 COMMITTED, W3 COMMITTED" {
 		t.Fatalf("after the correction: %s", got)
@@ -149,7 +148,8 @@ func TestCorrectACodeConflict(t *testing.T) {
 		}
 	}
 	commits := in.commits(t)
-	if len(commits) != 1 || commits[0].GetOldSha() != old || !slices.Equal(commits[0].GetTaskIds(), []string{w3.GetId(), w1.GetId(), w2.GetId()}) {
+	if len(commits) != 2 || commits[0].GetOldSha() != old || !slices.Equal(commits[0].GetTaskIds(), []string{w1.GetId()}) ||
+		!slices.Equal(commits[1].GetTaskIds(), []string{w3.GetId(), w2.GetId()}) {
 		t.Errorf("journal: %v", commits)
 	}
 }
@@ -160,11 +160,9 @@ func TestCorrectRedTests(t *testing.T) {
 	in := integrating(t)
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin\nFAIL"
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
-	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
 	var merged bool
 	in.correctWith(func(dir, _ string) string {
-		_, err := os.Stat(filepath.Join(dir, "src", "c.txt"))
+		_, err := os.Stat(filepath.Join(dir, "src", "a.txt"))
 		merged = err == nil
 		in.mu.Lock()
 		in.testCode = 0
@@ -172,23 +170,23 @@ func TestCorrectRedTests(t *testing.T) {
 		return ""
 	})
 
-	in.pass(t, time.Hour)
-	w4 := in.correction(t, w1)
-	prompt, err := firstPrompt(in.db, w4.GetId())
+	in.pass(t, 0)
+	w2 := in.correction(t, w1)
+	prompt, err := firstPrompt(in.db, w2.GetId())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"could not integrate the work of W1, W2, W3", "The command, run in the project's folder: `test`",
+	for _, s := range []string{"could not integrate the work of W1", "The command, run in the project's folder: `test`",
 		"    --- FAIL: TestLogin\n    FAIL", "Make the tests pass"} {
 		if !strings.Contains(prompt, s) {
-			t.Errorf("W4's prompt lacks %q:\n%s", s, prompt)
+			t.Errorf("W2's prompt lacks %q:\n%s", s, prompt)
 		}
 	}
-	if !merged || w4.GetTitle() != "Make the tests pass with the work of W1, W2, W3" {
-		t.Errorf("W4 %q started without the merged work: %v", w4.GetTitle(), merged)
+	if !merged || w2.GetTitle() != "Make the tests pass with the work of W1" {
+		t.Errorf("W2 %q started without the merged work: %v", w2.GetTitle(), merged)
 	}
 	in.pass(t, time.Second)
-	if got := in.states(t, w1, w4); got != "W1 COMMITTED, W4 COMMITTED" {
+	if got := in.states(t, w1, w2); got != "W1 COMMITTED, W2 COMMITTED" {
 		t.Errorf("after the correction: %s", got)
 	}
 }
@@ -200,11 +198,6 @@ func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin"
 	in.correctWith(func(string, string) string { return "" })
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
-		WishId: in.wishID, CommitAfterTasks: 1,
-	})); err != nil {
-		t.Fatal(err)
-	}
 
 	in.pass(t, time.Hour)
 	w2 := in.correction(t, w1)
@@ -245,11 +238,6 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 	in.testCode = 1
 	in.correctWith(func(string, string) string { return "" })
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
-		WishId: in.wishID, CommitAfterTasks: 1,
-	})); err != nil {
-		t.Fatal(err)
-	}
 	in.pass(t, time.Hour)
 	w2 := in.correction(t, w1)
 	in.pass(t, time.Second)
@@ -285,28 +273,28 @@ func TestACorrectionWorkerThatFails(t *testing.T) {
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 1\n")
 	in.correctWith(func(string, string) string { return "fail I cannot settle it" })
-	w1 := in.finished(t, "W1", map[string]string{"app/README.md": "# One\n"})
-	in.finished(t, "W2", map[string]string{"app/README.md": "# Two\n"})
+	in.finished(t, "W1", map[string]string{"app/README.md": "# One\n"})
+	w2 := in.finished(t, "W2", map[string]string{"app/README.md": "# Two\n"})
 	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
 
-	in.pass(t, time.Hour)
-	w4 := in.correction(t, w1)
+	in.pass(t, 0) // W2 conflicts with W1, gone in before it.
+	w4 := in.correction(t, w2)
 	if w4.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
 		t.Fatalf("W4 %v", w4)
 	}
 	in.pass(t, time.Second)
-	q := in.question(t, w1)
-	got, texts := in.integration(t, w1)
+	q := in.question(t, w2)
+	got, texts := in.integration(t, w2)
 	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_CONFLICT || got.GetAttempts() != 1 ||
 		texts[len(texts)-1] != "W4, its correction worker, failed: I cannot settle it; Djinn asks you "+q.GetCode() {
-		t.Errorf("W1's integration %v; events %q", got, texts)
+		t.Errorf("W2's integration %v; events %q", got, texts)
 	}
 	if !strings.Contains(q.GetText(), "Djinn started a correction worker: it did not get it in.") {
 		t.Errorf("the question %q", q.GetText())
 	}
 	// Leave it: the work stays out, and nothing starts.
 	in.answer(t, q, planv1.Choice_CHOICE_B)
-	if got, texts := in.integration(t, w1); !strings.HasPrefix(got.GetReason(), "left out ("+q.GetCode()+"): W2 conflicts") ||
+	if got, texts := in.integration(t, w2); !strings.HasPrefix(got.GetReason(), "left out ("+q.GetCode()+"): W2 conflicts") ||
 		texts[len(texts)-1] != "left out of "+in.branch+" ("+q.GetCode()+")" {
 		t.Errorf("left: %v; events %q", got, texts)
 	}

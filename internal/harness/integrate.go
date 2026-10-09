@@ -19,28 +19,21 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
-	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
 
 // Integration (T30): a worker's work counts once it is in its wish's integration branch, tested. When a worker ends
-// done in a project that names a test command, its task's integration is pending; Djinn then commits the work in
-// batches, by itself, no model: in a worktree of its own per wish and project, never the person's checkout, it
-// merges each task's branch, makes the generated files again on a conflict only in them, runs the project's tests
-// through a gate, and moves the integration branch when they pass.
+// done in a project that names a test command, its task's integration is pending; Djinn then commits the work at once,
+// task by task, by itself, no model: in a worktree of its own per wish and project, never the person's checkout, it
+// merges the task's branch, makes the generated files again on a conflict only in them, runs the project's tests
+// through a gate, moves the integration branch when they pass, and removes the task's worktree when clean. Pushing
+// the branch to its remote follows on a cadence (push.go).
 
 // How the journal records the integration.
 const (
 	methodIntegrate = "harness/integrate" // a task's integration moved on, Djinn recorded a wish's integration branch, or asked what to do with work that failed; the request is the task, the wish, or the question
 	methodCommit    = "harness/commit"    // a batch was committed into its wish's integration branch; the request is the commit (planv1.IntegrationCommit)
-)
-
-// When a batch is committed when no azima ends: once an hour has passed and three tasks are done since the last
-// commit. A wish sets its own (Wish.commit_after_minutes, Wish.commit_after_tasks).
-const (
-	DefaultCommitAfter = time.Hour
-	DefaultCommitTasks = 3
 )
 
 // The gates the integration's commands run under, as a worker's would: djinn gate run gen, djinn gate run test.
@@ -63,13 +56,13 @@ func WithGates(take TakeGate) Option { return func(h *Harness) { h.gates = take 
 // WithCommands runs the integration's commands with run, instead of the processes they name. Tests give a fake.
 func WithCommands(run RunCommand) Option { return func(h *Harness) { h.commands = run } }
 
-// Built is a batch of finished work committed into a wish's integration branch, in a project whose settings name an
-// install command: djinn up proposes to install it, and to restart on it (WithBuilt).
+// Built is a wish's integration branch as Djinn pushed it, in a project whose settings name an install command: djinn
+// up proposes to install it, and to restart on it (WithBuilt).
 type Built struct {
 	WishID, WishTitle, ProjectID, Project, Branch, Sha string
-	// The tasks of the batch, by code.
+	// The tasks whose work the push brought, by code.
 	Tasks []string
-	// What changed: the titles of the commits the batch brought, the latest first.
+	// What changed: the titles of the commits the push brought, the latest first.
 	Changes []string
 	// What to check, one line per task: its code and title, then the last paragraph its worker wrote.
 	Checks []string
@@ -77,16 +70,16 @@ type Built struct {
 	Install string
 }
 
-// WithBuilt calls built after each batch committed in a project whose settings name an install command.
+// WithBuilt calls built after each push of an integration branch in a project whose settings name an install command.
 func WithBuilt(built func(Built)) Option { return func(h *Harness) { h.built = built } }
 
 // WithIntegrateTick sets how often the integration looks at the work waiting without being woken: an hour passes
 // without telling anyone.
 func WithIntegrateTick(d time.Duration) Option { return func(h *Harness) { h.integrateTick = d } }
 
-// Integrate starts committing the tasks' finished work into their wishes' integration branches, by itself: woken
-// when a task ends done, and every minute for the hour. djinn up calls it once the harness has recovered; Close
-// stops it, and a batch it was on is integrated again at the next start.
+// Integrate starts committing the tasks' finished work into their wishes' integration branches, by itself, and
+// pushing them: woken when a task ends done or a push is approved, and every minute. djinn up calls it once the
+// harness has recovered; Close stops it, and the work it was on is integrated again at the next start.
 func (h *Harness) Integrate() {
 	h.integrating.Do(func() {
 		h.integrateDone = make(chan struct{})
@@ -115,7 +108,7 @@ func (h *Harness) kickIntegrate() {
 	}
 }
 
-// pendIntegration marks the work of t, a task its worker just finished, as waiting for its batch, when Djinn
+// pendIntegration marks the work of t, a task its worker just finished, as waiting to be merged, when Djinn
 // integrates it: a work task on a branch of its own, in a project whose settings name a test command.
 func (h *Harness) pendIntegration(t *planv1.Task) bool {
 	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || t.GetBranch() == "" || plan.IsAzima(t) {
@@ -149,50 +142,40 @@ func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task)
 	}
 }
 
-// integratePass commits each batch of finished work that is due, wish by wish and project by project.
+// integratePass commits the finished work waiting, each task alone in the order they ended, pushes the integration
+// branches whose push is due after each commit, and the pushes the person approved.
 func (h *Harness) integratePass(ctx context.Context) {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		log.Printf("djinn: integrate: %v", err)
 		return
 	}
-	type key struct{ wish, project string }
-	waiting := map[key][]*planv1.Task{}
-	byWish := map[string][]*planv1.Task{}
 	h.correctionsEnded(ctx, tasks)
+	var waiting []*planv1.Task
 	for _, t := range tasks {
-		byWish[t.GetWishId()] = append(byWish[t.GetWishId()], t)
 		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING &&
 			t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !h.running(t.GetId()) {
-			k := key{t.GetWishId(), t.GetProjectId()}
-			waiting[k] = append(waiting[k], t)
+			waiting = append(waiting, t)
 		}
 	}
-	keys := make([]key, 0, len(waiting))
-	for k := range waiting {
-		keys = append(keys, k)
-	}
-	slices.SortFunc(keys, func(a, b key) int { return cmp.Or(cmp.Compare(a.wish, b.wish), cmp.Compare(a.project, b.project)) })
-	for _, k := range keys {
+	slices.SortStableFunc(waiting, func(a, b *planv1.Task) int {
+		return a.GetEndTime().AsTime().Compare(b.GetEndTime().AsTime())
+	})
+	for _, t := range waiting {
 		if ctx.Err() != nil {
 			return
 		}
-		wish, err1 := store.Get[*planv1.Wish](ctx, h.store, k.wish)
-		project, err2 := store.Get[*planv1.Project](ctx, h.store, k.project)
+		wish, err1 := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
+		project, err2 := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
 		if err := errors.Join(err1, err2); err != nil {
 			log.Printf("djinn: integrate: %v", err)
 			continue
 		}
-		batch := waiting[k]
-		slices.SortStableFunc(batch, func(a, b *planv1.Task) int {
-			return a.GetEndTime().AsTime().Compare(b.GetEndTime().AsTime())
-		})
-		every := time.Duration(wish.GetCommitAfterMinutes()) * time.Minute
-		for _, b := range due(batch, byWish[k.wish], lastCommit(wish, byWish[k.wish], k.project), h.now(),
-			cmp.Or(every, DefaultCommitAfter), int(cmp.Or(wish.GetCommitAfterTasks(), DefaultCommitTasks))) {
-			h.integrateBatch(ctx, wish, project, b)
+		if h.integrateBatch(ctx, wish, project, []*planv1.Task{t}) {
+			h.pushIfDue(ctx, wish.GetId(), project)
 		}
 	}
+	h.pushApproved(ctx)
 }
 
 // running tells whether a worker runs for the task id: a task continued after it was done.
@@ -202,75 +185,7 @@ func (h *Harness) running(id string) bool {
 	return h.runs[id] != nil
 }
 
-// due returns the batches of waiting, a wish's finished work in one project in the order it ended, to commit now
-// (the developer's rule): each task another task waits for, and each correction worker's, at once and alone, so that
-// the graph never stalls; then
-// the others together when an azima one of them is part of ends, none of its parts being planned or under way any
-// more, or once every has passed since the last commit and n of them are done. tasks are all the wish's.
-func due(waiting, tasks []*planv1.Task, last, now time.Time, every time.Duration, n int) [][]*planv1.Task {
-	var out [][]*planv1.Task
-	var rest []*planv1.Task
-	for _, t := range waiting {
-		if awaited(t, tasks) || t.GetCorrection() != nil {
-			out = append(out, []*planv1.Task{t})
-		} else {
-			rest = append(rest, t)
-		}
-	}
-	if len(rest) > 0 && (azimaEnds(rest, tasks) || now.Sub(last) >= every && len(rest) >= n) {
-		out = append(out, rest)
-	}
-	return out
-}
-
-// awaited tells whether a planned task waits for t.
-func awaited(t *planv1.Task, tasks []*planv1.Task) bool {
-	return slices.ContainsFunc(tasks, func(o *planv1.Task) bool {
-		return dispatch.Planned(o) && slices.Contains(o.GetDependsOn(), t.GetId())
-	})
-}
-
-// azimaEnds tells whether an azima one of batch's tasks is part of has ended: every work part of it is finished,
-// done or not, so no part of it is still to come.
-func azimaEnds(batch, tasks []*planv1.Task) bool {
-	for _, t := range batch {
-		azima := t.GetPartOf()
-		if azima == "" {
-			continue
-		}
-		ended := true
-		for _, o := range tasks {
-			if o.GetPartOf() != azima || plan.IsAzima(o) {
-				continue
-			}
-			switch o.GetStatus() {
-			case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
-			default:
-				ended = false
-			}
-		}
-		if ended {
-			return true
-		}
-	}
-	return false
-}
-
-// lastCommit is when wish last committed finished work into its integration branch in the project projectID: when it
-// was made, before any.
-func lastCommit(wish *planv1.Wish, tasks []*planv1.Task, projectID string) time.Time {
-	last := wish.GetCreateTime().AsTime()
-	for _, t := range tasks {
-		if t.GetProjectId() == projectID && t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
-			if at := t.GetIntegration().GetUpdateTime().AsTime(); at.After(last) {
-				last = at
-			}
-		}
-	}
-	return last
-}
-
-// pending is the integration of work that waits for its batch, and why when it waits for something else.
+// pending is the integration of work that waits to be merged, and why when it waits for something else.
 func pending(branch, why string) *planv1.TaskIntegration {
 	return &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING, Branch: branch, Reason: why}
 }
@@ -282,9 +197,10 @@ type tested struct {
 	ids      []string
 }
 
-// integrateBatch commits the work of batch, tasks of wish in project, into the wish's integration branch, and records
-// where each task's work stands.
-func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, batch []*planv1.Task) {
+// integrateBatch commits the work of batch, a task of wish in project, with the work a correction worker of it
+// corrects, into the wish's integration branch, records where each task's work stands, and tells whether it is
+// committed. The worktrees of the work committed are removed when clean.
+func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, batch []*planv1.Task) bool {
 	h.integrateMu.Lock() // An install uses the integration worktree too.
 	defer h.integrateMu.Unlock()
 	branch, why := h.integrationBranch(ctx, wish, project)
@@ -298,7 +214,7 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	}
 	if why != "" {
 		h.settleIntegration(ctx, batch, pending(branch, why), "integration: waiting: "+why, nil)
-		return
+		return false
 	}
 	in, text, commit := h.commitBatch(ctx, wish, project, settings, branch, batch)
 	if ctx.Err() != nil && in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
@@ -307,16 +223,58 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	in.Branch = branch
 	if in.GetFailure() != nil {
 		h.failed(ctx, wish, project, settings, batch, in, text)
-		return
+		return false
 	}
 	h.settleIntegration(ctx, batch, in, text, commit)
-	if in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
-		h.settleCorrected(ctx, batch, in)
-		h.wake() // The tasks that waited for this work to be committed may start, from it.
+	if in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		return false
 	}
-	if commit != nil && settings.Install != "" && h.built != nil {
-		h.built(h.build(ctx, wish, project, settings, batch, commit))
+	for _, t := range append(slices.Clone(batch), h.settleCorrected(ctx, batch, in)...) {
+		h.dropWorktree(ctx, project, t)
 	}
+	h.wake() // The tasks that waited for this work to be committed may start, from it.
+	return true
+}
+
+// dropWorktree removes the worktree of t, whose work is committed, as djinn task clean does: its branch stays. A
+// worktree with changes not committed stays, said; so does the worktree of a task a worker runs again.
+func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *planv1.Task) {
+	ctx = context.WithoutCancel(ctx)
+	cur, err := store.Get[*planv1.Task](ctx, h.store, t.GetId())
+	if err != nil || cur.GetWorktree() == "" || h.running(t.GetId()) {
+		return
+	}
+	text := "worktree removed, branch " + cur.GetBranch() + " kept"
+	if changes, err := git(ctx, cur.GetWorktree(), "status", "--porcelain"); err == nil && changes != "" {
+		text = "worktree kept: it holds changes not committed, " + cur.GetWorktree()
+	} else if err := removeWorktree(ctx, project.GetDirectory(), cur.GetWorktree(), false); err != nil {
+		text = "worktree kept: " + err.Error()
+	}
+	kept := strings.HasPrefix(text, "worktree kept")
+	err = h.store.Tx(ctx, func(tx *store.Tx) error {
+		task, err := store.Get[*planv1.Task](ctx, tx, t.GetId())
+		if err != nil {
+			return err
+		}
+		if !kept {
+			task.Worktree = ""
+		}
+		if err := tx.Journal(actorHarness, methodIntegrate, task); err != nil {
+			return err
+		}
+		if err := tx.Put(task); err != nil {
+			return err
+		}
+		seq, err := lastSeq(ctx, tx, task.GetId())
+		if err != nil {
+			return err
+		}
+		return tx.Put(newEvent(task.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+	})
+	if err != nil {
+		log.Printf("djinn: integrate %s: %v", t.GetCode(), err)
+	}
+	h.notify()
 }
 
 // How long the lists of a build proposed are: the commits' titles, and a worker's last paragraph.
@@ -325,24 +283,13 @@ const (
 	buildCheck   = 400
 )
 
-// build is the batch committed by commit, to propose for installing.
-func (h *Harness) build(
-	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
-	commit *planv1.IntegrationCommit,
-) Built {
+// build is the integration branch as push pushed it, with the work of tasks, to propose for installing.
+func (h *Harness) build(ctx context.Context, wish *planv1.Wish, project *planv1.Project, install string, push *planv1.IntegrationPush, tasks []*planv1.Task) Built {
 	b := Built{
 		WishID: wish.GetId(), WishTitle: wish.GetTitle(), ProjectID: project.GetId(), Project: project.GetName(),
-		Branch: commit.GetBranch(), Sha: commit.GetNewSha(), Install: settings.Install,
+		Branch: push.GetBranch(), Sha: push.GetNewSha(), Changes: push.GetCommits(), Install: install,
 	}
-	out, err := git(ctx, project.GetDirectory(), "log", "--no-merges", "--format=%s", "-n", fmt.Sprint(buildChanges),
-		commit.GetOldSha()+".."+commit.GetNewSha())
-	if err != nil {
-		log.Printf("djinn: integrate: the commits of %s: %v", codes(batch), err)
-	}
-	if out != "" {
-		b.Changes = strings.Split(out, "\n")
-	}
-	for _, t := range batch {
+	for _, t := range tasks {
 		b.Tasks = append(b.Tasks, t.GetCode())
 		check := t.GetCode() + " " + t.GetTitle()
 		if last := h.lastWords(ctx, t.GetId()); last != "" {

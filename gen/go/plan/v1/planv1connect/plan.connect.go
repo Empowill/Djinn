@@ -793,8 +793,9 @@ type WishServiceClient interface {
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
-	// Set where and when the wish's finished work is committed: the integration branch of one of its projects, and
-	// how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.
+	// Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
+	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
+	// itself or asks first. Only what is given changes.
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
@@ -1148,8 +1149,9 @@ type WishServiceHandler interface {
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
-	// Set where and when the wish's finished work is committed: the integration branch of one of its projects, and
-	// how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.
+	// Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
+	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
+	// itself or asks first. Only what is given changes.
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.

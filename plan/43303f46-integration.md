@@ -2,7 +2,7 @@
 id: 01a12257-92a9-704b-9ef4-46c843303f46
 code: T30
 phase: 2
-status: open
+status: done
 after: T07
 ---
 
@@ -50,12 +50,17 @@ lead spends its tokens on mechanical work.
 
 - [x] A task done integrates by itself: merged in its own worktree, generated files made again, tests through a gate,
   the branch moved on, the person's clean checkout fast-forwarded; each step in the task's events and status.
-  (TestIntegrateADoneWorker, TestIntegrateACleanBatch, TestIntegrateGeneratedConflict, TestIntegrateCodeConflict,
+  (TestIntegrateADoneWorker, TestCommitEachTaskAlone, TestIntegrateGeneratedConflict, TestIntegrateCodeConflict,
   TestIntegrateRedTests, TestIntegrateLeavesADirtyCheckout, TestIntegrateFollowsACleanedCheckout,
   TestIntegrateABranchNoCheckoutHolds, TestRecoverAnIntegration)
-- [ ] Each task committed alone as it ends; the push automatic at an azima's end, or with three tasks committed and an
-  hour since the last push, checked as each merge ends; `ask` mode by a question; a refused push never forced.
-  (needs: a test with a fake clock and a bare remote in a temp folder)
+- [x] Each task committed alone as it ends; the push automatic at an azima's end, or with three tasks committed and an
+  hour since the last push, checked as each merge ends; `ask` mode by a question; a refused push never forced. Each
+  push in the journal and on the wish (its head shows the last one); the build proposed after a push; a task's
+  worktree removed once its work is committed, kept with changes not committed. Fake clock, bare remote in a temporary
+  folder. (TestCommitEachTaskAlone, TestPushAtAnAzimasEnd, TestPushAfterThreeTasksAndAnHour, TestPushDue,
+  TestCommittedSince, TestPushAskMode, TestARefusedPushIsNotForced, TestNoRemoteNoPush, TestABuildIsProposed,
+  TestRemoveTheWorktreeOnceCommitted, the screens test "the wish's head says where Djinn last pushed its integration
+  branch, and a push refused")
 - [x] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
   (TestCorrectACodeConflict, TestCorrectRedTests, TestCorrectionAttemptsThenAQuestion,
   TestAnswerAFailedIntegration, TestACorrectionWorkerThatFails)

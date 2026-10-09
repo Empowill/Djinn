@@ -1372,6 +1372,71 @@
         "additionalProperties": false,
         "description": "IntegrationFailure is a batch's merge or tests that failed, as a correction worker starts from it."
       },
+      "plan.v1.IntegrationPush": {
+        "type": "object",
+        "properties": {
+          "wishId": {
+            "type": "string",
+            "title": "wish_id",
+            "description": "The wish, and the project whose branch was pushed."
+          },
+          "projectId": {
+            "type": "string",
+            "title": "project_id"
+          },
+          "branch": {
+            "type": "string",
+            "title": "branch",
+            "description": "The branch, and the remote it went to: origin."
+          },
+          "remote": {
+            "type": "string",
+            "title": "remote"
+          },
+          "oldSha": {
+            "type": "string",
+            "title": "old_sha",
+            "description": "Where the remote's branch was before (empty when it had none), and the commit pushed."
+          },
+          "newSha": {
+            "type": "string",
+            "title": "new_sha"
+          },
+          "count": {
+            "type": "integer",
+            "title": "count",
+            "format": "int32",
+            "description": "How many commits the push brought, and the titles of the latest of them, the latest first."
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "commits"
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "task_ids",
+            "description": "The tasks whose work it brought, by identifier."
+          },
+          "pushTime": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/google.protobuf.Timestamp"
+              }
+            ],
+            "title": "push_time",
+            "description": "When it was pushed."
+          }
+        },
+        "title": "IntegrationPush",
+        "additionalProperties": false,
+        "description": "IntegrationPush is a push of a wish's integration branch to its remote, as the journal records it and the wish shows\n the last one."
+      },
       "plan.v1.IntegrationState": {
         "type": "string",
         "title": "IntegrationState",
@@ -2092,6 +2157,16 @@
           "PROVIDER_WATCH"
         ],
         "description": "Provider is the kind of agent a worker runs."
+      },
+      "plan.v1.PushMode": {
+        "type": "string",
+        "title": "PushMode",
+        "enum": [
+          "PUSH_MODE_UNSPECIFIED",
+          "PUSH_MODE_AUTO",
+          "PUSH_MODE_ASK"
+        ],
+        "description": "PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due."
       },
       "plan.v1.Question": {
         "type": "object",
@@ -3479,7 +3554,7 @@
         },
         "title": "TaskIntegration",
         "additionalProperties": false,
-        "description": "TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a\n worker ends done, Djinn commits its worktree on its branch, merges it with the batch into the integration branch in\n a worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,\n and moves the branch when it passes."
+        "description": "TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a\n worker ends done, Djinn commits its worktree on its branch, merges it alone into the integration branch in a\n worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,\n and moves the branch when it passes; its worktree is then removed when clean."
       },
       "plan.v1.TaskKind": {
         "type": "string",
@@ -4964,17 +5039,17 @@
             "title": "integration_branches",
             "description": "The branch each Git project of the wish integrates its tasks' finished work into: by default the branch the\n project's checkout was on when the wish was made, or, for a wish made before Djinn recorded it, when its first\n task's work was to integrate (djinn wish set-integration)."
           },
-          "commitAfterMinutes": {
+          "pushAfterMinutes": {
             "type": "integer",
-            "title": "commit_after_minutes",
+            "title": "push_after_minutes",
             "maximum": 10080,
             "minimum": 0,
             "format": "int32",
-            "description": "Djinn commits the finished work into the integration branch when an azima ends, or once this many minutes have\n passed and commit_after_tasks tasks are done since the last commit, whichever comes first; a task another task\n waits for is committed at once, alone. 0: 60 minutes, 3 tasks."
+            "description": "Each task's finished work is committed into the integration branch as soon as it ends, alone. Djinn pushes the\n branch to its remote, checked each time a task's merge ends: when an azima ends (its last part committed), or once\n push_after_tasks tasks are committed since the last push and more than this many minutes have passed since it.\n 0: 60 minutes, 3 tasks."
           },
-          "commitAfterTasks": {
+          "pushAfterTasks": {
             "type": "integer",
-            "title": "commit_after_tasks",
+            "title": "push_after_tasks",
             "maximum": 100,
             "minimum": 0,
             "format": "int32"
@@ -4983,11 +5058,65 @@
             "type": "string",
             "title": "description",
             "description": "A few lines that say what the wish is for, its scope and where it goes: djinn wish describe sets it, the person\n edits it in the wish's head, and the brief opens with it. Empty until someone writes one: the title stands for\n it."
+          },
+          "pushMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.PushMode"
+              }
+            ],
+            "title": "push_mode",
+            "description": "Whether Djinn pushes the integration branch by itself when a push is due, or asks first. Unset: auto."
+          },
+          "pushes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.WishPush"
+            },
+            "title": "pushes",
+            "description": "Where the push of each Git project's integration branch stands: its last push, and the question Djinn asks about\n the next one."
           }
         },
         "title": "Wish",
         "additionalProperties": false,
         "description": "A wish is what you ask Djinn for, and what it works to grant. It may span several projects."
+      },
+      "plan.v1.WishPush": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "title": "project_id",
+            "description": "The project."
+          },
+          "last": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.IntegrationPush"
+              }
+            ],
+            "title": "last",
+            "description": "The last push; unset before the first."
+          },
+          "questionId": {
+            "type": "string",
+            "title": "question_id",
+            "description": "The question Djinn asked about the next push, while it is open: in ask mode, or once the remote refused one.\n No push is due meanwhile."
+          },
+          "refused": {
+            "type": "string",
+            "title": "refused",
+            "description": "Why the remote refused the last push Djinn tried, in git's words; empty once one passes."
+          },
+          "approved": {
+            "type": "boolean",
+            "title": "approved",
+            "description": "The person said to push (an answer to the question): Djinn pushes at its next pass, whatever the cadence."
+          }
+        },
+        "title": "WishPush",
+        "additionalProperties": false,
+        "description": "WishPush is where the push of a wish's integration branch to its remote stands, in one of its projects. Only Djinn\n pushes it, through git with the person's own credentials, never forcing; agents never push."
       },
       "plan.v1.WishServiceActivateRequest": {
         "type": "object",
@@ -5675,21 +5804,30 @@
             "pattern": "^([A-Za-z0-9_]+([./-][A-Za-z0-9_]+)*)?$",
             "description": "The branch the project's finished work goes to, without refs/heads/: feat/wails-go."
           },
-          "commitAfterMinutes": {
+          "pushAfterMinutes": {
             "type": "integer",
-            "title": "commit_after_minutes",
+            "title": "push_after_minutes",
             "maximum": 10080,
             "minimum": 0,
             "format": "int32",
-            "description": "Commit once this many minutes have passed since the last commit, with commit_after_tasks tasks done."
+            "description": "Push once more than this many minutes have passed since the last push, with push_after_tasks tasks committed."
           },
-          "commitAfterTasks": {
+          "pushAfterTasks": {
             "type": "integer",
-            "title": "commit_after_tasks",
+            "title": "push_after_tasks",
             "maximum": 100,
             "minimum": 0,
             "format": "int32",
-            "description": "Commit once this many tasks are done since the last commit, the minutes having passed."
+            "description": "Push once this many tasks are committed since the last push, the minutes having passed."
+          },
+          "pushMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.PushMode"
+              }
+            ],
+            "title": "push_mode",
+            "description": "auto: Djinn pushes by itself; ask: it asks first. Unset: unchanged.\nenum.defined_only = true\n"
           }
         },
         "title": "WishServiceSetIntegrationRequest",
@@ -11574,7 +11712,7 @@
           "WishService"
         ],
         "summary": "SetIntegration",
-        "description": "Set where and when the wish's finished work is committed: the integration branch of one of its projects, and\n how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.",
+        "description": "Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its\n projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by\n itself or asks first. Only what is given changes.",
         "operationId": "WishService_SetIntegration",
         "parameters": [
           {

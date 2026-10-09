@@ -78,7 +78,12 @@ import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
-import { LeadButton, WishDescription, recordedAgent } from "./wish-head";
+import {
+  LastPushes,
+  LeadButton,
+  WishDescription,
+  recordedAgent,
+} from "./wish-head";
 
 // Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
 export interface Opening {
@@ -422,6 +427,7 @@ export function WishView({
                 <Clock3 size={13} />
                 {when(wish.createTime)}
               </span>
+              <LastPushes pushes={wish.pushes} projects={projects} />
             </div>
           </div>
           <div className="hero-visual">
