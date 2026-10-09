@@ -267,9 +267,9 @@ func TestRouteAnswered(t *testing.T) {
 	if got := c.requests(t, made.GetId()); !slices.Equal(got, []string{request}) {
 		t.Errorf("requests filed = %q", got)
 	}
-	moving, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadBriefFile))
-	if err != nil || !strings.HasPrefix(string(moving), FirstLine(here.GetTitle(), request)+"\n\n# The wish: Babysit shop!41") {
-		t.Errorf("the new lead's brief: %q, %v", moving, err)
+	first, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadFirstFile))
+	if err != nil || string(first) != FirstLine(here.GetTitle(), request)+"\n\n"+StartLine(made.GetId()) {
+		t.Errorf("the new lead's first message: %q, %v", first, err)
 	}
 	// The new lead first; then the lead of the wish the request came to, reopened to be told.
 	if len(leads.opened) != opened+2 || !strings.HasPrefix(leads.opened[opened], "claude --session-id "+made.GetLead().GetSessionId()) ||

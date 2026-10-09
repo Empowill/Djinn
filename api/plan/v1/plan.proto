@@ -175,6 +175,10 @@ message Wish {
     gte: 0
     lte: 100
   }];
+  // A few lines that say what the wish is for, its scope and where it goes: djinn wish describe sets it, the person
+  // edits it in the wish's head, and the brief opens with it. Empty until someone writes one: the title stands for
+  // it.
+  string description = 15;
 }
 
 // IntegrationBranch is the branch a wish integrates its finished work into, in one of its projects.
@@ -1336,17 +1340,26 @@ service WishService {
   // Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
   // to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
   // wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
-  // A lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
+  // A provider other than the recorded lead's starts a new lead of that agent from the brief the same way: a claude
+  // one becomes the wish's lead, a codex one once djinn wish set-lead gives its session, and an antigravity one
+  // leaves the record as it is. While the lead's terminal runs a program, nothing starts, and the note says so. A
+  // lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
   // project nothing starts, the error says to create one. Starts djinn if it is not running.
   rpc Resume(WishServiceResumeRequest) returns (WishServiceResumeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
     option (djinn.v1.autostart) = true;
   }
-  // The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
-  // what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
-  // decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
-  // No local path, no secret.
+  // Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had.
+  // Empty text takes it back to the title.
+  rpc Describe(WishServiceDescribeRequest) returns (WishServiceDescribeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
+  // store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
+  // running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
+  // acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.
   rpc Brief(WishServiceBriefRequest) returns (WishServiceBriefResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -1788,13 +1801,29 @@ message WishServiceSetLeadResponse {
   Wish wish = 1;
 }
 
+message WishServiceDescribeRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The description: a few lines. Empty takes the wish back to its title.
+  string text = 2 [(buf.validate.field).string.max_len = 2000];
+}
+
+message WishServiceDescribeResponse {
+  // The wish, with its description.
+  Wish wish = 1;
+}
+
 message WishServiceResumeRequest {
   // The wish.
   string wish_id = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  // Kind of agent for a new lead, when the wish has none to resume: claude (the default), codex or antigravity.
+  // Kind of agent for the lead: unset or the recorded lead's resumes it; another starts a new lead of that agent
+  // from the brief. A wish with no lead to resume starts one of this kind: claude (the default), codex or antigravity.
   Provider provider = 2 [(buf.validate.field).enum.defined_only = true];
 }
 

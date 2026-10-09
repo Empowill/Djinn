@@ -420,3 +420,85 @@ func TestHoldsHome(t *testing.T) {
 		}
 	}
 }
+
+// TestResumeAnotherAgent: the developer picks another agent than the recorded lead's. A new lead of that agent starts
+// from the brief in the lead's terminal; an antigravity or codex one leaves the claude record as it is, a claude one
+// over a codex record takes its place. While the terminal runs a lead, nothing starts, and the note says so.
+func TestResumeAnotherAgent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the lines are checked for the shells of Unix; TestLeadLine checks cmd.exe")
+	}
+	ctx := t.Context()
+	c, leads := serveLeads(t, t.TempDir())
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := project.Msg.GetProject().GetDirectory()
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Take it over", ProjectIds: []string{project.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := made.Msg.GetWish().GetId()
+	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	terminal := LeadTerminal(id)
+	resume := func(p planv1.Provider) *planv1.WishServiceResumeResponse {
+		t.Helper()
+		res, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: id, Provider: p}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	claudeKept := func(res *planv1.WishServiceResumeResponse) bool {
+		lead := res.GetWish().GetLead()
+		return lead.GetProvider() == planv1.Provider_PROVIDER_CLAUDE && lead.GetSessionId() == session
+	}
+
+	// Antigravity on a claude-led wish: agy -i on the start line, in the project; the claude record stays.
+	res := resume(planv1.Provider_PROVIDER_ANTIGRAVITY)
+	if want := "agy -i '" + StartLine(id) + "' in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
+		t.Fatalf("opened %q, want %q", leads.opened, want)
+	}
+	if res.GetAttached() || res.GetTerminal() != terminal || !claudeKept(res) ||
+		!strings.Contains(res.GetNote(), "stays the claude session "+session) {
+		t.Errorf("antigravity over claude = %v", res)
+	}
+	// While it runs, neither another agent nor the recorded lead starts: the note says to exit it there.
+	for _, p := range []planv1.Provider{planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_UNSPECIFIED} {
+		res = resume(p)
+		if !res.GetAttached() || !strings.Contains(res.GetNote(), "already runs") || !strings.Contains(res.GetNote(), "exit it there") ||
+			!claudeKept(res) || len(leads.opened) != 1 {
+			t.Errorf("%s over a running agy = %v, opened %q", p, res, leads.opened)
+		}
+	}
+	// Once it exits, the recorded agent resumes its own session.
+	delete(leads.running, terminal)
+	if res = resume(planv1.Provider_PROVIDER_CLAUDE); leads.opened[1] != "claude --resume "+session+" in "+folder || !claudeKept(res) {
+		t.Errorf("claude = %v, opened %q", res, leads.opened)
+	}
+	// Codex: its session is not known, the claude record stays until set-lead gives it.
+	delete(leads.running, terminal)
+	res = resume(planv1.Provider_PROVIDER_CODEX)
+	if leads.opened[2] != "codex '"+StartLine(id)+"' in "+folder || !claudeKept(res) ||
+		!strings.Contains(res.GetNote(), "set-lead") || !strings.Contains(res.GetNote(), "stays the claude session") {
+		t.Errorf("codex = %v, opened %q", res, leads.opened)
+	}
+	// A codex record, then claude: a new claude lead, whose session becomes the wish's lead.
+	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{
+		WishId: id, SessionId: "thread-1", Provider: planv1.Provider_PROVIDER_CODEX,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	delete(leads.running, terminal)
+	res = resume(planv1.Provider_PROVIDER_CLAUDE)
+	lead := res.GetWish().GetLead()
+	if lead.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || lead.GetSessionId() == "thread-1" ||
+		leads.opened[3] != "claude --session-id "+lead.GetSessionId()+" '"+StartLine(id)+"' in "+folder {
+		t.Errorf("claude over codex = %v, opened %q", res, leads.opened)
+	}
+}

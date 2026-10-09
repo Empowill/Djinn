@@ -4978,6 +4978,11 @@
             "maximum": 100,
             "minimum": 0,
             "format": "int32"
+          },
+          "description": {
+            "type": "string",
+            "title": "description",
+            "description": "A few lines that say what the wish is for, its scope and where it goes: djinn wish describe sets it, the person\n edits it in the wish's head, and the brief opens with it. Empty until someone writes one: the title stands for\n it."
           }
         },
         "title": "Wish",
@@ -5166,6 +5171,44 @@
           }
         },
         "title": "WishServiceDeleteResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.WishServiceDescribeRequest": {
+        "type": "object",
+        "properties": {
+          "wishId": {
+            "type": "string",
+            "title": "wish_id",
+            "format": "uuid",
+            "description": "The wish."
+          },
+          "text": {
+            "type": "string",
+            "title": "text",
+            "maxLength": 2000,
+            "description": "The description: a few lines. Empty takes the wish back to its title."
+          }
+        },
+        "title": "WishServiceDescribeRequest",
+        "required": [
+          "wishId"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.WishServiceDescribeResponse": {
+        "type": "object",
+        "properties": {
+          "wish": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.Wish"
+              }
+            ],
+            "title": "wish",
+            "description": "The wish, with its description."
+          }
+        },
+        "title": "WishServiceDescribeResponse",
         "additionalProperties": false
       },
       "plan.v1.WishServiceExportRequest": {
@@ -5490,7 +5533,7 @@
               }
             ],
             "title": "provider",
-            "description": "Kind of agent for a new lead, when the wish has none to resume: claude (the default), codex or antigravity.\nenum.defined_only = true\n"
+            "description": "Kind of agent for the lead: unset or the recorded lead's resumes it; another starts a new lead of that agent\n from the brief. A wish with no lead to resume starts one of this kind: claude (the default), codex or antigravity.\nenum.defined_only = true\n"
           }
         },
         "title": "WishServiceResumeRequest",
@@ -10525,7 +10568,7 @@
           "WishService"
         ],
         "summary": "Brief",
-        "description": "The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First\n what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,\n decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.\n No local path, no secret.",
+        "description": "The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the\n store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks\n running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last\n acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.",
         "operationId": "WishService_Brief.get",
         "parameters": [
           {
@@ -10625,7 +10668,7 @@
           "WishService"
         ],
         "summary": "Brief",
-        "description": "The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First\n what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,\n decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.\n No local path, no secret.",
+        "description": "The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the\n store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks\n running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last\n acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.",
         "operationId": "WishService_Brief",
         "parameters": [
           {
@@ -10736,6 +10779,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/plan.v1.WishServiceDeleteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.WishService/Describe": {
+      "post": {
+        "tags": [
+          "WishService"
+        ],
+        "summary": "Describe",
+        "description": "Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had.\n Empty text takes it back to the title.",
+        "operationId": "WishService_Describe",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceDescribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceDescribeResponse"
                 }
               }
             }
@@ -11345,7 +11450,7 @@
           "WishService"
         ],
         "summary": "Resume",
-        "description": "Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach\n to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the\n wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.\n A lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no\n project nothing starts, the error says to create one. Starts djinn if it is not running.",
+        "description": "Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach\n to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the\n wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.\n A provider other than the recorded lead's starts a new lead of that agent from the brief the same way: a claude\n one becomes the wish's lead, a codex one once djinn wish set-lead gives its session, and an antigravity one\n leaves the record as it is. While the lead's terminal runs a program, nothing starts, and the note says so. A\n lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no\n project nothing starts, the error says to create one. Starts djinn if it is not running.",
         "operationId": "WishService_Resume",
         "parameters": [
           {

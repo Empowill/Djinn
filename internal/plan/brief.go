@@ -15,21 +15,22 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
 )
 
-// Brief is what starts an agent on a wish, written by Djinn from the store, without a model. Stable changes rarely:
-// Djinn's rules and the rules of the wish's projects. Moving is where the wish stands. An agent gets Stable first,
-// so that it reads it from its cache from one session to the next.
+// Brief is where a wish stands and how to lead it, written by Djinn from the store, without a model: every lead, of
+// any agent, starts from it. Moving is where the wish stands. Stable changes rarely: Djinn's rules and the rules of
+// the wish's projects.
 type Brief struct {
 	Stable string
 	Moving string
 }
 
-// Text is the whole brief: the stable part, then the part that moves.
-func (b Brief) Text() string { return b.Stable + "\n" + b.Moving }
+// Text is the whole brief: where the wish stands, its description first, then how to lead it.
+func (b Brief) Text() string { return b.Moving + "\n" + b.Stable }
 
 // How much of each section a brief holds: it starts an agent, it does not replace the page.
 const (
@@ -39,7 +40,9 @@ const (
 	briefMarks     = 10
 	briefTilasms   = 20
 	briefBlockText = 600
-	briefLineMax   = 300
+	// briefDescription is the most of a description a brief holds: a few lines.
+	briefDescription = 2000
+	briefLineMax     = 300
 )
 
 // ruleFiles are the files a project keeps its rules in for agents and contributors, read first.
@@ -50,6 +53,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"Djinn holds the plan of this wish: its tasks, questions, decisions and blocks. You lead it: you talk with the " +
 	"developer, split the work into tasks for workers, and keep the plan true. Djinn computes the plan; you change it " +
 	"with the `djinn` command, never in its data folder.\n\n" +
+	"- **Start from the brief.** Djinn computes where the wish stands from its plan: `djinn wish brief <wish>`, above. " +
+	"Run it when you start and whenever you lose track, then continue the wish from what it says. Another agent may " +
+	"have led the wish before you: its plan carries over, its session does not.\n" +
 	"- **Ask, do not guess.** A question for the developer goes through `djinn question ask`, with its options and " +
 	"your recommendation. An answered question is a decision; so is a block of kind decision. A task that follows " +
 	"from one names it: `--decision Q03`, or the block's id.\n" +
@@ -91,8 +97,10 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"skill, its watcher started. When the developer asks for the same kind of work again, propose one. " +
 	"`djinn skill list` shows the templates, or why one cannot be used.\n\n" +
 	"## Commands\n\n" +
-	"`<wish>` is the wish's identifier, given below.\n\n" +
+	"`<wish>` is the wish's identifier, given above.\n\n" +
 	"- `djinn wish brief <wish>`: this brief, up to date.\n" +
+	"- `djinn wish describe <wish> --text \"…\"`: the wish's description, a few lines: what it is for, its scope, " +
+	"where it goes. The developer edits it in the window too.\n" +
 	"- `djinn question ask \"<question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔒` (one " +
 	"emoji for the subject); " +
 	"`djinn question list --wish-id <wish> --open`.\n" +
@@ -127,22 +135,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 // BuildBrief writes the brief of a wish from what r holds. home is Djinn's data folder: like the projects' folders
 // and the home folder, it never shows. No secret: Djinn stores none, and a URL loses its credentials.
 func BuildBrief(ctx context.Context, r store.Reader, home, wishID string) (Brief, error) {
-	return LeadBrief(ctx, r, home, wishID, "")
-}
-
-// LeadBrief is the brief a new lead starts from: first, its first line, opens the part that moves. A request block
-// whose text that line already holds, the request a wish was made for, is left out of the latest blocks: the lead
-// reads it once.
-func LeadBrief(ctx context.Context, r store.Reader, home, wishID, first string) (Brief, error) {
 	exp, projects, err := collect(ctx, r, wishID)
 	if err != nil {
 		return Brief{}, err
-	}
-	if first != "" {
-		exp.Blocks = slices.DeleteFunc(exp.Blocks, func(b *planv1.Block) bool {
-			text := strings.TrimSpace(b.GetContent())
-			return b.GetKind() == routeKindBlock && text != "" && strings.Contains(first, text)
-		})
 	}
 	all, err := store.List[*planv1.Project](ctx, r, nil)
 	if err != nil {
@@ -152,11 +147,7 @@ func LeadBrief(ctx context.Context, r store.Reader, home, wishID, first string) 
 	rank := wish.GetRank()
 	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
 	exp = portable(exp, newScrubber(all, home, dataName))
-	moving := movingBrief(exp, rank, ready)
-	if first != "" {
-		moving = stripCredentials(first) + "\n\n" + moving
-	}
-	return Brief{Stable: stableBrief(projects), Moving: moving}, nil
+	return Brief{Stable: stableBrief(projects), Moving: movingBrief(exp, rank, ready)}, nil
 }
 
 // StableBrief is the part of a brief that changes rarely, for a wish on projects: Djinn's rules, then where each
@@ -213,13 +204,17 @@ func presentFiles(dir string, names []string) []string {
 	return out
 }
 
-// movingBrief is where the wish stands: its state, questions, decisions, tasks and latest blocks. Empty sections are
-// left out.
+// movingBrief is where the wish stands: its description, its azimas, what runs and waits, its tilasms, its open
+// questions, its latest decisions and blocks, then the last lead and when a lead last acted. Empty sections are left
+// out.
 func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	wish := exp.GetWish()
 	var b strings.Builder
 	fmt.Fprintf(&b, "# The wish: %s\n\n", oneLine(wish.GetTitle()))
-	fmt.Fprintf(&b, "- Identifier: `%s`, the `<wish>` of the commands above.\n", wish.GetId())
+	if desc := strings.TrimSpace(wish.GetDescription()); desc != "" {
+		b.WriteString(clipText(desc, briefDescription) + "\n\n")
+	}
+	fmt.Fprintf(&b, "- Identifier: `%s`, the `<wish>` of the commands below.\n", wish.GetId())
 	switch wish.GetState() {
 	case planv1.WishState_WISH_STATE_PAUSED:
 		b.WriteString("- Paused: `djinn wish activate <wish>` makes it active again.\n")
@@ -251,79 +246,6 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	}
 	if ready {
 		b.WriteString("- Djinn proposes to grant it: every task is finished and no question is open. Granting is the developer's word.\n")
-	}
-
-	var open, investigate []*planv1.Question
-	for _, q := range exp.GetQuestions() {
-		if Investigating(q) {
-			investigate = append(investigate, q)
-		} else if q.GetAnswer() == nil {
-			open = append(open, q)
-		}
-	}
-	if len(open) > 0 {
-		b.WriteString("\n## Open questions\n\n")
-		for _, q := range open {
-			fmt.Fprintf(&b, "- **%s** %s\n", q.GetCode(), clipLine(q.GetText()))
-			for i, o := range q.GetOptions() {
-				fmt.Fprintf(&b, "  - %c: %s\n", 'A'+i, clipLine(o))
-			}
-			if rec := q.GetRecommendation(); rec != "" {
-				fmt.Fprintf(&b, "  - Recommended: %s\n", clipLine(rec))
-			}
-			if n := q.GetRevision(); n > 0 {
-				fmt.Fprintf(&b, "  - Revised %d times\n", n)
-			}
-		}
-	}
-	if len(investigate) > 0 {
-		b.WriteString("\n## To investigate\n\n")
-		b.WriteString("The developer asked to find out more before deciding. Dig, then `djinn question revise <question> " +
-			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`).\n\n")
-		for _, q := range investigate {
-			last := q.GetRounds()[len(q.GetRounds())-1]
-			fmt.Fprintf(&b, "- **%s** %s (asked %s)", q.GetCode(), clipLine(q.GetText()), when(last.GetCreateTime().AsTime()))
-			if note := last.GetNote(); note != "" {
-				b.WriteString(": " + clipLine(note))
-			}
-			b.WriteString("\n")
-		}
-	}
-	if decided := render.Decisions(exp); len(decided) > 0 {
-		b.WriteString("\n## Latest decisions\n\n")
-		for _, d := range decided[:min(len(decided), briefDecisions)] {
-			b.WriteString("- " + d.Icon + " ")
-			if q := d.Question; q != nil {
-				fmt.Fprintf(&b, "**%s** %s → %s", q.GetCode(), clipLine(q.GetText()), choiceText(q))
-				if note := q.GetAnswer().GetNote(); note != "" {
-					b.WriteString(" (" + clipLine(note) + ")")
-				}
-			} else {
-				fmt.Fprintf(&b, "**%s** (block %s)", cmp.Or(clipLine(d.Block.GetTitle()), "(untitled)"), d.Block.GetId())
-			}
-			b.WriteString(", " + deciderText(d))
-			if len(d.Tasks) > 0 {
-				b.WriteString("; led to " + strings.Join(d.Tasks, ", "))
-			}
-			b.WriteString("\n")
-		}
-	}
-
-	if marks := marksOf(exp.GetQuestions(), exp.GetBlocks()); len(marks) > 0 {
-		slices.Reverse(marks)
-		b.WriteString("\n## Marked by the developer\n\n")
-		for _, m := range marks[:min(len(marks), briefMarks)] {
-			label := m.GetLabel()
-			if m.GetBlockId() != "" {
-				label = "block " + cmp.Or(m.GetTitle(), "(untitled)")
-				if kind := m.GetLabel(); kind != "" {
-					label += " (" + oneLine(kind) + ")"
-				}
-			} else if m.GetTitle() != "" {
-				label += " " + m.GetTitle()
-			}
-			fmt.Fprintf(&b, "- **%s** %s, %s\n", markWord(m.GetMark().GetKind()), label, when(m.GetMark().GetCreateTime().AsTime()))
-		}
 	}
 
 	codes := map[string]string{}
@@ -404,6 +326,79 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 
 	tilasmsBrief(&b, exp.GetTilasms())
 
+	var open, investigate []*planv1.Question
+	for _, q := range exp.GetQuestions() {
+		if Investigating(q) {
+			investigate = append(investigate, q)
+		} else if q.GetAnswer() == nil {
+			open = append(open, q)
+		}
+	}
+	if len(open) > 0 {
+		b.WriteString("\n## Open questions\n\n")
+		for _, q := range open {
+			fmt.Fprintf(&b, "- **%s** %s\n", q.GetCode(), clipLine(q.GetText()))
+			for i, o := range q.GetOptions() {
+				fmt.Fprintf(&b, "  - %c: %s\n", 'A'+i, clipLine(o))
+			}
+			if rec := q.GetRecommendation(); rec != "" {
+				fmt.Fprintf(&b, "  - Recommended: %s\n", clipLine(rec))
+			}
+			if n := q.GetRevision(); n > 0 {
+				fmt.Fprintf(&b, "  - Revised %d times\n", n)
+			}
+		}
+	}
+	if len(investigate) > 0 {
+		b.WriteString("\n## To investigate\n\n")
+		b.WriteString("The developer asked to find out more before deciding. Dig, then `djinn question revise <question> " +
+			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`).\n\n")
+		for _, q := range investigate {
+			last := q.GetRounds()[len(q.GetRounds())-1]
+			fmt.Fprintf(&b, "- **%s** %s (asked %s)", q.GetCode(), clipLine(q.GetText()), when(last.GetCreateTime().AsTime()))
+			if note := last.GetNote(); note != "" {
+				b.WriteString(": " + clipLine(note))
+			}
+			b.WriteString("\n")
+		}
+	}
+	if decided := render.Decisions(exp); len(decided) > 0 {
+		b.WriteString("\n## Latest decisions\n\n")
+		for _, d := range decided[:min(len(decided), briefDecisions)] {
+			b.WriteString("- " + d.Icon + " ")
+			if q := d.Question; q != nil {
+				fmt.Fprintf(&b, "**%s** %s → %s", q.GetCode(), clipLine(q.GetText()), choiceText(q))
+				if note := q.GetAnswer().GetNote(); note != "" {
+					b.WriteString(" (" + clipLine(note) + ")")
+				}
+			} else {
+				fmt.Fprintf(&b, "**%s** (block %s)", cmp.Or(clipLine(d.Block.GetTitle()), "(untitled)"), d.Block.GetId())
+			}
+			b.WriteString(", " + deciderText(d))
+			if len(d.Tasks) > 0 {
+				b.WriteString("; led to " + strings.Join(d.Tasks, ", "))
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	if marks := marksOf(exp.GetQuestions(), exp.GetBlocks()); len(marks) > 0 {
+		slices.Reverse(marks)
+		b.WriteString("\n## Marked by the developer\n\n")
+		for _, m := range marks[:min(len(marks), briefMarks)] {
+			label := m.GetLabel()
+			if m.GetBlockId() != "" {
+				label = "block " + cmp.Or(m.GetTitle(), "(untitled)")
+				if kind := m.GetLabel(); kind != "" {
+					label += " (" + oneLine(kind) + ")"
+				}
+			} else if m.GetTitle() != "" {
+				label += " " + m.GetTitle()
+			}
+			fmt.Fprintf(&b, "- **%s** %s, %s\n", markWord(m.GetMark().GetKind()), label, when(m.GetMark().GetCreateTime().AsTime()))
+		}
+	}
+
 	blocks := slices.Clone(exp.GetBlocks())
 	if len(blocks) > 0 {
 		slices.SortStableFunc(blocks, func(x, y *planv1.Block) int {
@@ -424,7 +419,73 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			b.WriteString(clipText(bl.GetContent(), briefBlockText) + "\n")
 		}
 	}
+	lastLeadBrief(&b, exp)
 	return stripCredentials(b.String())
+}
+
+// leadMethods are the commands a lead gives, as its rules list them, whatever its agent: the latest says when a lead
+// last acted. The developer's own commands (answers, marks, pauses) are not among them.
+var leadMethods = map[string]bool{
+	planv1connect.TaskServiceSpawnProcedure:      true,
+	planv1connect.TaskServiceContinueProcedure:   true,
+	planv1connect.TaskServiceDependProcedure:     true,
+	planv1connect.TaskServiceGroupProcedure:      true,
+	planv1connect.BlockServicePutProcedure:       true,
+	planv1connect.QuestionServiceAskProcedure:    true,
+	planv1connect.QuestionServiceReviseProcedure: true,
+	planv1connect.WishServiceRouteProcedure:      true,
+	planv1connect.PlanServiceSyncProcedure:       true,
+}
+
+// lastLeadBrief writes the wish's last recorded lead, its agent and its session, and when a lead last acted on the
+// wish through Djinn, from the journal: a lead of another agent knows whom it takes over from. Nothing when the wish
+// never had a lead.
+func lastLeadBrief(b *strings.Builder, exp *planv1.WishExport) {
+	lead := exp.GetWish().GetLead()
+	var recorded, acted *planv1.Command
+	for _, c := range exp.GetCommands() {
+		req, err := c.GetRequest().UnmarshalNew()
+		if err != nil {
+			continue
+		}
+		switch m := req.(type) {
+		case *planv1.WishServiceSetLeadRequest:
+			if lead.GetSessionId() != "" && m.GetSessionId() == lead.GetSessionId() {
+				recorded = c
+			}
+		case *planv1.BlockServicePutRequest:
+			if m.GetTaskId() == "" { // A worker's block names its task.
+				acted = c
+			}
+		default:
+			if leadMethods[c.GetMethod()] {
+				acted = c
+			}
+		}
+	}
+	if lead.GetSessionId() == "" && acted == nil {
+		return
+	}
+	b.WriteString("\n## The last lead\n\n")
+	if lead.GetSessionId() != "" {
+		fmt.Fprintf(b, "- %s, session `%s`", providerName(lead.GetProvider()), lead.GetSessionId())
+		if recorded != nil {
+			b.WriteString(", recorded " + when(recorded.GetAt().AsTime()))
+		}
+		b.WriteString(": `djinn wish resume` takes it back. A lead of another agent starts from this brief.\n")
+	} else {
+		b.WriteString("- No lead session recorded: Djinn records claude's; a codex lead needs `djinn wish set-lead`.\n")
+	}
+	if acted != nil {
+		fmt.Fprintf(b, "- A lead last acted %s: `djinn %s`.\n", when(acted.GetAt().AsTime()), commandWords(acted.GetMethod()))
+	}
+}
+
+// commandWords is a Connect procedure as the command line names it: /plan.v1.TaskService/Spawn is task spawn.
+func commandWords(procedure string) string {
+	service, method, _ := strings.Cut(strings.TrimPrefix(procedure, "/"), "/")
+	service = strings.TrimSuffix(service[strings.LastIndexByte(service, '.')+1:], "Service")
+	return strings.ToLower(service) + " " + strings.ToLower(method)
 }
 
 // azimasBrief writes the plan's azimas as a graph: the ready ones first, under way before open, then the blocked ones

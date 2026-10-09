@@ -25,6 +25,12 @@ export {
 } from "@/src/data/flight.ts";
 export { AzimaCard } from "@/src/azima.tsx";
 export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
+export {
+  LeadButton,
+  LeadMenu,
+  WishDescription,
+  recordedAgent,
+} from "@/src/wish-head.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
 export { memory, resourcesDetail } from "@/src/usage.tsx";
 export { TilasmList } from "@/src/tilasms.tsx";
@@ -1549,4 +1555,111 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
     ["T7", "T3", "T6", "T1"],
   );
   assert.equal(fp.moving.length + fp.waiting.length, 0);
+});
+
+test("Lead is split: the button resumes the recorded lead, the arrow lists this machine's agents", () => {
+  const agents = [
+    { id: "codex", name: "Codex", available: false, command: "codex" },
+    { id: "claude", name: "Claude", available: true, command: "/bin/claude" },
+    {
+      id: "antigravity",
+      name: "Antigravity",
+      available: true,
+      command: "/bin/agy",
+    },
+  ];
+  const recorded = s.recordedAgent({
+    provider: s.Provider.UNSPECIFIED,
+    sessionId: "s1",
+    directory: "/tmp/lamp",
+  });
+  assert.equal(recorded, s.Provider.CLAUDE);
+  assert.equal(
+    s.recordedAgent({ provider: s.Provider.CODEX, sessionId: "" }),
+    undefined,
+  );
+  const props = {
+    recorded,
+    agents,
+    loadAgents: async () => agents,
+    onLead() {},
+    onPick() {},
+  };
+
+  // Closed: Lead, then the arrow, which says it opens a menu.
+  const closed = s.renderToStaticMarkup(h(s.LeadButton, props));
+  assert.match(closed, /<span>Lead<\/span><\/button>/);
+  assert.match(
+    closed,
+    /aria-label="Choose the agent"[^>]*aria-haspopup="menu" aria-expanded="false"/,
+  );
+  assert.doesNotMatch(closed, /role="menu"/);
+
+  // Open: claude, codex, antigravity in that order; the recorded one marked, the missing one disabled with why.
+  const open = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, open: true }),
+  );
+  assert.match(open, /aria-expanded="true"/);
+  assert.match(
+    open,
+    /<div class="lead-menu" role="menu" aria-label="Choose the agent">/,
+  );
+  const order = ["Claude", "Codex", "Antigravity"].map((name) =>
+    open.indexOf(`<span class="lead-agent-name">${name}`),
+  );
+  assert.ok(
+    order[0] > 0 && order[0] < order[1] && order[1] < order[2],
+    order.join(),
+  );
+  assert.match(
+    open,
+    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude<svg[^]*?The wish&#x27;s lead: resumes its session/,
+  );
+  assert.match(
+    open,
+    /<button role="menuitem" class="lead-agent" disabled=""><span class="lead-agent-name">Codex<\/span><span class="lead-agent-detail">codex is not installed on this machine<\/span>/,
+  );
+  assert.match(
+    open,
+    /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Starts a new lead from the brief<\/span>/,
+  );
+  // The agents not yet known: the menu says it loads.
+  const loading = s.renderToStaticMarkup(
+    h(s.LeadMenu, { recorded, onPick() {} }),
+  );
+  assert.match(loading, /Loading…/);
+});
+
+test("the wish's description shows under its title, the title until one is written, and edits in place", () => {
+  const titled = s.renderToStaticMarkup(
+    h(s.WishDescription, {
+      title: "Ship the lamp",
+      description: "",
+      onSave() {},
+    }),
+  );
+  assert.match(
+    titled,
+    /<p class="wish-description" role="button" tabindex="0" title="Click to describe the wish[^"]*">Ship the lamp<\/p>/,
+  );
+  const described = s.renderToStaticMarkup(
+    h(s.WishDescription, {
+      title: "Ship the lamp",
+      description: "Light the house.\nNot the street.",
+      onSave() {},
+    }),
+  );
+  assert.match(described, />Light the house.\nNot the street.<\/p>/);
+  const editing = s.renderToStaticMarkup(
+    h(s.WishDescription, {
+      title: "Ship the lamp",
+      description: "Light the house.\nNot the street.",
+      editing: true,
+      onSave() {},
+    }),
+  );
+  assert.match(
+    editing,
+    /<textarea class="wish-description-edit" aria-label="Description" rows="2" autofocus="">Light the house.\nNot the street.<\/textarea>/,
+  );
 });

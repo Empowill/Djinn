@@ -95,13 +95,13 @@ message Settings {
 
 // An agent command line.
 message Provider {
-  // Identifier: codex or claude.
+  // Identifier: codex, claude or antigravity.
   string id = 1;
   // Name shown in the window.
   string name = 2;
   // The command is found on this machine.
   bool available = 3;
-  // The command, as resolved on the PATH when available.
+  // The command, as resolved on the PATH when available: claude, codex, agy.
   string command = 4;
 }
 

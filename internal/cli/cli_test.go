@@ -107,6 +107,11 @@ func TestConvention(t *testing.T) {
 		},
 		{name: "empty request", args: nil, want: &planv1.ProjectServiceListRequest{}},
 		{
+			name: "djinn wish describe <wish> --text",
+			args: []string{wishID, "--text", "Ship the API.\nIts scope: the store."},
+			want: &planv1.WishServiceDescribeRequest{WishId: wishID, Text: "Ship the API.\nIts scope: the store."},
+		},
+		{
 			name: "a string and a list of strings in one input, repeated",
 			args: []string{taskID, "--after", "W1,W2", "--also", "W6=W5,W3", "--also", "W7="},
 			want: &planv1.TaskServiceDependRequest{

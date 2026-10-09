@@ -282,7 +282,7 @@ func TestHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if env.Msg.GetVersion() != "test" || env.Msg.GetPlatform() == "" || len(env.Msg.GetProviders()) != 2 {
+	if env.Msg.GetVersion() != "test" || env.Msg.GetPlatform() == "" || len(env.Msg.GetProviders()) != 3 {
 		t.Fatalf("GetEnvironment = %v", env.Msg)
 	}
 }
@@ -411,5 +411,33 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	s.SetBuild(&uiv1.Build{Sha: "def"})
 	if res, err := update("def"); err != nil || res.GetInstalled() != "def" || res.GetVersion() != "v2" || restarts != 1 {
 		t.Errorf("a build that installed a newer Djinn: %v, %v, %d restarts", res, err, restarts)
+	}
+}
+
+// The agents a lead may run, found on the PATH: Antigravity is the program agy.
+func TestEnvironmentProviders(t *testing.T) {
+	bin := t.TempDir()
+	agy := filepath.Join(bin, "agy")
+	if runtime.GOOS == "windows" {
+		agy += ".exe"
+	}
+	if err := os.WriteFile(agy, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	s, _ := newService(t)
+	env, err := s.GetEnvironment(context.Background(), connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]*uiv1.Provider{}
+	for _, p := range env.Msg.GetProviders() {
+		got[p.GetId()] = p
+	}
+	if p := got["antigravity"]; p.GetName() != "Antigravity" || !p.GetAvailable() || p.GetCommand() != agy {
+		t.Errorf("antigravity = %v, want available at %s", p, agy)
+	}
+	if p := got["claude"]; p.GetAvailable() || p.GetCommand() != "claude" {
+		t.Errorf("claude = %v, want missing from this PATH", p)
 	}
 }

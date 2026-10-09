@@ -72,9 +72,9 @@ func TestBrief(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := brief.Text()
-	// The stable part first: Djinn's rules, then the projects' own; then the wish.
-	order := []string{"# Leading a wish in Djinn", "## Commands", "## The projects' rules", "# The wish: Ship the API",
-		"## Open questions", "## Latest decisions", "## Running", "## Waiting", "## Latest blocks"}
+	// The wish first, where it stands; then how to lead it: Djinn's rules, then the projects' own.
+	order := []string{"# The wish: Ship the API", "## Running", "## Waiting", "## Open questions", "## Latest decisions",
+		"## Latest blocks", "# Leading a wish in Djinn", "## Commands", "## The projects' rules"}
 	last := -1
 	for _, s := range order {
 		i := strings.Index(text, s)
@@ -83,8 +83,8 @@ func TestBrief(t *testing.T) {
 		}
 		last = i
 	}
-	if !strings.HasPrefix(text, brief.Stable) || strings.Contains(brief.Stable, "# The wish") {
-		t.Errorf("the stable part does not lead, or holds the wish:\n%s", text)
+	if !strings.HasPrefix(text, brief.Moving) || !strings.HasSuffix(text, brief.Stable) || strings.Contains(brief.Stable, "# The wish") {
+		t.Errorf("the wish does not lead, or the rules hold it:\n%s", text)
 	}
 	for _, want := range []string{
 		"Read `AGENTS.md`, `contributing.md` at its root first", "**notes**, outside Git", "**api**, a Git repository",
@@ -135,45 +135,8 @@ func TestBrief(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(res.Msg.GetText(), brief.Stable) || !strings.Contains(res.Msg.GetText(), "# The wish: Ship the API") {
+	if !strings.HasPrefix(res.Msg.GetText(), "# The wish: Ship the API") || !strings.HasSuffix(res.Msg.GetText(), brief.Stable) {
 		t.Errorf("djinn wish brief = %q", res.Msg.GetText())
-	}
-}
-
-// A wish made for a request: its new lead reads the request once, on its first line, not again in the latest blocks.
-// A request filed later, and the other blocks, stay.
-func TestLeadBriefOnce(t *testing.T) {
-	ctx := t.Context()
-	c, wish, _ := source(t)
-	request := "babysit https://gitlab.com/acme/shop/-/merge_requests/41"
-	for _, b := range []*planv1.BlockServicePutRequest{
-		{WishId: wish.GetId(), Kind: routeKindBlock, Title: "Request from “Ship the API”", Content: request + "\n"},
-		{WishId: wish.GetId(), Kind: routeKindBlock, Title: "Request from “Ship the docs”", Content: "and the docs of !41"},
-		{WishId: wish.GetId(), Kind: "report", Title: "The same words", Content: request},
-	} {
-		if _, err := c.blocks.Put(ctx, connect.NewRequest(b)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	first := FirstLine("Ship the API", request)
-	brief, err := LeadBrief(ctx, c.store, "", wish.GetId(), first)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(brief.Moving, first+"\n\n# The wish: Ship the API") {
-		t.Errorf("the request does not open the brief:\n%s", brief.Moving)
-	}
-	if n := strings.Count(brief.Moving, request); n != 2 || strings.Contains(brief.Moving, "Request from “Ship the API”") ||
-		!strings.Contains(brief.Moving, "Request from “Ship the docs”") || !strings.Contains(brief.Moving, "### The same words") {
-		t.Errorf("the request shows %d times, or a block went missing:\n%s", n, brief.Moving)
-	}
-	// djinn wish brief, later, still holds the request in its blocks.
-	plain, err := BuildBrief(ctx, c.store, "", wish.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plain.Moving, "Request from “Ship the API”") || plain.Stable != brief.Stable {
-		t.Errorf("the plain brief lost the request:\n%s", plain.Moving)
 	}
 }
 
@@ -242,16 +205,15 @@ func TestResumeFromBrief(t *testing.T) {
 		return res.Msg
 	}
 
-	// Claude: the stable part from its file, the moving part as the first message, a session chosen and recorded.
+	// Claude: the same first message as every agent, to run djinn wish brief; a session chosen and recorded.
 	id := make("Ship the API")
 	res := resume(id, planv1.Provider_PROVIDER_UNSPECIFIED)
 	lead := res.GetWish().GetLead()
-	rules := filepath.Join(home, PagesDir, id, LeadRulesFile)
-	moving, err := os.ReadFile(filepath.Join(home, PagesDir, id, LeadBriefFile))
-	if err != nil {
-		t.Fatal(err)
+	first, err := os.ReadFile(filepath.Join(home, PagesDir, id, LeadFirstFile))
+	if err != nil || string(first) != StartLine(id) || !strings.Contains(string(first), "djinn wish brief "+id) {
+		t.Fatalf("first message %q, %v", first, err)
 	}
-	want := "claude --session-id " + lead.GetSessionId() + " --append-system-prompt-file '" + rules + "' '" + string(moving) + "'"
+	want := "claude --session-id " + lead.GetSessionId() + " '" + StartLine(id) + "'"
 	if len(leads.opened) != 1 || leads.opened[0] != want+" in "+folder {
 		t.Fatalf("opened %q\nwant %q", leads.opened, want+" in "+folder)
 	}
@@ -259,15 +221,11 @@ func TestResumeFromBrief(t *testing.T) {
 		!strings.Contains(res.GetNote(), "new lead") || res.GetAttached() {
 		t.Errorf("resume = %v", res)
 	}
-	stable, err := os.ReadFile(rules)
-	if err != nil || !strings.HasPrefix(string(stable), "# Leading a wish in Djinn") || !strings.HasPrefix(string(moving), "# The wish: Ship the API") {
-		t.Errorf("brief files: %q / %q (%v)", stable, moving, err)
-	}
-	// The shell gives the agent the brief as written: the quotes hold.
+	// The shell gives the agent the message as written: the quotes hold.
 	if sh, err := exec.LookPath("sh"); err == nil {
-		q, _ := quoteArg("linux", string(moving)+"it's $HOME `x`")
+		q, _ := quoteArg("linux", StartLine(id)+"it's $HOME `x`")
 		out, err := exec.Command(sh, "-c", "printf %s "+q).Output()
-		if err != nil || string(out) != string(moving)+"it's $HOME `x`" {
+		if err != nil || string(out) != StartLine(id)+"it's $HOME `x`" {
 			t.Errorf("through sh: %q, %v", out, err)
 		}
 	}
@@ -281,15 +239,14 @@ func TestResumeFromBrief(t *testing.T) {
 		t.Errorf("resume after exit = %v, opened %q", res, leads.opened)
 	}
 
-	// Codex and Antigravity take the whole brief as their first message; Djinn cannot know their session.
-	for p, prefix := range map[planv1.Provider]string{
-		planv1.Provider_PROVIDER_CODEX: "codex '# Leading a wish", planv1.Provider_PROVIDER_ANTIGRAVITY: "agy -i '# Leading a wish",
+	// Codex and Antigravity get the same first message; Djinn cannot know their session.
+	for p, program := range map[planv1.Provider]string{
+		planv1.Provider_PROVIDER_CODEX: "codex ", planv1.Provider_PROVIDER_ANTIGRAVITY: "agy -i ",
 	} {
 		id := make("Lead with " + p.String())
 		res := resume(id, p)
 		got := leads.opened[len(leads.opened)-1]
-		if !strings.HasPrefix(got, prefix) || !strings.Contains(got, "# The wish: Lead with") || res.GetWish().GetLead() != nil ||
-			res.GetNote() == "" {
+		if got != program+"'"+StartLine(id)+"' in "+folder || res.GetWish().GetLead() != nil || res.GetNote() == "" {
 			t.Errorf("%s: opened %q, resume %v", p, got, res)
 		}
 	}
@@ -301,35 +258,41 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 }
 
-func TestBriefLine(t *testing.T) {
-	brief := Brief{Stable: "# Rules\n", Moving: "# The wish: 100% done\n"}
+func TestLeadLine(t *testing.T) {
 	data := `C:\Users\Ann Lee\AppData\Roaming\djinn\wishes\w1`
-	rules, moving := data+`\`+LeadRulesFile, data+`\`+LeadBriefFile
+	file := data + `\` + LeadFirstFile
 	claude := &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: "s1"}
+	start := StartLine("w1")
 
-	// cmd.exe carries no line break: the first message names the brief's file, and the folder is allowed.
-	line, err := briefLine("windows", claude, data, brief)
-	if err != nil {
-		t.Fatal(err)
+	// Every agent gets the same message, as one argument.
+	for p, want := range map[planv1.Provider]string{
+		planv1.Provider_PROVIDER_CLAUDE: `claude --session-id s1 "` + start + `"`,
+		planv1.Provider_PROVIDER_CODEX:  `codex "` + start + `"`, planv1.Provider_PROVIDER_ANTIGRAVITY: `agy -i "` + start + `"`,
+	} {
+		lead := &planv1.Lead{Provider: p, SessionId: claude.GetSessionId()}
+		if line, err := leadLine("windows", lead, data, start); err != nil || line != want {
+			t.Errorf("%s: %q, %v; want %q", p, line, err, want)
+		}
 	}
-	want := `claude --session-id s1 --append-system-prompt-file "` + rules + `" --add-dir "` + data + `" "Read ` + moving +
-		`: where the wish stands now, written by Djinn. Then lead it."`
-	if line != want {
+	// cmd.exe carries no line break: a routed request first, the message names its file, and the folder is allowed.
+	routed := "The developer's request: babysit !41\n\n" + start
+	line, err := leadLine("windows", claude, data, routed)
+	want := `claude --session-id s1 --add-dir "` + data + `" "Read ` + file + `, written by Djinn, and do what it says."`
+	if err != nil || line != want {
 		t.Errorf("windows line\n%s\nwant\n%s", line, want)
 	}
-	codex, err := briefLine("windows", &planv1.Lead{Provider: planv1.Provider_PROVIDER_CODEX}, data, brief)
-	if err != nil || !strings.HasPrefix(codex, `codex "Read `+rules+", then "+moving) {
+	codex, err := leadLine("windows", &planv1.Lead{Provider: planv1.Provider_PROVIDER_CODEX}, data, routed)
+	if err != nil || !strings.HasPrefix(codex, `codex "Read `+file) {
 		t.Errorf("windows codex line %q, %v", codex, err)
 	}
 	// A data folder cmd.exe cannot quote is refused, with why.
-	if _, err := briefLine("windows", claude, `C:\100%`, brief); code(err) != connect.CodeFailedPrecondition {
+	if _, err := leadLine("windows", claude, `C:\100%`, routed); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("a %% in the data folder: %v", err)
 	}
-	// A brief too long for one argument is read from its file, on every system.
-	long := Brief{Stable: "# Rules\n", Moving: strings.Repeat("x", maxBriefArg+1)}
-	if line, err := briefLine("linux", claude, "/d", long); err != nil ||
-		!strings.HasSuffix(line, "--add-dir '/d' 'Read /d/lead-brief.md: where the wish stands now, written by Djinn. Then lead it.'") {
-		t.Errorf("a long brief: %q, %v", line, err)
+	// A message too long for one argument is read from its file, on every system.
+	if line, err := leadLine("linux", claude, "/d", strings.Repeat("x", maxFirstArg+1)); err != nil ||
+		!strings.HasSuffix(line, "--add-dir '/d' 'Read /d/lead-first.md, written by Djinn, and do what it says.'") {
+		t.Errorf("a long message: %q, %v", line, err)
 	}
 	if q, ok := quoteArg("darwin", "it's"); !ok || q != `'it'\''s'` {
 		t.Errorf("quote = %q", q)
@@ -465,5 +428,112 @@ func TestBriefWorkStands(t *testing.T) {
 		if !strings.Contains(brief.Moving, want) {
 			t.Errorf("the brief lacks\n%s\nin\n%s", want, brief.Moving)
 		}
+	}
+}
+
+// TestDescribe: a wish's description is a few lines in place of what it had; the title stands for an empty one, so
+// writing the title, or nothing, takes it back there.
+func TestDescribe(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	id := c.wish(t)
+	describe := func(text string) (*planv1.Wish, error) {
+		res, err := c.wishes.Describe(ctx, connect.NewRequest(&planv1.WishServiceDescribeRequest{WishId: id, Text: text}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetWish(), nil
+	}
+	text := "Ship the API to the shop.\nScope: the store, not the web."
+	if wish, err := describe("  " + text + "\n"); err != nil || wish.GetDescription() != text {
+		t.Fatalf("describe = %v, %v", wish, err)
+	}
+	listed, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
+	if err != nil || listed.Msg.GetWishes()[0].GetDescription() != text {
+		t.Errorf("listed = %v, %v", listed, err)
+	}
+	title := listed.Msg.GetWishes()[0].GetTitle()
+	for _, back := range []string{title, " ", ""} {
+		if wish, err := describe(back); err != nil || wish.GetDescription() != "" {
+			t.Errorf("describe(%q) = %v, %v; want the title back", back, wish, err)
+		}
+	}
+	if _, err := c.wishes.Describe(ctx, connect.NewRequest(&planv1.WishServiceDescribeRequest{
+		WishId: store.NewID(), Text: text,
+	})); code(err) != connect.CodeNotFound {
+		t.Errorf("describe an unknown wish: %v", err)
+	}
+}
+
+// TestBriefOrder: djinn wish brief says where the wish stands on its own, in this order: the description, the azimas,
+// what runs and waits, the open questions, the latest decisions and blocks, the last lead and when a lead last
+// acted; then how to lead it.
+func TestBriefOrder(t *testing.T) {
+	ctx := t.Context()
+	c, wish, _ := source(t)
+	id := wish.GetId()
+	description := "Ship the API to the shop.\nScope: the store, not the web."
+	if _, err := c.wishes.Describe(ctx, connect.NewRequest(&planv1.WishServiceDescribeRequest{WishId: id, Text: description})); err != nil {
+		t.Fatal(err)
+	}
+	azima := &planv1.Task{Id: store.NewID(), WishId: id, Code: "T01", Title: "The store", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now()}
+	part := &planv1.Task{Id: store.NewID(), WishId: id, Code: "W2", Title: "Back the store up", PartOf: azima.GetId(),
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now()}
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, task := range []*planv1.Task{azima, part} {
+			if err := tx.Journal("test", "test/put", task); err != nil {
+				return err
+			}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
+		WishId: id, Kind: "report", Title: "Where the store stands", Content: "Written, not backed up.",
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := brief.Text()
+	last := -1
+	for _, s := range []string{"# The wish: Ship the API\n\n" + description + "\n\n- Identifier:", "## Azimas", "**T01** The store: ready",
+		"## Running", "**W1** Write the store", "## Waiting", "**W2** Back the store up (part of T01)", "## Open questions",
+		"## Latest decisions", "## Latest blocks", "### Where the store stands (report)", "## The last lead",
+		"- claude, session `" + session + "`, recorded ", "- A lead last acted ", "`djinn block put`",
+		"# Leading a wish in Djinn", "**Start from the brief.**", "`djinn wish describe <wish> --text", "## The projects' rules"} {
+		i := strings.Index(text, s)
+		if i <= last {
+			t.Fatalf("%q at %d, after %d: the brief is out of order\n%s", s, i, last, text)
+		}
+		last = i
+	}
+	// A worker's block is not the lead acting.
+	tasks, err := store.List[*planv1.Task](ctx, c.store, store.Where{"wish_id": id, "code": "W1"})
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("W1: %v, %v", tasks, err)
+	}
+	if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
+		WishId: id, Kind: "report", Title: "From W1", Content: "Done.", TaskId: tasks[0].GetId(),
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := BuildBrief(ctx, c.store, t.TempDir(), id); err != nil || !strings.Contains(again.Moving, "`djinn block put`.\n") {
+		t.Errorf("the lead's last act moved with a worker's block (%v):\n%s", err, again.Moving)
+	}
+	// A wish that never had a lead says nothing of one.
+	if bare, err := BuildBrief(ctx, c.store, "", c.wish(t)); err != nil || strings.Contains(bare.Moving, "## The last lead") {
+		t.Errorf("a wish without a lead (%v):\n%s", err, bare.Moving)
 	}
 }
