@@ -43,8 +43,10 @@ import { useData, useTaskEvents } from "./data/djinn";
 import {
   taskFinished,
   taskStatusText,
+  taskTime,
   taskTone,
   usd,
+  useNow,
   when,
 } from "./data/format";
 import { DecisionLink } from "./decision-log";
@@ -143,6 +145,9 @@ export function WishTask({
         .map((id) => codes?.get(id))
         .filter((code): code is string => !!code);
   const tone = taskTone(task, forkedAs);
+  // How long it runs comes first: ticking while it runs, how long it ran once ended.
+  const now = useNow(!taskFinished(task.status) && !!task.startTime);
+  const time = taskTime(task, now);
   return (
     <article
       className={`wish-task tone-${tone} ${open ? "open" : ""} ${focused ? "focused" : ""}`}
@@ -156,10 +161,18 @@ export function WishTask({
         >
           <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
           <span className="agent-code">{task.code}</span>
-          <strong>{task.title}</strong>
+          {project?.name && (
+            <span className="task-project">{project.name}</span>
+          )}
+          {/* Cut to the room left: the whole title shows on hover. */}
+          <strong title={task.title}>{task.title}</strong>
           <span className="wish-task-meta">
             {origin}
-            {project?.name && <span>{project.name}</span>}
+            {time.text && (
+              <span className="task-time" title={time.title}>
+                {time.text}
+              </span>
+            )}
             <TaskUsage usage={task.usage} />
             {task.status === TaskStatus.RUNNING && task.resources?.readTime && (
               <span

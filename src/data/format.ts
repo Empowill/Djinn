@@ -16,6 +16,8 @@ import {
   type Wish,
   WishState,
 } from "../../gen/ts/plan/v1/plan_pb";
+import { useEffect, useState } from "react";
+
 import { type TextKey, language, t } from "../i18n";
 
 // A djinn grants three wishes at a time, never more. The lamp refuses a fourth; the page only says so beforehand.
@@ -35,6 +37,46 @@ export function when(ts?: Timestamp): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// span says a length of time as a counter, two units at most: 45s, 1m1s, 1h1m, 3d4h.
+export function span(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (s < 60) return t("time.s", { s });
+  if (m < 60) return t("time.ms", { m, s: s % 60 });
+  if (h < 24) return t("time.hm", { h, m: m % 60 });
+  return t("time.dh", { d: Math.floor(h / 24), h: h % 24 });
+}
+
+// taskTime is how long a task runs, from its start until now, or how long it ran once ended; "" before it starts.
+// Its title says when it started, and when it ended.
+export function taskTime(
+  task: Task,
+  now: number,
+): { text: string; title: string } {
+  const start = date(task.startTime);
+  if (!start) return { text: "", title: "" };
+  const end = taskFinished(task.status) ? date(task.endTime) : undefined;
+  if (taskFinished(task.status) && !end) return { text: "", title: "" };
+  const text = span((end?.getTime() ?? now) - start.getTime());
+  const title = end
+    ? t("task.ran", { from: when(task.startTime), to: when(task.endTime) })
+    : t("task.running_since", { when: when(task.startTime) });
+  return { text, title };
+}
+
+// useNow is the time now, read again every period while on: a duration shown stays current.
+export function useNow(on: boolean, period = 1_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!on) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), period);
+    return () => clearInterval(id);
+  }, [on, period]);
+  return now;
 }
 
 // A wish stored before states is active.

@@ -123,6 +123,16 @@
   color: var(--muted);
   font: var(--font-size-body) var(--mono);
 }
+/* The project, just before the task's title, in the grey of the facts after it. */
+.task-project {
+  flex-shrink: 0;
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+/* How long it runs: a counter that does not jiggle as it ticks. */
+.task-time {
+  font-variant-numeric: tabular-nums;
+}
 .wish-task-note {
   margin: 0;
   padding: 0 14px 11px 34px;

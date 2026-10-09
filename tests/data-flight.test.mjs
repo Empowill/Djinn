@@ -9,7 +9,7 @@ const f = await bundle(
   "flight",
   `export * from "@/src/data/flight.ts";
 export * from "@/src/data/journal.ts";
-export { deletedText, taskStatusText, taskTone } from "@/src/data/format.ts";
+export { deletedText, span, taskStatusText, taskTime, taskTone } from "@/src/data/format.ts";
 export { create } from "@bufbuild/protobuf";
 export { anyPack } from "@bufbuild/protobuf/wkt";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -373,10 +373,45 @@ test("a wish deleted says which worktrees stay, and why", () => {
   assert.equal(f.deletedText("Oil", []), "“Oil” deleted.");
   assert.equal(
     f.deletedText("Oil", [
-      { taskCode: "W2", branch: "w2-work", base: "main", commits: 2, changed: true, error: "" },
-      { taskCode: "W3", branch: "w3-work", base: "main", commits: 0, changed: false, error: "git worktree: locked" },
+      {
+        taskCode: "W2",
+        branch: "w2-work",
+        base: "main",
+        commits: 2,
+        changed: true,
+        error: "",
+      },
+      {
+        taskCode: "W3",
+        branch: "w3-work",
+        base: "main",
+        commits: 0,
+        changed: false,
+        error: "git worktree: locked",
+      },
     ]),
     "“Oil” deleted. W2 keeps its worktree, on w2-work: 2 commits beyond main, changes not committed. " +
       "W3 keeps its worktree, on w3-work: git worktree: locked.",
   );
+});
+
+test("a task says how long it runs as a counter, two units at most", () => {
+  assert.equal(f.span(45_000), "45s");
+  assert.equal(f.span(61_000), "1m1s");
+  assert.equal(f.span(3_660_000), "1h1m");
+  assert.equal(f.span((27 * 3600 + 5 * 60) * 1000), "1d3h");
+  const S = f.TaskStatus;
+  // Running: from its start until now; ended: how long it ran; not started: nothing.
+  const now = 1_000_000 * 1000;
+  assert.equal(
+    f.taskTime({ status: S.RUNNING, startTime: at(1_000_000 - 3_661) }, now)
+      .text,
+    "1h1m",
+  );
+  assert.equal(
+    f.taskTime({ status: S.DONE, startTime: at(100), endTime: at(161) }, now)
+      .text,
+    "1m1s",
+  );
+  assert.equal(f.taskTime({ status: S.PENDING }, now).text, "");
 });
