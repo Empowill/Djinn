@@ -71,6 +71,16 @@ lead spends its tokens on mechanical work.
   "where a task's work stands", the screens tests "the Tasks tab says where each task's work stands" and "the update
   banner proposes to install a build committed", TestABuildIsProposed, TestUpdateInstallsABuild)
 
+- [x] Each project says what Djinn checks (W141): `setup`, the command that makes a fresh integration worktree ready,
+  run once and again when its lock files change; `checks`, each with its gate and when it runs, before a commit (red,
+  a correction worker) or before a push (red, the push held and said, a question if it stays red); the former `test`
+  a check at commit. The brief and each worker's first prompt say them; `djinn project show` and the project view
+  show them with their last runs. Djinn's own: `npm ci`, lint at commit, test at push. (TestSetupOncePerWorktree,
+  TestARedCommitCheck, TestPushChecksHoldThePush, TestPushWithoutTheChecks, TestReadSettings, TestResolveSettings,
+  TestProjectShow, TestChecksBrief, TestDjinnsOwnSettings, TestBrief, the screens tests "the project view lists the
+  setup and the checks, when each runs, and how each last ran" and "the wish's head says a push its checks hold, why
+  on hover")
+
 ## Merged by hand into feat/wails-go
 
 Until Djinn integrates by itself, the lead merges finished branches. W129 (10/10/2026) brought four branches onto

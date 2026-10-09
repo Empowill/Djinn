@@ -19,12 +19,15 @@ model: "opus"
 max_budget_usd: 3
 branch: "djinn/{code}-{slug}-{uuid8}"
 
-# Djinn integrates their finished work by itself: go tool task gen makes gen/** and docs/openapi.json, go tool task
-# test tests the project, go tool task install installs the build pushed, once you say so.
+# Djinn integrates their finished work by itself: npm ci makes a fresh worktree ready, go tool task gen makes gen/**
+# and docs/openapi.json, the lint runs before each commit and the tests before each push, go tool task install
+# installs the build pushed, once you say so.
 generated: "gen/**"
 generated: "docs/openapi.json"
 generate: "go tool task gen"
-test: "go tool task test"
+setup: "npm ci"
+checks { name: "lint" command: "go tool task lint" when: CHECK_WHEN_COMMIT }
+checks { name: "test" command: "go tool task test" when: CHECK_WHEN_PUSH }
 install: "go tool task install"
 ```
 
@@ -36,7 +39,9 @@ install: "go tool task install"
 | `branch`         | The branch of a worker's worktree, a template: see [below](#branch-names). | `{code}-{slug}-{uuid8}` |
 | `generated`      | The files code generation makes, as globs (`gen/**`), repeated: see [integration](#integration). | none |
 | `generate`       | The command that makes them, in the project's folder.                   | none                       |
-| `test`           | The command that tests the project, in the project's folder. Set, Djinn integrates finished work. | none: no integration |
+| `setup`          | The command that makes a fresh worktree ready (`npm ci`), in the project's folder: see [checks](#checks). | none |
+| `checks`         | The commands Djinn runs before it commits a task's work, before it pushes, or both, each through a gate of its name: see [checks](#checks). Set, Djinn integrates finished work. A file that sets some sets them all. | none: no integration |
+| `test`           | The former name of a check run before each commit: `test: "make test"` is the check `test` at `commit`. | none |
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
 | `install`        | The command that installs the integration branch once pushed, in the project's folder: the window proposes it. | none: nothing proposed |
 
@@ -115,6 +120,10 @@ settings:
   - name: branch
     value: djinn/{code}-{slug}-{uuid8}
     source: repository
+  - name: checks
+    value: 'lint: go tool task lint (commit); test: go tool task test (push)'
+    source: repository
+  …
 repository_file: /home/me/src/app/.agents/settings.txtpb
 developer_file: /home/me/.config/djinn/projects/01a1…/settings.txtpb
 ```
@@ -134,10 +143,46 @@ it holds one (`api_key`, `token`, `password`…), where a word starts like a wel
 `AKIA`…), or where a long run of letters and digits looks like one. The error gives the line, never the value. A
 worker's keys stay where its agent keeps them.
 
+## Checks
+
+What Djinn runs on a project's work before it goes further: each check has a name, a command and when it runs,
+`CHECK_WHEN_COMMIT` (before a task's work is committed into its wish's integration branch), `CHECK_WHEN_PUSH` (before
+Djinn pushes that branch), or both. Each runs in the wish's integration worktree, never your checkout, through the gate
+of its name (`djinn gate run lint`), in the order the file names them.
+
+```
+# Djinn: the lint before each commit, the whole test suite before each push.
+setup: "npm ci"
+checks { name: "lint" command: "go tool task lint" when: CHECK_WHEN_COMMIT }
+checks { name: "test" command: "go tool task test" when: CHECK_WHEN_PUSH }
+
+# A project whose test suite takes too long to run before each push: the lint at both, its tests left to CI.
+checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }
+```
+
+- **Commit checks** run on the merge of each task's work: red, the merge fails as a conflict does, and a correction
+  worker starts (below).
+- **Push checks** run on the branch's tip when a push is due. A check that passed as a commit check on that very commit
+  does not run again. Red, the push is **held**: the tasks' events and the wish's head say why. Djinn checks again at
+  the next push due; still red then, or at once when no work of the wish is left to commit in the project, it asks you:
+  check again (once you have fixed it), push without the push checks this once, or leave it until the next push due.
+- **The setup** makes the integration worktree ready before the first command there (a check, `generate`, `install`):
+  once, then again when the setup command or a lock file changes (`package-lock.json`, `go.sum`, `yarn.lock`,
+  `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`, `uv.lock` and the like, anywhere in the project), and in a worktree
+  made anew. Failed, the merge is red.
+- **The workers know them.** The lead's brief lists each project's checks and when they run; each worker that edits a
+  worktree gets them at the end of its first prompt, to run the commit checks (`djinn gate run lint -- go tool task
+  lint`) before it ends.
+- `djinn project show <project>` and the project's view in the window list the setup and the checks, each with its
+  last run: the commit it checked, when, how long, and why it failed.
+
+A check's name is letters, digits, `-` and `_`; two checks never share a name, case ignored. `test: "make test"`, the
+former single test command, still works: it is the check `test` at `commit`, unless the file names a check `test`.
+
 ## Integration
 
-A worker's work counts once it is in its wish's branch, tested. In a project whose settings name a `test` command,
-Djinn brings it there by itself, no model ([T30](../plan/43303f46-integration.md)):
+A worker's work counts once it is in its wish's branch, checked. In a project whose settings name a check, Djinn
+brings it there by itself, no model ([T30](../plan/43303f46-integration.md)):
 
 1. When a worker ends done, its task's work is **pending** (`djinn task get` shows `integration`).
 2. Djinn commits each task's work **at once, alone**, in the order the tasks ended: its dependents build on it
@@ -146,18 +191,20 @@ Djinn brings it there by itself, no model ([T30](../plan/43303f46-integration.md
    id>`), detached at the integration branch's tip, never in your checkout: it commits what the worker left in its
    worktree on the task's branch (its title as the message; workers never commit), then merges the branch with
    `--no-ff`. A conflict only in `generated` files takes the task's side and runs
-   `generate` under the gate `gen`. Then `test` runs under the gate `test`.
+   `generate` under the gate `gen`. Then the `setup` runs if the worktree needs it, and each commit check under the
+   gate of its name.
 4. **Green**: the integration branch moves to the result, Git checking it is still where the merge started; the task
    is **committed**, with the commit, and the journal records it. Its worktree is then removed, as `djinn task clean`
    does, its branch kept; a worktree that holds changes not committed stays, and its events say so. Your checkout of
    the branch, clean, follows by a fast-forward. With changes not committed, it is left as it is, and so is the
    branch: moved under it, your next commit would undo the work. The task stays pending, saying why, and the branch
    moves once your changes are committed or put aside, without testing again.
-5. **Red**, or a **conflict** in code: the branch stays as it was, and the task says what failed. The tasks that end
+5. **Red** (a commit check, or the setup), or a **conflict** in code: the branch stays as it was, and the task says
+   what failed. The tasks that end
    after it are committed on their own meanwhile.
 6. **A correction worker** starts by itself: a work task part of the same azima as the failed task, of its provider,
    its worktree on the failed merge (the branch, and that merge again, its conflicts left in place; or the work merged,
-   for red tests), what failed in its first prompt: the files in conflict, or the test command and
+   for a red check), what failed in its first prompt: the files in conflict, or the check's command and
    the end of its output. It does not commit: Djinn commits what it leaves, which concludes the merge, and its branch
    integrates like any task's, at once and alone. Green, the failed tasks are committed with it, saying
    `corrected by W5`. A correction whose work fails in turn, or whose worker fails, counts as an attempt.
@@ -169,7 +216,7 @@ Djinn brings it there by itself, no model ([T30](../plan/43303f46-integration.md
 A task that waits for another (`--after W5`) waits for W5's work to be **committed**, not only done: it says `waits for
 W5 to be committed`, and W5 is committed at once, alone. Its worktree then starts from the integration branch's tip,
 whatever branch your checkout is on, so it builds on W5's work; its start event says `from feat/x at 1a2b3c4d`. Work
-Djinn does not integrate (a project that names no `test`) counts once done, as before.
+Djinn does not integrate (a project that names no check) counts once done, as before.
 
 Where each task's work stands shows in `djinn task get` (`integration`: its state, the commit, what failed, the task
 that corrects it), the lead's brief, the wish's page and the Tasks tab: done, waiting to be committed, being
@@ -182,6 +229,8 @@ push` to every worker. Djinn checks it each time a task's merge ends, and a push
 
 - when an azima ends: every part of it has finished, and its last part is committed;
 - or once three tasks are committed since the last push and more than an hour has passed since it.
+
+The [push checks](#checks) run first, on the branch's tip: red, they hold the push.
 
 The remote is the branch's upstream, else `origin`, else the repository's only remote; a repository without a remote
 pushes nothing. Djinn runs `git push` in your checkout's repository, with your own credentials (your SSH agent, your
