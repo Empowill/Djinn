@@ -3,6 +3,7 @@ id: 01a1223a-ae45-728f-8c37-c005eee91edb
 code: T29
 phase: 2
 status: open
+after: T01 T08
 ---
 
 # T29 · Tilasms: what explains a wish, kept, linked, opened anywhere

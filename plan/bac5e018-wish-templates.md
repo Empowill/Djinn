@@ -3,6 +3,7 @@ id: 01a12054-f8df-7dd1-a750-427abac5e018
 code: T27
 phase: 2
 status: in-progress
+after: T26
 ---
 
 # T27 · Wish templates, drawn from skills

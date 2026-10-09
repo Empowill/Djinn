@@ -3,6 +3,7 @@ id: 01a12054-f8e9-7235-8f47-c54dd6fb2417
 code: T28
 phase: 3
 status: in-progress
+after: T26 T27
 ---
 
 # T28 · An inbox: what comes from outside becomes a proposed wish
