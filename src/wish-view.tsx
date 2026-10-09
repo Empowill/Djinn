@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Clock3,
   Download,
-  FileText,
   GitBranch,
   Hourglass,
   Pause,
@@ -254,21 +253,6 @@ export function WishView({
           >
             <Terminal size={14} />
             <span>{t("wish.resume")}</span>
-          </button>
-          <button
-            className="button secondary small"
-            title={t("wish.page_detail")}
-            onClick={() =>
-              quiet(
-                (async () => {
-                  const res = await clients.wishes.render({ wishId: wish.id });
-                  onToast(t("wish.page_written", { file: res.file }));
-                })().catch((error) => onToast(message(error))),
-              )
-            }
-          >
-            <FileText size={14} />
-            <span>{t("wish.page")}</span>
           </button>
           <button
             className="button secondary small"

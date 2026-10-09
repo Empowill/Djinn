@@ -175,9 +175,30 @@ button {
   width: 100%;
   height: 100%;
 }
-.brand-dot {
-  color: var(--accent);
-  margin-left: -7px;
+/* The word beside the lamp (src/wordmark.tsx): its letters take the text's colour, its dots are smoke, its period
+   brass. Its height holds the j's descender and the rising puffs. */
+.wordmark {
+  height: 1.16em;
+  width: auto;
+  margin-top: -0.12em;
+}
+.wordmark-puff {
+  fill: #968aff;
+}
+.wordmark-puff.high {
+  fill: #c4baff;
+}
+.wordmark-period {
+  fill: #f0be64;
+}
+html[data-theme="light"] .wordmark-puff {
+  fill: #7b6cf0;
+}
+html[data-theme="light"] .wordmark-puff.high {
+  fill: #a094f5;
+}
+html[data-theme="light"] .wordmark-period {
+  fill: #c98a2e;
 }
 .brand.small .brand-mark {
   width: 24px;
@@ -1430,7 +1451,7 @@ button {
   .sidebar-brand > button .brand {
     font-size: 0;
   }
-  .sidebar-brand > button .brand-dot,
+  .sidebar-brand > button .wordmark,
   .version-tag,
   .sidebar .new-mission > span,
   .sidebar .new-mission kbd,

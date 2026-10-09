@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useRef } from "react";
 
 import icon from "../build/icon.svg";
 import { t } from "./i18n";
+import { Wordmark } from "./wordmark";
 
 // The mark is the app's icon, the one drawing the dock and the window show (build/icon.svg).
 export function Brand({ small = false }: { small?: boolean }) {
@@ -13,11 +14,7 @@ export function Brand({ small = false }: { small?: boolean }) {
       <span className="brand-mark">
         <img src={icon} alt="" />
       </span>
-      {!small && (
-        <>
-          djinn<span className="brand-dot">.</span>
-        </>
-      )}
+      {!small && <Wordmark />}
     </span>
   );
 }
