@@ -24,7 +24,11 @@ export {
   movingTasks,
 } from "@/src/data/flight.ts";
 export { AzimaCard } from "@/src/azima.tsx";
-export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
+export {
+  FolderField,
+  ProjectChecks,
+  ShortcutField,
+} from "@/src/wish-dialogs.tsx";
 export {
   LastPushes,
   LeadButton,
@@ -1827,4 +1831,85 @@ test("the wish's head says where Djinn last pushed its integration branch, and a
     /<b>api<\/b><span class="wish-push-refused" title="its branch has commits that this one does not">The remote refused the last push: Djinn asks you<\/span>/,
   );
   assert.doesNotMatch(two, /web/);
+});
+
+test("the wish's head says a push its checks hold, why on hover", () => {
+  const html = s.renderToStaticMarkup(
+    h(s.LastPushes, {
+      pushes: [
+        {
+          projectId: "p1",
+          refused: "",
+          held: "at 1a2b3c4d, test: go tool task test exited 1",
+        },
+      ],
+      projects: [{ id: "p1", name: "app" }],
+    }),
+  );
+  assert.match(
+    html,
+    /<span class="wish-push-refused" title="at 1a2b3c4d, test: go tool task test exited 1">The push is held: its checks are red<\/span>/,
+  );
+});
+
+test("the project view lists the setup and the checks, when each runs, and how each last ran", () => {
+  const none = s.renderToStaticMarkup(
+    h(s.ProjectChecks, { setup: "", checks: [], runs: [] }),
+  );
+  assert.match(none, /No check: Djinn does not integrate this project/);
+  const html = s.renderToStaticMarkup(
+    h(s.ProjectChecks, {
+      setup: "npm ci",
+      checks: [
+        {
+          name: "lint",
+          command: "go tool task lint",
+          when: [s.CheckWhen.COMMIT, s.CheckWhen.PUSH],
+        },
+        {
+          name: "test",
+          command: "go tool task test",
+          when: [s.CheckWhen.PUSH],
+        },
+      ],
+      runs: [
+        {
+          name: "setup",
+          setup: true,
+          passed: true,
+          sha: "0123456789abcdef",
+          durationMs: 61_000n,
+          reason: "",
+          output: "",
+          endTime: { seconds: 1791640800n, nanos: 0 },
+        },
+        {
+          name: "LINT",
+          setup: false,
+          passed: false,
+          sha: "fedcba9876543210",
+          durationMs: 2_000n,
+          reason: "go tool task lint exited 1:\nmain.go:1: unused",
+          output: "main.go:1: unused",
+          endTime: { seconds: 1791640800n, nanos: 0 },
+        },
+      ],
+    }),
+  );
+  assert.ok(
+    html.indexOf("npm ci") < html.indexOf("go tool task lint") &&
+      html.indexOf("go tool task lint") < html.indexOf("go tool task test"),
+  );
+  assert.match(
+    html,
+    /<strong>setup<\/strong><p><code>npm ci<\/code><\/p><p class="muted-text">Passed on 01234567, [^<]+, in 1m1s\.<\/p><\/div><span><span class="badge muted">makes a worktree ready<\/span>/,
+  );
+  assert.match(
+    html,
+    /<p class="login-message" title="main.go:1: unused">Failed on fedcba98, [^<]+: go tool task lint exited 1<\/p><\/div><span><span class="badge muted">before a commit<\/span><span class="badge muted">before a push<\/span>/,
+  );
+  assert.match(
+    html,
+    /<strong>test<\/strong><p><code>go tool task test<\/code><\/p><p class="muted-text">Not run yet\.<\/p>/,
+  );
 });
