@@ -28,8 +28,10 @@ opens a wish that already knows how to work. How a project declares one: [`docs/
   (`harness.OnWatched`); a line that is `done_when`, or starts with it before a sign, asks `Question.grant`: A grants
   the wish in the answer's transaction (journaled as `djinn wish grant`), B keeps it open. Asked once while open.
   A watcher that restarts its command ends, done, on its done line.
-- **Djinn ships one**: `.agents/skills/babysit-pr/` for GitHub, its `watch.sh` on `gh pr checks` and
-  `gh pr view --json`, printing only on change, exiting on the merge. Djinn's `.agents/permissions.txtpb` lists it.
+- **Djinn ships two**: `.agents/skills/babysit-pr/` for GitHub, its `watch.sh` on `gh pr checks` and
+  `gh pr view --json`; `.agents/skills/babysit-mr/` for GitLab, its `watch.sh` on `glab mr view --comments` and
+  `glab ci get` (glab 1.100 or later, for `--jq`). Both print only on change, exit on the merge, and only read.
+  Djinn's `.agents/permissions.txtpb` lists both.
 
 ## Done when
 
@@ -46,6 +48,10 @@ opens a wish that already knows how to work. How a project declares one: [`docs/
   (`e2e/wish-template.spec.ts`)
 - [x] `babysit-pr` for GitHub, and the docs of a GitLab one. (`.agents/skills/babysit-pr/`, run by hand on a public
   pull request open then merged: a summary, then `MERGED` and exit 0; `docs/wish-templates.md`)
+- [x] `babysit-mr` for GitLab: its template matches a merge request's link or `!12`, not a pull request; its watcher,
+  under Djinn's permissions, prints each change of the pipeline's jobs, merge status and comments, `MERGED` on the
+  merge and exits, and only reads. (`TestBabysitMRReadsOnly`, a fake `glab` on the `PATH`; `docs/wish-templates.md`)
+- [ ] `babysit-mr` run by hand on a real merge request open then merged. (needs: a person and a GitLab project)
 - [x] The brief's rules tell a lead to spawn a watcher (`--provider watch`, `--restart`) instead of polling, and to
   propose a template (`metadata.djinn.wish`) for a request that comes back. (`TestBrief`, `briefRules`;
   `docs/agent-protocol.md`)

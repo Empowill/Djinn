@@ -168,7 +168,8 @@ To use Djinn, see the [README](README.md). To work on it:
   model: open a new one whose lead starts on it in its own terminal, file it in an existing wish, or keep it here
   ([T26](plan/e1210c5e-request-routing.md)). A request that matches a skill's wish template (`metadata.djinn.wish` in its
   `SKILL.md`) makes that skill's wish, its watcher started and its lead on the skill: `.agents/skills/babysit-pr` for a
-  GitHub pull request ([`docs/wish-templates.md`](docs/wish-templates.md)).
+  GitHub pull request, `.agents/skills/babysit-mr` for a GitLab merge request
+  ([`docs/wish-templates.md`](docs/wish-templates.md)).
 - `djinn wish brief <wish-id>`: the brief a new lead starts from, when `djinn wish resume` finds no session.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
   --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)
