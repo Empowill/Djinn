@@ -78,7 +78,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [x] [T14 · Spend big models only where they matter](plan/8ce817da-cost.md)
 - [ ] [T16 · Dispatch: plain Go code or a local model?](plan/263f074f-dispatch-bench.md) (in progress)
 - [ ] [T09 · Quality of life and clean-up](plan/3792046b-quality-of-life.md) (in progress)
-- [ ] [T19 · Releases: binaries for every target](plan/71f9c331-releases.md)
+- [ ] [T19 · Releases: binaries for every target](plan/71f9c331-releases.md) (in progress)
 - [x] [T20 · Backups, on a server of your choice](plan/9b71f059-backup.md)
 - [ ] [T23 · Summon a skill from another project](plan/a5c284be-summon-skills.md) (in progress)
 - [ ] [T24 · A wish online: sync now, collaborate later](plan/7dc376e9-wish-online.md) (in progress)

@@ -2,7 +2,7 @@
 id: 01a118aa-6f2a-7cba-a7ed-f16071f9c331
 code: T19
 phase: 3
-status: open
+status: in-progress
 ---
 
 # T19 · Releases: binaries for every target
@@ -32,7 +32,7 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
 | -- | ---- | ----- | ------ |
 | Linux | amd64, arm64 | CGO, `-tags gtk3` (WebKitGTK 4.1) | yes, with the runtime libraries |
 | Linux | amd64, arm64 | CGO, GTK4 (WebKitGTK 6.0) | yes, on recent systems; the only one left after Wails 3.1 |
-| macOS | universal (arm64 + amd64) | CGO, signed and notarized | yes |
+| macOS | universal (arm64 + amd64) | CGO, signed and notarized; bare, and as `Djinn.app` | yes |
 | Windows | amd64, arm64 | no CGO, cross-compiled from Linux | yes |
 | Linux | amd64, arm64 | no CGO (`_browser`) | no: the browser, for a Linux without WebKitGTK |
 | any | any | `go install`, no CGO | Windows only; the browser elsewhere |
@@ -52,6 +52,18 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
   Linux (with the runtime libraries), macOS and Windows. (needs: a published release, a person on each system)
 - [ ] An update from inside the app replaces the binary in place (T12). (needs: a published release; the release
   check of T12 is built and tested against a fake release)
+- [ ] macOS gets `Djinn.app`, a bundle with an identifier: Finder, Launchpad, the Dock's icon and the system
+  notifications need it.
+  - [x] `tools/macapp` lays out the bundle around the universal binary and zips it, portable, tested on Linux.
+    (`go tool task test-pkg -- ./tools/macapp/...`: `TestBundleLayout`, `TestBundleVersion`,
+    `TestBundleNamesDifferBeyondCase`, `TestBundleRefusesWhatIsMissing`, `TestZipApp`, `TestLauncherStartsDjinnUp`;
+    `go tool task release-macos-app VERSION=v0.0.0-dryrun BINARY=<a GOOS=darwin build>` on Linux wrote
+    `bin/release/djinn_darwin_universal_app.zip`, 12 entries, `djinn` and `djinn-app` 0755)
+  - [x] The release workflow builds it next to the bare archive, checks it and ships it with the sums.
+    (`release.yml`, job `macos`; `actionlint` v1.7.12 passes; never run)
+  - [ ] The dry run passes on GitHub: the bundle is well formed and opens. (needs: the lead to put `release.yml` on
+    the default branch, then `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`)
+  - [ ] Opened on a Mac from Finder: the window, the icon in the Dock and Launchpad, a notification. (needs: a Mac)
 
 ## Decided along the way
 - **The CI is GitHub Actions.** `.github/workflows/ci.yml`, on every pull request and every push to `main`: `go tool
@@ -70,7 +82,8 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
   one, then `go install`; it says how to get the window. A release without it (an older one) still ends on `go
   install`. Tested in `tools/releasepack/install_test.go`.
 - **Asset names carry no version**: `djinn_<os>_<arch>[_gtk4|_browser].tar.gz`, `djinn_windows_<arch>.zip`,
-  `djinn_darwin_universal.tar.gz`, each with a top folder holding `djinn` and the notices. So
+  `djinn_darwin_universal.tar.gz`, each with a top folder holding `djinn` and the notices; and
+  `djinn_darwin_universal_app.zip`, which holds `Djinn.app` alone (see below). So
   `releases/latest/download/<name>` always works, with no API call. The version is the tag, and `djinn version`
   prints it (`-X main.version`).
 - **Linux GTK 3 builds on Ubuntu 22.04**, the oldest supported: the binary needs glibc 2.34 or later. **GTK 4 builds on
@@ -79,6 +92,45 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
 - **macOS ships unsigned for now.** The steps to sign and notarize are written, commented, in the workflow and in
   `release-build-macos`, with the secrets they need. A binary downloaded by `curl` gets no quarantine flag, so
   `install.sh` works unsigned; a browser download is blocked until allowed in System Settings.
+- **macOS gets Djinn.app too**, beside the bare binary, which `install.sh` and the command line keep using. One
+  universal bundle serves arm64 and amd64 Macs, around the very binary of `djinn_darwin_universal.tar.gz`.
+  `tools/macapp` lays it out and zips it; `go tool task release-macos-app VERSION=… [BINARY=…]` runs it anywhere, and
+  `release-build-macos` calls it. The bundle:
+  - `Contents/Info.plist`: `CFBundleIdentifier` `io.github.empowill.djinn` (it follows the module path; changing it
+    once released makes macOS ask for the notifications again), the version from the tag as three numbers
+    (`v1.2.3-rc.1` → `1.2.3`), `LSMinimumSystemVersion` 12.0 like the build, the icon's name.
+  - `Contents/Resources/djinn.icns`: `build/icon.icns`, which `tools/icons` makes from the logo, as `go-winres` makes
+    the `.exe` icon from `build/icon.ico`. The notices sit beside it.
+  - `Contents/MacOS/djinn-app`, the bundle's executable, is a small shell launcher; `djinn` sits beside it. Finder
+    starts an app with no arguments, and `djinn` alone prints its help: the launcher runs `djinn up`. An app started
+    by macOS gets a bare `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), without the agents' commands: the launcher goes
+    through the user's login shell (bash, zsh, ksh or sh; zsh otherwise), which gives the `PATH` of a terminal. Each
+    step `exec`s, so the process macOS started is `djinn up`, and the bundle around it gives it its identifier. The
+    launcher is not named `Djinn`: APFS ignores case by default, and `Djinn` and `djinn` would be one file.
+  - The zip holds `Djinn.app` at its root, with the executable bits: Finder unzips it into the app, ready to drag
+    into Applications. Once signed, the bundle must be zipped by `ditto` (its signature lives partly in extended
+    attributes); the commands are written, commented, in `release-macos-app` and the workflow.
+  - The workflow unzips it with `ditto`, lints `Info.plist` (`plutil`), reads its keys (`PlistBuddy`), checks that
+    the bundle's `djinn` is the archive's and prints the tag, then opens it with `open` and asks Launch Services for
+    `io.github.empowill.djinn` (this last step does not block a release until it has passed once).
+  - **A dry run without a release**: `release.yml` also runs on `workflow_dispatch`, with a `version` input
+    (`v0.0.0-dryrun` by default). Only the macOS job runs: it builds the interface (a branch has no `dist/`), the
+    archive and the bundle, checks them, and keeps them as the run's artifact; nothing is published. GitHub offers it
+    once `release.yml` with its `workflow_dispatch` is on the default branch:
+    `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`, then `gh run watch` and
+    `gh run download <run-id> -n darwin-universal`.
+  - **Still to do around it**: an update from inside the app (T12) swaps `Contents/MacOS/djinn` for the archive's
+    binary, as for the bare one; `Info.plist` keeps the older version, and a signed bundle's seal breaks. `install.sh`
+    could put `Djinn.app` in `~/Applications` (no sudo, and `curl` sets no quarantine flag).
+- **What Gatekeeper still lacks**, for the bare binary and `Djinn.app` alike: a Developer ID Application signature
+  with the hardened runtime and a timestamp, then notarization by Apple, and the ticket stapled to the app. Until
+  then, an app downloaded by a browser carries the quarantine flag: macOS 15 refuses to open it, with no Control-click
+  way round; the user allows it in System Settings › Privacy & Security › "Open Anyway", or runs
+  `xattr -dr com.apple.quarantine Djinn.app`. Opened from Downloads while quarantined, macOS runs it from a
+  read-only copy elsewhere (App Translocation), where an update cannot write: move it to Applications first. Apple
+  silicon runs only signed code: the Go linker signs the arm64 half ad hoc, which is enough without quarantine. Wails
+  says its macOS notifications need a bundled and signed app: whether the ad hoc signature suffices is to see on a
+  Mac. A maintainer holds the Apple account and its secrets (open question below).
 - **Actions are pinned by commit**, with their version in a comment. `actionlint` (with `shellcheck`) checks the
   workflows: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`.
 - **Sizes**, built locally at `-s -w`: Linux amd64 gtk3 36.8 MB (archive 12.9 MB), Windows amd64 37.3 MB (13.1 MB),
