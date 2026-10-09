@@ -59,11 +59,11 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 - [ ] [T01 · The native window: Wails, the embedded interface, dev and browser modes](plan/fe63ed30-native-window.md) (in progress)
 - [x] [T02 · Protos, API and command line: everything generated, a CLI by convention](plan/c30479be-api-and-cli.md)
-- [ ] [T03 · Keep the interface working: the `window.djinn` shim](plan/aef418cb-interface-shim.md) (in progress)
+- [x] [T03 · Keep the interface working: the `window.djinn` shim](plan/aef418cb-interface-shim.md)
 - [ ] [T04 · Getting started: install in one line, or ask your agent](plan/929d6a88-getting-started.md) (in progress)
 - [x] [T05 · Testing: unit tests in seconds, `task e2e` an agent can run](plan/b6a680bf-testing.md)
 - [ ] [T06 · End-to-end tests on the native window](plan/b81b5d99-native-e2e.md) (in progress)
-- [ ] [T10 · English everywhere](plan/4527d734-english-everywhere.md) (in progress)
+- [x] [T10 · English everywhere](plan/4527d734-english-everywhere.md)
 - [ ] [T11 · Windows](plan/a586b68b-windows.md)
 - [ ] [T12 · Updates from inside the app](plan/1aa20487-auto-update.md) (in progress)
 
@@ -75,7 +75,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [ ] [T21 · The lead's terminal, inside the app, by voice](plan/17ed4dcd-lead-terminal.md) (in progress)
 - [ ] [T22 · Workers that start fast, with the right context, and are measured](plan/1689571a-fast-workers.md) (in progress)
 - [x] [T08 · Data: what we store, and why](plan/716b9f97-data.md)
-- [ ] [T13 · Sessions across projects](plan/58ae4a59-cross-project-sessions.md) (in progress)
+- [x] [T13 · Sessions across projects](plan/58ae4a59-cross-project-sessions.md)
 - [ ] [T26 · Every request finds its wish: routing](plan/e1210c5e-request-routing.md) (in progress)
 - [ ] [T27 · Wish templates, drawn from skills](plan/bac5e018-wish-templates.md) (in progress)
 - [ ] [T29 · Tilasms: what explains a wish, kept, linked, opened anywhere](plan/eee91edb-tilasms.md)
@@ -90,7 +90,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [x] [T20 · Backups, on a server of your choice](plan/9b71f059-backup.md)
 - [ ] [T23 · Summon a skill from another project](plan/a5c284be-summon-skills.md) (in progress)
 - [ ] [T24 · A wish online: sync now, collaborate later](plan/7dc376e9-wish-online.md) (in progress)
-- [ ] [T25 · Review and decide at a glance](plan/4a699d0f-review-at-a-glance.md) (in progress)
+- [x] [T25 · Review and decide at a glance](plan/4a699d0f-review-at-a-glance.md)
 - [ ] [T28 · An inbox: what comes from outside becomes a proposed wish](plan/d6fb2417-inbox.md) (in progress)
 
 **After v1**

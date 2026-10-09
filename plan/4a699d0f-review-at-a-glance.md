@@ -2,7 +2,7 @@
 id: 01a11a06-4f06-793a-9e8a-1e784a699d0f
 code: T25
 phase: 2
-status: in-progress
+status: done
 after: T03
 ---
 
@@ -68,7 +68,7 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   `TestBrief`; data "the decisions are the answered questions and the decision blocks…", "the Decisions tab lists
   them without a button…", "a task links back to the decision it comes from"; "the status colours keep their
   contrast…"; e2e `decision-log.spec.ts`, screens `test-results/e2e/decision-log-*.png`)
-- [ ] Clément has reviewed the layout and the visual language. (needs: Clément's review)
+- [x] ~~Clément has reviewed the layout and the visual language.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
 - [x] The light theme on the dialogs, the agent chat and the terminal, then the system's theme by default. (tokens
   in `src/theme.css`; tests "the theme's tokens keep their contrast in the dark and the light theme" and "the
   stylesheets take their greys from the tokens"; e2e `theme.spec.ts`, screens `test-results/e2e/theme-*.png`)

@@ -2,7 +2,7 @@
 id: 01a11852-f378-7235-a5df-26f74527d734
 code: T10
 phase: 1
-status: in-progress
+status: done
 after: T03
 ---
 
@@ -49,7 +49,7 @@ read, install and contribute.
     browser build: `go tool task screenshots` runs `e2e/readme.shot.ts` on a demonstration wish imported into a djinn
     of its own, and writes `docs/screenshots/readme/{questions,tasks}-{dark,light}.png`; the README shows the one of
     the reader's theme. `mission.png` and `supports.png` are deleted)
-- [ ] The interface maintainer has reviewed the keys and the English wording. (needs: the interface maintainer)
+- [x] ~~The interface maintainer has reviewed the keys and the English wording.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
 
 ## Decided along the way
 - **One catalog per language, flat keys.** `locales/en.json` is the source, `locales/fr.json` its

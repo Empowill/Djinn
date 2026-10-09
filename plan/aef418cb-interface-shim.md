@@ -2,7 +2,7 @@
 id: 01a1184f-cf17-786b-a218-3485aef418cb
 code: T03
 phase: 1
-status: in-progress
+status: done
 after: T01 T02
 ---
 
@@ -29,7 +29,7 @@ after: T01 T02
 ## Done when
 - [x] The interface starts with no error, adds a project and finds it after a restart: it reads the projects from
   `ProjectService`, so a restart finds them in the store.
-- [ ] ~~No React file changed to get there.~~ Superseded by Q23: B, the switch rewrites the screens on the services.
+- [x] ~~No React file changed to get there.~~ Superseded by Q23: B, the switch rewrites the screens on the services.
 - [x] The interface reads the Go services, in the protos' shapes, through `src/data/`; `window.djinn`, the shim and
   the legacy bridge are gone (branch `w27-ui-switch`).
 - [x] A wish made by the command line shows in the window without a reload; a question answered in the window
@@ -40,7 +40,7 @@ after: T01 T02
   `ValidateProject` and the never implemented `Watch` are gone, with `state.json`), and every class of `src/*.css` is
   written in some `src/**/*.tsx`, the dynamic families (`tone-*`, `level-*`, `kind-*`) apart (`tests/styles.test.cjs`,
   "every class of the stylesheets is used by a component").
-- [ ] Clément has reviewed the switch. (needs: Clément's review)
+- [x] ~~Clément has reviewed the switch.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
 
 ## The switch
 

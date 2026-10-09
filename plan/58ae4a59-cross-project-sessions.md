@@ -2,7 +2,7 @@
 id: 01a11876-6480-7ec2-9833-abd058ae4a59
 code: T13
 phase: 2
-status: in-progress
+status: done
 after: T07
 ---
 
@@ -101,7 +101,7 @@ projects it touches, and a project is not necessarily a Git repository.
   the window's terminal; the flight plan shows the window's. Switching back finds the same lead, its output kept.
   (`TestServiceList`, `tests/data-terminal.test.mjs`, e2e `lead-switch.spec.ts`: two wishes with a lead each and one
   without, switched from the side panel)
-- [ ] Clément has reviewed the flight plan of several wishes: it changes `src/`. (needs: Clément's review)
+- [x] ~~Clément has reviewed the flight plan of several wishes: it changes `src/`.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
 - [x] Adding a project in the native window, "Choose a folder…" opens the system's folder dialog and fills the field;
   in the browser the button is hidden and the path is typed. (`UiService.ChooseDirectory` on the Wails dialog:
   `TestChooseDirectory`, `TestChooseDirectoryWithoutADialog`, `TestChooseDirectoryOneAtATime` in `internal/ui`; the
