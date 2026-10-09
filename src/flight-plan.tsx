@@ -194,9 +194,7 @@ export function FlightPlan({
                     const total = detail?.tasks.length ?? 0;
                     const failed =
                       detail?.tasks.filter(
-                        (x) =>
-                          x.status === TaskStatus.FAILED ||
-                          x.status === TaskStatus.INTERRUPTED,
+                        (x) => x.status === TaskStatus.FAILED,
                       ).length ?? 0;
                     return (
                       <button

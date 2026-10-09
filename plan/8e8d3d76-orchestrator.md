@@ -115,6 +115,11 @@ status: in-progress
   resumes. The window, the page and the brief show these tasks by status ("Resuming", "Waiting for the limit",
   "Resumed as W47"), never in what waits for the person. A task resumed as a fork no longer keeps its wish from being
   proposed for granting (`plan.Ready`): its fork does.
+- **A task cut short never asks the person to start it again.** Djinn resumes every task it can by itself, so one
+  left cut short (resumed as a fork, imported from another machine, its worktree gone) is history: among the finished
+  tasks in the window, the page and the brief, never in what waits for the person, and it keeps no wish from being
+  proposed for granting. What waits for the person is a question, an approval or a command to run, never a worker to
+  restart. (`TestReady`, `TestBar`, `TestBriefFinished`, `tests/data-flight.test.mjs`, `e2e/review.spec.ts`)
 - **The journal** gets the user's commands as received (`spawn`, `stop`, `clean`), and the harness's own changes
   under the actors `harness` and `worker` with the names `harness/start`, `harness/event`, `harness/end` and
   `harness/recover`: an event is journaled as the event itself.

@@ -115,7 +115,7 @@ func TestRichPage(t *testing.T) {
 		"Which Markdown library?", "<strong>MIT</strong>", "A: maintained.", "<span>goldmark</span>",
 		"May W2 edit the folder?", "To be answered with a yes.",
 		// What waits for the user.
-		"W2 waits for your answer to Q03 before it may edit.", "W3 was cut short when Djinn stopped",
+		"W2 waits for your answer to Q03 before it may edit.",
 		"Project web is not on this machine yet",
 		// Tasks: status, agent, time, cost, last word; the failed one in clear.
 		"Running", "claude · opus", "started 2026-10-08 14:00", "5m", "$1.50", "Tests pass: 12 of 12.", "exit code 2", "Failed",
@@ -438,15 +438,14 @@ func between(s, start, end string) string {
 }
 
 // TestBar: while something waits for the user, a bar holds it, the most urgent first: each blocking question a line,
-// the others too while they are few, the tasks cut short in one line. A task that waits on an open question is in the
-// bar by its question.
+// the others too while they are few. A task that waits on an open question is in the bar by its question. A task cut
+// short is not the user's move: Djinn resumes every one it can by itself, so the bar never asks to start one again.
 func TestBar(t *testing.T) {
 	html := page(t, Input{Export: rich(t), Unattached: []string{"web"}, Language: "en"})
 	bar := between(html, `<aside class="bar"`, "</aside>")
 	want := []string{
 		`<a class="line bad" href="#q-Q03"><span class="st bad"><i aria-hidden="true">!</i>Blocking</span><span class="what">Q03 · May W2 edit the folder? · Blocks W2</span></a>`,
 		`<a class="line wait" href="#q-Q01"><span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span><span class="what">Q01 · Which Markdown library?</span></a>`,
-		`<a class="line wait" href="#actions"><span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span><span class="what">Cut short when Djinn stopped: W3. Start again, or let go.</span></a>`,
 		`<a class="line wait" href="#actions"><span class="st wait"><i aria-hidden="true">?</i>Waiting for you</span><span class="what">Project web is not on this machine</span></a>`,
 	}
 	last := -1
@@ -466,7 +465,7 @@ func TestBar(t *testing.T) {
 		t.Error("the bar comes before the page")
 	}
 
-	// Many questions and tasks cut short: the bar keeps to a few lines.
+	// Many questions and tasks cut short: the bar keeps to a few lines, and asks nothing about the tasks.
 	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Many"}}
 	for i := range barQuestions + 1 {
 		exp.Questions = append(exp.Questions, &planv1.Question{Id: fmt.Sprint(i), Code: fmt.Sprintf("Q%02d", i), Text: "Which?"})
@@ -477,14 +476,13 @@ func TestBar(t *testing.T) {
 	bar = between(page(t, Input{Export: exp, Language: "en"}), `<aside class="bar"`, "</aside>")
 	for _, s := range []string{
 		`<span class="what">3 questions wait for your answer: Q00, Q01, Q02</span>`,
-		`<span class="what">Cut short when Djinn stopped: W0, W1, W2. Start again, or let go.</span>`,
 	} {
 		if !strings.Contains(bar, s) {
 			t.Errorf("the bar lacks %q:\n%s", s, bar)
 		}
 	}
-	if n := strings.Count(bar, `<a class="line`); n != 2 {
-		t.Errorf("the bar holds %d lines, want 2", n)
+	if n := strings.Count(bar, `<a class="line`); n != 1 {
+		t.Errorf("the bar holds %d lines, want 1:\n%s", n, bar)
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
-	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -77,9 +76,8 @@ func Ranked(all []*planv1.Wish) []*planv1.Wish {
 }
 
 // Ready tells whether Djinn proposes to grant a wish that has these tasks and questions: it has tasks, every one
-// finished (done, or stopped by the user), and no question is open. A task waiting for an answer, failed,
-// interrupted, resuming, planned or running keeps it from being ready; an interrupted task resumed as a fork does
-// not, its fork does. Djinn only proposes: the user grants.
+// finished (done, stopped by the user, or cut short for good), and no question is open. A task waiting for an
+// answer, failed, resuming, planned or running keeps it from being ready. Djinn only proposes: the user grants.
 func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
 	if len(tasks) == 0 {
 		return false
@@ -88,9 +86,8 @@ func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
 		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
-			if render.ForkedAs(t, tasks) == "" {
-				return false
-			}
+			// Cut short for good: Djinn resumes by itself every task it can (RESUMING), so one left interrupted
+			// (resumed as a fork, imported from another machine, its worktree gone) is history, not work to wait for.
 		default:
 			return false
 		}

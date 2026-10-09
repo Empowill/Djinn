@@ -54,7 +54,7 @@ test("a task marked done leaves what moves and tops the finished tasks", async (
       wish: { id: wishId, title, create_time: "2026-10-07T21:00:00Z" },
       tasks: [
         task("W1", "Merged long ago", "DONE", "2026-10-07T21:05:00Z"),
-        task("W2", "Cut short by a restart", "INTERRUPTED"),
+        task("W2", "Failed on a flaky test", "FAILED"),
         task("W3", "Still planned", "PENDING"),
       ],
     }),
@@ -70,9 +70,9 @@ test("a task marked done leaves what moves and tops the finished tasks", async (
     const finished = page.locator(".tasks-finished");
     await expect(moving.locator("h2")).toHaveText("Moving or waiting2");
     await expect(finished.locator("h2")).toHaveText("Finished1");
-    // Cut short before planned; the finished task at the bottom.
+    // Failed before planned; the finished task at the bottom.
     await expect(moving.locator(".wish-task").first()).toContainText(
-      "Cut short by a restart",
+      "Failed on a flaky test",
     );
     await expect(moving.locator(".wish-task").nth(1)).toContainText(
       "Still planned",
@@ -82,7 +82,7 @@ test("a task marked done leaves what moves and tops the finished tasks", async (
     ]);
 
     const card = moving.locator(".wish-task").filter({
-      hasText: "Cut short by a restart",
+      hasText: "Failed on a flaky test",
     });
     await card.getByRole("button", { name: "Mark done" }).click();
     await card
@@ -95,7 +95,7 @@ test("a task marked done leaves what moves and tops the finished tasks", async (
     await expect(finished.locator("h2")).toHaveText("Finished2");
     await expect(card).toHaveCount(0);
     const first = finished.locator(".wish-task").first();
-    await expect(first).toContainText("Cut short by a restart");
+    await expect(first).toContainText("Failed on a flaky test");
     await expect(first.locator(".wish-task-closed")).toContainText(
       /Closed by you, .+: merged in Git/,
     );

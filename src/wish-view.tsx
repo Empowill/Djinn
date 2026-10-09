@@ -599,7 +599,7 @@ export function WishOrigin({ wish }: { wish: Wish }) {
   );
 }
 
-// WaitingTasks are the workers that wait for the user: for an answer before they edit, or cut short by a stop.
+// WaitingTasks are the workers that wait for the user: for an answer before they edit.
 export function WaitingTasks({
   waiting,
   origin = false,
@@ -621,11 +621,9 @@ export function WaitingTasks({
           <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
           {origin && <WishOrigin wish={wish} />}
           <span>
-            {item.status === TaskStatus.INTERRUPTED
-              ? t("page.action_interrupted", { task: item.code })
-              : question
-                ? t("page.action_waiting", { task: item.code, question })
-                : t("page.action_waiting_unknown", { task: item.code })}
+            {question
+              ? t("page.action_waiting", { task: item.code, question })
+              : t("page.action_waiting_unknown", { task: item.code })}
           </span>
         </p>
       ))}

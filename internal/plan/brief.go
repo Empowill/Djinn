@@ -303,14 +303,10 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
 			running = append(running, t)
-		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
+		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
+			planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			// Cut short and not resumed by Djinn, which resumes every task it can: history.
 			done = append(done, t)
-		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
-			if render.ForkedAs(t, exp.GetTasks()) != "" {
-				done = append(done, t)
-			} else {
-				waiting = append(waiting, t)
-			}
 		default:
 			waiting = append(waiting, t)
 		}

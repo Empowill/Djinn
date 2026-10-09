@@ -312,7 +312,8 @@ func TestReady(t *testing.T) {
 		{"an open question", []*planv1.Task{done}, []*planv1.Question{answered, open}, false},
 		{"a task waiting for an answer", []*planv1.Task{done, task(planv1.TaskStatus_TASK_STATUS_WAITING)}, nil, false},
 		{"a failed task", []*planv1.Task{done, task(planv1.TaskStatus_TASK_STATUS_FAILED)}, nil, false},
-		{"an interrupted task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_INTERRUPTED)}, nil, false},
+		// Cut short and left so: Djinn resumes every task it can, so this one is history.
+		{"an interrupted task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_INTERRUPTED)}, nil, true},
 		{"a running task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_RUNNING)}, nil, false},
 		{"a planned task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_PENDING)}, nil, false},
 		{"a task Djinn resumes", []*planv1.Task{done, task(planv1.TaskStatus_TASK_STATUS_RESUMING)}, nil, false},
@@ -327,7 +328,7 @@ func TestReady(t *testing.T) {
 		{"an interrupted task and a fork of another", []*planv1.Task{
 			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
 			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W2", Status: planv1.TaskStatus_TASK_STATUS_DONE},
-		}, nil, false},
+		}, nil, true},
 	} {
 		if got := Ready(tt.tasks, tt.questions); got != tt.want {
 			t.Errorf("%s: Ready = %v", tt.name, got)

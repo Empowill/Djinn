@@ -150,9 +150,7 @@ test("a wish shown is read, and only what changed is read again", async () => {
   assert.equal(state.details[wishId].blocks[0].content, "A wick.");
   const before = { ...reads };
 
-  data.questions = [
-    { ...data.questions[0], answer: { choice: 1, note: "" } },
-  ];
+  data.questions = [{ ...data.questions[0], answer: { choice: 1, note: "" } }];
   watch.push({ wishId, changes: [Change.WISH, Change.QUESTION] });
   state = await until(
     store,

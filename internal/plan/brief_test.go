@@ -381,7 +381,7 @@ func TestBriefFinished(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, finished, ok := strings.Cut(brief.Moving, "## Finished: 7, the latest\n\n")
+	_, finished, ok := strings.Cut(brief.Moving, "## Finished: 8, the latest\n\n")
 	if !ok {
 		t.Fatalf("no finished section:\n%s", brief.Moving)
 	}
@@ -390,10 +390,13 @@ func TestBriefFinished(t *testing.T) {
 	if !strings.HasPrefix(finished, want) {
 		t.Errorf("finished =\n%s\nwant\n%s", finished, want)
 	}
-	// What waits, by status: cut short, failed, waiting, then planned.
+	// What waits, by status: failed, waiting, then planned. W9, cut short and not resumed by Djinn, is history.
 	waiting, _, _ := strings.Cut(brief.Moving, "## Finished")
+	if strings.Contains(waiting, "**W9**") {
+		t.Errorf("a task cut short for good waits:\n%s", brief.Moving)
+	}
 	last := -1
-	for _, code := range []string{"**W9**", "**W12**", "**W11**", "**W10**"} {
+	for _, code := range []string{"**W12**", "**W11**", "**W10**"} {
 		i := strings.Index(waiting, code)
 		if i <= last {
 			t.Fatalf("%s at %d, after %d: the waiting list is out of order\n%s", code, i, last, waiting)

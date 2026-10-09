@@ -483,9 +483,9 @@ test("the Tasks tab lists what moves or waits by status, then the finished tasks
   const order = [...html.matchAll(/<span class="agent-code">(W\d)</g)].map(
     (m) => m[1],
   );
+  // W7, cut short and not resumed by Djinn, is history: among the finished ones.
   assert.deepEqual(order, [
     "W8",
-    "W7",
     "W5",
     "W3",
     "W6",
@@ -493,14 +493,15 @@ test("the Tasks tab lists what moves or waits by status, then the finished tasks
     "W4",
     "W9",
     "W2",
+    "W7",
   ]);
   assert.ok(
     html.indexOf("Moving or waiting") < html.indexOf("Task W8") &&
       html.indexOf("Finished") > html.indexOf("Task W1") &&
       html.indexOf("Finished") < html.indexOf("Task W4"),
   );
-  assert.match(html, /Moving or waiting<span class="count">6<\/span>/);
-  assert.match(html, /Finished<span class="count">3<\/span>/);
+  assert.match(html, /Moving or waiting<span class="count">5<\/span>/);
+  assert.match(html, /Finished<span class="count">4<\/span>/);
   assert.match(html, /Closed by you, [^<]+: merged/);
 });
 

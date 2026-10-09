@@ -416,7 +416,6 @@ func build(in Input) (*view, error) {
 			v.Bar = append(v.Bar, barLine{Class: class, Level: level, Text: bar, Href: "#actions"})
 		}
 	}
-	var cutShort []string
 	for _, t := range exp.GetTasks() {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_WAITING:
@@ -426,17 +425,7 @@ func build(in Input) (*view, error) {
 				addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
 					tr("page.bar_waiting", "task", t.GetCode()))
 			}
-		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
-			if ForkedAs(t, exp.GetTasks()) != "" {
-				continue
-			}
-			addAction("wait", waiting, tr("page.action_interrupted", "task", t.GetCode()), "")
-			cutShort = append(cutShort, t.GetCode())
 		}
-	}
-	if len(cutShort) > 0 {
-		v.Bar = append(v.Bar, barLine{Class: "wait", Level: waiting, Href: "#actions",
-			Text: tr("page.bar_interrupted", "tasks", strings.Join(cutShort, ", "))})
 	}
 	for _, name := range in.Unattached {
 		addAction("wait", waiting, tr("page.action_attach", "project", name), tr("page.bar_attach", "project", name))
@@ -546,7 +535,9 @@ func build(in Input) (*view, error) {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING:
 			v.Planned = append(v.Planned, ct)
-		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
+		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
+			planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			// Cut short and not resumed: Djinn resumes every task it can by itself, so this one is history.
 			v.Finished = append(v.Finished, ct)
 		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_RESUMING:
 			v.Running = append(v.Running, ct)

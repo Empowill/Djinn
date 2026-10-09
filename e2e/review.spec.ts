@@ -123,11 +123,12 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await page.setViewportSize({ width: 1440, height: 2200 });
   await page.goto(process.env.DJINN_URL!);
   await expect(page.locator(".hero h1")).toHaveText("Flight plan");
-  // The bar of what waits: one line per question and per worker cut short, a click goes there.
+  // The bar of what waits: one line per question, a click goes there. W3, cut short and not resumed by Djinn, asks
+  // nothing: it is history.
   const bar = page.locator(".attention-bar");
-  await expect(bar).toContainText("3 things wait for you");
-  await expect(bar.locator(".attention-item")).toHaveCount(3);
-  await expect(bar.locator(".attention-item").last()).toContainText("W3");
+  await expect(bar).toContainText("2 things wait for you");
+  await expect(bar.locator(".attention-item")).toHaveCount(2);
+  await expect(bar).not.toContainText("W3");
   await expect(
     page.locator(".plan-wish").filter({ hasText: title }),
   ).toContainText("2 questions");
@@ -173,7 +174,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     .locator(".investigating-section .question-card")
     .filter({ hasText: "Which oil for the wick?" });
   await expect(digging).toContainText("Being investigated");
-  await expect(bar.locator(".attention-item")).toHaveCount(2);
+  await expect(bar.locator(".attention-item")).toHaveCount(1);
   const brief = djinn("wish", "brief", wishId);
   expect(brief).toContain("## To investigate");
   expect(brief).toContain("How long does each burn?");

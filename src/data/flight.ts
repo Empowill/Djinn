@@ -62,13 +62,14 @@ export function blocking(tasks: readonly Task[]): Map<string, string[]> {
 const time = (ts?: { seconds: bigint; nanos: number }) =>
   ts ? Number(ts.seconds) * 1000 + ts.nanos / 1e6 : 0;
 
-// finishedTask tells a finished task: done, stopped on request, or cut short and taken over by a fork among tasks, as
-// the wish's page and brief say. Every other one still moves, or waits for someone.
-export function finishedTask(task: Task, tasks: readonly Task[] = []): boolean {
+// finishedTask tells a finished task: done, stopped on request, or cut short for good, as the wish's page and brief
+// say. Djinn resumes by itself every task it can (resuming), so one left cut short (taken over by a fork, imported
+// from another machine, its worktree gone) is history. Every other one still moves, or waits for someone.
+export function finishedTask(task: Task): boolean {
   return (
     task.status === TaskStatus.DONE ||
     task.status === TaskStatus.STOPPED ||
-    (task.status === TaskStatus.INTERRUPTED && forkedAs(task, tasks) !== "")
+    task.status === TaskStatus.INTERRUPTED
   );
 }
 
@@ -81,7 +82,7 @@ export function newestEnded(a: Task, b: Task): number {
 
 // finishedTasks are the tasks at the bottom of the Tasks tab, the latest ended first.
 export function finishedTasks(tasks: readonly Task[]): Task[] {
-  return tasks.filter((x) => finishedTask(x, tasks)).sort(newestEnded);
+  return tasks.filter((x) => finishedTask(x)).sort(newestEnded);
 }
 
 // The order of the tasks that move or wait: what runs or broke first (running, cut short, failed, resuming), then
@@ -114,7 +115,7 @@ export function byMotion(a: Task, b: Task): number {
 
 // movingTasks are the tasks at the top of the Tasks tab: what moves or waits for someone, by status.
 export function movingTasks(tasks: readonly Task[]): Task[] {
-  return tasks.filter((x) => !finishedTask(x, tasks)).sort(byMotion);
+  return tasks.filter((x) => !finishedTask(x)).sort(byMotion);
 }
 
 // openQuestions are a wish's questions that wait for your answer, the blocking ones first, then in the order they were
@@ -162,10 +163,8 @@ export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
   const questions = new Map(detail.questions.map((q) => [q.id, q]));
   return detail.tasks
     .filter(
-      (task) =>
-        task.status === TaskStatus.WAITING ||
-        (task.status === TaskStatus.INTERRUPTED &&
-          !forkedAs(task, detail.tasks)),
+      // Only a worker that asks something waits for the user: Djinn resumes the ones it cut short by itself.
+      (task) => task.status === TaskStatus.WAITING,
     )
     .map((item) => {
       const q = questions.get(item.editQuestionId);
@@ -203,7 +202,7 @@ export function flightPlan(
         item.status === TaskStatus.RESUMING
       )
         plan.running.push({ wish, item });
-      if (finishedTask(item, detail.tasks)) plan.finished.push({ wish, item });
+      if (finishedTask(item)) plan.finished.push({ wish, item });
       else plan.moving.push({ wish, item });
     }
     for (const item of decisionsOf(

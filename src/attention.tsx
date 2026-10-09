@@ -7,7 +7,8 @@ import { TaskStatus, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import type { OpenQuestion, Waiting } from "./data/flight";
 import { t } from "./i18n";
 
-// How much a line holds up: a question workers wait on, a question, a worker cut short, a wish ready to grant.
+// How much a line holds up: a question workers wait on, a question, a worker that asks to edit, a wish ready to
+// grant.
 export type Level = "blocking" | "question" | "action" | "ready";
 
 export interface Attention {
@@ -54,10 +55,7 @@ export function attentionOf(
       level: "action",
       target: `waiting-${item.id}`,
       code: item.code,
-      text:
-        item.status === TaskStatus.INTERRUPTED
-          ? t("attention.interrupted")
-          : t("attention.worker_waits"),
+      text: t("attention.worker_waits"),
       origin: origin?.(wish),
     });
   }

@@ -77,12 +77,10 @@ test("the flight plan merges the wishes: blocking questions first, every item ke
       ["w1", "q1", []],
     ],
   );
+  // Only a worker that asks waits for the user: W3, cut short, is Djinn's to resume or history.
   assert.deepEqual(
     plan.waiting.map((w) => [w.wish.id, w.item.code, w.question]),
-    [
-      ["w1", "W3", ""],
-      ["w2", "W2", "Q01"],
-    ],
+    [["w2", "W2", "Q01"]],
   );
   assert.deepEqual(
     plan.running.map((r) => [r.wish.id, r.item.code]),
@@ -145,12 +143,12 @@ test("the Tasks tab: what moves or waits by status, then the finished tasks, the
   ];
   assert.deepEqual(
     f.finishedTasks(tasks).map((t) => t.code),
-    ["W3", "W4", "W1", "W6"],
+    ["W3", "W4", "W1", "W6", "W2"],
   );
-  // Running, cut short and failed first, then waiting and paused, the planned ones last.
+  // Running and failed first, then waiting and paused, the planned ones last; a task cut short is finished.
   assert.deepEqual(
     f.movingTasks(tasks).map((t) => t.code),
-    ["W2", "W5"],
+    ["W5"],
   );
   const moving = [
     { code: "P", status: f.TaskStatus.PENDING },
@@ -170,7 +168,7 @@ test("the Tasks tab: what moves or waits by status, then the finished tasks, the
   // A running watcher watches: it waits after the paused ones.
   assert.deepEqual(
     f.movingTasks(moving).map((t) => t.code),
-    ["R", "R2", "I", "F", "S", "W", "A", "WA", "P"],
+    ["R", "R2", "F", "S", "W", "A", "WA", "P"],
   );
   // A task cut short and taken over by a fork is finished, as on the page.
   const forked = [
@@ -196,11 +194,11 @@ test("the Tasks tab: what moves or waits by status, then the finished tasks, the
   });
   assert.deepEqual(
     plan.finished.map(({ wish, item }) => `${wish.id}:${item.code}`),
-    ["w1:W3", "w2:W4", "w1:W1", "w2:W6"],
+    ["w1:W3", "w2:W4", "w1:W1", "w2:W6", "w1:W2"],
   );
   assert.deepEqual(
     plan.moving.map(({ wish, item }) => `${wish.id}:${item.code}`),
-    ["w1:W2", "w2:W5"],
+    ["w2:W5"],
   );
 });
 
@@ -333,10 +331,10 @@ test("a task Djinn resumes, or one resumed as another task, is not the user's mo
     },
   ];
   const plan = f.flightPlan([lamp], { w1: detail(tasks, []) });
-  // Only W4 waits for the user: cut short, and nothing took it over.
+  // Nothing waits for the user: Djinn resumes what it can, and W4, cut short for good, is history.
   assert.deepEqual(
     plan.waiting.map((w) => w.item.code),
-    ["W4"],
+    [],
   );
   assert.equal(f.forkedAs(tasks[2], tasks), "W5");
   assert.equal(f.forkedAs(tasks[3], tasks), "");
