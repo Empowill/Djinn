@@ -202,6 +202,55 @@ func TestAskToEditUnableToRead(t *testing.T) {
 	}
 }
 
+// TestAskToEditWaitsForASlot: a yes to the edit question of a task no worker runs goes through the scheduler: on a
+// full machine the task waits, resuming, and says why; it starts once a slot frees, allowed to edit.
+func TestAskToEditWaitsForASlot(t *testing.T) {
+	l := &limit{slots: 1}
+	e := up(t, t.TempDir(), WithCapacity(l.capacity))
+	dir := folder(t)
+	wishID, _ := e.wish(t, dir)
+	task := e.mustSpawn(t, wishID, "Edit", "text reading\nwrite notes.md hello",
+		&planv1.TaskServiceSpawnRequest{WriteScopes: []string{"notes.md"}})
+	e.watch(t.Context(), t, task.GetId(), 0)
+	if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
+		t.Fatalf("before the answer: %v", got)
+	}
+	// It reads, and takes the one slot.
+	busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"other"}})
+
+	e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
+	got := e.get(t, task.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED ||
+		!strings.HasPrefix(got.GetWaitReason(), "edit granted; ") || !strings.Contains(got.GetWaitReason(), "the most this machine holds") {
+		t.Fatalf("after yes on a full machine: %v", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notes.md")); err == nil {
+		t.Fatal("written before a slot freed")
+	}
+	if n := e.h.Running(); n != 1 {
+		t.Errorf("%d workers run, want the busy one alone", n)
+	}
+
+	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: busy.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	events := e.watch(ctx, t, task.GetId(), 0)
+	checkSeqs(t, events, 1)
+	got = e.get(t, task.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED ||
+		got.GetResumes() != 0 || got.GetWaitReason() != "" {
+		t.Errorf("after the slot freed: %v", got)
+	}
+	if !hasText(events, "edit granted (Q01)") || !hasText(events, "waiting: edit granted; ") || !hasText(events, "started fake again") {
+		t.Errorf("events = %q", eventTexts(events))
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "notes.md")); err != nil || string(b) != "hello\n" {
+		t.Errorf("notes.md = %q, %v", b, err)
+	}
+}
+
 // TestSpawnAccess: what the worker is started with, by where it runs.
 func TestSpawnAccess(t *testing.T) {
 	e := up(t, t.TempDir())

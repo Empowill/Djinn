@@ -64,6 +64,9 @@ status: in-progress
   (`TestContinue`, `TestContinueWaitsForASlot`, `TestContinueRefused`, `TestForkClosesParent`, `TestContinueCommand`
   in `internal/harness`; `TestDependencyResumes` in `internal/dispatch`; `e2e/task-continue.spec.ts`: an interrupted
   task continued from the command line shows once in the Tasks tab)
+- [x] A yes to an edit question takes a slot like any task: on a full machine the task waits, resuming, with its
+  reason, and starts once a slot frees. (`TestAskToEditWaitsForASlot`, `TestAskToEdit`, `TestAskToEditUnableToRead` in
+  `internal/harness`)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -146,8 +149,13 @@ status: in-progress
   under the caller's own rights, never in Djinn's server. It returns the command's exit code. `djinn gate list`
   shows holders and waiters. With `$DJINN_TASK_ID` (set for every worker), the task's events show `gate <name>:
   waiting: …`, `taken`, `given back after 3s` (kind `GATE`).
-- **What is not limited yet**: a worker started again by a yes to its edit question, and a gate held outside
-  `djinn gate run`, bypass the slots.
+- **A yes to an edit question goes through the scheduler**: a task no worker runs (waiting for its answer, or failed
+  while it read) becomes `resuming`, its wait reason "edit granted; …" (`answer.go`): it starts in the call when a
+  slot is free, otherwise once its wish is active, its write scopes free and the machine has a slot and no pressure,
+  on its session, told it may now edit, with its first prompt; no resume is spent. A yes while the read-only worker
+  runs restarts it in its own slot. A task Djinn resumes already keeps waiting as it did, then resumes allowed to edit;
+  one imported from another Djinn records the grant and starts no worker.
+- **What is not limited yet**: a gate held outside `djinn gate run` bypasses the slots.
 - **Pause** (`djinn task pause <task>`, `djinn task resume <task>`, `TaskService.Pause` and `Resume`): on Linux and
   macOS, SIGSTOP then SIGCONT to the worker's process group (`process_unix.go`); the fake holds its script before its
   next step. The task is `paused` (`TASK_STATUS_PAUSED`, an event `paused: …` then `resumed`, journaled

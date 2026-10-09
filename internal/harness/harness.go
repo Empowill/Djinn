@@ -1094,6 +1094,16 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 		}
 		if ch == nil {
 			task, err := store.Get[*planv1.Task](ctx, h.store, taskID)
+			if s := task.GetStatus(); err == nil && (s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED) {
+				// Its worker started since it was subscribed to: its run is there, follow it.
+				select {
+				case <-changed:
+				case <-time.After(10 * time.Millisecond):
+				case <-ctx.Done():
+					return nil
+				}
+				continue
+			}
 			if err != nil || !planned(task) {
 				if ctx.Err() != nil {
 					return nil

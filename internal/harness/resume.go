@@ -150,9 +150,9 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 
 // relaunch starts again the worker of a task Djinn resumes: in its worktree (or its project's folder, or its own
 // folder outside any project), on its session when its agent can resume one, told why it stopped. A continued task's
-// worker takes its last prompt on its session instead (Continue). Its access is decided again in a project, as for a
-// planned task, but for an answer the developer gave about editing, which stays. A worker that cannot start fails
-// the task.
+// worker takes its last prompt on its session instead (Continue); one a yes to its edit question gave back is told
+// it may edit now, with its first prompt (grant). Its access is decided again in a project, as for a planned task,
+// but for an answer the developer gave about editing, which stays. A worker that cannot start fails the task.
 func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 	t = proto.CloneOf(t)
 	by := byRestart
@@ -163,13 +163,15 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 		by = byLimit
 	case strings.HasPrefix(t.GetWaitReason(), whyWishPaused):
 		by = byWish
+	case strings.HasPrefix(t.GetWaitReason(), whyEditGranted):
+		by = byAnswer
 	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
 	t.Status, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", nil
 	switch by {
 	case byContinue:
 		t.Continuing = false // Cut short again, it resumes as any task does.
-	case byWish: // The developer paused it: no resume spent.
+	case byWish, byAnswer: // The developer paused it, or let it edit: no resume spent.
 	default:
 		t.Resumes++
 	}
@@ -279,6 +281,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		line = wishLine
 	case byContinue:
 		line = prompt
+	case byAnswer:
+		line = editLine + prompt
 	}
 	readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
 	spec := Spec{
@@ -293,6 +297,9 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		// agy's resume is not verified (docs/providers.md): it starts again on its first prompt, as does a worker
 		// whose session was never known.
 		spec.Resume, spec.Prompt, how = "", prompt+"\n\n"+line, ", from its first prompt"
+		if by == byAnswer {
+			spec.Prompt = line // It holds the first prompt already.
+		}
 	}
 	r.base = t.GetUsage()
 	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)
@@ -305,6 +312,10 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	if by == byWish {
 		text = fmt.Sprintf("resumed %s: started %s %s%s, %s%s", by, short(t.GetProvider()), where, how,
 			accessText(t, nil), skillsText(spec.Skills))
+	}
+	if by == byAnswer {
+		text = fmt.Sprintf("started %s again %s%s, %s%s", short(t.GetProvider()), where, how, accessText(t, nil),
+			skillsText(spec.Skills))
 	}
 	if by == byContinue {
 		text = fmt.Sprintf("continued: started %s %s%s, %s%s", short(t.GetProvider()), where, how, accessText(t, nil),
