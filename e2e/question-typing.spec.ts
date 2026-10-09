@@ -71,10 +71,6 @@ test("a note typed on a question keeps its diagram mounted and every key fast", 
   await card
     .locator(".ac-code")
     .evaluate((el) => el.setAttribute("data-kept", "yes"));
-  await card.evaluate((el) => el.setAttribute("data-kept", "yes"));
-  await card
-    .locator(".mermaid-support")
-    .evaluate((el) => el.setAttribute("data-kept", "yes"));
 
   const note =
     "Store first, then the window; keep the diagram as it is, it reads well. ".repeat(
@@ -90,16 +86,6 @@ test("a note typed on a question keeps its diagram mounted and every key fast", 
   });
   await expect(box).toHaveValue(note);
 
-  const kept = await page.evaluate(() => ({
-    card: document.querySelector(".question-card[data-kept]") !== null,
-    code: document.querySelector(".ac-code[data-kept]") !== null,
-    support: document.querySelector(".mermaid-support[data-kept]") !== null,
-    frame: document.querySelector("iframe[data-kept]") !== null,
-    frames: document.querySelectorAll("iframe").length,
-  }));
-  test
-    .info()
-    .annotations.push({ type: "kept", description: JSON.stringify(kept) });
   await expect(frame).toHaveAttribute("data-kept", "yes");
   await expect(card.locator(".ac-code")).toHaveAttribute("data-kept", "yes");
   // Playwright sends one key at a time, a few milliseconds each on its own: 290 keys took 1.8 s with this fix and
