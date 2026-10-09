@@ -28,7 +28,8 @@ const (
 const maxBriefArg = 64 << 10
 
 // newLead prepares a new lead for a wish that has none to resume: the command line that starts provider's agent in
-// dir (the wish's first project; the wish's own folder without one) on the wish's brief, and the lead it starts.
+// dir (the wish's first project; without one, the folder of every wish's own folder) on the wish's brief, and the lead
+// it starts.
 // The lead holds a session only when Djinn chooses it ahead: claude's. A server without data folder keeps the shell.
 func (w *Wishes) newLead(
 	ctx context.Context, wish *planv1.Wish, provider planv1.Provider, dir string,
@@ -54,7 +55,10 @@ func (w *Wishes) newLead(
 		}
 	}
 	if dir == "" {
-		dir = own
+		// One folder for every lead without a project, not the wish's own: Claude Code asks to trust the folder it
+		// starts in, and its trust covers the subfolders, so the question comes once, not at each wish
+		// (docs/providers.md).
+		dir = filepath.Dir(own)
 	}
 	lead = &planv1.Lead{Provider: provider, Directory: dir}
 	if provider == planv1.Provider_PROVIDER_CLAUDE {
