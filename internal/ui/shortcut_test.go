@@ -92,7 +92,7 @@ func TestNormalizeChord(t *testing.T) {
 		}
 	}
 	for _, in := range []string{"Space", "Shift+A", "Ctrl+Alt", "Ctrl+Alt+Enter", "Ctrl+Alt+F13", "Ctrl+Alt+F0",
-		"Hyper+K", "Ctrl+Alt+é", "Ctrl+Alt+F01", "+"} {
+		"Hyper+K", "Ctrl+Alt+\u00e9", "Ctrl+Alt+F01", "+"} {
 		if got, err := NormalizeChord(in, "linux"); !errors.Is(err, errChord) {
 			t.Errorf("NormalizeChord(%q) = %q, %v; want an invalid chord", in, got, err)
 		}
