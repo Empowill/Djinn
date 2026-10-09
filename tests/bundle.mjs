@@ -44,7 +44,8 @@ export async function bundle(name, source) {
       platform: "node",
       nodePaths: [path.join(root, "node_modules")],
       define: { "import.meta.env.PROD": "false" },
-      loader: { ".json": "json", ".css": "empty" },
+      // An imported image is a URL, as Vite makes it (the brand mark, src/frame.tsx).
+      loader: { ".json": "json", ".css": "empty", ".svg": "dataurl" },
       // CommonJS dependencies (react-dom/server) require Node's own modules.
       banner: {
         js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',

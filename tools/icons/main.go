@@ -7,6 +7,12 @@
 //
 // desktop needs no sudo: it writes $XDG_DATA_HOME (~/.local/share by default), icons/hicolor/<size>/apps/djinn.png
 // and applications/djinn.desktop. Elsewhere it does nothing: macOS and Windows take the icon from the build.
+//
+// build/icon.png is build/icon.svg, drawn by hand, rendered at 1024 px; the interface shows the SVG itself
+// (src/frame.tsx). After a change to the SVG, render it with any SVG renderer, then run icons gen; with Inkscape
+// through a pipe, since its snap reads no hidden folder:
+//
+//	inkscape --pipe --export-type=png --export-filename=- -w 1024 -h 1024 < build/icon.svg > build/icon.png
 package main
 
 import (
