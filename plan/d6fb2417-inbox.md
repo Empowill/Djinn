@@ -21,7 +21,8 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
 - **Nothing is made without a click.** An item is a card in the inbox; only your answer files it or makes the wish.
 - **Nothing is sent out.** Djinn reads; it never comments, reacts, marks as read nor replies on your behalf.
 - **Djinn reads only what you plugged in**, and holds no secret: a source is a command you already use, logged in
-  by its own tool (`glab`, `gh`, a Slack or Notion CLI), run as a watcher. Djinn never stores its token.
+  by its own tool (`glab`, `gh`, a Slack or Notion CLI), run as a watcher. Djinn never stores its token. Plugged in is
+  about the person, not the repository: a source runs only once plugged in on this machine.
 - **Lamp and smoke.** An inbox item is lamp only if code computes on it (its source, its state: new, routed,
   dismissed); its text is smoke.
 
@@ -39,12 +40,23 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
   `plan.Inbox.Receive`: its route is `plan.propose`'s, the new wish's project being the source's when the item links
   to none, so the source's template matches. Its key is its first link, else its first line, unique: an item already
   seen (new, routed, dismissed) or whose link a wish's title or block holds is not proposed again.
+- **A source is plugged in per machine** (W76's open question, answer B): a `PluggedSource` (the project that holds
+  the skill, the skill) in Djinn's data, never in the repository; none by default. `harness.RunSources` runs only the
+  plugged ones (`plan.Sources`); a plug or an unplug wakes it, and an unplugged source's watcher stops. A source is
+  named `<project>/<skill>`, or by its skill alone when one project holds it. `djinn inbox sources` lists the declared
+  ones (plugged or not, or why they cannot run, a plugged one whose skill is gone included), `djinn inbox plug
+  <source>`, `djinn inbox unplug <source>`. The empty inbox lists them with "Plug in" / "Unplug"; with items, they
+  fold under the cards. A project added or a source plugged tells the window `CHANGE_INBOX`.
+- **Djinn's own source**: `.agents/skills/babysit-pr/inbox.sh`, read only (`gh pr list --search assignee:@me`, then
+  `review-requested:@me`), one paragraph per pull request with its link; an assigned one reads "Babysit PR #n", so
+  the inbox proposes the skill's wish. Unplugged by default, like every source.
 - **`InboxService`**: `djinn inbox list [--all]`, `djinn inbox dismiss <item>`, `djinn inbox route <item> <letter>`.
   Routing acts as answering a route question (`Wishes.routeTo`, shared with T26's `settle`): a request block, the new
   wish with its template, its watcher, then its lead (`plan.InboxFirstLine`), or the lead of the wish it is filed in
   told (`plan.InboxFiledLine`). `Change.CHANGE_INBOX` tells the window.
 - **The window**: the inbox heads the flight plan (`src/inbox.tsx`), newest first, each card with its source, its
-  options (the recommended first), "Rub the lamp" and "Dismiss". Empty, it is hidden.
+  options (the recommended first), "Rub the lamp" and "Dismiss". Without items, it lists the declared sources; without
+  sources either, it is hidden.
 - **Outside the flight plan**: the side panel's flight plan entry counts the new items (an inbox icon beside the
   questions' count), and shows while one waits even with no active wish. A new item is a system notification
   (`ui.Notices`, as a question's): its source as title, its text as body, no button; a click brings the window
@@ -67,17 +79,23 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
   (`TestNoticesShowNewInboxItems`: a new item is notified once, with its source and its text; a dismissed, routed or
   old one is not; `tests/screens.test.mjs` "the side panel counts the new inbox items on the flight plan's entry,
   even with no active wish")
+- [x] A source runs only once plugged in, per machine; an unplugged one never starts a command. (`TestSourceUnplugged`:
+  no watcher and 0 commands before the plug, 1 after and no other over two more passes, its watcher stopped by the
+  unplug and a new one on the next plug, each pass awaited, no sleep; `TestSourceRefused`: plugged in, a command the
+  project does not list still never runs; `TestSources`: plug, unplug, a name held by two projects, a source that
+  cannot run, a plugged one whose skill is gone; `TestWatchSaysPlugged`: a plug and an unplug tell the window
+  `CHANGE_INBOX`; `TestInboxPlug`: `djinn inbox sources/plug/unplug` against a real `djinn up`, the item come and one
+  run; `tests/data-store.test.mjs` "a change of the inbox reads it and its sources again, and nothing else";
+  `tests/screens.test.mjs` "the empty inbox lists the sources the skills declare, each with Plug in or Unplug;
+  without any, it is hidden"; `e2e/inbox.spec.ts`: the fake source is not run until "Plug in", then its card comes)
+- [x] Djinn's own `babysit-pr` ships a read-only `gh` source, unplugged by default. (`TestOwnSource`: with a fake `gh`,
+  only two `gh pr list` calls; an assigned pull request proposes "Babysit PR #12", one to review proposes no template;
+  `TestRepoPermissions`)
 - [ ] A real source (`glab mr list --assignee=@me`, wrapped) brings a real merge request to a babysit wish. (needs: a
   person, logged in to a real forge)
 
 ## Next
 
-- A `source` for Djinn's own `babysit-pr`, on `gh pr list --assignee @me`: it would poll GitHub for whoever opens
-  Djinn's repository, so it waits for the developer's say.
 - A click on an item's notification raises the window as it is: showing the flight plan would need the window's show
   request (`UiServiceWatchShowResponse`) to name it.
 
-## Open questions
-
-- Should a source be opt-in per machine (a project's skill could otherwise start polling a forge as soon as the
-  project is added)? Today the project's `.agents/permissions.txtpb` is the gate, when it lists commands.
