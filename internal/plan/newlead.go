@@ -54,6 +54,10 @@ func (w *Wishes) newLead(
 			return "", "", nil, "", connect.NewError(connect.CodeInternal, fmt.Errorf("write the brief: %w", err))
 		}
 	}
+	mode, err := leadMode(ctx, w.Store, wish, dir)
+	if err != nil {
+		return "", "", nil, "", Status(err)
+	}
 	if dir == "" {
 		// One folder for every lead without a project, not the wish's own: Claude Code asks to trust the folder it
 		// starts in, and its trust covers the subfolders, so the question comes once, not at each wish
@@ -64,7 +68,7 @@ func (w *Wishes) newLead(
 	if provider == planv1.Provider_PROVIDER_CLAUDE {
 		lead.SessionId = store.NewID()
 	}
-	if line, err = briefLine(runtime.GOOS, lead, own, brief); err != nil {
+	if line, err = briefLine(runtime.GOOS, lead, mode, own, brief); err != nil {
 		return "", "", nil, "", err
 	}
 	switch provider {
@@ -81,12 +85,12 @@ func (w *Wishes) newLead(
 	return line, dir, lead, note, nil
 }
 
-// briefLine is the command line that starts a lead's agent on brief, through the user's shell on goos; folder holds
-// the brief's files. Claude appends the stable part to its system prompt, from its file, and gets the part that moves as its first message:
+// briefLine is the command line that starts a lead's agent on brief, through the user's shell on goos, with the
+// options of mode (leadFlags); folder holds the brief's files. Claude appends the stable part to its system prompt, from its file, and gets the part that moves as its first message:
 // the prefix it shares with every lead is read from the cache. Codex and Antigravity take no system prompt at the
 // command line: the whole brief is their first message, stable part first. A message the shell cannot carry
 // (cmd.exe and a line break, or one too long) is replaced by the request to read its file.
-func briefLine(goos string, lead *planv1.Lead, folder string, brief Brief) (string, error) {
+func briefLine(goos string, lead *planv1.Lead, mode planv1.Allowance, folder string, brief Brief) (string, error) {
 	sep := "/"
 	if goos == "windows" {
 		sep = `\`
@@ -117,7 +121,8 @@ func briefLine(goos string, lead *planv1.Lead, folder string, brief Brief) (stri
 		if err != nil {
 			return "", err
 		}
-		line := "claude --session-id " + lead.GetSessionId() + " --append-system-prompt-file " + rulesArg
+		line := "claude " + leadFlags(goos, lead.GetProvider(), mode) + "--session-id " + lead.GetSessionId() +
+			" --append-system-prompt-file " + rulesArg
 		if byFile {
 			dir, err := quote(folder)
 			if err != nil {
@@ -133,9 +138,9 @@ func briefLine(goos string, lead *planv1.Lead, folder string, brief Brief) (stri
 			return "", err
 		}
 		if lead.GetProvider() == planv1.Provider_PROVIDER_CODEX {
-			return "codex " + msg, nil
+			return "codex " + leadFlags(goos, lead.GetProvider(), mode) + msg, nil
 		}
-		return "agy -i " + msg, nil
+		return "agy -i " + leadFlags(goos, lead.GetProvider(), mode) + msg, nil
 	}
 	return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
 		"a lead runs claude, codex or antigravity, not %s", providerName(lead.GetProvider())))

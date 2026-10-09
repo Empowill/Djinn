@@ -185,7 +185,8 @@ func TestResumeFromBrief(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "claude --session-id " + lead.GetSessionId() + " --append-system-prompt-file '" + rules + "' '" + string(moving) + "'"
+	tools := leadFlags(runtime.GOOS, planv1.Provider_PROVIDER_CLAUDE, planv1.Allowance_ALLOWANCE_NONE)
+	want := "claude " + tools + "--session-id " + lead.GetSessionId() + " --append-system-prompt-file '" + rules + "' '" + string(moving) + "'"
 	if len(leads.opened) != 1 || leads.opened[0] != want+" in "+folder {
 		t.Fatalf("opened %q\nwant %q", leads.opened, want+" in "+folder)
 	}
@@ -211,7 +212,7 @@ func TestResumeFromBrief(t *testing.T) {
 	}
 	// Once it has exited, the recorded session is resumed.
 	delete(leads.running, "lead-"+id)
-	if res = resume(id, planv1.Provider_PROVIDER_UNSPECIFIED); leads.opened[1] != "claude --resume "+lead.GetSessionId()+" in "+folder {
+	if res = resume(id, planv1.Provider_PROVIDER_UNSPECIFIED); leads.opened[1] != "claude "+tools+"--resume "+lead.GetSessionId()+" in "+folder {
 		t.Errorf("resume after exit = %v, opened %q", res, leads.opened)
 	}
 
@@ -363,26 +364,27 @@ func TestBriefLine(t *testing.T) {
 	claude := &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: "s1"}
 
 	// cmd.exe carries no line break: the first message names the brief's file, and the folder is allowed.
-	line, err := briefLine("windows", claude, data, brief)
+	line, err := briefLine("windows", claude, planv1.Allowance_ALLOWANCE_NONE, data, brief)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `claude --session-id s1 --append-system-prompt-file "` + rules + `" --add-dir "` + data + `" "Read ` + moving +
+	want := `claude ` + leadFlags("windows", planv1.Provider_PROVIDER_CLAUDE, planv1.Allowance_ALLOWANCE_NONE) +
+		`--session-id s1 --append-system-prompt-file "` + rules + `" --add-dir "` + data + `" "Read ` + moving +
 		`: where the wish stands now, written by Djinn. Then lead it."`
 	if line != want {
 		t.Errorf("windows line\n%s\nwant\n%s", line, want)
 	}
-	codex, err := briefLine("windows", &planv1.Lead{Provider: planv1.Provider_PROVIDER_CODEX}, data, brief)
+	codex, err := briefLine("windows", &planv1.Lead{Provider: planv1.Provider_PROVIDER_CODEX}, planv1.Allowance_ALLOWANCE_NONE, data, brief)
 	if err != nil || !strings.HasPrefix(codex, `codex "Read `+rules+", then "+moving) {
 		t.Errorf("windows codex line %q, %v", codex, err)
 	}
 	// A data folder cmd.exe cannot quote is refused, with why.
-	if _, err := briefLine("windows", claude, `C:\100%`, brief); code(err) != connect.CodeFailedPrecondition {
+	if _, err := briefLine("windows", claude, planv1.Allowance_ALLOWANCE_NONE, `C:\100%`, brief); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("a %% in the data folder: %v", err)
 	}
 	// A brief too long for one argument is read from its file, on every system.
 	long := Brief{Stable: "# Rules\n", Moving: strings.Repeat("x", maxBriefArg+1)}
-	if line, err := briefLine("linux", claude, "/d", long); err != nil ||
+	if line, err := briefLine("linux", claude, planv1.Allowance_ALLOWANCE_NONE, "/d", long); err != nil ||
 		!strings.HasSuffix(line, "--add-dir '/d' 'Read /d/lead-brief.md: where the wish stands now, written by Djinn. Then lead it.'") {
 		t.Errorf("a long brief: %q, %v", line, err)
 	}

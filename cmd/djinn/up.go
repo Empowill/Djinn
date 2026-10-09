@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -135,12 +136,26 @@ func runUp(args []string) (restart bool, err error) {
 	// The terminals hang up before the workers stop: the lead may be driving them. The note of the leads follows
 	// them until djinn up stops, and is left as it is before they hang up: a crash, or an error, keeps it.
 	leadNotes := newLeadNote(home, os.Stderr)
-	var leadsMoved atomic.Pointer[func()] // what follows the leads that run (plan.Leads.Watch)
+	var leadsMoved atomic.Pointer[func()]                                      // what follows the leads that run (plan.Leads.Watch)
+	var leadPrompted atomic.Pointer[func(wishID string, p *planv1.LeadPrompt)] // the notices, once they run
 	terminals := terminal.NewManager(terminal.Config{
 		Command: terminal.ShellCommand(*term), Dir: *termDir, BeforeStart: machine.ExtendPath, Changed: func() {
 			leadNotes.update()
 			if f := leadsMoved.Load(); f != nil {
 				(*f)()
+			}
+		},
+		// A choice a lead shows (an approval, a folder to trust) shows in the window, and as a notification.
+		Prompted: func(t *terminal.Terminal) {
+			wishID, ok := strings.CutPrefix(t.Name, "lead-")
+			if !ok {
+				return
+			}
+			if f := leadsMoved.Load(); f != nil {
+				(*f)()
+			}
+			if f := leadPrompted.Load(); f != nil {
+				(*f)(wishID, leadPrompt(t.Prompt()))
 			}
 		},
 	})
@@ -159,8 +174,6 @@ func runUp(args []string) (restart bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	// After an update, the terminals that ran before it run again; after a crash, the leads.
-	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
 	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
@@ -201,6 +214,10 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	uiSvc.Notices = notices
 	go notices.Run(ctx)
+	prompted := notices.LeadPrompt
+	leadPrompted.Store(&prompted)
+	// After an update, the terminals that ran before it run again; after a crash, the leads.
+	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
 	// The pages of the synced wishes follow every change, until djinn up stops.
 	pages := plan.NewPages(db, home, version)
 	go pages.Run(ctx)
@@ -213,11 +230,14 @@ func runUp(args []string) (restart bool, err error) {
 			log.Printf("djinn: not told to the lead of %s: %v", wishID, err)
 		}
 		if t != nil {
-			t.Post(text, func(err error) {
+			wait := t.Post(text, func(err error) {
 				if !errors.Is(err, terminal.ErrExited) {
 					log.Printf("djinn: tell the lead of %s: %v", wishID, err)
 				}
 			})
+			if wait != terminal.NoWait {
+				log.Printf("djinn: news for the lead of %s waits: %s", wishID, tellWait(wait))
+			}
 		}
 	}}
 	if err := nudges.Follow(ctx, db); err != nil {
@@ -334,16 +354,27 @@ func (l leads) Stop(name string) error {
 	}
 }
 
-func (l leads) Tell(name, text string) (bool, error) {
+func (l leads) Tell(name, text string) (planv1.TellWait, error) {
 	t, err := leadIn(l.terminals, name)
 	if err != nil {
-		return false, err
+		return planv1.TellWait_TELL_WAIT_UNSPECIFIED, err
 	}
-	return t.Post(text, func(err error) {
+	return tellWait(t.Post(text, func(err error) {
 		if !errors.Is(err, terminal.ErrExited) {
 			log.Printf("djinn: write to %s: %v", name, err)
 		}
-	}), nil
+	})), nil
+}
+
+// tellWait is why a text told waits, as the API says it.
+func tellWait(w terminal.Wait) planv1.TellWait {
+	switch w {
+	case terminal.WaitTyping:
+		return planv1.TellWait_TELL_WAIT_TYPING
+	case terminal.WaitChoice:
+		return planv1.TellWait_TELL_WAIT_CHOICE
+	}
+	return planv1.TellWait_TELL_WAIT_UNSPECIFIED
 }
 
 // leadIn returns the terminal called name if it runs a lead's line through a shell, as Open starts it: plan.ErrNoLead
@@ -363,6 +394,34 @@ func leadIn(terminals *terminal.Manager, name string) (*terminal.Terminal, error
 }
 
 func (l leads) Watch(f func()) { l.moved.Store(&f) }
+
+func (l leads) Prompt(name string) *planv1.LeadPrompt {
+	t, err := leadIn(l.terminals, name)
+	if err != nil {
+		return nil
+	}
+	return leadPrompt(t.Prompt())
+}
+
+func (l leads) Choose(name, title string, lines, options []string, index int) error {
+	t, err := leadIn(l.terminals, name)
+	if err != nil {
+		return err
+	}
+	err = t.Choose(title, lines, options, index)
+	if errors.Is(err, terminal.ErrNoPrompt) || errors.Is(err, terminal.ErrExited) {
+		return fmt.Errorf("%w: %v", plan.ErrNoChoice, err)
+	}
+	return err
+}
+
+// leadPrompt is the choice p as a wish carries it; nil for none.
+func leadPrompt(p *terminal.Prompt) *planv1.LeadPrompt {
+	if p == nil {
+		return nil
+	}
+	return &planv1.LeadPrompt{Title: p.Title, Lines: p.Lines, Options: p.Options}
+}
 
 func (l leads) Show(wishID, name string) {
 	if l.ui.Raise != nil {

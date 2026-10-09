@@ -72,6 +72,20 @@ message Wish {
   // The lead's terminal runs a program in this djinn up, which djinn wish tell writes to. Set by the list of the
   // wishes, never stored.
   bool lead_running = 12;
+  // The choice the lead's agent shows in its terminal now, waiting for the developer: an approval (a command, an
+  // edit, the network), a folder to trust. Read from its screen by the list of the wishes, never stored.
+  LeadPrompt lead_prompt = 13;
+}
+
+// LeadPrompt is a choice an agent shows in the lead's terminal, as read from its screen: the window shows it, and
+// WishService.Choose picks an option there, as the keys would.
+message LeadPrompt {
+  // The question, as the agent asks it: "Do you want to proceed?". Empty when the screen shows none.
+  string title = 1;
+  // What it is about, a line each, as on screen: the command, the file, the reason.
+  repeated string lines = 2;
+  // The options, in order, without their number.
+  repeated string options = 3;
 }
 
 // WishState is where a wish stands. A djinn grants three wishes at a time, never more: three are active at most.
@@ -99,7 +113,7 @@ message Lead {
 }
 
 // Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that
-// applies to every task of the wish in that project, and to no other wish.
+// applies to every task of the wish in that project, and to no other wish; and to its lead, when it starts there.
 enum Allowance {
   // Not set.
   ALLOWANCE_UNSPECIFIED = 0;
@@ -750,12 +764,19 @@ service WishService {
   rpc Tell(WishServiceTellRequest) returns (WishServiceTellResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+  // Pick an option of the choice the lead's agent shows in its terminal (Wish.lead_prompt), as its keys would: the
+  // window's answer to an approval. Refused when the screen shows another choice, or none. The window's only: an
+  // agent never answers its own approval.
+  rpc Choose(WishServiceChooseRequest) returns (WishServiceChooseResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
   // Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
   rpc Snapshot(WishServiceSnapshotRequest) returns (WishServiceSnapshotResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
-  // agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
+  // agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only. The lead
+  // starting in that project gets the same mode, at its next start.
   rpc Allow(WishServiceAllowRequest) returns (WishServiceAllowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
@@ -954,6 +975,9 @@ message WishServiceMakeRequest {
   // Kind of agent for the wish's lead and, unless a task names another, its tasks: claude (the default), codex or
   // antigravity.
   Provider provider = 4 [(buf.validate.field).enum.defined_only = true];
+  // What its agent may do in each of its projects from the start, as djinn wish allow gives it: edit, or auto. None,
+  // or not set, leaves it to each project's configuration.
+  Allowance allowance = 5 [(buf.validate.field).enum.defined_only = true];
 }
 
 message WishServiceMakeResponse {
@@ -1128,7 +1152,40 @@ message WishServiceTellResponse {
   // The text waits in the lead's terminal: something is being typed there, or a choice is on screen. It goes once
   // they are done.
   bool waiting = 1;
+  // Why it waits, when it does.
+  TellWait wait = 2;
 }
+
+// Why a text told to a lead waits in its terminal before it is typed.
+enum TellWait {
+  // It does not wait.
+  TELL_WAIT_UNSPECIFIED = 0;
+  // A line is under way at the lead's prompt: the text goes once it is sent or cleared, or after a while without a
+  // key.
+  TELL_WAIT_TYPING = 1;
+  // The lead shows a choice that keys answer: the text goes once it is answered in the terminal.
+  TELL_WAIT_CHOICE = 2;
+}
+
+message WishServiceChooseRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The option picked, from 1.
+  int32 option = 2 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 20
+  }];
+  // The choice as the window showed it, title and options: the screen must still show that one.
+  string title = 3 [(buf.validate.field).string.max_len = 2000];
+  repeated string options = 4 [(buf.validate.field).repeated.max_items = 20];
+  // The command, file or reason shown: identical options alone do not identify an approval.
+  repeated string lines = 5 [(buf.validate.field).repeated.max_items = 200];
+}
+
+message WishServiceChooseResponse {}
 
 message WishServiceSnapshotRequest {
   // The wish.

@@ -27,14 +27,25 @@ const order: Record<Level, number> = {
   ready: 3,
 };
 
-// attentionOf lists what waits for you, the most blocking first; origin marks a line with its wish.
+// attentionOf lists what waits for you, the most blocking first; origin marks a line with its wish. prompted are the
+// wishes whose lead shows a choice in its terminal: it holds the lead up.
 export function attentionOf(
   questions: readonly OpenQuestion[],
   waiting: readonly Waiting[],
   ready: readonly Wish[],
   origin?: (wish: Wish) => ReactNode,
+  prompted: readonly Wish[] = [],
 ): Attention[] {
   const out: Attention[] = [];
+  for (const wish of prompted)
+    out.push({
+      key: `lead-prompt-${wish.id}`,
+      level: "blocking",
+      target: `lead-prompt-${wish.id}`,
+      code: "",
+      text: wish.leadPrompt?.title || t("lead_prompt.title"),
+      origin: origin?.(wish),
+    });
   for (const { wish, item, blocking } of questions)
     out.push({
       key: item.id,

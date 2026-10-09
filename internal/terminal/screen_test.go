@@ -118,3 +118,35 @@ func FuzzScreen(f *testing.F) {
 		_ = s.text()
 	})
 }
+
+// TestScreenReadsAgentPrompts: Claude Code's and Codex's prompts as recorded (claude 2.1.295, codex 0.162, 120
+// columns): at rest, the placeholder drawn faint holds nothing; "Est" typed there holds text; Ctrl+U clears it.
+func TestScreenReadsAgentPrompts(t *testing.T) {
+	for _, agent := range []string{"claude", "codex"} {
+		s := newScreen(120, 40)
+		for _, step := range []struct {
+			file  string
+			holds bool
+		}{{"-idle.out", false}, {"-est.out", true}, {"-cleared.out", false}} {
+			recorded, err := os.ReadFile(filepath.Join("testdata", agent+step.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.write(recorded)
+			if shown, holds := s.prompt(); !shown || holds != step.holds {
+				t.Errorf("%s%s: prompt shown %v, holds %v; want shown, holds %v:\n%s", agent, step.file, shown, holds,
+					step.holds, strings.Join(rows(s), "\n"))
+			}
+		}
+	}
+	// Faint, then not, then faint in a color's own field: only SGR 2 and 22 and resets count.
+	s := newScreen(20, 2)
+	s.write([]byte("› \x1b[2mhint\x1b[38;5;2mx\x1b[22m"))
+	if shown, holds := s.prompt(); !shown || holds {
+		t.Errorf("a faint hint: shown %v, holds %v", shown, holds)
+	}
+	s.write([]byte("\x1b[38:5:2mtyped"))
+	if _, holds := s.prompt(); !holds {
+		t.Error("text drawn after SGR 22 is typed text")
+	}
+}

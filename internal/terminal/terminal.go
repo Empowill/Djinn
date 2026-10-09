@@ -51,6 +51,9 @@ type Config struct {
 	// BeforeStart, when set, runs before a program starts, outside the manager's lock: djinn up brings its PATH up
 	// to date there (machine.ExtendPath), so that a lead finds the agent the window's panel found.
 	BeforeStart func()
+	// Prompted, when set, runs when the choice a program shows (Terminal.Prompt) appears, changes or goes, outside
+	// the terminal's lock.
+	Prompted func(t *Terminal)
 }
 
 // Manager holds the terminals of a djinn up.
@@ -114,6 +117,9 @@ type Terminal struct {
 	screen    *screen   // what the program shows now
 	posted    []post    // what Post keeps to tell, in order
 	posting   bool      // a goroutine tells what is posted
+	answered  string    // choice already sent, until it changes or disappears
+	shown     string    // the choice on screen as last seen (promptKey)
+	prompted  func(*Terminal)
 }
 
 // Open returns the running terminal of name, attached true, or starts one: command in dir at cols×rows, each
@@ -182,7 +188,7 @@ func (m *Manager) OpenExclusive(
 	t = &Terminal{
 		ID: uuid.NewString(), Name: name, Command: slices.Clone(command), Dir: dir,
 		p: p, done: make(chan struct{}), cols: cols, rows: rows, changed: make(chan struct{}),
-		screen: newScreen(cols, rows),
+		screen: newScreen(cols, rows), prompted: m.cfg.Prompted,
 	}
 	if old := m.byName[name]; old != nil {
 		delete(m.byID, old.ID) // Ended: its output goes with it.
@@ -284,11 +290,13 @@ func (t *Terminal) pump() {
 	t.notify()
 	t.mu.Unlock()
 	close(t.done)
+	if t.prompted != nil {
+		t.prompted(t)
+	}
 }
 
 func (t *Terminal) append(b []byte) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	from := len(t.buf)
 	t.buf = append(t.buf, b...)
 	t.pasteMode(from)
@@ -299,6 +307,19 @@ func (t *Terminal) append(b []byte) {
 		t.buf = append([]byte(nil), t.buf[drop:]...)
 	}
 	t.notify()
+	moved := false
+	if t.prompted != nil {
+		if key := promptKey(t.prompt()); key != t.shown {
+			t.shown, moved = key, true
+			if key != t.answered {
+				t.answered = ""
+			}
+		}
+	}
+	t.mu.Unlock()
+	if moved {
+		t.prompted(t)
+	}
 }
 
 // notify wakes the readers; t.mu is held.

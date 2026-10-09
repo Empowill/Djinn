@@ -264,7 +264,7 @@
         "type": "object"
       },
       "plan.v1.Allowance": {
-        "description": "Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that applies to every task of the wish in that project, and to no other wish.",
+        "description": "Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that applies to every task of the wish in that project, and to no other wish; and to its lead, when it starts there.",
         "enum": [
           "ALLOWANCE_UNSPECIFIED",
           "ALLOWANCE_NONE",
@@ -487,6 +487,30 @@
           },
           "sessionId": {
             "description": "Identifier of the session, as the agent names it: claude --resume takes it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.LeadPrompt": {
+        "description": "LeadPrompt is a choice an agent shows in the lead's terminal, as read from its screen: the window shows it, and WishService.Choose picks an option there, as the keys would.",
+        "properties": {
+          "lines": {
+            "description": "What it is about, a line each, as on screen: the command, the file, the reason.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "options": {
+            "description": "The options, in order, without their number.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "The question, as the agent asks it: \"Do you want to proceed?\". Empty when the screen shows none.",
             "type": "string"
           }
         },
@@ -1708,6 +1732,15 @@
         ],
         "type": "string"
       },
+      "plan.v1.TellWait": {
+        "description": "Why a text told to a lead waits in its terminal before it is typed.",
+        "enum": [
+          "TELL_WAIT_UNSPECIFIED",
+          "TELL_WAIT_TYPING",
+          "TELL_WAIT_CHOICE"
+        ],
+        "type": "string"
+      },
       "plan.v1.Usage": {
         "description": "Usage is what a worker spent, as its provider reports it.",
         "properties": {
@@ -1776,6 +1809,10 @@
           "lead": {
             "$ref": "#/components/schemas/plan.v1.Lead",
             "description": "The lead: the agent session that drives the wish, for djinn wish resume to take it back."
+          },
+          "leadPrompt": {
+            "$ref": "#/components/schemas/plan.v1.LeadPrompt",
+            "description": "The choice the lead's agent shows in its terminal now, waiting for the developer: an approval (a command, an edit, the network), a folder to trust. Read from its screen by the list of the wishes, never stored."
           },
           "leadRunning": {
             "description": "The lead's terminal runs a program in this djinn up, which djinn wish tell writes to. Set by the list of the wishes, never stored.",
@@ -1999,6 +2036,10 @@
       },
       "plan.v1.WishServiceMakeRequest": {
         "properties": {
+          "allowance": {
+            "$ref": "#/components/schemas/plan.v1.Allowance",
+            "description": "What its agent may do in each of its projects from the start, as djinn wish allow gives it: edit, or auto. None, or not set, leaves it to each project's configuration."
+          },
           "paused": {
             "description": "Make it paused: it waits, out of the three active wishes.",
             "type": "boolean"
@@ -2292,6 +2333,10 @@
       },
       "plan.v1.WishServiceTellResponse": {
         "properties": {
+          "wait": {
+            "$ref": "#/components/schemas/plan.v1.TellWait",
+            "description": "Why it waits, when it does."
+          },
           "waiting": {
             "description": "The text waits in the lead's terminal: something is being typed there, or a choice is on screen. It goes once they are done.",
             "type": "boolean"
@@ -3433,7 +3478,7 @@
     },
     "/plan.v1.WishService/Allow": {
       "post": {
-        "description": "Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.",
+        "description": "Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only. The lead starting in that project gets the same mode, at its next start.",
         "operationId": "WishService_Allow",
         "requestBody": {
           "content": {

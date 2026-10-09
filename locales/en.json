@@ -57,7 +57,6 @@
   "lead_message.send": "Send to the lead",
   "lead_message.sent": "Sent to the lead",
   "lead_message.title": "To the lead",
-  "lead_message.waiting": "Sent: it goes once the terminal is free",
   "make.eyebrow": "NEW WISH",
   "make.full": "{max} wishes are active already: this one will wait, paused. Pause or grant one to make room.",
   "make.projects": "Projects it works on",
@@ -268,7 +267,7 @@
   "question.rub_detail": "Apply the recommendation",
   "question.yes": "Yes",
   "rights.auto": "Edit, in auto mode",
-  "rights.detail": "What this wish's workers may do in each project, on top of its own configuration.",
+  "rights.detail": "What the lead and future workers may do in each project. The lead applies changes at its next start.",
   "rights.edit": "Edit the files",
   "rights.for": "Rights in {project}",
   "rights.none": "The project decides",
@@ -397,5 +396,15 @@
   "wish.state_active": "Active · {rank}",
   "wish.state_granted": "Granted",
   "wish.state_paused": "Paused",
-  "wish.tasks": "Tasks"
+  "wish.tasks": "Tasks",
+  "lead_message.waiting_choice": "Waiting: the lead shows a choice in its terminal. Yours goes once it is answered",
+  "lead_message.waiting_typing": "Waiting: text is at the lead's prompt in its terminal. Yours goes once that is sent or cleared",
+  "lead_prompt.terminal": "Lead approval",
+  "lead_prompt.waits": "The lead is waiting for your approval.",
+  "lead_prompt.badge": "Approval needed",
+  "lead_prompt.title": "The lead needs your approval",
+  "lead_prompt.detail": "Choose here to answer the agent. Your answer applies to the request shown above.",
+  "notify.lead_prompt_title": "{wish}: the lead needs your approval",
+  "make.allowance": "Permissions in the selected projects",
+  "make.allowance_detail": "Applies to the lead and future workers. Changes take effect when the lead restarts."
 }

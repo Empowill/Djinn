@@ -1,11 +1,18 @@
 // A discreet button at the bottom right of a wish: a click unfolds a box whose text goes to the wish's lead, as if
 // typed in its terminal (WishService.Tell). Enter sends, Shift+Enter breaks the line, Escape folds it. Without a lead
-// running, the box says so and offers to resume it.
-import { Check, MessageSquare, Send, Terminal, X } from "lucide-react";
+// running, the box says so and offers to resume it. A text that waits in the terminal says why, until the next one.
+import {
+  Check,
+  Hourglass,
+  MessageSquare,
+  Send,
+  Terminal,
+  X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
-import type { Wish } from "../gen/ts/plan/v1/plan_pb";
+import { TellWait, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
 import { t } from "./i18n";
@@ -23,16 +30,16 @@ export function LeadMessage({
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState<"" | "sent" | "waiting">("");
+  const [sent, setSent] = useState<"" | "sent" | "typing" | "choice">("");
   const box = useRef<HTMLTextAreaElement>(null);
   const running = wish.leadRunning;
 
   useEffect(() => {
     if (open && running) box.current?.focus();
   }, [open, running]);
-  // The confirmation fades on its own.
+  // The confirmation fades on its own; why a text waits stays.
   useEffect(() => {
-    if (!sent) return;
+    if (sent !== "sent") return;
     const timer = setTimeout(() => setSent(""), 4000);
     return () => clearTimeout(timer);
   }, [sent]);
@@ -44,7 +51,13 @@ export function LeadMessage({
     try {
       const res = await clients.wishes.tell({ wishId: wish.id, text: said });
       setText("");
-      setSent(res.waiting ? "waiting" : "sent");
+      setSent(
+        res.wait === TellWait.CHOICE
+          ? "choice"
+          : res.waiting
+            ? "typing"
+            : "sent",
+      );
     } catch (error) {
       onToast(message(error)); // The text stays, to send again.
     } finally {
@@ -119,12 +132,17 @@ export function LeadMessage({
             />
             <footer>
               <span className="lead-message-hint" aria-live="polite">
-                {sent ? (
+                {sent === "sent" ? (
                   <span className="lead-message-sent">
                     <Check size={12} aria-hidden="true" />
-                    {sent === "waiting"
-                      ? t("lead_message.waiting")
-                      : t("lead_message.sent")}
+                    {t("lead_message.sent")}
+                  </span>
+                ) : sent ? (
+                  <span className="lead-message-sent waiting">
+                    <Hourglass size={12} aria-hidden="true" />
+                    {sent === "choice"
+                      ? t("lead_message.waiting_choice")
+                      : t("lead_message.waiting_typing")}
                   </span>
                 ) : (
                   t("lead_message.hint")

@@ -61,7 +61,12 @@ export function WishSidebar({
 
   const item = (wish: Wish, rank?: number) => {
     const count = counts[wish.id] ?? { questions: 0, running: 0 };
-    const tone = wishTone(wish, count.questions, count.running);
+    const prompted = wish.leadRunning && !!wish.leadPrompt;
+    const tone = wishTone(
+      wish,
+      count.questions + (prompted ? 1 : 0),
+      count.running,
+    );
     const keys = (event: KeyboardEvent) => {
       if (!rank || !event.altKey) return;
       if (event.key === "ArrowUp" && rank > 1) onMove(wish.id, rank - 1);
@@ -104,6 +109,13 @@ export function WishSidebar({
         {!collapsed && (
           <>
             <span>{wish.title}</span>
+            {prompted && (
+              <CountPill
+                tone="waiting"
+                count={1}
+                label={t("lead_prompt.badge")}
+              />
+            )}
             {count.questions > 0 && (
               <CountPill
                 tone="waiting"
@@ -131,7 +143,10 @@ export function WishSidebar({
   };
 
   const waits = active.reduce(
-    (sum, w) => sum + (counts[w.id]?.questions ?? 0),
+    (sum, w) =>
+      sum +
+      (counts[w.id]?.questions ?? 0) +
+      (w.leadRunning && w.leadPrompt ? 1 : 0),
     0,
   );
   return (

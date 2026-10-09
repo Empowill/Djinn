@@ -102,6 +102,10 @@ type Notices struct {
 
 	readyMu sync.Mutex
 	ready   map[string]bool // active wishes ready to review, as last seen
+
+	leadMu      sync.Mutex
+	leadCurrent map[string]*planv1.LeadPrompt // current prompts, including those waiting for notification permission
+	leadShown   map[string]string             // the choice each wish's lead shows, as last notified
 }
 
 // Use shows the notifications with notifier from now on; nil shows none.
@@ -114,6 +118,7 @@ func (n *Notices) Use(notifier Notifier) {
 		if err := n.prime(context.Background()); err != nil {
 			log.Printf("djinn: notices: %v", err)
 		}
+		n.replayLeadPrompts()
 	}
 }
 
@@ -138,7 +143,11 @@ func (n *Notices) Access() uiv1.NotificationAccess {
 
 // Request asks the system to show the notifications, and tells whether it does.
 func (n *Notices) Request() uiv1.NotificationAccess {
-	return n.access(func(p Permission) (bool, error) { return p.Allow() })
+	access := n.access(func(p Permission) (bool, error) { return p.Allow() })
+	if access == uiv1.NotificationAccess_NOTIFICATION_ACCESS_ALLOWED {
+		n.replayLeadPrompts()
+	}
+	return access
 }
 
 func (n *Notices) access(ask func(Permission) (bool, error)) uiv1.NotificationAccess {
@@ -211,6 +220,13 @@ func (n *Notices) follow(ctx context.Context, m proto.Message) error {
 	var err error
 	var wishID string
 	switch m := m.(type) {
+	case *planv1.Wish:
+		n.leadMu.Lock()
+		p := n.leadCurrent[m.GetId()]
+		n.leadMu.Unlock()
+		if p != nil {
+			n.LeadPrompt(m.GetId(), p)
+		}
 	case *planv1.Question:
 		wishID = m.GetWishId()
 		if m.GetAnswer() == nil && recent(m.GetCreateTime()) {
@@ -374,6 +390,77 @@ func (n *Notices) show(key string, note Notification) error {
 		return nil // The user sees it already.
 	}
 	return notifier.Notify(note)
+}
+
+// LeadPrompt notifies the choice p the lead of wishID shows in its terminal (an approval, a folder to trust): once
+// per choice, again when another comes; nil says it went. A click shows it in the window, which answers it.
+func (n *Notices) LeadPrompt(wishID string, p *planv1.LeadPrompt) {
+	key := ""
+	if p != nil {
+		key = p.GetTitle() + "\x00" + strings.Join(p.GetLines(), "\x00") + "\x00" + strings.Join(p.GetOptions(), "\x00")
+	}
+	n.leadMu.Lock()
+	if n.leadCurrent == nil {
+		n.leadCurrent = map[string]*planv1.LeadPrompt{}
+	}
+	if p == nil {
+		delete(n.leadCurrent, wishID)
+		delete(n.leadShown, wishID)
+	} else {
+		n.leadCurrent[wishID] = proto.Clone(p).(*planv1.LeadPrompt)
+	}
+	same := n.leadShown[wishID] == key
+	n.leadMu.Unlock()
+	if same || key == "" || n.Store == nil || n.Access() != uiv1.NotificationAccess_NOTIFICATION_ACCESS_ALLOWED {
+		return
+	}
+	wish, err := n.activeWish(context.Background(), wishID)
+	if wish == nil || err != nil {
+		return
+	}
+	n.leadMu.Lock()
+	if n.leadShown == nil {
+		n.leadShown = map[string]string{}
+	}
+	if n.leadShown[wishID] == key {
+		n.leadMu.Unlock()
+		return
+	}
+	n.leadShown[wishID] = key
+	n.leadMu.Unlock()
+	body := []string{}
+	for _, line := range append([]string{p.GetTitle()}, p.GetLines()...) {
+		if line != "" {
+			body = append(body, clipText(line, maxBody/2))
+		}
+	}
+	for i, option := range p.GetOptions() {
+		body = append(body, fmt.Sprintf("%d. %s", i+1, clipText(option, maxBody/4)))
+	}
+	note := Notification{
+		ID: "lead-prompt-" + wishID, WishID: wishID, Target: "lead-prompt-" + wishID,
+		Title: n.text("notify.lead_prompt_title", map[string]string{"wish": wish.GetTitle()}),
+		Body:  clipText(strings.Join(body, "\n"), 2*maxBody),
+	}
+	if err := n.show("", note); err != nil {
+		n.leadMu.Lock()
+		delete(n.leadShown, wishID)
+		n.leadMu.Unlock()
+		log.Printf("djinn: notices: %v", err)
+	}
+}
+
+// replayLeadPrompts delivers choices seen before the notifier or its permission became available.
+func (n *Notices) replayLeadPrompts() {
+	n.leadMu.Lock()
+	pending := make(map[string]*planv1.LeadPrompt, len(n.leadCurrent))
+	for id, p := range n.leadCurrent {
+		pending[id] = p
+	}
+	n.leadMu.Unlock()
+	for id, p := range pending {
+		n.LeadPrompt(id, p)
+	}
 }
 
 // questionNote is the notification of q: the wish and the question's code as title, its text and options as body,

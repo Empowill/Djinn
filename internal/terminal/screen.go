@@ -1,21 +1,31 @@
 package terminal
 
 import (
+	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
 // maxPending bounds an escape sequence kept between two reads: a longer one is dropped, not kept growing.
 const maxPending = 4 << 10
 
+// faintCell marks a cell drawn faint (SGR 2), above every character.
+const faintCell rune = 1 << 30
+
+// promptMarks start the row of an agent's prompt, before a space: Claude Code's ❯, Codex's ›.
+var promptMarks = []rune{'❯', '›'}
+
 // screen follows what the program shows now, cell by cell, as a terminal draws it: what Tell reads to know whether a
 // choice is on screen. A choice drawn once and covered since, erased in place (Claude Code redraws by moving the
 // cursor, not by clearing the screen) or scrolled away, is no longer there. It follows what moves text and the
-// cursor, not colors: the window's emulator is the one that shows.
+// cursor, and of the colors only faintness, which tells an agent's placeholder from text typed at its prompt: the
+// window's emulator is the one that shows.
 type screen struct {
 	cols, rows  int
-	cells       [][]rune // rows of cols cells; 0 is blank
+	cells       [][]rune // rows of cols cells; 0 is blank, faintCell marks a faint character
+	faint       bool     // what is drawn now is faint
 	x, y        int
 	wrap        bool // the last column was written: the next character goes to the next line
 	top, bottom int  // the scroll region, rows included
@@ -59,7 +69,7 @@ func (s *screen) text() string {
 	var b strings.Builder
 	for _, row := range s.cells {
 		for _, r := range row {
-			if r == 0 {
+			if r &^= faintCell; r == 0 {
 				r = ' '
 			}
 			b.WriteRune(r)
@@ -67,6 +77,26 @@ func (s *screen) text() string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// prompt reads an agent's prompt off the screen: the lowest row that starts with its mark (promptMarks) and a space,
+// where Claude Code and Codex take what is typed. It tells whether one shows, and whether it holds text: anything but
+// blanks and the agent's placeholder, drawn faint ("Ask Codex to do anything").
+func (s *screen) prompt() (shown, holds bool) {
+	for y := s.rows - 1; y >= 0; y-- {
+		row := s.cells[y]
+		if len(row) < 2 || !slices.Contains(promptMarks, row[0]&^faintCell) ||
+			!slices.Contains([]rune{0, ' ', '\u00a0'}, row[1]&^faintCell) {
+			continue
+		}
+		for _, r := range row[2:] {
+			if r&faintCell == 0 && r != 0 && !unicode.IsSpace(r) {
+				return true, true
+			}
+		}
+		return true, false
+	}
+	return false, false
 }
 
 // write draws the output b.
@@ -170,7 +200,7 @@ func (s *screen) escape(b []byte) int {
 			s.y = max(0, s.y-1)
 		}
 	case 'c':
-		s.other = nil
+		s.other, s.faint = nil, false
 		s.clear(0, 0, s.rows-1, s.cols-1)
 		s.x, s.y, s.wrap, s.top, s.bottom = 0, 0, false, 0, s.rows-1
 	}
@@ -205,10 +235,31 @@ func (s *screen) csi(params string, final byte) {
 		}
 		return
 	}
-	n := arg(0, 1)
-	if final != 'm' { // Colors keep a line that reached its last column wrapping.
-		s.wrap = false
+	if final == 'm' { // Colors keep a line that reached its last column wrapping. Of them, faintness only.
+		fields := strings.Split(params, ";")
+		for i := 0; i < len(p); i++ {
+			if strings.Contains(fields[i], ":") { // 38:5:n and the like: one field each.
+				continue
+			}
+			switch p[i] {
+			case 0:
+				s.faint = false
+			case 2:
+				s.faint = true
+			case 22:
+				s.faint = false
+			case 38, 48, 58: // A color: 5 and an index, or 2 and its red, green and blue.
+				if i+1 < len(p) && p[i+1] == 5 {
+					i += 2
+				} else if i+1 < len(p) && p[i+1] == 2 {
+					i += 4
+				}
+			}
+		}
+		return
 	}
+	n := arg(0, 1)
+	s.wrap = false
 	switch final {
 	case 'A':
 		s.y = max(0, s.y-n)
@@ -302,6 +353,9 @@ func (s *screen) put(r rune) {
 	if s.wrap || s.x+w > s.cols {
 		s.x = 0
 		s.index()
+	}
+	if s.faint {
+		r |= faintCell
 	}
 	s.cells[s.y][s.x] = r
 	if w == 2 && s.x+1 < s.cols {

@@ -88,6 +88,8 @@ const (
 	WishServiceBriefProcedure = "/plan.v1.WishService/Brief"
 	// WishServiceTellProcedure is the fully-qualified name of the WishService's Tell RPC.
 	WishServiceTellProcedure = "/plan.v1.WishService/Tell"
+	// WishServiceChooseProcedure is the fully-qualified name of the WishService's Choose RPC.
+	WishServiceChooseProcedure = "/plan.v1.WishService/Choose"
 	// WishServiceSnapshotProcedure is the fully-qualified name of the WishService's Snapshot RPC.
 	WishServiceSnapshotProcedure = "/plan.v1.WishService/Snapshot"
 	// WishServiceAllowProcedure is the fully-qualified name of the WishService's Allow RPC.
@@ -593,10 +595,15 @@ type WishServiceClient interface {
 	// is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
 	// djinn wish resume starts it. A terminal of its name that runs another program, a shell, gets nothing.
 	Tell(context.Context, *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error)
+	// Pick an option of the choice the lead's agent shows in its terminal (Wish.lead_prompt), as its keys would: the
+	// window's answer to an approval. Refused when the screen shows another choice, or none. The window's only: an
+	// agent never answers its own approval.
+	Choose(context.Context, *connect.Request[v1.WishServiceChooseRequest]) (*connect.Response[v1.WishServiceChooseResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
-	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
+	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only. The lead
+	// starting in that project gets the same mode, at its next start.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
@@ -693,6 +700,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Tell")),
 			connect.WithClientOptions(opts...),
 		),
+		choose: connect.NewClient[v1.WishServiceChooseRequest, v1.WishServiceChooseResponse](
+			httpClient,
+			baseURL+WishServiceChooseProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Choose")),
+			connect.WithClientOptions(opts...),
+		),
 		snapshot: connect.NewClient[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse](
 			httpClient,
 			baseURL+WishServiceSnapshotProcedure,
@@ -762,6 +775,7 @@ type wishServiceClient struct {
 	setProvider *connect.Client[v1.WishServiceSetProviderRequest, v1.WishServiceSetProviderResponse]
 	brief       *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
 	tell        *connect.Client[v1.WishServiceTellRequest, v1.WishServiceTellResponse]
+	choose      *connect.Client[v1.WishServiceChooseRequest, v1.WishServiceChooseResponse]
 	snapshot    *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
 	allow       *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
 	grant       *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
@@ -821,6 +835,11 @@ func (c *wishServiceClient) Brief(ctx context.Context, req *connect.Request[v1.W
 // Tell calls plan.v1.WishService.Tell.
 func (c *wishServiceClient) Tell(ctx context.Context, req *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error) {
 	return c.tell.CallUnary(ctx, req)
+}
+
+// Choose calls plan.v1.WishService.Choose.
+func (c *wishServiceClient) Choose(ctx context.Context, req *connect.Request[v1.WishServiceChooseRequest]) (*connect.Response[v1.WishServiceChooseResponse], error) {
+	return c.choose.CallUnary(ctx, req)
 }
 
 // Snapshot calls plan.v1.WishService.Snapshot.
@@ -905,10 +924,15 @@ type WishServiceHandler interface {
 	// is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
 	// djinn wish resume starts it. A terminal of its name that runs another program, a shell, gets nothing.
 	Tell(context.Context, *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error)
+	// Pick an option of the choice the lead's agent shows in its terminal (Wish.lead_prompt), as its keys would: the
+	// window's answer to an approval. Refused when the screen shows another choice, or none. The window's only: an
+	// agent never answers its own approval.
+	Choose(context.Context, *connect.Request[v1.WishServiceChooseRequest]) (*connect.Response[v1.WishServiceChooseResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
-	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
+	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only. The lead
+	// starting in that project gets the same mode, at its next start.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
@@ -1001,6 +1025,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Tell")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceChooseHandler := connect.NewUnaryHandler(
+		WishServiceChooseProcedure,
+		svc.Choose,
+		connect.WithSchema(wishServiceMethods.ByName("Choose")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceSnapshotHandler := connect.NewUnaryHandler(
 		WishServiceSnapshotProcedure,
 		svc.Snapshot,
@@ -1077,6 +1107,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceBriefHandler.ServeHTTP(w, r)
 		case WishServiceTellProcedure:
 			wishServiceTellHandler.ServeHTTP(w, r)
+		case WishServiceChooseProcedure:
+			wishServiceChooseHandler.ServeHTTP(w, r)
 		case WishServiceSnapshotProcedure:
 			wishServiceSnapshotHandler.ServeHTTP(w, r)
 		case WishServiceAllowProcedure:
@@ -1142,6 +1174,10 @@ func (UnimplementedWishServiceHandler) Brief(context.Context, *connect.Request[v
 
 func (UnimplementedWishServiceHandler) Tell(context.Context, *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Tell is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Choose(context.Context, *connect.Request[v1.WishServiceChooseRequest]) (*connect.Response[v1.WishServiceChooseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Choose is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error) {

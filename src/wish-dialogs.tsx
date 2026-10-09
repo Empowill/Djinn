@@ -4,6 +4,7 @@ import { ArrowRight, FolderOpen } from "lucide-react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 
 import {
+  Allowance,
   type Project,
   Provider,
   type Skill,
@@ -53,6 +54,7 @@ export function MakeWish({
   const clients = useClients();
   const full = active >= MAX_ACTIVE;
   const [title, setTitle] = useState("");
+  const [allowance, setAllowance] = useState(Allowance.NONE);
   const [chosen, setChosen] = useState<string[]>([]);
   const [provider, setProvider] = useState<Provider>(defaultProvider);
   const [error, setError] = useState("");
@@ -71,6 +73,7 @@ export function MakeWish({
         projectIds: chosen,
         paused: full,
         provider,
+        allowance: chosen.length ? allowance : Allowance.NONE,
       });
       onMade(res.wish?.id ?? "");
     } catch (err) {
@@ -166,6 +169,22 @@ export function MakeWish({
               </label>
             ))}
           </fieldset>
+        )}
+        {chosen.length > 0 && (
+          <label>
+            <span>{t("make.allowance")}</span>
+            <select
+              value={allowance}
+              onChange={(e) =>
+                setAllowance(Number(e.target.value) as Allowance)
+              }
+            >
+              <option value={Allowance.NONE}>{t("rights.none")}</option>
+              <option value={Allowance.EDIT}>{t("rights.edit")}</option>
+              <option value={Allowance.AUTO}>{t("rights.auto")}</option>
+            </select>
+            <small className="form-tip">{t("make.allowance_detail")}</small>
+          </label>
         )}
         <p className="form-tip">
           {full

@@ -82,7 +82,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages}
 	if o.leads != nil {
-		// Whether a lead runs is part of each wish read: a terminal that starts or ends changes the wishes.
+		// Whether a lead runs, and the choice it shows, are part of each wish read: a terminal that starts or ends,
+		// or a lead's choice that comes or goes, changes the wishes.
 		o.leads.Watch(func() { wishes.watch.notify([]watched{{"", planv1.Change_CHANGE_WISH}}) })
 	}
 	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
@@ -285,6 +286,12 @@ func (w *Wishes) Make(
 				wish.ProjectIds = append(wish.ProjectIds, project.GetId())
 			}
 		}
+		// The right chosen with the wish, in each of its projects, as djinn wish allow gives it.
+		if mode := req.Msg.GetAllowance(); mode == planv1.Allowance_ALLOWANCE_EDIT || mode == planv1.Allowance_ALLOWANCE_AUTO {
+			for _, id := range wish.GetProjectIds() {
+				wish.Allowances = append(wish.Allowances, &planv1.ProjectAllowance{ProjectId: id, Allowance: mode})
+			}
+		}
 		if req.Msg.GetPaused() {
 			wish.State = planv1.WishState_WISH_STATE_PAUSED
 			return tx.Put(wish)
@@ -322,6 +329,9 @@ func (w *Wishes) List(
 	if w.Leads != nil {
 		for _, wish := range wishes {
 			wish.LeadRunning = w.Leads.Running(LeadTerminal(wish.GetId()))
+			if wish.LeadRunning {
+				wish.LeadPrompt = w.Leads.Prompt(LeadTerminal(wish.GetId()))
+			}
 		}
 	}
 	return connect.NewResponse(&planv1.WishServiceListResponse{Wishes: wishes}), nil

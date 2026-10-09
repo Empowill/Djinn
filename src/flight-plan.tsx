@@ -12,6 +12,7 @@ import { useData, useWishDetails } from "./data/djinn";
 import { flightPlan, spent } from "./data/flight";
 import { investigating, waitsForYou, wishTone } from "./data/format";
 import { t } from "./i18n";
+import { LeadPromptCard } from "./lead-prompt";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
@@ -42,12 +43,18 @@ export function FlightPlan({
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
   const { clients, act, quiet, answer, enlighten, mark } = useWrites(onToast);
-  const waits = plan.questions.length + plan.waiting.length + plan.ready.length;
+  const prompted = wishes.filter((w) => w.leadRunning && w.leadPrompt);
+  const waits =
+    prompted.length +
+    plan.questions.length +
+    plan.waiting.length +
+    plan.ready.length;
   const attention = attentionOf(
     plan.questions,
     plan.waiting,
     plan.ready,
     (wish) => <WishOrigin wish={wish} />,
+    prompted,
   );
   const wishOf = new Map(
     [...plan.decisions, ...plan.investigating].map((x) => [x.item.id, x.wish]),
@@ -113,13 +120,15 @@ export function FlightPlan({
                       <StatusBadge
                         tone={wishTone(wish, open, running)}
                         label={
-                          open
-                            ? t("plan.questions", { count: open })
-                            : wish.ready
-                              ? t("wish.ready")
-                              : running
-                                ? t("plan.running", { count: running })
-                                : t("pill.calm")
+                          wish.leadRunning && wish.leadPrompt
+                            ? t("lead_prompt.badge")
+                            : open
+                              ? t("plan.questions", { count: open })
+                              : wish.ready
+                                ? t("wish.ready")
+                                : running
+                                  ? t("plan.running", { count: running })
+                                  : t("pill.calm")
                         }
                       />
                       {digging > 0 && (
@@ -189,6 +198,31 @@ export function FlightPlan({
                     : t("panels.your_move_detail")}
                 </p>
               </div>
+              {prompted.map((wish) => {
+                const prompt = wish.leadPrompt!;
+                return (
+                  <LeadPromptCard
+                    key={wish.id}
+                    wishId={wish.id}
+                    prompt={prompt}
+                    origin={<WishOrigin wish={wish} />}
+                    onChoose={(index) =>
+                      act(
+                        wish.id,
+                        () =>
+                          clients.wishes.choose({
+                            wishId: wish.id,
+                            option: index + 1,
+                            title: prompt.title,
+                            lines: prompt.lines,
+                            options: prompt.options,
+                          }),
+                        [Change.WISH],
+                      )
+                    }
+                  />
+                );
+              })}
               {plan.questions.length > 0 && (
                 <section className="decisions-section">
                   <div className="section-heading">

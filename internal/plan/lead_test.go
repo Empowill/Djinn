@@ -2,9 +2,11 @@ package plan
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -18,13 +20,15 @@ const session = "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69"
 
 // fakeLeads records what Resume asks of the terminals and the window.
 type fakeLeads struct {
-	running map[string][]string // command of each running terminal, by name
-	opened  []string            // line of each program started
-	shown   []string            // wish/terminal of each show
-	told    []string            // terminal: text of each tell
-	stopped []string            // name of each terminal stopped while it ran
-	waiting bool                // what Tell says of the texts told
-	watch   func()              // what Watch was given
+	running map[string][]string
+	opened  []string
+	shown   []string
+	told    []string
+	stopped []string
+	waiting planv1.TellWait
+	watch   func()
+	prompts map[string]*planv1.LeadPrompt
+	chosen  []string
 	err     error
 }
 
@@ -59,18 +63,33 @@ func (f *fakeLeads) Stop(name string) error {
 	return nil
 }
 
-func (f *fakeLeads) Tell(name, text string) (bool, error) {
+func (f *fakeLeads) Tell(name, text string) (planv1.TellWait, error) {
 	if !f.Running(name) {
-		return false, ErrNoLead
+		return planv1.TellWait_TELL_WAIT_UNSPECIFIED, ErrNoLead
 	}
 	if cmd := f.running[name]; !LeadLine(cmd[len(cmd)-1]) {
-		return false, ErrNotLead
+		return planv1.TellWait_TELL_WAIT_UNSPECIFIED, ErrNotLead
 	}
 	f.told = append(f.told, name+": "+text)
 	return f.waiting, nil
 }
 
 func (f *fakeLeads) Watch(fn func()) { f.watch = fn }
+
+func (f *fakeLeads) Prompt(name string) *planv1.LeadPrompt { return f.prompts[name] }
+
+func (f *fakeLeads) Choose(name, title string, lines, options []string, index int) error {
+	p := f.prompts[name]
+	if !f.Running(name) {
+		return ErrNoLead
+	}
+	if p == nil || p.GetTitle() != title || !slices.Equal(p.GetLines(), lines) || !slices.Equal(p.GetOptions(), options) || index >= len(options) {
+		return ErrNoChoice
+	}
+	f.chosen = append(f.chosen, name+": "+options[index])
+	delete(f.prompts, name)
+	return nil
+}
 
 func setLead(t *testing.T, c clients, req *planv1.WishServiceSetLeadRequest) (*planv1.Wish, error) {
 	t.Helper()
@@ -207,7 +226,8 @@ func TestResume(t *testing.T) {
 	}
 	delete(leads.running, "lead-"+id)
 	res = resume()
-	if res.GetAttached() || res.GetNote() != "" || strings.Join(res.GetCommand(), " ") != "/bin/sh -c claude --resume "+session {
+	if res.GetAttached() || res.GetNote() != "" || strings.Join(res.GetCommand(), " ") != "/bin/sh -c claude "+
+		leadFlags(runtime.GOOS, planv1.Provider_PROVIDER_CLAUDE, planv1.Allowance_ALLOWANCE_NONE)+"--resume "+session {
 		t.Errorf("resume = %v", res)
 	}
 	if res = resume(); !res.GetAttached() || res.GetNote() != "" || len(leads.opened) != 2 {
@@ -357,8 +377,8 @@ func TestTell(t *testing.T) {
 	if err != nil || res.GetWaiting() {
 		t.Fatalf("tell = %v, %v", res, err)
 	}
-	leads.waiting = true
-	if res, err = tell("Then"); err != nil || !res.GetWaiting() {
+	leads.waiting = planv1.TellWait_TELL_WAIT_TYPING
+	if res, err = tell("Then"); err != nil || !res.GetWaiting() || res.GetWait() != planv1.TellWait_TELL_WAIT_TYPING {
 		t.Errorf("tell while the developer types = %v, %v, want waiting", res, err)
 	}
 	if want := []string{"lead-" + id + ": First line\nsecond line", "lead-" + id + ": Then"}; strings.Join(leads.told, "|") != strings.Join(want, "|") {
@@ -384,7 +404,7 @@ func TestLeadLine(t *testing.T) {
 	var lines []string
 	for _, p := range []planv1.Provider{planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX} {
 		lead.Provider = p
-		line, err := resumeLine(lead)
+		line, err := resumeLine("linux", lead, planv1.Allowance_ALLOWANCE_AUTO)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -394,7 +414,7 @@ func TestLeadLine(t *testing.T) {
 		planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_ANTIGRAVITY,
 	} {
 		lead.Provider = p
-		line, err := briefLine("linux", lead, "/data/wish", Brief{Stable: "rules", Moving: "now"})
+		line, err := briefLine("linux", lead, planv1.Allowance_ALLOWANCE_EDIT, "/data/wish", Brief{Stable: "rules", Moving: "now"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -408,6 +428,149 @@ func TestLeadLine(t *testing.T) {
 	for _, line := range []string{"", "zsh", "/bin/sh -l", "sleep 30", "claudette", "echo claude"} {
 		if LeadLine(line) {
 			t.Errorf("%q is not a lead's line", line)
+		}
+	}
+}
+
+// TestLeadMode: the mode chosen with the wish, or allowed after, is the one its lead starts with, in the project it
+// starts in; nothing more. Without one, the agent's own configuration decides.
+func TestLeadMode(t *testing.T) {
+	ctx := t.Context()
+	c, leads := serveLeads(t, t.TempDir())
+	dir := t.TempDir()
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := project.Msg.GetProject().GetId()
+	resume := func(id string, provider planv1.Provider) string {
+		t.Helper()
+		if _, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: id, Provider: provider})); err != nil {
+			t.Fatal(err)
+		}
+		delete(leads.running, LeadTerminal(id))
+		return leads.opened[len(leads.opened)-1]
+	}
+	for _, tc := range []struct {
+		provider planv1.Provider
+		mode     planv1.Allowance
+		has, not []string
+	}{
+		{planv1.Provider_PROVIDER_CLAUDE, planv1.Allowance_ALLOWANCE_UNSPECIFIED,
+			nil,
+			[]string{"--allowedTools", "--permission-mode", "djinn wish grant", "djinn wish allow", "djinn question answer"}},
+		{planv1.Provider_PROVIDER_CLAUDE, planv1.Allowance_ALLOWANCE_EDIT, []string{"--permission-mode acceptEdits"}, []string{"auto"}},
+		{planv1.Provider_PROVIDER_CLAUDE, planv1.Allowance_ALLOWANCE_AUTO, []string{"--permission-mode auto"}, nil},
+		{planv1.Provider_PROVIDER_CODEX, planv1.Allowance_ALLOWANCE_UNSPECIFIED, nil, []string{"--sandbox", "--ask-for-approval"}},
+		{planv1.Provider_PROVIDER_CODEX, planv1.Allowance_ALLOWANCE_EDIT,
+			[]string{"codex --sandbox workspace-write --ask-for-approval on-request '"}, []string{"--approve-for-me"}},
+		{planv1.Provider_PROVIDER_CODEX, planv1.Allowance_ALLOWANCE_AUTO, []string{"--approve-for-me"}, nil},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, planv1.Allowance_ALLOWANCE_EDIT, []string{"agy -i --mode accept-edits"}, nil},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, planv1.Allowance_ALLOWANCE_AUTO, []string{"agy -i --mode accept-edits"}, nil},
+	} {
+		made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+			Title: "Lead " + tc.provider.String() + " " + tc.mode.String(), ProjectIds: []string{pid},
+			Provider: tc.provider, Allowance: tc.mode, Paused: true,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wish := made.Msg.GetWish()
+		if want := cmp.Or(tc.mode, planv1.Allowance_ALLOWANCE_NONE); AllowanceOf(wish, pid) != want {
+			t.Errorf("%v: made with %v", tc.mode, wish.GetAllowances())
+		}
+		line := resume(wish.GetId(), tc.provider)
+		for _, s := range tc.has {
+			if !strings.Contains(line, s) {
+				t.Errorf("%v %v: %q lacks %q", tc.provider, tc.mode, line, s)
+			}
+		}
+		for _, s := range tc.not {
+			if strings.Contains(line, s) {
+				t.Errorf("%v %v: %q has %q", tc.provider, tc.mode, line, s)
+			}
+		}
+		// The session resumed takes the mode allowed since.
+		if tc.provider == planv1.Provider_PROVIDER_CLAUDE && tc.mode == planv1.Allowance_ALLOWANCE_EDIT {
+			if _, err := c.wishes.Allow(ctx, connect.NewRequest(&planv1.WishServiceAllowRequest{
+				WishId: wish.GetId(), Mode: planv1.Allowance_ALLOWANCE_AUTO,
+			})); err != nil {
+				t.Fatal(err)
+			}
+			if line := resume(wish.GetId(), tc.provider); !strings.Contains(line, "--permission-mode auto --resume ") {
+				t.Errorf("resumed after allow: %q", line)
+			}
+		}
+	}
+	// A lead without a project keeps the provider’s permissions.
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "No project", Allowance: planv1.Allowance_ALLOWANCE_AUTO, Paused: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if line := resume(made.Msg.GetWish().GetId(), planv1.Provider_PROVIDER_CLAUDE); strings.Contains(line, "--permission-mode") ||
+		len(made.Msg.GetWish().GetAllowances()) != 0 {
+		t.Errorf("without a project: %q, %v", line, made.Msg.GetWish().GetAllowances())
+	}
+}
+
+// TestChoose: the choice the lead shows comes with its wish, and the window's answer goes to the lead's terminal,
+// only while that very choice shows.
+func TestChoose(t *testing.T) {
+	ctx := t.Context()
+	choose := func(c clients, req *planv1.WishServiceChooseRequest) error {
+		_, err := c.wishes.Choose(ctx, connect.NewRequest(req))
+		return err
+	}
+	if err := choose(serve(t), &planv1.WishServiceChooseRequest{WishId: session, Option: 1}); code(err) != connect.CodeUnimplemented {
+		t.Errorf("choose without terminals: %v, want unimplemented", err)
+	}
+	leads := &fakeLeads{}
+	c := serve(t, WithLeads(leads))
+	id := c.wish(t)
+	name := LeadTerminal(id)
+	prompt := &planv1.LeadPrompt{
+		Title: "Would you like to run the following command?", Lines: []string{"$ djinn wish brief " + id},
+		Options: []string{"Yes, proceed (y)", "Yes, and don't ask again for commands that start with `djinn` (p)", "No"},
+	}
+	leads.running = map[string][]string{name: {"/bin/sh", "-c", "codex resume s1"}}
+	leads.prompts = map[string]*planv1.LeadPrompt{name: prompt}
+	listed, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := listed.Msg.GetWishes()[0].GetLeadPrompt(); got.GetTitle() != prompt.GetTitle() || len(got.GetOptions()) != 3 {
+		t.Fatalf("lead prompt = %v", got)
+	}
+	req := &planv1.WishServiceChooseRequest{WishId: id, Option: 2, Title: prompt.GetTitle(), Lines: prompt.GetLines(), Options: prompt.GetOptions()}
+	other := &planv1.WishServiceChooseRequest{WishId: id, Option: 2, Title: "Do you want to proceed?", Lines: prompt.GetLines(), Options: prompt.GetOptions()}
+	if err := choose(c, other); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("another choice: %v, want failed precondition", err)
+	}
+	changedCommand := &planv1.WishServiceChooseRequest{WishId: id, Option: 2, Title: prompt.GetTitle(), Options: prompt.GetOptions(), Lines: []string{"$ another command"}}
+	if err := choose(c, changedCommand); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("same options on another command: %v, want failed precondition", err)
+	}
+	if err := choose(c, req); err != nil {
+		t.Fatal(err)
+	}
+	if len(leads.chosen) != 1 || !strings.HasSuffix(leads.chosen[0], "start with `djinn` (p)") {
+		t.Errorf("chosen %q", leads.chosen)
+	}
+	if err := choose(c, req); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("answered twice: %v, want failed precondition", err)
+	}
+	if err := choose(c, &planv1.WishServiceChooseRequest{WishId: id, Option: 0}); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("option 0: %v, want invalid argument", err)
+	}
+}
+
+func TestWindowsLeadAllowsPowerShellCommands(t *testing.T) {
+	flags := leadFlags("windows", planv1.Provider_PROVIDER_CLAUDE, planv1.Allowance_ALLOWANCE_EDIT)
+	for _, tool := range []string{"Bash", "PowerShell"} {
+		if !strings.Contains(flags, tool+"(djinn task spawn *)") {
+			t.Errorf("missing %s orchestration rules: %s", tool, flags)
 		}
 	}
 }

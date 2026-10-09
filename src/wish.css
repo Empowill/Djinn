@@ -474,7 +474,23 @@
   gap: var(--space-1);
   color: var(--muted);
 }
+/* Why a text waits is a sentence: it wraps, its icon on its first line. */
+.lead-message-sent.waiting {
+  align-items: flex-start;
+}
+.lead-message-sent.waiting svg {
+  flex: none;
+  margin-top: 2px;
+}
 /* The page scrolls past the button: nothing stays under it. */
 .wish-view .mission-scroll {
   padding-bottom: 64px;
+}
+
+.lead-prompt-lines {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 20rem;
+  overflow: auto;
+  font: 12px/1.6 var(--mono);
 }

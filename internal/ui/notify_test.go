@@ -403,3 +403,51 @@ func TestNoticesShowAQuestionAskedThroughTheServer(t *testing.T) {
 		t.Errorf("notification = %+v", got)
 	}
 }
+
+func TestLeadPromptNotificationsFollowTheCommand(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	wish := makeWish(t, n.Store, "Permissions", planv1.WishState_WISH_STATE_ACTIVE)
+	p := &planv1.LeadPrompt{Title: "Run this command?", Lines: []string{"go tool task test"}, Options: []string{"Yes", "No"}}
+	n.LeadPrompt(wish.Id, p)
+	note := notes.next(t)
+	if note.Target != "lead-prompt-"+wish.Id || !strings.Contains(note.Body, p.Lines[0]) {
+		t.Fatalf("notification: %+v", note)
+	}
+	n.LeadPrompt(wish.Id, p)
+	select {
+	case extra := <-notes:
+		t.Fatalf("duplicate: %+v", extra)
+	default:
+	}
+	p.Lines = []string{"go tool task build"}
+	n.LeadPrompt(wish.Id, p)
+	if note := notes.next(t); !strings.Contains(note.Body, p.Lines[0]) {
+		t.Fatalf("changed command: %+v", note)
+	}
+	n.LeadPrompt(wish.Id, nil)
+	n.LeadPrompt(wish.Id, p)
+	notes.next(t)
+}
+
+func TestLeadPromptBeforeNotifierIsReplayed(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	wish := makeWish(t, n.Store, "Startup approval", planv1.WishState_WISH_STATE_ACTIVE)
+	n.Use(nil)
+	p := &planv1.LeadPrompt{Title: "Trust this folder?", Lines: []string{"/project"}, Options: []string{"No", "Yes"}}
+	n.LeadPrompt(wish.Id, p)
+	select {
+	case note := <-notes:
+		t.Fatalf("notifier disabled: %+v", note)
+	default:
+	}
+	n.Use(notes)
+	if got := notes.next(t); got.Target != "lead-prompt-"+wish.Id {
+		t.Fatalf("startup notification: %+v", got)
+	}
+	n.Use(notes)
+	select {
+	case note := <-notes:
+		t.Fatalf("duplicate after reconnect: %+v", note)
+	default:
+	}
+}

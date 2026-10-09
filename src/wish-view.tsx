@@ -59,6 +59,7 @@ import { t } from "./i18n";
 import { AttentionBar, attentionOf } from "./attention";
 import { MarkButtons, type OnMark, useWrites } from "./marks";
 import { LeadMessage } from "./lead-message";
+import { LeadPromptCard } from "./lead-prompt";
 import { MarkdownBody } from "./markdown-body";
 import { providerName } from "./provider";
 import { useKeepPlace } from "./scroll-anchor";
@@ -112,7 +113,14 @@ export function WishView({
       () => clients.wishes.resume({ wishId: wish.id, provider: wish.provider }),
       [Change.WISH],
     );
-  const attention = attentionOf(open, waiting, wish.ready ? [wish] : []);
+  const prompt = wish.leadRunning ? wish.leadPrompt : undefined;
+  const attention = attentionOf(
+    open,
+    waiting,
+    wish.ready ? [wish] : [],
+    undefined,
+    prompt ? [wish] : [],
+  );
   const tone = wishTone(wish, open.length, running);
 
   return (
@@ -300,7 +308,7 @@ export function WishView({
         </div>
 
         <div className="overview-content">
-          {(open.length > 0 || waiting.length > 0 || wish.ready) && (
+          {(prompt || open.length > 0 || waiting.length > 0 || wish.ready) && (
             <section
               className="action-center"
               id="action-center"
@@ -309,13 +317,34 @@ export function WishView({
               <div className="section-title">
                 <h2>{t("panels.your_move")}</h2>
                 <p>
-                  {open.length
-                    ? t("wish.questions_wait", { count: open.length })
-                    : wish.ready
-                      ? t("wish.ready_detail")
-                      : t("panels.your_move_detail")}
+                  {prompt
+                    ? t("lead_prompt.waits")
+                    : open.length
+                      ? t("wish.questions_wait", { count: open.length })
+                      : wish.ready
+                        ? t("wish.ready_detail")
+                        : t("panels.your_move_detail")}
                 </p>
               </div>
+              {prompt && (
+                <LeadPromptCard
+                  wishId={wish.id}
+                  prompt={prompt}
+                  onChoose={(index) =>
+                    act(
+                      () =>
+                        clients.wishes.choose({
+                          wishId: wish.id,
+                          option: index + 1,
+                          title: prompt.title,
+                          lines: prompt.lines,
+                          options: prompt.options,
+                        }),
+                      [Change.WISH],
+                    )
+                  }
+                />
+              )}
               {open.length > 0 && (
                 <section className="decisions-section">
                   <div className="section-heading">

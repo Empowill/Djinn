@@ -23,8 +23,9 @@ var (
 	enterGap = 300 * time.Millisecond
 	// tellPoll is how often Tell looks again while it waits on the keyboard.
 	tellPoll = 200 * time.Millisecond
-	// typingIdle is how long something under way at the prompt holds Tell without a key: Tell follows the keys,
-	// not the prompt, and loses track of an edit it does not know (a word erased by a key of the user's own).
+	// typingIdle is how long something under way at the prompt holds Tell without a key, where the program shows
+	// no prompt Tell reads (underWay): there Tell follows the keys, and loses track of an edit it does not know (a
+	// word erased by a key of the user's own).
 	typingIdle = 30 * time.Second
 )
 
@@ -69,6 +70,18 @@ func (t *Terminal) TellText(text string) error {
 	}, text), true)
 }
 
+// Wait is why a text told waits before it is typed.
+type Wait int
+
+const (
+	// NoWait: nothing holds the text.
+	NoWait Wait = iota
+	// WaitTyping: the user has a line under way at the prompt.
+	WaitTyping
+	// WaitChoice: the program shows a choice that keys answer.
+	WaitChoice
+)
+
 // post is a text Post keeps to tell, and what to call if it fails.
 type post struct {
 	text   string
@@ -76,9 +89,9 @@ type post struct {
 }
 
 // Post tells text as TellText does, without waiting: the texts posted arrive in the order posted, and failed, if not
-// nil, gets the error of one that could not be typed. Post tells whether the text waits for the user: a line under
-// way at the prompt, or a choice on screen.
-func (t *Terminal) Post(text string, failed func(error)) (waits bool) {
+// nil, gets the error of one that could not be typed. Post tells whether the text waits for the user, and why: a line
+// under way at the prompt, or a choice on screen.
+func (t *Terminal) Post(text string, failed func(error)) Wait {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.posted = append(t.posted, post{text, failed})
@@ -86,7 +99,13 @@ func (t *Terminal) Post(text string, failed func(error)) (waits bool) {
 		t.posting = true
 		go t.drain()
 	}
-	return t.underWay() || t.choosing()
+	switch {
+	case t.choosing():
+		return WaitChoice
+	case t.underWay():
+		return WaitTyping
+	}
+	return NoWait
 }
 
 // drain tells what is posted, one text after the other, until none is left.
@@ -178,17 +197,27 @@ func (t *Terminal) choosing() bool {
 	return false
 }
 
-// underWay tells whether the user has something under way at the prompt that a line told would join: typed and not
-// sent nor cleared, or a line recalled from the history, with a key less than typingIdle ago. t.mu is held.
+// underWay tells whether the user has something under way at the prompt that a line told would join. Where the
+// agent shows its prompt (Claude Code, Codex), the screen says it: text there that is not its placeholder, however
+// long ago it was typed, and whatever edit brought it there. A word left at the prompt while the developer thinks
+// holds the line until it is sent or cleared: a line told would be glued to it. Elsewhere the keys say it: typed and
+// not sent nor cleared, or a line recalled from the history, with a key less than typingIdle ago. t.mu is held.
 func (t *Terminal) underWay() bool {
+	if shown, holds := t.screen.prompt(); shown {
+		return holds
+	}
 	return (len(t.draft) > 0 || t.recalled) && time.Since(t.lastKey) < typingIdle
 }
 
 // typed follows what the user types at the program's prompt: whether something is under way there, that a line
 // told would join. Printable keys add; Backspace takes a character off, Ctrl+W and Alt+Backspace a word; Enter (not
 // after a backslash, which makes it a line break), Ctrl+C, Ctrl+U and Esc twice clear; Up and Down at an empty prompt
-// recall a line of the history. Keys that answer a choice on screen type nothing. t.mu is held.
+// recall a line of the history. Keys that answer a choice on screen type nothing. What the terminal sends on its own
+// (reports) is no key. t.mu is held.
 func (t *Terminal) typed(b []byte) {
+	if b = withoutReports(b); len(b) == 0 {
+		return
+	}
 	t.lastKey = time.Now()
 	if t.choosing() {
 		t.escaped = false
@@ -254,6 +283,68 @@ func (t *Terminal) typed(b []byte) {
 			t.lastTyped = c
 		}
 	}
+}
+
+// withoutReports is b without what a terminal sends on its own, which the user did not type: answers to the
+// program's queries and reports of the mouse and the focus. Codex asks the colors at start (OSC 10 and 11) and
+// xterm.js answers them as keys would come, ESC ] 10;rgb:…, which read as Alt+] and text would leave a line under way
+// that no Enter of the user's ever clears. Codex and Claude Code follow the mouse (mode 1003): a pointer moving over
+// the terminal is no typing either. A key itself never ends so: a string (OSC, DCS, APC, PM, SOS) up to BEL or ST, a
+// mouse report (CSI < … M or m, or CSI M and three bytes), focus (CSI I, CSI O), the cursor's position (CSI … R), the
+// device's attributes (CSI ? … c, CSI > … c), a mode (CSI ? … $ y) or the keyboard's flags (CSI ? … u).
+func withoutReports(b []byte) []byte {
+	if !bytes.Contains(b, []byte{0x1b}) {
+		return b
+	}
+	out := make([]byte, 0, len(b))
+	for i := 0; i < len(b); {
+		if b[i] != 0x1b || i+1 == len(b) {
+			out = append(out, b[i])
+			i++
+			continue
+		}
+		switch b[i+1] {
+		case ']', 'P', '_', '^', 'X':
+			j := i + 2
+			for j < len(b) && b[j] != 0x07 && (b[j] != 0x1b || j+1 == len(b) || b[j+1] != '\\') {
+				j++
+			}
+			if j < len(b) && b[j] == 0x1b {
+				j++
+			}
+			i = min(len(b), j+1)
+			continue
+		case '[':
+			j := i + 2
+			for j < len(b) && (b[j] < 0x40 || b[j] > 0x7e) {
+				j++
+			}
+			if j == len(b) {
+				break
+			}
+			params, final := b[i+2:j], b[j]
+			report := false
+			switch {
+			case final == 'M' && len(params) == 0 && j+3 < len(b): // X10 mouse: three bytes follow.
+				i = j + 4
+				continue
+			case (final == 'M' || final == 'm') && bytes.HasPrefix(params, []byte("<")),
+				(final == 'I' || final == 'O') && len(params) == 0,
+				final == 'R',
+				final == 'c' && len(params) > 0 && (params[0] == '?' || params[0] == '>'),
+				final == 'y' && bytes.HasSuffix(params, []byte("$")),
+				final == 'u' && bytes.HasPrefix(params, []byte("?")):
+				report = true
+			}
+			if report {
+				i = j + 1
+				continue
+			}
+		}
+		out = append(out, b[i])
+		i++
+	}
+	return out
 }
 
 // eraseWord follows Ctrl+W: the spaces before the cursor go, then the word before them. t.mu is held.

@@ -73,6 +73,24 @@ regard to case: for every agent, `AGENTS.md` and an `.agents` folder; for Claude
 "describes the tools" is for a model to judge, and the lamp decides without one. Antigravity keeps its project
 settings in its own store, not in the folder, so they cannot be seen.
 
+### The lead in the native window
+
+At wish creation, the window can give the selected projects an explicit **Edit** or **Auto** allowance.
+The wish's existing Rights panel changes it later. Future workers and a lead starting or resuming in that
+project receive it; a running lead keeps its current permissions until restarted. **The project decides**
+leaves the agent's configuration unchanged. No project means no additional allowance.
+
+An explicit allowance launches Claude with `acceptEdits` or `auto` and the listed Djinn orchestration commands;
+Codex uses `workspace-write` with `on-request`, plus `--approve-for-me` for Auto. Antigravity receives `--mode accept-edits` for either allowance,
+because its CLI has no Auto mode. Claude’s command rules cover Bash and PowerShell. These flags were checked against
+the installed CLIs' help. Folder trust remains a separate human decision. Nothing bypasses an approval.
+
+A numbered permission or folder-trust choice in the lead's terminal appears as a card in the wish, with its
+command or reason and each option. The window's answer sends the corresponding keys. The server checks the
+question, command/reason and options again before writing, and refuses a choice that changed. An agent cannot
+call the internal `WishService.Choose` through the generated CLI or MCP tools. The terminal remains available
+for screens whose choices Djinn does not recognize. No credentials are read or saved by this feature.
+
 ### The `.agents/permissions.txtpb` format
 
 A `djinn.v1.Permissions` message (`api/djinn/v1/agents.proto`) in text protobuf, like Djinn's own configuration,

@@ -57,7 +57,6 @@
   "lead_message.send": "Envoyer au lead",
   "lead_message.sent": "Envoyé au lead",
   "lead_message.title": "Au lead",
-  "lead_message.waiting": "Envoyé : il part dès que le terminal est libre",
   "make.eyebrow": "NOUVEAU SOUHAIT",
   "make.full": "{max} souhaits sont déjà actifs : celui-ci attendra, en pause. Mettez-en un en pause ou exaucez-le pour faire de la place.",
   "make.projects": "Projets concernés",
@@ -268,7 +267,7 @@
   "question.rub_detail": "Appliquer la recommandation",
   "question.yes": "Oui",
   "rights.auto": "Modifier, en mode auto",
-  "rights.detail": "Ce que les workers de ce souhait peuvent faire dans chaque projet, en plus de sa propre configuration.",
+  "rights.detail": "Ce que le lead et les prochains workers peuvent faire dans chaque projet. Le lead applique les changements au prochain démarrage.",
   "rights.edit": "Modifier les fichiers",
   "rights.for": "Droits dans {project}",
   "rights.none": "Le projet décide",
@@ -397,5 +396,15 @@
   "wish.state_active": "Actif · {rank}",
   "wish.state_granted": "Exaucé",
   "wish.state_paused": "En pause",
-  "wish.tasks": "Tâches"
+  "wish.tasks": "Tâches",
+  "lead_message.waiting_choice": "En attente : le lead affiche un choix dans son terminal. Le vôtre part une fois ce choix fait",
+  "lead_message.waiting_typing": "En attente : du texte est à l'invite du lead, dans son terminal. Le vôtre part une fois ce texte envoyé ou effacé",
+  "lead_prompt.terminal": "Autorisation du lead",
+  "lead_prompt.waits": "Le lead attend votre autorisation.",
+  "lead_prompt.badge": "Autorisation requise",
+  "lead_prompt.title": "Le lead a besoin de votre autorisation",
+  "lead_prompt.detail": "Choisissez ici pour répondre à l’agent. Votre réponse concerne la demande affichée ci-dessus.",
+  "notify.lead_prompt_title": "{wish} : le lead attend votre autorisation",
+  "make.allowance": "Droits dans les projets sélectionnés",
+  "make.allowance_detail": "S’applique au lead et aux prochains workers. Les changements prennent effet au redémarrage du lead."
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -34,8 +35,15 @@ type Leads interface {
 	// there and no choice is on screen; it returns at once, with whether the text waits, ErrNoLead when the terminal
 	// runs no program, or ErrNotLead when it runs another program than a lead's line (LeadLine). Texts told arrive
 	// in order.
-	Tell(name, text string) (waiting bool, err error)
-	// Watch calls f each time a terminal starts or ends; f never waits.
+	Tell(name, text string) (planv1.TellWait, error)
+	// Prompt is the choice the program of the terminal called name shows now, as read from its screen: an approval,
+	// a folder to trust. Nil when it shows none, or runs nothing.
+	Prompt(name string) *planv1.LeadPrompt
+	// Choose picks the option index (from 0) of the choice the terminal called name shows, as its keys would. It
+	// returns ErrNoChoice, typing nothing, when the screen no longer shows the choice of title and options.
+	Choose(name, title string, lines, options []string, index int) error
+	// Watch calls f each time a terminal starts or ends, and each time the choice a lead shows comes, changes or
+	// goes; f never waits.
 	Watch(f func())
 }
 
@@ -46,6 +54,8 @@ var (
 	// ErrNotLead: the lead's terminal runs another program than its lead, a shell the window opened under its name:
 	// a text typed there would run as a command.
 	ErrNotLead = errors.New("the lead's terminal runs another program than the lead")
+	// ErrNoChoice: the lead's terminal no longer shows the choice the window showed: answered there, or changed.
+	ErrNoChoice = errors.New("the lead no longer shows this choice")
 )
 
 // LeadTerminal is the name of the terminal of a wish's lead.
@@ -57,17 +67,94 @@ func WishProvider(wish *planv1.Wish) planv1.Provider {
 	return cmp.Or(wish.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
 }
 
-// resumeLine is the command line that resumes the lead's session, as its agent's command line takes it. The session
-// identifier was checked against a pattern without spaces or quotes: the line goes through the user's shell as it is.
-func resumeLine(lead *planv1.Lead) (string, error) {
+// resumeLine is the command line that resumes the lead's session, as its agent's command line takes it, with the
+// options of mode (leadFlags) for the shell of goos. The session identifier was checked against a pattern without
+// spaces or quotes: the line goes through the user's shell as it is.
+func resumeLine(goos string, lead *planv1.Lead, mode planv1.Allowance) (string, error) {
 	switch lead.GetProvider() {
 	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_UNSPECIFIED:
-		return "claude --resume " + lead.GetSessionId(), nil
+		return "claude " + leadFlags(goos, planv1.Provider_PROVIDER_CLAUDE, mode) + "--resume " + lead.GetSessionId(), nil
 	case planv1.Provider_PROVIDER_CODEX:
-		return "codex resume " + lead.GetSessionId(), nil
+		return "codex resume " + leadFlags(goos, planv1.Provider_PROVIDER_CODEX, mode) + lead.GetSessionId(), nil
 	}
 	return "", fmt.Errorf("a %s lead cannot be resumed in a terminal: only claude and codex",
 		strings.ToLower(strings.TrimPrefix(lead.GetProvider().String(), "PROVIDER_")))
+}
+
+// leadCommands are the djinn commands a lead runs without asking the developer: reading and driving its wish, as its
+// brief tells. What is the developer's word (grant, allow, answer, mark, make) or deletes is not among them: the
+// agent asks before, as for any other command.
+var leadCommands = []string{
+	"djinn wish brief", "djinn wish sync", "djinn wish render", "djinn wish list",
+	"djinn question ask", "djinn question list", "djinn question revise",
+	"djinn task spawn", "djinn task list", "djinn task get", "djinn task watch", "djinn task send",
+	"djinn task stop", "djinn task pause", "djinn task resume", "djinn task start",
+	"djinn block put", "djinn block list", "djinn mark list",
+}
+
+// leadFlags are the options of a lead's agent for the mode the wish allows in the project it starts in, quoted for
+// the shell of goos, each followed by a space (docs/providers.md, "The lead"). None grants more than mode: Claude
+// gets leadCommands, and its edits accepted with edit, its auto mode with auto; Codex its workspace sandbox and
+// approvals on request with edit, its automatic review of approvals with auto. Without a mode, the agent's own
+// configuration decides, as for a worker.
+func leadFlags(goos string, provider planv1.Provider, mode planv1.Allowance) string {
+	if mode != planv1.Allowance_ALLOWANCE_EDIT && mode != planv1.Allowance_ALLOWANCE_AUTO {
+		return "" // Keep the provider’s own permissions unless the developer chose an allowance.
+	}
+	var flags []string
+	switch provider {
+	case planv1.Provider_PROVIDER_CLAUDE:
+		flags = append(flags, "--allowedTools")
+		for _, c := range leadCommands {
+			for _, tool := range []string{"Bash", "PowerShell"} {
+				q, _ := quoteArg(goos, tool+"("+c+" *)") // No quote nor % in them.
+				flags = append(flags, q)
+			}
+		}
+		switch mode {
+		case planv1.Allowance_ALLOWANCE_EDIT:
+			flags = append(flags, "--permission-mode", "acceptEdits")
+		case planv1.Allowance_ALLOWANCE_AUTO:
+			flags = append(flags, "--permission-mode", "auto")
+		}
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		flags = append(flags, "--mode", "accept-edits") // agy has no auto mode on its CLI.
+	case planv1.Provider_PROVIDER_CODEX:
+		switch mode {
+		case planv1.Allowance_ALLOWANCE_EDIT:
+			flags = append(flags, "--sandbox", "workspace-write", "--ask-for-approval", "on-request")
+		case planv1.Allowance_ALLOWANCE_AUTO:
+			flags = append(flags, "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "--approve-for-me")
+		}
+	}
+	if len(flags) == 0 {
+		return ""
+	}
+	return strings.Join(flags, " ") + " "
+}
+
+// leadMode is the mode the wish allows in the project its lead runs in: the one whose folder holds dir, the
+// deepest. ALLOWANCE_NONE outside its projects.
+func leadMode(ctx context.Context, r store.Reader, wish *planv1.Wish, dir string) (planv1.Allowance, error) {
+	best, mode := "", planv1.Allowance_ALLOWANCE_NONE
+	for _, id := range wish.GetProjectIds() {
+		p, err := store.Get[*planv1.Project](ctx, r, id)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return mode, err
+		}
+		folder := p.GetDirectory()
+		if folder == "" || dir == "" || len(folder) <= len(best) {
+			continue
+		}
+		if rel, err := filepath.Rel(folder, dir); err == nil && rel != ".." &&
+			!strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			best, mode = folder, AllowanceOf(wish, p.GetId())
+		}
+	}
+	return mode, nil
 }
 
 // LeadLine tells whether line is one a lead runs, as Resume starts it (resumeLine, briefLine) and a restart takes
@@ -82,7 +169,7 @@ func (w *Wishes) SetLead(
 ) (*connect.Response[planv1.WishServiceSetLeadResponse], error) {
 	lead := &planv1.Lead{Provider: req.Msg.GetProvider(), SessionId: req.Msg.GetSessionId()}
 	if lead.Provider != planv1.Provider_PROVIDER_UNSPECIFIED {
-		if _, err := resumeLine(lead); err != nil {
+		if _, err := resumeLine(runtime.GOOS, lead, planv1.Allowance_ALLOWANCE_NONE); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
 		}
 	}
@@ -101,7 +188,7 @@ func (w *Wishes) SetLead(
 		if lead.Provider == planv1.Provider_PROVIDER_UNSPECIFIED {
 			// Without a kind given, the session is of the wish's agent.
 			lead.Provider = WishProvider(wish)
-			if _, err := resumeLine(lead); err != nil {
+			if _, err := resumeLine(runtime.GOOS, lead, planv1.Allowance_ALLOWANCE_NONE); err != nil {
 				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%w: give --provider", err))
 			}
 		}
@@ -141,7 +228,7 @@ func (w *Wishes) Tell(
 	if err != nil {
 		return nil, Status(err)
 	}
-	waiting, err := w.Leads.Tell(LeadTerminal(wish.GetId()), text)
+	wait, err := w.Leads.Tell(LeadTerminal(wish.GetId()), text)
 	if errors.Is(err, ErrNoLead) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"%w: djinn wish resume %s starts it", err, wish.GetId()))
@@ -153,7 +240,30 @@ func (w *Wishes) Tell(
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&planv1.WishServiceTellResponse{Waiting: waiting}), nil
+	return connect.NewResponse(&planv1.WishServiceTellResponse{
+		Waiting: wait != planv1.TellWait_TELL_WAIT_UNSPECIFIED, Wait: wait,
+	}), nil
+}
+
+// Choose answers the choice the lead shows in its terminal, as its keys would: the window's answer to an approval.
+func (w *Wishes) Choose(
+	ctx context.Context, req *connect.Request[planv1.WishServiceChooseRequest],
+) (*connect.Response[planv1.WishServiceChooseResponse], error) {
+	if w.Leads == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
+	}
+	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
+	if err != nil {
+		return nil, Status(err)
+	}
+	err = w.Leads.Choose(LeadTerminal(wish.GetId()), req.Msg.GetTitle(), req.Msg.GetLines(), req.Msg.GetOptions(), int(req.Msg.GetOption())-1)
+	switch {
+	case errors.Is(err, ErrNoLead), errors.Is(err, ErrNotLead), errors.Is(err, ErrNoChoice):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&planv1.WishServiceChooseResponse{}), nil
 }
 
 func (w *Wishes) Resume(
@@ -184,10 +294,14 @@ func (w *Wishes) resume(
 	var line, dir, exclusive string
 	var started *planv1.Lead // the lead a brief starts, recorded once its terminal runs
 	if lead := wish.GetLead(); lead.GetSessionId() != "" {
-		if line, err = resumeLine(lead); err != nil {
+		dir, exclusive = lead.GetDirectory(), lead.GetSessionId()
+		mode, err := leadMode(ctx, w.Store, wish, dir)
+		if err != nil {
+			return nil, Status(err)
+		}
+		if line, err = resumeLine(runtime.GOOS, lead, mode); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
-		dir, exclusive = lead.GetDirectory(), lead.GetSessionId()
 		if info, err := os.Stat(dir); dir == "" || !filepath.IsAbs(dir) || err != nil || !info.IsDir() {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"the lead's folder %q is not on this machine: djinn wish set-lead %s %s --directory <folder> gives it",
@@ -267,7 +381,7 @@ func (w *Wishes) SetProvider(
 		"names no other agent. The tasks that run go on with theirs. The conversation of the %s lead does not pass to "+
 		"the new one, which starts from the wish's brief.", providerName(provider), providerName(from), providerName(from))}
 	if old.GetSessionId() != "" {
-		if line, err := resumeLine(old); err == nil {
+		if line, err := resumeLine(runtime.GOOS, old, planv1.Allowance_ALLOWANCE_NONE); err == nil {
 			notes = append(notes, "The session of the old lead stays with "+providerName(old.GetProvider())+": "+line+
 				" in its folder reads it again.")
 		}
