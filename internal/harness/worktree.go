@@ -2,6 +2,7 @@ package harness
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // worktreeDir is where a task's worktree goes: in Djinn's data folder, on the project's side, named after the
@@ -17,21 +20,27 @@ func worktreeDir(home, projectID, taskID string) string {
 	return filepath.Join(home, "projects", projectID, "worktrees", taskID)
 }
 
-// branchName is the default branch of a task: <task-code>-<slug>-<uuid8>, in lower case, the last 8 characters
-// of its UUIDv7 being the random part.
 // scratchDir is the folder of a task outside any project, under Djinn's data folder.
 func scratchDir(home, taskID string) string {
 	return filepath.Join(home, "tasks", taskID)
 }
 
-func branchName(code, title, taskID string) string {
-	parts := []string{}
-	for _, p := range []string{slug(code, 20), slug(title, 40), taskID[max(0, len(taskID)-8):]} {
-		if p != "" {
-			parts = append(parts, p)
+// branchName is the branch of a task: the project's template (plan.DefaultBranch when empty) with {code} and {slug}
+// its code and title as slugs, {uuid8} the last 8 characters of its UUIDv7, the random part. A placeholder that comes
+// out empty takes the separator after it away, or else the one before it: W3 "!!!" is w3-89abcdef.
+func branchName(template, code, title, taskID string) string {
+	values := []string{"{code}", slug(code, 20), "{slug}", slug(title, 40), "{uuid8}", taskID[max(0, len(taskID)-8):]}
+	var pairs []string
+	for i := 0; i < len(values); i += 2 {
+		if values[i+1] != "" {
+			continue
+		}
+		for _, sep := range []string{"-", "_", ".", "/"} {
+			pairs = append(pairs, values[i]+sep, "", sep+values[i], "")
 		}
 	}
-	return strings.Join(parts, "-")
+	out := strings.NewReplacer(pairs...).Replace(cmp.Or(template, plan.DefaultBranch))
+	return strings.NewReplacer(values...).Replace(out)
 }
 
 // accents are folded to their letter in a slug.

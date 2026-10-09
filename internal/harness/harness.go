@@ -120,6 +120,7 @@ type run struct {
 	restart bool          // the worker stops to start again, allowed to edit
 	unread  []string      // messages the worker took on its input and has said nothing after yet
 	warm    *warm         // the warm worker the task takes, until launch
+	branch  string        // the branch template of the project's settings, for launch; empty: the default
 	failure string        // the last error the current worker said: it never ends done
 	limit   *Limit        // the usage limit the current worker said it hit: it wins over failure
 }
@@ -329,7 +330,7 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		}
 		return nil, err
 	}
-	r.warm = wk
+	r.warm, r.branch = wk, settings.Branch
 	var prep prepared
 	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -463,7 +464,7 @@ func (h *Harness) launch(
 		}
 	}
 	if project.GetGit() && !r.watcher { // A watcher writes nothing: it runs in the project's folder.
-		task.Branch = branchName(task.GetCode(), task.GetTitle(), task.GetId())
+		task.Branch = branchName(r.branch, task.GetCode(), task.GetTitle(), task.GetId())
 		task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
 		var err error
 		if wk != nil {

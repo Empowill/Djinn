@@ -312,6 +312,15 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 		h.finish(r, Result{ExitCode: -1, Err: err})
 		return err
 	}
+	if project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+		// Its branch follows the project's settings as they are now, like its access.
+		settings, err := plan.LoadSettings(h.home, project)
+		if err != nil {
+			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("project %s: %w", project.GetName(), err)})
+			return nil
+		}
+		r.branch = settings.Branch
+	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err
 }

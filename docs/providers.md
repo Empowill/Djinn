@@ -91,8 +91,8 @@ for skills. Djinn's own: [`.agents/permissions.txtpb`](../.agents/permissions.tx
 Reading is always allowed. A word holds no wildcard nor shell operator (the file is refused otherwise), so a
 prefix never widens into a pattern.
 
-Next to it, `.agents/settings.txtpb` gives the project's workers their default agent, model and budget, shared by
-the team, your own file winning: [team settings](team-settings.md).
+Next to it, `.agents/settings.txtpb` gives the project's workers their default agent, model, budget and branch
+name, shared by the team, your own file winning: [team settings](team-settings.md).
 
 ### How each agent receives it
 

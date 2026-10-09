@@ -64,6 +64,11 @@ status: in-progress
   (`TestContinue`, `TestContinueWaitsForASlot`, `TestContinueRefused`, `TestForkClosesParent`, `TestContinueCommand`
   in `internal/harness`; `TestDependencyResumes` in `internal/dispatch`; `e2e/task-continue.spec.ts`: an interrupted
   task continued from the command line shows once in the Tasks tab)
+- [x] Worker branch names follow the project's settings: `branch` in `.agents/settings.txtpb` or the developer's
+  file, a template of `{code}`, `{slug}` and `{uuid8}` (required), checked by the proto when the file is read;
+  default `{code}-{slug}-{uuid8}`; a planned task takes it when it starts. (`TestReadSettings`, `TestResolveSettings`,
+  `TestProjectShow` in `internal/plan`; `TestBranchName`, `TestBranchFromSettings` in `internal/harness`;
+  [`docs/team-settings.md`](../docs/team-settings.md#branch-names))
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -91,8 +96,8 @@ status: in-progress
 - **One process per worker**, in a process group of its own on Unix: stop sends SIGTERM to the group, then
   SIGKILL after 5 s. On Windows the process is killed at once; its children survive until a job object (T17).
   Djinn's environment is passed on, plus `DJINN_TASK_ID` and `DJINN_WISH_ID`; it is never read nor recorded.
-- **Worktree**: `<data folder>/projects/<project id>/worktrees/<task id>`, branch `<code>-<slug>-<uuid8>` in
-  lower case, from the project's `HEAD`; a project in a sub-folder of its repository runs in the same sub-folder
+- **Worktree**: `<data folder>/projects/<project id>/worktrees/<task id>`, branch from the project's `branch`
+  setting, by default `<code>-<slug>-<uuid8>` in lower case, from the project's `HEAD`; a project in a sub-folder of its repository runs in the same sub-folder
   of the worktree. Outside Git the worker runs in the project folder. The worktree stays when the task ends:
   `djinn task clean` removes it (refused with changes not committed, unless `--force`); the branch stays.
 - **Task codes** `W1`, `W2`… per wish, like question codes. The task's project defaults to the wish's only one.
@@ -183,7 +188,7 @@ status: in-progress
 - **Not built yet**: per-worker measures (gopsutil), cgroups (T17).
 
 ## Open questions
-- Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`.*
+- Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`; built (`branch`, `TestBranchFromSettings`).*
 - Which permissions does a Claude worker get? *Decided (Q34): the project's own configuration; Djinn imposes
   none. Outside any project, read-only. Completed by Q38: `.agents/permissions.txtpb` first, translated per
   agent; a folder outside Git without configuration asks.*
