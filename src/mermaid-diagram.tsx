@@ -5,6 +5,7 @@ import {
 } from "./visualization-document";
 import "./mermaid-diagram.css";
 import { t } from "./i18n";
+import { token, useShownTheme } from "./theme";
 
 // Load the locally bundled engine only when a Markdown Mermaid block is visible.
 // It executes in a scripts-only iframe, never in the page itself.
@@ -16,7 +17,34 @@ const loadEngine = () =>
 const scriptLiteral = (value: string) =>
   JSON.stringify(value).replaceAll("<", "\\u003c");
 
+// The diagram's colours: the theme on the page, from the tokens of theme.css.
+function diagramLook(theme: "dark" | "light") {
+  const [ground, text, box, border, line] = [
+    "n-19",
+    "n-e7",
+    "n-28",
+    "n-65",
+    "n-a9",
+  ].map(token);
+  return {
+    css: `:root{color-scheme:${theme}}body{margin:12px;background:${ground};color:${text};font:12px/1.6 system-ui}`,
+    config: {
+      theme: theme === "light" ? "neutral" : "dark",
+      themeVariables: {
+        fontSize: "12px",
+        background: ground,
+        primaryColor: box,
+        primaryTextColor: text,
+        primaryBorderColor: border,
+        lineColor: line,
+        textColor: text,
+      },
+    },
+  };
+}
+
 function DiagramFrame({ source }: { source: string }) {
+  const theme = useShownTheme();
   const frame = useRef<HTMLIFrameElement>(null);
   const [url, setUrl] = useState("");
   const [height, setHeight] = useState(240);
@@ -42,7 +70,8 @@ function DiagramFrame({ source }: { source: string }) {
       void loadEngine()
         .then((runtime) => {
           if (!active) return;
-          const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${VISUALIZATION_POLICY}"><style>:root{color-scheme:dark}body{margin:12px;background:#191919;color:#e7e7e7;font:12px/1.6 system-ui}svg{max-width:100%;height:auto;display:block;margin:auto}#render{overflow:auto}</style></head><body><div id="render"></div><script>${runtime.replaceAll("</script", "<\\/script")}</script><script>(async()=>{const token=${scriptLiteral(token)},send=(type,data)=>parent.postMessage({type,token,...data},'*');try{mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'dark',fontFamily:'system-ui',themeVariables:{fontSize:'12px',primaryColor:'#292929',primaryTextColor:'#e7e7e7',primaryBorderColor:'#666',lineColor:'#aaa'},flowchart:{htmlLabels:false},maxTextSize:30000,suppressErrorRendering:true});const {svg}=await mermaid.render('diagram',${scriptLiteral(source)});document.getElementById('render').innerHTML=svg;const report=()=>send('djinn:visualization-height',{height:Math.min(4000,Math.max(120,Math.ceil(document.documentElement.scrollHeight)))});new ResizeObserver(report).observe(document.body);report()}catch(e){send('djinn:visualization-error',{message:${scriptLiteral(t("mermaid.render_failed"))}})}})();</script></body></html>`;
+          const look = diagramLook(theme);
+          const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${VISUALIZATION_POLICY}"><style>${look.css}svg{max-width:100%;height:auto;display:block;margin:auto}#render{overflow:auto}</style></head><body><div id="render"></div><script>${runtime.replaceAll("</script", "<\\/script")}</script><script>(async()=>{const token=${scriptLiteral(token)},send=(type,data)=>parent.postMessage({type,token,...data},'*');try{mermaid.initialize({startOnLoad:false,securityLevel:'strict',fontFamily:'system-ui',...${JSON.stringify(look.config).replaceAll("<", "\\u003c")},flowchart:{htmlLabels:false},maxTextSize:30000,suppressErrorRendering:true});const {svg}=await mermaid.render('diagram',${scriptLiteral(source)});document.getElementById('render').innerHTML=svg;const report=()=>send('djinn:visualization-height',{height:Math.min(4000,Math.max(120,Math.ceil(document.documentElement.scrollHeight)))});new ResizeObserver(report).observe(document.body);report()}catch(e){send('djinn:visualization-error',{message:${scriptLiteral(t("mermaid.render_failed"))}})}})();</script></body></html>`;
           blob = URL.createObjectURL(new Blob([html], { type: "text/html" }));
           setUrl(blob);
         })
@@ -52,7 +81,7 @@ function DiagramFrame({ source }: { source: string }) {
       window.removeEventListener("message", receive);
       if (blob) URL.revokeObjectURL(blob);
     };
-  }, [source]);
+  }, [source, theme]);
   return (
     <>
       {error ? (

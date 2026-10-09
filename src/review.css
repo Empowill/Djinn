@@ -28,7 +28,7 @@ html[data-theme="light"] {
   --line: #e2e2dd;
   --line-strong: #c9c9c2;
   --muted: #66665f;
-  --muted-dim: #7a7a72;
+  --muted-dim: #6f6f68;
   --accent: #1c1c1a;
   --st-done: #116b33;
   --st-running: #1d4ed8;
@@ -322,7 +322,7 @@ html[data-theme="light"] {
   padding-left: 1.3em;
   margin: 0.5em 0;
 }
-.prose .ac-markdown code {
+.prose .ac-markdown :not(pre) > code {
   font: 12.5px var(--mono);
   background: var(--surface-soft);
   border-radius: 4px;

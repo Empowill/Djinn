@@ -12,7 +12,7 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-control);
   background: var(--surface-raised);
-  box-shadow: 0 6px 24px #00000080;
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--shadow) 50.2%, transparent);
   color: var(--accent);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);

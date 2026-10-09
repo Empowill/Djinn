@@ -39,7 +39,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: 0 var(--space-3) 0 var(--space-2);
-  background: #131313;
+  background: var(--n-14);
   font: var(--font-size-body) var(--mono);
   color: var(--muted);
 }
@@ -78,7 +78,7 @@
 .lead-terminal-state.error {
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #d78a7c;
+  color: var(--danger);
 }
 .lead-terminal-screen {
   flex: 1;

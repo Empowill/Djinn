@@ -243,7 +243,7 @@
   "settings.language_system": "System ({language})",
   "settings.theme": "Theme",
   "settings.theme_dark": "Dark",
-  "settings.theme_detail": "How the window looks. Dark by default.",
+  "settings.theme_detail": "How the window looks. As the system by default.",
   "settings.theme_light": "Light",
   "settings.theme_system": "As the system",
   "sidebar.active_count.one": "{count}/{max}",
