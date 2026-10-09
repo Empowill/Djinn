@@ -19,7 +19,9 @@
       "Bash(sh .agents/skills/babysit-pr/watch.sh *)",
       "PowerShell(sh .agents/skills/babysit-pr/watch.sh *)",
       "Bash(sh .agents/skills/babysit-mr/watch.sh *)",
-      "PowerShell(sh .agents/skills/babysit-mr/watch.sh *)"
+      "PowerShell(sh .agents/skills/babysit-mr/watch.sh *)",
+      "Bash(sh .agents/skills/babysit-pr/inbox.sh *)",
+      "PowerShell(sh .agents/skills/babysit-pr/inbox.sh *)"
     ],
     "defaultMode": "auto",
     "deny": [

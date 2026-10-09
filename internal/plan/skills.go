@@ -131,6 +131,8 @@ type Summoned struct {
 	SkillDir
 	// Source is <project>/<skill>.
 	Source string
+	// ProjectID is the project that holds it.
+	ProjectID string
 	// Missing says why the skill cannot be found; empty when it is.
 	Missing string
 }
@@ -139,7 +141,9 @@ type Summoned struct {
 func SummonedSkills(ctx context.Context, r store.Reader, project *planv1.Project) ([]Summoned, error) {
 	var out []Summoned
 	for _, s := range project.GetSummons() {
-		res := Summoned{Source: s.GetProjectId() + "/" + s.GetSkill(), SkillDir: SkillDir{Name: s.GetSkill()}}
+		res := Summoned{
+			Source: s.GetProjectId() + "/" + s.GetSkill(), ProjectID: s.GetProjectId(), SkillDir: SkillDir{Name: s.GetSkill()},
+		}
 		src, err := store.Get[*planv1.Project](ctx, r, s.GetProjectId())
 		switch {
 		case errors.Is(err, store.ErrNotFound):

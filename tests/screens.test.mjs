@@ -886,7 +886,12 @@ test("the inbox shows each item with its proposed route, the recommended destina
     service(s.ProjectService, {
       list: () => ({ projects: [{ id: "p1", name: "gong" }] }),
     });
-    service(s.InboxService, { list: () => ({ items: [item] }) });
+    service(s.InboxService, {
+      list: () => ({ items: [item] }),
+      sources: () => ({
+        sources: [{ name: "gong/babysit-mr", skill: "babysit-mr" }],
+      }),
+    });
     service(s.TaskService, { list: () => ({ tasks: [] }) });
     service(s.QuestionService, { list: () => ({ questions: [] }) });
     service(s.BlockService, { list: () => ({ blocks: [] }) });
@@ -914,6 +919,94 @@ test("the inbox shows each item with its proposed route, the recommended destina
   assert.ok(made > 0 && filed > made);
   assert.match(html, /Rub the lamp/);
   assert.match(html, /Dismiss/);
+  // The sources fold under the items.
+  assert.match(
+    html,
+    /<details class="inbox-sources-fold"><summary>Sources \(1\)<\/summary>/,
+  );
+});
+
+test("the empty inbox lists the sources the skills declare, each with Plug in or Unplug; without any, it is hidden", async () => {
+  const lamp = wish(
+    "01a11833-a440-7479-a067-52615c91da71",
+    "Ship the lamp",
+    s.WishState.ACTIVE,
+    1,
+  );
+  const render = async (sources) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.ProjectService, { list: () => ({ projects: [] }) });
+      service(s.InboxService, {
+        list: () => ({ items: [] }),
+        sources: () => ({ sources }),
+      });
+      service(s.TaskService, { list: () => ({ tasks: [] }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    await djinn.store.changed("", [
+      s.Change.WISH,
+      s.Change.PROJECT,
+      s.Change.INBOX,
+    ]);
+    return s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+      ),
+    );
+  };
+
+  assert.doesNotMatch(await render([]), /Inbox/);
+
+  const html = await render([
+    {
+      name: "djinn/babysit-pr",
+      skill: "babysit-pr",
+      project: "djinn",
+      watch: "sh .agents/skills/babysit-pr/inbox.sh",
+      every: "5m0s",
+    },
+    {
+      name: "gong/mentions",
+      skill: "mentions",
+      project: "gong",
+      watch: "mentions --new",
+      every: "1h0m0s",
+      plugged: true,
+    },
+    {
+      name: "gong/noisy",
+      skill: "noisy",
+      project: "gong",
+      error: "metadata.djinn.source.every: 10s is too often",
+    },
+  ]);
+  assert.match(html, /Inbox/);
+  assert.match(
+    html,
+    /Djinn reads only the sources you plug in, on this machine/,
+  );
+  const rows = html
+    .split('<li class="inbox-source-row">')
+    .slice(1)
+    .map((row) => row.slice(0, row.indexOf("</li>")));
+  assert.equal(rows.length, 3);
+  assert.match(rows[0], /djinn\/babysit-pr/);
+  assert.match(
+    rows[0],
+    /<code>sh .agents\/skills\/babysit-pr\/inbox.sh<\/code>/,
+  );
+  assert.match(rows[0], /Unplugged: runs nothing/);
+  assert.match(rows[0], />Plug in<\/button>/);
+  assert.match(rows[1], /Plugged in, every 1h/);
+  assert.match(rows[1], />Unplug<\/button>/);
+  // A source that cannot run says why, and offers nothing to plug in.
+  assert.match(rows[2], /10s is too often/);
+  assert.doesNotMatch(rows[2], /<button/);
 });
 
 test("the folder of a new project has a folder dialog's button only when the window has one", () => {

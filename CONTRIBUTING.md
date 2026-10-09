@@ -143,6 +143,10 @@ To use Djinn, see the [README](README.md). To work on it:
   `djinn up` runs (delete it to stop); the lead republishes that file. `djinn wish render <wish-id>` writes it once.
 - `djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app, without a copy: they
   follow the source. `djinn skill list` shows the skills; `djinn skill unsummon app/babysit-mr --from infra` stops it.
+- An inbox source a project's skill declares runs only once you plug it in, on your machine: `djinn inbox sources`
+  lists them, `djinn inbox plug babysit-pr` runs Djinn's own (the pull requests assigned to you or that request your
+  review, read with `gh`), `djinn inbox unplug <source>` stops one; the empty inbox does the same with its buttons
+  ([T28](plan/d6fb2417-inbox.md)).
 - Three wishes are active at most; the others wait, paused. `djinn wish pause <wish-id>` sets one aside and stops its
   workers; `djinn wish activate <wish-id>` takes it back, its workers resumed, in the last place (three being active,
   the third wish is paused); `djinn wish move <wish-id> --to 1` gives one priority, active or not;

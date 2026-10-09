@@ -1238,6 +1238,39 @@
         "title": "InboxServiceListResponse",
         "additionalProperties": false
       },
+      "plan.v1.InboxServicePlugRequest": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "source",
+            "maxLength": 300,
+            "pattern": "^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "description": "The source, as \u003cproject\u003e/\u003cskill\u003e, or the skill alone when one project holds it. Case ignored."
+          }
+        },
+        "title": "InboxServicePlugRequest",
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.InboxServicePlugResponse": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.InboxSource"
+              }
+            ],
+            "title": "source",
+            "description": "The source, plugged in."
+          }
+        },
+        "title": "InboxServicePlugResponse",
+        "additionalProperties": false
+      },
       "plan.v1.InboxServiceRouteRequest": {
         "type": "object",
         "properties": {
@@ -1285,6 +1318,102 @@
         },
         "title": "InboxServiceRouteResponse",
         "additionalProperties": false
+      },
+      "plan.v1.InboxServiceSourcesRequest": {
+        "type": "object",
+        "title": "InboxServiceSourcesRequest",
+        "additionalProperties": false
+      },
+      "plan.v1.InboxServiceSourcesResponse": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.InboxSource"
+            },
+            "title": "sources",
+            "description": "The sources, by project then skill."
+          }
+        },
+        "title": "InboxServiceSourcesResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.InboxServiceUnplugRequest": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "source",
+            "maxLength": 300,
+            "pattern": "^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "description": "The source, as \u003cproject\u003e/\u003cskill\u003e, or the skill alone when one project holds it. Case ignored."
+          }
+        },
+        "title": "InboxServiceUnplugRequest",
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.InboxServiceUnplugResponse": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.InboxSource"
+              }
+            ],
+            "title": "source",
+            "description": "The source, unplugged."
+          }
+        },
+        "title": "InboxServiceUnplugResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.InboxSource": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "name",
+            "description": "The source, as \u003cproject\u003e/\u003cskill\u003e: the project that holds the skill, then its folder name."
+          },
+          "skill": {
+            "type": "string",
+            "title": "skill",
+            "description": "The skill's folder name."
+          },
+          "project": {
+            "type": "string",
+            "title": "project",
+            "description": "The project that holds the skill, by name."
+          },
+          "watch": {
+            "type": "string",
+            "title": "watch",
+            "description": "The command line it runs, without a shell, in the folder of the project that uses it."
+          },
+          "every": {
+            "type": "string",
+            "title": "every",
+            "description": "The least time between two starts of its command, as 5m0s."
+          },
+          "plugged": {
+            "type": "boolean",
+            "title": "plugged",
+            "description": "Whether it is plugged in on this machine: only then does its command run."
+          },
+          "error": {
+            "type": "string",
+            "title": "error",
+            "description": "Why it cannot be used; empty when it can."
+          }
+        },
+        "title": "InboxSource",
+        "additionalProperties": false,
+        "description": "An inbox source a project's skill declares (metadata.djinn.source), as this machine sees it."
       },
       "plan.v1.InboxState": {
         "type": "string",
@@ -7225,6 +7354,68 @@
         }
       }
     },
+    "/plan.v1.InboxService/Plug": {
+      "post": {
+        "tags": [
+          "InboxService"
+        ],
+        "summary": "Plug",
+        "description": "Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.",
+        "operationId": "InboxService_Plug",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InboxServicePlugRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServicePlugResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/plan.v1.InboxService/Route": {
       "post": {
         "tags": [
@@ -7280,6 +7471,230 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/plan.v1.InboxServiceRouteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.InboxService/Sources": {
+      "get": {
+        "tags": [
+          "InboxService"
+        ],
+        "summary": "Sources",
+        "description": "List the sources the projects' skills declare, plugged in or not on this machine.",
+        "operationId": "InboxService_Sources.get",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          },
+          {
+            "name": "message",
+            "in": "query",
+            "description": "The URL-encoded message query parameter contains the JSON or binary serialized request message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceSourcesRequest"
+                }
+              }
+            }
+          },
+          {
+            "name": "encoding",
+            "in": "query",
+            "description": "Define which encoding or 'Message-Codec' to use",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/encoding"
+            },
+            "example": "json"
+          },
+          {
+            "name": "base64",
+            "in": "query",
+            "description": "Specifies if the message query param is base64 encoded, which may be required for binary data",
+            "schema": {
+              "$ref": "#/components/schemas/base64"
+            },
+            "example": false
+          },
+          {
+            "name": "compression",
+            "in": "query",
+            "description": "Which compression algorithm to use for this request",
+            "schema": {
+              "$ref": "#/components/schemas/compression"
+            },
+            "example": "gzip"
+          },
+          {
+            "name": "connect",
+            "in": "query",
+            "description": "Define the version of the Connect protocol",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect"
+            },
+            "example": "v1"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceSourcesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "InboxService"
+        ],
+        "summary": "Sources",
+        "description": "List the sources the projects' skills declare, plugged in or not on this machine.",
+        "operationId": "InboxService_Sources",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InboxServiceSourcesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceSourcesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.InboxService/Unplug": {
+      "post": {
+        "tags": [
+          "InboxService"
+        ],
+        "summary": "Unplug",
+        "description": "Unplug a source, on this machine: its command stops and runs no more. Its items stay.",
+        "operationId": "InboxService_Unplug",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.InboxServiceUnplugRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.InboxServiceUnplugResponse"
                 }
               }
             }
@@ -12127,7 +12542,7 @@
     },
     {
       "name": "InboxService",
-      "description": "The inbox: what comes from outside, proposed as requests. A source is a command a skill declares in its SKILL.md\n (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. Each paragraph it\n prints becomes an item with its proposed route; nothing is made until you answer."
+      "description": "The inbox: what comes from outside, proposed as requests. A source is a command a skill declares in its SKILL.md\n (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. A source runs only\n once you plug it in, on this machine. Each paragraph it prints becomes an item with its proposed route; nothing is\n made until you answer."
     },
     {
       "name": "WishService",
