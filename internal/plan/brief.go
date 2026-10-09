@@ -47,7 +47,8 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"developer, split the work into tasks for workers, and keep the plan true. Djinn computes the plan; you change it " +
 	"with the `djinn` command, never in its data folder.\n\n" +
 	"- **Ask, do not guess.** A question for the developer goes through `djinn question ask`, with its options and " +
-	"your recommendation. An answered question is a decision.\n" +
+	"your recommendation. An answered question is a decision; so is a block of kind decision. A task that follows " +
+	"from one names it: `--decision Q03`, or the block's id.\n" +
 	"- **Workers start from a short prompt.** Say what to do, in which project, and how to check it. " +
 	"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
 	"again at every turn, so use them only when the whole context is needed.\n" +
@@ -71,18 +72,19 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"## Commands\n\n" +
 	"`<wish>` is the wish's identifier, given below.\n\n" +
 	"- `djinn wish brief <wish>`: this brief, up to date.\n" +
-	"- `djinn question ask \"<question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\"`; " +
+	"- `djinn question ask \"<question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔒` (one " +
+	"emoji for the subject); " +
 	"`djinn question list --wish-id <wish> --open`.\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\"` (`--project-id`, `--depends-on W1`, `--later`, " +
-	"`--fork W1`, `--from-lead`, `--provider watch`, `--restart`); `djinn task list --wish-id <wish>`; " +
-	"`djinn task watch <task>`; " +
+	"`--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`); " +
+	"`djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
 	"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
 	"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task done <task> --note " +
 	"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported) once its work is done " +
 	"elsewhere.\n" +
 	"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
 	"card; without `--ask`, the proposal only.\n" +
-	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\"`; `djinn block list <wish>`.\n" +
+	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\" --icon 🧱`; `djinn block list <wish>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for your " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, after you investigated.\n" +
 	"- `djinn mark list <wish>`: what the developer read or approved in the window, without a word. An approved " +
@@ -222,14 +224,12 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		b.WriteString("- Djinn proposes to grant it: every task is finished and no question is open. Granting is the developer's word.\n")
 	}
 
-	var open, investigate, decided []*planv1.Question
+	var open, investigate []*planv1.Question
 	for _, q := range exp.GetQuestions() {
 		if Investigating(q) {
 			investigate = append(investigate, q)
 		} else if q.GetAnswer() == nil {
 			open = append(open, q)
-		} else {
-			decided = append(decided, q)
 		}
 	}
 	if len(open) > 0 {
@@ -260,15 +260,21 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			b.WriteString("\n")
 		}
 	}
-	if len(decided) > 0 {
-		slices.SortStableFunc(decided, func(x, y *planv1.Question) int {
-			return y.GetAnswer().GetCreateTime().AsTime().Compare(x.GetAnswer().GetCreateTime().AsTime())
-		})
+	if decided := render.Decisions(exp); len(decided) > 0 {
 		b.WriteString("\n## Latest decisions\n\n")
-		for _, q := range decided[:min(len(decided), briefDecisions)] {
-			fmt.Fprintf(&b, "- **%s** %s → %s", q.GetCode(), clipLine(q.GetText()), choiceText(q))
-			if note := q.GetAnswer().GetNote(); note != "" {
-				b.WriteString(" (" + clipLine(note) + ")")
+		for _, d := range decided[:min(len(decided), briefDecisions)] {
+			b.WriteString("- " + d.Icon + " ")
+			if q := d.Question; q != nil {
+				fmt.Fprintf(&b, "**%s** %s → %s", q.GetCode(), clipLine(q.GetText()), choiceText(q))
+				if note := q.GetAnswer().GetNote(); note != "" {
+					b.WriteString(" (" + clipLine(note) + ")")
+				}
+			} else {
+				fmt.Fprintf(&b, "**%s** (block %s)", cmp.Or(clipLine(d.Block.GetTitle()), "(untitled)"), d.Block.GetId())
+			}
+			b.WriteString(", " + deciderText(d))
+			if len(d.Tasks) > 0 {
+				b.WriteString("; led to " + strings.Join(d.Tasks, ", "))
 			}
 			b.WriteString("\n")
 		}
@@ -402,6 +408,19 @@ func waitText(t *planv1.Task) string {
 		text += ", " + clipLine(t.GetError())
 	}
 	return text
+}
+
+// deciderText says who took a decision: the developer, by an answer or an approval, or an agent.
+func deciderText(d render.Decided) string {
+	switch {
+	case d.Approved:
+		return "approved by the developer"
+	case d.Human:
+		return "by the developer"
+	case d.By == render.ByLead:
+		return "by the lead"
+	}
+	return "by " + d.By
 }
 
 func markWord(k planv1.MarkKind) string {

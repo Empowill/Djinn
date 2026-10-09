@@ -170,6 +170,10 @@ To use Djinn, see the [README](README.md). To work on it:
   compares them ([T22](plan/1689571a-fast-workers.md)).
 - `djinn task send <task-id> "…"` gives a running worker an instruction (or the box under its events, in the window):
   an event of the task, then "received" once the worker says something after it.
+- A decision is an answered question or a block of kind decision. `djinn question ask … --icon 🔒` and `djinn block put
+  … --icon 🧱` give it its subject's emoji (one emoji); `djinn task spawn … --decision Q43` (a question's code, or a
+  decision block's id) says which decision a task comes from. The window lists them in a "Decisions" tab, read only:
+  who took each one (you, the lead, a worker) and the tasks it led to; the page and the brief follow.
 - With the window, a question asked in an active wish shows as a system notification: a click shows the wish, a
   button answers it. On macOS it needs the `.app` bundle (T19); a headless build and `--browser` show none.
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it

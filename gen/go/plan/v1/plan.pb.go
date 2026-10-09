@@ -1556,7 +1556,10 @@ type Task struct {
 	Closed *Closure `protobuf:"bytes,31,opt,name=closed,proto3" json:"closed,omitempty"`
 	// The task was continued (TaskService.Continue): its next worker resumes its own session on the last prompt of its
 	// events, instead of being told Djinn restarted. Cleared as that worker starts.
-	Continuing    bool `protobuf:"varint,32,opt,name=continuing,proto3" json:"continuing,omitempty"`
+	Continuing bool `protobuf:"varint,32,opt,name=continuing,proto3" json:"continuing,omitempty"`
+	// The decision the task comes from (djinn task spawn --decision): a question's code (Q43), or the id of a block of
+	// kind decision. Empty for a task no decision led to.
+	Decision      string `protobuf:"bytes,33,opt,name=decision,proto3" json:"decision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1815,6 +1818,13 @@ func (x *Task) GetContinuing() bool {
 	return false
 }
 
+func (x *Task) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
 // Closure records a task marked done by hand: its worker's own done records none.
 type Closure struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2032,7 +2042,10 @@ type Question struct {
 	Route *Route `protobuf:"bytes,13,opt,name=route,proto3" json:"route,omitempty"`
 	// Djinn asked it when the watcher of the wish's template printed its done line: answering A grants the wish, B
 	// keeps it open. Djinn never grants a wish itself.
-	Grant         bool `protobuf:"varint,14,opt,name=grant,proto3" json:"grant,omitempty"`
+	Grant bool `protobuf:"varint,14,opt,name=grant,proto3" json:"grant,omitempty"`
+	// One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.
+	// Empty: a default by kind.
+	Icon          string `protobuf:"bytes,15,opt,name=icon,proto3" json:"icon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2163,6 +2176,13 @@ func (x *Question) GetGrant() bool {
 		return x.Grant
 	}
 	return false
+}
+
+func (x *Question) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -2901,8 +2921,10 @@ type QuestionServiceAskRequest struct {
 	Context string `protobuf:"bytes,4,opt,name=context,proto3" json:"context,omitempty"`
 	// The option you recommend, and why, in Markdown.
 	Recommendation string `protobuf:"bytes,5,opt,name=recommendation,proto3" json:"recommendation,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// One emoji for the subject, like 🔒: the decision log shows it once the question is answered.
+	Icon          string `protobuf:"bytes,6,opt,name=icon,proto3" json:"icon,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *QuestionServiceAskRequest) Reset() {
@@ -2966,6 +2988,13 @@ func (x *QuestionServiceAskRequest) GetContext() string {
 func (x *QuestionServiceAskRequest) GetRecommendation() string {
 	if x != nil {
 		return x.Recommendation
+	}
+	return ""
+}
+
+func (x *QuestionServiceAskRequest) GetIcon() string {
+	if x != nil {
+		return x.Icon
 	}
 	return ""
 }
@@ -6078,7 +6107,10 @@ type Block struct {
 	// When it last changed.
 	UpdateTime *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
 	// What the developer marked on it from the window: read, approved.
-	Marks         []*Mark `protobuf:"bytes,11,rep,name=marks,proto3" json:"marks,omitempty"`
+	Marks []*Mark `protobuf:"bytes,11,rep,name=marks,proto3" json:"marks,omitempty"`
+	// One emoji for its subject, set by its writer (djinn block put --icon 🧱): the decision log shows it first. Empty:
+	// a default by kind.
+	Icon          string `protobuf:"bytes,12,opt,name=icon,proto3" json:"icon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6190,6 +6222,13 @@ func (x *Block) GetMarks() []*Mark {
 	return nil
 }
 
+func (x *Block) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
 type BlockServicePutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Wish the block belongs to.
@@ -6207,7 +6246,9 @@ type BlockServicePutRequest struct {
 	// Task the block is about.
 	TaskId string `protobuf:"bytes,7,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// Order within the wish; by default 1000 after the last block, for a new one.
-	Position      int64 `protobuf:"varint,8,opt,name=position,proto3" json:"position,omitempty"`
+	Position int64 `protobuf:"varint,8,opt,name=position,proto3" json:"position,omitempty"`
+	// One emoji for the subject, like 🧱: the decision log shows it before a decision.
+	Icon          string `protobuf:"bytes,9,opt,name=icon,proto3" json:"icon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6296,6 +6337,13 @@ func (x *BlockServicePutRequest) GetPosition() int64 {
 		return x.Position
 	}
 	return 0
+}
+
+func (x *BlockServicePutRequest) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
 }
 
 type BlockServicePutResponse struct {
@@ -6946,7 +6994,10 @@ type TaskServiceSpawnRequest struct {
 	// Start the worker from a copy of the lead's conversation, as --fork does from a task.
 	FromLead bool `protobuf:"varint,12,opt,name=from_lead,json=fromLead,proto3" json:"from_lead,omitempty"`
 	// For a watcher (--provider watch): start its command again after each exit, until the task is stopped.
-	Restart       bool `protobuf:"varint,13,opt,name=restart,proto3" json:"restart,omitempty"`
+	Restart bool `protobuf:"varint,13,opt,name=restart,proto3" json:"restart,omitempty"`
+	// The decision the task comes from: an answered question's code (Q43), or the id of a block of kind decision. The
+	// decision log links to the task, and the task to its decision.
+	Decision      string `protobuf:"bytes,14,opt,name=decision,proto3" json:"decision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7070,6 +7121,13 @@ func (x *TaskServiceSpawnRequest) GetRestart() bool {
 		return x.Restart
 	}
 	return false
+}
+
+func (x *TaskServiceSpawnRequest) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
 }
 
 type TaskServiceSpawnResponse struct {
@@ -8249,7 +8307,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\routput_tokens\x18\x02 \x01(\x03R\foutputTokens\x12*\n" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
-	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xf8\b\n" +
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\x9d\t\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -8291,7 +8349,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06closed\x18\x1f \x01(\v2\x10.plan.v1.ClosureR\x06closed\x12\x1e\n" +
 	"\n" +
 	"continuing\x18  \x01(\bR\n" +
-	"continuing:\x13\xd2\xf3\x18\x0f\n" +
+	"continuing\x12#\n" +
+	"\bdecision\x18! \x01(\tB\a\xbaH\x04r\x02\x18@R\bdecision:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\xa4\x01\n" +
 	"\aClosure\x12%\n" +
@@ -8311,7 +8370,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vcreate_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime:\x12\xd2\xf3\x18\x0e\n" +
 	"\atask_id\n" +
-	"\x03seq\"\xe1\x03\n" +
+	"\x03seq\"\xfe\x03\n" +
 	"\bQuestion\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x17\n" +
@@ -8328,7 +8387,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06rounds\x18\v \x03(\v2\x0e.plan.v1.RoundR\x06rounds\x12\x1a\n" +
 	"\brevision\x18\f \x01(\x05R\brevision\x12$\n" +
 	"\x05route\x18\r \x01(\v2\x0e.plan.v1.RouteR\x05route\x12\x14\n" +
-	"\x05grant\x18\x0e \x01(\bR\x05grant:\x13\xd2\xf3\x18\x0f\n" +
+	"\x05grant\x18\x0e \x01(\bR\x05grant\x12\x1b\n" +
+	"\x04icon\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"s\n" +
 	"\x05Route\x12\x18\n" +
@@ -8382,13 +8442,14 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0erecommendation\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\x12$\n" +
 	"\awish_id\x18\x05 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"N\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xe4\x01\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x81\x02\n" +
 	"\x19QuestionServiceAskRequest\x12\x1f\n" +
 	"\x04text\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xd0\x0fR\x04text\x12(\n" +
 	"\aoptions\x18\x02 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12#\n" +
 	"\acontext\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x121\n" +
-	"\x0erecommendation\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\"K\n" +
+	"\x0erecommendation\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\x12\x1b\n" +
+	"\x04icon\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\"K\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xd2\x01\n" +
 	"\x1cQuestionServiceAnswerRequest\x128\n" +
@@ -8573,7 +8634,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12*\n" +
 	"\x02at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
 	"\x06method\x18\x04 \x01(\tR\x06method\x12.\n" +
-	"\arequest\x18\x05 \x01(\v2\x14.google.protobuf.AnyR\arequest\"\xf1\x02\n" +
+	"\arequest\x18\x05 \x01(\v2\x14.google.protobuf.AnyR\arequest\"\x8e\x03\n" +
 	"\x05Block\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x17\n" +
@@ -8589,7 +8650,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vupdate_time\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"updateTime\x12#\n" +
-	"\x05marks\x18\v \x03(\v2\r.plan.v1.MarkR\x05marks\"\xa8\x02\n" +
+	"\x05marks\x18\v \x03(\v2\r.plan.v1.MarkR\x05marks\x12\x1b\n" +
+	"\x04icon\x18\f \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\"\xc5\x02\n" +
 	"\x16BlockServicePutRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x1b\n" +
 	"\x02id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x02id\x12\x1b\n" +
@@ -8599,7 +8661,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
 	"media_type\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\tmediaType\x12$\n" +
 	"\atask_id\x18\a \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1a\n" +
-	"\bposition\x18\b \x01(\x03R\bposition\"?\n" +
+	"\bposition\x18\b \x01(\x03R\bposition\x12\x1b\n" +
+	"\x04icon\x18\t \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\"?\n" +
 	"\x17BlockServicePutResponse\x12$\n" +
 	"\x05block\x18\x01 \x01(\v2\x0e.plan.v1.BlockR\x05block\"\x82\x01\n" +
 	"\x17BlockServiceListRequest\x12$\n" +
@@ -8634,7 +8697,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16MarkServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"@\n" +
 	"\x17MarkServiceListResponse\x12%\n" +
-	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\x90\x04\n" +
+	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\x97\x05\n" +
 	"\x17TaskServiceSpawnRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12 \n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -8653,7 +8716,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	" \x01(\bR\x05later\x12\x1b\n" +
 	"\x04fork\x18\v \x01(\tB\a\xbaH\x04r\x02\x18@R\x04fork\x12\x1b\n" +
 	"\tfrom_lead\x18\f \x01(\bR\bfromLead\x12\x18\n" +
-	"\arestart\x18\r \x01(\bR\arestart\"=\n" +
+	"\arestart\x18\r \x01(\bR\arestart\x12\x84\x01\n" +
+	"\bdecision\x18\x0e \x01(\tBh\xbaHe\xd8\x01\x01r`2^^([Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$R\bdecision\"=\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"j\n" +
 	"\x16TaskServiceListRequest\x12$\n" +

@@ -1,5 +1,5 @@
 // The flight plan of the active wishes, merged from what the store read of each: one list of questions, of what
-// waits, of what runs, of the latest decisions. Every item keeps its wish. The order is the page's (the Go page of a
+// waits, of what runs, of the decisions. Every item keeps its wish. The order is the page's (the Go page of a
 // wish sorts the same way); what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
 import {
   type Question,
@@ -8,11 +8,9 @@ import {
   type Usage,
   type Wish,
 } from "../../gen/ts/plan/v1/plan_pb";
+import { type Decision, decisionsOf, later } from "./decisions";
 import { investigating, isOpen, waitsForYou, watcherRuns } from "./format";
 import type { WishDetail } from "./store";
-
-// How many decisions the flight plan shows, the latest first.
-export const RECENT_DECISIONS = 8;
 
 export interface Item<T> {
   wish: Wish;
@@ -42,7 +40,8 @@ export interface FlightPlan {
   // The tasks that move or wait, by status, then those done or stopped, the latest ended first: the Tasks tab.
   moving: Item<Task>[];
   finished: Item<Task>[];
-  decisions: Item<Question>[];
+  // Every decision of the wishes, the latest first: the Decisions tab.
+  decisions: Item<Decision>[];
   // Read for every wish shown.
   loaded: boolean;
 }
@@ -207,17 +206,18 @@ export function flightPlan(
       if (finishedTask(item, detail.tasks)) plan.finished.push({ wish, item });
       else plan.moving.push({ wish, item });
     }
-    for (const item of detail.questions)
-      if (!isOpen(item)) plan.decisions.push({ wish, item });
+    for (const item of decisionsOf(
+      detail.questions,
+      detail.blocks,
+      detail.tasks,
+    ))
+      plan.decisions.push({ wish, item });
   }
   // Blocking first across every wish; otherwise each keeps its wish's rank and its own order.
   plan.questions.sort(
     (a, b) => Number(!a.blocking.length) - Number(!b.blocking.length),
   );
-  plan.decisions.sort(
-    (a, b) => time(b.item.answer?.createTime) - time(a.item.answer?.createTime),
-  );
-  plan.decisions = plan.decisions.slice(0, RECENT_DECISIONS);
+  plan.decisions.sort((a, b) => later(a.item.at, b.item.at));
   plan.moving.sort((a, b) => byMotion(a.item, b.item));
   plan.finished.sort((a, b) => newestEnded(a.item, b.item));
   return plan;

@@ -417,7 +417,7 @@ func propose(in routeInput) *planv1.Route {
 // per destination, in the route's order, and the first one recommended, so that rubbing the lamp takes it.
 func routeQuestion(lang string, route *planv1.Route, names map[string]string) *planv1.Question {
 	q := &planv1.Question{
-		Id: store.NewID(), WishId: route.GetFromWishId(), CreateTime: timestamppb.Now(), Route: route,
+		Id: store.NewID(), WishId: route.GetFromWishId(), CreateTime: timestamppb.Now(), Route: route, Icon: "🧭",
 		Text: locales.T(lang, "route.question", map[string]string{"request": clipRunes(oneLine(route.GetRequest()), 300)}),
 	}
 	var ctx strings.Builder

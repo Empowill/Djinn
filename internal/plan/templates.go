@@ -235,6 +235,7 @@ func (w *Wishes) Watched(ctx context.Context, task *planv1.Task, text string) (d
 		Options:        []string{locales.T(lang, "template.grant", nil), locales.T(lang, "template.keep", nil)},
 		Context:        locales.T(lang, "template.grant_context", params),
 		Recommendation: "A: " + locales.T(lang, "template.grant_why", params),
+		Icon:           "🏁",
 	}
 	return true, Status(w.Store.Tx(ctx, func(tx *store.Tx) error {
 		asked, err := store.List[*planv1.Question](ctx, tx, store.Where{"wish_id": wish.GetId()})
@@ -250,6 +251,7 @@ func (w *Wishes) Watched(ctx context.Context, task *planv1.Task, text string) (d
 		return Ask(ctx, tx, &planv1.Question{
 			Id: store.NewID(), WishId: ask.GetWishId(), Text: ask.GetText(), Options: ask.GetOptions(),
 			Context: ask.GetContext(), Recommendation: ask.GetRecommendation(), CreateTime: timestamppb.Now(), Grant: true,
+			Icon: ask.GetIcon(),
 		})
 	}))
 }

@@ -44,6 +44,9 @@ func (b *Blocks) Put(
 // putBlock adds or changes the block m names, in tx. The caller journals the command.
 func putBlock(ctx context.Context, tx *store.Tx, m *planv1.BlockServicePutRequest) (*planv1.Block, error) {
 	var block *planv1.Block
+	if err := checkIcon(m.GetIcon()); err != nil {
+		return nil, err
+	}
 	if _, err := store.Get[*planv1.Wish](ctx, tx, m.GetWishId()); err != nil {
 		return nil, err
 	}
@@ -84,6 +87,7 @@ func putBlock(ctx context.Context, tx *store.Tx, m *planv1.BlockServicePutReques
 	set(&block.Content, m.GetContent())
 	set(&block.MediaType, m.GetMediaType())
 	set(&block.TaskId, m.GetTaskId())
+	set(&block.Icon, m.GetIcon())
 	if m.GetPosition() != 0 {
 		block.Position = m.GetPosition()
 	}

@@ -1128,13 +1128,6 @@ button {
   gap: 6px;
   align-items: center;
 }
-.decision-history {
-  padding: 4px 0 0;
-}
-.decision-history > .text-button {
-  color: var(--n-88);
-  font-size: var(--font-size-body, 12px);
-}
 .clear-state {
   display: flex;
   align-items: center;
@@ -3863,12 +3856,6 @@ html[data-motion="reduced"] *::after {
   height: 2px;
 }
 .overview-content .agent-card .agent-code {
-  font-size: var(--font-size-body, 12px);
-}
-.overview-content > .decision-history {
-  margin: 15px 0;
-}
-.overview-content > .decision-history > .text-button {
   font-size: var(--font-size-body, 12px);
 }
 @media (max-width: 820px) {

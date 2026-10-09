@@ -58,7 +58,10 @@ test("a wish made by the command line shows live, and its question is answered f
   await card.getByLabel("Note with the answer").fill("Glass, then brass.");
   await card.getByRole("button", { name: "Confirm this choice" }).click();
   await expect(page.locator(".decisions-section")).toHaveCount(0);
-  await expect(page.getByText("1 decision recorded")).toBeVisible();
+  // It is a decision now, in its own tab.
+  await expect(page.getByRole("tab", { name: /^Decisions/ })).toHaveText(
+    "Decisions1",
+  );
 
   // The command line reads it answered.
   const [question] = JSON.parse(

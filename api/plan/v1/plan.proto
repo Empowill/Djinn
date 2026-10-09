@@ -302,6 +302,9 @@ message Task {
   // The task was continued (TaskService.Continue): its next worker resumes its own session on the last prompt of its
   // events, instead of being told Djinn restarted. Cleared as that worker starts.
   bool continuing = 32;
+  // The decision the task comes from (djinn task spawn --decision): a question's code (Q43), or the id of a block of
+  // kind decision. Empty for a task no decision led to.
+  string decision = 33 [(buf.validate.field).string.max_len = 64];
 }
 
 // Closure records a task marked done by hand: its worker's own done records none.
@@ -434,6 +437,9 @@ message Question {
   // Djinn asked it when the watcher of the wish's template printed its done line: answering A grants the wish, B
   // keeps it open. Djinn never grants a wish itself.
   bool grant = 14;
+  // One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.
+  // Empty: a default by kind.
+  string icon = 15 [(buf.validate.field).string.max_len = 16];
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -644,6 +650,8 @@ message QuestionServiceAskRequest {
   string context = 4 [(buf.validate.field).string.max_len = 20000];
   // The option you recommend, and why, in Markdown.
   string recommendation = 5 [(buf.validate.field).string.max_len = 20000];
+  // One emoji for the subject, like 🔒: the decision log shows it once the question is answered.
+  string icon = 6 [(buf.validate.field).string.max_len = 16];
 }
 
 message QuestionServiceAskResponse {
@@ -1362,6 +1370,9 @@ message Block {
   google.protobuf.Timestamp update_time = 10;
   // What the developer marked on it from the window: read, approved.
   repeated Mark marks = 11;
+  // One emoji for its subject, set by its writer (djinn block put --icon 🧱): the decision log shows it first. Empty:
+  // a default by kind.
+  string icon = 12 [(buf.validate.field).string.max_len = 16];
 }
 
 // Blocks: the free content of a wish, beside its tasks and questions.
@@ -1409,6 +1420,8 @@ message BlockServicePutRequest {
   ];
   // Order within the wish; by default 1000 after the last block, for a new one.
   int64 position = 8;
+  // One emoji for the subject, like 🧱: the decision log shows it before a decision.
+  string icon = 9 [(buf.validate.field).string.max_len = 16];
 }
 
 message BlockServicePutResponse {
@@ -1647,6 +1660,12 @@ message TaskServiceSpawnRequest {
   bool from_lead = 12;
   // For a watcher (--provider watch): start its command again after each exit, until the task is stopped.
   bool restart = 13;
+  // The decision the task comes from: an answered question's code (Q43), or the id of a block of kind decision. The
+  // decision log links to the task, and the task to its decision.
+  string decision = 14 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^([Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+  ];
 }
 
 message TaskServiceSpawnResponse {

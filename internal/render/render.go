@@ -5,7 +5,8 @@
 // is not rendered, and the contents at the top name only the sections present.
 //
 // One colour language runs through the page, always with an icon and a word: done, running, waiting for you,
-// planned, failed, interrupted, paused, stopped; and for what waits, blocking, waiting for you, can wait.
+// planned, failed, interrupted, paused, stopped; and for what waits, blocking, waiting for you, can wait. A decision
+// the developer took has a colour of its own, human.
 //
 // The page shows what it is given: the caller strips secrets and local paths first, as an export does.
 package render
@@ -80,6 +81,7 @@ const maxLastWord, maxEvent = 600, 280
 // shows a live dot, drawn by the style sheet.
 var icons = map[string]string{
 	"ok": "✓", "run": "", "wait": "?", "idle": "○", "bad": "!", "fail": "✕", "amber": "↺", "pause": "‖", "stop": "■", "dig": "⌕",
+	"human": "✋\ufe0e",
 	"later": "◷",
 }
 
@@ -192,7 +194,12 @@ type option struct{ Letter, Text string }
 
 type decision struct {
 	Code, Text, Choice, At string
-	Note                   template.HTML
+	// Icon is the subject's emoji; Who says who took it, Human when the developer did; Tasks are the codes of the tasks
+	// it led to.
+	Icon, Who string
+	Human     bool
+	Tasks     []string
+	Note      template.HTML
 	// A long note is folded under its first line, to keep the table compact.
 	LongNote bool
 	NoteLine string
@@ -271,7 +278,7 @@ func build(in Input) (*view, error) {
 		"page.planned", "page.projects", "page.questions", "page.questions_sub", "page.recommendation",
 		"page.running", "page.running_sub", "page.spent", "page.status", "page.task", "page.tasks", "page.tasks_sub",
 		"page.took", "page.wait_col", "page.what", "page.when", "page.why", "page.yes_only",
-		"page.rounds",
+		"page.rounds", "page.led_to",
 	} {
 		v.T[key] = tr(key)
 	}
@@ -305,10 +312,8 @@ func build(in Input) (*view, error) {
 	}
 
 	// Open questions, the blocking ones first, then in the order they were asked. Decisions, the latest first.
-	var answered []*planv1.Question
 	for _, q := range exp.GetQuestions() {
 		if q.GetAnswer() != nil {
-			answered = append(answered, q)
 			continue
 		}
 		cq := question{
@@ -347,19 +352,30 @@ func build(in Input) (*view, error) {
 	if len(v.Questions) == 1 {
 		v.Questions[0].Open = true
 	}
-	slices.SortStableFunc(answered, func(a, b *planv1.Question) int {
-		return b.GetAnswer().GetCreateTime().AsTime().Compare(a.GetAnswer().GetCreateTime().AsTime())
-	})
-	for i, q := range answered {
-		d := decision{
-			Code: q.GetCode(), Text: q.GetText(), Choice: choice(q, tr), At: at(q.GetAnswer().GetCreateTime()),
-			Note: md(q.GetAnswer().GetNote()), LongNote: utf8.RuneCountInString(q.GetAnswer().GetNote()) > longNote,
-			NoteLine: cmp.Or(firstLine(q.GetAnswer().GetNote(), 140), tr("page.details")),
+	for i, d := range Decisions(exp) {
+		cd := decision{At: d.At.In(loc).Format("2006-01-02 15:04"), Icon: d.Icon, Human: d.Human, Tasks: d.Tasks}
+		note := ""
+		if q := d.Question; q != nil {
+			cd.Code, cd.Text, cd.Choice, note = q.GetCode(), q.GetText(), choice(q, tr), q.GetAnswer().GetNote()
+		} else {
+			cd.Text, note = cmp.Or(d.Block.GetTitle(), firstLine(d.Block.GetContent(), 140)), d.Block.GetContent()
+		}
+		cd.Note, cd.LongNote = md(note), utf8.RuneCountInString(note) > longNote
+		cd.NoteLine = cmp.Or(firstLine(note, 140), tr("page.details"))
+		switch {
+		case d.Approved:
+			cd.Who = tr("page.by_you_approved")
+		case d.Human:
+			cd.Who = tr("page.by_you")
+		case d.By == ByLead:
+			cd.Who = tr("page.by_lead")
+		default:
+			cd.Who = tr("page.by_task", "task", d.By)
 		}
 		if i < shownDecisions {
-			v.Decisions = append(v.Decisions, d)
+			v.Decisions = append(v.Decisions, cd)
 		} else {
-			v.Older = append(v.Older, d)
+			v.Older = append(v.Older, cd)
 		}
 	}
 
@@ -588,6 +604,10 @@ func build(in Input) (*view, error) {
 			if e.Summary != "" || e.Note != "" {
 				journal = append(journal, e)
 			}
+			continue
+		}
+		if IsDecision(b) {
+			// In the decisions, with who took it.
 			continue
 		}
 		cb := block{Kind: b.GetKind(), Title: b.GetTitle(), Updated: at(b.GetUpdateTime())}

@@ -334,10 +334,6 @@
   flex-shrink: 0;
   color: var(--muted);
 }
-.plan-decisions .question-card {
-  margin-bottom: var(--space-2);
-}
-
 /* A long block, folded under its title. */
 .wish-block.folded .wish-block-body {
   max-height: 180px;
@@ -379,9 +375,4 @@
 }
 .journal-list li.log > div {
   flex-direction: column;
-}
-.plan-decisions h3 {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }

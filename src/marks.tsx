@@ -17,7 +17,8 @@ import { t } from "./i18n";
 
 export type OnMark = (kind: MarkKind, remove: boolean) => Promise<void>;
 
-// MarkButtons are an item's read mark and, for a decision or a block, its approval: each a toggle.
+// MarkButtons are an item's read mark and, for a block, its approval: each a toggle. A decision has none: it was taken
+// (the decision log).
 export function MarkButtons({
   item,
   approve,

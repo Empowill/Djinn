@@ -302,6 +302,11 @@
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
             "description": "When the block was created."
           },
+          "icon": {
+            "description": "One emoji for its subject, set by its writer (djinn block put --icon 🧱): the decision log shows it first. Empty: a default by kind.",
+            "maxLength": 16,
+            "type": "string"
+          },
           "id": {
             "description": "Identifier, a UUIDv7.",
             "format": "uuid",
@@ -406,6 +411,11 @@
           "content": {
             "description": "The content, Markdown unless --media-type says otherwise.",
             "maxLength": 1000000,
+            "type": "string"
+          },
+          "icon": {
+            "description": "One emoji for the subject, like 🧱: the decision log shows it before a decision.",
+            "maxLength": 16,
             "type": "string"
           },
           "id": {
@@ -814,6 +824,11 @@
             "description": "Djinn asked it when the watcher of the wish's template printed its done line: answering A grants the wish, B keeps it open. Djinn never grants a wish itself.",
             "type": "boolean"
           },
+          "icon": {
+            "description": "One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first. Empty: a default by kind.",
+            "maxLength": 16,
+            "type": "string"
+          },
           "id": {
             "description": "Identifier, a UUIDv7.",
             "format": "uuid",
@@ -921,6 +936,11 @@
           "context": {
             "description": "What is at stake, in Markdown: what the answer changes, what each option costs.",
             "maxLength": 20000,
+            "type": "string"
+          },
+          "icon": {
+            "description": "One emoji for the subject, like 🔒: the decision log shows it once the question is answered.",
+            "maxLength": 16,
             "type": "string"
           },
           "options": {
@@ -1350,6 +1370,11 @@
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
             "description": "When the task was created."
           },
+          "decision": {
+            "description": "The decision the task comes from (djinn task spawn --decision): a question's code (Q43), or the id of a block of kind decision. Empty for a task no decision led to.",
+            "maxLength": 64,
+            "type": "string"
+          },
           "dependsOn": {
             "description": "Tasks that must be done before this one starts, by identifier. A task whose dependency ends without being done fails too.",
             "items": {
@@ -1777,6 +1802,11 @@
       },
       "plan.v1.TaskServiceSpawnRequest": {
         "properties": {
+          "decision": {
+            "description": "The decision the task comes from: an answered question's code (Q43), or the id of a block of kind decision. The decision log links to the task, and the task to its decision.",
+            "pattern": "^([Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "dependsOn": {
             "description": "A task of the same wish that must be done first: its code (W1) or its identifier.",
             "items": {

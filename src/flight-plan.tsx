@@ -1,21 +1,23 @@
 // The flight plan of the active wishes, merged (T13): a bar at the top while something waits for you, then each
 // wish at a glance, then what waits for you (the open questions of every wish, the blocking ones first, the workers
-// that wait, the wishes Djinn proposes to grant), the questions you asked to investigate, and the latest decisions.
-// The tasks of every wish have a tab of their own (task-tabs.tsx). Every line shows the wish it comes from, and an
-// answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
-import { CheckCircle2 } from "lucide-react";
+// that wait, the wishes Djinn proposes to grant), and the questions you asked to investigate. The tasks of every wish
+// have a tab of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
+// it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
 import { type CSSProperties, useRef, useState } from "react";
 
 import {
   Change,
   Closer,
+  type Task,
   TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { AttentionBar, attentionOf } from "./attention";
+import { decisionOf } from "./data/decisions";
 import { useData, useWishDetails } from "./data/djinn";
 import { flightPlan, spent } from "./data/flight";
 import { investigating, waitsForYou, wishTone } from "./data/format";
+import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
@@ -56,9 +58,16 @@ export function FlightPlan({
     (wish) => <WishOrigin wish={wish} />,
   );
   const [view, setView] = useState<View>("main");
-  const wishOf = new Map(
-    [...plan.decisions, ...plan.investigating].map((x) => [x.item.id, x.wish]),
-  );
+  // What a link between a decision and a task brings into sight in the other tab: its id.
+  const [focus, setFocus] = useState("");
+  const show = (to: View, id = "") => (setView(to), setFocus(id));
+  const wishOf = new Map(plan.investigating.map((x) => [x.item.id, x.wish]));
+  // A task's decision, among those of its wish: two wishes may each have a Q01.
+  const decisionOfTask = (task: Task, wish: Wish) =>
+    decisionOf(
+      task,
+      plan.decisions.filter((d) => d.wish.id === wish.id).map((d) => d.item),
+    );
 
   return (
     <div className="wish-view flight-plan review">
@@ -89,8 +98,17 @@ export function FlightPlan({
             view={view}
             main={t("plan.title")}
             tasks={plan.moving.length + plan.finished.length}
-            onView={setView}
+            decisions={plan.decisions.length}
+            onView={(to) => show(to)}
           />
+          {view === "decisions" && (
+            <DecisionLog
+              items={plan.decisions}
+              origin={({ wish }) => <WishOrigin wish={wish} />}
+              focus={focus}
+              onTask={(id) => show("tasks", id)}
+            />
+          )}
           {view === "tasks" && (
             <TaskSections
               moving={plan.moving}
@@ -100,6 +118,11 @@ export function FlightPlan({
                   key={item.id}
                   task={item}
                   origin={<WishOrigin wish={wish} />}
+                  decision={decisionOfTask(item, wish)}
+                  focused={focus === item.id}
+                  onDecision={() =>
+                    show("decisions", decisionOfTask(item, wish)?.id)
+                  }
                   project={projects.find((p) => p.id === item.projectId)}
                   onStop={() =>
                     quiet(
@@ -330,37 +353,9 @@ export function FlightPlan({
                 />
               )}
 
-              {plan.decisions.length > 0 && (
-                <section
-                  className="wish-section plan-decisions"
-                  aria-label={t("plan.recent_decisions")}
-                >
-                  <div className="section-title">
-                    <h2>
-                      <CheckCircle2 size={16} />
-                      {t("plan.recent_decisions")}
-                    </h2>
-                  </div>
-                  {plan.decisions.map(({ wish, item }) => (
-                    <WishQuestion
-                      key={item.id}
-                      question={item}
-                      origin={<WishOrigin wish={wish} />}
-                      onAnswer={async () => {}}
-                      onMark={(kind, remove) =>
-                        mark(wish.id, item.id, kind, remove)
-                      }
-                    />
-                  ))}
-                </section>
-              )}
-
               {plan.loaded &&
                 wishes.length > 0 &&
-                waits +
-                  plan.running.length +
-                  plan.decisions.length +
-                  plan.investigating.length ===
+                waits + plan.running.length + plan.investigating.length ===
                   0 && <p className="muted-text">{t("plan.calm")}</p>}
             </>
           )}
