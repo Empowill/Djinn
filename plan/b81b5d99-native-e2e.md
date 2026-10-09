@@ -16,10 +16,9 @@ status: in-progress
   (`cmd/djinn/window_mcp.go`). It is never shipped: a normal build has neither the server nor the title.
 - The test, `e2e/native/`, runs that variant with a short temporary `DJINN_HOME`. Its MCP server listens on
   127.0.0.1 only, on a free port (`WAILS_MCP_PORT=0`) read from its log, behind a random token.
-- Through the MCP server it checks four things:
-  - The interface shows: the terminal and the `window.djinn` bridge are in the DOM.
-  - The state saves and loads back through the window. `SaveState` answers an empty message: the HTTP 501 bug of
-    the Wails asset server. Without the fix in `internal/server`, the test fails with "HTTP 501".
+- Through the MCP server it checks these things:
+  - The interface shows: the terminal and the wish view are in the DOM.
+  - A wish made by the command line shows in the window without a reload, and a Mermaid block draws.
   - The terminal runs `whoami`, typed key by key, and shows the user name.
   - Closing the window minimises it (hides it on macOS). Djinn still answers a Connect call on its socket (Q36).
 - It stops the variant by its PID and removes the folder. It opens a window, so `go tool task test` skips it.

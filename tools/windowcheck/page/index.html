@@ -176,7 +176,7 @@ async function run() {
       values.push({ v, t });
       output.textContent = String(v);
     });
-    // An empty response, as LoadState with nothing saved: in binary, connect-go writes no byte, and the window must
+    // An empty response, as TerminalService.Write's: in binary, connect-go writes no byte, and the window must
     // still get its 200, not the 501 of the Wails asset server.
     if (codec.readString(await unary(codec, "/windowcheck.v1.Bench/Echo", codec.string(""))) !== "")
       throw new Error("empty echo: not empty");

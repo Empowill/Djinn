@@ -5,24 +5,11 @@ package ui.v1;
 
 import "buf/validate/validate.proto";
 import "djinn/v1/options.proto";
-import "plan/v1/plan.proto";
 
 // What the window needs to show and follow the plan.
 service UiService {
   // The environment the window runs in.
   rpc GetEnvironment(UiServiceGetEnvironmentRequest) returns (UiServiceGetEnvironmentResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
-  }
-  // The application state, as the window last saved it.
-  rpc LoadState(UiServiceLoadStateRequest) returns (UiServiceLoadStateResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
-  }
-  // Replace the application state.
-  rpc SaveState(UiServiceSaveStateRequest) returns (UiServiceSaveStateResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
-  }
-  // Check that a project directory exists and can be read.
-  rpc ValidateProject(UiServiceValidateProjectRequest) returns (UiServiceValidateProjectResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Ask the user for a folder with the system's dialog, over the window. Only the native window has one: see
@@ -59,10 +46,6 @@ service UiService {
   // as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
   // sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
   rpc Update(UiServiceUpdateRequest) returns (UiServiceUpdateResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
-  }
-  // Every change, in order, from a sequence number on. Resume a broken stream from the last number received plus one.
-  rpc Watch(UiServiceWatchRequest) returns (stream UiServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
 }
@@ -113,32 +96,6 @@ message Provider {
   bool available = 3;
   // The command, as resolved on the PATH when available.
   string command = 4;
-}
-
-message UiServiceLoadStateRequest {}
-
-message UiServiceLoadStateResponse {
-  // The state as JSON, exactly as saved; empty when nothing was saved yet.
-  string state_json = 1;
-}
-
-message UiServiceSaveStateRequest {
-  // The state as JSON. It must be a JSON object.
-  string state_json = 1;
-}
-
-message UiServiceSaveStateResponse {}
-
-message UiServiceValidateProjectRequest {
-  // Path of the project directory.
-  string directory = 1;
-}
-
-message UiServiceValidateProjectResponse {
-  // Absolute path of the directory, with symbolic links resolved.
-  string directory = 1;
-  // The directory is inside a Git repository.
-  bool git = 2;
 }
 
 message UiServiceChooseDirectoryRequest {
@@ -215,21 +172,4 @@ message UiServiceUpdateResponse {
   string version = 1;
   // How many terminals the new Djinn will run again.
   int32 terminals = 2;
-}
-
-message UiServiceWatchRequest {
-  // First sequence number to send; 0 sends everything still kept.
-  uint64 from_seq = 1;
-}
-
-message UiServiceWatchResponse {
-  // Sequence number of the change, strictly increasing.
-  uint64 seq = 1;
-  // The entity as it is after the change.
-  oneof entity {
-    // A project added or changed.
-    plan.v1.Project project = 2;
-    // A question asked or answered.
-    plan.v1.Question question = 3;
-  }
 }

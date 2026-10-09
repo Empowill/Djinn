@@ -169,3 +169,38 @@ test("the stylesheets take their greys from the tokens", () => {
     }
   }
 });
+
+// No style outlives its element: every class a stylesheet names is written in some component of src/. A class built
+// at run time takes its family's prefix here; a class left only in a :not() would always match, so it counts too.
+test("every class of the stylesheets is used by a component", () => {
+  const dynamic = [
+    /^tone-/, // status.tsx and the task, wish and plan lines: tone-${tone}
+    /^level-/, // attention.tsx: level-${item.level}
+    /^kind-\d+$/, // wish-task.tsx: kind-${event.kind}, a TaskEvent kind
+  ];
+  const components = fs
+    .readdirSync(root, { recursive: true })
+    .filter((entry) => entry.endsWith(".tsx"))
+    .map((entry) => fs.readFileSync(path.join(root, entry), "utf8"))
+    .join("\n");
+  const unused = [];
+  for (const entry of fs.readdirSync(root).filter((e) => e.endsWith(".css"))) {
+    // The selectors only: comments, strings and declarations hold dots that are no class.
+    const selectors = fs
+      .readFileSync(path.join(root, entry), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/"[^"]*"|'[^']*'/g, '""')
+      .matchAll(/(?<=^|[;{}])([^;{}]*)\{/g);
+    const classes = new Set();
+    for (const [, selector] of selectors) {
+      if (selector.trim().startsWith("@")) continue;
+      for (const [, name] of selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) classes.add(name);
+    }
+    for (const name of classes) {
+      if (dynamic.some((family) => family.test(name))) continue;
+      const word = new RegExp(`(?<![\\w-])${name}(?![\\w-])`);
+      if (!word.test(components)) unused.push(`${entry}: .${name}`);
+    }
+  }
+  assert.deepEqual(unused, [], "classes no component uses: remove their rules");
+});

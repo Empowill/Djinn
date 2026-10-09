@@ -264,19 +264,7 @@
   background: var(--n-28);
   color: var(--n-e7);
 }
-.wish-waiting {
-  margin-left: auto;
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--bg);
-  font: var(--font-size-body) var(--mono);
-  text-align: center;
-}
-.wish-waiting + .wish-rank {
-  margin-left: var(--space-1);
-}
+
 .wish-origin {
   display: inline-flex;
   align-items: center;
@@ -298,12 +286,7 @@
   font: 600 var(--font-size-body) var(--mono);
   color: var(--muted);
 }
-.question-blocking {
-  color: var(--accent);
-}
-.question-meta .question-blocking {
-  color: var(--accent);
-}
+
 .plan-wishes {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

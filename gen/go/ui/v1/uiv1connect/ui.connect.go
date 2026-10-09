@@ -37,13 +37,6 @@ const (
 	// UiServiceGetEnvironmentProcedure is the fully-qualified name of the UiService's GetEnvironment
 	// RPC.
 	UiServiceGetEnvironmentProcedure = "/ui.v1.UiService/GetEnvironment"
-	// UiServiceLoadStateProcedure is the fully-qualified name of the UiService's LoadState RPC.
-	UiServiceLoadStateProcedure = "/ui.v1.UiService/LoadState"
-	// UiServiceSaveStateProcedure is the fully-qualified name of the UiService's SaveState RPC.
-	UiServiceSaveStateProcedure = "/ui.v1.UiService/SaveState"
-	// UiServiceValidateProjectProcedure is the fully-qualified name of the UiService's ValidateProject
-	// RPC.
-	UiServiceValidateProjectProcedure = "/ui.v1.UiService/ValidateProject"
 	// UiServiceChooseDirectoryProcedure is the fully-qualified name of the UiService's ChooseDirectory
 	// RPC.
 	UiServiceChooseDirectoryProcedure = "/ui.v1.UiService/ChooseDirectory"
@@ -59,20 +52,12 @@ const (
 	UiServiceWatchUpdateProcedure = "/ui.v1.UiService/WatchUpdate"
 	// UiServiceUpdateProcedure is the fully-qualified name of the UiService's Update RPC.
 	UiServiceUpdateProcedure = "/ui.v1.UiService/Update"
-	// UiServiceWatchProcedure is the fully-qualified name of the UiService's Watch RPC.
-	UiServiceWatchProcedure = "/ui.v1.UiService/Watch"
 )
 
 // UiServiceClient is a client for the ui.v1.UiService service.
 type UiServiceClient interface {
 	// The environment the window runs in.
 	GetEnvironment(context.Context, *connect.Request[v1.UiServiceGetEnvironmentRequest]) (*connect.Response[v1.UiServiceGetEnvironmentResponse], error)
-	// The application state, as the window last saved it.
-	LoadState(context.Context, *connect.Request[v1.UiServiceLoadStateRequest]) (*connect.Response[v1.UiServiceLoadStateResponse], error)
-	// Replace the application state.
-	SaveState(context.Context, *connect.Request[v1.UiServiceSaveStateRequest]) (*connect.Response[v1.UiServiceSaveStateResponse], error)
-	// Check that a project directory exists and can be read.
-	ValidateProject(context.Context, *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error)
 	// Ask the user for a folder with the system's dialog, over the window. Only the native window has one: see
 	// UiServiceGetEnvironmentResponse.folder_dialog. An empty directory says the user cancelled.
 	ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error)
@@ -95,8 +80,6 @@ type UiServiceClient interface {
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
 	// sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
-	// Every change, in order, from a sequence number on. Resume a broken stream from the last number received plus one.
-	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchResponse], error)
 }
 
 // NewUiServiceClient constructs a client for the ui.v1.UiService service. By default, it uses the
@@ -114,24 +97,6 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			httpClient,
 			baseURL+UiServiceGetEnvironmentProcedure,
 			connect.WithSchema(uiServiceMethods.ByName("GetEnvironment")),
-			connect.WithClientOptions(opts...),
-		),
-		loadState: connect.NewClient[v1.UiServiceLoadStateRequest, v1.UiServiceLoadStateResponse](
-			httpClient,
-			baseURL+UiServiceLoadStateProcedure,
-			connect.WithSchema(uiServiceMethods.ByName("LoadState")),
-			connect.WithClientOptions(opts...),
-		),
-		saveState: connect.NewClient[v1.UiServiceSaveStateRequest, v1.UiServiceSaveStateResponse](
-			httpClient,
-			baseURL+UiServiceSaveStateProcedure,
-			connect.WithSchema(uiServiceMethods.ByName("SaveState")),
-			connect.WithClientOptions(opts...),
-		),
-		validateProject: connect.NewClient[v1.UiServiceValidateProjectRequest, v1.UiServiceValidateProjectResponse](
-			httpClient,
-			baseURL+UiServiceValidateProjectProcedure,
-			connect.WithSchema(uiServiceMethods.ByName("ValidateProject")),
 			connect.WithClientOptions(opts...),
 		),
 		chooseDirectory: connect.NewClient[v1.UiServiceChooseDirectoryRequest, v1.UiServiceChooseDirectoryResponse](
@@ -176,21 +141,12 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(uiServiceMethods.ByName("Update")),
 			connect.WithClientOptions(opts...),
 		),
-		watch: connect.NewClient[v1.UiServiceWatchRequest, v1.UiServiceWatchResponse](
-			httpClient,
-			baseURL+UiServiceWatchProcedure,
-			connect.WithSchema(uiServiceMethods.ByName("Watch")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
 // uiServiceClient implements UiServiceClient.
 type uiServiceClient struct {
 	getEnvironment  *connect.Client[v1.UiServiceGetEnvironmentRequest, v1.UiServiceGetEnvironmentResponse]
-	loadState       *connect.Client[v1.UiServiceLoadStateRequest, v1.UiServiceLoadStateResponse]
-	saveState       *connect.Client[v1.UiServiceSaveStateRequest, v1.UiServiceSaveStateResponse]
-	validateProject *connect.Client[v1.UiServiceValidateProjectRequest, v1.UiServiceValidateProjectResponse]
 	chooseDirectory *connect.Client[v1.UiServiceChooseDirectoryRequest, v1.UiServiceChooseDirectoryResponse]
 	openExternal    *connect.Client[v1.UiServiceOpenExternalRequest, v1.UiServiceOpenExternalResponse]
 	setShortcut     *connect.Client[v1.UiServiceSetShortcutRequest, v1.UiServiceSetShortcutResponse]
@@ -198,27 +154,11 @@ type uiServiceClient struct {
 	watchShow       *connect.Client[v1.UiServiceWatchShowRequest, v1.UiServiceWatchShowResponse]
 	watchUpdate     *connect.Client[v1.UiServiceWatchUpdateRequest, v1.UiServiceWatchUpdateResponse]
 	update          *connect.Client[v1.UiServiceUpdateRequest, v1.UiServiceUpdateResponse]
-	watch           *connect.Client[v1.UiServiceWatchRequest, v1.UiServiceWatchResponse]
 }
 
 // GetEnvironment calls ui.v1.UiService.GetEnvironment.
 func (c *uiServiceClient) GetEnvironment(ctx context.Context, req *connect.Request[v1.UiServiceGetEnvironmentRequest]) (*connect.Response[v1.UiServiceGetEnvironmentResponse], error) {
 	return c.getEnvironment.CallUnary(ctx, req)
-}
-
-// LoadState calls ui.v1.UiService.LoadState.
-func (c *uiServiceClient) LoadState(ctx context.Context, req *connect.Request[v1.UiServiceLoadStateRequest]) (*connect.Response[v1.UiServiceLoadStateResponse], error) {
-	return c.loadState.CallUnary(ctx, req)
-}
-
-// SaveState calls ui.v1.UiService.SaveState.
-func (c *uiServiceClient) SaveState(ctx context.Context, req *connect.Request[v1.UiServiceSaveStateRequest]) (*connect.Response[v1.UiServiceSaveStateResponse], error) {
-	return c.saveState.CallUnary(ctx, req)
-}
-
-// ValidateProject calls ui.v1.UiService.ValidateProject.
-func (c *uiServiceClient) ValidateProject(ctx context.Context, req *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error) {
-	return c.validateProject.CallUnary(ctx, req)
 }
 
 // ChooseDirectory calls ui.v1.UiService.ChooseDirectory.
@@ -256,21 +196,10 @@ func (c *uiServiceClient) Update(ctx context.Context, req *connect.Request[v1.Ui
 	return c.update.CallUnary(ctx, req)
 }
 
-// Watch calls ui.v1.UiService.Watch.
-func (c *uiServiceClient) Watch(ctx context.Context, req *connect.Request[v1.UiServiceWatchRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchResponse], error) {
-	return c.watch.CallServerStream(ctx, req)
-}
-
 // UiServiceHandler is an implementation of the ui.v1.UiService service.
 type UiServiceHandler interface {
 	// The environment the window runs in.
 	GetEnvironment(context.Context, *connect.Request[v1.UiServiceGetEnvironmentRequest]) (*connect.Response[v1.UiServiceGetEnvironmentResponse], error)
-	// The application state, as the window last saved it.
-	LoadState(context.Context, *connect.Request[v1.UiServiceLoadStateRequest]) (*connect.Response[v1.UiServiceLoadStateResponse], error)
-	// Replace the application state.
-	SaveState(context.Context, *connect.Request[v1.UiServiceSaveStateRequest]) (*connect.Response[v1.UiServiceSaveStateResponse], error)
-	// Check that a project directory exists and can be read.
-	ValidateProject(context.Context, *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error)
 	// Ask the user for a folder with the system's dialog, over the window. Only the native window has one: see
 	// UiServiceGetEnvironmentResponse.folder_dialog. An empty directory says the user cancelled.
 	ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error)
@@ -293,8 +222,6 @@ type UiServiceHandler interface {
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
 	// sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
-	// Every change, in order, from a sequence number on. Resume a broken stream from the last number received plus one.
-	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest], *connect.ServerStream[v1.UiServiceWatchResponse]) error
 }
 
 // NewUiServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -308,24 +235,6 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 		UiServiceGetEnvironmentProcedure,
 		svc.GetEnvironment,
 		connect.WithSchema(uiServiceMethods.ByName("GetEnvironment")),
-		connect.WithHandlerOptions(opts...),
-	)
-	uiServiceLoadStateHandler := connect.NewUnaryHandler(
-		UiServiceLoadStateProcedure,
-		svc.LoadState,
-		connect.WithSchema(uiServiceMethods.ByName("LoadState")),
-		connect.WithHandlerOptions(opts...),
-	)
-	uiServiceSaveStateHandler := connect.NewUnaryHandler(
-		UiServiceSaveStateProcedure,
-		svc.SaveState,
-		connect.WithSchema(uiServiceMethods.ByName("SaveState")),
-		connect.WithHandlerOptions(opts...),
-	)
-	uiServiceValidateProjectHandler := connect.NewUnaryHandler(
-		UiServiceValidateProjectProcedure,
-		svc.ValidateProject,
-		connect.WithSchema(uiServiceMethods.ByName("ValidateProject")),
 		connect.WithHandlerOptions(opts...),
 	)
 	uiServiceChooseDirectoryHandler := connect.NewUnaryHandler(
@@ -370,22 +279,10 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(uiServiceMethods.ByName("Update")),
 		connect.WithHandlerOptions(opts...),
 	)
-	uiServiceWatchHandler := connect.NewServerStreamHandler(
-		UiServiceWatchProcedure,
-		svc.Watch,
-		connect.WithSchema(uiServiceMethods.ByName("Watch")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/ui.v1.UiService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UiServiceGetEnvironmentProcedure:
 			uiServiceGetEnvironmentHandler.ServeHTTP(w, r)
-		case UiServiceLoadStateProcedure:
-			uiServiceLoadStateHandler.ServeHTTP(w, r)
-		case UiServiceSaveStateProcedure:
-			uiServiceSaveStateHandler.ServeHTTP(w, r)
-		case UiServiceValidateProjectProcedure:
-			uiServiceValidateProjectHandler.ServeHTTP(w, r)
 		case UiServiceChooseDirectoryProcedure:
 			uiServiceChooseDirectoryHandler.ServeHTTP(w, r)
 		case UiServiceOpenExternalProcedure:
@@ -400,8 +297,6 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 			uiServiceWatchUpdateHandler.ServeHTTP(w, r)
 		case UiServiceUpdateProcedure:
 			uiServiceUpdateHandler.ServeHTTP(w, r)
-		case UiServiceWatchProcedure:
-			uiServiceWatchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -413,18 +308,6 @@ type UnimplementedUiServiceHandler struct{}
 
 func (UnimplementedUiServiceHandler) GetEnvironment(context.Context, *connect.Request[v1.UiServiceGetEnvironmentRequest]) (*connect.Response[v1.UiServiceGetEnvironmentResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.GetEnvironment is not implemented"))
-}
-
-func (UnimplementedUiServiceHandler) LoadState(context.Context, *connect.Request[v1.UiServiceLoadStateRequest]) (*connect.Response[v1.UiServiceLoadStateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.LoadState is not implemented"))
-}
-
-func (UnimplementedUiServiceHandler) SaveState(context.Context, *connect.Request[v1.UiServiceSaveStateRequest]) (*connect.Response[v1.UiServiceSaveStateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.SaveState is not implemented"))
-}
-
-func (UnimplementedUiServiceHandler) ValidateProject(context.Context, *connect.Request[v1.UiServiceValidateProjectRequest]) (*connect.Response[v1.UiServiceValidateProjectResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.ValidateProject is not implemented"))
 }
 
 func (UnimplementedUiServiceHandler) ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error) {
@@ -453,8 +336,4 @@ func (UnimplementedUiServiceHandler) WatchUpdate(context.Context, *connect.Reque
 
 func (UnimplementedUiServiceHandler) Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.Update is not implemented"))
-}
-
-func (UnimplementedUiServiceHandler) Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest], *connect.ServerStream[v1.UiServiceWatchResponse]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.Watch is not implemented"))
 }

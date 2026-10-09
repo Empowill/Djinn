@@ -33,6 +33,10 @@ status: in-progress
   the legacy bridge are gone (branch `w27-ui-switch`).
 - [x] A wish made by the command line shows in the window without a reload; a question answered in the window
   reads as answered by the command line (`e2e/wish-live.spec.ts`).
+- [x] Nothing of the old interface is left: `UiService` keeps only what the window calls (`LoadState`, `SaveState`,
+  `ValidateProject` and the never implemented `Watch` are gone, with `state.json`), and every class of `src/*.css` is
+  written in some `src/**/*.tsx`, the dynamic families (`tone-*`, `level-*`, `kind-*`) apart (`tests/styles.test.cjs`,
+  "every class of the stylesheets is used by a component").
 - [ ] Clément has reviewed the switch. (needs: Clément's review)
 
 ## The switch
@@ -94,8 +98,6 @@ Not switched yet, screen by screen:
 - **Notifications** of a new question: shown by the server itself, not by the page (T09).
 - **A terminal per wish** (T13's open question): still one terminal, switched by `djinn wish resume`.
 - **Visualizations** (HTML artifacts in a frame): gone with the artifact workspace.
-- **Clean-up**: the styles of the removed panels are still in `styles.css`; `UiService.LoadState`, `SaveState`,
-  `ValidateProject` and the never implemented `UiService.Watch` have no caller left.
 - **`npm run dev`** has no djinn behind it: a proxy to a dev djinn would bring it back.
 - **`go tool task e2e-native`** follows the new screens, but was not run here: it opens a window.
 
