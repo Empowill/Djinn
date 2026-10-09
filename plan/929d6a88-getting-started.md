@@ -57,6 +57,11 @@ The top of the main README is for them; contributors come after.
 - [x] The README top is kept in sync by every change to the install. (b09fb6b: `TestReadmeInstallLines` in
   `tools/releasepack`: each README line takes a script of `scripts/`, from the releases it defaults to, says what
   its usage says, and `release.yml` ships it; a renamed script fails it)
+- [x] Once installed, the user guide takes over: `docs/user-guide.md` describes the Go app as it is, from `djinn up`
+  to granting a wish, and stays so. (10/10, W139, porting W90 onto the azimas, tilasms, terminal tabs, the lead's
+  agent, pause, resume and delete of a wish: `TestUserGuide` in `cmd/djinn/guide_test.go`: every `djinn` command the
+  guide names exists under its full name with the flags it gives, `djinn up`'s parsed by `djinn up` itself, and every
+  label it names in bold is a text of `locales/en.json`; a renamed command, flag or button fails it)
 
 ## Open questions
 - What does the prompt for your agent say, word for word? *To write once `go install` works.*
