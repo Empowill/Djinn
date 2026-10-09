@@ -89,7 +89,7 @@ func TestParsePS(t *testing.T) {
 
 // TestNotMeasured says, where workers are not measured, why.
 func TestNotMeasured(t *testing.T) {
-	if _, err := ReadWorker(os.Getpid()); (err != nil) != (NotMeasured != "") {
+	if _, err := ReadWorker(os.Getpid(), ""); (err != nil) != (NotMeasured != "") {
 		t.Errorf("ReadWorker: %v, NotMeasured %q", err, NotMeasured)
 	}
 	if (NotMeasured == "") != (runtime.GOOS == "linux" || runtime.GOOS == "darwin") {

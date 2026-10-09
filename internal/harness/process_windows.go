@@ -15,12 +15,12 @@ func ownGroup(cmd *exec.Cmd) {
 
 // terminate stops the process. Windows has no signal to ask a console process to stop: it is killed at once.
 // What it started survives; a job object will hold the whole tree when the machine task (T17) needs one.
-func terminate(cmd *exec.Cmd) { kill(cmd) }
+func terminate(p *process) { kill(p) }
 
 // kill kills the process.
-func kill(cmd *exec.Cmd) {
-	if cmd.Process != nil {
-		_ = cmd.Process.Kill()
+func kill(p *process) {
+	if p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
 	}
 }
 
@@ -30,7 +30,7 @@ var errNoPause = errors.New("pausing a worker is not possible on Windows yet: Wi
 	"a process and what it started; stop the task instead, or let it run")
 
 // pause refuses: see errNoPause.
-func pause(*exec.Cmd) error { return errNoPause }
+func pause(*process) error { return errNoPause }
 
 // resume refuses: nothing was paused.
-func resume(*exec.Cmd) error { return errNoPause }
+func resume(*process) error { return errNoPause }

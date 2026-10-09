@@ -488,3 +488,22 @@ func TestWindowTerminalOpensInAProject(t *testing.T) {
 		t.Errorf("the terminal opened in %q, want the project's folder %q", dir, folder)
 	}
 }
+
+// TestWorkerScopesFallback: without systemd-run, djinn up says once that workers run in their process group,
+// uncapped when caps were asked, and starts no scope.
+func TestWorkerScopesFallback(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var out bytes.Buffer
+	if s := workerScopes(t.Context(), &out, 150, 1<<30); s != nil {
+		t.Errorf("scopes %+v without systemd-run", s)
+	}
+	if got := out.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "no systemd scope per worker") ||
+		!strings.HasSuffix(got, "workers run in their process group, uncapped\n") {
+		t.Errorf("djinn up said %q", got)
+	}
+	out.Reset()
+	workerScopes(t.Context(), &out, 0, 0)
+	if got := out.String(); strings.Contains(got, "uncapped") || !strings.HasSuffix(got, "workers run in their process group\n") {
+		t.Errorf("without caps, djinn up said %q", got)
+	}
+}

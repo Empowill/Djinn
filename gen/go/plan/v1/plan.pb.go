@@ -2102,18 +2102,20 @@ func (x *Task) GetResources() *Resources {
 }
 
 // Resources is what a task's worker uses of the machine: its process group and every process it started, even one
-// that left the group. Linux reads /proc; macOS, ps.
+// that left the group. Linux reads the cgroup of the worker's systemd scope when it runs in one, else /proc; macOS,
+// ps.
 type Resources struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// CPU used since the reading before, in percent of one core: 200 is two cores busy.
 	CpuPercent float64 `protobuf:"fixed64,1,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
-	// Resident memory, in bytes: the sum over its processes, a page they share counted once per process.
+	// Resident memory, in bytes: the sum over its processes, a page they share counted once per process. From a
+	// cgroup, what the kernel charges it (memory.current): its processes' memory once, and the page cache they filled.
 	MemoryBytes uint64 `protobuf:"varint,2,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
 	// Processes running.
 	Processes int32 `protobuf:"varint,3,opt,name=processes,proto3" json:"processes,omitempty"`
 	// Highest cpu_percent read, over all the task's workers.
 	PeakCpuPercent float64 `protobuf:"fixed64,4,opt,name=peak_cpu_percent,json=peakCpuPercent,proto3" json:"peak_cpu_percent,omitempty"`
-	// Highest memory_bytes read, over all the task's workers.
+	// Highest memory_bytes read, or held between two readings (a cgroup's memory.peak), over all the task's workers.
 	PeakMemoryBytes uint64 `protobuf:"varint,5,opt,name=peak_memory_bytes,json=peakMemoryBytes,proto3" json:"peak_memory_bytes,omitempty"`
 	// When it was last read.
 	ReadTime      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=read_time,json=readTime,proto3" json:"read_time,omitempty"`

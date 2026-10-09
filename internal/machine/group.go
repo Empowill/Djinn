@@ -20,8 +20,11 @@ type Group struct {
 	Processes int
 	// CPU time, user and system, of the processes running and of the children they waited for.
 	CPU time.Duration
-	// Resident memory, summed over the processes: a page they share counts once per process.
+	// Resident memory, summed over the processes: a page they share counts once per process. Read from a cgroup,
+	// what the kernel charges it (ReadCgroup).
 	Memory uint64
+	// Peak is the most memory the worker's cgroup held since it started; 0 without a cgroup.
+	Peak uint64
 }
 
 // proc is one process, as a listing gives it.
@@ -220,11 +223,18 @@ var listing struct {
 	err   error
 }
 
-// ReadWorker reads what the worker whose process leads group pid uses. The processes are listed at most once a
-// second, for every worker. Where workers are not measured (NotMeasured), it fails.
-func ReadWorker(pid int) (Group, error) {
+// ReadWorker reads what the worker whose process leads group pid uses: from its cgroup when it runs in one
+// (Scope.Cgroup, ReadCgroup), else from its processes, listed at most once a second for every worker. Where workers
+// are not measured (NotMeasured), it fails.
+func ReadWorker(pid int, cgroup string) (Group, error) {
 	if NotMeasured != "" {
 		return Group{}, errors.New(NotMeasured)
+	}
+	if cgroup != "" {
+		// Not yet made, or without the memory controller: read as without a scope.
+		if g, err := ReadCgroup(os.DirFS("/"), cgroup); err == nil && g.Processes > 0 {
+			return g, nil
+		}
 	}
 	listing.mu.Lock()
 	defer listing.mu.Unlock()

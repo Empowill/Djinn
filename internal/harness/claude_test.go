@@ -11,6 +11,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/machine"
 )
 
 func collect(w Worker) []Event {
@@ -145,13 +146,16 @@ func TestClaudeArgs(t *testing.T) {
 	}
 }
 
-// TestPrefix: a worker runs under its prefix (djinn up --worker-cpu: a systemd scope), its own program found first.
-func TestPrefix(t *testing.T) {
+// TestScopePrefix: a worker runs under its scope's prefix (systemd-run, played by the fake), its own program found
+// first, and keeps the scope's cgroup.
+func TestScopePrefix(t *testing.T) {
 	env, args, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
 	record := filepath.Join(t.TempDir(), "prefix")
 	env = append(env, "DJINN_FAKE_PREFIX="+record)
-	prefix := []string{os.Args[0], "--scope", "--"}
-	w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env, Prefix: prefix})
+	scope := func() machine.Scope {
+		return machine.Scope{Prefix: []string{os.Args[0], "--scope", "--"}, Cgroup: "/sys/fs/cgroup/djinn-W1-0a1b2c3d.scope"}
+	}
+	w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env, Scope: scope})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +174,10 @@ func TestPrefix(t *testing.T) {
 	if want := "--scope\n--\n" + os.Args[0] + "\n" + string(claudeArgs); string(got) != want {
 		t.Errorf("the prefix ran %q, want %q", got, want)
 	}
-	if _, err := (Claude{Command: "djinn-no-such-agent"}).Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Prefix: prefix}); err == nil ||
+	if p, ok := w.(Process); !ok || p.Cgroup() != scope().Cgroup {
+		t.Errorf("the worker's cgroup is not its scope's")
+	}
+	if _, err := (Claude{Command: "djinn-no-such-agent"}).Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Scope: scope}); err == nil ||
 		!strings.Contains(err.Error(), "djinn-no-such-agent not found in PATH") {
 		t.Errorf("a missing agent under a prefix: %v", err)
 	}

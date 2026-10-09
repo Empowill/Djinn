@@ -59,7 +59,7 @@ func startStreamIdle(ctx context.Context, spec Spec, command string, args []stri
 func startStreamWith(
 	ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent, prompt bool,
 ) (Worker, error) {
-	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Prefix, grace)
+	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
@@ -114,6 +114,9 @@ func (w *streamWorker) Done() <-chan struct{} { return w.done }
 
 // PID is the process of the agent.
 func (w *streamWorker) PID() int { return w.p.cmd.Process.Pid }
+
+// Cgroup is the cgroup of the agent's scope.
+func (w *streamWorker) Cgroup() string { return w.p.cgroup }
 
 func (w *streamWorker) Pause() error  { return w.p.Pause() }
 func (w *streamWorker) Resume() error { return w.p.Resume() }

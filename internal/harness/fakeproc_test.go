@@ -36,7 +36,7 @@ import (
 // JSON-RPC: an answer line of the fixture (id and result or error) gets the id of the client's next request, and
 // after a request line (id and method) the fake waits for the client's reply.
 //
-// DJINN_FAKE_PREFIX, a file, makes it play a prefix instead (Spec.Prefix): it writes its arguments to the file,
+// DJINN_FAKE_PREFIX, a file, makes it play a prefix instead (a Scope's, Spec.Scope): it writes its arguments to the file,
 // then runs them as a command.
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == fakeWatchArg {

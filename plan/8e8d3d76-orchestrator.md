@@ -82,6 +82,11 @@ status: in-progress
   goes back once that process ends or its timeout passes. (`TestOutside`, `TestHolderEnds`, `TestTimeout` in
   `internal/gate`; `TestGateHeldOutside` in `internal/harness`: on a full machine a new worker waits, saying "1 worker
   runs and 1 gate is held outside the workers", and starts once the gate is given back)
+- [x] On Linux with a user systemd, each worker runs in a cgroup of its own, made without root, which pausing, stopping
+  and measuring take whole; elsewhere Djinn says so once and runs workers as before. (`TestScopeTakesTheTree` in
+  `internal/harness` freezes, measures and stops a real scope whose child left its session, and skips without a user
+  systemd; `TestProbeScopesFallback`, `TestReadCgroup`, `TestScopePrefix` in `internal/machine`;
+  `TestWorkerScopesFallback` in `cmd/djinn`; T17 has the rest)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -195,7 +200,8 @@ status: in-progress
   cost: only `djinn gate run` knows its command ended by itself. Without a pid, Djinn does not learn the holder's
   process from the connection (the Unix socket's peer credentials could give it).
 - **Pause** (`djinn task pause <task>`, `djinn task resume <task>`, `TaskService.Pause` and `Resume`): on Linux and
-  macOS, SIGSTOP then SIGCONT to the worker's process group (`process_unix.go`); the fake holds its script before its
+  macOS, SIGSTOP then SIGCONT to the worker's process group (`process_unix.go`), or in a scope its cgroup frozen then
+  thawed; the fake holds its script before its
   next step. The task is `paused` (`TASK_STATUS_PAUSED`, an event `paused: …` then `resumed`, journaled
   `harness/hold`), and its worker takes no slot (`Harness.Running`): a planned task may start meanwhile. Resuming
   does not wait for a slot: the developer asked for it. A paused task keeps its write scopes. Stop sends SIGTERM then
@@ -226,7 +232,12 @@ status: in-progress
   it finished, with W57 as a link to its card. A fork of a running or done task leaves it as it is. The lead's brief
   says it: to follow up on a task, continue it; fork only to start a different task from its context.
 - **Per-worker measures** are built, without gopsutil: each worker's process group, read from /proc on Linux and
-  `ps` on macOS, its latest reading and peaks on its task (T17). **Not built yet**: a cgroup per worker (T17).
+  `ps` on macOS, its latest reading and peaks on its task (T17).
+- **A cgroup per worker on Linux** (T17): where the user has a systemd, each worker runs in a systemd user scope of
+  its own, `djinn-<task code>-<uuid8>`, made without root by `systemd-run --user --scope`, the `--worker-cpu` cap and
+  the memory ceiling as its properties. Pausing freezes its cgroup, stopping signals and then kills every process in
+  it, measuring reads its files: a tool that left the worker's process group goes with it. Without a user systemd, or
+  on macOS and Windows, `djinn up` says so once and the process group serves, as before.
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`; built (`branch`, `TestBranchFromSettings`).*

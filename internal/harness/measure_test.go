@@ -36,10 +36,10 @@ func TestMeasurePeaks(t *testing.T) {
 	var mu sync.Mutex
 	readings := []machine.Group{
 		{Processes: 1, CPU: 0, Memory: 100 << 20},
-		{Processes: 3, CPU: time.Second, Memory: 300 << 20},
+		{Processes: 3, CPU: time.Second, Memory: 300 << 20, Peak: 400 << 20}, // a cgroup's peak, between two readings
 		{Processes: 2, CPU: time.Second, Memory: 200 << 20},
 	}
-	read := func(pid int) (machine.Group, error) {
+	read := func(pid int, _ string) (machine.Group, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		g := readings[0]
@@ -54,9 +54,9 @@ func TestMeasurePeaks(t *testing.T) {
 		got = e.get(t, task.GetId()).GetResources()
 		return got.GetProcesses() == 2
 	})
-	if got.GetMemoryBytes() != 200<<20 || got.GetPeakMemoryBytes() != 300<<20 || got.GetCpuPercent() != 0 ||
+	if got.GetMemoryBytes() != 200<<20 || got.GetPeakMemoryBytes() != 400<<20 || got.GetCpuPercent() != 0 ||
 		got.GetPeakCpuPercent() <= 0 || got.GetReadTime() == nil {
-		t.Errorf("resources = %v, want 200 MiB now, 300 MiB at most, no CPU now and some before", got)
+		t.Errorf("resources = %v, want 200 MiB now, 400 MiB at most, no CPU now and some before", got)
 	}
 	uses := e.h.Uses()
 	if len(uses) != 1 || uses[0].GetCode() != task.GetCode() || uses[0].GetResources().GetMemoryBytes() != 200<<20 {
@@ -66,7 +66,7 @@ func TestMeasurePeaks(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.watch(t.Context(), t, task.GetId(), 0)
-	if got := e.get(t, task.GetId()).GetResources(); got.GetPeakMemoryBytes() != 300<<20 {
+	if got := e.get(t, task.GetId()).GetResources(); got.GetPeakMemoryBytes() != 400<<20 {
 		t.Errorf("stopped: resources = %v, want its peak kept", got)
 	}
 	if uses := e.h.Uses(); len(uses) != 0 {
@@ -76,7 +76,7 @@ func TestMeasurePeaks(t *testing.T) {
 
 // TestNotMeasured: the fake agent runs in Djinn's process, and a harness without a measure reads no worker.
 func TestNotMeasured(t *testing.T) {
-	read := func(int) (machine.Group, error) {
+	read := func(int, string) (machine.Group, error) {
 		t.Error("an in-process worker read")
 		return machine.Group{}, nil
 	}

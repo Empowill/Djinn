@@ -155,6 +155,16 @@ func (w *watchWorker) PID() int {
 	return w.proc.cmd.Process.Pid
 }
 
+// Cgroup is the cgroup of the command's scope while it runs: a scope of its own each run.
+func (w *watchWorker) Cgroup() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.proc == nil {
+		return ""
+	}
+	return w.proc.cgroup
+}
+
 // Pause stops the command where it is; between two runs, the next one waits.
 func (w *watchWorker) Pause() error {
 	w.mu.Lock()
@@ -197,7 +207,7 @@ func (w *watchWorker) loop() {
 			return
 		}
 		started := time.Now()
-		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Prefix, w.c.Grace, w.c.Items)
+		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Scope, w.c.Grace, w.c.Items)
 		if err != nil {
 			w.res = Result{ExitCode: -1, Err: err}
 			return
