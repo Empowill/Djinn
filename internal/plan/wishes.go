@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"slices"
 
 	"connectrpc.com/connect"
@@ -300,6 +301,7 @@ func (w *Wishes) Delete(
 	}
 	res := &planv1.WishServiceDeleteResponse{}
 	var tasks []*planv1.Task
+	var tilasms []*planv1.Tilasm
 	err = write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		where := store.Where{"wish_id": id}
 		var err error
@@ -338,6 +340,14 @@ func (w *Wishes) Delete(
 				return err
 			}
 		}
+		if tilasms, err = store.List[*planv1.Tilasm](ctx, tx, where); err != nil {
+			return err
+		}
+		for _, t := range tilasms {
+			if err := tx.Delete(t); err != nil {
+				return err
+			}
+		}
 		items, err := store.List[*planv1.InboxItem](ctx, tx, where)
 		if err != nil {
 			return err
@@ -362,6 +372,11 @@ func (w *Wishes) Delete(
 	}
 	if w.Leads != nil {
 		w.Leads.Close(LeadTerminal(id))
+	}
+	for _, t := range tilasms {
+		if w.Home != "" {
+			os.RemoveAll(TilasmDir(w.Home, t.GetId()))
+		}
 	}
 	res.Kept, res.WorktreesRemoved = cleanWorktrees(ctx, w.Store, tasks)
 	return connect.NewResponse(res), nil

@@ -108,7 +108,10 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 	name, err := pick(rest[0], names, "command")
 	if err != nil {
-		return err
+		var ok bool
+		if name, ok = aliased(rest[0], names, services); !ok {
+			return err
+		}
 	}
 	if name == "version" {
 		fmt.Fprintln(cfg.Stdout, "djinn", cfg.Version)
@@ -288,6 +291,32 @@ func pick(word string, names []string, what string) (string, error) {
 	return "", usageError{fmt.Errorf("%s %q is ambiguous: %s", what, word, strings.Join(found, ", "))}
 }
 
+// aliased resolves a word no command's own name takes to the command of a service it is an alias of, in full or by
+// a unique prefix: djinn talisman is djinn tilasm.
+func aliased(word string, names []string, services []protoreflect.ServiceDescriptor) (string, bool) {
+	if slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, word) }) {
+		return "", false
+	}
+	var found []string
+	for _, sd := range services {
+		for _, alias := range aliases(sd) {
+			if (alias == word || strings.HasPrefix(alias, word)) && !slices.Contains(found, command(sd)) {
+				found = append(found, command(sd))
+			}
+		}
+	}
+	if len(found) != 1 {
+		return "", false
+	}
+	return found[0], true
+}
+
+// aliases are the other names of a service's command.
+func aliases(sd protoreflect.ServiceDescriptor) []string {
+	out, _ := proto.GetExtension(sd.Options(), djinnv1.E_Alias).([]string)
+	return out
+}
+
 // files are the protos of api/, read from the embedded descriptors so that they keep their comments.
 var files = sync.OnceValue(func() *protoregistry.Files {
 	var set descriptorpb.FileDescriptorSet
@@ -376,7 +405,11 @@ func writeHelp(w io.Writer) {
 	fmt.Fprint(w, "Usage: djinn <command> <method> [arguments] [flags]\n\nCommands:\n")
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	for _, sd := range commands() {
-		fmt.Fprintf(tw, "  %s\t%s\n", command(sd), comment(sd))
+		name := command(sd)
+		if a := aliases(sd); len(a) > 0 {
+			name += ", " + strings.Join(a, ", ")
+		}
+		fmt.Fprintf(tw, "  %s\t%s\n", name, comment(sd))
 	}
 	fmt.Fprintf(tw, "  version\tPrint the version of djinn.\n")
 	fmt.Fprintf(tw, "  mcp\tServe these commands as MCP tools on stdin and stdout, for an agent that speaks MCP.\n")
