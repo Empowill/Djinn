@@ -88,13 +88,17 @@ func secretIn(b []byte) (int, string) {
 	return 0, ""
 }
 
+// DefaultBranch is the branch template of a project whose files set none.
+const DefaultBranch = "{code}-{slug}-{uuid8}"
+
 // Settings are a project's settings as its workers get them, each with where it comes from.
 type Settings struct {
 	Provider     planv1.Provider
 	Model        string
 	MaxBudgetUSD float64
+	Branch       string // a template: {code}, {slug}, {uuid8}
 
-	ProviderFrom, ModelFrom, BudgetFrom planv1.SettingSource
+	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom planv1.SettingSource
 }
 
 // ResolveSettings merges the repository's settings and the developer's, either nil when there is none. The
@@ -102,7 +106,10 @@ type Settings struct {
 // goes to a provider it is not one of.
 func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 	def := planv1.SettingSource_SETTING_SOURCE_DEFAULT
-	s := Settings{Provider: planv1.Provider_PROVIDER_CLAUDE, ProviderFrom: def, ModelFrom: def, BudgetFrom: def}
+	s := Settings{
+		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch,
+		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def,
+	}
 	for _, f := range []struct {
 		settings *planv1.ProjectSettings
 		from     planv1.SettingSource
@@ -119,6 +126,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.MaxBudgetUsd != nil {
 			s.MaxBudgetUSD, s.BudgetFrom = f.settings.GetMaxBudgetUsd(), f.from
+		}
+		if f.settings.Branch != nil {
+			s.Branch, s.BranchFrom = f.settings.GetBranch(), f.from
 		}
 	}
 	return s
@@ -173,5 +183,6 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "provider", Value: providerName(s.Provider), Source: s.ProviderFrom},
 		{Name: "model", Value: s.Model, Source: s.ModelFrom},
 		{Name: "max_budget_usd", Value: budget, Source: s.BudgetFrom},
+		{Name: "branch", Value: s.Branch, Source: s.BranchFrom},
 	}
 }

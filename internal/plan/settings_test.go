@@ -29,10 +29,17 @@ func TestReadSettings(t *testing.T) {
 		t.Errorf("no file: %v, %v", s, err)
 	}
 	writeSettings(t, path, "# proto-message: plan.v1.ProjectSettings\nprovider: PROVIDER_CODEX\nmodel: \"gpt-5.1-codex\"\n"+
-		"max_budget_usd: 2.5\n")
+		"max_budget_usd: 2.5\nbranch: \"djinn/{code}-{slug}-{uuid8}\"\n")
 	s, err := ReadSettings(path)
-	if err != nil || s.GetProvider() != planv1.Provider_PROVIDER_CODEX || s.GetModel() != "gpt-5.1-codex" || s.GetMaxBudgetUsd() != 2.5 {
+	if err != nil || s.GetProvider() != planv1.Provider_PROVIDER_CODEX || s.GetModel() != "gpt-5.1-codex" || s.GetMaxBudgetUsd() != 2.5 ||
+		s.GetBranch() != "djinn/{code}-{slug}-{uuid8}" {
 		t.Errorf("valid file: %v, %v", s, err)
+	}
+	for _, branch := range []string{"{uuid8}", "feature/{slug}_{uuid8}", "T.{code}.{uuid8}", "{code}{uuid8}"} {
+		writeSettings(t, path, "branch: \""+branch+"\"\n")
+		if s, err := ReadSettings(path); err != nil || s.GetBranch() != branch {
+			t.Errorf("branch %s: %v, %v", branch, s, err)
+		}
 	}
 	for _, model := range []string{"claude-sonnet-4-5-20250929", "us.anthropic.claude-opus-4-1-20250805-v1:0", "opus[1m]"} {
 		writeSettings(t, path, "model: \""+model+"\"\n")
@@ -47,6 +54,15 @@ func TestReadSettings(t *testing.T) {
 		"provider: PROVIDER_UNSPECIFIED\n",
 		"max_budget_usd: -1\n",
 		"model: \"opus; rm -rf /\"\n",
+		"branch: \"\"\n",
+		"branch: \"{code}-{slug}\"\n",
+		"branch: \"{code}-{ticket}-{uuid8}\"\n",
+		"branch: \"feature//{uuid8}\"\n",
+		"branch: \"../{uuid8}\"\n",
+		"branch: \"-{uuid8}\"\n",
+		"branch: \"{uuid8}/\"\n",
+		"branch: \"a b-{uuid8}\"\n",
+		"branch: \"{uuid8}@{1}\"\n",
 	} {
 		writeSettings(t, path, bad)
 		if s, err := ReadSettings(path); err == nil || !strings.Contains(err.Error(), path) {
@@ -86,27 +102,40 @@ func TestResolveSettings(t *testing.T) {
 		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
 	)
 	claude, codex := planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX
-	team := &planv1.ProjectSettings{Provider: &claude, Model: proto.String("opus"), MaxBudgetUsd: proto.Float64(3)}
+	team := &planv1.ProjectSettings{
+		Provider: &claude, Model: proto.String("opus"), MaxBudgetUsd: proto.Float64(3), Branch: proto.String("djinn/{code}-{uuid8}"),
+	}
 	for _, c := range []struct {
 		name      string
 		repo, dev *planv1.ProjectSettings
 		want      Settings
 	}{
-		{"neither file", nil, nil, Settings{Provider: claude, ProviderFrom: def, ModelFrom: def, BudgetFrom: def}},
+		{"neither file", nil, nil, Settings{
+			Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def,
+		}},
 		{"the repository's only", team, nil, Settings{
-			Provider: claude, Model: "opus", MaxBudgetUSD: 3, ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo,
+			Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
+			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: repo,
 		}},
 		{"the developer's win, setting by setting", team, &planv1.ProjectSettings{Model: proto.String("sonnet")}, Settings{
-			Provider: claude, Model: "sonnet", MaxBudgetUSD: 3, ProviderFrom: repo, ModelFrom: dev, BudgetFrom: repo,
+			Provider: claude, Model: "sonnet", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
+			ProviderFrom: repo, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo,
 		}},
 		{"a provider brings its model, not the other file's", team, &planv1.ProjectSettings{Provider: &codex}, Settings{
-			Provider: codex, MaxBudgetUSD: 3, ProviderFrom: dev, ModelFrom: dev, BudgetFrom: repo,
+			Provider: codex, MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
+			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo,
 		}},
 		{"an explicit zero lifts the team's budget", team, &planv1.ProjectSettings{MaxBudgetUsd: proto.Float64(0)}, Settings{
-			Provider: claude, Model: "opus", ProviderFrom: repo, ModelFrom: repo, BudgetFrom: dev,
+			Provider: claude, Model: "opus", Branch: "djinn/{code}-{uuid8}",
+			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: dev, BranchFrom: repo,
+		}},
+		{"the developer's branch wins", team, &planv1.ProjectSettings{Branch: proto.String("me/{slug}-{uuid8}")}, Settings{
+			Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "me/{slug}-{uuid8}",
+			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: dev,
 		}},
 		{"the developer's only", nil, &planv1.ProjectSettings{Provider: &codex, Model: proto.String("gpt-5.1-codex")}, Settings{
-			Provider: codex, Model: "gpt-5.1-codex", ProviderFrom: dev, ModelFrom: dev, BudgetFrom: def,
+			Provider: codex, Model: "gpt-5.1-codex", Branch: DefaultBranch,
+			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: def, BranchFrom: def,
 		}},
 	} {
 		if got := ResolveSettings(c.repo, c.dev); got != c.want {
@@ -147,20 +176,22 @@ func TestProjectShow(t *testing.T) {
 	if res.GetRepositoryFile() != repoFile || res.GetDeveloperFile() != devFile || len(res.GetProblems()) > 0 {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
-	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT"; got != want {
+	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 
-	writeSettings(t, repoFile, "provider: PROVIDER_CLAUDE\nmodel: \"opus\"\nmax_budget_usd: 3\n")
-	writeSettings(t, devFile, "model: \"sonnet\"\n")
-	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY"; got != want {
+	writeSettings(t, repoFile, "provider: PROVIDER_CLAUDE\nmodel: \"opus\"\nmax_budget_usd: 3\nbranch: \"djinn/{code}-{uuid8}\"\n")
+	writeSettings(t, devFile, "model: \"sonnet\"\nbranch: \"me/{slug}-{uuid8}\"\n")
+	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
+		"branch=me/{slug}-{uuid8} DEVELOPER"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
 	// A malformed file is a problem shown, not a failure: the other file still counts.
 	writeSettings(t, devFile, "model: sonnet\n")
 	res = show()
-	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY"; got != want {
+	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
+		"branch=djinn/{code}-{uuid8} REPOSITORY"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
 	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {

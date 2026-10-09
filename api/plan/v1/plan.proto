@@ -68,6 +68,15 @@ message ProjectSettings {
     gte: 0
     lte: 10000
   }];
+  // Branch of a worker's worktree, a template: {code} is the task's code (w1), {slug} its title in lower case
+  // ("fix-the-login-page"), {uuid8} the last 8 characters of its UUIDv7, the random part; a placeholder that comes
+  // out empty takes a separator next to it away. Letters, digits and placeholders, joined by at most one of . _ / -
+  // in a row. {uuid8} is required: two tasks never share a branch. Not set: {code}-{slug}-{uuid8}.
+  optional string branch = 4 [
+    (buf.validate.field).string.max_len = 100,
+    (buf.validate.field).string.pattern = "^([A-Za-z0-9]+|\\{(code|slug|uuid8)\\})([._/-]?([A-Za-z0-9]+|\\{(code|slug|uuid8)\\}))*$",
+    (buf.validate.field).string.contains = "{uuid8}"
+  ];
 }
 
 // SettingSource is where a project setting comes from.
@@ -84,7 +93,7 @@ enum SettingSource {
 
 // ProjectSetting is one setting of a project, as its workers get it.
 message ProjectSetting {
-  // Its name, as the files write it: provider, model, max_budget_usd.
+  // Its name, as the files write it: provider, model, max_budget_usd, branch.
   string name = 1;
   // Its value, as text; empty for the provider's own default model, or no budget limit.
   string value = 2;

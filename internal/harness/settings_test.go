@@ -3,6 +3,7 @@ package harness
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -63,4 +64,31 @@ func TestSpawnTakesTheProjectSettings(t *testing.T) {
 	if _, err := e.project.List(t.Context(), connect.NewRequest(&planv1.ProjectServiceListRequest{})); err != nil {
 		t.Errorf("djinn up with a malformed settings file: %v", err)
 	}
+}
+
+// TestBranchFromSettings: a worker's branch follows the project's template, the developer's over the team's; a
+// planned task takes it when it starts.
+func TestBranchFromSettings(t *testing.T) {
+	home, repo := t.TempDir(), gitRepo(t)
+	writeFile(t, repo, ".agents/settings.txtpb", "branch: \"djinn/{code}-{uuid8}\"\n")
+	e := up(t, home, WithTick(20*time.Millisecond))
+	wishID, projectID := e.wish(t, repo)
+	check := func(name string, task *planv1.Task, want string) {
+		t.Helper()
+		want += task.GetId()[len(task.GetId())-8:]
+		if got := e.ended(t, task.GetId()); got.GetBranch() != want || got.GetWorktree() == "" {
+			t.Errorf("%s: branch %q in %q; want %q", name, got.GetBranch(), got.GetWorktree(), want)
+		}
+		if out, _ := git(t.Context(), repo, "branch", "--list", want); out == "" {
+			t.Errorf("%s: no branch %s in the repository", name, want)
+		}
+	}
+
+	check("the repository's", e.mustSpawn(t, wishID, "Fix the login page", "text ok", nil), "djinn/w1-")
+	writeFile(t, home, "projects/"+projectID+"/settings.txtpb", "branch: \"{slug}/{code}/{uuid8}\"\n")
+	later := e.mustSpawn(t, wishID, "Ship it", "text ok", &planv1.TaskServiceSpawnRequest{Later: true})
+	if later.GetBranch() != "" {
+		t.Errorf("a planned task has a branch already: %s", later.GetBranch())
+	}
+	check("the developer's, for a planned task", later, "ship-it/w2/")
 }

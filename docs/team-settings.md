@@ -1,7 +1,7 @@
 # Team settings
 
 A team that works on one repository shares a few defaults for its workers: which agent runs them, which model,
-how much one may spend. The repository carries them in one file, next to the permissions:
+how much one may spend, how their branches are named. The repository carries them in one file, next to the permissions:
 `.agents/settings.txtpb`. Each developer may keep their own next to their Djinn's data, and theirs win.
 
 ## The file
@@ -13,10 +13,11 @@ with the code:
 # proto-file: api/plan/v1/plan.proto
 # proto-message: plan.v1.ProjectSettings
 
-# The team's workers run claude with opus, and spend at most 3 dollars each.
+# The team's workers run claude with opus, spend at most 3 dollars each, and work on djinn/<code>-<slug>-<uuid8>.
 provider: PROVIDER_CLAUDE
 model: "opus"
 max_budget_usd: 3
+branch: "djinn/{code}-{slug}-{uuid8}"
 ```
 
 | Setting          | What it sets, when a task names none                                   | Not set                    |
@@ -24,8 +25,29 @@ max_budget_usd: 3
 | `provider`       | The agent of the project's workers: claude, codex, antigravity, fake.  | claude                     |
 | `model`          | Their model, a model of that provider. `""`: the provider's default.   | the provider's default     |
 | `max_budget_usd` | The most one worker may spend, when its provider can enforce it. `0`: no limit. | no limit          |
+| `branch`         | The branch of a worker's worktree, a template: see [below](#branch-names). | `{code}-{slug}-{uuid8}` |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
+
+## Branch names
+
+In a Git repository each worker edits its own worktree, on a new branch from the project's `HEAD`. `branch` names it,
+with three placeholders:
+
+| Placeholder | Becomes                                                                 | Task W1 "Fix the login page" |
+| ----------- | ----------------------------------------------------------------------- | ---------------------------- |
+| `{code}`    | The task's code, in lower case.                                          | `w1`                         |
+| `{slug}`    | Its title in lower case, accents folded, letters and digits joined by `-`, 40 characters at most. | `fix-the-login-page` |
+| `{uuid8}`   | The last 8 characters of its UUIDv7, the random part.                    | `89abcdef`                   |
+
+`{uuid8}` is required: two tasks never share a branch, and a code repeats from one wish to the next. Around the
+placeholders, letters and digits joined by at most one of `.` `_` `/` `-` in a row: a template Git would refuse as a
+branch (`feature//{uuid8}`, `-{uuid8}`, `{uuid8}/`) is refused when Djinn reads the file, like an unknown placeholder.
+A placeholder that comes out empty, a title with no letter, takes a separator next to it away: `{code}-{slug}-{uuid8}`
+gives `w3-89abcdef` for "!!!".
+
+A task gets its branch when its worker starts: a planned task takes the template as the files are then. Its branch
+never changes after, and stays when `djinn task clean` removes its worktree.
 
 ## Your own file
 
@@ -39,7 +61,7 @@ Setting by setting, the first that sets it:
 1. **The task's own flags**: `djinn task spawn --model … --max-budget-usd …`, or what the lead asked.
 2. **Your own file.**
 3. **The repository's file.**
-4. **Djinn's default**: claude, its default model, no limit.
+4. **Djinn's default**: claude, its default model, no limit, `{code}-{slug}-{uuid8}`.
 
 A file that sets `provider` sets the model with it: its own `model`, or else the provider's default, whatever the
 other file says. Your `provider: PROVIDER_CODEX` never runs codex with the team's claude model. A model applies only
@@ -62,6 +84,9 @@ settings:
     source: developer
   - name: max_budget_usd
     value: 3
+    source: repository
+  - name: branch
+    value: djinn/{code}-{slug}-{uuid8}
     source: repository
 repository_file: /home/me/src/app/.agents/settings.txtpb
 developer_file: /home/me/.config/djinn/projects/01a1…/settings.txtpb

@@ -1186,7 +1186,12 @@ type ProjectSettings struct {
 	// provider's own default. It applies only to a task that runs this provider.
 	Model *string `protobuf:"bytes,2,opt,name=model,proto3,oneof" json:"model,omitempty"`
 	// Most a worker may spend, in US dollars, when a task gives none and its provider can enforce it. 0: no limit.
-	MaxBudgetUsd  *float64 `protobuf:"fixed64,3,opt,name=max_budget_usd,json=maxBudgetUsd,proto3,oneof" json:"max_budget_usd,omitempty"`
+	MaxBudgetUsd *float64 `protobuf:"fixed64,3,opt,name=max_budget_usd,json=maxBudgetUsd,proto3,oneof" json:"max_budget_usd,omitempty"`
+	// Branch of a worker's worktree, a template: {code} is the task's code (w1), {slug} its title in lower case
+	// ("fix-the-login-page"), {uuid8} the last 8 characters of its UUIDv7, the random part; a placeholder that comes
+	// out empty takes a separator next to it away. Letters, digits and placeholders, joined by at most one of . _ / -
+	// in a row. {uuid8} is required: two tasks never share a branch. Not set: {code}-{slug}-{uuid8}.
+	Branch        *string `protobuf:"bytes,4,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1242,10 +1247,17 @@ func (x *ProjectSettings) GetMaxBudgetUsd() float64 {
 	return 0
 }
 
+func (x *ProjectSettings) GetBranch() string {
+	if x != nil && x.Branch != nil {
+		return *x.Branch
+	}
+	return ""
+}
+
 // ProjectSetting is one setting of a project, as its workers get it.
 type ProjectSetting struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Its name, as the files write it: provider, model, max_budget_usd.
+	// Its name, as the files write it: provider, model, max_budget_usd, branch.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Its value, as text; empty for the provider's own default model, or no budget limit.
 	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
@@ -9211,14 +9223,16 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\x80\x02\n" +
+	"createTime\"\x91\x03\n" +
 	"\x0fProjectSettings\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
 	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
-	"\x0emax_budget_usd\x18\x03 \x01(\x01B\x17\xbaH\x14\x12\x12\x19\x00\x00\x00\x00\x00\x88\xc3@)\x00\x00\x00\x00\x00\x00\x00\x00H\x02R\fmaxBudgetUsd\x88\x01\x01B\v\n" +
+	"\x0emax_budget_usd\x18\x03 \x01(\x01B\x17\xbaH\x14\x12\x12\x19\x00\x00\x00\x00\x00\x88\xc3@)\x00\x00\x00\x00\x00\x00\x00\x00H\x02R\fmaxBudgetUsd\x88\x01\x01\x12\x83\x01\n" +
+	"\x06branch\x18\x04 \x01(\tBf\xbaHcra\x18d2T^([A-Za-z0-9]+|\\{(code|slug|uuid8)\\})([._/-]?([A-Za-z0-9]+|\\{(code|slug|uuid8)\\}))*$J\a{uuid8}H\x03R\x06branch\x88\x01\x01B\v\n" +
 	"\t_providerB\b\n" +
 	"\x06_modelB\x11\n" +
-	"\x0f_max_budget_usd\"j\n" +
+	"\x0f_max_budget_usdB\t\n" +
+	"\a_branch\"j\n" +
 	"\x0eProjectSetting\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12.\n" +
