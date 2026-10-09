@@ -55,7 +55,11 @@ export default defineConfig({
     port: 4317,
     strictPort: true,
     proxy: devApi
-      ? { "^/[a-z]+\\.v[0-9]+\\.[A-Za-z]+Service/": { target: devApi } }
+      ? {
+          "^/[a-z]+\\.v[0-9]+\\.[A-Za-z]+Service/": { target: devApi },
+          // The documentation site, which djinn serves.
+          "^/docs/": { target: devApi },
+        }
       : undefined,
   },
 });

@@ -22,7 +22,7 @@ import (
 func handler(f *fake) http.Handler {
 	qp, qh := planv1connect.NewQuestionServiceHandler(questions{fake: f})
 	pp, ph := planv1connect.NewProjectServiceHandler(projects{fake: f})
-	return server.Handler(fstest.MapFS{"index.html": {}}, map[string]http.Handler{qp: qh, pp: ph})
+	return server.Handler(fstest.MapFS{"index.html": {}}, nil, map[string]http.Handler{qp: qh, pp: ph})
 }
 
 // runIn runs a command line with no address given, as an agent does: the command line reads the address file.
@@ -122,7 +122,7 @@ func TestAutostart(t *testing.T) {
 	wp, wh := planv1connect.NewWishServiceHandler(resumes{})
 	f := &fake{}
 	qp, qh := planv1connect.NewQuestionServiceHandler(questions{fake: f})
-	srv := httptest.NewServer(server.Handler(fstest.MapFS{"index.html": {}}, map[string]http.Handler{wp: wh, qp: qh}))
+	srv := httptest.NewServer(server.Handler(fstest.MapFS{"index.html": {}}, nil, map[string]http.Handler{wp: wh, qp: qh}))
 	defer srv.Close()
 	home := t.TempDir()
 	started := 0

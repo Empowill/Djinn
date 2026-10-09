@@ -20,3 +20,28 @@ plugins:
     out: gen/ts
     opt: target=ts
     include_imports: true
+  # docs/openapi.json, the OpenAPI document of the public methods: those of VISIBILITY_PUBLIC. The plugin reads only
+  # google.api.visibility, so the internal ones are excluded by name; TestOpenAPI fails when this list lags behind
+  # the protos. docs/openapi.base.yaml gives what the protos do not say.
+  - local: ["go", "tool", "protoc-gen-connect-openapi"]
+    out: docs
+    strategy: all
+    opt:
+      - path=openapi.json
+      - format=json
+      - base=docs/openapi.base.yaml
+      - features=connectrpc;protovalidate
+      - content-types=json
+      - allow-get
+      - with-streaming
+      - short-service-tags
+      - short-operation-ids
+      - trim-unused-types
+    exclude_types:
+      - backup.v1
+      - demo.v1
+      - terminal.v1
+      - ui.v1
+      - machine.v1.CommandService.Record
+      - plan.v1.WishService.ImportData
+      - plan.v1.WishService.Snapshot

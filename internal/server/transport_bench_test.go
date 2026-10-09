@@ -65,7 +65,7 @@ func benchHandler(gzip bool, payload string) http.Handler {
 	if gzip {
 		return mux
 	}
-	return Handler(fstest.MapFS{}, map[string]http.Handler{"/bench.v1.Bench/": mux})
+	return Handler(fstest.MapFS{}, nil, map[string]http.Handler{"/bench.v1.Bench/": mux})
 }
 
 // variant is one way to carry the calls over the socket.

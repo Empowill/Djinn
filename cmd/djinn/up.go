@@ -224,7 +224,7 @@ func runUp(args []string) (restart bool, err error) {
 	svc[costsPrefix] = costsHandler
 	backupPrefix, backupHandler := backup.Handler(db, home, version)
 	svc[backupPrefix] = backupHandler
-	h := server.Handler(djinn.UI(), svc)
+	h := server.Handler(djinn.UI(), djinn.Docs(), svc)
 
 	var ln net.Listener
 	var addr string

@@ -119,11 +119,14 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
       then the chord brings the window forward. (needs: a person on a Wayland desktop with the portal)
     - [ ] Pressed by hand on macOS and on Windows. (needs: a Mac, and a Windows machine)
 - [x] OpenAPI documentation of the public methods. (`docs/openapi.json`, OpenAPI 3.1, written by `go tool task gen`
-  through `tools/openapi`; `TestOpenAPIIsFresh`, `TestOpenAPI`; Redocly lint: valid, one warning on the localhost
-  server; its `ProjectService/List` answered a curl with the bearer token)
+  through `tools/openapi`, since replaced by protoc-gen-connect-openapi in `buf.gen.yaml`; `TestOpenAPI`; Redocly
+  lint: valid, one warning on the localhost server; its `ProjectService/List` answered a curl with the bearer token)
+- [x] A documentation site: `docs/site`, its concepts and its API tab (RapiDoc on `docs/openapi.json`), built by
+  `go tool task docs` into `bin/docs`, served by `djinn up` at `/docs/`, opened from the settings.
+  (`TestBuild`, `TestDocs`, `TestOpenAPI`; `e2e/docs.spec.ts`)
 - [x] Read-only methods say so. Each public method that answers once says `idempotency_level = NO_SIDE_EFFECTS`
   (12 reads) or `(djinn.v1.writes)` = `WRITES_CHANGE` (23) or `WRITES_DELETE` (6); `djinn mcp` sets `readOnlyHint`
-  and `destructiveHint` on every tool, OpenAPI marks reads `x-read-only`, Connect serves them as GET.
+  and `destructiveHint` on every tool, OpenAPI gives each read a GET, as Connect serves it.
   (`TestEveryMethodSaysWhatItChanges`, `TestMCPListTools`, `TestOpenAPI`; `TestReadOnlyMethodsAnswerAGet` on a real
   `djinn up`: GET `ProjectService/List` 200, GET `ProjectService/Add` 405;
   [the convention](../docs/cli-convention.md#reads-and-writes))

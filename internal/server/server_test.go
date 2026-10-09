@@ -29,7 +29,7 @@ var ui = fstest.MapFS{
 
 func handler() http.Handler {
 	prefix, h := demov1connect.NewDemoServiceHandler(demo.Service{})
-	return server.Handler(ui, map[string]http.Handler{prefix: h})
+	return server.Handler(ui, nil, map[string]http.Handler{prefix: h})
 }
 
 // get serves a GET on h and returns the status and the body.
@@ -57,6 +57,40 @@ func TestAssets(t *testing.T) {
 		{"/missions/42", http.StatusOK, "<title>index</title>", "text/html"}, // a route of the interface
 		{"/assets/", http.StatusOK, "<title>index</title>", "text/html"},     // no directory listing
 		{"/assets/missing.js", http.StatusNotFound, "", ""},                  // a missing file is not a page
+	} {
+		rec, body := get(t, h, tc.path, nil)
+		if rec.Code != tc.status {
+			t.Errorf("%s: status %d, want %d", tc.path, rec.Code, tc.status)
+		}
+		if tc.body != "" && body != tc.body {
+			t.Errorf("%s: body %q, want %q", tc.path, body, tc.body)
+		}
+		if !strings.HasPrefix(rec.Header().Get("Content-Type"), tc.contentType) {
+			t.Errorf("%s: content type %q, want %q", tc.path, rec.Header().Get("Content-Type"), tc.contentType)
+		}
+	}
+}
+
+// TestDocs checks that the documentation site is served at /docs/, beside the interface.
+func TestDocs(t *testing.T) {
+	docs := fstest.MapFS{
+		"index.html": {Data: []byte("<title>docs</title>")},
+		"site.css":   {Data: []byte("main{}")},
+		"openapi.js": {Data: []byte("window.DJINN_OPENAPI = {};")},
+	}
+	prefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
+	h := server.Handler(ui, docs, map[string]http.Handler{prefix: demoHandler})
+	for _, tc := range []struct {
+		path              string
+		status            int
+		body, contentType string
+	}{
+		{"/docs/", http.StatusOK, "<title>docs</title>", "text/html"},
+		{"/docs/site.css", http.StatusOK, "main{}", "text/css"},
+		{"/docs/openapi.js", http.StatusOK, "window.DJINN_OPENAPI = {};", "text/javascript"},
+		{"/docs/missing.js", http.StatusNotFound, "", ""},
+		{"/docs", http.StatusTemporaryRedirect, "", ""},
+		{"/", http.StatusOK, "<title>index</title>", "text/html"},
 	} {
 		rec, body := get(t, h, tc.path, nil)
 		if rec.Code != tc.status {
@@ -135,7 +169,7 @@ func (w *strictWriter) Write(b []byte) (int, error) {
 // (TerminalService.Write, Resize) still gets its 200: connect-go writes nothing for it.
 func TestEmptyResponseIsAnswered(t *testing.T) {
 	const procedure = "/test.v1.EmptyService/Call"
-	h := server.Handler(ui, map[string]http.Handler{
+	h := server.Handler(ui, nil, map[string]http.Handler{
 		"/test.v1.EmptyService/": connect.NewUnaryHandler(procedure,
 			func(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[emptypb.Empty], error) {
 				return connect.NewResponse(&emptypb.Empty{}), nil

@@ -19,19 +19,25 @@ import (
 	"time"
 )
 
-// Handler serves each Connect service at its path prefix, as returned by a generated New…Handler, and the
-// interface from ui for every other path.
+// Handler serves each Connect service at its path prefix, as returned by a generated New…Handler, the documentation
+// site from docs at /docs/ when docs is not nil, and the interface from ui for every other path.
 //
 // The services never compress a response: every client of this server is on the same machine, where gzip only
 // costs time on both ends (see docs/transport.md). A service that writes nothing still answers 200, as on net/http.
-func Handler(ui fs.FS, services map[string]http.Handler) http.Handler {
+func Handler(ui, docs fs.FS, services map[string]http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	for prefix, h := range services {
 		mux.Handle(prefix, answered(uncompressed(h)))
 	}
+	if docs != nil {
+		mux.Handle(DocsPath, http.StripPrefix(strings.TrimSuffix(DocsPath, "/"), assets(docs)))
+	}
 	mux.Handle("/", assets(ui))
 	return mux
 }
+
+// DocsPath is where Handler serves the documentation site.
+const DocsPath = "/docs/"
 
 // uncompressed hides from h the compressions the client accepts, so that a Connect handler answers in the clear.
 // connect-go compresses a response whenever the client accepts gzip, and both the command line (connect-go) and
