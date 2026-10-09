@@ -318,11 +318,9 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	}
 
 	// A warm worker of the wish in the project, when the task asks for nothing it was not started with.
-	var wk *warm
-	if task.GetForkSession() == "" && task.GetModel() == "" && task.GetMaxBudgetUsd() == 0 {
-		if wk = h.claimWarm(ctx, wish, project, kind); wk != nil {
-			task.Id = wk.id
-		}
+	wk := h.claimWarm(ctx, wish, project, task)
+	if wk != nil {
+		task.Id = wk.id
 	}
 	r, err := h.newRun(task, 1)
 	if err != nil {

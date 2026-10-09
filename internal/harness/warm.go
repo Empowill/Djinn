@@ -22,8 +22,9 @@ import (
 // loaded, and waiting for its first message on its input. The next task spawned there takes it instead of starting
 // an agent, and the scheduler starts another one. It costs no token while it waits, only memory. Only Claude warms
 // (Warmer), and only for what Djinn knows ahead: the task's identifier (its session, DJINN_TASK_ID, its worktree),
-// its folder and its rights. A task that asks for anything else (a model, a budget, a fork, other rights) starts
-// cold, as does a planned task: its identifier is older than the warm worker.
+// its folder, its rights, and the model and budget the project's settings give (plan.LoadSettings), as Spawn fills
+// them. A task that asks for anything else (another model or budget, a fork, other rights) starts cold, as does a
+// planned task: its identifier is older than the warm worker.
 
 // Warmer is a provider that starts its agent before it knows the first message. The first Send of the worker is
 // its first message.
@@ -53,14 +54,16 @@ type warm struct {
 	since    time.Time
 }
 
-// wantWarm is a warm worker the scheduler wants: for a wish, in one of its projects, with the rights its next task
-// would have.
+// wantWarm is a warm worker the scheduler wants: for a wish, in one of its projects, with the rights, the model and
+// the budget its next task would have.
 type wantWarm struct {
 	key      string
 	wishID   string
 	project  *planv1.Project
 	readOnly bool
 	perms    *djinnv1.Permissions
+	model    string
+	budget   float64
 }
 
 func warmKey(wishID, projectID string) string { return wishID + "/" + projectID }
@@ -111,6 +114,8 @@ func (h *Harness) refreshWarm(ctx context.Context) {
 			h.dropWarm(w, "no longer wanted, or no slot left for it")
 		case !w.fits(ww.readOnly, ww.perms):
 			h.dropWarm(w, "the rights of its project changed")
+		case !w.settled(ww.model, ww.budget):
+			h.dropWarm(w, "the settings of its project changed")
 		case w.stale(ctx):
 			h.dropWarm(w, "its project moved on")
 		default:
@@ -126,7 +131,7 @@ func (h *Harness) refreshWarm(ctx context.Context) {
 }
 
 // wantedWarm are the warm workers the active wishes call for, the first wish first: one per project with a folder
-// here whose next Claude task would start now, without a question to ask first.
+// here whose next task would be Claude's by default and start now, without a question to ask first.
 func (h *Harness) wantedWarm(ctx context.Context) []wantWarm {
 	wishes, err := plan.ActiveWishes(ctx, h.store)
 	if err != nil {
@@ -139,12 +144,21 @@ func (h *Harness) wantedWarm(ctx context.Context) []wantWarm {
 			if err != nil || project.GetDirectory() == "" {
 				continue
 			}
+			// Its model and budget are the ones Spawn fills from the project's settings. A project whose settings
+			// cannot be read spawns no task; one whose tasks go to another agent has no use for a claude.
+			settings, err := plan.LoadSettings(h.home, project)
+			if err != nil || settings.Provider != planv1.Provider_PROVIDER_CLAUDE {
+				continue
+			}
 			access, declared, err := decideAccess(project, planv1.Provider_PROVIDER_CLAUDE, plan.AllowanceOf(wish, id))
 			if err != nil || access == planv1.TaskAccess_TASK_ACCESS_ASKING || access == planv1.TaskAccess_TASK_ACCESS_READ_ONLY {
 				continue
 			}
 			readOnly, perms := accessSpec(access, declared)
-			out = append(out, wantWarm{key: warmKey(wish.GetId(), id), wishID: wish.GetId(), project: project, readOnly: readOnly, perms: perms})
+			out = append(out, wantWarm{
+				key: warmKey(wish.GetId(), id), wishID: wish.GetId(), project: project, readOnly: readOnly, perms: perms,
+				model: settings.Model, budget: settings.MaxBudgetUSD,
+			})
 		}
 	}
 	return out
@@ -168,7 +182,7 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 		}
 	}
 	w.spec = Spec{
-		TaskID: id, Dir: dir, ReadOnly: ww.readOnly, Permissions: ww.perms,
+		TaskID: id, Dir: dir, ReadOnly: ww.readOnly, Permissions: ww.perms, Model: ww.model, MaxBudgetUSD: ww.budget,
 		Env: []string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID}, Prefix: h.prefix,
 	}
 	worker, err := h.warmer().Warm(h.ctx, w.spec)
@@ -181,15 +195,17 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 	h.warm[ww.key] = w
 }
 
-// claimWarm hands the warm worker of the wish in the project to a task that starts now with these rights, and
-// takes it out of the pool; nil when there is none, or it does not fit. Under h.sched.
-func (h *Harness) claimWarm(ctx context.Context, wish *planv1.Wish, project *planv1.Project, kind planv1.Provider) *warm {
-	if !h.warmOn || project == nil || kind != planv1.Provider_PROVIDER_CLAUDE {
+// claimWarm hands the warm worker of the wish in the project to the task, which starts now, and takes it out of the
+// pool; nil when there is none, or it does not fit. A task that asks for a fork, or another model or budget than
+// the warm worker's, leaves it to the next one. Under h.sched.
+func (h *Harness) claimWarm(ctx context.Context, wish *planv1.Wish, project *planv1.Project, task *planv1.Task) *warm {
+	kind := task.GetProvider()
+	if !h.warmOn || project == nil || kind != planv1.Provider_PROVIDER_CLAUDE || task.GetForkSession() != "" {
 		return nil
 	}
 	key := warmKey(wish.GetId(), project.GetId())
 	w := h.warm[key]
-	if w == nil {
+	if w == nil || !w.settled(task.GetModel(), task.GetMaxBudgetUsd()) {
 		return nil
 	}
 	delete(h.warm, key)
@@ -212,6 +228,11 @@ func (h *Harness) claimWarm(ctx context.Context, wish *planv1.Wish, project *pla
 // fits tells whether a task with these rights may take the warm worker.
 func (w *warm) fits(readOnly bool, perms *djinnv1.Permissions) bool {
 	return w.spec.ReadOnly == readOnly && proto.Equal(w.spec.Permissions, perms)
+}
+
+// settled tells whether a task with this model and budget may take the warm worker.
+func (w *warm) settled(model string, budget float64) bool {
+	return w.spec.Model == model && w.spec.MaxBudgetUSD == budget
 }
 
 // stale tells whether the project has moved on since the warm worker started: its HEAD is no longer the commit
