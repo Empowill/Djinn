@@ -62,6 +62,8 @@ const (
 	ProjectServiceAddProcedure = "/plan.v1.ProjectService/Add"
 	// ProjectServiceListProcedure is the fully-qualified name of the ProjectService's List RPC.
 	ProjectServiceListProcedure = "/plan.v1.ProjectService/List"
+	// ProjectServiceShowProcedure is the fully-qualified name of the ProjectService's Show RPC.
+	ProjectServiceShowProcedure = "/plan.v1.ProjectService/Show"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -330,6 +332,9 @@ type ProjectServiceClient interface {
 	Add(context.Context, *connect.Request[v1.ProjectServiceAddRequest]) (*connect.Response[v1.ProjectServiceAddResponse], error)
 	// List the projects.
 	List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error)
+	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
+	// .agents/settings.txtpb or your own file.
+	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -356,6 +361,13 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		show: connect.NewClient[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse](
+			httpClient,
+			baseURL+ProjectServiceShowProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Show")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -363,6 +375,7 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type projectServiceClient struct {
 	add  *connect.Client[v1.ProjectServiceAddRequest, v1.ProjectServiceAddResponse]
 	list *connect.Client[v1.ProjectServiceListRequest, v1.ProjectServiceListResponse]
+	show *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -375,12 +388,20 @@ func (c *projectServiceClient) List(ctx context.Context, req *connect.Request[v1
 	return c.list.CallUnary(ctx, req)
 }
 
+// Show calls plan.v1.ProjectService.Show.
+func (c *projectServiceClient) Show(ctx context.Context, req *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error) {
+	return c.show.CallUnary(ctx, req)
+}
+
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
 	Add(context.Context, *connect.Request[v1.ProjectServiceAddRequest]) (*connect.Response[v1.ProjectServiceAddResponse], error)
 	// List the projects.
 	List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error)
+	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
+	// .agents/settings.txtpb or your own file.
+	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -403,12 +424,21 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceShowHandler := connect.NewUnaryHandler(
+		ProjectServiceShowProcedure,
+		svc.Show,
+		connect.WithSchema(projectServiceMethods.ByName("Show")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceAddProcedure:
 			projectServiceAddHandler.ServeHTTP(w, r)
 		case ProjectServiceListProcedure:
 			projectServiceListHandler.ServeHTTP(w, r)
+		case ProjectServiceShowProcedure:
+			projectServiceShowHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -424,6 +454,10 @@ func (UnimplementedProjectServiceHandler) Add(context.Context, *connect.Request[
 
 func (UnimplementedProjectServiceHandler) List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.List is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Show is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.

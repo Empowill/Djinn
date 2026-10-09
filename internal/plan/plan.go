@@ -44,6 +44,7 @@ type options struct {
 	leads    Leads
 	pages    *Pages
 	language string
+	home     string
 	watchers SpawnWatcher
 	answered []func(context.Context, *planv1.Question)
 }
@@ -51,6 +52,9 @@ type options struct {
 // WithLanguage writes the texts Djinn puts in the plan for the developer, such as the question that routes a
 // request, in language; English by default.
 func WithLanguage(language string) Option { return func(o *options) { o.language = language } }
+
+// WithHome gives the projects Djinn's data folder, where each developer keeps their own settings of a project.
+func WithHome(home string) Option { return func(o *options) { o.home = home } }
 
 // WithLeads gives the wishes the terminals of their leads, for WishService.Resume.
 func WithLeads(l Leads) Option { return func(o *options) { o.leads = l } }
@@ -69,7 +73,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	}
 	out := map[string]http.Handler{}
 	opt := connect.WithInterceptors(Validate)
-	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s}, opt)
+	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers}
 	if o.leads != nil {
@@ -132,6 +136,8 @@ func Status(err error) error {
 type Projects struct {
 	planv1connect.UnimplementedProjectServiceHandler
 	Store *store.Store
+	// Home is Djinn's data folder, which holds the developer's own settings of each project; empty: none are read.
+	Home string
 }
 
 func (p *Projects) Add(
@@ -194,6 +200,22 @@ func (p *Projects) List(
 		return nil, Status(err)
 	}
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: projects}), nil
+}
+
+func (p *Projects) Show(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceShowRequest],
+) (*connect.Response[planv1.ProjectServiceShowResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	repo, dev, problems := loadSettings(p.Home, project)
+	out := &planv1.ProjectServiceShowResponse{Project: project, Settings: ResolveSettings(repo, dev).Rows()}
+	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
+	for _, err := range problems {
+		out.Problems = append(out.Problems, err.Error())
+	}
+	return connect.NewResponse(out), nil
 }
 
 // unattached returns the project without a folder that has this remote, or else this name, case ignored; nil
