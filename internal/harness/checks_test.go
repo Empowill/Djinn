@@ -60,9 +60,8 @@ func (in *integration) checkRuns(t *testing.T) []string {
 
 const lintAtCommit = "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"
 
-// TestSetupOncePerWorktree: the setup makes the integration worktree ready before its first check, once; again when a
-// lock file changes, and again in a worktree made anew. Each runs through the gate of its name, and the project keeps
-// their last runs.
+// TestSetupOncePerWorktree: the setup makes the integration worktree ready before its first check, once, while no lock
+// file changes. Each runs through the gate of its name, and the project keeps their last runs.
 func TestSetupOncePerWorktree(t *testing.T) {
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
@@ -84,19 +83,29 @@ func TestSetupOncePerWorktree(t *testing.T) {
 		t.Errorf("W2, no lock file changed: %q; want lint only", runs)
 	}
 
-	in.finished(t, "W3", map[string]string{"app/package-lock.json": "{}\n"})
+}
+
+// TestSetupAgain: the setup runs again when a lock file changes, and in an integration worktree made anew.
+func TestSetupAgain(t *testing.T) {
+	in := integrating(t)
+	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
+	in.finished(t, "W1", map[string]string{"app/package-lock.json": "{}\n"})
+	in.pass(t, 0)
+	in.ran()
+
+	in.finished(t, "W2", map[string]string{"app/package-lock.json": "{\"lockfileVersion\": 3}\n"})
 	in.pass(t, time.Second)
 	if runs, _ := in.ran(); !slices.Equal(runs, []string{"setup", "lint"}) {
-		t.Errorf("W3 changes a lock file: %q; want setup then lint", runs)
+		t.Errorf("W2 changes a lock file: %q; want setup then lint", runs)
 	}
 
 	if err := os.RemoveAll(integrationDir(in.home, in.projectID, in.wishID)); err != nil {
 		t.Fatal(err)
 	}
-	in.finished(t, "W4", map[string]string{"app/src/d.txt": "d\n"})
+	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
 	in.pass(t, time.Second)
 	if runs, _ := in.ran(); !slices.Equal(runs, []string{"setup", "lint"}) {
-		t.Errorf("W4, in a worktree made anew: %q; want setup then lint", runs)
+		t.Errorf("W3, in a worktree made anew: %q; want setup then lint", runs)
 	}
 }
 
