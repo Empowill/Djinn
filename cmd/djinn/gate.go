@@ -21,6 +21,7 @@ Take the gate <name> (codegen, stack, e2e, paid, or any other), run the command 
 gate back when the command ends, fails or is interrupted. Djinn grants a gate to one holder at a time, and only
 while the machine is not under pressure; meanwhile it says why it waits. The exit code is the command's.
 Djinn records what the command cost in its project (CPU time, peak memory, duration): djinn command list.
+Outside a running worker, the gate takes a worker's slot. Djinn takes it back after an hour, the command going on.
 
   --task-id <task>   Task the gate is taken for (default $DJINN_TASK_ID): its events show the gate.
   --addr URL         Address of the djinn server (default $DJINN_ADDR, then the one djinn up writes).

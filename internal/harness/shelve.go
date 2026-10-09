@@ -40,7 +40,8 @@ func (h *Harness) Shelve(_ context.Context, wishID string) {
 	}
 }
 
-// Wake asks the scheduler for a pass: a wish active again has tasks to start.
+// Wake asks the scheduler for a pass: a wish active again has tasks to start, or a gate held outside the workers
+// was given back (gate.Gates.Freed).
 func (h *Harness) Wake() { h.wake() }
 
 // shelve gives the task of a run its wish's pause stopped its waiting status: RESUMING, held with its wish.

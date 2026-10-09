@@ -94,6 +94,7 @@ type Harness struct {
 	closed  bool
 	held    func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
+	outside func() int                   // the gates held outside the running workers (GatesOutside); nil: none
 	runs    map[string]*run              // by task id
 	changed chan struct{}                // closed at the next change of a task without worker (notifyLocked)
 }

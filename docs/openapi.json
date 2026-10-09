@@ -151,6 +151,10 @@
       "machine.v1.Gate": {
         "description": "Gate is a gate held or waited for.",
         "properties": {
+          "expireTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When Djinn takes it back if its holder has not given it back by then."
+          },
           "holder": {
             "description": "Who holds it, and what for; empty when nobody does.",
             "type": "string"
@@ -163,9 +167,17 @@
             "description": "Name of the gate, in lower case.",
             "type": "string"
           },
+          "resources": {
+            "$ref": "#/components/schemas/plan.v1.Resources",
+            "description": "What its holder's process uses, at the last reading; unset when its process is not known or not measured."
+          },
           "since": {
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
             "description": "Since when it is held."
+          },
+          "takesSlot": {
+            "description": "Its holder is no running worker (a person's terminal, a lead, a script): the gate takes a worker's slot while it is held, so no new worker starts on it.",
+            "type": "boolean"
           },
           "waiting": {
             "description": "Who waits for it, the next one first.",

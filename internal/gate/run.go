@@ -46,7 +46,7 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	hold, give := context.WithCancel(ctx)
 	defer give()
 	stream, err := client.Hold(hold, connect.NewRequest(&machinev1.GateServiceHoldRequest{
-		Name: name, TaskId: taskID, What: what, Directory: dir,
+		Name: name, TaskId: taskID, What: what, Directory: dir, Pid: int32(os.Getpid()),
 	}))
 	if err != nil {
 		return -1, err
@@ -67,9 +67,13 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 		}
 		return -1, fmt.Errorf("gate %s: djinn ended the call before granting it", name)
 	}
-	// The gate is held as long as the stream is open; say so if djinn up goes away meanwhile.
+	// The gate is held as long as the stream is open; say so if Djinn takes it back, or djinn up goes away meanwhile.
 	go func() {
 		for stream.Receive() {
+			if msg := stream.Msg(); msg.GetState() == machinev1.GateState_GATE_STATE_TAKEN_BACK {
+				fmt.Fprintf(c.Notice, "djinn: %s\n", msg.GetReason())
+				return
+			}
 		}
 		if hold.Err() == nil {
 			fmt.Fprintf(c.Notice, "djinn: gate %s lost: djinn no longer answers (%v)\n", name, stream.Err())

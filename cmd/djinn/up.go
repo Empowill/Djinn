@@ -133,6 +133,11 @@ func runUp(args []string) (restart bool, err error) {
 	workers.Schedule()
 	gates := gate.New(monitor, machine.NewPeaks(db), workers)
 	workers.HeldGates(gates.Held, gates.Waiting)
+	workers.GatesOutside(gates.Outside)
+	gates.Freed(workers.Wake)
+	if machine.NotMeasured == "" {
+		gates.Measure(5*time.Second, machine.ReadWorker)
+	}
 	if *termDir != "" {
 		if *termDir, err = filepath.Abs(*termDir); err != nil {
 			return false, err
