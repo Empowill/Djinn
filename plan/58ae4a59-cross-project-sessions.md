@@ -82,9 +82,11 @@ projects it touches, and a project is not necessarily a Git repository.
 - [x] Pausing a wish stops its workers; they resume on their sessions, without spending a resume, once the wish is
   active again. (`TestWishPauseStopsItsWorkers`)
 - [x] The window: Pause or Resume at the top of a wish (Reopen once granted), a trash that deletes the wish with its
-  tasks, their events, its questions and its blocks after a confirmation; the side panel shows three rows and
-  scrolls under the pointer, a paused wish goes first with its button or by dragging it onto an active one.
-  (`TestDeleteWish`, `e2e/wish-lifecycle.spec.ts`)
+  tasks, their events, its questions and its blocks after a confirmation, closes its lead's terminal and removes the
+  worktrees of its tasks that hold no work (clean, no commit beyond the project's current branch), its toast naming
+  each one kept and why, every branch kept; the side panel shows three rows and scrolls under the pointer, a paused
+  wish goes first with its button or by dragging it onto an active one. (`TestDeleteWish`,
+  `TestDeleteWishWorktrees`, `TestHangupByName`, `e2e/wish-lifecycle.spec.ts`)
 - [x] The active wishes are ranked by hand (`djinn wish move <wish> --to 1`); `plan.ActiveWishes` gives them in
   order, for the scheduler (T07).
 - [x] Djinn proposes a ready wish and never grants it: only `djinn wish grant`, or "My wish is granted" in the
@@ -154,7 +156,9 @@ projects it touches, and a project is not necessarily a Git repository.
   wish make it active within the three first, pausing the wish pushed past the third place. A paused wish's workers
   stop (`harness.Shelve`): each task waits RESUMING and starts again on its session once the wish is active.
   `djinn wish delete` deletes a wish with its tasks, their events, its questions and its blocks; its workers stop
-  first; the worktrees and branches stay. The limit of workers is another one, the machine's (T17).
+  first, then its lead's terminal closes; a task's worktree that is clean, with no commit beyond the project's current
+  branch, goes (`git worktree remove`, never `--force`), the others stay, the response saying why; every branch
+  stays. The limit of workers is another one, the machine's (T17).
 - **The rank**: `Wish.rank`, from 1, without gaps; 0 for a paused or granted wish. A new or activated wish goes
   last; `djinn wish move <wish> --to n` moves one, and beyond the last means last. An import that replaces a wish
   keeps its place. `djinn wish list` gives the active wishes by rank, then the paused ones, then the granted ones.

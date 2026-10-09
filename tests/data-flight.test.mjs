@@ -9,7 +9,7 @@ const f = await bundle(
   "flight",
   `export * from "@/src/data/flight.ts";
 export * from "@/src/data/journal.ts";
-export { taskStatusText, taskTone } from "@/src/data/format.ts";
+export { deletedText, taskStatusText, taskTone } from "@/src/data/format.ts";
 export { create } from "@bufbuild/protobuf";
 export { anyPack } from "@bufbuild/protobuf/wkt";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -366,5 +366,17 @@ test("a watcher has its own tone while its command runs", () => {
   assert.equal(
     f.taskTone({ status: S.RUNNING, provider: f.Provider.CLAUDE }),
     "running",
+  );
+});
+
+test("a wish deleted says which worktrees stay, and why", () => {
+  assert.equal(f.deletedText("Oil", []), "“Oil” deleted.");
+  assert.equal(
+    f.deletedText("Oil", [
+      { taskCode: "W2", branch: "w2-work", base: "main", commits: 2, changed: true, error: "" },
+      { taskCode: "W3", branch: "w3-work", base: "main", commits: 0, changed: false, error: "git worktree: locked" },
+    ]),
+    "“Oil” deleted. W2 keeps its worktree, on w2-work: 2 commits beyond main, changes not committed. " +
+      "W3 keeps its worktree, on w3-work: git worktree: locked.",
   );
 });

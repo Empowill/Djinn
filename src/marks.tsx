@@ -70,15 +70,17 @@ export function MarkButtons({
 export function useWrites(onToast: (text: string) => void) {
   const clients = useClients();
   const store = useStore();
+  // done is the toast once run succeeds, or makes it then, from what run found.
   const act = async (
     wishId: string,
     run: () => Promise<unknown>,
     changes: Change[],
-    done?: string,
+    done?: string | (() => string),
   ) => {
     try {
       await run();
-      if (done) onToast(done);
+      const text = typeof done === "function" ? done() : done;
+      if (text) onToast(text);
     } catch (error) {
       onToast(message(error));
       throw error;

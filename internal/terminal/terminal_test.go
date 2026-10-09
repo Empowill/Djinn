@@ -325,6 +325,27 @@ func TestCloseHangsUp(t *testing.T) {
 	}
 }
 
+// TestHangupByName: a wish deleted hangs up its lead's terminal by name, and leaves the others running.
+func TestHangupByName(t *testing.T) {
+	m := NewManager(Config{})
+	lead := sh(t, m, "lead-w", "-c", `trap 'exit 7' HUP; echo ready; while :; do sleep 0.05; done`)
+	other := sh(t, m, "other", "-c", `echo ready; while :; do sleep 0.05; done`)
+	output(t, lead, 0, contains("ready"))
+	output(t, other, 0, contains("ready"))
+	if !m.Hangup("lead-w") {
+		t.Fatal("hangup of a running terminal: false")
+	}
+	if code := end(t, lead); code != 7 {
+		t.Fatalf("the lead ended with %d, want 7", code)
+	}
+	if m.Hangup("lead-w") || m.Hangup("none") {
+		t.Fatal("hangup of an ended or unknown terminal: true")
+	}
+	if other.Exited() {
+		t.Fatal("the other terminal ended")
+	}
+}
+
 // TestHeldSpaceArrivesAsRepeats is what Claude Code's dictation needs in hold mode: a terminal sends no key release,
 // so the program tells a held Space from the key repeat, a quick run of spaces. Each space written to the terminal,
 // at a key repeat rate, must reach a program in raw mode on its own and at once, not batched.

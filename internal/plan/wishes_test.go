@@ -165,12 +165,13 @@ func TestThreeWishes(t *testing.T) {
 	}
 }
 
-// TestDeleteWish: deleting a wish stops its workers, and takes its tasks, their events, its questions and its
-// blocks with it; the other wishes keep theirs, and close the gap in the ranks.
+// TestDeleteWish: deleting a wish stops its workers, closes its lead's terminal, and takes its tasks, their events,
+// its questions and its blocks with it; the other wishes keep theirs and their leads, and close the gap in the ranks.
 func TestDeleteWish(t *testing.T) {
 	ctx := t.Context()
 	fake := &workers{}
-	c := serve(t, WithWorkers(fake))
+	leads := &fakeLeads{}
+	c := serve(t, WithWorkers(fake), WithLeads(leads))
 	a, err := c.make(t, "A", false)
 	if err != nil {
 		t.Fatal(err)
@@ -190,6 +191,11 @@ func TestDeleteWish(t *testing.T) {
 	bt, be, bq, bb := of(b.GetId())
 	item := &planv1.InboxItem{Id: store.NewID(), WishId: a.GetId(), Text: "x", State: planv1.InboxState_INBOX_STATE_ROUTED}
 	c.put(t, at, ae, aq, ab, bt, be, bq, bb, item)
+	for _, w := range []*planv1.Wish{a, b} {
+		if _, _, _, err := leads.Open(LeadTerminal(w.GetId()), "claude --resume "+session, t.TempDir(), session); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	res, err := c.wishes.Delete(ctx, connect.NewRequest(&planv1.WishServiceDeleteRequest{WishId: a.GetId()}))
 	if err != nil || res.Msg.GetTasks() != 1 || res.Msg.GetQuestions() != 1 || res.Msg.GetBlocks() != 1 {
@@ -197,6 +203,12 @@ func TestDeleteWish(t *testing.T) {
 	}
 	if !slices.Equal(fake.stopped, []string{a.GetId()}) || !slices.Equal(fake.shelved, []string{a.GetId()}) {
 		t.Errorf("stopped %v, shelved %v", fake.stopped, fake.shelved)
+	}
+	if _, runs := leads.running[LeadTerminal(b.GetId())]; !slices.Equal(leads.closed, []string{LeadTerminal(a.GetId())}) || !runs {
+		t.Errorf("closed %v, running %v", leads.closed, leads.running)
+	}
+	if res.Msg.GetWorktreesRemoved() != 0 || len(res.Msg.GetKept()) != 0 {
+		t.Errorf("a worktree no longer on disk: removed %d, kept %v", res.Msg.GetWorktreesRemoved(), res.Msg.GetKept())
 	}
 	gone := func(name string, get func() error) {
 		t.Helper()

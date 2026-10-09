@@ -3,6 +3,7 @@ package plan
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -276,8 +277,8 @@ func place(ctx context.Context, tx *store.Tx, wish *planv1.Wish, to int) ([]*pla
 
 // Delete deletes a wish and everything that belongs to it: its tasks and their events, its questions, its blocks.
 // Its workers stop first: an active wish is paused, which the journal records, so that no task of it starts again.
-// The worktrees and branches its workers made stay in the project, as Git keeps them; an inbox item routed to it
-// forgets it.
+// Once it is gone, its lead's terminal closes, and each task's worktree that holds no work is removed (cleanWorktree);
+// the others stay, the response says why. Every branch stays. An inbox item routed to it forgets it.
 func (w *Wishes) Delete(
 	ctx context.Context, req *connect.Request[planv1.WishServiceDeleteRequest],
 ) (*connect.Response[planv1.WishServiceDeleteResponse], error) {
@@ -298,10 +299,11 @@ func (w *Wishes) Delete(
 		}
 	}
 	res := &planv1.WishServiceDeleteResponse{}
+	var tasks []*planv1.Task
 	err = write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		where := store.Where{"wish_id": id}
-		tasks, err := store.List[*planv1.Task](ctx, tx, where)
-		if err != nil {
+		var err error
+		if tasks, err = store.List[*planv1.Task](ctx, tx, where); err != nil {
 			return err
 		}
 		for _, t := range tasks {
@@ -358,7 +360,37 @@ func (w *Wishes) Delete(
 	if err != nil {
 		return nil, err
 	}
+	if w.Leads != nil {
+		w.Leads.Close(LeadTerminal(id))
+	}
+	res.Kept, res.WorktreesRemoved = cleanWorktrees(ctx, w.Store, tasks)
 	return connect.NewResponse(res), nil
+}
+
+// cleanWorktrees removes the worktrees of tasks that hold no work, each from its project's repository, and returns
+// those it keeps and how many it removed. The wish is gone already: what fails here keeps a worktree, and says so.
+func cleanWorktrees(ctx context.Context, r store.Reader, tasks []*planv1.Task) ([]*planv1.KeptWorktree, int32) {
+	var kept []*planv1.KeptWorktree
+	var removed int32
+	for _, t := range tasks {
+		if t.GetWorktree() == "" {
+			continue
+		}
+		project, err := store.Get[*planv1.Project](ctx, r, t.GetProjectId())
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			kept = append(kept, &planv1.KeptWorktree{TaskCode: t.GetCode(), Worktree: t.GetWorktree(),
+				Branch: t.GetBranch(), Error: err.Error()})
+			continue
+		}
+		gone, k := cleanWorktree(ctx, project.GetDirectory(), t)
+		if gone {
+			removed++
+		}
+		if k != nil {
+			kept = append(kept, k)
+		}
+	}
+	return kept, removed
 }
 
 // Move gives a wish another rank, and shifts the others. A wish that is not active becomes active at that rank, the

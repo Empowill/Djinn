@@ -27,6 +27,8 @@ type Leads interface {
 	// Say types line into the running terminal called name, then Enter, once the person is not typing there. It
 	// returns at once; the lines go out in order.
 	Say(name, line string) error
+	// Close hangs up the running terminal called name, as closing it in the window does; none runs, nothing.
+	Close(name string)
 }
 
 // LeadTerminal is the name of the terminal of a wish's lead.

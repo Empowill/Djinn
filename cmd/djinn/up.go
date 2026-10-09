@@ -311,6 +311,8 @@ func (l leads) Open(name, line, dir, exclusive string) ([]string, string, bool, 
 
 func (l leads) Say(name, line string) error { return l.terminals.Say(name, line) }
 
+func (l leads) Close(name string) { l.terminals.Hangup(name) }
+
 func (l leads) Show(wishID, name string) {
 	if l.ui.Raise != nil {
 		l.ui.Raise()

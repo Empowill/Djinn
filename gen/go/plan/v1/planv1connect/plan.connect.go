@@ -784,7 +784,8 @@ type WishServiceClient interface {
 	// active at most: when three are, it takes the third place, and the third wish is paused.
 	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
 	// Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
-	// stop first. The worktrees and branches its workers made stay in the project. It cannot be undone.
+	// stop first, and its lead's terminal closes. A task's worktree goes when it holds no work: clean, and no commit
+	// beyond the project's current branch; the others stay, said with why. Branches all stay. It cannot be undone.
 	Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error)
 	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
 	// there, the third place at most, and the wish it pushes past the third place is paused.
@@ -1105,7 +1106,8 @@ type WishServiceHandler interface {
 	// active at most: when three are, it takes the third place, and the third wish is paused.
 	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
 	// Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
-	// stop first. The worktrees and branches its workers made stay in the project. It cannot be undone.
+	// stop first, and its lead's terminal closes. A task's worktree goes when it holds no work: clean, and no commit
+	// beyond the project's current branch; the others stay, said with why. Branches all stay. It cannot be undone.
 	Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error)
 	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
 	// there, the third place at most, and the wish it pushes past the third place is paused.

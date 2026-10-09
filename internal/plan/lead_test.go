@@ -24,6 +24,7 @@ type fakeLeads struct {
 	opened  []string            // line of each program started
 	shown   []string            // wish/terminal of each show
 	said    []string            // terminal: line of each line typed
+	closed  []string            // name of each running terminal closed
 	err     error
 }
 
@@ -47,6 +48,13 @@ func (f *fakeLeads) Open(name, line, dir, exclusive string) ([]string, string, b
 }
 
 func (f *fakeLeads) Show(wishID, terminal string) { f.shown = append(f.shown, wishID+"/"+terminal) }
+
+func (f *fakeLeads) Close(name string) {
+	if _, ok := f.running[name]; ok {
+		delete(f.running, name)
+		f.closed = append(f.closed, name)
+	}
+}
 
 func (f *fakeLeads) Say(name, line string) error {
 	if _, ok := f.running[name]; !ok {
