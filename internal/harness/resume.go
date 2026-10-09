@@ -45,6 +45,10 @@ const (
 	byContinue   = "continued" // djinn task continue: its worker takes the new prompt on its session
 )
 
+// whyStoppedFirst is why a planned task waits that djinn up stopped before its worker started (its worktree being
+// made): it starts at the next start, as planned.
+const whyStoppedFirst = "djinn up stopped before its worker started"
+
 // WithClock gives the harness its time: when a usage limit resets is compared with it. Tests set a fake one.
 func WithClock(now func() time.Time) Option { return func(h *Harness) { h.clock = now } }
 

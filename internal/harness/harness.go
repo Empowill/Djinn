@@ -876,6 +876,10 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request"
 	case shelved:
 		shelve(t)
+	case h.ctx.Err() != nil && t.GetScheduled() && t.GetStartTime() == nil:
+		// Stopped before its worker started (its worktree being made): nothing to interrupt, nothing to resume. It
+		// waits for a worker again, as planned; interrupted without a worktree, it would never resume.
+		t.Status, t.Error, t.EndTime, t.ExitCode, t.WaitReason = planv1.TaskStatus_TASK_STATUS_PENDING, "", nil, 0, whyStoppedFirst
 	case h.ctx.Err() != nil:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up stopped while the worker ran"
 	case res.Err != nil:
@@ -898,6 +902,8 @@ func (h *Harness) end(r *run, res Result) {
 	switch {
 	case shelved:
 		text = "resuming: " + whyWishPaused
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING:
+		text = "waiting: " + whyStoppedFirst
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
 		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
 	case t.GetError() != "":

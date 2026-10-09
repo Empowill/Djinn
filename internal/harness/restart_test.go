@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -97,6 +99,34 @@ func leftRunning(t *testing.T, db *store.Store, wishID, projectID, code, worktre
 	return tk
 }
 
+// TestStoppedBeforeItsWorkerStarted: djinn up stops while the worktree of a planned task is being made, before its
+// worker starts: the task waits for a worker again, with no worktree to lose, and the next start runs it.
+func TestStoppedBeforeItsWorkerStarted(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home, WithTick(time.Hour))
+	wishID, projectID := e.wish(t, gitRepo(t))
+	e.h.cancel() // djinn up stops: git cannot make the worktree any more.
+	<-e.h.loopDone
+	planned := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W1", Title: "W1", Scheduled: true,
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Provider: planv1.Provider_PROVIDER_FAKE, CreateTime: timestamppb.Now(),
+	}
+	putTask(t, e.db, planned, "text ok")
+	if err := e.h.launchPlanned(t.Context(), planned); err == nil {
+		t.Fatal("a worker started while djinn up stops")
+	}
+	got := e.get(t, planned.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetError() != "" || got.GetWorktree() != "" ||
+		got.GetEndTime() != nil || got.GetWaitReason() != whyStoppedFirst {
+		t.Errorf("stopped before its worker started = %v", got)
+	}
+	e.down()
+
+	e = up(t, home)
+	e.until(t, planned.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+}
+
 // TestRestartResumesInOrder: Djinn restarts with 6 workers cut short over 2 wishes, a planned task, and 2 tasks of a
 // paused wish, on a machine of 2 slots. The orchestrator alone puts them back: the first wish's go first, then the
 // second's, each in its own order, then the planned one, never more than 2 at once, the others waiting for a slot and
@@ -119,6 +149,12 @@ func TestRestartResumesInOrder(t *testing.T) {
 		}
 		putWish(t, e.db, w)
 	}
+	// The tasks as the previous djinn left them, written while it is down: its scheduler would start the planned one.
+	e.down()
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
 	at := time.Now().Add(-time.Hour)
 	code := map[string]string{}
 	var resumed []*planv1.Task
@@ -128,7 +164,7 @@ func TestRestartResumesInOrder(t *testing.T) {
 		if c[0] == 'F' {
 			wish, project = first, firstProject
 		}
-		tk := leftRunning(t, e.db, wish, project, c, t.TempDir(), at.Add(time.Duration(i)*time.Minute))
+		tk := leftRunning(t, db, wish, project, c, t.TempDir(), at.Add(time.Duration(i)*time.Minute))
 		code[tk.GetId()] = c
 		resumed = append(resumed, tk)
 	}
@@ -138,15 +174,15 @@ func TestRestartResumesInOrder(t *testing.T) {
 		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Provider: planv1.Provider_PROVIDER_FAKE,
 		CreateTime: timestamppb.New(at.Add(-time.Hour)), WaitReason: "2 workers run, the most this machine holds (set by the test)",
 	}
-	putTask(t, e.db, planned, "text F0")
+	putTask(t, db, planned, "text F0")
 	code[planned.GetId()] = "F0"
 	// The paused wish's: one its pause stopped, one that ran when Djinn stopped.
-	stopped := leftRunning(t, e.db, shelved, shelvedProject, "P1", t.TempDir(), at, func(tk *planv1.Task) {
+	stopped := leftRunning(t, db, shelved, shelvedProject, "P1", t.TempDir(), at, func(tk *planv1.Task) {
 		tk.Status, tk.WaitReason, tk.EndTime = planv1.TaskStatus_TASK_STATUS_RESUMING, whyWishPaused, timestamppb.Now()
 	})
-	cut := leftRunning(t, e.db, shelved, shelvedProject, "P2", t.TempDir(), at.Add(time.Minute))
+	cut := leftRunning(t, db, shelved, shelvedProject, "P2", t.TempDir(), at.Add(time.Minute))
 	code[stopped.GetId()], code[cut.GetId()] = "P1", "P2"
-	e.down()
+	db.Close()
 
 	providers, c := countingProviders()
 	e = upWith(t, home, providers, WithCapacity((&limit{slots: 2}).capacity))

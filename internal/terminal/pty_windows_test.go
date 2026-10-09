@@ -4,6 +4,8 @@
 package terminal
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -104,16 +106,7 @@ func TestConsoleCloseKillsTheTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	stubborn := helper(t, m, "stubborn", "stubborn", 80, 24)
-	out := output(t, stubborn, 0, regexp.MustCompile(`ready \d+\r?\n`).MatchString)
-	pid, _ := strconv.Atoi(regexp.MustCompile(`ready (\d+)`).FindStringSubmatch(out)[1])
-	child, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, uint32(pid))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = windows.TerminateProcess(child, 1)
-		_ = windows.CloseHandle(child)
-	})
+	child := readyChild(t, output(t, stubborn, 0, readyLine.MatchString))
 	start := time.Now()
 	m.Close() // djinn up stopping.
 	if code := end(t, polite); code == -1 {
@@ -130,11 +123,83 @@ func TestConsoleCloseKillsTheTree(t *testing.T) {
 	}
 }
 
+// TestConsoleHangupEndsTheChildren: a program that ends on CTRL_CLOSE_EVENT leaves no child behind to hold its
+// folder, without waiting for the grace delay.
+func TestConsoleHangupEndsTheChildren(t *testing.T) {
+	defer func(g time.Duration) { grace = g }(grace)
+	grace = time.Hour
+	m := NewManager(Config{})
+	parent := helper(t, m, "parent", "parent", 80, 24)
+	child := readyChild(t, output(t, parent, 0, readyLine.MatchString))
+	m.Close()
+	if code := end(t, parent); code == -1 {
+		t.Fatal("the program was killed, want it to end on CTRL_CLOSE_EVENT")
+	}
+	if ev, err := windows.WaitForSingleObject(child, 1000); err != nil || ev != windows.WAIT_OBJECT_0 {
+		t.Fatalf("the child of the program still runs: %d, %v", ev, err)
+	}
+}
+
+// TestConsoleEndsWithDjinn: djinn killed without closing its terminals (a crash, or the e2e's teardown on Windows),
+// the programs of its terminals end with it, and leave their folder free to remove (t.TempDir removes it).
+func TestConsoleEndsWithDjinn(t *testing.T) {
+	host := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
+	host.Env = append(os.Environ(), helperEnv+"=host", hostDirEnv+"="+t.TempDir())
+	stdout, err := host.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := host.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = host.Process.Kill()
+		_ = host.Wait()
+	})
+	timeout := time.AfterFunc(5*time.Second, func() { _ = host.Process.Kill() })
+	line, err := bufio.NewReader(stdout).ReadString('\n')
+	timeout.Stop()
+	if err != nil || !readyLine.MatchString(line) {
+		t.Fatalf("the host said %q: %v", line, err)
+	}
+	child := readyChild(t, line)
+	if err := host.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = host.Wait()
+	if ev, err := windows.WaitForSingleObject(child, 1000); err != nil || ev != windows.WAIT_OBJECT_0 {
+		t.Fatalf("the child of the terminal's program outlived djinn: %d, %v", ev, err)
+	}
+}
+
+// hostDirEnv is the folder of the terminal the host opens.
+const hostDirEnv = "DJINN_TERMINAL_HOST_DIR"
+
+// readyLine is what a helper that started a child prints, with the child's id.
+var readyLine = regexp.MustCompile(`ready (\d+)\r?\n`)
+
+// readyChild opens the child whose id out says, killed at the end of the test.
+func readyChild(t *testing.T, out string) windows.Handle {
+	t.Helper()
+	pid, _ := strconv.Atoi(readyLine.FindStringSubmatch(out)[1])
+	child, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = windows.TerminateProcess(child, 1)
+		_ = windows.CloseHandle(child)
+	})
+	return child
+}
+
 // TestHelperProcess is the program the tests run in a terminal, not a test. With size, it prints the size of its
 // console each time it changes, for 5 s; with stubborn, it starts a child like it, prints its id, and holds on through
-// CTRL_CLOSE_EVENT as both wait to be killed.
+// CTRL_CLOSE_EVENT as both wait to be killed; with parent, it starts such a child but ends on CTRL_CLOSE_EVENT. With
+// host, it is djinn: it opens a terminal on a stubborn helper in the folder of hostDirEnv, prints the child's id
+// on its own output, then waits to be killed.
 func TestHelperProcess(t *testing.T) {
-	switch os.Getenv(helperEnv) {
+	switch mode := os.Getenv(helperEnv); mode {
 	case "size":
 		con, err := os.OpenFile("CONOUT$", os.O_RDWR, 0)
 		if err != nil {
@@ -150,18 +215,38 @@ func TestHelperProcess(t *testing.T) {
 			}
 		}
 		os.Exit(0)
-	case "stubborn":
+	case "stubborn", "parent":
 		cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
 		cmd.Env = append(os.Environ(), helperEnv+"=child")
 		if err := cmd.Start(); err != nil {
 			fmt.Println("child:", err)
 			os.Exit(1)
 		}
-		signal.Notify(make(chan os.Signal, 1), syscall.SIGTERM) // CTRL_CLOSE_EVENT then waits to be killed.
+		if mode == "stubborn" {
+			signal.Notify(make(chan os.Signal, 1), syscall.SIGTERM) // CTRL_CLOSE_EVENT then waits to be killed.
+		}
 		fmt.Printf("ready %d\r\n", cmd.Process.Pid)
 		time.Sleep(time.Hour) // Not select{}: the runtime would call that a deadlock.
 	case "child":
 		signal.Notify(make(chan os.Signal, 1), syscall.SIGTERM)
+		time.Sleep(time.Hour)
+	case "host":
+		_ = os.Setenv(helperEnv, "stubborn")
+		term, _, err := NewManager(Config{}).Open("main", []string{os.Args[0], "-test.run=^TestHelperProcess$"},
+			os.Getenv(hostDirEnv), 80, 24)
+		if err != nil {
+			fmt.Println("open:", err)
+			os.Exit(1)
+		}
+		var out []byte
+		_ = term.Read(0, nil, func(o Output) error {
+			out = append(out, o.Data...)
+			if m := readyLine.FindSubmatch(out); m != nil {
+				fmt.Printf("ready %s\n", m[1])
+				return errors.New("ready")
+			}
+			return nil
+		})
 		time.Sleep(time.Hour)
 	}
 	t.Skip("run by the console tests")
