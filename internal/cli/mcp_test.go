@@ -98,8 +98,8 @@ func TestMCPListTools(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	// Every public method that answers once: the three streams (gate hold, wish watch, task watch) are left out.
-	if len(names) != 49 {
-		t.Errorf("got %d tools, want 49: %v", len(names), names)
+	if len(names) != 50 {
+		t.Errorf("got %d tools, want 50: %v", len(names), names)
 	}
 	for _, want := range []string{"question_answer", "wish_set_lead", "project_list", "machine_show"} {
 		if !slices.Contains(names, want) {

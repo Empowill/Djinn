@@ -1863,6 +1863,13 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_DELETE;
   }
+  // Set what a task waits for: the tasks of its wish that must be done first, in place of those it had. The tasks of a
+  // wish form a graph without cycle: a dependency that would close one is refused, naming it. A task not started yet
+  // waits for its new dependencies; a finished one only records them; one whose worker runs is refused until it ends.
+  rpc Depend(TaskServiceDependRequest) returns (TaskServiceDependResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
   // events. A task a worker of this Djinn ran stays, as the record of that work.
   rpc Delete(TaskServiceDeleteRequest) returns (TaskServiceDeleteResponse) {
@@ -2070,6 +2077,22 @@ message TaskServiceCleanRequest {
 
 message TaskServiceCleanResponse {
   // The task, without its worktree.
+  Task task = 1;
+}
+
+message TaskServiceDependRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // A task of the same wish that must be done first: its code (W1) or its identifier. Repeat for each one; none
+  // leaves the task waiting for nothing.
+  repeated string depends_on = 2 [(buf.validate.field).repeated.items.string.min_len = 1];
+}
+
+message TaskServiceDependResponse {
+  // The task, with its dependencies.
   Task task = 1;
 }
 

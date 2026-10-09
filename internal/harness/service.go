@@ -119,6 +119,16 @@ func (s *Tasks) Clean(
 	return connect.NewResponse(&planv1.TaskServiceCleanResponse{Task: task}), nil
 }
 
+func (s *Tasks) Depend(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDependRequest],
+) (*connect.Response[planv1.TaskServiceDependResponse], error) {
+	task, err := s.h.Depend(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceDependResponse{Task: task}), nil
+}
+
 func (s *Tasks) Delete(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceDeleteRequest],
 ) (*connect.Response[planv1.TaskServiceDeleteResponse], error) {

@@ -187,6 +187,10 @@ status: in-progress
 - **Nor is a worker that waits for a gate** (W60's question, A): paused, it would get the gate in its turn and hold
   it frozen. The pause is refused, saying "W1 waits for the gate test: wait or stop it" (`gate.Gates.Waiting`, given
   with `Held`). A worker that holds one gate and waits for another is told it holds.
+- **What a task waits for is set again as the plan learns** (`djinn task depend`, `TaskService.Depend`): its
+  dependencies, in place of those it had, tasks of its wish by code; the tasks of a wish form a graph without cycle,
+  and a dependency that would close one is refused, naming it ("W1 → W3 → W1"). A task whose worker runs is refused
+  until it ends: its worker writes the task as it goes. (`TestDepend`)
 - **A follow-up continues the task, it does not copy it** (W83: every resume through a fork left a duplicate):
   `djinn task continue <task> --prompt "…"` (`TaskService.Continue`) makes a done, failed, stopped or interrupted task
   `resuming` again, `Task.continuing` set: the scheduler starts it like any task (slots, dependencies, pressure, the

@@ -142,6 +142,8 @@ const (
 	TaskServiceWatchProcedure = "/plan.v1.TaskService/Watch"
 	// TaskServiceCleanProcedure is the fully-qualified name of the TaskService's Clean RPC.
 	TaskServiceCleanProcedure = "/plan.v1.TaskService/Clean"
+	// TaskServiceDependProcedure is the fully-qualified name of the TaskService's Depend RPC.
+	TaskServiceDependProcedure = "/plan.v1.TaskService/Depend"
 	// TaskServiceDeleteProcedure is the fully-qualified name of the TaskService's Delete RPC.
 	TaskServiceDeleteProcedure = "/plan.v1.TaskService/Delete"
 	// TaskServiceDoneProcedure is the fully-qualified name of the TaskService's Done RPC.
@@ -1639,6 +1641,10 @@ type TaskServiceClient interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
+	// Set what a task waits for: the tasks of its wish that must be done first, in place of those it had. The tasks of a
+	// wish form a graph without cycle: a dependency that would close one is refused, naming it. A task not started yet
+	// waits for its new dependencies; a finished one only records them; one whose worker runs is refused until it ends.
+	Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error)
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
@@ -1717,6 +1723,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Clean")),
 			connect.WithClientOptions(opts...),
 		),
+		depend: connect.NewClient[v1.TaskServiceDependRequest, v1.TaskServiceDependResponse](
+			httpClient,
+			baseURL+TaskServiceDependProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Depend")),
+			connect.WithClientOptions(opts...),
+		),
 		delete: connect.NewClient[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse](
 			httpClient,
 			baseURL+TaskServiceDeleteProcedure,
@@ -1754,6 +1766,7 @@ type taskServiceClient struct {
 	resume    *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
 	watch     *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
 	clean     *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
+	depend    *connect.Client[v1.TaskServiceDependRequest, v1.TaskServiceDependResponse]
 	delete    *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
 	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
 	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
@@ -1800,6 +1813,11 @@ func (c *taskServiceClient) Clean(ctx context.Context, req *connect.Request[v1.T
 	return c.clean.CallUnary(ctx, req)
 }
 
+// Depend calls plan.v1.TaskService.Depend.
+func (c *taskServiceClient) Depend(ctx context.Context, req *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error) {
+	return c.depend.CallUnary(ctx, req)
+}
+
 // Delete calls plan.v1.TaskService.Delete.
 func (c *taskServiceClient) Delete(ctx context.Context, req *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {
 	return c.delete.CallUnary(ctx, req)
@@ -1843,6 +1861,10 @@ type TaskServiceHandler interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
+	// Set what a task waits for: the tasks of its wish that must be done first, in place of those it had. The tasks of a
+	// wish form a graph without cycle: a dependency that would close one is refused, naming it. A task not started yet
+	// waits for its new dependencies; a finished one only records them; one whose worker runs is refused until it ends.
+	Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error)
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
@@ -1917,6 +1939,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Clean")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceDependHandler := connect.NewUnaryHandler(
+		TaskServiceDependProcedure,
+		svc.Depend,
+		connect.WithSchema(taskServiceMethods.ByName("Depend")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceDeleteHandler := connect.NewUnaryHandler(
 		TaskServiceDeleteProcedure,
 		svc.Delete,
@@ -1959,6 +1987,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceWatchHandler.ServeHTTP(w, r)
 		case TaskServiceCleanProcedure:
 			taskServiceCleanHandler.ServeHTTP(w, r)
+		case TaskServiceDependProcedure:
+			taskServiceDependHandler.ServeHTTP(w, r)
 		case TaskServiceDeleteProcedure:
 			taskServiceDeleteHandler.ServeHTTP(w, r)
 		case TaskServiceDoneProcedure:
@@ -2006,6 +2036,10 @@ func (UnimplementedTaskServiceHandler) Watch(context.Context, *connect.Request[v
 
 func (UnimplementedTaskServiceHandler) Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Clean is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Depend is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {

@@ -59,8 +59,8 @@ func TestOpenAPI(t *testing.T) {
 		t.Errorf("openapi %q", doc.OpenAPI)
 	}
 	// The unary public methods: the streams use Connect's streaming protocol.
-	if len(doc.Paths) != 49 {
-		t.Errorf("%d paths, want 49", len(doc.Paths))
+	if len(doc.Paths) != 50 {
+		t.Errorf("%d paths, want 50", len(doc.Paths))
 	}
 	if _, ok := doc.Paths["/plan.v1.WishService/Watch"]; ok {
 		t.Error("a stream is described")

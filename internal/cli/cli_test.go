@@ -322,8 +322,8 @@ func TestEveryPublicMethodIsExpressible(t *testing.T) {
 			}
 		}
 	}
-	if methods != 52 {
-		t.Errorf("found %d public methods, want 52", methods)
+	if methods != 53 {
+		t.Errorf("found %d public methods, want 53", methods)
 	}
 }
 

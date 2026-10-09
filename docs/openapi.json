@@ -2049,6 +2049,35 @@
         },
         "type": "object"
       },
+      "plan.v1.TaskServiceDependRequest": {
+        "properties": {
+          "dependsOn": {
+            "description": "A task of the same wish that must be done first: its code (W1) or its identifier. Repeat for each one; none leaves the task waiting for nothing.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "taskId": {
+            "description": "The task.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TaskServiceDependResponse": {
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/plan.v1.Task",
+            "description": "The task, with its dependencies."
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.TaskServiceDoneRequest": {
         "properties": {
           "by": {
@@ -3962,6 +3991,44 @@
           }
         },
         "summary": "djinn task delete",
+        "tags": [
+          "TaskService"
+        ]
+      }
+    },
+    "/plan.v1.TaskService/Depend": {
+      "post": {
+        "description": "Set what a task waits for: the tasks of its wish that must be done first, in place of those it had. The tasks of a wish form a graph without cycle: a dependency that would close one is refused, naming it. A task not started yet waits for its new dependencies; a finished one only records them; one whose worker runs is refused until it ends.",
+        "operationId": "TaskService_Depend",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TaskServiceDependRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TaskServiceDependResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn task depend",
         "tags": [
           "TaskService"
         ]
