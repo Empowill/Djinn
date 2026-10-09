@@ -81,15 +81,22 @@ project receive it; a running lead keeps its current permissions until restarted
 leaves the agent's configuration unchanged. No project means no additional allowance.
 
 An explicit allowance launches Claude with `acceptEdits` or `auto` and the listed Djinn orchestration commands;
-Codex uses `workspace-write` with `on-request`, plus `--approve-for-me` for Auto. Antigravity receives `--mode accept-edits` for either allowance,
-because its CLI has no Auto mode. Claude’s command rules cover Bash and PowerShell. These flags were checked against
-the installed CLIs' help. Folder trust remains a separate human decision. Nothing bypasses an approval.
+Codex uses `workspace-write` with `on-request` for Edit. Auto uses only `--approve-for-me`, which selects workspace-write and automatic approval review itself; Codex rejects combining it with `--sandbox` or `--ask-for-approval`. Antigravity receives `--mode accept-edits` for either allowance,
+because its CLI has no Auto mode. Claude’s command rules cover Bash and PowerShell. Codex's mutually exclusive
+options were checked by starting the installed CLI without a model prompt: its help returns before validating
+option conflicts. Folder trust remains a separate human decision. Nothing bypasses an approval.
 
 A numbered permission or folder-trust choice in the lead's terminal appears as a card in the wish, with its
 command or reason and each option. The window's answer sends the corresponding keys. The server checks the
 question, command/reason and options again before writing, and refuses a choice that changed. An agent cannot
 call the internal `WishService.Choose` through the generated CLI or MCP tools. The terminal remains available
 for screens whose choices Djinn does not recognize. No credentials are read or saved by this feature.
+
+Creating an active wish in the window starts its lead; creating a paused wish does not. The wish shows whether
+the lead runs, has not started, or ended with an exit code. A start failure stays visible until a successful
+retry. These states come from the running Djinn and are never stored or exported. An ended lead's terminal
+remains readable: opening it does not restart it. The explicit retry goes through `WishService.Resume`, which
+applies the wish's current rights, rather than replaying an old command line.
 
 ### The `.agents/permissions.txtpb` format
 

@@ -28,6 +28,8 @@ type Leads interface {
 	Show(wishID, terminal string)
 	// Running tells whether the terminal called name runs a program.
 	Running(name string) bool
+	// Exit reports the last lead terminal's exit, nil while it runs or has never started.
+	Exit(name string) *planv1.LeadExit
 	// Stop asks the program of the terminal called name to end, as a terminal that closes does, kills it if it is
 	// still there after a grace, and returns once it ended. Nothing runs there: nothing to do.
 	Stop(name string) error
@@ -124,7 +126,9 @@ func leadFlags(goos string, provider planv1.Provider, mode planv1.Allowance) str
 		case planv1.Allowance_ALLOWANCE_EDIT:
 			flags = append(flags, "--sandbox", "workspace-write", "--ask-for-approval", "on-request")
 		case planv1.Allowance_ALLOWANCE_AUTO:
-			flags = append(flags, "--sandbox", "workspace-write", "--ask-for-approval", "on-request", "--approve-for-me")
+			// This option selects workspace-write and automatic approval review itself; Codex rejects it with
+			// --sandbox or --ask-for-approval. --help exits before checking these conflicts.
+			flags = append(flags, "--approve-for-me")
 		}
 	}
 	if len(flags) == 0 {
@@ -282,7 +286,21 @@ func (w *Wishes) Resume(
 // resume shows the wish and resumes its lead, or starts one of provider from the brief when it has no session.
 func (w *Wishes) resume(
 	ctx context.Context, wishID string, provider planv1.Provider,
-) (*planv1.WishServiceResumeResponse, error) {
+) (result *planv1.WishServiceResumeResponse, resultErr error) {
+	defer func() {
+		key := strings.ToLower(wishID)
+		if resultErr != nil {
+			text := resultErr.Error()
+			var ce *connect.Error
+			if errors.As(resultErr, &ce) {
+				text = ce.Message()
+			}
+			w.leadErrors.Store(key, text)
+		} else {
+			w.leadErrors.Delete(key)
+		}
+		w.watch.notify([]watched{{wishID, planv1.Change_CHANGE_WISH}})
+	}()
 	wish, err := store.Get[*planv1.Wish](ctx, w.Store, wishID)
 	if err != nil {
 		return nil, Status(err)

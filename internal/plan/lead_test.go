@@ -14,6 +14,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/store"
 )
 
 const session = "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69"
@@ -28,6 +29,7 @@ type fakeLeads struct {
 	waiting planv1.TellWait
 	watch   func()
 	prompts map[string]*planv1.LeadPrompt
+	exits   map[string]*planv1.LeadExit
 	chosen  []string
 	err     error
 }
@@ -54,6 +56,8 @@ func (f *fakeLeads) Open(name, line, dir, exclusive string) ([]string, string, b
 func (f *fakeLeads) Show(wishID, terminal string) { f.shown = append(f.shown, wishID+"/"+terminal) }
 
 func (f *fakeLeads) Running(name string) bool { _, ok := f.running[name]; return ok }
+
+func (f *fakeLeads) Exit(name string) *planv1.LeadExit { return f.exits[name] }
 
 func (f *fakeLeads) Stop(name string) error {
 	if f.running[name] != nil {
@@ -432,6 +436,48 @@ func TestLeadLine(t *testing.T) {
 	}
 }
 
+func TestLeadStartFailureVisibleUntilRetry(t *testing.T) {
+	leads := &fakeLeads{err: errors.New("agent executable unavailable")}
+	c := serve(t, WithLeads(leads))
+	ctx := t.Context()
+	id := c.wish(t)
+	watcher := watch(t, c.wishes, id)
+	request := connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: id})
+	if _, err := c.wishes.Resume(ctx, request); code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("start: %v", err)
+	}
+	if msg := next(t, watcher); !slices.Contains(msg.GetChanges(), planv1.Change_CHANGE_WISH) {
+		t.Fatalf("failure did not notify wishes: %v", msg)
+	}
+	list := func() *planv1.Wish {
+		t.Helper()
+		res, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetWishes()[0]
+	}
+	if wish := list(); wish.GetLeadError() != "agent executable unavailable" || wish.GetLeadRunning() {
+		t.Fatalf("failure not visible: %v", wish)
+	}
+	stored, err := store.Get[*planv1.Wish](ctx, c.store, id)
+	if err != nil || stored.GetLeadError() != "" || stored.GetLeadExit() != nil {
+		t.Fatalf("runtime status stored: %v, %v", stored, err)
+	}
+	leads.err = nil
+	if _, err := c.wishes.Resume(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	if wish := list(); wish.GetLeadError() != "" || !wish.GetLeadRunning() {
+		t.Fatalf("retry did not clear failure: %v", wish)
+	}
+	delete(leads.running, LeadTerminal(id))
+	leads.exits = map[string]*planv1.LeadExit{LeadTerminal(id): {Code: 2}}
+	if wish := list(); wish.GetLeadExit().GetCode() != 2 || wish.GetLeadRunning() {
+		t.Fatalf("exit not visible: %v", wish)
+	}
+}
+
 // TestLeadMode: the mode chosen with the wish, or allowed after, is the one its lead starts with, in the project it
 // starts in; nothing more. Without one, the agent's own configuration decides.
 func TestLeadMode(t *testing.T) {
@@ -464,7 +510,7 @@ func TestLeadMode(t *testing.T) {
 		{planv1.Provider_PROVIDER_CODEX, planv1.Allowance_ALLOWANCE_UNSPECIFIED, nil, []string{"--sandbox", "--ask-for-approval"}},
 		{planv1.Provider_PROVIDER_CODEX, planv1.Allowance_ALLOWANCE_EDIT,
 			[]string{"codex --sandbox workspace-write --ask-for-approval on-request '"}, []string{"--approve-for-me"}},
-		{planv1.Provider_PROVIDER_CODEX, planv1.Allowance_ALLOWANCE_AUTO, []string{"--approve-for-me"}, nil},
+		{planv1.Provider_PROVIDER_CODEX, planv1.Allowance_ALLOWANCE_AUTO, []string{"codex --approve-for-me '"}, []string{"--sandbox", "--ask-for-approval"}},
 		{planv1.Provider_PROVIDER_ANTIGRAVITY, planv1.Allowance_ALLOWANCE_EDIT, []string{"agy -i --mode accept-edits"}, nil},
 		{planv1.Provider_PROVIDER_ANTIGRAVITY, planv1.Allowance_ALLOWANCE_AUTO, []string{"agy -i --mode accept-edits"}, nil},
 	} {

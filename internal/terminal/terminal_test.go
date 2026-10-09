@@ -520,3 +520,59 @@ func TestServiceNeverOpensAShellForALead(t *testing.T) {
 		t.Fatalf("opened %v, want attached to %s at 90 columns", open.Msg, lead.ID)
 	}
 }
+
+// TestServiceAttachesToExitedLeadTerminal keeps the last lead terminal available to the window after a fast exit:
+// its final output can still be read, and opening it does not start a replacement process.
+func TestServiceAttachesToExitedLeadTerminal(t *testing.T) {
+	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
+	t.Cleanup(m.Close)
+	srv := httptest.NewServer(func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.Handle(Handler(m))
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	lead, attached, err := m.Open("lead-w1", []string{"/bin/sh", "-c", "printf 'retained\\n'; exit 7"}, t.TempDir(), 80, 24)
+	if err != nil || attached {
+		t.Fatalf("start lead: attached %v, %v", attached, err)
+	}
+	if code := end(t, lead); code != 7 {
+		t.Fatalf("lead exit code %d, want 7", code)
+	}
+
+	open, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: "lead-w1", Cols: 90, Rows: 20,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := open.Msg.GetTerminal()
+	if got.GetId() != lead.ID || !open.Msg.GetAttached() || !got.GetExited() || got.GetExitCode() != 7 {
+		t.Fatalf("opened %v, want attached to exited terminal %s", open.Msg, lead.ID)
+	}
+	if m.Lookup("lead-w1") != nil {
+		t.Fatal("opening an exited lead restarted it")
+	}
+
+	stream, err := c.Read(ctx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: got.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	var code int32
+	var exited bool
+	for stream.Receive() {
+		out.Write(stream.Msg().GetData())
+		if stream.Msg().GetExited() {
+			exited, code = true, stream.Msg().GetExitCode()
+		}
+	}
+	if stream.Err() != nil || !strings.Contains(out.String(), "retained") || !exited || code != 7 {
+		t.Fatalf("read output %q, exited %v, code %d: %v", out.String(), exited, code, stream.Err())
+	}
+	if _, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead-missing"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("open missing lead: %v, want failed precondition", err)
+	}
+}

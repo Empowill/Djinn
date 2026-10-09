@@ -35,7 +35,7 @@ import {
   WishState,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { useClients, useData, useWishDetail } from "./data/djinn";
+import { useClients, useData, useStore, useWishDetail } from "./data/djinn";
 import {
   type OpenQuestion,
   investigatingQuestions,
@@ -60,6 +60,8 @@ import { AttentionBar, attentionOf } from "./attention";
 import { MarkButtons, type OnMark, useWrites } from "./marks";
 import { LeadMessage } from "./lead-message";
 import { LeadPromptCard } from "./lead-prompt";
+import { leadTerminal } from "./lead-terminal";
+import { LeadStatus } from "./lead-status";
 import { MarkdownBody } from "./markdown-body";
 import { providerName } from "./provider";
 import { useKeepPlace } from "./scroll-anchor";
@@ -78,6 +80,7 @@ export function WishView({
   onToast: (text: string) => void;
 }) {
   const allProjects = useData((s) => s.projects);
+  const data = useStore();
   const detail = useWishDetail(wish.id);
   const projects = projectsOf(wish, allProjects);
   const open = openQuestions(wish, detail);
@@ -108,11 +111,31 @@ export function WishView({
   } = useWrites(onToast);
   const act = (run: () => Promise<unknown>, changes: Change[], done?: string) =>
     write(wish.id, run, changes, done);
-  const resume = () =>
-    act(
-      () => clients.wishes.resume({ wishId: wish.id, provider: wish.provider }),
-      [Change.WISH],
-    );
+  const viewLead = async () => {
+    try {
+      await clients.ui.show({
+        wishId: wish.id,
+        terminal: leadTerminal(wish.id),
+      });
+    } catch (error) {
+      onToast(message(error));
+    }
+  };
+  const startLead = async () => {
+    try {
+      const res = await clients.wishes.resume({
+        wishId: wish.id,
+        provider: wish.provider,
+      });
+      await data.changed(wish.id, [Change.WISH]);
+      await clients.ui.show({ wishId: wish.id, terminal: res.terminal });
+    } catch (error) {
+      onToast(message(error));
+      await data.changed(wish.id, [Change.WISH]).catch(() => undefined);
+    }
+  };
+  const openLead = () =>
+    wish.leadRunning || wish.leadExit ? viewLead() : startLead();
   const prompt = wish.leadRunning ? wish.leadPrompt : undefined;
   const attention = attentionOf(
     open,
@@ -161,7 +184,7 @@ export function WishView({
           <button
             className="button secondary small"
             title={t("wish.resume_detail")}
-            onClick={() => quiet(resume())}
+            onClick={() => quiet(openLead())}
           >
             <Terminal size={14} />
             <span>{t("wish.resume")}</span>
@@ -308,6 +331,11 @@ export function WishView({
         </div>
 
         <div className="overview-content">
+          <LeadStatus
+            wish={wish}
+            onView={() => void viewLead()}
+            onStart={startLead}
+          />
           {(prompt || open.length > 0 || waiting.length > 0 || wish.ready) && (
             <section
               className="action-center"
@@ -407,7 +435,11 @@ export function WishView({
             </div>
             {detail.tasks.length === 0 ? (
               <p className="muted-text">
-                {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
+                {detail.loaded
+                  ? wish.leadRunning
+                    ? t("wish.no_tasks")
+                    : t("wish.no_tasks_not_started")
+                  : t("common.loading")}
               </p>
             ) : (
               byAttention(detail.tasks).map((task) => (
@@ -520,7 +552,7 @@ export function WishView({
         </div>
       </div>
       {(wish.lead || wish.leadRunning) && (
-        <LeadMessage wish={wish} onResume={resume} onToast={onToast} />
+        <LeadMessage wish={wish} onResume={startLead} onToast={onToast} />
       )}
     </div>
   );

@@ -272,6 +272,194 @@ func fakeClaude(t *testing.T) (bin, count string) {
 	return bin, count
 }
 
+// fakeCodex writes the command it received, counts starts, and can exit immediately when the test sets an exit code.
+// It also models Codex's rejection of the incompatible sandbox and automatic-approval flags.
+func fakeCodex(t *testing.T) (bin, count string) {
+	t.Helper()
+	bin = t.TempDir()
+	count = filepath.Join(t.TempDir(), "starts")
+	script := `#!/bin/sh
+echo "fake-codex $* in $(pwd)"
+echo start >> "$DJINN_TEST_COUNT"
+sandbox=
+approve=
+for arg in "$@"; do
+  [ "$arg" = "--sandbox" ] && sandbox=1
+  [ "$arg" = "--approve-for-me" ] && approve=1
+done
+if [ "$sandbox" = 1 ] && [ "$approve" = 1 ]; then
+  echo "codex: --sandbox cannot be used with --approve-for-me" >&2
+  exit 2
+fi
+echo "fake-codex-ready"
+if [ -n "$DJINN_TEST_CODEX_EXIT" ]; then
+  exit "$DJINN_TEST_CODEX_EXIT"
+fi
+exec cat
+`
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin, count
+}
+
+// TestCodexAutoLeadUsesCompatibleFlags starts a real lead terminal with a fake Codex that rejects the flags Codex
+// rejects. The command only stays alive when Auto uses --approve-for-me on its own.
+func TestCodexAutoLeadUsesCompatibleFlags(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin, count := fakeCodex(t)
+	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, addr := up(t, home, env)
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishes := planv1connect.NewWishServiceClient(httpClient, base)
+	projects := planv1connect.NewProjectServiceClient(httpClient, base)
+	terminals := terminalv1connect.NewTerminalServiceClient(httpClient, base)
+	project, err := projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: folder}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	made, err := wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Codex Auto flags", Provider: planv1.Provider_PROVIDER_CODEX,
+		Allowance: planv1.Allowance_ALLOWANCE_AUTO, ProjectIds: []string{project.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	resumed, err := wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: wishID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := plan.LeadTerminal(wishID)
+	if resumed.Msg.GetTerminal() != name || resumed.Msg.GetAttached() {
+		t.Fatalf("resume: %v, want a new lead terminal", resumed.Msg)
+	}
+	opened, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: name}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lead := opened.Msg.GetTerminal()
+	if lead.GetExited() {
+		t.Fatalf("Auto lead exited with %d: %v", lead.GetExitCode(), lead)
+	}
+	command := strings.Join(lead.GetCommand(), " ")
+	if !strings.Contains(command, "codex --approve-for-me") || strings.Contains(command, "--sandbox") ||
+		strings.Contains(command, "--ask-for-approval") {
+		t.Fatalf("Auto lead command %q, want only --approve-for-me", command)
+	}
+	read(t, terminals, lead.GetId(), "fake-codex-ready")
+	if got := starts(t, count); got != 1 {
+		t.Fatalf("Codex started %d times, want once", got)
+	}
+}
+
+// TestExitedCodexLeadIsRetainedUntilExplicitResume checks the terminal and plan paths separately: an exited lead is
+// attachable with its output and exit code, while only an explicit Resume starts a replacement process.
+func TestExitedCodexLeadIsRetainedUntilExplicitResume(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin, count := fakeCodex(t)
+	env := environ(home, bin, "DJINN_TEST_COUNT="+count, "DJINN_TEST_CODEX_EXIT=2")
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, addr := up(t, home, env)
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishes := planv1connect.NewWishServiceClient(httpClient, base)
+	projects := planv1connect.NewProjectServiceClient(httpClient, base)
+	terminals := terminalv1connect.NewTerminalServiceClient(httpClient, base)
+	project, err := projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: folder}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	made, err := wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Retain a failed Codex lead", Provider: planv1.Provider_PROVIDER_CODEX,
+		Allowance: planv1.Allowance_ALLOWANCE_AUTO, ProjectIds: []string{project.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	name := plan.LeadTerminal(wishID)
+	if _, err := wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: wishID})); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: name}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstID := opened.Msg.GetTerminal().GetId()
+	read(t, terminals, firstID, "")
+	ended, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: name}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ended.Msg.GetTerminal().GetId() != firstID || !ended.Msg.GetAttached() || !ended.Msg.GetTerminal().GetExited() ||
+		ended.Msg.GetTerminal().GetExitCode() != 2 {
+		t.Fatalf("ended lead open: %v, want the same exited terminal", ended.Msg)
+	}
+	read(t, terminals, firstID, "fake-codex-ready")
+	listed, err := wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listedWish *planv1.Wish
+	for _, wish := range listed.Msg.GetWishes() {
+		if wish.GetId() == wishID {
+			listedWish = wish
+			break
+		}
+	}
+	if listedWish == nil || listedWish.GetLeadExit() == nil || listedWish.GetLeadExit().GetCode() != 2 {
+		t.Fatalf("listed lead exit: %v, want code 2", listedWish)
+	}
+	if got := starts(t, count); got != 1 {
+		t.Fatalf("Codex started %d times before retry, want once", got)
+	}
+
+	resumed, err := wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: wishID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Msg.GetAttached() {
+		t.Fatalf("explicit retry attached to the ended lead: %v", resumed.Msg)
+	}
+	var retry *terminalv1.Terminal
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		opened, err = terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: name}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if opened.Msg.GetTerminal().GetId() != firstID {
+			retry = opened.Msg.GetTerminal()
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if retry == nil {
+		t.Fatal("explicit retry kept the ended terminal")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for starts(t, count) < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := starts(t, count); got != 2 {
+		t.Fatalf("Codex started %d times after retry, want twice", got)
+	}
+}
+
 func TestWishResume(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()

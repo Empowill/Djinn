@@ -57,8 +57,9 @@ export function leadTerminal(wishId: string): string {
 // The wish the window shows, as the terminal follows it: its lead, if it has one.
 interface Shown {
   id: string;
-  lead: boolean; // A lead session is recorded: resuming it takes it back.
+  lead: boolean; // A lead session is recorded, so following may resume its known session.
   running: boolean; // The lead's terminal runs.
+  exited: boolean; // The lead's terminal ended, so following attaches without starting it again.
 }
 
 const ShowWish = createContext<(shown: Shown | undefined) => void>(
@@ -70,11 +71,12 @@ const ShowWish = createContext<(shown: Shown | undefined) => void>(
 export function useTerminalFollows(wish: Wish | undefined) {
   const show = useContext(ShowWish);
   const id = wish?.id ?? "";
-  const lead = !!wish?.lead?.sessionId;
+  const lead = !!wish?.lead || !!wish?.leadRunning;
   const running = !!wish?.leadRunning;
+  const exited = !!wish?.leadExit;
   useEffect(
-    () => show(id ? { id, lead, running } : undefined),
-    [show, id, lead, running],
+    () => show(id ? { id, lead, running, exited } : undefined),
+    [show, id, lead, running, exited],
   );
 }
 
@@ -87,7 +89,8 @@ export function LeadTerminalFrame({ children }: { children: ReactNode }) {
       setShown((prev) =>
         prev?.id === next?.id &&
         prev?.lead === next?.lead &&
-        prev?.running === next?.running
+        prev?.running === next?.running &&
+        prev?.exited === next?.exited
           ? prev
           : next,
       ),
@@ -157,20 +160,22 @@ function LeadTerminal({
     [djinn],
   );
 
-  // Show the lead of the wish the window shows, once the terminal is open: attach to it while it runs, else resume
-  // it, as the button Lead does. A wish without a lead keeps the window's terminal, and the bar proposes to resume it.
-  // Never a shell under a lead's name: djinn refuses to start one there.
-  // start resumes even a wish without a lead, which starts one from the wish's brief: only on the developer's click.
+  // Show the lead of the wish the window shows, once the terminal is open. An ended lead attaches to its retained
+  // output without starting it again. A recorded session with no current terminal keeps the old follow behavior and
+  // resumes its known session; a wish without a lead keeps the window's terminal until the user starts it.
   const follow = useCallback(
     (wish: Shown, start = false) => {
-      followed.current = wish.id;
+      const key = `${wish.id}:`;
+      const target = wish.running || wish.exited ? leadTerminal(wish.id) : NAME;
+      followed.current = key + target;
       setNotice("");
       const take = (terminal: string) => {
-        if (followed.current !== wish.id) return;
+        if (!followed.current.startsWith(key)) return;
         ended.current = undefined;
+        followed.current = key + terminal;
         setName(terminal);
       };
-      if (wish.running) take(leadTerminal(wish.id));
+      if (wish.running || wish.exited) take(leadTerminal(wish.id));
       else if (!wish.lead && !start) take(NAME);
       else
         djinn.clients.wishes
@@ -178,13 +183,16 @@ function LeadTerminal({
           .then((res) => take(res.terminal))
           .catch(
             (error) =>
-              followed.current === wish.id && setNotice(message(error)),
+              followed.current.startsWith(key) && setNotice(message(error)),
           );
     },
     [djinn],
   );
   useEffect(() => {
-    if (collapsed || !shown || followed.current === shown.id) return;
+    if (collapsed || !shown) return;
+    const target =
+      shown.running || shown.exited ? leadTerminal(shown.id) : NAME;
+    if (followed.current === `${shown.id}:${target}`) return;
     follow(shown);
   }, [collapsed, shown, follow]);
 
@@ -192,7 +200,9 @@ function LeadTerminal({
   useEffect(() => {
     const element = host.current;
     if (!element) return;
-    const again = ended.current;
+    // The recorded command is safe to replay for the window shell. A lead retry belongs to WishService.Resume, so a
+    // lead terminal is always reattached with its retained output instead of starting its old command directly.
+    const again = ended.current && name === NAME ? ended.current : undefined;
     const mounted = mountTerminal(
       element,
       djinn,
@@ -290,9 +300,12 @@ function LeadTerminal({
         {shown && name !== leadTerminal(shown.id) && (
           <button
             className="lead-terminal-switch"
-            onClick={() => follow(shownRef.current ?? shown, true)}
+            onClick={() => {
+              const next = shownRef.current ?? shown;
+              follow(next, !(next.lead || next.running || next.exited));
+            }}
             title={
-              shown.lead || shown.running
+              shown.lead || shown.running || shown.exited
                 ? t("terminal.lead_detail")
                 : t("wish.resume_detail")
             }
@@ -311,6 +324,8 @@ function LeadTerminal({
             onClick={() => {
               ended.current = undefined;
               setNotice("");
+              const current = shownRef.current;
+              if (current) followed.current = `${current.id}:${NAME}`;
               setName(NAME);
             }}
             title={t("terminal.shell_detail")}
@@ -319,14 +334,15 @@ function LeadTerminal({
             <span>{t("terminal.shell")}</span>
           </button>
         )}
-        {(status.kind === "exited" || status.kind === "error") && (
-          <button
-            onClick={() => setGeneration((g) => g + 1)}
-            title={t("terminal.restart")}
-          >
-            <RotateCcw size={13} />
-          </button>
-        )}
+        {(status.kind === "exited" || status.kind === "error") &&
+          name === NAME && (
+            <button
+              onClick={() => setGeneration((g) => g + 1)}
+              title={t("terminal.restart")}
+            >
+              <RotateCcw size={13} />
+            </button>
+          )}
         <button
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? t("terminal.expand") : t("terminal.collapse")}

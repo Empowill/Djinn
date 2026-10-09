@@ -48,7 +48,7 @@ export function MakeWish({
 }: {
   projects: Project[];
   active: number;
-  onMade: (wishId: string) => void;
+  onMade: (wish: Wish) => void;
   onClose: () => void;
 }) {
   const clients = useClients();
@@ -75,7 +75,7 @@ export function MakeWish({
         provider,
         allowance: chosen.length ? allowance : Allowance.NONE,
       });
-      onMade(res.wish?.id ?? "");
+      if (res.wish) onMade(res.wish);
     } catch (err) {
       setError(message(err));
     } finally {

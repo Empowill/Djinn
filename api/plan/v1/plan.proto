@@ -75,6 +75,15 @@ message Wish {
   // The choice the lead's agent shows in its terminal now, waiting for the developer: an approval (a command, an
   // edit, the network), a folder to trust. Read from its screen by the list of the wishes, never stored.
   LeadPrompt lead_prompt = 13;
+  // The last lead terminal ended in this Djinn. Computed from the retained terminal, never stored.
+  LeadExit lead_exit = 14;
+  // A lead could not be started. Kept until the next successful start in this Djinn, never stored.
+  string lead_error = 15;
+}
+
+// LeadExit records a terminal's exit, including success (code 0).
+message LeadExit {
+  int32 code = 1;
 }
 
 // LeadPrompt is a choice an agent shows in the lead's terminal, as read from its screen: the window shows it, and

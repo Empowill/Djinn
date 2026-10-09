@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"unicode"
 
 	"buf.build/go/protovalidate"
@@ -267,7 +268,8 @@ type Wishes struct {
 	// and Sync is then unavailable.
 	Pages *Pages
 
-	watch watchers // the open Watch streams
+	watch      watchers // the open Watch streams
+	leadErrors sync.Map // wish ID -> last start error, transient like the terminal state
 }
 
 func (w *Wishes) Make(
@@ -329,6 +331,10 @@ func (w *Wishes) List(
 	if w.Leads != nil {
 		for _, wish := range wishes {
 			wish.LeadRunning = w.Leads.Running(LeadTerminal(wish.GetId()))
+			wish.LeadExit = w.Leads.Exit(LeadTerminal(wish.GetId()))
+			if text, ok := w.leadErrors.Load(strings.ToLower(wish.GetId())); ok {
+				wish.LeadError = text.(string)
+			}
 			if wish.LeadRunning {
 				wish.LeadPrompt = w.Leads.Prompt(LeadTerminal(wish.GetId()))
 			}

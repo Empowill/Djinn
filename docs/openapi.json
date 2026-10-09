@@ -492,6 +492,16 @@
         },
         "type": "object"
       },
+      "plan.v1.LeadExit": {
+        "description": "LeadExit records a terminal's exit, including success (code 0).",
+        "properties": {
+          "code": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.LeadPrompt": {
         "description": "LeadPrompt is a choice an agent shows in the lead's terminal, as read from its screen: the window shows it, and WishService.Choose picks an option there, as the keys would.",
         "properties": {
@@ -1809,6 +1819,14 @@
           "lead": {
             "$ref": "#/components/schemas/plan.v1.Lead",
             "description": "The lead: the agent session that drives the wish, for djinn wish resume to take it back."
+          },
+          "leadError": {
+            "description": "A lead could not be started. Kept until the next successful start in this Djinn, never stored.",
+            "type": "string"
+          },
+          "leadExit": {
+            "$ref": "#/components/schemas/plan.v1.LeadExit",
+            "description": "The last lead terminal ended in this Djinn. Computed from the retained terminal, never stored."
           },
           "leadPrompt": {
             "$ref": "#/components/schemas/plan.v1.LeadPrompt",

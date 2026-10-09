@@ -38,7 +38,7 @@ func (s *Service) Open(
 	}
 	if len(command) == 0 && strings.HasPrefix(strings.ToLower(msg.GetName()), "lead-") {
 		// A lead's terminal starts with its lead (djinn wish resume), never with a shell a text told would run in.
-		t := s.m.Lookup(msg.GetName())
+		t := s.m.Latest(msg.GetName())
 		if t == nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"%s runs no lead: resume the wish to start it", msg.GetName()))

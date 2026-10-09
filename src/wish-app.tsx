@@ -5,7 +5,7 @@ import { Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Change, TaskStatus } from "../gen/ts/plan/v1/plan_pb";
+import { Change, TaskStatus, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import { ProviderState } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import {
@@ -170,6 +170,23 @@ export function WishApp() {
     }
   };
 
+  // Making an active wish only records it. Start its lead once, here, so the UI owns the decision to launch and a
+  // failed start remains visible on the wish through WishService's transient leadError field.
+  const launchMadeLead = async (made: Wish) => {
+    if (!isActive(made)) return;
+    try {
+      const res = await clients.wishes.resume({
+        wishId: made.id,
+        provider: made.provider,
+      });
+      await data.changed(made.id, [Change.WISH]);
+      await clients.ui.show({ wishId: made.id, terminal: res.terminal });
+    } catch (err) {
+      setToast(message(err));
+      await data.changed(made.id, [Change.WISH]).catch(() => undefined);
+    }
+  };
+
   return (
     <div className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
@@ -257,10 +274,11 @@ export function WishApp() {
             projects={projects}
             active={wishes.filter(isActive).length}
             onClose={() => setModal(null)}
-            onMade={(id) => {
+            onMade={(made) => {
               setModal(null);
-              setSelected(id);
-              void data.changed(id, [Change.WISH]);
+              setSelected(made.id);
+              void data.changed(made.id, [Change.WISH]);
+              void launchMadeLead(made);
             }}
           />
         )}

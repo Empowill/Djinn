@@ -337,6 +337,18 @@ func (l leads) Open(name, line, dir, exclusive string) ([]string, string, bool, 
 
 func (l leads) Running(name string) bool { return l.terminals.Lookup(name) != nil }
 
+func (l leads) Exit(name string) *planv1.LeadExit {
+	t := l.terminals.Latest(name)
+	if t == nil {
+		return nil
+	}
+	_, _, exited, code := t.State()
+	if !exited {
+		return nil
+	}
+	return &planv1.LeadExit{Code: int32(code)}
+}
+
 // stopWait is how long Stop waits for a lead to end: its grace, then the kill and the last of its output.
 const stopWait = terminal.Grace + 5*time.Second
 
