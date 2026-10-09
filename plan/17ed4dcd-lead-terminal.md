@@ -42,9 +42,18 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   (`TestCrashReopensTheLeads`: a test djinn killed by its PID with SIGKILL, then started again, runs the fake
   `claude --resume <session>` in its folder and shows it; stopped with SIGTERM, the note is gone and the next one starts
   no claude; `TestChangedFollowsWhatRuns`).
+- [x] An answer given in the window reaches the lead: one line typed in its terminal, then Enter, once the person is
+  quiet, in order; a lead that does not run is reopened on its session (`TestSayTypesOneLineAndEnter`,
+  `TestSayWaitsWhileThePersonTypes`, `TestSayWaitsForAProgramJustStarted`, `TestAnswerReachesTheLead`, e2e
+  `lead-tell.spec.ts`).
 - [ ] This flight plan's session resumes inside Djinn's terminal and goes on by voice. (needs: a person, by voice)
 
 ## Decided along the way
+- **Djinn types into the lead's terminal** (`Terminal.Say`): a line, a pause of 300 ms, then Enter, so that an
+  agent's prompt does not read them as one paste. It waits until the person has not typed there for 3 s, and a
+  program just started until its output paused for 1 s (10 s at most). Sixteen lines wait at most, in order.
+  Control characters become spaces: one line, no keys. A lead terminal that runs another program, a shell, gets
+  nothing: the line would run as a command.
 - **`TerminalService`** (`api/terminal/v1`, all methods internal): `Open` (by name: a running
   terminal of that name is returned, `attached`, else a program starts), `Write`, `Resize`, `Read`
   (server stream of the output from an offset, then live, ending with the exit code), `Close`

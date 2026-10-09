@@ -20,6 +20,7 @@ type fakeLeads struct {
 	running map[string][]string // command of each running terminal, by name
 	opened  []string            // line of each program started
 	shown   []string            // wish/terminal of each show
+	said    []string            // terminal: line of each line typed
 	err     error
 }
 
@@ -43,6 +44,14 @@ func (f *fakeLeads) Open(name, line, dir, exclusive string) ([]string, string, b
 }
 
 func (f *fakeLeads) Show(wishID, terminal string) { f.shown = append(f.shown, wishID+"/"+terminal) }
+
+func (f *fakeLeads) Say(name, line string) error {
+	if _, ok := f.running[name]; !ok {
+		return errors.New("no such terminal")
+	}
+	f.said = append(f.said, name+": "+line)
+	return nil
+}
 
 func setLead(t *testing.T, c clients, req *planv1.WishServiceSetLeadRequest) (*planv1.Wish, error) {
 	t.Helper()

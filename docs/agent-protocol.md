@@ -21,6 +21,12 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   dated, and waits for the developer again. A decision may take several rounds.
 - **Marks.** What the developer read or approved as it is, from the window: `djinn mark list <wish>`, and the brief's
   "Marked by the developer". An approved block or decision is a go.
+- **An answer reaches the lead.** When the developer answers a question, Djinn types one line in the terminal of
+  the wish's lead, then Enter: `Djinn: Q43 answered B — "<option>". Note: "<note>". Act on it: djinn wish brief
+  <wish> has the context.` The agent reads it as a message, queued while it works. The line waits until the
+  developer has not typed in that terminal for three seconds, and lines go out in order. A lead that does not run is
+  reopened on its session first, as `djinn wish resume` does, without taking the window; only an active wish's.
+  A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
 - **Blocks.** What Djinn does not compute (an analysis, a hand-off, a decision taken outside a question) is a block:

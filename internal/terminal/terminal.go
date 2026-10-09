@@ -100,6 +100,7 @@ type Terminal struct {
 	changed chan struct{} // closed and replaced at each change
 	exited  bool
 	code    int
+	voice   voice // the lines Djinn types, under mu
 }
 
 // Open returns the running terminal of name, attached true, or starts one: command in dir at cols×rows, each
@@ -165,6 +166,7 @@ func (m *Manager) OpenExclusive(
 	t = &Terminal{
 		ID: uuid.NewString(), Name: name, Command: slices.Clone(command), Dir: dir,
 		p: p, done: make(chan struct{}), cols: cols, rows: rows, changed: make(chan struct{}),
+		voice: voice{started: time.Now()},
 	}
 	if old := m.byName[name]; old != nil {
 		delete(m.byID, old.ID) // Ended: its output goes with it.
@@ -262,6 +264,7 @@ func (t *Terminal) append(b []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.buf = append(t.buf, b...)
+	t.voice.output = time.Now()
 	if len(t.buf) > Scrollback+Scrollback/4 {
 		drop := len(t.buf) - Scrollback
 		t.base += uint64(drop)
@@ -293,8 +296,19 @@ func (t *Terminal) State() (cols, rows int, exited bool, code int) {
 // Done is closed once the program ended and its output was read.
 func (t *Terminal) Done() <-chan struct{} { return t.done }
 
-// Write sends b to the program, as typed.
+// Write sends b to the program, as the person typed it.
 func (t *Terminal) Write(b []byte) error {
+	if t.Exited() {
+		return ErrExited
+	}
+	t.mu.Lock()
+	t.voice.typed = time.Now()
+	t.mu.Unlock()
+	return t.put(b)
+}
+
+// put sends b to the program.
+func (t *Terminal) put(b []byte) error {
 	if t.Exited() {
 		return ErrExited
 	}

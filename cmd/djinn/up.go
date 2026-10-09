@@ -275,6 +275,8 @@ func (l leads) Open(name, line, dir, exclusive string) ([]string, string, bool, 
 	return t.Command, t.Dir, attached, nil
 }
 
+func (l leads) Say(name, line string) error { return l.terminals.Say(name, line) }
+
 func (l leads) Show(wishID, name string) {
 	if l.ui.Raise != nil {
 		l.ui.Raise()

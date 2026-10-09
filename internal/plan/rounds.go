@@ -32,6 +32,9 @@ func (q *Questions) Enlighten(
 	if err != nil {
 		return nil, err
 	}
+	if q.Enlightened != nil {
+		q.Enlightened(ctx, proto.CloneOf(question), req.Msg.GetNote())
+	}
 	return connect.NewResponse(&planv1.QuestionServiceEnlightenResponse{Question: question}), nil
 }
 
