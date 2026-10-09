@@ -314,6 +314,15 @@ func ChecksText(checks []*planv1.ProjectCheck) string {
 	return strings.Join(parts, "; ")
 }
 
+// CommitGates lists how an agent runs the commit checks, each through its gate: "`djinn gate run lint -- make lint`".
+func (s Settings) CommitGates() string {
+	var gates []string
+	for _, c := range s.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT) {
+		gates = append(gates, "`"+GateCommand(c)+"`")
+	}
+	return strings.Join(gates, ", ")
+}
+
 // GateCommand is how an agent runs a check of the project: through the gate of its name.
 func GateCommand(c *planv1.ProjectCheck) string {
 	return "djinn gate run " + c.GetName() + " -- " + c.GetCommand()

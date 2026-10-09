@@ -202,7 +202,8 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 // the warm worker's, leaves it to the next one. Under h.sched.
 func (h *Harness) claimWarm(ctx context.Context, wish *planv1.Wish, project *planv1.Project, task *planv1.Task) *warm {
 	kind := task.GetProvider()
-	if !h.warmOn || project == nil || kind != planv1.Provider_PROVIDER_CLAUDE || task.GetForkSession() != "" || task.GetCorrection() != nil {
+	if !h.warmOn || project == nil || kind != planv1.Provider_PROVIDER_CLAUDE || task.GetForkSession() != "" || task.GetCorrection() != nil ||
+		task.GetReview() != nil {
 		return nil
 	}
 	key := warmKey(wish.GetId(), project.GetId())

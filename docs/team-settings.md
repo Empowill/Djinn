@@ -188,11 +188,10 @@ brings it there by itself, no model ([T30](../plan/43303f46-integration.md)):
 2. Djinn commits each task's work **at once, alone**, in the order the tasks ended: its dependents build on it
    straight away.
 3. In a worktree of its own per wish and project, under Djinn's data folder (`projects/<project id>/integration/<wish
-   id>`), detached at the integration branch's tip, never in your checkout: it commits what the worker left in its
-   worktree on the task's branch (its title as the message; workers never commit), then merges the branch with
-   `--no-ff`. A conflict only in `generated` files takes the task's side and runs
-   `generate` under the gate `gen`. Then the `setup` runs if the worktree needs it, and each commit check under the
-   gate of its name.
+   id>`), detached at the integration branch's tip, never in your checkout: it merges the task's branch with
+   `--no-ff`, once its worktree holds nothing not committed (step 8). A conflict only in `generated` files takes the
+   task's side and runs `generate` under the gate `gen`. Then the `setup` runs if the worktree needs it, and each
+   commit check under the gate of its name.
 4. **Green**: the integration branch moves to the result, Git checking it is still where the merge started; the task
    is **committed**, with the commit, and the journal records it. Its worktree is then removed, as `djinn task clean`
    does, its branch kept; a worktree that holds changes not committed stays, and its events say so. Your checkout of
@@ -205,13 +204,24 @@ brings it there by itself, no model ([T30](../plan/43303f46-integration.md)):
 6. **A correction worker** starts by itself: a work task part of the same azima as the failed task, of its provider,
    its worktree on the failed merge (the branch, and that merge again, its conflicts left in place; or the work merged,
    for a red check), what failed in its first prompt: the files in conflict, or the check's command and
-   the end of its output. It does not commit: Djinn commits what it leaves, which concludes the merge, and its branch
-   integrates like any task's, at once and alone. Green, the failed tasks are committed with it, saying
+   the end of its output. It commits its work, which concludes the merge, and its branch integrates like any task's,
+   at once and alone. Green, the failed tasks are committed with it, saying
    `corrected by W5`. A correction whose work fails in turn, or whose worker fails, counts as an attempt.
 7. Past `correction_attempts` (2 by default), Djinn **asks you** on the wish: try again (a new correction worker, its
    attempts counted again), leave it (the work stays out of the branch), or you take it (the question says how to
    find the failed merge). The question blocks nothing else: the rest of the wish goes on. A correction worker you
    stop leaves it to you, asked the same.
+8. **Work not committed is not merged, and Djinn commits nothing blindly.** Before merging a task, a correction
+   worker's included, Djinn looks at its worktree (`git status --porcelain`, untracked files included, the project's
+   `.gitignore` applying). Clean, it merges as above. With changes, the task is **uncommitted**: a **review worker**
+   starts by itself, a work task part of the same azima, of the task's provider, in that task's worktree and on its
+   branch, the task's title and prompt, the files and their diff (clipped) in its first prompt. It commits what
+   belongs to the task, with a message in the repository's style, reverts or deletes the rest (debug output, scratch
+   files, artifacts), and ends with a line saying what it kept, what it dropped, and why. Its branch then integrates
+   like any task's, and the task says `uncommitted: reviewed by W5`. A review that fails, or leaves changes in turn,
+   counts as an attempt; past `correction_attempts`, Djinn asks you, as above. Review and correction workers may run
+   `git add`, `git commit`, `git restore`, `git rm` and `git clean` besides the project's `commands`; its
+   `denied_commands` still win.
 
 A task that waits for another (`--after W5`) waits for W5's work to be **committed**, not only done: it says `waits for
 W5 to be committed`, and W5 is committed at once, alone. Its worktree then starts from the integration branch's tip,
@@ -220,7 +230,7 @@ Djinn does not integrate (a project that names no check) counts once done, as be
 
 Where each task's work stands shows in `djinn task get` (`integration`: its state, the commit, what failed, the task
 that corrects it), the lead's brief, the wish's page and the Tasks tab: done, waiting to be committed, being
-committed, committed as `1a2b3c4d`, conflict, red, corrected by W9.
+committed, committed as `1a2b3c4d`, conflict, red, corrected by W9, uncommitted, reviewed by W9.
 
 ### Pushing
 

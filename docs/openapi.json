@@ -1665,7 +1665,8 @@
           "INTEGRATION_STATE_INTEGRATING",
           "INTEGRATION_STATE_COMMITTED",
           "INTEGRATION_STATE_CONFLICT",
-          "INTEGRATION_STATE_RED"
+          "INTEGRATION_STATE_RED",
+          "INTEGRATION_STATE_UNCOMMITTED"
         ],
         "description": "IntegrationState is where a task's finished work stands on its way into its wish's integration branch."
       },
@@ -3644,6 +3645,15 @@
             "title": "question",
             "maxLength": 64,
             "description": "The code of the question a question worker works on (Q52); empty for any other task."
+          },
+          "review": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TaskReview"
+              }
+            ],
+            "title": "review",
+            "description": "For a review worker, which Djinn starts by itself when a task's worktree holds changes not committed: what it\n reviews. It works in that task's worktree, on its branch, and its branch integrates like any task's."
           }
         },
         "title": "Task",
@@ -3860,11 +3870,16 @@
             "type": "string",
             "title": "question_id",
             "description": "The question Djinn asked once the attempts were spent: try again, leave it, or the person takes it."
+          },
+          "reviewedBy": {
+            "type": "string",
+            "title": "reviewed_by",
+            "description": "For UNCOMMITTED, the review worker that commits the work left in its worktree, or did: for COMMITTED, the work\n went in with it (\"uncommitted: reviewed by W5\")."
           }
         },
         "title": "TaskIntegration",
         "additionalProperties": false,
-        "description": "TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a\n worker ends done, Djinn commits its worktree on its branch, merges it alone into the integration branch in a\n worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,\n and moves the branch when it passes; its worktree is then removed when clean."
+        "description": "TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a\n worker ends done, Djinn checks that its worktree holds nothing not committed, merges its branch alone into the\n integration branch in a worktree of its own, makes the generated files again on a conflict only in them, tests the\n result through a gate, and moves the branch when it passes; its worktree is then removed when clean."
       },
       "plan.v1.TaskKind": {
         "type": "string",
@@ -3875,6 +3890,28 @@
           "TASK_KIND_AZIMA"
         ],
         "description": "TaskKind says what a task is."
+      },
+      "plan.v1.TaskReview": {
+        "type": "object",
+        "properties": {
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "task_ids",
+            "description": "The tasks whose work it commits: the task whose worktree it works in first, then the reviews before it."
+          },
+          "attempt": {
+            "type": "integer",
+            "title": "attempt",
+            "format": "int32",
+            "description": "Which attempt it is, from 1: past the project's correction_attempts, Djinn asks the person."
+          }
+        },
+        "title": "TaskReview",
+        "additionalProperties": false,
+        "description": "TaskReview is what a review worker reviews: work its worker left in its worktree without committing it."
       },
       "plan.v1.TaskRole": {
         "type": "string",

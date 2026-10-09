@@ -25,10 +25,11 @@ import (
 
 // Integration (T30): a worker's work counts once it is in its wish's integration branch, tested. When a worker ends
 // done in a project that names a check, its task's integration is pending; Djinn then commits the work at once,
-// task by task, by itself, no model: in a worktree of its own per wish and project, never the person's checkout, it
-// merges the task's branch, makes the generated files again on a conflict only in them, runs the project's commit
-// checks (checks.go) each through a gate, moves the integration branch when they pass, and removes the task's worktree when clean. Pushing
-// the branch to its remote follows on a cadence (push.go).
+// task by task, by itself, no model: a task whose worktree holds changes not committed goes to a review worker instead
+// (review.go), and nothing commits them blindly; in a worktree of its own per wish and project, never the person's
+// checkout, it merges the task's branch, makes the generated files again on a conflict only in them, runs the
+// project's commit checks (checks.go) each through a gate, moves the integration branch when they pass, and removes the
+// task's worktree when clean. Pushing the branch to its remote follows on a cadence (push.go).
 
 // How the journal records the integration.
 const (
@@ -197,9 +198,10 @@ type tested struct {
 	ids      []string
 }
 
-// integrateBatch commits the work of batch, a task of wish in project, with the work a correction worker of it
-// corrects, into the wish's integration branch, records where each task's work stands, and tells whether it is
-// committed. The worktrees of the work committed are removed when clean.
+// integrateBatch commits the work of batch, a task of wish in project, with the work a review or a correction worker
+// of it reviews or corrects, into the wish's integration branch, records where each task's work stands, and tells
+// whether it is committed. A task whose worktree holds changes not committed is not merged: a review worker judges
+// them. The worktrees of the work committed are removed when clean.
 func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, batch []*planv1.Task) bool {
 	h.integrateMu.Lock() // An install uses the integration worktree too.
 	defer h.integrateMu.Unlock()
@@ -216,6 +218,9 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		h.settleIntegration(ctx, batch, pending(branch, why), "integration: waiting: "+why, nil)
 		return false
 	}
+	if batch = h.reviewUncommitted(ctx, wish, project, settings, branch, batch); len(batch) == 0 {
+		return false
+	}
 	in, text, commit := h.commitBatch(ctx, wish, project, settings, branch, batch)
 	if ctx.Err() != nil && in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 		in, text, commit = pending(branch, ""), "integration: djinn up stopped during it; Djinn integrates the work again", nil
@@ -229,7 +234,8 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	if in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 		return false
 	}
-	for _, t := range append(slices.Clone(batch), h.settleCorrected(ctx, batch, in)...) {
+	settled := append(slices.Clone(batch), h.settleReviewed(ctx, batch, in)...)
+	for _, t := range append(settled, h.settleCorrected(ctx, settled, in)...) {
 		h.dropWorktree(ctx, project, t)
 	}
 	h.wake() // The tasks that waited for this work to be committed may start, from it.
@@ -245,10 +251,13 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 		return
 	}
 	text := "worktree removed, branch " + cur.GetBranch() + " kept"
-	if changes, err := git(ctx, cur.GetWorktree(), "status", "--porcelain"); err == nil && changes != "" {
-		text = "worktree kept: it holds changes not committed, " + cur.GetWorktree()
-	} else if err := removeWorktree(ctx, project.GetDirectory(), cur.GetWorktree(), false); err != nil {
-		text = "worktree kept: " + err.Error()
+	// A review worker works in the worktree of the task it reviews: the second of them finds it removed already.
+	if _, err := os.Stat(cur.GetWorktree()); !errors.Is(err, os.ErrNotExist) {
+		if changes, err := git(ctx, cur.GetWorktree(), "status", "--porcelain"); err == nil && changes != "" {
+			text = "worktree kept: it holds changes not committed, " + cur.GetWorktree()
+		} else if err := removeWorktree(ctx, project.GetDirectory(), cur.GetWorktree(), false); err != nil {
+			text = "worktree kept: " + err.Error()
+		}
 	}
 	kept := strings.HasPrefix(text, "worktree kept")
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -394,9 +403,9 @@ func (h *Harness) integrationBranch(ctx context.Context, wish *planv1.Wish, proj
 	return b, ""
 }
 
-// commitBatch commits each task's work on its branch, merges the branches into the integration branch in the wish's
-// integration worktree, checks the result, and moves the branch when the commit checks pass. It returns where the batch's work
-// stands, the event that says it, and the commit to journal when the branch moved.
+// commitBatch merges the branches of batch, tasks whose worktree holds nothing not committed, into the integration
+// branch in the wish's integration worktree, checks the result, and moves the branch when the commit checks pass. It
+// returns where the batch's work stands, the event that says it, and the commit to journal when the branch moved.
 func (h *Harness) commitBatch(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch string, batch []*planv1.Task,
 ) (*planv1.TaskIntegration, string, *planv1.IntegrationCommit) {
@@ -426,7 +435,7 @@ func (h *Harness) commitBatch(
 	sha := done.sha
 	commit := &planv1.IntegrationCommit{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Branch: branch, OldSha: old, NewSha: sha,
-		TaskIds: append(taskIDs, correctedIDs(batch)...),
+		TaskIds: append(append(taskIDs, correctedIDs(batch)...), reviewedIDs(batch)...),
 	}
 	committed := &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, Sha: sha}
 	if sha == old {
@@ -487,11 +496,6 @@ func (h *Harness) mergeAndTest(
 	}
 	wait := func(why string) (string, *planv1.TaskIntegration, string) {
 		return "", pending(branch, why), "integration: waiting: " + why
-	}
-	for _, t := range batch {
-		if err := commitWork(ctx, t); err != nil {
-			return wait(fmt.Sprintf("commit %s's work on its branch: %v", t.GetCode(), err))
-		}
 	}
 	repo := project.GetDirectory()
 	wt := integrationDir(h.home, project.GetId(), wish.GetId())
@@ -646,8 +650,8 @@ func (h *Harness) settleIntegration(
 // sameIntegration tells whether a and b say the same, whenever they said it.
 func sameIntegration(a, b *planv1.TaskIntegration) bool {
 	return a.GetState() == b.GetState() && a.GetBranch() == b.GetBranch() && a.GetSha() == b.GetSha() && a.GetReason() == b.GetReason() &&
-		a.GetCorrectedBy() == b.GetCorrectedBy() && a.GetAttempts() == b.GetAttempts() && a.GetQuestionId() == b.GetQuestionId() &&
-		proto.Equal(a.GetFailure(), b.GetFailure())
+		a.GetCorrectedBy() == b.GetCorrectedBy() && a.GetReviewedBy() == b.GetReviewedBy() && a.GetAttempts() == b.GetAttempts() &&
+		a.GetQuestionId() == b.GetQuestionId() && proto.Equal(a.GetFailure(), b.GetFailure())
 }
 
 // ids lists the tasks' identifiers.
@@ -670,27 +674,6 @@ func codes(batch []*planv1.Task) string {
 
 // short8 is a commit's first eight characters.
 func short8(sha string) string { return sha[:min(8, len(sha))] }
-
-// commitWork commits what the worker of t left in its worktree on the task's branch, with the task's title: workers
-// never commit. A worktree removed already has nothing left.
-func commitWork(ctx context.Context, t *planv1.Task) error {
-	wt := t.GetWorktree()
-	if wt == "" {
-		return nil
-	}
-	if _, err := os.Stat(wt); errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	changes, err := git(ctx, wt, "status", "--porcelain")
-	if err != nil || changes == "" {
-		return err
-	}
-	if _, err := git(ctx, wt, "add", "--all"); err != nil {
-		return err
-	}
-	_, err = git(ctx, wt, "commit", "--quiet", "-m", cmp.Or(t.GetTitle(), t.GetCode()))
-	return err
-}
 
 // integrationDir is the worktree a wish integrates its work in, for one project: in Djinn's data folder, next to the
 // tasks' worktrees.

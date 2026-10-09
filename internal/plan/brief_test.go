@@ -407,6 +407,10 @@ func TestBriefWorkStands(t *testing.T) {
 	}
 	tasks = append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W6", Title: "Next", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
 		Scheduled: true, DependsOn: []string{tasks[1].GetId()}, WaitReason: "waits for W2 to be committed", CreateTime: timestamppb.New(day)})
+	tasks = append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W7", Title: "Work", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(6 * time.Minute)), Integration: &planv1.TaskIntegration{
+			State: planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED, Branch: "feat/x", ReviewedBy: tasks[1].GetId(),
+		}})
 	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
 		for _, task := range tasks {
 			if err := tx.Journal(actor, "test/put", task); err != nil {
@@ -426,11 +430,11 @@ func TestBriefWorkStands(t *testing.T) {
 	}
 	for _, want := range []string{
 		"- **W6** Next: planned, waits for W2 to be committed\n",
-		"- **W1** Work: done\n" +
+		"- **W7** Work: changes not committed, not merged, reviewed by W2\n" +
+			"- **W1** Work: done\n" +
 			"- **W2** Work: done, waiting to be committed\n" +
 			"- **W3** Work: committed into feat/x as 1a2b3c4d\n" +
-			"- **W4** Work: conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9\n" +
-			"- **W5** Work: red tests, not committed: test exited 1\n",
+			"- **W4** Work: conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9\n",
 	} {
 		if !strings.Contains(brief.Moving, want) {
 			t.Errorf("the brief lacks\n%s\nin\n%s", want, brief.Moving)

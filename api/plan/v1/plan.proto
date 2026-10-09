@@ -623,6 +623,17 @@ message Task {
   TaskRole role = 44;
   // The code of the question a question worker works on (Q52); empty for any other task.
   string question = 45 [(buf.validate.field).string.max_len = 64];
+  // For a review worker, which Djinn starts by itself when a task's worktree holds changes not committed: what it
+  // reviews. It works in that task's worktree, on its branch, and its branch integrates like any task's.
+  TaskReview review = 46;
+}
+
+// TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
+message TaskReview {
+  // The tasks whose work it commits: the task whose worktree it works in first, then the reviews before it.
+  repeated string task_ids = 1;
+  // Which attempt it is, from 1: past the project's correction_attempts, Djinn asks the person.
+  int32 attempt = 2;
 }
 
 // TaskCorrection is what a correction worker corrects.
@@ -655,9 +666,9 @@ message IntegrationFailure {
 }
 
 // TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a
-// worker ends done, Djinn commits its worktree on its branch, merges it alone into the integration branch in a
-// worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,
-// and moves the branch when it passes; its worktree is then removed when clean.
+// worker ends done, Djinn checks that its worktree holds nothing not committed, merges its branch alone into the
+// integration branch in a worktree of its own, makes the generated files again on a conflict only in them, tests the
+// result through a gate, and moves the branch when it passes; its worktree is then removed when clean.
 message TaskIntegration {
   // Where it stands.
   IntegrationState state = 1;
@@ -679,6 +690,9 @@ message TaskIntegration {
   int32 attempts = 8;
   // The question Djinn asked once the attempts were spent: try again, leave it, or the person takes it.
   string question_id = 9;
+  // For UNCOMMITTED, the review worker that commits the work left in its worktree, or did: for COMMITTED, the work
+  // went in with it ("uncommitted: reviewed by W5").
+  string reviewed_by = 10;
 }
 
 // IntegrationState is where a task's finished work stands on its way into its wish's integration branch.
@@ -695,6 +709,9 @@ enum IntegrationState {
   INTEGRATION_STATE_CONFLICT = 4;
   // Its batch's tests failed: the branch stayed as it was.
   INTEGRATION_STATE_RED = 5;
+  // Its worktree held changes not committed: it is not merged, and a review worker commits what belongs to the task
+  // and drops the rest, or the person decides.
+  INTEGRATION_STATE_UNCOMMITTED = 6;
 }
 
 // IntegrationCommit is a batch of finished work committed into a wish's integration branch, as the journal records

@@ -40,7 +40,8 @@ lead spends its tokens on mechanical work.
   refused by the remote (behind, protected) never forces: Djinn says why, and asks.
 - **A task done without its work committed is not done.** W94 ended "done" with its whole change staged in its
   worktree and no commit: integration finds a branch with nothing new, or a worktree with changes, and says so (the
-  task is not done: its work waits, uncommitted), rather than counting it.
+  task is not done: its work waits, uncommitted), rather than counting it. Nor does Djinn commit it blindly (the
+  developer, 10/10/2026: debug files, abandoned attempts or artifacts would go in too): a review worker judges it.
 - **A task waits for its dependencies to be integrated**, not only done, and its worktree starts from the integration
   branch, so it builds on their work.
 - **The person decides what is theirs**: to install and restart on the new build (Djinn proposes it, with what
@@ -64,6 +65,13 @@ lead spends its tokens on mechanical work.
 - [x] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
   (TestCorrectACodeConflict, TestCorrectRedTests, TestCorrectionAttemptsThenAQuestion,
   TestAnswerAFailedIntegration, TestACorrectionWorkerThatFails)
+- [x] Work not committed is never merged nor committed blindly: before a task's merge, a correction worker's
+  included, Djinn reads its worktree (`git status --porcelain`, untracked files included, `.gitignore` applying);
+  with changes, a review worker starts in that worktree, part of the same azima, of the task's provider, the task's
+  title and prompt, the files and their diff in its first prompt; it commits what belongs to the task and drops the
+  rest, and its work integrates like any task's ("uncommitted: reviewed by W5"); past the attempts, a question.
+  (TestIntegrateACleanWorktree, TestReviewUncommittedWork, TestReviewAttemptsThenAQuestion,
+  TestReviewACorrectionsWork, TestAReviewThatFailsAfterItsCommit)
 - [x] A task waits for its dependencies to be integrated, and starts from the integration branch.
   (TestWaitsForTheCommit, TestADependentStartsFromTheCommit)
 - [x] The window, the page and the brief show where each task's work stands (done, integrating, integrated,

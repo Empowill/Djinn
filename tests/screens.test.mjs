@@ -1431,6 +1431,7 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
     sha: "1a2b3c4d5e6f",
     reason: "",
     correctedBy: "",
+    reviewedBy: "",
     ...extra,
   });
   const tasks = [
@@ -1446,6 +1447,8 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
     ],
     ["W5", work(s.IntegrationState.RED, { reason: "test exited 1" })],
     ["W6", work(s.IntegrationState.INTEGRATING)],
+    ["W8", work(s.IntegrationState.UNCOMMITTED, { reviewedBy: "W9" })],
+    ["W10", work(s.IntegrationState.COMMITTED, { reviewedBy: "W9" })],
   ].map(([code, integration], i) => ({
     id: code,
     code,
@@ -1472,6 +1475,8 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
     "W4 failed: Conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9",
     "W5 failed: Red tests, not committed: test exited 1",
     "W6 running: Being committed into feat/x",
+    "W8 waiting: Changes not committed, not merged, reviewed by W9",
+    "W10 done: Committed into feat/x as 1a2b3c4d, reviewed by W9",
   ]);
   // A task that waits for another's work to be committed says so.
   const waits = card({

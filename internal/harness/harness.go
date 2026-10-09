@@ -264,8 +264,9 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 }
 
 // spawn is Spawn, of a task Djinn spawns by itself when made is set, with what made says it is for: a correction
-// worker (Task.correction), whose worktree starts on the failed merge, or a question worker (Task.role and question),
-// which reads in its project's folder.
+// worker (Task.correction), whose worktree starts on the failed merge, a review worker (Task.review), which works in
+// the worktree and on the branch of the task it reviews (made's), or a question worker (Task.role and question), which
+// reads in its project's folder.
 func (h *Harness) spawn(
 	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, made *planv1.Task,
 ) (*planv1.Task, error) {
@@ -279,8 +280,11 @@ func (h *Harness) spawn(
 	task := &planv1.Task{
 		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
 		CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
-		WriteScopes: scopes, Scheduled: true, Correction: made.GetCorrection(), Role: made.GetRole(),
+		WriteScopes: scopes, Scheduled: true, Correction: made.GetCorrection(), Review: made.GetReview(), Role: made.GetRole(),
 		Question: made.GetQuestion(),
+	}
+	if made.GetReview() != nil {
+		task.Branch, task.Worktree = made.GetBranch(), made.GetWorktree()
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
 
@@ -453,10 +457,10 @@ func (h *Harness) spawn(
 	return h.launch(ctx, r, provider, project, prep, prompt)
 }
 
-// spawner is who spawns task, as the journal records it: Djinn for a correction or a question worker, the
+// spawner is who spawns task, as the journal records it: Djinn for a correction, a review or a question worker, the
 // developer's side otherwise.
 func spawner(task *planv1.Task) string {
-	if task.GetCorrection() != nil || questionWorker(task) {
+	if task.GetCorrection() != nil || task.GetReview() != nil || questionWorker(task) {
 		return actorHarness
 	}
 	return actorLocal
@@ -548,6 +552,7 @@ func (h *Harness) launch(
 ) (*planv1.Task, error) {
 	task := r.task
 	readOnly, perms := accessSpec(task.GetAccess(), prep.declared)
+	perms = withCommit(task, perms)
 	wk := r.warm
 	r.warm = nil
 	if wk != nil && !wk.fits(readOnly, perms) {
@@ -577,11 +582,15 @@ func (h *Harness) launch(
 	// The integration branch the worktree starts from, and its commit then, for the start event.
 	fromText := ""
 	if project.GetGit() && !r.watcher && !r.light { // They write nothing: they run in the project's folder.
-		task.Branch = branchName(r.branch, task.GetCode(), task.GetTitle(), task.GetId())
-		task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
+		if task.GetReview() == nil { // A review worker works in the worktree, on the branch, of the task it reviews.
+			task.Branch = branchName(r.branch, task.GetCode(), task.GetTitle(), task.GetId())
+			task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
+		}
 		var err error
 		var sha, from string
 		switch f := task.GetCorrection().GetFailure(); {
+		case task.GetReview() != nil:
+			dir, err = reviewWorktree(ctx, project.GetDirectory(), task.GetWorktree())
 		case f != nil:
 			dir, err = correctionWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), f)
 		case wk != nil:

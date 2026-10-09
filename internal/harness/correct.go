@@ -51,6 +51,8 @@ func (h *Harness) failed(
 			attempts = max(attempts, c.GetAttempt())
 			before = append(before, c.GetFailure().GetTaskIds()...)
 		}
+		// A review worker's work that failed holds the work it reviewed.
+		before = append(before, t.GetReview().GetTaskIds()...)
 	}
 	f.TaskIds = unique(append(before, f.GetTaskIds()...))
 	group, err := tasksByID(ctx, h.store, f.GetTaskIds())
@@ -163,13 +165,10 @@ func correctionPrompt(group []*planv1.Task, f *planv1.IntegrationFailure, branch
 				strings.Join(settings.Generated, ", "), settings.Generate)
 		}
 	}
-	var checks []string
-	for _, c := range settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT) {
-		checks = append(checks, "`"+plan.GateCommand(c)+"`")
-	}
-	fmt.Fprintf(&b, " Do not commit: when you end, Djinn commits what you leave, which concludes the merge, then integrates "+
-		"your branch like any task's, its commit checks (%s) run through their gates. Its success brings the work of %s in "+
-		"with yours.", strings.Join(checks, ", "), codes(group))
+	fmt.Fprintf(&b, " Commit your work before you end, with a message in the repository's style (`git log` shows it), which "+
+		"concludes the merge, and leave nothing not committed: Djinn commits nothing blindly, and a review worker would judge "+
+		"what you leave. Djinn then integrates your branch like any task's, its commit checks (%s) run through their gates. "+
+		"Its success brings the work of %s in with yours.", settings.CommitGates(), codes(group))
 	if attempt > 1 {
 		fmt.Fprintf(&b, "\n\nThis is attempt %d: the correction before yours failed.", attempt)
 	}
@@ -268,20 +267,26 @@ func correctedIDs(batch []*planv1.Task) []string {
 	return out
 }
 
-// correctionsEnded settles the work of the correction workers among tasks that ended without being done: one that
-// failed counts as an attempt, the next one starting while the attempts are not spent; one stopped leaves it to the
-// person, asked.
+// correctionsEnded settles the work of the correction and review workers among tasks that ended without being done:
+// one that failed counts as an attempt, the next one starting while the attempts are not spent; one stopped leaves it
+// to the person, asked.
 func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 	for _, c := range tasks {
 		failed := c.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED
-		if c.GetCorrection() == nil || !failed && c.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || h.running(c.GetId()) {
+		if c.GetCorrection() == nil && c.GetReview() == nil || !failed && c.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED ||
+			h.running(c.GetId()) {
 			continue
 		}
 		var group []*planv1.Task
 		for _, t := range tasks {
 			in := t.GetIntegration()
-			if in.GetCorrectedBy() == c.GetId() && in.GetQuestionId() == "" && (in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_CONFLICT ||
-				in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_RED) {
+			if in.GetQuestionId() != "" {
+				continue
+			}
+			corrected := in.GetCorrectedBy() == c.GetId() && (in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_CONFLICT ||
+				in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_RED)
+			reviewed := in.GetReviewedBy() == c.GetId() && in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED
+			if corrected || reviewed {
 				group = append(group, t)
 			}
 		}
@@ -293,9 +298,21 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 			log.Printf("djinn: integrate %s: %v", c.GetCode(), err)
 			continue
 		}
-		text := "integration: " + c.GetCode() + ", its correction worker, was stopped"
+		worker := "correction"
+		if c.GetReview() != nil {
+			worker = "review"
+		}
+		text := "integration: " + c.GetCode() + ", its " + worker + " worker, was stopped"
 		if failed {
-			text = "integration: " + c.GetCode() + ", its correction worker, failed: " + c.GetError()
+			text = "integration: " + c.GetCode() + ", its " + worker + " worker, failed: " + c.GetError()
+		}
+		if r := c.GetReview(); r != nil {
+			// The work stays in the worktree of the task it reviews: the first of the review's tasks.
+			if g, err := tasksByID(ctx, h.store, r.GetTaskIds()); err == nil {
+				group = g
+			}
+			h.review(ctx, wish, project, settings, group, group[0].GetIntegration(), text, r.GetAttempt(), failed)
+			continue
 		}
 		h.correct(ctx, wish, project, settings, group, group[0].GetIntegration(), text, c.GetCorrection().GetAttempt(), failed)
 	}
@@ -316,8 +333,8 @@ func (h *Harness) integrationOf(ctx context.Context, t *planv1.Task) (*planv1.Wi
 }
 
 // answerIntegration takes the person's answer to a question Djinn asked once a failed integration's attempts were
-// spent: A starts a new correction worker, its attempts counted again from one; B leaves the work out; C leaves it to
-// the person. It tells whether q was such a question.
+// spent: A starts a new correction worker, or review worker, its attempts counted again from one; B leaves the work
+// out; C leaves it to the person. It tells whether q was such a question.
 func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) bool {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
 	if err != nil {
@@ -338,7 +355,12 @@ func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) boo
 			return true
 		}
 		settings.CorrectionAttempts = max(settings.CorrectionAttempts, 1) // Asked for, even where none starts by itself.
-		h.correct(ctx, wish, project, settings, group, in, "integration: you said to try again ("+q.GetCode()+")", 0, true)
+		text := "integration: you said to try again (" + q.GetCode() + ")"
+		if in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED {
+			h.review(ctx, wish, project, settings, group, in, text, 0, true)
+			return true
+		}
+		h.correct(ctx, wish, project, settings, group, in, text, 0, true)
 	case planv1.Choice_CHOICE_B:
 		in.Reason = "left out (" + q.GetCode() + "): " + in.GetReason()
 		h.settleIntegration(ctx, group, in, "integration: left out of "+in.GetBranch()+" ("+q.GetCode()+")", nil)

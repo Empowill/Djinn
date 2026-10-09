@@ -824,7 +824,7 @@ func Translator(lang string) func(key string, params ...string) string {
 
 // Work says where the finished work of t stands on its way into its wish's integration branch (T30), with tr, and
 // the class that colours it: "" for work Djinn does not integrate. code names a task of the wish by its identifier,
-// for the correction worker; "": the identifier itself.
+// for the correction and the review worker; "": the identifier itself.
 func Work(t *planv1.Task, code func(id string) string, tr func(string, ...string) string) (text, class string) {
 	in := t.GetIntegration()
 	switch in.GetState() {
@@ -841,14 +841,20 @@ func Work(t *planv1.Task, code func(id string) string, tr func(string, ...string
 		text, class = tr("work.conflict", "reason", in.GetReason()), "fail"
 	case planv1.IntegrationState_INTEGRATION_STATE_RED:
 		text, class = tr("work.red", "reason", in.GetReason()), "fail"
+	case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+		text, class = tr("work.uncommitted"), "pause"
 	default:
 		return "", ""
 	}
-	if c := in.GetCorrectedBy(); c != "" {
-		if code != nil && code(c) != "" {
-			c = code(c)
+	for _, by := range [][2]string{{"work.corrected_by", in.GetCorrectedBy()}, {"work.reviewed_by", in.GetReviewedBy()}} {
+		id := by[1]
+		if id == "" {
+			continue
 		}
-		text += ", " + tr("work.corrected_by", "task", c)
+		if code != nil && code(id) != "" {
+			id = code(id)
+		}
+		text += ", " + tr(by[0], "task", id)
 	}
 	return text, class
 }
