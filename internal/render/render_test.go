@@ -700,3 +700,56 @@ func TestRounds(t *testing.T) {
 		t.Errorf("the bar should hold Q02, waiting for you, and not Q01, investigated:\n%s", bar)
 	}
 }
+
+// TestFinishedNewestFirst: the finished tasks show the latest ended first, then the latest created; a task closed by
+// hand says who closed it, and why.
+func TestFinishedNewestFirst(t *testing.T) {
+	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Old work"}}
+	exp.Tasks = []*planv1.Task{
+		{Id: "t1", Code: "W1", Title: "Oldest", Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: ts(0), EndTime: ts(10)},
+		{Id: "t2", Code: "W2", Title: "Newest", Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: ts(1), EndTime: ts(30),
+			Closed: &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: ts(30), Note: "merged in Git"}},
+		{Id: "t3", Code: "W3", Title: "Middle", Status: planv1.TaskStatus_TASK_STATUS_STOPPED, CreateTime: ts(2), EndTime: ts(20)},
+		{Id: "t4", Code: "W4", Title: "Same end, created later", Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: ts(3), EndTime: ts(10),
+			Closed: &planv1.Closure{Actor: planv1.Closer_CLOSER_LEAD, CreateTime: ts(10)}},
+	}
+	html := page(t, Input{Export: exp})
+	last := -1
+	for _, code := range []string{"W2", "W3", "W4", "W1"} {
+		i := strings.Index(html, `<span class="code">`+code+`</span>`)
+		if i <= last {
+			t.Fatalf("%s at %d, after %d: finished tasks out of order", code, i, last)
+		}
+		last = i
+	}
+	for _, want := range []string{`<p class="closed">Closed by you: merged in Git</p>`, `<p class="closed">Closed by the lead</p>`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if fr := page(t, Input{Export: exp, Language: "fr"}); !strings.Contains(fr, french(t, "page.closed_by_you", nil)+": merged in Git") {
+		t.Error("the French page does not say who closed W2")
+	}
+}
+
+// TestMovingByStatus: what moves or waits shows by status, as in the window: running before paused, cut short before
+// failed before waiting, the planned ones apart.
+func TestMovingByStatus(t *testing.T) {
+	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Busy"}}
+	for i, s := range []planv1.TaskStatus{
+		planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_FAILED,
+		planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
+	} {
+		exp.Tasks = append(exp.Tasks, &planv1.Task{Id: fmt.Sprintf("t%d", i), Code: fmt.Sprintf("W%d", i+1), Title: "A task", Status: s})
+	}
+	html := page(t, Input{Export: exp})
+	last := -1
+	// Running then paused in "Who runs now"; then cut short, failed, waiting in "Tasks".
+	for _, code := range []string{"W4", "W2", "W5", "W3", "W1"} {
+		i := strings.Index(html, `<span class="code">`+code+`</span>`)
+		if i <= last {
+			t.Fatalf("%s at %d, after %d: tasks out of order", code, i, last)
+		}
+		last = i
+	}
+}

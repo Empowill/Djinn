@@ -1,7 +1,7 @@
 // The screen of one wish, read from the services: what waits for you first (its open questions, the blocking ones
-// first, its workers that wait, and "My wish is granted" once Djinn proposes it), then its tasks (those that need an
-// eye first) with what they spent, its decisions, its blocks, its journal and the rights its workers have. Djinn
-// proposes; only the user grants.
+// first, its workers that wait, and "My wish is granted" once Djinn proposes it), its decisions, its blocks, its
+// journal and the rights its workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent.
+// Djinn proposes; only the user grants.
 import {
   CheckCircle2,
   ChevronDown,
@@ -25,6 +25,7 @@ import {
   type Block,
   Change,
   type Choice,
+  Closer,
   type MarkKind,
   type Project,
   type Task,
@@ -37,7 +38,9 @@ import { message } from "./data/client";
 import { useClients, useData, useWishDetail } from "./data/djinn";
 import {
   type OpenQuestion,
+  finishedTasks,
   investigatingQuestions,
+  movingTasks,
   openQuestions,
   spent,
   waitingTasks,
@@ -60,6 +63,7 @@ import { MarkButtons, type OnMark, useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
+import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
@@ -89,6 +93,9 @@ export function WishView({
   ).length;
   const granted = wish.state === WishState.GRANTED;
   const [history, setHistory] = useState(false);
+  const [view, setView] = useState<View>("main");
+  const moving = movingTasks(detail.tasks);
+  const finished = finishedTasks(detail.tasks);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
@@ -279,185 +286,213 @@ export function WishView({
         </div>
 
         <div className="overview-content">
-          {(open.length > 0 || waiting.length > 0 || wish.ready) && (
-            <section
-              className="action-center"
-              id="action-center"
-              aria-label={t("panels.your_move")}
-            >
-              <div className="section-title">
-                <h2>{t("panels.your_move")}</h2>
-                <p>
-                  {open.length
-                    ? t("wish.questions_wait", { count: open.length })
-                    : wish.ready
-                      ? t("wish.ready_detail")
-                      : t("panels.your_move_detail")}
-                </p>
-              </div>
-              {open.length > 0 && (
-                <section className="decisions-section">
-                  <div className="section-heading">
-                    <h3>
-                      {t("panels.decisions")}
-                      <span className="count">{open.length}</span>
-                    </h3>
-                  </div>
-                  <AnimatePresence mode="popLayout">
-                    {open.map(({ item: q, blocking }) => (
-                      <WishQuestion
-                        key={q.id}
-                        question={q}
-                        blocking={blocking}
-                        onAnswer={(choice, note) =>
-                          answer(wish.id, q.id, choice, note)
-                        }
-                        onMark={(kind, remove) =>
-                          mark(wish.id, q.id, kind, remove)
-                        }
-                        onEnlighten={(note) => enlighten(wish.id, q.id, note)}
-                      />
-                    ))}
-                  </AnimatePresence>
-                </section>
-              )}
-              {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-              {wish.ready && (
-                <GrantCard
-                  wish={wish}
-                  onGrant={() =>
-                    quiet(
-                      act(
-                        () => clients.wishes.grant({ wishId: wish.id }),
-                        [Change.WISH],
-                        t("wish.granted_toast"),
-                      ),
-                    )
-                  }
-                />
-              )}
-            </section>
-          )}
-
-          {digging.length > 0 && (
-            <InvestigatingSection
-              questions={digging}
-              onAnswer={(q, choice, note) => answer(wish.id, q, choice, note)}
-              onMark={(q, kind, remove) => mark(wish.id, q, kind, remove)}
-            />
-          )}
-
-          <section className="wish-section" aria-label={t("wish.tasks")}>
-            <div className="section-title">
-              <h2>
-                {t("wish.tasks")}
-                <span className="count">{detail.tasks.length}</span>
-              </h2>
-              <SpentLine spent={spent(detail.tasks)} />
-            </div>
-            {detail.tasks.length === 0 ? (
-              <p className="muted-text">
+          <ViewTabs
+            view={view}
+            main={t("tabs.wish")}
+            tasks={detail.tasks.length}
+            onView={setView}
+          />
+          {view === "tasks" &&
+            (detail.tasks.length === 0 ? (
+              <p className="muted-text" role="tabpanel">
                 {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
               </p>
             ) : (
-              byAttention(detail.tasks).map((task) => (
-                <WishTask
-                  key={task.id}
-                  task={task}
-                  codes={codes}
-                  project={allProjects.find((p) => p.id === task.projectId)}
-                  onStop={() =>
+              <TaskSections
+                moving={moving}
+                finished={finished}
+                aside={<SpentLine spent={spent(detail.tasks)} />}
+                render={(task) => (
+                  <WishTask
+                    key={task.id}
+                    task={task}
+                    codes={codes}
+                    project={allProjects.find((p) => p.id === task.projectId)}
+                    onStop={() =>
+                      quiet(
+                        act(
+                          () => clients.tasks.stop({ taskId: task.id }),
+                          [Change.TASK],
+                        ),
+                      )
+                    }
+                    onSend={(text) =>
+                      act(
+                        () => clients.tasks.send({ taskId: task.id, text }),
+                        [],
+                      )
+                    }
+                    onDone={(note) =>
+                      act(
+                        () =>
+                          clients.tasks.done({
+                            taskId: task.id,
+                            note,
+                            by: Closer.DEVELOPER,
+                          }),
+                        [Change.TASK],
+                        t("task.marked_done", { task: task.code }),
+                      )
+                    }
+                  />
+                )}
+              />
+            ))}
+          {view === "main" && (
+            <>
+              {(open.length > 0 || waiting.length > 0 || wish.ready) && (
+                <section
+                  className="action-center"
+                  id="action-center"
+                  aria-label={t("panels.your_move")}
+                >
+                  <div className="section-title">
+                    <h2>{t("panels.your_move")}</h2>
+                    <p>
+                      {open.length
+                        ? t("wish.questions_wait", { count: open.length })
+                        : wish.ready
+                          ? t("wish.ready_detail")
+                          : t("panels.your_move_detail")}
+                    </p>
+                  </div>
+                  {open.length > 0 && (
+                    <section className="decisions-section">
+                      <div className="section-heading">
+                        <h3>
+                          {t("panels.decisions")}
+                          <span className="count">{open.length}</span>
+                        </h3>
+                      </div>
+                      <AnimatePresence mode="popLayout">
+                        {open.map(({ item: q, blocking }) => (
+                          <WishQuestion
+                            key={q.id}
+                            question={q}
+                            blocking={blocking}
+                            onAnswer={(choice, note) =>
+                              answer(wish.id, q.id, choice, note)
+                            }
+                            onMark={(kind, remove) =>
+                              mark(wish.id, q.id, kind, remove)
+                            }
+                            onEnlighten={(note) =>
+                              enlighten(wish.id, q.id, note)
+                            }
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </section>
+                  )}
+                  {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
+                  {wish.ready && (
+                    <GrantCard
+                      wish={wish}
+                      onGrant={() =>
+                        quiet(
+                          act(
+                            () => clients.wishes.grant({ wishId: wish.id }),
+                            [Change.WISH],
+                            t("wish.granted_toast"),
+                          ),
+                        )
+                      }
+                    />
+                  )}
+                </section>
+              )}
+
+              {digging.length > 0 && (
+                <InvestigatingSection
+                  questions={digging}
+                  onAnswer={(q, choice, note) =>
+                    answer(wish.id, q, choice, note)
+                  }
+                  onMark={(q, kind, remove) => mark(wish.id, q, kind, remove)}
+                />
+              )}
+
+              {notes.length > 0 && (
+                <section className="wish-section" aria-label={t("wish.blocks")}>
+                  <div className="section-title">
+                    <h2>
+                      {t("wish.blocks")}
+                      <span className="count">{notes.length}</span>
+                    </h2>
+                    <p>{t("wish.blocks_detail")}</p>
+                  </div>
+                  {notes.map((block) => (
+                    <WishBlock
+                      key={block.id}
+                      block={block}
+                      task={codes.get(block.taskId) ?? ""}
+                      onMark={(kind, remove) =>
+                        mark(wish.id, block.id, kind, remove)
+                      }
+                    />
+                  ))}
+                </section>
+              )}
+
+              {decided.length > 0 && (
+                <div className="decision-history">
+                  <button
+                    className="text-button"
+                    onClick={() => setHistory(!history)}
+                    aria-expanded={history}
+                  >
+                    <CheckCircle2 size={14} />
+                    {t("panels.decisions_recorded", { count: decided.length })}
+                    <ChevronDown
+                      size={13}
+                      className={history ? "rotated" : ""}
+                    />
+                  </button>
+                  <AnimatePresence>
+                    {history && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                      >
+                        {decided.map((q) => (
+                          <WishQuestion
+                            key={q.id}
+                            question={q}
+                            onAnswer={async () => {}}
+                            onMark={(kind, remove) =>
+                              mark(wish.id, q.id, kind, remove)
+                            }
+                          />
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              <Journal wish={wish} blocks={detail.blocks} />
+
+              {projects.length > 0 && (
+                <Rights
+                  wish={wish}
+                  projects={projects}
+                  onAllow={(projectId, mode) =>
                     quiet(
                       act(
-                        () => clients.tasks.stop({ taskId: task.id }),
-                        [Change.TASK],
+                        () =>
+                          clients.wishes.allow({
+                            wishId: wish.id,
+                            projectId,
+                            mode,
+                          }),
+                        [Change.WISH],
                       ),
                     )
                   }
-                  onSend={(text) =>
-                    act(() => clients.tasks.send({ taskId: task.id, text }), [])
-                  }
                 />
-              ))
-            )}
-          </section>
-
-          {notes.length > 0 && (
-            <section className="wish-section" aria-label={t("wish.blocks")}>
-              <div className="section-title">
-                <h2>
-                  {t("wish.blocks")}
-                  <span className="count">{notes.length}</span>
-                </h2>
-                <p>{t("wish.blocks_detail")}</p>
-              </div>
-              {notes.map((block) => (
-                <WishBlock
-                  key={block.id}
-                  block={block}
-                  task={codes.get(block.taskId) ?? ""}
-                  onMark={(kind, remove) =>
-                    mark(wish.id, block.id, kind, remove)
-                  }
-                />
-              ))}
-            </section>
-          )}
-
-          {decided.length > 0 && (
-            <div className="decision-history">
-              <button
-                className="text-button"
-                onClick={() => setHistory(!history)}
-                aria-expanded={history}
-              >
-                <CheckCircle2 size={14} />
-                {t("panels.decisions_recorded", { count: decided.length })}
-                <ChevronDown size={13} className={history ? "rotated" : ""} />
-              </button>
-              <AnimatePresence>
-                {history && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                  >
-                    {decided.map((q) => (
-                      <WishQuestion
-                        key={q.id}
-                        question={q}
-                        onAnswer={async () => {}}
-                        onMark={(kind, remove) =>
-                          mark(wish.id, q.id, kind, remove)
-                        }
-                      />
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-
-          <Journal wish={wish} blocks={detail.blocks} />
-
-          {projects.length > 0 && (
-            <Rights
-              wish={wish}
-              projects={projects}
-              onAllow={(projectId, mode) =>
-                quiet(
-                  act(
-                    () =>
-                      clients.wishes.allow({
-                        wishId: wish.id,
-                        projectId,
-                        mode,
-                      }),
-                    [Change.WISH],
-                  ),
-                )
-              }
-            />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -576,18 +611,6 @@ export function WaitingTasks({
       ))}
     </section>
   );
-}
-
-// The tasks that need an eye come first (running, waiting, failed, cut short), then the planned ones, then the
-// finished ones; each group keeps the lamp's order.
-function byAttention(tasks: readonly Task[]): Task[] {
-  const group = (task: Task) =>
-    task.status === TaskStatus.PENDING || task.status === TaskStatus.UNSPECIFIED
-      ? 1
-      : task.status === TaskStatus.DONE || task.status === TaskStatus.STOPPED
-        ? 2
-        : 0;
-  return [...tasks].sort((a, b) => group(a) - group(b));
 }
 
 // A block this long, in characters or lines, is folded under its title, as on the wish's page.

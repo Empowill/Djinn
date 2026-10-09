@@ -42,5 +42,16 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   `internal/render`; e2e: enlighten with a note, read in the brief, revised from the CLI, the revised card rubbed)
 - [x] Titles, subtitles, a readable measure; the blocks in Markdown typography; logs, events and rounds as compact
   tables, folded. (screenshots `test-results/e2e/review-*.png`)
+- [x] A task is closed by hand, reliably, instead of deleted: `djinn task done <task> [--note …] [--by developer]`
+  (`TaskService.Done`) closes a task no worker runs (planned, waiting, cut short, failed, stopped, imported), records
+  `Task.closed` (who, when, why), journals it, keeps it through export and import, lets a dependent start; a running,
+  paused or done task is refused. A yes to the edit question of a task closed while waiting starts nothing.
+  (`TestDone`, `TestDoneStartsDependent`, `TestDoneWaitingThenYes`, `TestDoneCommand`, `TestExportKeepsClosure`)
+- [x] The tasks have their own tab, in a wish and in the flight plan: what moves or waits first, by status (running,
+  interrupted, failed, then waiting, paused, then planned), then every finished task, the latest ended first, with
+  who closed it and why; "Mark done", with an optional note, on any card no worker runs. The page and the brief follow
+  the same order. (screens "the Tasks tab lists what moves or waits by status…", "a task no worker runs can be marked
+  done…"; data "the Tasks tab: what moves or waits by status…"; `TestFinishedNewestFirst`, `TestMovingByStatus`,
+  `TestBriefFinished`; e2e `task-done.spec.ts`)
 - [ ] Clément has reviewed the layout and the visual language. (needs: Clément's review)
 - [ ] The light theme on the dialogs, the agent chat and the terminal. (needs: a decision, see the report of W41)

@@ -130,6 +130,8 @@ const (
 	TaskServiceCleanProcedure = "/plan.v1.TaskService/Clean"
 	// TaskServiceDeleteProcedure is the fully-qualified name of the TaskService's Delete RPC.
 	TaskServiceDeleteProcedure = "/plan.v1.TaskService/Delete"
+	// TaskServiceDoneProcedure is the fully-qualified name of the TaskService's Done RPC.
+	TaskServiceDoneProcedure = "/plan.v1.TaskService/Done"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
 )
@@ -1365,6 +1367,10 @@ type TaskServiceClient interface {
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
+	// Mark a task done that no worker runs now: planned, waiting, cut short, failed, stopped or imported. It records
+	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
+	// done already is refused.
+	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
@@ -1435,6 +1441,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
+		done: connect.NewClient[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse](
+			httpClient,
+			baseURL+TaskServiceDoneProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Done")),
+			connect.WithClientOptions(opts...),
+		),
 		send: connect.NewClient[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse](
 			httpClient,
 			baseURL+TaskServiceSendProcedure,
@@ -1455,6 +1467,7 @@ type taskServiceClient struct {
 	watch  *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
 	clean  *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
 	delete *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
+	done   *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
 	send   *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
 }
 
@@ -1503,6 +1516,11 @@ func (c *taskServiceClient) Delete(ctx context.Context, req *connect.Request[v1.
 	return c.delete.CallUnary(ctx, req)
 }
 
+// Done calls plan.v1.TaskService.Done.
+func (c *taskServiceClient) Done(ctx context.Context, req *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error) {
+	return c.done.CallUnary(ctx, req)
+}
+
 // Send calls plan.v1.TaskService.Send.
 func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
 	return c.send.CallUnary(ctx, req)
@@ -1533,6 +1551,10 @@ type TaskServiceHandler interface {
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
+	// Mark a task done that no worker runs now: planned, waiting, cut short, failed, stopped or imported. It records
+	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
+	// done already is refused.
+	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
@@ -1599,6 +1621,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceDoneHandler := connect.NewUnaryHandler(
+		TaskServiceDoneProcedure,
+		svc.Done,
+		connect.WithSchema(taskServiceMethods.ByName("Done")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceSendHandler := connect.NewUnaryHandler(
 		TaskServiceSendProcedure,
 		svc.Send,
@@ -1625,6 +1653,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceCleanHandler.ServeHTTP(w, r)
 		case TaskServiceDeleteProcedure:
 			taskServiceDeleteHandler.ServeHTTP(w, r)
+		case TaskServiceDoneProcedure:
+			taskServiceDoneHandler.ServeHTTP(w, r)
 		case TaskServiceSendProcedure:
 			taskServiceSendHandler.ServeHTTP(w, r)
 		default:
@@ -1670,6 +1700,10 @@ func (UnimplementedTaskServiceHandler) Clean(context.Context, *connect.Request[v
 
 func (UnimplementedTaskServiceHandler) Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Delete is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Done is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {

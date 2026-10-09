@@ -5,6 +5,7 @@ import {
   Activity,
   AlertCircle,
   CheckCheck,
+  CheckCircle2,
   ChevronDown,
   CircleStop,
   FileText,
@@ -25,6 +26,7 @@ import {
 } from "react";
 
 import {
+  Closer,
   type Project,
   Provider,
   type Task,
@@ -81,6 +83,7 @@ export function WishTask({
   origin,
   onStop,
   onSend,
+  onDone,
 }: {
   task: Task;
   project?: Project;
@@ -90,8 +93,11 @@ export function WishTask({
   origin?: ReactNode;
   onStop: () => void;
   onSend: (text: string) => Promise<unknown>;
+  // Marks the task done by hand, with a note; none where the task cannot be closed from here.
+  onDone?: (note: string) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const stoppable =
     task.status === TaskStatus.RUNNING ||
     task.status === TaskStatus.PAUSED ||
@@ -133,7 +139,32 @@ export function WishTask({
             <CircleStop size={14} />
           </button>
         )}
+        {onDone && closable(task.status) && (
+          <button
+            className="icon-button"
+            onClick={() => setClosing(!closing)}
+            title={t("task.mark_done_detail")}
+            aria-label={t("task.mark_done")}
+            aria-expanded={closing}
+          >
+            <CheckCircle2 size={14} />
+          </button>
+        )}
       </div>
+      {closing && onDone && closable(task.status) && (
+        <DoneBox onDone={onDone} onCancel={() => setClosing(false)} />
+      )}
+      {task.closed && (
+        <p className="wish-task-note wish-task-closed">
+          {t(
+            task.closed.actor === Closer.DEVELOPER
+              ? "task.closed_by_you"
+              : "task.closed_by_lead",
+            { when: when(task.closed.createTime) },
+          )}
+          {task.closed.note && `: ${task.closed.note}`}
+        </p>
+      )}
       {(task.waitReason || task.error || after.length > 0) && (
         <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
           {task.error || task.waitReason}
@@ -151,6 +182,61 @@ export function WishTask({
         <SendBox onSend={onSend} />
       )}
     </article>
+  );
+}
+
+// closable tells a task a person may mark done by hand: one no worker runs now, not done already.
+export function closable(status: TaskStatus): boolean {
+  return (
+    status !== TaskStatus.RUNNING &&
+    status !== TaskStatus.PAUSED &&
+    status !== TaskStatus.DONE
+  );
+}
+
+// DoneBox marks the task done, with an optional note; djinn's refusal shows as a toast, and the box stays.
+function DoneBox({
+  onDone,
+  onCancel,
+}: {
+  onDone: (note: string) => Promise<unknown>;
+  onCancel: () => void;
+}) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onDone(note.trim());
+    } catch {
+      // The toast says why.
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="wish-task-send wish-task-done" onSubmit={submit}>
+      <input
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+        placeholder={t("task.done_note")}
+        aria-label={t("task.done_note")}
+        disabled={busy}
+        autoFocus
+      />
+      <button
+        className="button secondary small"
+        type="button"
+        onClick={onCancel}
+      >
+        {t("common.cancel")}
+      </button>
+      <button className="button accent small" type="submit" disabled={busy}>
+        <CheckCircle2 size={14} />
+        {t("task.mark_done")}
+      </button>
+    </form>
   );
 }
 

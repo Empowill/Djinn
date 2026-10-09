@@ -16,6 +16,8 @@ export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
 export { FlightPlan } from "@/src/flight-plan.tsx";
+export { TaskSections } from "@/src/task-tabs.tsx";
+export { finishedTasks, movingTasks } from "@/src/data/flight.ts";
 export { FolderField } from "@/src/wish-dialogs.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
@@ -98,7 +100,10 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.match(open, /Which oil\?/);
   assert.match(open, /<strong class="option-letter">A<\/strong><p>Olive<\/p>/);
-  assert.match(open, /<strong class="option-letter">B<\/strong><p>Paraffin<\/p>/);
+  assert.match(
+    open,
+    /<strong class="option-letter">B<\/strong><p>Paraffin<\/p>/,
+  );
   assert.match(open, /<strong>A<\/strong>, for the smell\./);
   assert.match(open, /Confirm this choice/);
   // The recommendation is boxed first, its option marked; nothing to rub without onMark.
@@ -174,7 +179,10 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.match(digging, /Being investigated/);
   assert.match(digging, /You asked to find out more: And the price\?/);
   assert.match(digging, /Revised/);
-  assert.match(digging, /<details class="question-rounds"><summary>.*History: 3 rounds/);
+  assert.match(
+    digging,
+    /<details class="question-rounds"><summary>.*History: 3 rounds/,
+  );
   assert.match(digging, /Recommended before: B: brighter\./);
   // Already asked: no second request.
   assert.doesNotMatch(digging, /Enlighten me/);
@@ -211,6 +219,14 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
             code: "W1",
             title: "Trim the wick",
             status: s.TaskStatus.DONE,
+          },
+          {
+            id: "t2",
+            wishId,
+            code: "W2",
+            title: "Light the wick",
+            status: s.TaskStatus.FAILED,
+            error: "exit code 1",
           },
         ],
       }),
@@ -259,18 +275,33 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: ready, onToast() {} })),
   );
   assert.match(html, /My wish is granted/);
-  assert.match(html, /Trim the wick/);
+  // The tasks have a tab of their own, with their count: the wish's tab does not show them.
+  assert.match(
+    html,
+    /role="tab" id="view-tab-main" aria-selected="true" class="active">Wish<\/button>/,
+  );
+  assert.match(
+    html,
+    /role="tab" id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">2<\/span>/,
+  );
+  assert.doesNotMatch(html, /Trim the wick|Light the wick/);
   assert.match(html, /<strong>wick<\/strong> carries the oil\./);
   assert.match(html, /1 decision recorded/);
   // Nothing waits for an answer: no yes/no card waiting.
   assert.doesNotMatch(html, /Confirm the answer/);
   // The bar at the top lists what waits for you: here, the grant, which it links to.
-  assert.match(html, /<nav class="attention-bar" aria-label="What waits for you">/);
+  assert.match(
+    html,
+    /<nav class="attention-bar" aria-label="What waits for you">/,
+  );
   assert.match(html, /1 thing waits for you/);
   assert.match(html, /id="grant-01a11833/);
-  // The status language, in words: the wish waits, its task is done, a question is being investigated, apart.
-  assert.match(html, /status-badge tone-done[^>]*>.*Done/);
-  assert.match(html, /<h2>Being investigated<span class="count">1<\/span><\/h2>/);
+  // The status language, in words: the wish waits, one task of two is done, a question is being investigated, apart.
+  assert.match(html, /count-pill tone-done" title="1 of 2 tasks done"/);
+  assert.match(
+    html,
+    /<h2>Being investigated<span class="count">1<\/span><\/h2>/,
+  );
   assert.match(html, /1 question being investigated by the lead/);
   assert.match(html, /You asked to find out more: Burn time\?/);
   // A block has its read and approve marks; the journal is folded.
@@ -319,6 +350,120 @@ test("a task shows its tokens and its cost; a Codex task, its tokens only", () =
   );
   assert.match(codex, /6\.5K tokens</);
   assert.doesNotMatch(codex, /\$/);
+});
+
+test("a task no worker runs can be marked done; a task closed by hand says who closed it, and why", () => {
+  const card = (status, extra = {}) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Trim the wick",
+          status,
+          ...extra,
+        },
+        onStop() {},
+        async onSend() {},
+        async onDone() {},
+      }),
+    );
+  for (const status of [
+    s.TaskStatus.PENDING,
+    s.TaskStatus.WAITING,
+    s.TaskStatus.INTERRUPTED,
+    s.TaskStatus.FAILED,
+    s.TaskStatus.STOPPED,
+  ])
+    assert.match(card(status), /aria-label="Mark done"/, s.TaskStatus[status]);
+  for (const status of [
+    s.TaskStatus.RUNNING,
+    s.TaskStatus.PAUSED,
+    s.TaskStatus.DONE,
+  ])
+    assert.doesNotMatch(card(status), /Mark done/, s.TaskStatus[status]);
+  const closed = card(s.TaskStatus.DONE, {
+    endTime: { seconds: 1760000000n, nanos: 0 },
+    closed: {
+      actor: s.Closer.DEVELOPER,
+      createTime: { seconds: 1760000000n, nanos: 0 },
+      note: "merged in Git",
+    },
+  });
+  assert.match(
+    closed,
+    /<p class="wish-task-note wish-task-closed">Closed by you, [^<]+: merged in Git<\/p>/,
+  );
+  const byLead = card(s.TaskStatus.DONE, {
+    closed: {
+      actor: s.Closer.LEAD,
+      createTime: { seconds: 1760000000n, nanos: 0 },
+      note: "",
+    },
+  });
+  assert.match(byLead, /wish-task-closed">Closed by the lead, [^<]+<\/p>/);
+});
+
+test("the Tasks tab lists what moves or waits by status, then the finished tasks, the latest first", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const tasks = [
+    ["W1", s.TaskStatus.PENDING],
+    ["W2", s.TaskStatus.DONE, 10],
+    ["W3", s.TaskStatus.WAITING],
+    ["W4", s.TaskStatus.STOPPED, 30],
+    ["W5", s.TaskStatus.FAILED],
+    ["W6", s.TaskStatus.PAUSED],
+    ["W7", s.TaskStatus.INTERRUPTED],
+    ["W8", s.TaskStatus.RUNNING],
+    ["W9", s.TaskStatus.DONE, 20],
+  ].map(([code, status, end]) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    createTime: at(1),
+    endTime: end ? at(end) : undefined,
+    closed:
+      code === "W9"
+        ? { actor: s.Closer.DEVELOPER, createTime: at(20), note: "merged" }
+        : undefined,
+  }));
+  const html = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(tasks),
+      finished: s.finishedTasks(tasks),
+      render: (task) =>
+        h(s.WishTask, {
+          key: task.id,
+          task,
+          onStop() {},
+          async onSend() {},
+          async onDone() {},
+        }),
+    }),
+  );
+  const order = [...html.matchAll(/<span class="agent-code">(W\d)</g)].map(
+    (m) => m[1],
+  );
+  assert.deepEqual(order, [
+    "W8",
+    "W7",
+    "W5",
+    "W3",
+    "W6",
+    "W1",
+    "W4",
+    "W9",
+    "W2",
+  ]);
+  assert.ok(
+    html.indexOf("Moving or waiting") < html.indexOf("Task W8") &&
+      html.indexOf("Finished") > html.indexOf("Task W1") &&
+      html.indexOf("Finished") < html.indexOf("Task W4"),
+  );
+  assert.match(html, /Moving or waiting<span class="count">6<\/span>/);
+  assert.match(html, /Finished<span class="count">3<\/span>/);
+  assert.match(html, /Closed by you, [^<]+: merged/);
 });
 
 // two wishes, a question each, a worker running in the second, read from in-memory services.
@@ -429,10 +574,13 @@ test("the flight plan merges the active wishes: their questions, the blocking on
     html,
     /class="wish-origin" title="Find the oil"><b>2<\/b>Find the oil/,
   );
-  // What waits, what runs, the latest decisions.
+  // What waits, the latest decisions; the tasks of both wishes in their own tab.
   assert.match(html, /W2 waits for your answer to Q01 before it may edit\./);
-  assert.match(html, /Who runs now/);
-  assert.match(html, /Taste the oils/);
+  assert.match(
+    html,
+    /id="view-tab-tasks"[^>]*>Tasks<span class="count">3<\/span>/,
+  );
+  assert.doesNotMatch(html, /Taste the oils/);
   assert.match(html, /Latest decisions/);
   assert.match(html, /Tonight\?/);
   // What each wish spent: the first with its cost, the second in tokens only.
