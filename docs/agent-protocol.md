@@ -14,6 +14,12 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   wish stands. Djinn writes it from its store (`internal/plan/brief.go`), without a model.
 - **Questions.** `djinn question ask` offers up to four options, answered by letter, or none for a yes. An answered
   question is a decision. On options that say yes and no, `yes` and `no` pick them too.
+- **An answer reaches the lead.** When the developer answers a question, Djinn types one line in the terminal of
+  the wish's lead, then Enter: `Djinn: Q43 answered B — "<option>". Note: "<note>". Act on it: djinn wish brief
+  <wish> has the context.` The agent reads it as a message, queued while it works. The line waits until the
+  developer has not typed in that terminal for three seconds, and lines go out in order. A lead that does not run is
+  reopened on its session first, as `djinn wish resume` does, without taking the window; only an active wish's.
+  A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
 - **Blocks.** What Djinn does not compute (an analysis, a hand-off, a decision taken outside a question) is a block:

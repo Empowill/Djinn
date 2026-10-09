@@ -50,7 +50,7 @@ type options struct {
 func WithLeads(l Leads) Option { return func(o *options) { o.leads = l } }
 
 // WithAnswered calls f with a question once its answer is stored: the harness starts again the worker a yes
-// allows to edit.
+// allows to edit. With WithLeads, the wish's lead is told next (Wishes.Answered).
 func WithAnswered(f func(context.Context, *planv1.Question)) Option {
 	return func(o *options) { o.answered = append(o.answered, f) }
 }
@@ -66,6 +66,9 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages}
+	if o.leads != nil {
+		o.answered = append(o.answered, wishes.Answered) // The lead learns each answer, after the harness.
+	}
 	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
 	out[p] = h
 	p, h = planv1connect.NewQuestionServiceHandler(&Questions{Store: s, Answered: o.answered}, opt)

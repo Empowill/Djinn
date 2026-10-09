@@ -24,6 +24,9 @@ type Leads interface {
 	Open(name, line, dir, exclusive string) (command []string, directory string, attached bool, err error)
 	// Show brings the window to the front, on the wish and the terminal.
 	Show(wishID, terminal string)
+	// Say types line into the running terminal called name, then Enter, once the person is not typing there. It
+	// returns at once; the lines go out in order.
+	Say(name, line string) error
 }
 
 // LeadTerminal is the name of the terminal of a wish's lead.
@@ -101,16 +104,11 @@ func (w *Wishes) Resume(
 	res := &planv1.WishServiceResumeResponse{Wish: wish, Terminal: LeadTerminal(wish.GetId())}
 	var line, dir, exclusive string
 	var started *planv1.Lead // the lead a brief starts, recorded once its terminal runs
-	if lead := wish.GetLead(); lead.GetSessionId() != "" {
-		if line, err = resumeLine(lead); err != nil {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	if wish.GetLead().GetSessionId() != "" {
+		if line, dir, err = sessionLine(wish); err != nil {
+			return nil, err
 		}
-		dir, exclusive = lead.GetDirectory(), lead.GetSessionId()
-		if info, err := os.Stat(dir); dir == "" || !filepath.IsAbs(dir) || err != nil || !info.IsDir() {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-				"the lead's folder %q is not on this machine: djinn wish set-lead %s %s --directory <folder> gives it",
-				dir, wish.GetId(), lead.GetSessionId()))
-		}
+		exclusive = wish.GetLead().GetSessionId()
 	} else {
 		if dir, err = firstFolder(ctx, w.Store, wish); err != nil {
 			return nil, Status(err)
@@ -141,6 +139,21 @@ func (w *Wishes) Resume(
 	}
 	w.Leads.Show(wish.GetId(), res.GetTerminal())
 	return connect.NewResponse(res), nil
+}
+
+// sessionLine is the command line that resumes the session of the wish's lead, and the folder it runs in.
+func sessionLine(wish *planv1.Wish) (line, dir string, err error) {
+	lead := wish.GetLead()
+	if line, err = resumeLine(lead); err != nil {
+		return "", "", connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	dir = lead.GetDirectory()
+	if info, err := os.Stat(dir); dir == "" || !filepath.IsAbs(dir) || err != nil || !info.IsDir() {
+		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"the lead's folder %q is not on this machine: djinn wish set-lead %s %s --directory <folder> gives it",
+			dir, wish.GetId(), lead.GetSessionId()))
+	}
+	return line, dir, nil
 }
 
 // firstFolder is the folder of the first project of the wish that has one on this machine; empty when none has.
