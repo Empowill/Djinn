@@ -26,6 +26,13 @@ checked against Windows first, because it is where the constraints are.
 - **Paths from the standard library** (`os.UserConfigDir`, `filepath`), never hard-coded.
 - **Task commands stay portable**: Task runs them with its own shell interpreter; no Unix-only
   tool in `Taskfile.yml`.
+- **The terminal's pseudo-console is ConPTY written on `golang.org/x/sys/windows`**
+  (`internal/terminal/pty_windows.go`), maintained by the Go team, in place of Charm's `x/conpty` (experimental, no
+  promises). Two pipes, `CreatePseudoConsole`, the program started suspended with a `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`
+  attribute list, put in a Job Object, then resumed: a hangup closes the console (CTRL_CLOSE_EVENT), a kill ends the
+  job, the program and what it started. The job has no kill-on-close limit: a window started from the terminal
+  outlives it. Once no process of the job is left, the console closes at once and its output ends, without the
+  second left to a child holding the terminal.
 
 ## To check on Windows
 - The Wails v3 window on WebView2, built with or without CGO (to confirm).
@@ -59,6 +66,10 @@ checked against Windows first, because it is where the constraints are.
   Chromium), each step reporting even when one before fails; it reports without blocking until it is green once.
   On a branch without a pull request, once the workflow's `workflow_dispatch` is on main:
   `gh workflow run ci.yml --ref <branch>`.
+- The terminal's own tests on Windows (`internal/terminal/pty_windows_test.go`): read and write through `cmd.exe`, the
+  exit code, the folder and environment, a resize seen by the program, and a close that kills a program holding on
+  through CTRL_CLOSE_EVENT with its child. From Linux, `GOOS=windows go vet -tags headless ./...` and `GOOS=windows go
+  test -c` only compile them: the proof is their run in the CI's Windows job (`test-go`), not yet seen green.
 - What only Unix can run skips on Windows and says why: tests that stop djinn with a signal or run a shell script
   (`//go:build !windows` files, with their reason), the terminal specs that drive a POSIX shell, pausing a worker.
 - Windows' temporary folder has a short 8.3 name (`RUNNER~1`); djinn stores a project's folder resolved, so a test

@@ -227,11 +227,10 @@ their contributors.
   [protobuf-go](https://github.com/protocolbuffers/protobuf-go),
   [protovalidate-go](https://github.com/bufbuild/protovalidate-go),
   [pty](https://github.com/creack/pty) (the terminal's pseudo-terminal on macOS and Linux),
-  [conpty](https://github.com/charmbracelet/x/tree/main/conpty) from Charm (the same on Windows),
   [goldmark](https://github.com/yuin/goldmark) (the Markdown of a wish's page),
   [godbus](https://github.com/godbus/dbus) and [go-toast](https://git.sr.ht/~jackmordaunt/go-toast) (the system
   notifications of the window, through Wails, on Linux and on Windows),
-  [x/sys](https://github.com/golang/sys), [x/term](https://github.com/golang/term) (tests),
+  [x/sys](https://github.com/golang/sys) (also the terminal's pseudo-console on Windows), [x/term](https://github.com/golang/term) (tests),
   [x/mod](https://github.com/golang/mod) (release versions),
   [go-yaml](https://github.com/yaml/go-yaml) (the front matter of a skill's wish template); as module tools,
   [Task](https://github.com/go-task/task) and [buf](https://github.com/bufbuild/buf).
