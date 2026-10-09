@@ -2,7 +2,8 @@
 // boxed first, the options as buttons, then what is at stake. Two lamp buttons: "Rub the lamp" answers with the
 // recommended option in one click (a mark the lamp turns into the answer), "Enlighten me" asks the lead to find out
 // more first (QuestionService.Enlighten). Answered, it is a decision: no mark asks to read or approve it again, and
-// the decision log shows it. Its rounds, each request and each revision, fold below.
+// the decision log shows it. Djinn types each answer in the lead's terminal; a wish without a lead session has no
+// lead to tell, and the card says so. Its rounds, each request and each revision, fold below.
 import {
   ArrowRight,
   Check,
@@ -39,6 +40,7 @@ export function WishQuestion({
   expanded: open = false,
   origin,
   blocking = [],
+  noLead = false,
   onAnswer,
   onMark,
   onEnlighten,
@@ -50,6 +52,8 @@ export function WishQuestion({
   blocking?: readonly string[];
   // A decision opened at first. An open question is always open.
   expanded?: boolean;
+  // The wish has no lead session: no lead is told the answer, it waits in the wish's brief.
+  noLead?: boolean;
   // Answers the question; resolves once djinn has it. A rejection keeps the card open.
   onAnswer: (choice: Choice, note: string) => Promise<void>;
   // Marks an open question read, or approves it, which answers it with the recommended option.
@@ -172,6 +176,9 @@ export function WishQuestion({
                 {t("question.decided", { when: when(q.answer?.createTime) })}
               </span>
               {q.answer?.note && <p>{q.answer.note}</p>}
+              {noLead && (
+                <p className="no-lead">{t("question.no_lead_answered")}</p>
+              )}
             </div>
           ) : (
             <>
@@ -281,7 +288,7 @@ export function WishQuestion({
               )}
               <p className="question-hint">
                 <CornerDownRight size={14} aria-hidden="true" />
-                {t("question.goes_to_lead")}
+                {t(noLead ? "question.no_lead" : "question.goes_to_lead")}
               </p>
             </>
           )}

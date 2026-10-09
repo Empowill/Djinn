@@ -279,6 +279,8 @@
   "question.investigating_note": "Vous avez demandé à en savoir plus : {note}",
   "question.investigating_section": "Vous avez demandé à en savoir plus avant de décider : elles reviennent ici une fois révisées par le lead. Vous pouvez encore décider maintenant.",
   "question.investigating_title": "En investigation",
+  "question.no_lead": "Aucun lead à prévenir : votre réponse part aux workers et attend dans le brief du souhait.",
+  "question.no_lead_answered": "Aucun lead à prévenir : la réponse attend dans le brief du souhait.",
   "question.note_label": "Note jointe à la réponse",
   "question.note_placeholder": "Une note avec votre choix (facultatif)",
   "question.open": "Attend votre réponse",

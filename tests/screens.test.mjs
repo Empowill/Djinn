@@ -260,6 +260,40 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.match(answered, /Decision recorded/);
 });
 
+test("a question of a wish without a lead session says no lead is told: open, then answered", () => {
+  const props = (noLead, extra) =>
+    s.renderToStaticMarkup(
+      h(s.WishQuestion, {
+        question: {
+          id: "q1",
+          code: "Q01",
+          text: "Which oil?",
+          options: ["Olive", "Paraffin"],
+          recommendation: "A: it smells good.",
+          ...extra,
+        },
+        expanded: true,
+        noLead,
+        onAnswer: async () => {},
+      }),
+    );
+  const told = props(false, {});
+  assert.match(told, /Your answer goes to the lead and the workers\./);
+  assert.doesNotMatch(told, /No lead to tell/);
+  const open = props(true, {});
+  assert.match(
+    open,
+    /No lead to tell: your answer goes to the workers and waits in the wish&#x27;s brief\./,
+  );
+  assert.doesNotMatch(open, /goes to the lead/);
+  const answer = { answer: { choice: s.Choice.A, note: "" } };
+  assert.doesNotMatch(props(false, answer), /No lead to tell/);
+  assert.match(
+    props(true, answer),
+    /<p class="no-lead">No lead to tell: the answer waits in the wish&#x27;s brief\.<\/p>/,
+  );
+});
+
 test("a running worker pauses from its card, a paused one resumes; none where djinn cannot pause", () => {
   const card = (status, provider, onHold) =>
     s.renderToStaticMarkup(

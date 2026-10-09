@@ -55,6 +55,7 @@ import {
   deletedText,
   MAX_ACTIVE,
   isActive,
+  noLead,
   projectsOf,
   taskStatusText,
   taskTone,
@@ -461,6 +462,7 @@ export function WishView({
           {view === "decisions" && (
             <DecisionLog
               items={decisions.map((item) => ({ item }))}
+              noLead={() => noLead(wish)}
               focus={focus}
               onTask={(id) => show("tasks", id)}
             />
@@ -534,6 +536,7 @@ export function WishView({
                             key={q.id}
                             question={q}
                             blocking={blocking}
+                            noLead={noLead(wish)}
                             onAnswer={(choice, note) =>
                               answer(wish.id, q.id, choice, note)
                             }
@@ -684,6 +687,7 @@ export function InvestigatingSection({
           key={item.id}
           question={item}
           blocking={blocking}
+          noLead={noLead(wish)}
           origin={origin ? <WishOrigin wish={wish} /> : undefined}
           onAnswer={(choice, note) => onAnswer(item.id, choice, note)}
           onMark={(kind, remove) => onMark(item.id, kind, remove)}

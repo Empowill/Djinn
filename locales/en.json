@@ -279,6 +279,8 @@
   "question.investigating_note": "You asked to find out more: {note}",
   "question.investigating_section": "You asked for more before deciding: they come back here once the lead has revised them. You can still decide now.",
   "question.investigating_title": "Being investigated",
+  "question.no_lead": "No lead to tell: your answer goes to the workers and waits in the wish's brief.",
+  "question.no_lead_answered": "No lead to tell: the answer waits in the wish's brief.",
   "question.note_label": "Note with the answer",
   "question.note_placeholder": "A note with your choice (optional)",
   "question.open": "Waiting for you",

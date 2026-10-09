@@ -212,7 +212,8 @@ recommendation first, then the options A to D, then what is at stake.
 - **Enlighten me** asks the lead to dig first, with what to dig into if you like. The question shows
   **Being investigated** until the lead revises it; you may still decide now. Its rounds fold below the card.
 
-Your answer goes to the lead and the workers. An answered question is a decision.
+Your answer goes to the lead and the workers. An answered question is a decision. A wish without a lead session has no
+lead to tell: the card says so, and the answer waits in the wish's brief for the next lead.
 
 **From anywhere.** In the window, a question asked in an active wish also shows as a system notification: a click
 shows the wish, a button answers it (one per option, or **Yes**). The browser shows none; on macOS, notifications need

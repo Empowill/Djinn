@@ -163,6 +163,28 @@ test("the Decisions tab lists them without a button: the human label and colour,
   assert.match(empty, /No decision yet/);
 });
 
+test("an answer in a wish without a lead session says no lead was told; a decision block, nothing", () => {
+  const items = d
+    .decisionsOf(questions, blocks, tasks)
+    .map((item) => ({ item }));
+  const told = d.renderToStaticMarkup(
+    h(d.DecisionLog, { items, noLead: () => false, onTask() {} }),
+  );
+  assert.doesNotMatch(told, /No lead to tell/);
+  const html = d.renderToStaticMarkup(
+    h(d.DecisionLog, { items, noLead: () => true, onTask() {} }),
+  );
+  // Q01 and Q02, the two answered questions; no block.
+  assert.equal(
+    html.match(
+      /<p class="no-lead">No lead to tell: the answer waits in the wish&#x27;s brief\.<\/p>/g,
+    )?.length,
+    2,
+  );
+  assert.match(html, /→ A · Brass<\/p><p class="no-lead">/);
+  assert.doesNotMatch(html, /id="decision-b2".*?no-lead.*?id="decision-b1"/);
+});
+
 test("a task links back to the decision it comes from", () => {
   const log = d.decisionsOf(questions, blocks, tasks);
   const html = d.renderToStaticMarkup(

@@ -41,6 +41,13 @@
 .decision-row .answer-value {
   margin: 2px 0 0;
 }
+/* An answer in a wish without a lead session: no lead was told. */
+.no-lead {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
 .decision-note {
   margin-top: 6px;
   color: var(--muted);

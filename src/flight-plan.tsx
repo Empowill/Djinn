@@ -17,7 +17,7 @@ import { AttentionBar, attentionOf } from "./attention";
 import { decisionOf } from "./data/decisions";
 import { useData, usePausable, useWishDetails } from "./data/djinn";
 import { flightPlan, spent } from "./data/flight";
-import { investigating, waitsForYou, wishTone } from "./data/format";
+import { investigating, noLead, waitsForYou, wishTone } from "./data/format";
 import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { Inbox } from "./inbox";
@@ -170,6 +170,7 @@ export function FlightPlan({
             <DecisionLog
               items={plan.decisions}
               origin={({ wish }) => <WishOrigin wish={wish} />}
+              noLead={({ wish }) => noLead(wish)}
               focus={focus}
               onTask={(id) => show("tasks", id)}
             />
@@ -339,6 +340,7 @@ export function FlightPlan({
                           question={item}
                           origin={<WishOrigin wish={wish} />}
                           blocking={blocking}
+                          noLead={noLead(wish)}
                           onAnswer={(choice, note) =>
                             answer(wish.id, item.id, choice, note)
                           }
