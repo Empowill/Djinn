@@ -1,6 +1,7 @@
 // The inbox, against the real djinn up --browser (see global-setup.ts): a project's skill declares a source and a wish
-// template; the source prints a merge request assigned to you, which becomes a card in the flight plan, proposing the
-// template's wish; a click makes the wish, with its watcher. The source and the watcher are fakes: shell scripts.
+// template. The source runs nothing until plugged in: the empty inbox lists it with "Plug in". Plugged in, it prints a
+// merge request assigned to you, which becomes a card in the flight plan, proposing the template's wish; a click makes
+// the wish, with its watcher. The source and the watcher are fakes: shell scripts.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -40,7 +41,7 @@ test.skip(
   "the fake claude, the fake source and the fake watcher are shell scripts",
 );
 
-test("a source's assigned merge request becomes a card that proposes the babysit template; a click makes the wish with its watcher", async ({
+test("a source runs once plugged in; its assigned merge request becomes a card that proposes the babysit template; a click makes the wish with its watcher", async ({
   page,
 }) => {
   // Three wishes at a time: the earlier specs' wishes make way, and one stays active for the flight plan.
@@ -63,9 +64,10 @@ test("a source's assigned merge request becomes a card that proposes the babysit
     path.join(folder, ".agents", "skills", "babysit-fake-mr", "SKILL.md"),
     skill,
   );
+  const runs = path.join(folder, "source-runs");
   fs.writeFileSync(
     path.join(folder, "fake-source.sh"),
-    `echo "Babysit !12 · Fix the wick, assigned to you by alice"\necho "${link}"\n`,
+    `echo run >> "${runs}"\necho "Babysit !12 · Fix the wick, assigned to you by alice"\necho "${link}"\n`,
   );
   fs.writeFileSync(
     path.join(folder, "fake-watch.sh"),
@@ -77,18 +79,31 @@ test("a source's assigned merge request becomes a card that proposes the babysit
   ).skills;
   expect(skills[0].inbox_source).toBe("sh fake-source.sh");
 
-  // The source runs as soon as the project is added: its item waits, and nothing is made.
-  await expect
-    .poll(
-      () => JSON.parse(djinn("inbox", "list", "--json")).items?.length ?? 0,
-      {
-        timeout: 20_000,
-      },
-    )
-    .toBe(1);
+  // Declared, the source is not plugged in: it never runs, and the empty inbox lists it with "Plug in".
+  const sources = JSON.parse(djinn("inbox", "sources", "--json")).sources;
+  expect(sources).toContainEqual(
+    expect.objectContaining({
+      name: "bell/babysit-fake-mr",
+      watch: "sh fake-source.sh",
+    }),
+  );
+  expect(
+    sources.find((s: { name: string }) => s.name === "bell/babysit-fake-mr")
+      .plugged,
+  ).toBeFalsy();
+  await page.goto(process.env.DJINN_URL!);
+  const row = page
+    .locator(".inbox-empty .inbox-source-row")
+    .filter({ hasText: "bell/babysit-fake-mr" });
+  await expect(row).toContainText("Unplugged: runs nothing");
+  expect(fs.existsSync(runs)).toBe(false);
+  expect(JSON.parse(djinn("inbox", "list", "--json")).items ?? []).toHaveLength(
+    0,
+  );
   const wishes = JSON.parse(djinn("wish", "list", "--json")).wishes.length;
 
-  await page.goto(process.env.DJINN_URL!);
+  // Plugged in, it runs: its item waits, and nothing is made.
+  await row.getByRole("button", { name: "Plug in" }).click();
   const card = page
     .locator(".inbox-card")
     .filter({ hasText: "Babysit !12 · Fix the wick" });
@@ -124,6 +139,12 @@ test("a source's assigned merge request becomes a card that proposes the babysit
     0,
   );
 
+  djinn("inbox", "unplug", "bell/babysit-fake-mr");
+  expect(
+    JSON.parse(djinn("inbox", "sources", "--json")).sources.find(
+      (s: { name: string }) => s.name === "bell/babysit-fake-mr",
+    ).plugged,
+  ).toBeFalsy();
   djinn("task", "stop", tasks[0].id);
   djinn("wish", "pause", made.id);
   djinn("wish", "pause", here);

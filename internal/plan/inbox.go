@@ -3,8 +3,9 @@ package plan
 // The inbox. What comes from outside (a merge request assigned to you, a mention in a thread) becomes an item,
 // proposed as a request: Djinn routes it as djinn wish route does, without a model, and waits for your answer. A
 // source is a command a skill declares in its SKILL.md, under metadata.djinn.source, run like a watcher; each
-// paragraph it prints is an item. Djinn reads it and never sends anything back: no comment, no reaction, nothing
-// marked as read. The command logs in by its own tool: Djinn holds no token.
+// paragraph it prints is an item. A source runs only once the developer plugs it in, on this machine: a clone of a
+// project polls nothing by itself. Djinn reads a source and never sends anything back: no comment, no reaction,
+// nothing marked as read. The command logs in by its own tool: Djinn holds no token.
 
 import (
 	"cmp"
@@ -49,13 +50,22 @@ const (
 type Source struct {
 	// Skill is the skill's name; Dir its folder.
 	Skill, Dir string
+	// HolderID is the project that holds the skill, Holder its name: the source is named <Holder>/<Skill>.
+	HolderID, Holder string
 	// ProjectID is the project that holds the skill or summons it: the command runs in its folder.
 	ProjectID string
 	// Watch is the command line, run without a shell.
 	Watch string
 	// Every is the least time between two starts of the command.
 	Every time.Duration
+	// Plugged tells whether the source is plugged in on this machine: only then does its command run.
+	Plugged bool
+	// Err says why the source cannot be used; nil when it can.
+	Err error
 }
+
+// Name is the source as the developer names it: <project>/<skill>, the project that holds the skill.
+func (s *Source) Name() string { return s.Holder + "/" + s.Skill }
 
 // sourceYAML is an inbox source as SKILL.md writes it.
 type sourceYAML struct {
@@ -88,45 +98,146 @@ func ReadSource(dir string) (*Source, error) {
 	return s, nil
 }
 
+// heldSkill is a skill a project uses, and the project that holds it.
+type heldSkill struct {
+	SkillDir
+	// HolderID is the project that holds the skill, Holder its name.
+	HolderID, Holder string
+}
+
 // usedSkills are the skills project uses, its own then those it summons that are found.
-func usedSkills(ctx context.Context, r store.Reader, project *planv1.Project) ([]SkillDir, error) {
-	dirs := ProjectSkills(project.GetDirectory())
+func usedSkills(ctx context.Context, r store.Reader, project *planv1.Project) ([]heldSkill, error) {
+	var out []heldSkill
+	for _, d := range ProjectSkills(project.GetDirectory()) {
+		out = append(out, heldSkill{SkillDir: d, HolderID: project.GetId(), Holder: project.GetName()})
+	}
 	summoned, err := SummonedSkills(ctx, r, project)
 	if err != nil {
 		return nil, err
 	}
 	for _, s := range summoned {
 		if s.Missing == "" {
-			dirs = append(dirs, s.SkillDir)
+			holder, _, _ := strings.Cut(s.Source, "/")
+			out = append(out, heldSkill{SkillDir: s.SkillDir, HolderID: s.ProjectID, Holder: holder})
 		}
 	}
-	return dirs, nil
+	return out, nil
 }
 
-// Sources are the inbox sources of the skills the projects use, their own then those they summon, in the projects'
-// order then by name. A skill used by several projects runs once, in the first one's folder. A source that cannot
-// be used is left out: djinn skill list says why.
-func Sources(ctx context.Context, r store.Reader, projects []*planv1.Project) ([]*Source, error) {
+// declaredSources are the inbox sources of the skills the projects use, their own then those they summon, in the
+// projects' order then by name, each said plugged in or not on this machine; a source that cannot be used says
+// why. A skill used by several projects is one source, run in the first one's folder. A source plugged in whose
+// skill no longer declares it comes last, with why: it runs nothing, and can be unplugged.
+func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Project) ([]*Source, error) {
+	plugged, err := store.List[*planv1.PluggedSource](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	isPlugged := func(s *Source) bool {
+		return slices.ContainsFunc(plugged, func(p *planv1.PluggedSource) bool {
+			return strings.EqualFold(p.GetProjectId(), s.HolderID) && strings.EqualFold(p.GetSkill(), s.Skill)
+		})
+	}
 	var out []*Source
 	for _, p := range projects {
 		if p.GetDirectory() == "" {
 			continue
 		}
-		dirs, err := usedSkills(ctx, r, p)
+		used, err := usedSkills(ctx, r, p)
 		if err != nil {
 			return nil, err
 		}
-		for _, d := range dirs {
+		for _, d := range used {
 			if slices.ContainsFunc(out, func(s *Source) bool { return s.Dir == d.Dir }) {
 				continue
 			}
-			if s, err := ReadSource(d.Dir); err == nil && s != nil {
-				s.ProjectID = p.GetId()
-				out = append(out, s)
+			s, err := ReadSource(d.Dir)
+			switch {
+			case err != nil:
+				s = &Source{Skill: d.Name, Dir: d.Dir, Err: err}
+			case s == nil:
+				continue
 			}
+			s.HolderID, s.Holder, s.ProjectID = d.HolderID, d.Holder, p.GetId()
+			s.Plugged = isPlugged(s)
+			out = append(out, s)
 		}
 	}
+	for _, p := range plugged {
+		if slices.ContainsFunc(out, func(s *Source) bool {
+			return strings.EqualFold(p.GetProjectId(), s.HolderID) && strings.EqualFold(p.GetSkill(), s.Skill)
+		}) {
+			continue
+		}
+		holder := p.GetProjectId()
+		if project, err := store.Get[*planv1.Project](ctx, r, holder); err == nil {
+			holder = project.GetName()
+		}
+		out = append(out, &Source{
+			Skill: p.GetSkill(), HolderID: p.GetProjectId(), Holder: holder, Plugged: true,
+			Err: errors.New("no skill of the projects declares this source on this machine any more: it runs nothing"),
+		})
+	}
 	return out, nil
+}
+
+// Sources are the inbox sources plugged in on this machine that can run, from the skills the projects use, in the
+// projects' order then by name. A skill used by several projects runs once, in the first one's folder. A source
+// that cannot be used is left out: djinn inbox sources says why. One not plugged in never runs.
+func Sources(ctx context.Context, r store.Reader, projects []*planv1.Project) ([]*Source, error) {
+	all, err := declaredSources(ctx, r, projects)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(all, func(s *Source) bool { return s.Err != nil || !s.Plugged }), nil
+}
+
+// sourceMessage is the source s as InboxService shows it.
+func sourceMessage(s *Source) *planv1.InboxSource {
+	out := &planv1.InboxSource{Name: s.Name(), Skill: s.Skill, Project: s.Holder, Watch: s.Watch, Plugged: s.Plugged}
+	if s.Every > 0 {
+		out.Every = s.Every.String()
+	}
+	if s.Err != nil {
+		out.Error = s.Err.Error()
+	}
+	return out
+}
+
+// findSource is the source named name among srcs: <project>/<skill>, or the skill alone when one project holds it.
+func findSource(srcs []*Source, name string) (*Source, error) {
+	project, skill, scoped := strings.Cut(name, "/")
+	if !scoped {
+		skill = project
+	}
+	var found []*Source
+	for _, s := range srcs {
+		if strings.EqualFold(s.Skill, skill) && (!scoped || strings.EqualFold(s.Holder, project)) {
+			found = append(found, s)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return nil, connect.NewError(connect.CodeNotFound,
+			fmt.Errorf("no inbox source %s: djinn inbox sources lists them, %w", name, store.ErrNotFound))
+	case 1:
+		return found[0], nil
+	}
+	names := make([]string, len(found))
+	for i, s := range found {
+		names[i] = s.Name()
+	}
+	return nil, connect.NewError(connect.CodeInvalidArgument,
+		fmt.Errorf("several projects hold a source %s: name one, as %s", name, strings.Join(names, " or ")))
+}
+
+// sourcesIn are the sources the projects' skills declare, read in r.
+func sourcesIn(ctx context.Context, r store.Reader) ([]*Source, error) {
+	projects, err := store.List[*planv1.Project](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	return declaredSources(ctx, r, projects)
 }
 
 // itemKey is what makes an item the same when a source prints it again: its first link, else its first line.
@@ -291,6 +402,91 @@ func (in *Inbox) Route(
 		then(ctx)
 	}
 	return connect.NewResponse(&planv1.InboxServiceRouteResponse{Item: item}), nil
+}
+
+func (in *Inbox) Sources(
+	ctx context.Context, _ *connect.Request[planv1.InboxServiceSourcesRequest],
+) (*connect.Response[planv1.InboxServiceSourcesResponse], error) {
+	srcs, err := sourcesIn(ctx, in.Wishes.Store)
+	if err != nil {
+		return nil, Status(err)
+	}
+	out := make([]*planv1.InboxSource, len(srcs))
+	for i, s := range srcs {
+		out[i] = sourceMessage(s)
+	}
+	slices.SortStableFunc(out, func(a, b *planv1.InboxSource) int {
+		return strings.Compare(strings.ToLower(a.GetName()), strings.ToLower(b.GetName()))
+	})
+	return connect.NewResponse(&planv1.InboxServiceSourcesResponse{Sources: out}), nil
+}
+
+func (in *Inbox) Plug(
+	ctx context.Context, req *connect.Request[planv1.InboxServicePlugRequest],
+) (*connect.Response[planv1.InboxServicePlugResponse], error) {
+	var out *planv1.InboxSource
+	err := write(ctx, in.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		srcs, err := sourcesIn(ctx, tx)
+		if err != nil {
+			return err
+		}
+		s, err := findSource(srcs, req.Msg.GetSource())
+		if err != nil {
+			return err
+		}
+		if s.Err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the source %s cannot run: %w", s.Name(), s.Err))
+		}
+		if !s.Plugged {
+			s.Plugged = true
+			err := tx.Put(&planv1.PluggedSource{
+				Id: store.NewID(), ProjectId: s.HolderID, Skill: s.Skill, CreateTime: timestamppb.Now(),
+			})
+			if err != nil {
+				return err
+			}
+		}
+		out = sourceMessage(s)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.InboxServicePlugResponse{Source: out}), nil
+}
+
+func (in *Inbox) Unplug(
+	ctx context.Context, req *connect.Request[planv1.InboxServiceUnplugRequest],
+) (*connect.Response[planv1.InboxServiceUnplugResponse], error) {
+	var out *planv1.InboxSource
+	err := write(ctx, in.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		srcs, err := sourcesIn(ctx, tx)
+		if err != nil {
+			return err
+		}
+		s, err := findSource(srcs, req.Msg.GetSource())
+		if err != nil {
+			return err
+		}
+		plugged, err := store.List[*planv1.PluggedSource](ctx, tx, nil)
+		if err != nil {
+			return err
+		}
+		for _, p := range plugged {
+			if strings.EqualFold(p.GetProjectId(), s.HolderID) && strings.EqualFold(p.GetSkill(), s.Skill) {
+				if err := tx.Delete(p); err != nil {
+					return err
+				}
+			}
+		}
+		s.Plugged = false
+		out = sourceMessage(s)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.InboxServiceUnplugResponse{Source: out}), nil
 }
 
 // InboxFirstLine is the first line of the lead of a wish made for an inbox item: the item, and its source.

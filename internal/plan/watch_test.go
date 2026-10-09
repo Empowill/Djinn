@@ -92,8 +92,33 @@ func TestWatchSaysWhatChanged(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if msg := next(t, s); msg.GetWishId() != "" || !slices.Equal(msg.GetChanges(), []planv1.Change{planv1.Change_CHANGE_PROJECT}) {
-		t.Fatalf("after project add: %v", msg)
+	// The inbox's sources come from the projects' skills.
+	want := []planv1.Change{planv1.Change_CHANGE_PROJECT, planv1.Change_CHANGE_INBOX}
+	if msg := next(t, s); msg.GetWishId() != "" || !slices.Equal(msg.GetChanges(), want) {
+		t.Fatalf("after project add: %v, want %v", msg, want)
+	}
+}
+
+// TestWatchSaysPlugged: plugging a source in, or unplugging it, changes the inbox's sources.
+func TestWatchSaysPlugged(t *testing.T) {
+	c := serve(t)
+	dir := t.TempDir()
+	agentSkill(t, dir, "mentions", "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n")
+	if _, err := c.projects.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir})); err != nil {
+		t.Fatal(err)
+	}
+	s := watch(t, c.wishes, "")
+	if _, err := c.inbox.Plug(t.Context(), connect.NewRequest(&planv1.InboxServicePlugRequest{Source: "mentions"})); err != nil {
+		t.Fatal(err)
+	}
+	if msg := next(t, s); !slices.Equal(msg.GetChanges(), []planv1.Change{planv1.Change_CHANGE_INBOX}) {
+		t.Fatalf("after plug: %v", msg)
+	}
+	if _, err := c.inbox.Unplug(t.Context(), connect.NewRequest(&planv1.InboxServiceUnplugRequest{Source: "mentions"})); err != nil {
+		t.Fatal(err)
+	}
+	if msg := next(t, s); !slices.Equal(msg.GetChanges(), []planv1.Change{planv1.Change_CHANGE_INBOX}) {
+		t.Fatalf("after unplug: %v", msg)
 	}
 }
 

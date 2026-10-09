@@ -6,6 +6,7 @@ import {
   type Block,
   Change,
   type InboxItem,
+  type InboxSource,
   type Project,
   type Question,
   type Task,
@@ -39,6 +40,8 @@ export interface State {
   details: Readonly<Record<string, WishDetail>>;
   // The inbox items that wait for an answer, the newest first.
   inbox: InboxItem[];
+  // The sources the projects' skills declare, plugged in or not on this machine.
+  sources: InboxSource[];
   // The events of the tasks followed, oldest first.
   events: Readonly<Record<string, TaskEvent[]>>;
   machine?: Machine;
@@ -82,6 +85,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
     wishes: [],
     details: {},
     inbox: [],
+    sources: [],
     events: {},
     gates: [],
   };
@@ -148,6 +152,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
     if (inbox)
       attempt(async () => {
         patch.inbox = (await clients.inbox.list({})).items;
+      });
+    if (inbox)
+      attempt(async () => {
+        patch.sources = (await clients.inbox.sources({})).sources;
       });
     const read: Record<string, Partial<WishDetail>> = {};
     for (const [wishId, kinds] of details) {

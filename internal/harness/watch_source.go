@@ -1,9 +1,10 @@
 package harness
 
-// Inbox sources. A skill declares a command (metadata.djinn.source) that prints what comes from outside: Djinn runs
-// it like a watcher, without a task nor a wish, in the folder of the project that holds or summons the skill. Each
-// item it prints becomes an item of the inbox (plan.Inbox.Receive). It takes no slot and spends no token; its input
-// is closed, and Djinn never writes anything back to it.
+// Inbox sources. A skill declares a command (metadata.djinn.source) that prints what comes from outside: once the
+// developer plugs it in on this machine, Djinn runs it like a watcher, without a task nor a wish, in the folder of the
+// project that holds or summons the skill. A source not plugged in never starts. Each item it prints becomes an item
+// of the inbox (plan.Inbox.Receive). It takes no slot and spends no token; its input is closed, and Djinn never writes
+// anything back to it.
 
 import (
 	"context"
@@ -29,12 +30,29 @@ type ReceiveFunc func(ctx context.Context, src *plan.Source, text string) (*plan
 // djinn up calls it once.
 func (h *Harness) RunSources(receive ReceiveFunc) { h.runSources(receive, Watch{}, sourceRescan) }
 
-// runSources is RunSources, its watchers made from c and the skills read again every rescan.
-func (h *Harness) runSources(receive ReceiveFunc, c Watch, rescan time.Duration) {
+// runSources is RunSources, its watchers made from c and the skills read again every rescan. scan reads them again at
+// once and returns when that pass is over, its watchers started or stopped: how many sources run then.
+func (h *Harness) runSources(receive ReceiveFunc, c Watch, rescan time.Duration) (scan func() int) {
 	kick := make(chan struct{}, 1)
+	asked := make(chan chan int)
+	scan = func() int {
+		done := make(chan int, 1)
+		select {
+		case asked <- done:
+		case <-h.ctx.Done():
+			return 0
+		}
+		select {
+		case n := <-done:
+			return n
+		case <-h.ctx.Done():
+			return 0
+		}
+	}
 	h.store.OnCommit(func(ms []proto.Message) {
 		for _, m := range ms {
-			if _, ok := m.(*planv1.Project); ok {
+			switch m.(type) {
+			case *planv1.Project, *planv1.PluggedSource:
 				select {
 				case kick <- struct{}{}:
 				default: // Already kicked.
@@ -46,10 +64,11 @@ func (h *Harness) runSources(receive ReceiveFunc, c Watch, rescan time.Duration)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.closed {
-		return
+		return scan
 	}
 	h.wg.Add(1)
-	go h.sources(receive, c, rescan, kick)
+	go h.sources(receive, c, rescan, kick, asked)
+	return scan
 }
 
 // sourceRun is a source's command at work.
@@ -60,9 +79,10 @@ type sourceRun struct {
 	err    error         // why it ended, once done
 }
 
-// sources keeps one watcher per source running: it starts the new ones, and stops those no skill declares any more.
-// A source whose command ended (not found, or refused) starts again at the next rescan, its error said once.
-func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, kick <-chan struct{}) {
+// sources keeps one watcher per plugged source running: it starts the new ones, and stops those unplugged or no skill
+// declares any more. A source whose command ended (not found, or refused) starts again at the next rescan, its error said once.
+// Each pass answers the scans asked before it began.
+func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, kick <-chan struct{}, asked <-chan chan int) {
 	defer h.wg.Done()
 	c.Items = true
 	running := map[string]*sourceRun{}
@@ -81,6 +101,7 @@ func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, ki
 			<-r.done
 		}
 	}()
+	var waiting []chan int
 	for {
 		want, err := h.readSources()
 		if err != nil {
@@ -113,11 +134,17 @@ func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, ki
 			}
 			running[key] = r
 		}
+		for _, done := range waiting {
+			done <- len(running)
+		}
+		waiting = nil
 		select {
 		case <-h.ctx.Done():
 			return
 		case <-kick:
 		case <-tick.C:
+		case done := <-asked:
+			waiting = append(waiting, done)
 		}
 	}
 }
@@ -128,7 +155,8 @@ type wantedSource struct {
 	dir string
 }
 
-// readSources reads the sources the projects' skills declare, by what makes each one run apart.
+// readSources reads the sources the projects' skills declare and this machine plugged in, by what makes each one run
+// apart.
 func (h *Harness) readSources() (map[string]wantedSource, error) {
 	ctx, cancel := context.WithTimeout(h.ctx, 30*time.Second)
 	defer cancel()

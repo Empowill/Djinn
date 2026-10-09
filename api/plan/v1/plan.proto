@@ -1229,9 +1229,43 @@ enum InboxState {
   INBOX_STATE_DISMISSED = 3;
 }
 
+// An inbox source a project's skill declares (metadata.djinn.source), as this machine sees it.
+message InboxSource {
+  // The source, as <project>/<skill>: the project that holds the skill, then its folder name.
+  string name = 1;
+  // The skill's folder name.
+  string skill = 2;
+  // The project that holds the skill, by name.
+  string project = 3;
+  // The command line it runs, without a shell, in the folder of the project that uses it.
+  string watch = 4;
+  // The least time between two starts of its command, as 5m0s.
+  string every = 5;
+  // Whether it is plugged in on this machine: only then does its command run.
+  bool plugged = 6;
+  // Why it cannot be used; empty when it can.
+  string error = 7;
+}
+
+// A source plugged in on this machine. It lives in Djinn's data, never in a repository: a clone of a project whose
+// skill declares a source runs nothing until you plug it in.
+message PluggedSource {
+  option (djinn.v1.unique) = {fields: ["project_id", "skill"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project that holds the skill.
+  string project_id = 2;
+  // The skill's folder name.
+  string skill = 3;
+  // When it was plugged in.
+  google.protobuf.Timestamp create_time = 4;
+}
+
 // The inbox: what comes from outside, proposed as requests. A source is a command a skill declares in its SKILL.md
-// (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. Each paragraph it
-// prints becomes an item with its proposed route; nothing is made until you answer.
+// (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. A source runs only
+// once you plug it in, on this machine. Each paragraph it prints becomes an item with its proposed route; nothing is
+// made until you answer.
 service InboxService {
   // List the inbox, the newest first: the items that wait for an answer, or every one with --all.
   rpc List(InboxServiceListRequest) returns (InboxServiceListResponse) {
@@ -1249,6 +1283,56 @@ service InboxService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // List the sources the projects' skills declare, plugged in or not on this machine.
+  rpc Sources(InboxServiceSourcesRequest) returns (InboxServiceSourcesResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+  rpc Plug(InboxServicePlugRequest) returns (InboxServicePlugResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+  rpc Unplug(InboxServiceUnplugRequest) returns (InboxServiceUnplugResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
+  }
+}
+
+message InboxServiceSourcesRequest {}
+
+message InboxServiceSourcesResponse {
+  // The sources, by project then skill.
+  repeated InboxSource sources = 1;
+}
+
+message InboxServicePlugRequest {
+  // The source, as <project>/<skill>, or the skill alone when one project holds it. Case ignored.
+  string source = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 300,
+    (buf.validate.field).string.pattern = "^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
+  ];
+}
+
+message InboxServicePlugResponse {
+  // The source, plugged in.
+  InboxSource source = 1;
+}
+
+message InboxServiceUnplugRequest {
+  // The source, as <project>/<skill>, or the skill alone when one project holds it. Case ignored.
+  string source = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 300,
+    (buf.validate.field).string.pattern = "^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
+  ];
+}
+
+message InboxServiceUnplugResponse {
+  // The source, unplugged.
+  InboxSource source = 1;
 }
 
 message InboxServiceListRequest {
@@ -1502,7 +1586,7 @@ enum Change {
   CHANGE_BLOCK = 4;
   // The projects: one added or changed.
   CHANGE_PROJECT = 5;
-  // The inbox: an item came, or was routed or dismissed.
+  // The inbox: an item came, or was routed or dismissed; a source was plugged in or unplugged, or a project added.
   CHANGE_INBOX = 6;
   // Its tilasms: one put, restored or imported.
   CHANGE_TILASM = 7;
