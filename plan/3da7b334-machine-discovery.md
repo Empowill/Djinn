@@ -44,6 +44,10 @@ overloaded. Part of the orchestrator (T07).
   from /proc on Linux, `TestMeasurePeaks`, `TestNotMeasured` and `TestWorth` in `internal/harness`; "a running task
   shows what its worker uses now" in `tests/screens.test.mjs`. macOS reads `ps`: not run on a Mac yet. Windows says it
   is not measured yet)
+- [x] A gate goes to a command only when the machine holds what it was measured at, and says why it waits; a light
+  command goes at once, one never measured as it comes. (`TestMemory` in `internal/gate`, with a fake machine and fake
+  costs: `go tool task e2e` at 3.1 GiB waits with 1.8 GiB free, then goes once 8 GiB are; a second heavy command waits
+  while it holds its gate. `TestRoom` and `TestCosts` in `internal/machine`)
 
 ## Decided along the way
 - **The minimum first** (`internal/machine`): cores (`runtime.NumCPU`), memory, load and pressure, read live (at
@@ -88,5 +92,14 @@ overloaded. Part of the orchestrator (T07).
   in the journal) only when it moved enough to show: a process more or less, 5 points of CPU, 5% of memory, or a
   minute gone; `djinn machine show` gives every reading. The fake agent runs in Djinn's process: not measured. Not
   read by the scheduler yet.
-- **Not used yet.** The scheduler and the gates do not read the costs yet: a heavy command waiting for a gate
-  (the capacity, above) is the next step.
+- **A gate waits for the memory** (`Policy.Room`, `CommandMargin` a field of `machine.DefaultPolicy`). This default
+  rule is Djinn's recommendation, and the developer may change it: a gate goes to a command measured in its project
+  only when there is no pressure and the memory available, less the peaks of the commands holding a gate, is at least
+  its highest peak plus 512 MiB. The peaks of the holders count in full, even when they have not reached them yet or
+  are already in what is available: careful rather than exact. A command never measured (or measured at 0, on
+  Windows), outside any project, or on a machine whose memory is unknown goes as before. The command is the
+  `what` of `GateService.Hold` (what `djinn gate run` runs, up to 200 characters), case ignored; its project is the
+  task's, else the one holding its `directory`, as for the costs. Its peak is read once, when it asks for the gate.
+  While it waits, the reason names the command, its peak and the memory free (`waiting: go tool task e2e peaks at
+  3.1 GiB, 1.8 GiB free`), told again only when the cause changes, not as the memory moves. A heavy command that
+  waits does not keep its gate from a lighter one behind it. The scheduler does not read the costs yet.

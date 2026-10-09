@@ -159,8 +159,8 @@ status: in-progress
   to edit). In Git scopes are kept but not checked.
 - **A task imported with a wish is not scheduled** on the importing machine (`scheduled` cleared on import).
 - **Gates** (`internal/gate`, `GateService` in `api/machine/v1`): any name (`codegen`, `stack`, `e2e`, `paid`…), case
-  ignored; one holder per gate, granted only when the machine is not under pressure, the first wish of the rank
-  first, then the first come. A holder holds as long as its `Hold` stream is open: the gate goes back when the
+  ignored; one holder per gate, granted only when the machine is not under pressure and holds the command's measured
+  peak memory ([T17](3da7b334-machine-discovery.md)), the first wish of the rank first, then the first come. A holder holds as long as its `Hold` stream is open: the gate goes back when the
   command ends, fails, is interrupted, or its process dies (the connection closes). `djinn gate run <name> --
   <command>` is the one command written by hand (`cmd/djinn/gate.go`): it runs the command on the caller's side,
   under the caller's own rights, never in Djinn's server. It returns the command's exit code. `djinn gate list`

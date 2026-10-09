@@ -93,6 +93,22 @@ func TestCosts(t *testing.T) {
 		t.Errorf("a negative CPU time: %v", err)
 	}
 
+	// The gates read the highest peak of a command in its project; 0 for one never measured there.
+	peaks := NewPeaks(db)
+	for _, tt := range []struct {
+		taskID, dir, command string
+		want                 uint64
+	}{
+		{"", filepath.Join(dir, "src"), "Go Test ./...", 300 << 20},
+		{task.GetId(), os.TempDir(), "go test ./...", 0},
+		{"", os.TempDir(), "go test ./...", 0},
+		{"", dir, "go vet ./...", 0},
+	} {
+		if got := peaks.Peak(ctx, tt.taskID, tt.dir, tt.command); got != tt.want {
+			t.Errorf("peak of %q in %q, task %q = %d, want %d", tt.command, tt.dir, tt.taskID, got, tt.want)
+		}
+	}
+
 	list := func(project string) []*machinev1.CommandCost {
 		t.Helper()
 		res, err := client.List(ctx, connect.NewRequest(&machinev1.CommandServiceListRequest{Project: project}))

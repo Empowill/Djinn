@@ -58,6 +58,10 @@ type Policy struct {
 	// MemoryFree of the total. On macOS, the system's own memory pressure level at warning or above.
 	LoadPerCore float64
 	MemoryFree  float64
+	// A gate goes to a command measured in its project only when the memory available, less the peaks of the
+	// commands holding a gate, holds its highest peak plus CommandMargin; a command never measured goes as it comes.
+	// Djinn's recommendation: the developer may change it.
+	CommandMargin uint64
 	// A local model runs on an NVIDIA or AMD GPU, its driver loaded, with ModelGPUMemory of its own; on Apple
 	// Silicon with ModelMemory of unified memory; else on the CPU, slowly, with ModelMemory. Its weights need
 	// ModelDisk free on the disk of the data folder.
@@ -71,7 +75,7 @@ type Policy struct {
 func DefaultPolicy() Policy {
 	return Policy{
 		CoresPerWorker: 2, MemoryPerWorker: 2 * GiB, MemoryReserve: 2 * GiB, MaxWorkers: 16,
-		CPUPressure: 50, MemoryPressure: 10, LoadPerCore: 2, MemoryFree: 0.10,
+		CPUPressure: 50, MemoryPressure: 10, LoadPerCore: 2, MemoryFree: 0.10, CommandMargin: 512 << 20,
 		ModelGPUMemory: 6 * GiB, ModelMemory: 16 * GiB, ModelDisk: 10 * GiB,
 	}
 }
@@ -123,6 +127,22 @@ func (p Policy) Pressure(s Snapshot) string {
 			p.MemoryFree*100)
 	}
 	return ""
+}
+
+// Room says why the machine cannot hold the command yet, its highest measured peak memory being peak, or "" when it
+// can: the memory available, less held (the peaks of the commands holding a gate, which may not have reached them
+// yet), holds the peak plus CommandMargin. A command never measured (peak 0), or a machine whose memory is unknown,
+// has room.
+func (p Policy) Room(s Snapshot, command string, peak, held uint64) string {
+	free := s.MemoryAvailable - min(held, s.MemoryAvailable)
+	if peak == 0 || s.MemoryTotal == 0 || free >= peak+p.CommandMargin {
+		return ""
+	}
+	why := fmt.Sprintf("%s peaks at %s, %s free", command, size(peak), size(s.MemoryAvailable))
+	if held > 0 {
+		why += fmt.Sprintf(", %s of it for the commands holding a gate", size(min(held, s.MemoryAvailable)))
+	}
+	return why
 }
 
 // LocalModel says whether a local open-weight model can run on the machine, and why: dispatch asks one only where it

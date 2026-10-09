@@ -44,9 +44,7 @@ func (c *costs) Record(
 		if err != nil {
 			return err
 		}
-		if i := slices.IndexFunc(all, func(o *machinev1.CommandCost) bool { return strings.EqualFold(o.GetCommand(), in.GetCommand()) }); i >= 0 {
-			out = all[i]
-		} else {
+		if out = find(all, in.GetCommand()); out == nil {
 			out = &machinev1.CommandCost{Id: store.NewID(), ProjectId: projectID, Command: in.GetCommand()}
 		}
 		Add(out, in)
@@ -59,6 +57,35 @@ func (c *costs) Record(
 		return nil, plan.Status(err)
 	}
 	return connect.NewResponse(&machinev1.CommandServiceRecordResponse{Cost: out}), nil
+}
+
+// find is the cost of the command among all, case ignored; nil when it is not there.
+func find(all []*machinev1.CommandCost, command string) *machinev1.CommandCost {
+	if i := slices.IndexFunc(all, func(o *machinev1.CommandCost) bool { return strings.EqualFold(o.GetCommand(), command) }); i >= 0 {
+		return all[i]
+	}
+	return nil
+}
+
+// Peaks reads the highest peak memory measured of each command, for the gates.
+type Peaks struct{ db *store.Store }
+
+// NewPeaks reads the peaks in the store.
+func NewPeaks(db *store.Store) *Peaks { return &Peaks{db: db} }
+
+// Peak is the highest peak memory, in bytes, of the command in its project: the task's, else the one holding dir.
+// It is 0 when the command was never measured, or outside any project.
+func (p *Peaks) Peak(ctx context.Context, taskID, dir, command string) uint64 {
+	c := &costs{db: p.db}
+	projectID, err := c.project(ctx, taskID, dir)
+	if err != nil || projectID == "" {
+		return 0
+	}
+	all, err := store.List[*machinev1.CommandCost](ctx, p.db, store.Where{"project_id": projectID})
+	if err != nil {
+		return 0
+	}
+	return find(all, command).GetPeakMemoryBytes()
 }
 
 // Add counts a run in what the command costs: the means move, the peak keeps the highest.

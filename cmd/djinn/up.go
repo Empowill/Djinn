@@ -131,7 +131,7 @@ func runUp(args []string) (restart bool, err error) {
 		return false, err
 	}
 	workers.Schedule()
-	gates := gate.New(monitor.Pressure, workers)
+	gates := gate.New(monitor, machine.NewPeaks(db), workers)
 	workers.HeldGates(gates.Held, gates.Waiting)
 	if *termDir != "" {
 		if *termDir, err = filepath.Abs(*termDir); err != nil {

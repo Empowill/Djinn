@@ -21,6 +21,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
 	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/machine"
 )
 
 // tasks is a fake harness: tasks by id with their wish's rank, and the events noted.
@@ -68,30 +69,62 @@ func times(s string) string {
 	return regexp.MustCompile(`[0-9][0-9.hms]*s\b`).ReplaceAllString(s, "Ns")
 }
 
-// pressure is a pressure a test changes as it goes.
-type pressure struct {
-	mu  sync.Mutex
-	why string
+// box is a fake machine of 8 cores and 16 GiB, under the default policy; a test sets its CPU pressure and the
+// memory free as it goes.
+type box struct {
+	mu   sync.Mutex
+	cpu  float64 // percent of the last 10 s tasks waited for the CPU
+	free uint64
 }
 
-func (p *pressure) get() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.why
+// squeezed says the CPU pressure of a box under pressure.
+const squeezed = "the machine is under pressure: tasks waited for the CPU 80% of the last 10 s (50% at most)"
+
+func calm() *box { return &box{free: 8 * machine.GiB} }
+
+func (b *box) Snapshot() machine.Snapshot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return machine.Snapshot{
+		Cores: 8, MemoryTotal: 16 * machine.GiB, MemoryAvailable: b.free,
+		CPU: &machine.Pressure{Some: b.cpu}, Memory: &machine.Pressure{},
+	}
 }
 
-func (p *pressure) set(why string) {
-	p.mu.Lock()
-	p.why = why
-	p.mu.Unlock()
+func (b *box) Policy() machine.Policy { return machine.DefaultPolicy() }
+
+func (b *box) squeeze(on bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cpu = 0
+	if on {
+		b.cpu = 80
+	}
 }
+
+func (b *box) setFree(free uint64) {
+	b.mu.Lock()
+	b.free = free
+	b.mu.Unlock()
+}
+
+// peaks is fake costs: the highest peak memory of each command measured, wherever it runs.
+type peaks map[string]uint64
+
+func (p peaks) Peak(_ context.Context, _, _, command string) uint64 { return p[command] }
 
 // take takes the gate in the background; the channel gets the give function once granted.
 func take(t *testing.T, g *Gates, name, taskID string) (<-chan func(), <-chan string) {
 	t.Helper()
+	return run(t, g, name, taskID, "")
+}
+
+// run takes the gate in the background to run what; the channel gets the give function once granted.
+func run(t *testing.T, g *Gates, name, taskID, what string) (<-chan func(), <-chan string) {
+	t.Helper()
 	granted, waits := make(chan func(), 1), make(chan string, 16)
 	go func() {
-		give, err := g.Take(t.Context(), name, taskID, "", func(why string) { waits <- why })
+		give, err := g.Take(t.Context(), name, taskID, what, "", func(why string) { waits <- why })
 		if err == nil {
 			granted <- give
 		}
@@ -124,7 +157,7 @@ func notGranted(t *testing.T, ch <-chan func(), what string) {
 // events say so. Another gate is free meanwhile. Held says what a task holds.
 func TestOneAtATime(t *testing.T) {
 	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
-	g := New(nil, f)
+	g := New(nil, nil, f)
 	first := await(t, func() <-chan func() { c, _ := take(t, g, "Codegen", "W1"); return c }(), "first grant")
 	second, waits := take(t, g, "codegen", "W2")
 	if why := times(await(t, waits, "reason")); why != "held by W1, for Ns" {
@@ -157,7 +190,7 @@ func TestOneAtATime(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("notes = %q\nwant %q", got, want)
 	}
-	if _, err := g.Take(t.Context(), "codegen", "W9", "", nil); err == nil {
+	if _, err := g.Take(t.Context(), "codegen", "W9", "", "", nil); err == nil {
 		t.Error("took a gate for an unknown task")
 	}
 }
@@ -166,17 +199,17 @@ func TestOneAtATime(t *testing.T) {
 // them or stops waiting; a holder waits for nothing, and a waiter outside any task is no task's.
 func TestWaiting(t *testing.T) {
 	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
-	p := &pressure{}
-	g := New(p.get, f)
+	p := calm()
+	g := New(p, nil, f)
 	g.tick = 10 * time.Millisecond
 	give := await(t, func() <-chan func() { c, _ := take(t, g, "test", "W1"); return c }(), "first grant")
 	test, waits := take(t, g, "Test", "W2")
 	await(t, waits, "reason")
-	p.set("simulated")
+	p.squeeze(true)
 	ctx, cancel := context.WithCancel(t.Context())
 	left := make(chan error, 1)
 	go func() {
-		_, err := g.Take(ctx, "e2e", "W2", "", nil)
+		_, err := g.Take(ctx, "e2e", "W2", "", "", nil)
 		left <- err
 	}()
 	_, outside := take(t, g, "e2e", "")
@@ -197,7 +230,7 @@ func TestWaiting(t *testing.T) {
 	if got := g.Waiting("W2"); !slices.Equal(got, []string{"test"}) {
 		t.Errorf("W2 waits for %v once it left e2e", got)
 	}
-	p.set("")
+	p.squeeze(false)
 	give()
 	await(t, test, "second grant")()
 	if got := g.Waiting("W2"); got != nil {
@@ -207,22 +240,23 @@ func TestWaiting(t *testing.T) {
 
 // TestUnderPressure: no gate is granted while the machine is under pressure; it is once the pressure falls.
 func TestUnderPressure(t *testing.T) {
-	p := &pressure{why: "simulated"}
-	g := New(p.get, nil)
+	p := calm()
+	p.squeeze(true)
+	g := New(p, nil, nil)
 	g.tick = 10 * time.Millisecond
 	granted, waits := take(t, g, "stack", "")
-	if why := await(t, waits, "reason"); why != "the machine is under pressure: simulated" {
+	if why := await(t, waits, "reason"); why != squeezed {
 		t.Errorf("waits because %q", why)
 	}
 	notGranted(t, granted, "a gate under pressure")
-	p.set("")
+	p.squeeze(false)
 	await(t, granted, "grant after the pressure")()
 }
 
 // TestRankFirst: when a gate frees, the waiter of the first wish of the rank gets it, whoever came first.
 func TestRankFirst(t *testing.T) {
 	f := &tasks{rank: map[string]int{"holder": 0, "low": 2, "high": 1}}
-	g := New(nil, f)
+	g := New(nil, nil, f)
 	give := await(t, func() <-chan func() { c, _ := take(t, g, "paid", "holder"); return c }(), "first grant")
 	low, lowWaits := take(t, g, "paid", "low")
 	await(t, lowWaits, "low waits")
@@ -236,16 +270,51 @@ func TestRankFirst(t *testing.T) {
 	await(t, outside, "the grant outside any task")()
 }
 
+// TestMemory: a gate goes to a measured command only when the machine holds its peak, the peaks of the commands
+// holding a gate counted as taken; a light command goes at once, and one never measured goes as it comes.
+func TestMemory(t *testing.T) {
+	f := &tasks{rank: map[string]int{"W1": 0}}
+	m := calm()
+	m.setFree(18 * machine.GiB / 10)
+	g := New(m, peaks{"go tool task e2e": 31 * machine.GiB / 10, "go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20}, f)
+	g.tick = 10 * time.Millisecond
+
+	heavy, waits := run(t, g, "e2e", "W1", "go tool task e2e")
+	if why := await(t, waits, "reason"); why != "go tool task e2e peaks at 3.1 GiB, 1.8 GiB free" {
+		t.Errorf("the heavy command waits because %q", why)
+	}
+	notGranted(t, heavy, "a command the machine cannot hold")
+	if !slices.Contains(f.noted(), "W1 gate e2e: waiting: go tool task e2e peaks at 3.1 GiB, 1.8 GiB free") {
+		t.Errorf("notes = %q", f.noted())
+	}
+	light, _ := run(t, g, "lint", "", "go tool task lint")
+	await(t, light, "the light command's grant")()
+	unmeasured, _ := run(t, g, "stack", "", "npm run everything")
+	await(t, unmeasured, "the unmeasured command's grant")()
+
+	m.setFree(8 * machine.GiB)
+	giveE2E := await(t, heavy, "the heavy command's grant once memory frees")
+
+	// The e2e run holds its gate: its peak counts as taken until it gives it back.
+	test, waits := run(t, g, "test", "", "go tool task test")
+	if why := await(t, waits, "reason"); why != "go tool task test peaks at 5.0 GiB, 8.0 GiB free, 3.1 GiB of it for the commands holding a gate" {
+		t.Errorf("the second heavy command waits because %q", why)
+	}
+	notGranted(t, test, "a command beside a heavy holder")
+	giveE2E()
+	await(t, test, "the second heavy command's grant")()
+}
+
 // TestTakeGivesUp: a waiter that leaves is forgotten; the gate goes to the next one.
 func TestTakeGivesUp(t *testing.T) {
-	g := New(nil, nil)
-	give, err := g.Take(t.Context(), "e2e", "", "", nil)
+	g := New(nil, nil, nil)
+	give, err := g.Take(t.Context(), "e2e", "", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	left := make(chan error, 1)
-	go func() { _, err := g.Take(ctx, "e2e", "", "", nil); left <- err }()
+	go func() { _, err := g.Take(ctx, "e2e", "", "", "", nil); left <- err }()
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 	if err := await(t, left, "the waiter leaving"); !errors.Is(err, context.Canceled) {
@@ -313,18 +382,19 @@ func waitFree(t *testing.T, g *Gates) {
 // TestRun: djinn gate run holds the gate while the command runs, says why it waits, and gives the gate back when
 // the command fails, cannot start, or its caller goes away.
 func TestRun(t *testing.T) {
-	p := &pressure{why: "simulated"}
-	g := New(p.get, nil)
+	p := calm()
+	p.squeeze(true)
+	g := New(p, nil, nil)
 	g.tick = 10 * time.Millisecond
 	client := server(t, g)
 	t.Setenv(helperEnv, "exit3")
 	var out, notice bytes.Buffer
-	go func() { time.Sleep(100 * time.Millisecond); p.set("") }()
+	go func() { time.Sleep(100 * time.Millisecond); p.squeeze(false) }()
 	code, err := Run(t.Context(), client, "codegen", "", Command{Args: []string{os.Args[0]}, Stdout: &out, Stderr: &out, Notice: &notice})
 	if err != nil || code != 3 || out.String() != "working\n" {
 		t.Errorf("run = %d, %v, output %q", code, err, out.String())
 	}
-	if !strings.Contains(notice.String(), "djinn: gate codegen: waiting: the machine is under pressure: simulated") {
+	if !strings.Contains(notice.String(), "djinn: gate codegen: waiting: "+squeezed) {
 		t.Errorf("notice = %q", notice.String())
 	}
 	waitFree(t, g)
@@ -367,7 +437,7 @@ func (c *costs) Record(
 // TestRunCost: djinn gate run measures what the command cost, its children included, and records it for its task;
 // not when it was interrupted.
 func TestRunCost(t *testing.T) {
-	client := server(t, New(nil, nil))
+	client := server(t, New(nil, nil, nil))
 	rec := &costs{}
 	t.Setenv(helperEnv, "burn")
 	var notice bytes.Buffer
