@@ -317,7 +317,7 @@ func (s *staged) copyFolder(src string, limit int64) error {
 		case d.IsDir() || !d.Type().IsRegular() || name == tilasmManifest:
 			return nil
 		}
-		f, err := os.Open(p)
+		f, err := os.Open(p) //nolint:gosec // G122: the person's own folder, its links refused above; a link put there meanwhile is theirs too.
 		if err != nil {
 			return err
 		}
@@ -764,7 +764,7 @@ func zipFolder(zw *zip.Writer, dir string) error {
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(p)
+		data, err := os.ReadFile(p) //nolint:gosec // G122: a version's folder in Djinn's data folder, which holds no link.
 		if err != nil {
 			return err
 		}
@@ -1023,7 +1023,7 @@ func tilasmFiles(home string, tilasm *planv1.Tilasm) ([]*planv1.TilasmFile, erro
 			if err != nil {
 				return err
 			}
-			data, err := os.ReadFile(p)
+			data, err := os.ReadFile(p) //nolint:gosec // G122: a version's folder in Djinn's data folder, which holds no link.
 			if err != nil {
 				return err
 			}
@@ -1136,7 +1136,7 @@ func (f *tilasmFolders) done(committed bool) {
 			os.RemoveAll(TilasmDir(f.home, id))
 		}
 		for _, id := range f.moved {
-			os.Rename(filepath.Join(f.trash, strings.ToLower(id)), TilasmDir(f.home, id))
+			os.Rename(filepath.Join(f.trash, strings.ToLower(id)), TilasmDir(f.home, id)) //nolint:errcheck // Best effort: the transaction's own error is the one reported.
 		}
 	}
 	removeIf(f.trash)

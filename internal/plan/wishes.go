@@ -85,12 +85,8 @@ func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
 		return false
 	}
 	for _, t := range tasks {
-		switch t.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
-		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
-			// Cut short for good: Djinn resumes by itself every task it can (RESUMING), so one left interrupted
-			// (resumed as a fork, imported from another machine, its worktree gone) is history, not work to wait for.
-		default:
+		// Cut short for good counts as finished: see Finished.
+		if !Finished(t) {
 			return false
 		}
 	}

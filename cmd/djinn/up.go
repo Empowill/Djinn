@@ -145,6 +145,10 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		return held.Give, nil
 	}))
+	// A batch committed in a project that names an install command: the window proposes to install it. The
+	// integration starts once the window's service is there.
+	var uiSvc *ui.Service
+	opts = append(opts, harness.WithBuilt(func(b harness.Built) { uiSvc.SetBuild(buildOf(b)) }))
 	workers := harness.New(db, home, harness.Providers(), opts...)
 	defer workers.Close()
 	if err := workers.Recover(ctx); err != nil {
@@ -155,7 +159,6 @@ func runUp(args []string) (restart bool, err error) {
 	workers.HeldGates(gates.Held, gates.Waiting)
 	workers.GatesOutside(gates.Outside)
 	gates.Freed(workers.Wake)
-	workers.Integrate()
 	if machine.NotMeasured == "" {
 		// A gate's holder is a process of its own, in no worker's scope: read from its processes.
 		gates.Measure(5*time.Second, func(pid int) (machine.Group, error) { return machine.ReadWorker(pid, "") })
@@ -184,8 +187,7 @@ func runUp(args []string) (restart bool, err error) {
 	if *browser {
 		transport = server.HTTP
 	}
-	uiSvc, err := ui.New(version)
-	if err != nil {
+	if uiSvc, err = ui.New(version); err != nil {
 		return false, err
 	}
 	// A djinn:// link shows the tilasm's wish, or the wish.
@@ -204,6 +206,13 @@ func runUp(args []string) (restart bool, err error) {
 		uiSvc.Restart = updates.restart
 		go updates.run(ctx)
 	}
+	uiSvc.Install = func(ctx context.Context, b *uiv1.Build) (bool, error) {
+		if _, err := workers.Install(ctx, b.GetWishId(), b.GetProjectId(), b.GetSha()); err != nil {
+			return false, err
+		}
+		return updates != nil && updates.check(ctx) != "", nil
+	}
+	workers.Integrate()
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
 	uiSvc.Window = !*browser
@@ -458,4 +467,12 @@ func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64) *mac
 		fmt.Fprintf(w, "djinn: each worker runs in a systemd scope of its own, %s\n", strings.Join(caps, ", "))
 	}
 	return scopes
+}
+
+// buildOf is a build committed, as the window proposes it.
+func buildOf(b harness.Built) *uiv1.Build {
+	return &uiv1.Build{
+		WishId: b.WishID, WishTitle: b.WishTitle, ProjectId: b.ProjectID, Project: b.Project, Branch: b.Branch, Sha: b.Sha,
+		Tasks: b.Tasks, Changes: b.Changes, Checks: b.Checks, Install: b.Install,
+	}
 }

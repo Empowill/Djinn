@@ -20,11 +20,12 @@ max_budget_usd: 3
 branch: "djinn/{code}-{slug}-{uuid8}"
 
 # Djinn integrates their finished work by itself: go tool task gen makes gen/** and docs/openapi.json, go tool task
-# test tests the project.
+# test tests the project, go tool task install installs a batch committed, once you say so.
 generated: "gen/**"
 generated: "docs/openapi.json"
 generate: "go tool task gen"
 test: "go tool task test"
+install: "go tool task install"
 ```
 
 | Setting          | What it sets, when a task names none                                   | Not set                    |
@@ -37,12 +38,14 @@ test: "go tool task test"
 | `generate`       | The command that makes them, in the project's folder.                   | none                       |
 | `test`           | The command that tests the project, in the project's folder. Set, Djinn integrates finished work. | none: no integration |
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
+| `install`        | The command that installs a batch committed, in the project's folder: the window proposes it. | none: nothing proposed |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
 ## Branch names
 
-In a Git repository each worker edits its own worktree, on a new branch from the project's `HEAD`. `branch` names it,
+In a Git repository each worker edits its own worktree, on a new branch from the tip of its wish's
+[integration branch](#integration), or the project's `HEAD` when the wish has none. `branch` names it,
 with three placeholders:
 
 | Placeholder | Becomes                                                                 | Task W1 "Fix the login page" |
@@ -150,6 +153,21 @@ Djinn brings it there by itself, no model ([T30](../plan/43303f46-integration.md
    attempts counted again), leave it (the work stays out of the branch), or you take it (the question says how to
    find the failed merge). The question blocks nothing else: the rest of the wish goes on. A correction worker you
    stop leaves it to you, asked the same.
+
+A task that waits for another (`--after W5`) waits for W5's work to be **committed**, not only done: it says `waits for
+W5 to be committed`, and W5 is committed at once, alone. Its worktree then starts from the integration branch's tip,
+whatever branch your checkout is on, so it builds on W5's work; its start event says `from feat/x at 1a2b3c4d`. Work
+Djinn does not integrate (a project that names no `test`) counts once done, as before.
+
+Where each task's work stands shows in `djinn task get` (`integration`: its state, the commit, what failed, the task
+that corrects it), the lead's brief, the wish's page and the Tasks tab: done, waiting to be committed, being
+committed, committed as `1a2b3c4d`, conflict, red, corrected by W9.
+
+Once a batch is committed in a project whose settings name an `install` command, the window proposes, as for a new
+version, to install it and restart on it, with what changed (the titles of the batch's commits) and what to check
+(each task, with the last paragraph its worker wrote). Nothing installs before your click. The command runs under the
+gate `install`, in the integration worktree at that commit, never in your checkout; when it installed a newer Djinn at
+the path of the running one, Djinn restarts on it, as the update button does; otherwise it says the build is installed.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
 branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.

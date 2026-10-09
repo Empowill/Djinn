@@ -282,7 +282,7 @@ func TestHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if env.Msg.GetVersion() != "test" || env.Msg.GetPlatform() == "" || len(env.Msg.GetProviders()) != 2 {
+	if env.Msg.GetVersion() != "test" || env.Msg.GetPlatform() == "" || len(env.Msg.GetProviders()) != 3 {
 		t.Fatalf("GetEnvironment = %v", env.Msg)
 	}
 }
@@ -357,5 +357,87 @@ func TestOpenLink(t *testing.T) {
 	}
 	if raised != 4 {
 		t.Errorf("raised %d times, want 4: the window comes forward to say so", raised)
+	}
+}
+
+// TestUpdateInstallsABuild: a build committed is proposed to the window; installing it runs its install command, then
+// restarts on the newer Djinn it installed, or restarts nothing when it installed none. Only the build proposed
+// installs.
+func TestUpdateInstallsABuild(t *testing.T) {
+	s, _ := newService(t)
+	var installed []string
+	newer, restarts := false, 0
+	s.Install = func(_ context.Context, b *uiv1.Build) (bool, error) {
+		installed = append(installed, b.GetSha())
+		return newer, nil
+	}
+	s.Restart = func() (string, int, error) { restarts++; return "v2", 1, nil }
+	s.SetBuild(&uiv1.Build{WishId: "w", ProjectId: "p", Branch: "feat/x", Sha: "abc", Changes: []string{"Work of W1"}})
+
+	path, handler := uiv1connect.NewUiServiceHandler(s)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := uiv1connect.NewUiServiceClient(server.Client(), server.URL)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	watch, err := client.WatchUpdate(ctx, connect.NewRequest(&uiv1.UiServiceWatchUpdateRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !watch.Receive() || watch.Msg().GetBuild().GetSha() != "abc" || watch.Msg().GetBuild().GetChanges()[0] != "Work of W1" {
+		t.Fatalf("the window is not proposed the build: %v, %v", watch.Msg(), watch.Err())
+	}
+
+	update := func(sha string) (*uiv1.UiServiceUpdateResponse, error) {
+		res, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: sha}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	if _, err := update("other"); code(err) != connect.CodeFailedPrecondition || len(installed) != 0 {
+		t.Errorf("a build not proposed: %v, installed %v", err, installed)
+	}
+	res, err := update("abc")
+	if err != nil || res.GetInstalled() != "abc" || res.GetVersion() != "" || restarts != 0 {
+		t.Errorf("a build that installed no newer Djinn: %v, %v, %d restarts", res, err, restarts)
+	}
+	if !watch.Receive() || watch.Msg().GetBuild() != nil {
+		t.Errorf("still proposed once installed: %v, %v", watch.Msg(), watch.Err())
+	}
+	newer = true
+	s.SetBuild(&uiv1.Build{Sha: "def"})
+	if res, err := update("def"); err != nil || res.GetInstalled() != "def" || res.GetVersion() != "v2" || restarts != 1 {
+		t.Errorf("a build that installed a newer Djinn: %v, %v, %d restarts", res, err, restarts)
+	}
+}
+
+// The agents a lead may run, found on the PATH: Antigravity is the program agy.
+func TestEnvironmentProviders(t *testing.T) {
+	bin := t.TempDir()
+	agy := filepath.Join(bin, "agy")
+	if runtime.GOOS == "windows" {
+		agy += ".exe"
+	}
+	if err := os.WriteFile(agy, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	s, _ := newService(t)
+	env, err := s.GetEnvironment(context.Background(), connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]*uiv1.Provider{}
+	for _, p := range env.Msg.GetProviders() {
+		got[p.GetId()] = p
+	}
+	if p := got["antigravity"]; p.GetName() != "Antigravity" || !p.GetAvailable() || p.GetCommand() != agy {
+		t.Errorf("antigravity = %v, want available at %s", p, agy)
+	}
+	if p := got["claude"]; p.GetAvailable() || p.GetCommand() != "claude" {
+		t.Errorf("claude = %v, want missing from this PATH", p)
 	}
 }

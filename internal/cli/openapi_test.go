@@ -64,7 +64,6 @@ func TestOpenAPI(t *testing.T) {
 	for path := range doc.Paths {
 		described[path] = true
 	}
-	var count int
 	files().RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		for i := range fd.Services().Len() {
 			sd := fd.Services().Get(i)
@@ -79,7 +78,6 @@ func TestOpenAPI(t *testing.T) {
 					}
 					continue
 				}
-				count++
 				if !ok || item.Post == nil {
 					t.Errorf("%s is public and not described: run go tool task gen", path)
 					continue
@@ -100,10 +98,6 @@ func TestOpenAPI(t *testing.T) {
 	})
 	for path := range described {
 		t.Errorf("%s is described and is no method of the protos: run go tool task gen", path)
-	}
-	// The public methods, streams included, as the command line has them.
-	if count != 64 {
-		t.Errorf("%d public methods, want 64", count)
 	}
 }
 

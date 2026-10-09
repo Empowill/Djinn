@@ -629,7 +629,9 @@ func contrast(a, b string) float64 {
 		var rgb [3]float64
 		for i := range rgb {
 			var v int
-			fmt.Sscanf(hex[2*i:2*i+2], "%02x", &v)
+			if _, err := fmt.Sscanf(hex[2*i:2*i+2], "%02x", &v); err != nil {
+				panic(err) // The colours come from page.css: a test that reads them wrong must stop.
+			}
 			c := float64(v) / 255
 			if c <= 0.04045 {
 				rgb[i] = c / 12.92
@@ -798,5 +800,43 @@ func TestMovingByStatus(t *testing.T) {
 			t.Fatalf("%s at %d, after %d: tasks out of order", code, i, last)
 		}
 		last = i
+	}
+}
+
+// TestWorkStands: each finished task says where its work stands on its way into the wish's integration branch: done
+// and waiting to be committed, committed with its short commit, a conflict or red tests and who corrects them; a task
+// whose work Djinn does not integrate says only done.
+func TestWorkStands(t *testing.T) {
+	done := planv1.TaskStatus_TASK_STATUS_DONE
+	in := func(state planv1.IntegrationState, reason, by string) *planv1.TaskIntegration {
+		return &planv1.TaskIntegration{State: state, Branch: "feat/x", Sha: "1a2b3c4d5e6f", Reason: reason, CorrectedBy: by}
+	}
+	exp := &planv1.WishExport{Wish: &planv1.Wish{Id: "w", Title: "Integrates"}, Tasks: []*planv1.Task{
+		{Id: "t1", WishId: "w", Code: "W1", Title: "Plain", Status: done},
+		{Id: "t2", WishId: "w", Code: "W2", Title: "Waits", Status: done, Integration: in(planv1.IntegrationState_INTEGRATION_STATE_PENDING, "", "")},
+		{Id: "t3", WishId: "w", Code: "W3", Title: "In", Status: done, Integration: in(planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, "", "")},
+		{Id: "t4", WishId: "w", Code: "W4", Title: "Clash", Status: done,
+			Integration: in(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, "W4 conflicts with feat/x in a.go", "W9")},
+		{Id: "t5", WishId: "w", Code: "W5", Title: "Red", Status: done, Integration: in(planv1.IntegrationState_INTEGRATION_STATE_RED, "test exited 1", "")},
+		{Id: "t6", WishId: "w", Code: "W6", Title: "Merging", Status: done, Integration: in(planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, "", "")},
+	}}
+	html := page(t, Input{Export: exp, Language: "en"})
+	for code, want := range map[string]string{
+		"W2": `<p class="work pause">Done, waiting to be committed</p>`,
+		"W3": `<p class="work ok">Committed into feat/x as 1a2b3c4d</p>`,
+		"W4": `<p class="work fail">Conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9</p>`,
+		"W5": `<p class="work fail">Red tests, not committed: test exited 1</p>`,
+		"W6": `<p class="work run">Being committed into feat/x</p>`,
+	} {
+		if row := between(html, `<tr id="t-`+code+`">`, "</tr>"); !strings.Contains(row, want) {
+			t.Errorf("%s's row lacks %s:\n%s", code, want, row)
+		}
+	}
+	if row := between(html, `<tr id="t-W1">`, "</tr>"); strings.Contains(row, `class="work`) {
+		t.Errorf("a task whose work Djinn does not integrate says where it stands:\n%s", row)
+	}
+	if fr := page(t, Input{Export: exp, Language: "fr"}); !strings.Contains(fr,
+		french(t, "work.committed", map[string]string{"branch": "feat/x", "sha": "1a2b3c4d"})) {
+		t.Error("the French page does not say where the work stands")
 	}
 }

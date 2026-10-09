@@ -1,0 +1,154 @@
+# golangci-lint v2, pinned in tools/golangci/go.mod. `go tool task lint` runs it (its formatters with `fmt --diff`,
+# which reads every Go file whatever its build tags); `go tool task format` formats and applies the fixes it knows.
+# Each rule left out says why: a rule that only adds noise costs more than it finds.
+version: "2"
+run:
+  # Tests and CI build headless (no CGO, no webview): the window's code needs the native toolkit to type-check. The
+  # lint task runs a second pass with the mcp tag on cmd/djinn, the build of the native end-to-end tests.
+  build-tags: [headless]
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - copyloopvar
+    - durationcheck
+    - errcheck
+    - errname
+    - errorlint
+    # Opt-in only (explicit-exhaustive-switch below): most switches on a proto enum name the states they act on.
+    - exhaustive
+    - gocritic
+    - godot
+    - gomoddirectives
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - loggercheck
+    - makezero
+    - nakedret
+    - nilerr
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - reassign
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck
+    - testableexamples
+    - unconvert
+    - unused
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+    # Left out:
+    # - lll: gofmt owns the layout. 600 lines pass 120 columns, mostly strings and test tables; wrapping them reads
+    #   worse.
+    # - goconst: the repeated strings are JSON keys, OS names and proto field names, clearer where they are used.
+    # - cyclop, gocyclo, gocognit, funlen, nestif: length and nesting are judged in review. The functions over the
+    #   bar (render.build, plan.movingBrief, harness.Spawn) read top-down as one list of cases; splitting them is a
+    #   refactor of its own, not a lint fix.
+    # - prealloc: these slices hold a handful of items; a capacity hint is noise.
+    # - exhaustruct, forbidigo, gomodguard, promlinter, testifylint: nothing to guard here. Djinn is a command line
+    #   that prints, has no metrics, and its tests use the standard library.
+  settings:
+    exhaustive:
+      # Checked only where a switch says //exhaustive:enforce: the switch that must learn each new state.
+      explicit-exhaustive-switch: true
+    gocritic:
+      disabled-checks:
+        # route.Options = append(filed, made...) builds a new list on purpose; the rule wants the same slice.
+        - appendAssign
+    govet:
+      enable-all: true
+      disable:
+        # Field order follows meaning, not padding.
+        - fieldalignment
+        # `if err := …; err != nil` inside a function with an err is the idiom.
+        - shadow
+    nakedret:
+      max-func-lines: 30
+    nolintlint:
+      # A //nolint names its linter and says why.
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        # Revive's defaults, less the two below.
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+        - name: unused-parameter
+          # Handlers and callbacks keep the signature their caller expects.
+          disabled: true
+        - name: empty-block
+          # `for !h.settle(r, h.drain(r)) {}` loops until a call says stop: the body is the condition.
+          disabled: true
+  exclusions:
+    generated: lax
+    presets: [comments, common-false-positives, legacy, std-error-handling]
+    rules:
+      - linters: [bodyclose, gosec, noctx]
+        # Tests write fixtures for themselves, call their own servers and end with them.
+        path: _test\.go$
+      - linters: [gosec]
+        # G115: integer conversions of counts, sizes and pids that stay small (proto int32, terminal sizes).
+        # G204, G702: Djinn launches agents, git and the user's own commands: running a command it was given is its
+        # job.
+        # G703: the paths come from the user's command line or Djinn's own folders.
+        text: "G(115|204|702|703):"
+      - linters: [gosec]
+        # SQL built from the table and column names of the proto descriptors, each quoted; values always go as
+        # parameters.
+        path: ^internal/store/table\.go$
+        text: "G202:"
+      - linters: [gosec]
+        # Developer tools on the developer's own repository: the files they write are meant to be read by others
+        # (0644), the dev server lives for a session.
+        path: ^tools/
+        text: "G(114|122|306):"
+      - linters: [noctx]
+        # Listening, dialing and starting a process at startup or once: a context adds nothing there.
+        text: (net\.(Listen|Dial|DialTimeout)|os/exec\.Command) must not be called
+      - linters: [staticcheck]
+        # A condition written as the sentence it checks reads better than its De Morgan twin.
+        text: "QF1001:"
+      - linters: [unused]
+        # Used by window.go only, which builds with the native toolkit (not headless).
+        path: ^cmd/djinn/window_(plain|mcp)\.go$
+    paths:
+      - gen/
+      - node_modules/
+formatters:
+  # gofmt, simplified (gofmt -s). goimports would only add the grouping of imports, which the code already keeps.
+  enable: [gofmt]
+  exclusions:
+    generated: lax
+    paths:
+      - gen/
+      - node_modules/
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -141,6 +141,10 @@
 .wish-task-note.error {
   color: var(--danger);
 }
+/* Where the task's finished work stands on its way into the wish's branch: red when it is held. */
+.wish-task-work.work-failed {
+  color: var(--danger);
+}
 .wish-task-body {
   border-top: 1px solid var(--line);
   padding: var(--space-3) 14px;
@@ -434,6 +438,9 @@
 .azima-waits {
   color: var(--text);
 }
+.azima-needs {
+  color: var(--st-proof);
+}
 .azima-progress {
   display: inline-flex;
   align-items: center;
@@ -455,4 +462,18 @@
 .azima-parts {
   border-top: 1px solid var(--line);
   padding: var(--space-2) var(--space-2) 0 24px;
+}
+/* What the proof of an azima whose work is done needs, box by box, above its parts. */
+.azima-proof {
+  border-left: 2px solid var(--st-proof);
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.azima-proof p {
+  margin: 0;
+  font-weight: 600;
+}
+.azima-proof ul {
+  margin: var(--space-1) 0 var(--space-2);
+  padding-left: 18px;
 }

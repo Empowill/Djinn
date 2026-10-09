@@ -42,6 +42,7 @@ export function ModalFrame({
   );
   useEffect(() => {
     const el = ref.current;
+    const previous = previousFocus.current;
     const focusable = () =>
       Array.from(
         el?.querySelectorAll<HTMLElement>(
@@ -71,8 +72,7 @@ export function ModalFrame({
     document.addEventListener("keydown", handle);
     return () => {
       document.removeEventListener("keydown", handle);
-      if (previousFocus.current?.isConnected)
-        previousFocus.current.focus({ preventScroll: true });
+      if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
   return (

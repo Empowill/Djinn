@@ -344,12 +344,12 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	cancel()
 	s.Close()
 	e.down()
-	before, worktree := storedTask(t, home, task.GetId()), ""
+	before := storedTask(t, home, task.GetId())
 	if before.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED || before.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
 		before.GetSessionId() != task.GetId() || before.GetWorktree() == "" || before.GetUsage().GetCostUsd() != 0.01 {
 		t.Errorf("after the stop: %v", before)
 	}
-	worktree = before.GetWorktree()
+	worktree := before.GetWorktree()
 
 	e = up(t, home)
 	events := e.watch(t.Context(), t, task.GetId(), 0)

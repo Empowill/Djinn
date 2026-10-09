@@ -180,5 +180,4 @@ func TestTilasmPutData(t *testing.T) {
 	if got := res.Msg.GetTilasm(); got.GetCode() != "L01" || len(got.GetVersions()) != 2 || !res.Msg.GetImported() {
 		t.Fatalf("a dropped export = %v", res.Msg)
 	}
-
 }

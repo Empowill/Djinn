@@ -188,7 +188,8 @@ type planSource struct {
 }
 
 // SyncPlan reads the plan files of the wish's projects into its azimas, then writes what each azima depends on back
-// into its file (PlanService.Sync). An azima is found by its file's id, else its code; one the files name and the
+// into its file (PlanService.Sync). A file closes its azima when its status says done or every Done-when box is
+// checked, the latter reported; its unchecked boxes that wait for a proof no worker can give go on the azima. An azima is found by its file's id, else its code; one the files name and the
 // store lacks is made, taking its file's after line once. What an azima depends on is the store's: the files only
 // follow it.
 func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.PlanServiceSyncRequest) (*planv1.PlanServiceSyncResponse, error) {
@@ -280,11 +281,20 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 				if t.GetProjectId() == "" {
 					t.ProjectId = src.project.GetId()
 				}
+				// What the unchecked boxes wait for, when nothing else is left in them.
+				t.ProofNeeds = f.DoneWhen.Needs
+				if !f.Done() && f.DoneWhen.AllChecked() {
+					res.AllChecked = append(res.AllChecked, f.Path)
+				}
 				switch {
-				case f.Done() && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
+				case f.Closes() && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
+					note := f.Path + " says done"
+					if !f.Done() {
+						note = "every Done-when box of " + f.Path + " is checked"
+					}
 					t.Status, t.WaitReason, t.EndTime = planv1.TaskStatus_TASK_STATUS_DONE, "", now
-					t.Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_PLAN_FILE, CreateTime: now, Note: f.Path + " says done"}
-				case !f.Done() && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE &&
+					t.Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_PLAN_FILE, CreateTime: now, Note: note}
+				case !f.Closes() && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE &&
 					t.GetClosed().GetActor() == planv1.Closer_CLOSER_PLAN_FILE:
 					t.Status, t.EndTime, t.Closed = planv1.TaskStatus_TASK_STATUS_PENDING, nil, nil
 				}
@@ -382,7 +392,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 func azimaID(ctx context.Context, r store.Reader, fileID string) (string, error) {
 	u, err := uuid.Parse(fileID)
 	if err != nil {
-		return store.NewID(), nil
+		return store.NewID(), nil //nolint:nilerr // A file id that is not a UUID is not an error: the azima gets a new one.
 	}
 	id := u.String()
 	switch _, err := store.Get[*planv1.Task](ctx, r, id); {

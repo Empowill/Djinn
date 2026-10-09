@@ -120,7 +120,12 @@ To use Djinn, see the [README](README.md). To work on it:
   `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 2 s
   (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
-- `go tool task lint`: every check (protos, Go, types, formatting). `go tool task format` fixes.
+- `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
+  can be.
+  - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
+    formats (gofmt) and runs vet with the linters, on the headless build and on cmd/djinn with the `mcp` tag.
+  - Interface: [ESLint](eslint.config.mjs) (typescript-eslint, @eslint-react, the rules of hooks); `tsc` checks the
+    types, Prettier owns the layout.
 - `go tool task gen`: code from the protos, and [`docs/openapi.json`](docs/openapi.json).
 - `go tool task docs`: the documentation site, its concepts and its API, into `bin/docs` (open `bin/docs/index.html`,
   offline). Its sources are in [`docs/site`](docs/site); `djinn up` serves it at `/docs/`, and the settings open it.
@@ -152,7 +157,9 @@ To use Djinn, see the [README](README.md). To work on it:
   branches in a worktree of its own, makes the generated files again on a conflict only in them, runs the tests
   through a gate, and moves the wish's branch when they pass ([T30](plan/43303f46-integration.md)). `djinn wish
   set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or red tests, start a correction
-  worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you.
+  worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task waits for
+  its dependencies' work to be committed, and its worktree starts from that branch; once a batch is committed, the
+  window proposes to install it (the `install` setting) and restart on it.
 - `djinn task spawn … --after W1,W2` gives a task what comes before it (`--depends-on`, its former name, still works);
   `--blocks W5` puts the new task before a planned one, W5 waiting for it from the same step, refused once W5 has
   started. `djinn task depend <task-id> --after W1,W2 --also W6=W5` sets what tasks wait for, in place of what they
@@ -162,7 +169,8 @@ To use Djinn, see the [README](README.md). To work on it:
   --part-of T07` spawns work in one, `djinn task group <task-id> --part-of T07` moves it, `djinn task spawn <wish>
   --kind azima --title "…"` makes one. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes
   each one's `after:` back from the store ([T07](plan/8e8d3d76-orchestrator.md)). The Tasks tab groups work under its
-  azima.
+  azima. One whose work is finished and whose file's unchecked "Done when" boxes all say `(needs: …)` awaits its
+  proof ("Proof awaited"): a person, a machine, a release or a real model gives it, never a worker.
 - `djinn task done <task-id> --note "…"` closes a task no worker runs (planned, cut short, failed, stopped,
   imported) once its work is done, with who closed it and why; "Mark done" on its card does it in the window.
   `djinn task delete` stays for a task made by mistake.
@@ -221,7 +229,10 @@ To use Djinn, see the [README](README.md). To work on it:
   `SKILL.md`) makes that skill's wish, its watcher started and its lead on the skill: `.agents/skills/babysit-pr` for a
   GitHub pull request, `.agents/skills/babysit-mr` for a GitLab merge request
   ([`docs/wish-templates.md`](docs/wish-templates.md)).
-- `djinn wish brief <wish-id>`: the brief a new lead starts from, when `djinn wish resume` finds no session.
+- `djinn wish brief <wish-id>`: where the wish stands and how to lead it, computed from the store; every new lead, of
+  any agent, starts by running it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
+  (also edited under the wish's title). `djinn wish resume <wish-id> --provider antigravity` (or the arrow beside Lead)
+  starts a lead of another agent than the recorded one's.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
   --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)
   compares them ([T22](plan/1689571a-fast-workers.md)).
@@ -262,8 +273,10 @@ their contributors.
   [x/mod](https://github.com/golang/mod) (release versions), [x/net](https://github.com/golang/net) (the text of a
   tilasm's page, by its HTML tokenizer),
   [go-yaml](https://github.com/yaml/go-yaml) (the front matter of a skill's wish template); as module tools,
-  [Task](https://github.com/go-task/task), [buf](https://github.com/bufbuild/buf) and
-  [protoc-gen-connect-openapi](https://github.com/sudorandom/protoc-gen-connect-openapi) (`docs/openapi.json`).
+  [Task](https://github.com/go-task/task), [buf](https://github.com/bufbuild/buf),
+  [protoc-gen-connect-openapi](https://github.com/sudorandom/protoc-gen-connect-openapi) (`docs/openapi.json`) and
+  [golangci-lint](https://github.com/golangci/golangci-lint) (GPL-3.0: run on the code, in a module of its own, never
+  built into Djinn).
 - Interface: [React](https://github.com/react/react),
   [Connect for the web](https://github.com/connectrpc/connect-es) and
   [Protobuf-ES](https://github.com/bufbuild/protobuf-es),
@@ -281,6 +294,9 @@ their contributors.
   [TypeScript](https://github.com/microsoft/TypeScript),
   [Playwright](https://github.com/microsoft/playwright),
   [Prettier](https://github.com/prettier/prettier),
+  [ESLint](https://github.com/eslint/eslint) with [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint),
+  [ESLint React](https://github.com/Rel1cx/eslint-react),
+  [eslint-plugin-react-hooks](https://github.com/facebook/react) and [globals](https://github.com/sindresorhus/globals),
   [DefinitelyTyped](https://github.com/DefinitelyTyped/DefinitelyTyped).
 - Adapted code and assets are credited in [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md).
 

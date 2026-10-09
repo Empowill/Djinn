@@ -207,7 +207,7 @@ func (t *table) backfill(ctx context.Context, tx *sql.Tx, mt protoreflect.Messag
 	for rows.Next() {
 		var payload []byte
 		if err := rows.Scan(&payload); err != nil {
-			rows.Close()
+			rows.Close() //nolint:sqlclosecheck // Closed by hand before the writes below, which the open rows would block.
 			return err
 		}
 		m := mt.New().Interface()
@@ -260,7 +260,7 @@ func (t *table) put(ctx context.Context, tx *sql.Tx, m proto.Message) error {
 		strings.Repeat(", ?", len(names)-1) + `) ON CONFLICT (id) DO UPDATE SET ` + strings.Join(set, ", ")
 	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
 		if isUnique(err) {
-			return fmt.Errorf("%s %s: %w: %v", t.md.Name(), id, ErrDuplicate, err)
+			return fmt.Errorf("%s %s: %w: %w", t.md.Name(), id, ErrDuplicate, err)
 		}
 		return err
 	}

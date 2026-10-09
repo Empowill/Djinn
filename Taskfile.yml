@@ -2,6 +2,12 @@
 version: "3"
 
 vars:
+  # What Prettier formats: the interface, its tests, and the root configs. Not docs/ nor plan/: their prose is
+  # wrapped by hand, and Prettier would rewrite the tables and list markers of files every worker edits.
+  PRETTIER_FILES: '"src/**/*.{ts,tsx,css}" "e2e/**/*.ts" "tests/*.{mjs,cjs}" "*.{ts,mjs}"'
+  # golangci-lint is pinned in a module of its own (tools/golangci/go.mod): its few hundred dependencies stay out of
+  # Djinn's go.mod, and nothing needs installing.
+  GOLANGCI: go tool -modfile=tools/golangci/go.mod golangci-lint
   # The native window is in every build by default. Tests and CI build headless: no CGO, no webview.
   # Ubuntu 22.04 only ships WebKitGTK 4.1, which Wails v3 reaches through its gtk3 tag.
   WINDOW_TAGS:
@@ -145,21 +151,28 @@ tasks:
       - go run -tags '{{.WINDOW_TAGS}}' ./tools/windowcheck {{.CLI_ARGS}}
 
   lint:
-    desc: "Check everything: protos, Go (gofmt, vet), TypeScript types, formatting"
+    desc: "Check everything: protos, Go (golangci-lint: gofmt, vet and the linters of .golangci.yml), TypeScript types, ESLint, formatting"
     deps: [ui]
     cmds:
       - go tool buf lint
-      - go run ./tools/gofmtcheck cmd internal tools locales e2e
-      - go vet -tags headless ./...
-      - go vet -tags 'headless mcp' ./cmd/djinn
+      # fmt reads every Go file, whatever its build tags; run type-checks the headless build (.golangci.yml), then
+      # cmd/djinn with the mcp tag too, the build of the native end-to-end tests.
+      - "{{.GOLANGCI}} fmt --diff"
+      - "{{.GOLANGCI}} run ./..."
+      - "{{.GOLANGCI}} run --build-tags headless,mcp ./cmd/djinn"
       - npx tsc -b --noEmit
-      - npx prettier --check --log-level warn "src/**/*.{ts,tsx,css}" "e2e/**/*.ts"
+      - npx eslint --max-warnings 0 .
+      - npx prettier --check --log-level warn {{.PRETTIER_FILES}}
 
   format:
-    desc: Format the Go and TypeScript code in place
+    desc: Format the Go and TypeScript code in place, and apply the fixes golangci-lint and ESLint know
+    deps: [ui]
     cmds:
-      - gofmt -w cmd internal tools locales e2e
-      - npx prettier --write --log-level warn "src/**/*.{ts,tsx,css}" "e2e/**/*.ts"
+      - "{{.GOLANGCI}} fmt"
+      - "{{.GOLANGCI}} run --fix --issues-exit-code 0 ./..."
+      - "{{.GOLANGCI}} run --fix --issues-exit-code 0 --build-tags headless,mcp ./cmd/djinn"
+      - npx eslint --fix .
+      - npx prettier --write --log-level warn {{.PRETTIER_FILES}}
 
   release:
     desc: "Tag a release that carries the built interface: task release VERSION=v0.1.0 (pushing the tag stays a separate step)"

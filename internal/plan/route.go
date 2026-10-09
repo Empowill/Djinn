@@ -43,7 +43,7 @@ const (
 	routeBlocks   = 5 // how many of the latest blocks are read
 	routeShown    = 3 // the least score of a wish proposed
 	routeFile     = 6 // the least score for Djinn to recommend filing rather than a new wish
-	// the least score to recommend filing rather than a template's new wish: the same piece of work, said again
+	// the least score to recommend filing rather than a template's new wish: the same piece of work, said again.
 	routeFileTemplate = routeRef + routeWord
 	routeTitleMax     = 80
 	routeKindBlock    = "request" // the kind of the block that holds a routed request
@@ -269,7 +269,7 @@ func sharedWords(a, b map[string]bool) []string {
 // rank scores the wishes a request may go to, the closest first: every wish but the one it came to and the granted
 // ones. The close ones score routeShown or more; the others follow, the developer may still file the request there.
 // Between equal scores, an active wish comes first, by rank.
-func rank(lang string, req signs, wishes []*planv1.Wish, blocks map[string][]*planv1.Block, from string) (close, far []candidate) {
+func rank(lang string, req signs, wishes []*planv1.Wish, blocks map[string][]*planv1.Block, from string) (near, far []candidate) {
 	var out []candidate
 	for _, w := range wishes {
 		if w.GetId() == from || w.GetState() == planv1.WishState_WISH_STATE_GRANTED {

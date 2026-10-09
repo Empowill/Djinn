@@ -14,6 +14,7 @@
   --st-paused: #b4b4c8;
   --st-watching: #4fd1c5;
   --st-human: #f590b8;
+  --st-proof: #b8cf6a;
   --lamp: #e9bf55;
   --lamp-ink: #2a1d00;
   --measure: 72ch;
@@ -43,6 +44,7 @@ html[data-theme="light"] {
   --st-paused: #4b4b6b;
   --st-watching: #0f6b63;
   --st-human: #a8235a;
+  --st-proof: #4f6212;
   --lamp: #f0c75e;
 }
 
@@ -79,6 +81,9 @@ html[data-theme="light"] {
 }
 .tone-human {
   --tone: var(--st-human);
+}
+.tone-proof {
+  --tone: var(--st-proof);
 }
 .status-badge,
 .count-pill {
@@ -654,6 +659,12 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
 .review .wish-task-closed {
   color: var(--st-done);
 }
+.review .wish-task-work.work-done {
+  color: var(--st-done);
+}
+.review .wish-task-work.work-failed {
+  color: var(--st-failed);
+}
 .review .wish-task-closed .task-link {
   padding: 0;
   color: inherit;
@@ -934,4 +945,100 @@ html[data-theme="light"] .review .question-meta .wish-origin {
 }
 .review .action-center .decisions-section .section-heading h3 {
   color: var(--text);
+}
+
+/* The wish's description, under its title: a few lines, edited in place. */
+.review .hero-copy > .wish-description {
+  margin: -4px 0 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: var(--measure);
+  white-space: pre-line;
+  cursor: text;
+  border-radius: 5px;
+}
+.review .hero-copy > .wish-description:hover,
+.review .hero-copy > .wish-description:focus-visible {
+  color: var(--text);
+  outline: 1px dashed var(--line-strong);
+  outline-offset: 4px;
+}
+.wish-description-edit {
+  display: block;
+  width: 100%;
+  max-width: var(--measure);
+  margin: -4px 0 12px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+/* Lead, split: the button resumes the recorded lead, the arrow beside it lists the agents of this machine. */
+.split-button {
+  position: relative;
+  display: inline-flex;
+}
+.split-button > .button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split-button > .split-arrow {
+  padding-left: 6px;
+  padding-right: 6px;
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.lead-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 260px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px color-mix(in srgb, black 35%, transparent);
+}
+.lead-menu > p {
+  padding: 8px 10px;
+}
+.lead-agent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  text-align: left;
+  color: var(--text);
+}
+.lead-agent:not(:disabled):hover,
+.lead-agent:not(:disabled):focus-visible {
+  background: var(--n-28);
+}
+.lead-agent:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.lead-agent-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 550;
+}
+.lead-agent-detail {
+  font-size: var(--font-size-body, 12px);
+  color: var(--muted);
 }

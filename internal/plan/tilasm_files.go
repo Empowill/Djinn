@@ -187,7 +187,7 @@ func (t *Tilasms) Files() http.Handler {
 		}
 		if !ok {
 			// Its files are relative to its folder: the address ends with a slash.
-			http.Redirect(w, r, server.TilasmPrefix+id+"/", http.StatusMovedPermanently)
+			http.Redirect(w, r, server.TilasmPrefix+id+"/", http.StatusMovedPermanently) //nolint:gosec // Same origin: a path, its id a UUID.
 			return
 		}
 		if t.Home == "" {

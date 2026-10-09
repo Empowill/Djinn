@@ -19,7 +19,7 @@ import {
 import {
   type ReactNode,
   createContext,
-  useContext,
+  use,
   useEffect,
   useRef,
   useState,
@@ -92,8 +92,10 @@ function store(key: string, value: string) {
 }
 
 // The app tells the terminal which wish it shows: empty for none, such as the flight plan.
-const ShowWish = createContext<(wishId: string) => void>(() => undefined);
-export const useShowWish = () => useContext(ShowWish);
+const ShowWishContext = createContext<(wishId: string) => void>(
+  () => undefined,
+);
+export const useShowWish = () => use(ShowWishContext);
 
 // A terminal you opened, in a tab of its own: a shell in the first project's folder (shell-…), or in a project's
 // root (project-<id>-…). The names say which, so that the tabs come back from djinn up after a reload.
@@ -104,10 +106,10 @@ interface Tab {
 const opened = (name: string) =>
   name.startsWith("shell-") || name.startsWith("project-");
 // The app asks the terminal for a new tab: in a project's root when given a folder, else a plain shell.
-const OpenTerminal = createContext<
+const OpenTerminalContext = createContext<
   ((project?: { id: string; directory: string }) => void) | undefined
 >(undefined);
-export const useOpenTerminal = () => useContext(OpenTerminal);
+export const useOpenTerminal = () => use(OpenTerminalContext);
 
 // LeadTerminalFrame lays the app out above the terminal, when there is one.
 export function LeadTerminalFrame({ children }: { children: ReactNode }) {
@@ -124,11 +126,11 @@ export function LeadTerminalFrame({ children }: { children: ReactNode }) {
     });
   return (
     <div className="lead-frame">
-      <ShowWish.Provider value={setWishId}>
-        <OpenTerminal.Provider value={open}>
+      <ShowWishContext value={setWishId}>
+        <OpenTerminalContext value={open}>
           <div className="lead-frame-app">{children}</div>
-        </OpenTerminal.Provider>
-      </ShowWish.Provider>
+        </OpenTerminalContext>
+      </ShowWishContext>
       <LeadTerminal
         djinn={djinn}
         wishId={wishId}
@@ -399,6 +401,7 @@ function LeadTerminal({
             if (abort.signal.aborted) return;
             if ((error as { code?: number }).code === 5) throw error; // Not found: djinn up restarted.
           }
+          // eslint-disable-next-line @eslint-react/web-api-no-leaked-timeout -- a pause in a loop the cleanup aborts
           await new Promise((r) => setTimeout(r, 500));
         }
       } catch (error) {

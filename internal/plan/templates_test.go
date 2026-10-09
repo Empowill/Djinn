@@ -226,15 +226,16 @@ func TestTemplateWish(t *testing.T) {
 	if len(leads.opened) <= opened || !strings.HasPrefix(leads.opened[opened], "claude --session-id "+made.GetLead().GetSessionId()) {
 		t.Errorf("opened %q", leads.opened[opened:])
 	}
-	first, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadBriefFile))
+	first, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadFirstFile))
 	want := FirstLine(here.GetTitle(), request) + " This wish follows the skill babysit (" + filepath.Join(skill, SkillFile) +
 		"): read it first, and follow it. Its watcher W1 runs sh watch.sh 12 and tells you what changes. When it prints " +
-		"MERGED, Djinn asks the developer whether to grant the wish.\n\n# The wish: Babysit PR #12"
-	if err != nil || !strings.HasPrefix(string(first), want) {
-		t.Errorf("the lead's first line and brief:\n%s\nwant a start of\n%s", first, want)
+		"MERGED, Djinn asks the developer whether to grant the wish.\n\n" + StartLine(made.GetId())
+	if err != nil || string(first) != want {
+		t.Errorf("the lead's first message:\n%s\nwant\n%s", first, want)
 	}
-	if !strings.Contains(string(first), "- Made from the wish template of the skill `babysit`: follow that skill. Its watcher runs `sh watch.sh 12`") {
-		t.Errorf("the brief does not say the template:\n%s", first)
+	brief, err := BuildBrief(ctx, c.store, home, made.GetId())
+	if err != nil || !strings.Contains(brief.Moving, "- Made from the wish template of the skill `babysit`: follow that skill. Its watcher runs `sh watch.sh 12`") {
+		t.Errorf("the brief does not say the template (%v):\n%s", err, brief.Moving)
 	}
 
 	// The watcher's paragraphs: a change asks nothing; the done line asks once, B keeps the wish open.

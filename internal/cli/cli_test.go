@@ -107,6 +107,11 @@ func TestConvention(t *testing.T) {
 		},
 		{name: "empty request", args: nil, want: &planv1.ProjectServiceListRequest{}},
 		{
+			name: "djinn wish describe <wish> --text",
+			args: []string{wishID, "--text", "Ship the API.\nIts scope: the store."},
+			want: &planv1.WishServiceDescribeRequest{WishId: wishID, Text: "Ship the API.\nIts scope: the store."},
+		},
+		{
 			name: "a string and a list of strings in one input, repeated",
 			args: []string{taskID, "--after", "W1,W2", "--also", "W6=W5,W3", "--also", "W7="},
 			want: &planv1.TaskServiceDependRequest{
@@ -256,6 +261,21 @@ type projects struct {
 	*fake
 }
 
+type tasks struct {
+	planv1connect.UnimplementedTaskServiceHandler
+	*fake
+}
+
+// Get is a task done whose work a correction worker took over, its batch red.
+func (f tasks) Get(_ context.Context, req *connect.Request[planv1.TaskServiceGetRequest]) (*connect.Response[planv1.TaskServiceGetResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: &planv1.Task{
+		Id: req.Msg.GetTaskId(), Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE, Integration: &planv1.TaskIntegration{
+			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Branch: "feat/x", Reason: "test exited 1", CorrectedBy: "W9",
+		},
+	}}), nil
+}
+
 func (f questions) Answer(_ context.Context, req *connect.Request[planv1.QuestionServiceAnswerRequest]) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
 	f.record(req.Msg)
 	if req.Msg.GetQuestion().GetCode() == "Q99" {
@@ -289,6 +309,7 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux.Handle(planv1connect.NewQuestionServiceHandler(questions{fake: f}))
 	mux.Handle(planv1connect.NewProjectServiceHandler(projects{fake: f}))
 	mux.Handle(planv1connect.NewTilasmServiceHandler(tilasms{fake: f}))
+	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return f, func(args ...string) (int, string, string) {
@@ -310,6 +331,8 @@ func TestRun(t *testing.T) {
 		{name: "prefixes", args: []string{"q", "ans", "Q03", "b"}, wantOut: "code: Q03", wantCalled: true},
 		{name: "text output", args: []string{"question", "answer", "Q03", "B", "--note", "ok"}, wantOut: "answer:\n  choice: b\n  note: ok\n", wantCalled: true},
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
+		{name: "where a task's work stands", args: []string{"task", "get", wishID}, wantOut: "status: done\n" +
+			"integration:\n  state: red\n  branch: feat/x\n  reason: test exited 1\n  corrected_by: W9\n", wantCalled: true},
 		{name: "list output", args: []string{"pr", "l"}, wantOut: "- id: " + projectID + "\n  name: api\n", wantCalled: true},
 		{name: "server error", args: []string{"q", "answer", "Q99", "a"}, wantCode: 1, wantErr: "not_found: no question Q99", wantCalled: true},
 		{name: "validation before sending", args: []string{"q", "answer"}, wantCode: 2, wantErr: "<question>: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\n  <choice>: value is required; expected one of yes, no, a, b, c, d"},
@@ -342,27 +365,49 @@ func TestRun(t *testing.T) {
 	}
 }
 
-// TestEveryPublicMethodIsExpressible keeps the protos within what the convention can type.
-func TestEveryPublicMethodIsExpressible(t *testing.T) {
-	var methods int
-	for _, sd := range commands() {
-		for _, md := range public(sd) {
-			methods++
-			for _, fd := range byNumber(md.Input()) {
-				if err := supported(fd); err != nil {
-					t.Errorf("%s: %v", fd.FullName(), err)
+// protoMethods are the public methods of the protos, streams included: each method of each service that says
+// VISIBILITY_PUBLIC, read from the descriptors, not from the command line's own list. A method added is in it.
+func protoMethods(t *testing.T) []protoreflect.MethodDescriptor {
+	t.Helper()
+	var out []protoreflect.MethodDescriptor
+	files().RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		for i := range fd.Services().Len() {
+			sd := fd.Services().Get(i)
+			for j := range sd.Methods().Len() {
+				if md := sd.Methods().Get(j); proto.GetExtension(md.Options(), djinnv1.E_Visibility) == djinnv1.Visibility_VISIBILITY_PUBLIC {
+					out = append(out, md)
 				}
-				if comment(fd) == "" {
-					t.Errorf("%s has no comment, so no help", fd.FullName())
-				}
-			}
-			if comment(md) == "" {
-				t.Errorf("%s has no comment, so no help", md.FullName())
 			}
 		}
+		return true
+	})
+	if len(out) == 0 {
+		t.Fatal("the protos have no public method")
 	}
-	if methods != 64 {
-		t.Errorf("found %d public methods, want 64", methods)
+	return out
+}
+
+// TestEveryPublicMethodIsExpressible keeps the protos within what the convention can type: each public method is a
+// command line, djinn <service> <method>, and its fields are flags or arguments with their help.
+func TestEveryPublicMethodIsExpressible(t *testing.T) {
+	for _, md := range protoMethods(t) {
+		line := []string{command(md.Parent().(protoreflect.ServiceDescriptor)), kebab(string(md.Name()))}
+		var out, errs bytes.Buffer
+		code := Run(t.Context(), append(line, "--help"), Config{Version: "test", Stdout: &out, Stderr: &errs})
+		if usage := "Usage: djinn " + strings.Join(line, " "); code != 0 || !strings.HasPrefix(out.String(), usage) {
+			t.Errorf("%s: djinn %s --help exited %d: %s%s", md.FullName(), strings.Join(line, " "), code, out.String(), errs.String())
+		}
+		for _, fd := range byNumber(md.Input()) {
+			if err := supported(fd); err != nil {
+				t.Errorf("%s: %v", fd.FullName(), err)
+			}
+			if comment(fd) == "" {
+				t.Errorf("%s has no comment, so no help", fd.FullName())
+			}
+		}
+		if comment(md) == "" {
+			t.Errorf("%s has no comment, so no help", md.FullName())
+		}
 	}
 }
 

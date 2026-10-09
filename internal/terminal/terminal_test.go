@@ -55,7 +55,7 @@ func TestWriteThenRead(t *testing.T) {
 	if !last.Exited || last.Code != 3 {
 		t.Fatalf("last piece %+v, want the end with code 3", last)
 	}
-	if err := term.Write([]byte("x")); err != ErrExited {
+	if err := term.Write([]byte("x")); !errors.Is(err, ErrExited) {
 		t.Fatalf("write after the end: %v, want ErrExited", err)
 	}
 }
@@ -89,7 +89,7 @@ func TestOpenAttachesToTheRunningTerminal(t *testing.T) {
 	if err != nil || attached || next.ID == first.ID {
 		t.Fatalf("open after the end: attached %v, new %v, %v", attached, next.ID != first.ID, err)
 	}
-	if _, err := m.Get(first.ID); err != ErrNotFound {
+	if _, err := m.Get(first.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("get the ended terminal: %v, want ErrNotFound", err)
 	}
 }
@@ -275,7 +275,7 @@ func TestCloseHangsUp(t *testing.T) {
 	if took := time.Since(start); took < grace || took > grace+2*time.Second {
 		t.Fatalf("closing took %v, want the grace delay %v and a little", took, grace)
 	}
-	if _, _, err := m.Open("again", nil, "", 0, 0); err != ErrClosed {
+	if _, _, err := m.Open("again", nil, "", 0, 0); !errors.Is(err, ErrClosed) {
 		t.Fatalf("open after close: %v, want ErrClosed", err)
 	}
 }
@@ -352,14 +352,14 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Println("raw:", err)
 		os.Exit(1)
 	}
-	defer rawterm.Restore(0, state) //nolint:errcheck
+	defer rawterm.Restore(0, state) //nolint:errcheck // Restored by hand before the exit below.
 	fmt.Print("ready\r\n")
 	var first time.Time
 	b := make([]byte, 64)
 	for count := 0; count < 20; {
 		n, err := os.Stdin.Read(b)
 		if err != nil {
-			os.Exit(1)
+			os.Exit(1) //nolint:gocritic // The pseudo-terminal goes with this process.
 		}
 		if first.IsZero() {
 			first = time.Now()
@@ -368,7 +368,7 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Printf("read %d at %d\r\n", n, time.Since(first).Milliseconds())
 	}
 	fmt.Print("done\r\n")
-	rawterm.Restore(0, state) //nolint:errcheck
+	rawterm.Restore(0, state) //nolint:errcheck // Exits next: nothing to report it to.
 	os.Exit(0)
 }
 
