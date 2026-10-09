@@ -44,7 +44,7 @@ service UiService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-  // change. With the leads that a restart could not resume, once, and the last build committed that is not installed.
+  // change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
   rpc WatchUpdate(UiServiceWatchUpdateRequest) returns (stream UiServiceWatchUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
@@ -189,12 +189,12 @@ message UiServiceWatchUpdateResponse {
   // Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
   // local install, which has none.
   string notes_url = 4;
-  // The last batch of finished work committed into a wish's integration branch, in a project whose settings name an
-  // install command, and not installed since: the window proposes to install it and restart on it. Unset for none.
+  // The last push of a wish's integration branch, in a project whose settings name an install command, and not
+  // installed since: the window proposes to install it and restart on it. Unset for none.
   Build build = 5;
 }
 
-// Build is a batch of finished work committed into a wish's integration branch (T30), to install.
+// Build is a wish's integration branch as Djinn pushed it (T30), to install.
 message Build {
   // The wish, and its title.
   string wish_id = 1;
@@ -202,12 +202,12 @@ message Build {
   // The project, by its identifier and its name.
   string project_id = 3;
   string project = 4;
-  // The integration branch, and the commit it moved to.
+  // The integration branch, and the commit pushed.
   string branch = 5;
   string sha = 6;
-  // The tasks of the batch, by code: W5.
+  // The tasks whose work the push brought, by code: W5.
   repeated string tasks = 7;
-  // What changed: the titles of the commits the batch brought, the latest first.
+  // What changed: the titles of the commits the push brought, the latest first.
   repeated string changes = 8;
   // What to check, one line per task: its code and title, then what its worker said last.
   repeated string checks = 9;

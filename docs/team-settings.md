@@ -20,7 +20,7 @@ max_budget_usd: 3
 branch: "djinn/{code}-{slug}-{uuid8}"
 
 # Djinn integrates their finished work by itself: go tool task gen makes gen/** and docs/openapi.json, go tool task
-# test tests the project, go tool task install installs a batch committed, once you say so.
+# test tests the project, go tool task install installs the build pushed, once you say so.
 generated: "gen/**"
 generated: "docs/openapi.json"
 generate: "go tool task gen"
@@ -38,7 +38,7 @@ install: "go tool task install"
 | `generate`       | The command that makes them, in the project's folder.                   | none                       |
 | `test`           | The command that tests the project, in the project's folder. Set, Djinn integrates finished work. | none: no integration |
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
-| `install`        | The command that installs a batch committed, in the project's folder: the window proposes it. | none: nothing proposed |
+| `install`        | The command that installs the integration branch once pushed, in the project's folder: the window proposes it. | none: nothing proposed |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
@@ -127,25 +127,24 @@ A worker's work counts once it is in its wish's branch, tested. In a project who
 Djinn brings it there by itself, no model ([T30](../plan/43303f46-integration.md)):
 
 1. When a worker ends done, its task's work is **pending** (`djinn task get` shows `integration`).
-2. Djinn commits a **batch** when an azima ends (none of its parts is planned or under way any more), or once an hour
-   has passed and three tasks are done since the last commit, whichever comes first. A task another task waits for
-   is committed at once, alone. `djinn wish set-integration <wish> --commit-after-minutes 30 --commit-after-tasks 2`
-   changes the hour and the count, for that wish.
+2. Djinn commits each task's work **at once, alone**, in the order the tasks ended: its dependents build on it
+   straight away.
 3. In a worktree of its own per wish and project, under Djinn's data folder (`projects/<project id>/integration/<wish
-   id>`), detached at the integration branch's tip, never in your checkout: it commits what each worker left in its
-   worktree on the task's branch (its title as the message; workers never commit), then merges each branch with
-   `--no-ff`, in the order the tasks ended. A conflict only in `generated` files takes the task's side and runs
+   id>`), detached at the integration branch's tip, never in your checkout: it commits what the worker left in its
+   worktree on the task's branch (its title as the message; workers never commit), then merges the branch with
+   `--no-ff`. A conflict only in `generated` files takes the task's side and runs
    `generate` under the gate `gen`. Then `test` runs under the gate `test`.
-4. **Green**: the integration branch moves to the result, Git checking it is still where the batch started; each task
-   is **committed**, with the commit, and the journal records the batch. Your checkout of that branch, clean, follows
-   by a fast-forward. With changes not committed, it is left as it is, and so is the branch: moved under it, your
-   next commit would undo the batch. The tasks stay pending, saying why, and the branch moves once your changes are
-   committed or put aside, without testing again.
-5. **Red**, or a **conflict** in code: the branch stays as it was, and each task of the batch says what failed. The
-   tasks of the batch after a conflict, whose merge was not tried, go back to wait for the next batch.
+4. **Green**: the integration branch moves to the result, Git checking it is still where the merge started; the task
+   is **committed**, with the commit, and the journal records it. Its worktree is then removed, as `djinn task clean`
+   does, its branch kept; a worktree that holds changes not committed stays, and its events say so. Your checkout of
+   the branch, clean, follows by a fast-forward. With changes not committed, it is left as it is, and so is the
+   branch: moved under it, your next commit would undo the work. The task stays pending, saying why, and the branch
+   moves once your changes are committed or put aside, without testing again.
+5. **Red**, or a **conflict** in code: the branch stays as it was, and the task says what failed. The tasks that end
+   after it are committed on their own meanwhile.
 6. **A correction worker** starts by itself: a work task part of the same azima as the failed task, of its provider,
-   its worktree on the failed merge (the merges before it and that merge again, its conflicts left in place; or all
-   the batch merged, for red tests), what failed in its first prompt: the files in conflict, or the test command and
+   its worktree on the failed merge (the branch, and that merge again, its conflicts left in place; or the work merged,
+   for red tests), what failed in its first prompt: the files in conflict, or the test command and
    the end of its output. It does not commit: Djinn commits what it leaves, which concludes the merge, and its branch
    integrates like any task's, at once and alone. Green, the failed tasks are committed with it, saying
    `corrected by W5`. A correction whose work fails in turn, or whose worker fails, counts as an attempt.
@@ -163,8 +162,27 @@ Where each task's work stands shows in `djinn task get` (`integration`: its stat
 that corrects it), the lead's brief, the wish's page and the Tasks tab: done, waiting to be committed, being
 committed, committed as `1a2b3c4d`, conflict, red, corrected by W9.
 
-Once a batch is committed in a project whose settings name an `install` command, the window proposes, as for a new
-version, to install it and restart on it, with what changed (the titles of the batch's commits) and what to check
+### Pushing
+
+Pushing the integration branch to its remote is Djinn's, never an agent's: `.agents/permissions.txtpb` denies `git
+push` to every worker. Djinn checks it each time a task's merge ends, and a push is **due**:
+
+- when an azima ends: every part of it has finished, and its last part is committed;
+- or once three tasks are committed since the last push and more than an hour has passed since it.
+
+The remote is the branch's upstream, else `origin`, else the repository's only remote; a repository without a remote
+pushes nothing. Djinn runs `git push` in your checkout's repository, with your own credentials (your SSH agent, your
+credential helper), never prompting for them and **never forcing**. By default it pushes by itself (`auto`); in `ask`
+mode it asks a question first, "Push feat/x to origin? (3 commits: …)", which Rub the lamp answers in one click, and
+nothing more is asked until you answer. A push the remote refuses (your branch is behind, or protected) is said in the
+tasks' events and asked about: push again once you have brought the remote's commits in, or leave it until the next
+push due. Each push is in the journal; the wish's head shows the last one, its commits on hover, and when.
+
+`djinn wish set-integration <wish> --push-after-minutes 30 --push-after-tasks 2 --push-mode ask` changes the hour, the
+count and the mode, for that wish.
+
+Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
+version, to install it and restart on it, with what changed (the titles of the commits pushed) and what to check
 (each task, with the last paragraph its worker wrote). Nothing installs before your click. The command runs under the
 gate `install`, in the integration worktree at that commit, never in your checkout; when it installed a newer Djinn at
 the path of the running one, Djinn restarts on it, as the update button does; otherwise it says the build is installed.

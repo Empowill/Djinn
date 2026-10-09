@@ -80,7 +80,7 @@ type UiServiceClient interface {
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchShowResponse], error)
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once, and the last build committed that is not installed.
+	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchUpdateResponse], error)
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
@@ -239,7 +239,7 @@ type UiServiceHandler interface {
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest], *connect.ServerStream[v1.UiServiceWatchShowResponse]) error
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once, and the last build committed that is not installed.
+	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest], *connect.ServerStream[v1.UiServiceWatchUpdateResponse]) error
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same

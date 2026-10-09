@@ -234,8 +234,9 @@ func (h *Harness) askIntegration(ctx context.Context, wish *planv1.Wish, group [
 }
 
 // settleCorrected records the work the correction workers of batch corrected as committed with theirs, in in.Sha:
-// "corrected by W5".
-func (h *Harness) settleCorrected(ctx context.Context, batch []*planv1.Task, in *planv1.TaskIntegration) {
+// "corrected by W5". It returns the tasks whose work that is.
+func (h *Harness) settleCorrected(ctx context.Context, batch []*planv1.Task, in *planv1.TaskIntegration) []*planv1.Task {
+	var out []*planv1.Task
 	for _, c := range batch {
 		if c.GetCorrection() == nil {
 			continue
@@ -249,7 +250,9 @@ func (h *Harness) settleCorrected(ctx context.Context, batch []*planv1.Task, in 
 			State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, Branch: in.GetBranch(), Sha: in.GetSha(),
 			Reason: "corrected by " + c.GetCode(), CorrectedBy: c.GetId(), Attempts: c.GetCorrection().GetAttempt(),
 		}, fmt.Sprintf("integration: committed into %s as %s, corrected by %s", in.GetBranch(), short8(in.GetSha()), c.GetCode()), nil)
+		out = append(out, group...)
 	}
+	return out
 }
 
 // correctedIDs are the tasks the correction workers of batch corrected.

@@ -61,8 +61,8 @@ Each one is a decision. Changing one is a discussion first.
   through the running Djinn, one at a time: `djinn gate run <name> -- go tool task test`. `.agents/`
   allows no heavy command directly; light ones (`lint`, `test-pkg` on a package) run as they are.
 - **Workers never commit.** A worker edits its worktree; `.agents/` gives it no `git commit` and no
-  `git push`. The lead reviews each diff, commits in batches and pushes once: fewer commits, one CI
-  run instead of one per worker.
+  `git push`. Djinn commits each task's work as it ends, tested, and pushes the branch on a cadence: one CI
+  run per push instead of one per worker.
 - **Two words from the theme, no more.** You make a *wish*; you *summon* a skill. Everything
   else is plain.
 - **Names ignore case.** Two names that differ only by case are one name.
@@ -153,10 +153,11 @@ To use Djinn, see the [README](README.md). To work on it:
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. Not on Windows
   yet.
 - In a project whose settings name a test command ([`docs/team-settings.md`](docs/team-settings.md#integration)), Djinn
-  integrates finished work by itself: at an azima's end, or after an hour and three tasks done, it merges the tasks'
-  branches in a worktree of its own, makes the generated files again on a conflict only in them, runs the tests
-  through a gate, and moves the wish's branch when they pass ([T30](plan/43303f46-integration.md)). `djinn wish
-  set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or red tests, start a correction
+  integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own,
+  makes the generated files again on a conflict only in them, runs the tests through a gate, moves the wish's branch
+  when they pass, and removes the task's worktree when clean ([T30](plan/43303f46-integration.md)). It pushes the
+  branch, never forcing, at an azima's end or once three tasks are committed and an hour has passed since the last
+  push; `--push-mode ask` asks first. `djinn wish set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or red tests, start a correction
   worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task waits for
   its dependencies' work to be committed, and its worktree starts from that branch; once a batch is committed, the
   window proposes to install it (the `install` setting) and restart on it.

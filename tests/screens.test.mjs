@@ -26,6 +26,7 @@ export {
 export { AzimaCard } from "@/src/azima.tsx";
 export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
 export {
+  LastPushes,
   LeadButton,
   LeadMenu,
   WishDescription,
@@ -50,6 +51,7 @@ const wish = (id, title, state, rank, extra = {}) => ({
   rank,
   projectIds: [],
   allowances: [],
+  pushes: [],
   ...extra,
 });
 
@@ -1417,7 +1419,7 @@ test("the update banner proposes to install a build committed, with what changed
   const html = banner();
   assert.match(
     html,
-    /W5, W6 committed into feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
+    /W5, W6 pushed with feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
   );
   assert.match(
     html,
@@ -1684,4 +1686,52 @@ test("the wish's description shows under its title, the title until one is writt
     editing,
     /<textarea class="wish-description-edit" aria-label="Description" rows="2" autofocus="">Light the house.\nNot the street.<\/textarea>/,
   );
+});
+
+test("the wish's head says where Djinn last pushed its integration branch, and a push refused", () => {
+  const last = {
+    branch: "feat/x",
+    remote: "origin",
+    count: 3,
+    commits: ["Work of W3", "Work of W2", "Work of W1"],
+    pushTime: { seconds: 1791640800n, nanos: 0 },
+  };
+  const one = s.renderToStaticMarkup(
+    h(s.LastPushes, {
+      pushes: [{ projectId: "p1", last, refused: "" }],
+      projects: [{ id: "p1", name: "app" }],
+    }),
+  );
+  assert.match(
+    one,
+    /<span class="wish-push"><svg[^]*?<\/svg><span title="Work of W3\nWork of W2\nWork of W1">Pushed feat\/x to origin, 3 commits, [^<]+<\/span><\/span>/,
+  );
+  assert.doesNotMatch(one, /<b>app<\/b>/);
+  // Several projects: each push names its project; one the remote refused says so; none yet, nothing.
+  const two = s.renderToStaticMarkup(
+    h(s.LastPushes, {
+      pushes: [
+        { projectId: "p1", last: { ...last, count: 1 }, refused: "" },
+        {
+          projectId: "p2",
+          refused: "its branch has commits that this one does not",
+        },
+        { projectId: "p3", refused: "" },
+      ],
+      projects: [
+        { id: "p1", name: "app" },
+        { id: "p2", name: "api" },
+        { id: "p3", name: "web" },
+      ],
+    }),
+  );
+  assert.match(
+    two,
+    /<b>app<\/b><span title="[^"]*">Pushed feat\/x to origin, 1 commit, /,
+  );
+  assert.match(
+    two,
+    /<b>api<\/b><span class="wish-push-refused" title="its branch has commits that this one does not">The remote refused the last push: Djinn asks you<\/span>/,
+  );
+  assert.doesNotMatch(two, /web/);
 });

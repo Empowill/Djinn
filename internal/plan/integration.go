@@ -85,11 +85,14 @@ func (w *Wishes) SetIntegration(
 			}
 			SetIntegrationBranch(wish, ids[i], branch)
 		}
-		if n := req.Msg.GetCommitAfterMinutes(); n > 0 {
-			wish.CommitAfterMinutes = n
+		if n := req.Msg.GetPushAfterMinutes(); n > 0 {
+			wish.PushAfterMinutes = n
 		}
-		if n := req.Msg.GetCommitAfterTasks(); n > 0 {
-			wish.CommitAfterTasks = n
+		if n := req.Msg.GetPushAfterTasks(); n > 0 {
+			wish.PushAfterTasks = n
+		}
+		if m := req.Msg.GetPushMode(); m != planv1.PushMode_PUSH_MODE_UNSPECIFIED {
+			wish.PushMode = m
 		}
 		return tx.Put(wish)
 	})

@@ -99,6 +99,7 @@ type Harness struct {
 	integrateDone chan struct{}     // closed when the integration has stopped; nil until Integrate
 	tested        map[string]tested // by wish/project; owned by the integration's pass
 	integrateMu   sync.Mutex        // held while a batch is integrated, or a build installed: they share a worktree
+	pushMu        sync.Mutex        // held while an integration branch is pushed
 	built         func(Built)       // nil: no build is proposed
 
 	// Warm workers (warm.go), guarded by sched.
@@ -911,7 +912,7 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	if integrate {
-		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, waiting for its batch"})
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, to be merged into the integration branch"})
 		h.kickIntegrate()
 	}
 	// The links to the summoned skills go with the worker; a worker started again makes them anew.

@@ -580,6 +580,12 @@ html[data-theme="light"] .wordmark-period {
   align-items: center;
   gap: 6px;
 }
+.hero-meta .wish-push b {
+  font-weight: 600;
+}
+.hero-meta .wish-push-refused {
+  color: var(--st-waiting);
+}
 .hero-meta .badge {
   font-size: var(--font-size-body, 12px);
   padding: 3px 5px;

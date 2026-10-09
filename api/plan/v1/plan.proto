@@ -105,9 +105,9 @@ message ProjectSettings {
     lte: 10
   }];
   // The command that installs the project's new build, run in the project's folder of the integration worktree at
-  // the commit: "go tool task install". Once a batch is committed, the window proposes it, with what changed and what
-  // to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are split on spaces, without
-  // a shell. Not set: nothing is proposed.
+  // the commit: "go tool task install". Once Djinn has pushed the integration branch, the window proposes it, with
+  // what changed and what to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are
+  // split on spaces, without a shell. Not set: nothing is proposed.
   optional string install = 9 [(buf.validate.field).string.max_len = 500];
 }
 
@@ -164,14 +164,15 @@ message Wish {
   // project's checkout was on when the wish was made, or, for a wish made before Djinn recorded it, when its first
   // task's work was to integrate (djinn wish set-integration).
   repeated IntegrationBranch integration_branches = 12;
-  // Djinn commits the finished work into the integration branch when an azima ends, or once this many minutes have
-  // passed and commit_after_tasks tasks are done since the last commit, whichever comes first; a task another task
-  // waits for is committed at once, alone. 0: 60 minutes, 3 tasks.
-  int32 commit_after_minutes = 13 [(buf.validate.field).int32 = {
+  // Each task's finished work is committed into the integration branch as soon as it ends, alone. Djinn pushes the
+  // branch to its remote, checked each time a task's merge ends: when an azima ends (its last part committed), or once
+  // push_after_tasks tasks are committed since the last push and more than this many minutes have passed since it.
+  // 0: 60 minutes, 3 tasks.
+  int32 push_after_minutes = 13 [(buf.validate.field).int32 = {
     gte: 0
     lte: 10080
   }];
-  int32 commit_after_tasks = 14 [(buf.validate.field).int32 = {
+  int32 push_after_tasks = 14 [(buf.validate.field).int32 = {
     gte: 0
     lte: 100
   }];
@@ -179,6 +180,58 @@ message Wish {
   // edits it in the wish's head, and the brief opens with it. Empty until someone writes one: the title stands for
   // it.
   string description = 15;
+  // Whether Djinn pushes the integration branch by itself when a push is due, or asks first. Unset: auto.
+  PushMode push_mode = 16;
+  // Where the push of each Git project's integration branch stands: its last push, and the question Djinn asks about
+  // the next one.
+  repeated WishPush pushes = 17;
+}
+
+// PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
+enum PushMode {
+  // Not set: auto.
+  PUSH_MODE_UNSPECIFIED = 0;
+  // Djinn pushes by itself, never forcing.
+  PUSH_MODE_AUTO = 1;
+  // Djinn asks first: "Push feat/x to origin?", pushed in one click.
+  PUSH_MODE_ASK = 2;
+}
+
+// WishPush is where the push of a wish's integration branch to its remote stands, in one of its projects. Only Djinn
+// pushes it, through git with the person's own credentials, never forcing; agents never push.
+message WishPush {
+  // The project.
+  string project_id = 1;
+  // The last push; unset before the first.
+  IntegrationPush last = 2;
+  // The question Djinn asked about the next push, while it is open: in ask mode, or once the remote refused one.
+  // No push is due meanwhile.
+  string question_id = 3;
+  // Why the remote refused the last push Djinn tried, in git's words; empty once one passes.
+  string refused = 4;
+  // The person said to push (an answer to the question): Djinn pushes at its next pass, whatever the cadence.
+  bool approved = 5;
+}
+
+// IntegrationPush is a push of a wish's integration branch to its remote, as the journal records it and the wish shows
+// the last one.
+message IntegrationPush {
+  // The wish, and the project whose branch was pushed.
+  string wish_id = 1;
+  string project_id = 2;
+  // The branch, and the remote it went to: origin.
+  string branch = 3;
+  string remote = 4;
+  // Where the remote's branch was before (empty when it had none), and the commit pushed.
+  string old_sha = 5;
+  string new_sha = 6;
+  // How many commits the push brought, and the titles of the latest of them, the latest first.
+  int32 count = 7;
+  repeated string commits = 8;
+  // The tasks whose work it brought, by identifier.
+  repeated string task_ids = 9;
+  // When it was pushed.
+  google.protobuf.Timestamp push_time = 10;
 }
 
 // IntegrationBranch is the branch a wish integrates its finished work into, in one of its projects.
@@ -485,9 +538,9 @@ message IntegrationFailure {
 }
 
 // TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a
-// worker ends done, Djinn commits its worktree on its branch, merges it with the batch into the integration branch in
-// a worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,
-// and moves the branch when it passes.
+// worker ends done, Djinn commits its worktree on its branch, merges it alone into the integration branch in a
+// worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate,
+// and moves the branch when it passes; its worktree is then removed when clean.
 message TaskIntegration {
   // Where it stands.
   IntegrationState state = 1;
@@ -515,7 +568,7 @@ message TaskIntegration {
 enum IntegrationState {
   // Not set: Djinn does not integrate the task's work.
   INTEGRATION_STATE_UNSPECIFIED = 0;
-  // Done, waiting for its batch: an azima's end, or an hour and three tasks done since the last commit.
+  // Done, waiting to be merged: at once, unless something else holds it (its reason says what).
   INTEGRATION_STATE_PENDING = 1;
   // Its batch is being merged and tested.
   INTEGRATION_STATE_INTEGRATING = 2;
@@ -1374,8 +1427,9 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Set where and when the wish's finished work is committed: the integration branch of one of its projects, and
-  // how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.
+  // Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
+  // projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
+  // itself or asks first. Only what is given changes.
   rpc SetIntegration(WishServiceSetIntegrationRequest) returns (WishServiceSetIntegrationResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -1578,16 +1632,18 @@ message WishServiceSetIntegrationRequest {
     (buf.validate.field).string.max_len = 200,
     (buf.validate.field).string.pattern = "^([A-Za-z0-9_]+([./-][A-Za-z0-9_]+)*)?$"
   ];
-  // Commit once this many minutes have passed since the last commit, with commit_after_tasks tasks done.
-  int32 commit_after_minutes = 4 [(buf.validate.field).int32 = {
+  // Push once more than this many minutes have passed since the last push, with push_after_tasks tasks committed.
+  int32 push_after_minutes = 4 [(buf.validate.field).int32 = {
     gte: 0
     lte: 10080
   }];
-  // Commit once this many tasks are done since the last commit, the minutes having passed.
-  int32 commit_after_tasks = 5 [(buf.validate.field).int32 = {
+  // Push once this many tasks are committed since the last push, the minutes having passed.
+  int32 push_after_tasks = 5 [(buf.validate.field).int32 = {
     gte: 0
     lte: 100
   }];
+  // auto: Djinn pushes by itself; ask: it asks first. Unset: unchanged.
+  PushMode push_mode = 6 [(buf.validate.field).enum.defined_only = true];
 }
 
 message WishServiceSetIntegrationResponse {
