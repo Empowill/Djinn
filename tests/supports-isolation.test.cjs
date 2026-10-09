@@ -69,7 +69,7 @@ test("parent CSP allows only isolated frames in development and production", () 
     const policy = policyModule.exports.rendererPolicy(origin);
     assert.equal(
       policy.split("; ").find((d) => d.startsWith("frame-src")),
-      "frame-src blob: djinn-visualization:",
+      "frame-src 'self'",
     );
     assert.ok(policy.includes("object-src 'none'"));
     assert.equal(policy.includes("ws://127.0.0.1:4317"), Boolean(origin));
@@ -138,4 +138,47 @@ test("height channel rejects forged windows, origins, tokens, coercions and unbo
     ),
     null,
   );
+});
+
+test("the Mermaid frame runs only its two scripts, allowed by their hashes", async () => {
+  const { createHash } = require("node:crypto");
+  const { mermaidFrame, MERMAID_FRAME } = require("../src/mermaid-frame.ts");
+  assert.equal(MERMAID_FRAME, "mermaid-frame.html");
+  const html = await mermaidFrame("window.mermaid={}");
+  const policy = html.match(
+    /http-equiv="Content-Security-Policy" content="([^"]+)"/,
+  )[1];
+  assert.ok(html.indexOf("Content-Security-Policy") < html.indexOf("<script"));
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+    (m) => m[1],
+  );
+  assert.equal(scripts.length, 2);
+  assert.equal(scripts[0], "window.mermaid={}");
+  const allowed = policy.split("; ").find((d) => d.startsWith("script-src"));
+  assert.equal(
+    allowed,
+    "script-src " +
+      scripts
+        .map(
+          (s) => `'sha256-${createHash("sha256").update(s).digest("base64")}'`,
+        )
+        .join(" "),
+  );
+  for (const directive of [
+    "default-src 'none'",
+    "frame-src 'none'",
+    "object-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
+  ])
+    assert.ok(policy.split("; ").includes(directive), directive);
+  // No connect-src: default-src 'none' forbids connections, and the test build's window rewrites the first one.
+  assert.ok(!policy.includes("connect-src"));
+  assert.ok(!allowed.includes("unsafe"));
+  // The bootstrap answers only its parent, and only in a sandboxed (opaque) frame.
+  assert.ok(scripts[1].includes('self.origin!=="null"'));
+  assert.ok(scripts[1].includes("event.source!==parent"));
+  assert.ok(scripts[1].includes('securityLevel:"strict"'));
+  await assert.rejects(mermaidFrame("a</script>b"));
+  await assert.rejects(mermaidFrame("a<SCRIPT>b"));
 });
