@@ -101,9 +101,13 @@ for (const engine of ["native", "script"] as const)
 
     // The first question opens, then is answered, from out of sight: no click scrolls to it.
     await above.locator(".question-heading").dispatchEvent("click");
-    const confirm = above.getByRole("button", { name: "Confirm this choice" });
-    await expect(confirm).toBeAttached();
-    await confirm.dispatchEvent("click");
+    // No recommendation: the option is picked, then the lamp rubbed.
+    const yes = above.getByRole("button", { name: /Yes — go/ });
+    await expect(yes).toBeAttached();
+    await yes.dispatchEvent("click");
+    const rub = above.getByRole("button", { name: "Rub the lamp" });
+    await expect(rub).toBeEnabled();
+    await rub.dispatchEvent("click");
     await expect(above).toHaveCount(0);
     await expect(scroller.locator(".decisions-section .count")).toHaveText(
       "19",
