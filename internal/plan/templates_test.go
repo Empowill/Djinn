@@ -151,7 +151,7 @@ func TestRouteTemplate(t *testing.T) {
 		!strings.Contains(opt.GetReason(), "the skill babysit makes this wish") {
 		t.Errorf("option = %v", opt)
 	}
-	if got := optionText("en", opt, map[string]string{lamp.GetId(): "lamp"}); got != "New wish “Babysit PR #12”, in lamp, from the skill babysit" {
+	if got := optionText("en", opt, "", map[string]string{lamp.GetId(): "lamp"}); got != "New wish “Babysit PR #12”, in lamp, from the skill babysit" {
 		t.Errorf("option text = %q", got)
 	}
 	if opt := propose(in("fix the lint of the sidebar")).GetOptions()[0]; opt.GetTemplate() != nil {

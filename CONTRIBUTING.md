@@ -160,7 +160,7 @@ To use Djinn, see the [README](README.md). To work on it:
   `djinn wish resume <wish-id>` shows the wish and resumes its lead in the window's terminal,
   starting Djinn if needed. A second `djinn up` brings the window to the front.
 - `djinn wish route "<request>" --wish-id <wish-id> --ask`: a request that is not about the wish becomes a card, without a
-  model: file it in the closest wish, or open a new one whose lead starts on it in its own terminal
+  model: open a new one whose lead starts on it in its own terminal, file it in an existing wish, or keep it here
   ([T26](plan/e1210c5e-request-routing.md)). A request that matches a skill's wish template (`metadata.djinn.wish` in its
   `SKILL.md`) makes that skill's wish, its watcher started and its lead on the skill: `.agents/skills/babysit-pr` for a
   GitHub pull request ([`docs/wish-templates.md`](docs/wish-templates.md)).

@@ -1326,7 +1326,7 @@
         "description": "Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or into a new one. Djinn computes it without a model, from the wishes' titles, their projects and their latest blocks.",
         "properties": {
           "fromWishId": {
-            "description": "The wish the request came to; it is never proposed.",
+            "description": "The wish the request came to; it is proposed last, to keep the request there.",
             "type": "string"
           },
           "options": {
@@ -2612,7 +2612,7 @@
             "type": "string"
           },
           "wishId": {
-            "description": "The wish the request came to: the lead's own. It is not proposed, and --ask asks there.",
+            "description": "The wish the request came to: the lead's own. It is proposed last, to keep the request there, and --ask asks there.",
             "format": "uuid",
             "type": "string"
           }

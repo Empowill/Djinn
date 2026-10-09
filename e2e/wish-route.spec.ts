@@ -56,7 +56,11 @@ test("a request routed to a new wish starts its lead there, at a rub of the lamp
     djinn("wish", "route", request, "--wish-id", here, "--ask", "--json"),
   );
   const title = "Wax the brass canoe paddles";
-  expect(asked.question.options).toEqual([`New wish “${title}”, in brass`]);
+  // A new wish first; then the earlier specs' wishes, far as they are; keeping it here last.
+  const options: string[] = asked.question.options;
+  expect(options[0]).toBe(`New wish “${title}”, in brass`);
+  expect(options.at(-1)).toBe("Keep it in “Route from here”");
+  for (const o of options.slice(1, -1)) expect(o).toMatch(/^File it in “/);
 
   await page.goto(process.env.DJINN_URL!);
   await page

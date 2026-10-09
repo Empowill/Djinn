@@ -19,8 +19,10 @@ finds its wish". This task is its first part, the routing.
   (a project's name counted once), the same merge request or issue (`!41`, `#12`, from the text or the link; another
   one weighs against), and a little for the words of the five latest blocks. A wish is proposed from 3, and
   recommended from 6; else Djinn recommends a new wish, its title made from the request (links shortened to
-  `shop!41`), in the projects the request points to, else those of the wish it came to. The wish it came to and
-  the granted ones are never proposed.
+  `shop!41`), in the projects the request points to, else those of the wish it came to. Filing in an existing wish
+  is always a choice: the wishes under 3 fill the places the close ones leave (`route.why_far`), and the wish it came
+  to is proposed last, to keep the request there (`route.keep`); then its lead does the work. The granted ones are
+  never proposed.
 - **The card is a question**: `Question.route` (13) holds the `Route`, its options in the question's order, the
   recommended one first (`A: …`), so Rub the lamp takes it. The texts are the developer's language
   (`plan.WithLanguage`, `locales` `route.*`).
@@ -49,6 +51,10 @@ finds its wish". This task is its first part, the routing.
 - [x] E2e: route a request, rub the lamp, see the new wish with its lead terminal. (`e2e/wish-route.spec.ts`)
 - [x] The new lead reads the request once: on its first line, not again in its brief's latest blocks; a later
   `djinn wish brief` still lists the request block. (`TestLeadBriefOnce`, `plan.LeadBrief`; `TestRouteAnswered`)
+- [x] Filing in an existing wish is always a choice: far wishes fill the places, the wish it came to is the last
+  option and keeping it there tells its own lead to do the work, no filed line. (`TestRouteRanking`: nothing close
+  still offers the other wishes then keep, one other wish scoring 0 is still offered; `TestRouteAnswered`: keep;
+  `e2e/wish-route.spec.ts`)
 - [ ] A real lead hands a request over by itself, from the brief's rule. (needs: a person and a real model)
 
 ## Next (the design's parts 2 and 3)
