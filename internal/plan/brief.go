@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -209,6 +210,12 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			running = append(running, t)
 		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
 			done = append(done, t)
+		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			if render.ForkedAs(t, exp.GetTasks()) != "" {
+				done = append(done, t)
+			} else {
+				waiting = append(waiting, t)
+			}
 		default:
 			waiting = append(waiting, t)
 		}
@@ -238,7 +245,11 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		})
 		fmt.Fprintf(&b, "\n## Finished: %d\n\n", len(done))
 		for _, t := range done[:min(len(done), briefDone)] {
-			fmt.Fprintf(&b, "- **%s** %s: %s\n", t.GetCode(), clipLine(t.GetTitle()), statusWord(t.GetStatus()))
+			word := statusWord(t.GetStatus())
+			if as := render.ForkedAs(t, exp.GetTasks()); as != "" && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+				word = "resumed as " + as
+			}
+			fmt.Fprintf(&b, "- **%s** %s: %s\n", t.GetCode(), clipLine(t.GetTitle()), word)
 		}
 	}
 
@@ -275,6 +286,12 @@ func waitText(t *planv1.Task) string {
 		return "planned"
 	case planv1.TaskStatus_TASK_STATUS_WAITING:
 		return "waits for the answer to its edit question"
+	case planv1.TaskStatus_TASK_STATUS_RESUMING:
+		// Djinn resumes it by itself: not the lead's move.
+		if t.GetWaitReason() != "" {
+			return "resuming by itself, " + clipLine(t.GetWaitReason())
+		}
+		return "resuming by itself"
 	}
 	text := statusWord(t.GetStatus())
 	if t.GetError() != "" {

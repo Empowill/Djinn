@@ -14,8 +14,11 @@ import (
 
 	"connectrpc.com/connect"
 
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	terminalv1 "github.com/empowill/djinn/gen/go/terminal/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/cli"
 )
 
 // running is a djinn up a test started, which it stops by its PID.
@@ -151,5 +154,72 @@ func TestCrashReopensTheLeads(t *testing.T) {
 	}
 	if strings.Contains(third.errs.String(), "reopened") {
 		t.Fatalf("djinn up after a quit reopened leads:\n%s", third.errs.String())
+	}
+}
+
+// TestCrashResumesTheWorkers: a djinn killed while a worker runs leaves its task running in the store; the next
+// djinn up resumes it by itself, in the same task, and it finishes. The wish keeps one task.
+func TestCrashResumesTheWorkers(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin, _ := fakeClaude(t)
+	env := environ(home, bin)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An agent configuration: the worker edits as the project says, without asking first.
+	if err := os.WriteFile(filepath.Join(folder, "AGENTS.md"), []byte("# Rules\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wish := seedWish(t, home, folder, "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69")
+
+	first, addr := startUp(t, home, env)
+	res, err := taskClient(t, addr).Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wish.GetId(), Title: "Long", Prompt: "text halfway\nsleep 1h", Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	waitTask(t, taskClient(t, addr), id, func(task *planv1.Task) bool {
+		return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && task.GetSessionId() != ""
+	})
+	first.stop(t, syscall.SIGKILL)
+
+	second, addr := startUp(t, home, env)
+	tasks := taskClient(t, addr)
+	got := waitTask(t, tasks, id, func(task *planv1.Task) bool { return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE })
+	if got.GetResumes() != 1 {
+		t.Errorf("the task after the crash: %v\n%s", got, second.errs.String())
+	}
+	list, err := tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wish.GetId()}))
+	if err != nil || len(list.Msg.GetTasks()) != 1 {
+		t.Errorf("the wish's tasks after the crash: %v, %v; want the one resumed", list, err)
+	}
+}
+
+func taskClient(t *testing.T, addr string) planv1connect.TaskServiceClient {
+	t.Helper()
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return planv1connect.NewTaskServiceClient(httpClient, base)
+}
+
+// waitTask waits until the task is as ok says, and returns it.
+func waitTask(t *testing.T, c planv1connect.TaskServiceClient, id string, ok func(*planv1.Task) bool) *planv1.Task {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		res, err := c.Get(t.Context(), connect.NewRequest(&planv1.TaskServiceGetRequest{TaskId: id}))
+		if err == nil && ok(res.Msg.GetTask()) {
+			return res.Msg.GetTask()
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("task %s: %v, %v", id, res, err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

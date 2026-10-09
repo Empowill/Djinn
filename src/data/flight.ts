@@ -66,14 +66,30 @@ export function openQuestions(wish: Wish, detail: WishDetail): OpenQuestion[] {
     .sort((a, b) => Number(!a.blocking.length) - Number(!b.blocking.length));
 }
 
-// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, or cut short by a stop.
+// forkedAs is the code of the task that took over one cut short: a task of its wish forked from its session; "" when
+// none did. It is the lamp's rule (internal/render.ForkedAs).
+export function forkedAs(task: Task, tasks: readonly Task[]): string {
+  return (
+    tasks.find(
+      (other) =>
+        other.id !== task.id &&
+        other.wishId === task.wishId &&
+        other.forkOf !== "" &&
+        other.forkOf === task.code,
+    )?.code ?? ""
+  );
+}
+
+// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, or cut short by a stop and
+// not resumed. A task Djinn resumes by itself (RESUMING), or one resumed as another task, is not the user's move.
 export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
   const questions = new Map(detail.questions.map((q) => [q.id, q]));
   return detail.tasks
     .filter(
       (task) =>
         task.status === TaskStatus.WAITING ||
-        task.status === TaskStatus.INTERRUPTED,
+        (task.status === TaskStatus.INTERRUPTED &&
+          !forkedAs(task, detail.tasks)),
     )
     .map((item) => {
       const q = questions.get(item.editQuestionId);
@@ -102,7 +118,11 @@ export function flightPlan(
     plan.questions.push(...openQuestions(wish, detail));
     plan.waiting.push(...waitingTasks(wish, detail));
     for (const item of detail.tasks)
-      if (item.status === TaskStatus.RUNNING) plan.running.push({ wish, item });
+      if (
+        item.status === TaskStatus.RUNNING ||
+        item.status === TaskStatus.RESUMING
+      )
+        plan.running.push({ wish, item });
     for (const item of detail.questions)
       if (!isOpen(item)) plan.decisions.push({ wish, item });
   }

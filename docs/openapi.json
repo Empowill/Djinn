@@ -993,6 +993,15 @@
             "$ref": "#/components/schemas/plan.v1.Provider",
             "description": "Kind of agent that works on the task."
           },
+          "resumeAfter": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When a RESUMING task may start again: after its provider's usage limit resets. While it is ahead, no new worker of that provider starts. Unset: as soon as the scheduler can."
+          },
+          "resumes": {
+            "description": "How many times Djinn resumed the task by itself. At 3, a task cut short again fails instead.",
+            "format": "int32",
+            "type": "integer"
+          },
           "scheduled": {
             "description": "Djinn starts the task's worker by itself, once its dependencies are done, its scopes free and a slot free: the task was spawned or planned on this machine. A task imported with a wish is not.",
             "type": "boolean"
@@ -1398,7 +1407,8 @@
           "TASK_STATUS_STOPPED",
           "TASK_STATUS_INTERRUPTED",
           "TASK_STATUS_WAITING",
-          "TASK_STATUS_PAUSED"
+          "TASK_STATUS_PAUSED",
+          "TASK_STATUS_RESUMING"
         ],
         "type": "string"
       },

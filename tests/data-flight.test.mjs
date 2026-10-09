@@ -210,3 +210,39 @@ test("the journal reads its commands from their requests, with the log blocks, t
     "skill unsummon",
   );
 });
+
+test("a task Djinn resumes, or one resumed as another task, is not the user's move", () => {
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const tasks = [
+    { id: "t1", wishId: "w1", code: "W1", status: f.TaskStatus.RESUMING },
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      status: f.TaskStatus.RESUMING,
+      resumeAfter: at(100),
+    },
+    { id: "t3", wishId: "w1", code: "W3", status: f.TaskStatus.INTERRUPTED },
+    { id: "t4", wishId: "w1", code: "W4", status: f.TaskStatus.INTERRUPTED },
+    {
+      id: "t5",
+      wishId: "w1",
+      code: "W5",
+      status: f.TaskStatus.RUNNING,
+      forkOf: "W3",
+    },
+  ];
+  const plan = f.flightPlan([lamp], { w1: detail(tasks, []) });
+  // Only W4 waits for the user: cut short, and nothing took it over.
+  assert.deepEqual(
+    plan.waiting.map((w) => w.item.code),
+    ["W4"],
+  );
+  assert.equal(f.forkedAs(tasks[2], tasks), "W5");
+  assert.equal(f.forkedAs(tasks[3], tasks), "");
+  // The ones Djinn resumes show among the running ones.
+  assert.deepEqual(
+    plan.running.map((r) => r.item.code),
+    ["W1", "W2", "W5"],
+  );
+});

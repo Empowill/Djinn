@@ -50,6 +50,10 @@ status: in-progress
 - [x] `djinn task spawn` creates the worktree and runs a worker with a fake provider.
 - [x] Two workers with overlapping scopes never run together.
 - [x] A gate waits while the machine is under pressure, and says why.
+- [x] Djinn resumes its interrupted workers by itself, in the same task, and waits out a provider's usage limit.
+  (`TestNothingLostOnShutdown`, `TestPausedInterrupted`, `TestResumeRules`, `TestSessionLimitWaitsThenResumes`,
+  `TestSessionLimitBounded` in `internal/harness`; `TestCrashResumesTheWorkers` in `cmd/djinn` kills djinn up while a
+  fake worker runs; `TestResumingFirst` in `internal/dispatch`; `TestResumingNotYourMove` in `internal/render`)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -87,7 +91,19 @@ status: in-progress
   stream ends with the task.
 - **Statuses**: `stopped` on request; `interrupted` when `djinn up` stops (SIGTERM, window closed) or crashed
   while the worker ran: at shutdown the workers are stopped and recorded so, and at start any task left running
-  is. An interrupted task keeps its provider, session and worktree; nothing restarts it by itself.
+  is. An interrupted task keeps its provider, session and worktree.
+- **Djinn resumes its workers** (`internal/harness/resume.go`, 08/10): at start, after Recover, every interrupted task
+  becomes `resuming` (`TASK_STATUS_RESUMING`, journaled `harness/resume`), unless a person stopped it, it was imported
+  (`scheduled` false), its worktree is gone, its wish is granted, or another task forked from it (`fork_of`: it reads
+  "resumed as W47"). The scheduler starts it first, in the same task, worktree and session (`--resume`, Codex's
+  thread; agy from its first prompt), told "Djinn restarted while you worked; your worktree is as you left it.
+  Continue your task.". A worker that fails on its provider's usage limit (`limit.go`: Claude's rejected
+  `rate_limit_event` and "You've hit your session limit · resets 7:20am (Europe/Paris)", Codex's
+  `usageLimitExceeded`, agy's `RESOURCE_EXHAUSTED`) leaves its task `resuming` until `Task.resume_after`: the reset
+  plus a minute, else 15 minutes doubled at each resume, at most 2 h; meanwhile no new worker of that provider
+  starts. `Task.resumes` counts; at 3, a task cut short again fails, saying so. A task stopped by a person never
+  resumes. The window, the page and the brief show these tasks by status ("Resuming", "Waiting for the limit",
+  "Resumed as W47"), never in what waits for the person.
 - **The journal** gets the user's commands as received (`spawn`, `stop`, `clean`), and the harness's own changes
   under the actors `harness` and `worker` with the names `harness/start`, `harness/event`, `harness/end` and
   `harness/recover`: an event is journaled as the event itself.

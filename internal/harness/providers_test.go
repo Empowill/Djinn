@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -99,6 +100,21 @@ func catalog() []catalogCase {
 				}
 				if ev := event(t, events, "STATUS"); ev.SessionID != "0199c3a0-0000-7000-8000-00000000a001" {
 					t.Errorf("session = %q", ev.SessionID)
+				}
+			}},
+		{provider: "claude", fixture: "session-limit", want: []string{"STATUS", "STATUS", "STATUS", "TEXT", "ERROR", "USAGE"},
+			err: "You've hit your session limit · resets 7:20am (Europe/Paris)",
+			check: func(t *testing.T, events []Event, _, _ string) {
+				// The rejected rate limit says which limit, and when it resets; the warning before it says nothing.
+				var limits []Limit
+				for _, ev := range events {
+					if ev.Limit != nil {
+						limits = append(limits, *ev.Limit)
+					}
+				}
+				if want := (Limit{What: "the account's session limit", Until: time.Unix(1791436800, 0)}); len(limits) != 1 ||
+					limits[0].What != want.What || !limits[0].Until.Equal(want.Until) {
+					t.Errorf("limits = %+v, want %+v", limits, want)
 				}
 			}},
 		{provider: "claude", fixture: "unknown-line", want: []string{"STATUS", "OTHER", "OTHER", "OTHER", "TEXT", "USAGE"},

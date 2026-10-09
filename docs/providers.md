@@ -185,6 +185,31 @@ needing approval is soft-denied). Supposed, for Claude read-only: that `--restri
 able to write or run code. For agy: that plan mode writes nothing in headless mode, and the sandbox blocks every
 command, are to check on a real run.
 
+## When Djinn resumes a worker
+
+Djinn resumes a worker by itself, in the same task (status `resuming`), in two cases:
+
+- **djinn up stopped or crashed while it ran.** At the next start the task is interrupted, then resumed, unless a
+  person stopped it, it was imported, its worktree is gone, its wish is granted, or another task was forked from it
+  (it reads "resumed as W47").
+- **Its provider's usage limit stopped it.** The task waits for the reset (status "waiting for the limit", with
+  "the account's session limit, resets at 07:20"), then resumes. Without a reset time, it waits 15 minutes, then 30,
+  doubling up to 2 hours. While a limit holds, no new worker of that provider starts.
+
+The scheduler starts a resumed task like a planned one, first: slots, pressure and gates still apply. After 3
+resumes without finishing, the task fails, saying so. What each agent gets:
+
+| Agent  | Resumed with                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------ |
+| Claude | `--resume <session>`, and "Djinn restarted while you worked; your worktree is as you left it. Continue your task." |
+| Codex  | `thread/resume` on its thread, and the same line                                                                   |
+| agy    | its first prompt again, followed by that line, in the same worktree: its resume is not verified                    |
+
+The limits Djinn recognizes, in the failure a worker ends with (`internal/harness/limit.go`): Claude's
+`rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your
+session limit · resets …" or "Claude AI usage limit reached|<time>"; Codex's `usageLimitExceeded`; agy's
+`RESOURCE_EXHAUSTED` (supposed); a rate limit or HTTP 429 from any of them.
+
 ## Claude
 
 **Command.** `claude -p --input-format stream-json --output-format stream-json --verbose
@@ -219,6 +244,7 @@ holding only thinking whose text is withheld. A thinking block with text is kept
 | Unknown lines                                 | `claude/unknown-line.jsonl`      | by hand                                     | each kept as `OTHER`, raw                                                                                           |
 | Process dies mid-turn                         | `claude/process-dies.jsonl`      | by hand                                     | error "claude ended before the end of its turn"; task failed                                                        |
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
+| Session limit reached                         | `claude/session-limit.jsonl`     | **real**, claude 2.1.293                    | `rate_limit_event` `rejected` gives the limit and its `resetsAt`; error "You've hit your session limit · resets 7:20am (Europe/Paris)"; the task waits for the reset, then resumes |
 
 ## Codex
 
@@ -251,7 +277,7 @@ too. Nothing has been captured from a real codex yet: see "Codex: to check" belo
 | Simple success             | `codex/success.jsonl`           | by hand | session, text, usage, `turn completed`                                                 |
 | Tool calls                 | `codex/tool-call.jsonl`         | by hand | command and file change as tool calls and results, reasoning summary as other          |
 | Error after a retry        | `codex/error.jsonl`             | by hand | `retrying: …`, then the error once; task failed                                        |
-| Usage limit                | `codex/limit.jsonl`             | by hand | `usageLimitExceeded: …`; task failed                                                   |
+| Usage limit                | `codex/limit.jsonl`             | by hand | `usageLimitExceeded: …`; the task waits for the limit (a backoff), then resumes        |
 | Permission denied          | `codex/permission-denied.jsonl` | by hand | the approval declined, `permission denied: commandExecution …`, the command `declined` |
 | Listed command approved    | `codex/permission-denied.jsonl` | by hand | with `.agents` listing `go test`: `untrusted`, `workspace-write`, the approval accepted |
 | Thread resumed             | `codex/resume.jsonl`            | by hand | `thread/resume` with `excludeTurns`                                                    |
@@ -340,7 +366,7 @@ use a personal or licensed account.
 | Simple success          | `antigravity/success.jsonl`                       | by hand, **supposed** | session, the deltas as one text, usage                             |
 | Tool calls              | `antigravity/tool-call.jsonl`                     | by hand, **supposed** | a call per tool step, its output as the result                     |
 | Model error             | `antigravity/error.jsonl` + `.stderr`             | by hand, **supposed** | the cut text, `AGY_ERROR`, the result's error; exit 3, task failed |
-| Quota exhausted         | `antigravity/limit.jsonl` + `.stderr`             | by hand, **supposed** | `… (HTTP 429), retryable`; task failed                             |
+| Quota exhausted         | `antigravity/limit.jsonl` + `.stderr`             | by hand, **supposed** | `… (HTTP 429), retryable`; the task waits (a backoff), then resumes |
 | Permission soft-denied  | `antigravity/permission-denied.jsonl` + `.stderr` | by hand, **supposed** | `permission denied: the run_command tool(s) …`; the task goes on   |
 | Conversation resumed    | `antigravity/resume.jsonl`                        | by hand, **supposed** | `--conversation`, the resumed conversation                         |
 | Unknown lines           | `antigravity/unknown-line.jsonl`                  | by hand, **supposed** | each kept as `OTHER`, raw                                          |

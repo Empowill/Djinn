@@ -271,7 +271,14 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 		if info.ResetsAt > 0 {
 			text += ", resets at " + time.Unix(info.ResetsAt, 0).UTC().Format(time.RFC3339)
 		}
-		add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+		ev := add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+		if info.Status == "rejected" {
+			// The account's limit is reached: the turn fails next, and the task waits for the reset.
+			ev.Limit = &Limit{What: limitWhat(info.RateLimitType)}
+			if info.ResetsAt > 0 {
+				ev.Limit.Until = time.Unix(info.ResetsAt, 0)
+			}
+		}
 	case "assistant", "user":
 		bs := blocks(m.Message)
 		if len(bs) > 0 && !slices.ContainsFunc(bs, func(b claudeBlock) bool {

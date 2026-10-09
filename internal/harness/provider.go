@@ -108,6 +108,9 @@ type Event struct {
 	Usage *planv1.Usage
 	// SessionID is the agent's session, when the event tells it.
 	SessionID string
+	// Limit is the provider's usage limit, when the event says the worker hit it: the task waits for it to reset,
+	// should the worker then fail.
+	Limit *Limit
 }
 
 // Result is how a worker ended.

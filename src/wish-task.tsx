@@ -78,6 +78,7 @@ export function WishTask({
   project,
   codes,
   origin,
+  forkedAs = "",
   onStop,
   onSend,
 }: {
@@ -87,6 +88,8 @@ export function WishTask({
   codes?: ReadonlyMap<string, string>;
   // Where the task comes from, in the flight plan of several wishes: its wish.
   origin?: ReactNode;
+  // The task that took over this one, cut short: its code.
+  forkedAs?: string;
   onStop: () => void;
   onSend: (text: string) => Promise<unknown>;
 }) {
@@ -94,7 +97,8 @@ export function WishTask({
   const stoppable =
     task.status === TaskStatus.RUNNING ||
     task.status === TaskStatus.PAUSED ||
-    task.status === TaskStatus.PENDING;
+    task.status === TaskStatus.PENDING ||
+    task.status === TaskStatus.RESUMING;
   const after = taskFinished(task.status)
     ? []
     : (task.dependsOn ?? [])
@@ -108,13 +112,13 @@ export function WishTask({
           onClick={() => setOpen(!open)}
           aria-expanded={open}
         >
-          <span className={`mission-dot ${taskTone(task.status)}`} />
+          <span className={`mission-dot ${taskTone(task.status, forkedAs)}`} />
           <span className="agent-code">{task.code}</span>
           <strong>{task.title}</strong>
           <span className="wish-task-meta">
             {origin}
             {project?.name && <span>{project.name}</span>}
-            <span>{taskStatusText(task.status)}</span>
+            <span>{taskStatusText(task, forkedAs)}</span>
             <TaskUsage usage={task.usage} />
           </span>
           <ChevronDown size={14} className={open ? "rotated" : ""} />
@@ -132,7 +136,7 @@ export function WishTask({
       </div>
       {(task.waitReason || task.error || after.length > 0) && (
         <p
-          className={`wish-task-note ${taskTone(task.status) === "error" ? "error" : ""}`}
+          className={`wish-task-note ${taskTone(task.status, forkedAs) === "error" ? "error" : ""}`}
         >
           {task.error || task.waitReason}
           {after.length > 0 && (

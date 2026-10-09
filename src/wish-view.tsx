@@ -34,7 +34,7 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients, useData, useStore, useWishDetail } from "./data/djinn";
-import { openQuestions, spent, waitingTasks } from "./data/flight";
+import { forkedAs, openQuestions, spent, waitingTasks } from "./data/flight";
 import {
   allowanceOf,
   isActive,
@@ -331,6 +331,7 @@ export function WishView({
                   key={task.id}
                   task={task}
                   codes={codes}
+                  forkedAs={forkedAs(task, detail.tasks)}
                   project={allProjects.find((p) => p.id === task.projectId)}
                   onStop={() =>
                     quiet(

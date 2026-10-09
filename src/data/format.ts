@@ -6,6 +6,7 @@ import {
   Choice,
   type Project,
   type Question,
+  type Task,
   TaskStatus,
   type Wish,
   WishState,
@@ -54,16 +55,29 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
   [TaskStatus.INTERRUPTED]: "task.status_interrupted",
   [TaskStatus.WAITING]: "task.status_waiting",
   [TaskStatus.PAUSED]: "task.status_paused",
+  [TaskStatus.RESUMING]: "task.status_resuming",
 };
 
-export function taskStatusText(status: TaskStatus): string {
-  return t(taskStatusKeys[status]);
+// taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the
+// limit; one cut short and resumed as another task (forkedAs) says which.
+export function taskStatusText(
+  task: Pick<Task, "status" | "resumeAfter">,
+  forkedAs = "",
+): string {
+  if (task.status === TaskStatus.RESUMING && task.resumeAfter)
+    return t("task.status_limit");
+  if (task.status === TaskStatus.INTERRUPTED && forkedAs)
+    return t("task.status_forked", { task: forkedAs });
+  return t(taskStatusKeys[task.status]);
 }
 
-// taskTone is the class of a task's dot, as the sidebar's mission dots are styled.
-export function taskTone(status: TaskStatus): string {
+// taskTone is the class of a task's dot, as the sidebar's mission dots are styled. A task cut short and resumed as
+// another one (forkedAs) is no error any more.
+export function taskTone(status: TaskStatus, forkedAs = ""): string {
+  if (status === TaskStatus.INTERRUPTED && forkedAs) return "idle";
   switch (status) {
     case TaskStatus.RUNNING:
+    case TaskStatus.RESUMING:
       return "running";
     case TaskStatus.DONE:
       return "done";
