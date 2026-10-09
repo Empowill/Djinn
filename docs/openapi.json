@@ -1037,7 +1037,8 @@
           "CHANGE_QUESTION",
           "CHANGE_BLOCK",
           "CHANGE_PROJECT",
-          "CHANGE_INBOX"
+          "CHANGE_INBOX",
+          "CHANGE_TILASM"
         ],
         "description": "Change is a kind of entity that changed, for a reader to read it again."
       },
@@ -3993,6 +3994,31 @@
         "additionalProperties": false,
         "description": "A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out.\n A folder with an index.html and its sources, kept in Djinn's data folder, tilasms/\u003cid\u003e/v\u003cn\u003e/, never in a project.\n Putting it again adds a version; the latest is what its links show. The word comes from the Arabic ṭilasm, the\n origin of \"talisman\"."
       },
+      "plan.v1.TilasmFile": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "version",
+            "format": "int32",
+            "description": "The version it belongs to."
+          },
+          "path": {
+            "type": "string",
+            "title": "path",
+            "description": "Its path in the version's folder, with forward slashes: index.html, img/model.svg."
+          },
+          "content": {
+            "type": "string",
+            "title": "content",
+            "format": "byte",
+            "description": "Its content."
+          }
+        },
+        "title": "TilasmFile",
+        "additionalProperties": false,
+        "description": "TilasmFile is a file of a tilasm's version."
+      },
       "plan.v1.TilasmRef": {
         "type": "object",
         "allOf": [
@@ -4317,6 +4343,65 @@
           }
         },
         "title": "TilasmServiceListResponse",
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServicePutDataRequest": {
+        "type": "object",
+        "properties": {
+          "wish": {
+            "type": "string",
+            "title": "wish",
+            "format": "uuid",
+            "description": "The wish to put it into."
+          },
+          "name": {
+            "type": "string",
+            "title": "name",
+            "maxLength": 1000,
+            "description": "The name of what was dropped, the folder's or the .zip's: the title when its index.html has none."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.TilasmFile"
+            },
+            "title": "files",
+            "maxItems": 10000,
+            "minItems": 1,
+            "description": "The files, by their paths in the folder (version 0); or one file, the .zip."
+          },
+          "author": {
+            "type": "string",
+            "title": "author",
+            "maxLength": 100,
+            "description": "Who puts it; the developer by default."
+          }
+        },
+        "title": "TilasmServicePutDataRequest",
+        "required": [
+          "wish"
+        ],
+        "additionalProperties": false
+      },
+      "plan.v1.TilasmServicePutDataResponse": {
+        "type": "object",
+        "properties": {
+          "tilasm": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.Tilasm"
+              }
+            ],
+            "title": "tilasm",
+            "description": "The tilasm, its new version last."
+          },
+          "imported": {
+            "type": "boolean",
+            "title": "imported",
+            "description": "The .zip was a tilasm's export: it was imported."
+          }
+        },
+        "title": "TilasmServicePutDataResponse",
         "additionalProperties": false
       },
       "plan.v1.TilasmServicePutRequest": {
@@ -9841,6 +9926,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/plan.v1.TilasmServicePutResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan.v1.TilasmService/PutData": {
+      "post": {
+        "tags": [
+          "TilasmService"
+        ],
+        "summary": "PutData",
+        "description": "Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm\n export wrote is imported, as Import; any other is put, as Put.",
+        "operationId": "TilasmService_PutData",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "description": "Define the version of the Connect protocol",
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            },
+            "example": 1
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "description": "Define the timeout, in ms",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            },
+            "example": 1000
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServicePutDataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServicePutDataResponse"
                 }
               }
             }

@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -18,6 +19,9 @@ import (
 	"sync"
 	"time"
 )
+
+// TilasmPrefix is where the tilasms' files are served, each tilasm's under /tilasm/<id>/ (plan.Tilasms.Files).
+const TilasmPrefix = "/tilasm/"
 
 // Handler serves each Connect service at its path prefix, as returned by a generated New…Handler, the documentation
 // site from docs at /docs/ when docs is not nil, and the interface from ui for every other path.
@@ -168,6 +172,20 @@ func Guard(next http.Handler, token, origin string) http.Handler {
 	cookie := "djinn_token_" + u.Port()
 	valid := func(s string) bool { return subtle.ConstantTimeCompare([]byte(s), []byte(token)) == 1 }
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A tilasm's frame has an opaque origin: the browser sends the cookie for the frame's page, never for the files
+		// it loads (Origin null, Sec-Fetch-Site cross-site). Its page is sent to an address with a key of its own, from
+		// which the files load.
+		if id, key, rest, ok := keyedTilasm(r.URL.Path); ok {
+			if (r.Method != http.MethodGet && r.Method != http.MethodHead) ||
+				subtle.ConstantTimeCompare([]byte(key), []byte(FrameKey(token, id))) != 1 {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			r = r.Clone(r.Context())
+			r.URL.Path, r.URL.RawPath = TilasmPrefix+id+"/"+rest, ""
+			next.ServeHTTP(w, r)
+			return
+		}
 		if o := r.Header.Get("Origin"); o != "" && o != origin {
 			http.Error(w, "forbidden origin", http.StatusForbidden)
 			return
@@ -187,6 +205,14 @@ func Guard(next http.Handler, token, origin string) http.Handler {
 			return
 		}
 		if c, err := r.Cookie(cookie); err == nil && valid(c.Value) {
+			if id, rest, ok := tilasmPage(r); ok {
+				to := TilasmPrefix + id + "/" + keyMark + FrameKey(token, id) + "/" + rest
+				if r.URL.RawQuery != "" {
+					to += "?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, to, http.StatusSeeOther)
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -196,6 +222,37 @@ func Guard(next http.Handler, token, origin string) http.Handler {
 		}
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	})
+}
+
+// keyMark starts the segment of a tilasm's address that holds its key: /tilasm/<id>/@<key>/<file>.
+const keyMark = "@"
+
+// FrameKey is the key of a tilasm's files for the server of token: it opens that tilasm only, while that server runs.
+func FrameKey(token, id string) string {
+	mac := hmac.New(sha256.New, []byte(token))
+	mac.Write([]byte("tilasm " + strings.ToLower(id)))
+	return hex.EncodeToString(mac.Sum(nil))[:32]
+}
+
+// keyedTilasm reads an address /tilasm/<id>/@<key>/<rest>.
+func keyedTilasm(p string) (id, key, rest string, ok bool) {
+	id, after, ok := strings.Cut(strings.TrimPrefix(p, TilasmPrefix), "/")
+	if !ok || !strings.HasPrefix(p, TilasmPrefix) || !strings.HasPrefix(after, keyMark) {
+		return "", "", "", false
+	}
+	key, rest, _ = strings.Cut(after[len(keyMark):], "/")
+	return id, key, rest, true
+}
+
+// tilasmPage tells a browser opening a tilasm's page, in a frame or alone, at /tilasm/<id>/<rest>: it gets the address
+// with the key. A program, with its bearer token, reads the files where they are.
+func tilasmPage(r *http.Request) (id, rest string, ok bool) {
+	if r.Method != http.MethodGet || r.Header.Get("Sec-Fetch-Mode") != "navigate" ||
+		!strings.HasPrefix(r.URL.Path, TilasmPrefix) {
+		return "", "", false
+	}
+	id, rest, ok = strings.Cut(strings.TrimPrefix(r.URL.Path, TilasmPrefix), "/")
+	return id, rest, ok && id != ""
 }
 
 // Serve serves h on ln until ctx is done, then shuts down. Requests share ctx, so open streams end with it

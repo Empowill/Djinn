@@ -59,6 +59,7 @@ export default defineConfig({
           "^/[a-z]+\\.v[0-9]+\\.[A-Za-z]+Service/": { target: devApi },
           // The documentation site, which djinn serves.
           "^/docs/": { target: devApi },
+          "^/tilasm/": { target: devApi },
         }
       : undefined,
   },

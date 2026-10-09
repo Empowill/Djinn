@@ -21,6 +21,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
 )
@@ -100,8 +101,10 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h
-	p, h = planv1connect.NewTilasmServiceHandler(&Tilasms{Store: s, Home: o.home}, opt)
+	tilasms := &Tilasms{Store: s, Home: o.home}
+	p, h = planv1connect.NewTilasmServiceHandler(tilasms, opt)
 	out[p] = h
+	out[server.TilasmPrefix] = tilasms.Files()
 	return out
 }
 

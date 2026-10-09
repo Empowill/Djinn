@@ -91,29 +91,40 @@ func (t *Tilasms) ceiling(existing *planv1.Tilasm) int64 {
 func (t *Tilasms) Put(
 	ctx context.Context, req *connect.Request[planv1.TilasmServicePutRequest],
 ) (*connect.Response[planv1.TilasmServicePutResponse], error) {
-	if err := t.ready(); err != nil {
+	tilasm, placed, err := t.put(ctx, req.Spec(), req.Msg, req.Msg)
+	if err != nil {
 		return nil, err
 	}
-	m := req.Msg
+	return connect.NewResponse(&planv1.TilasmServicePutResponse{Tilasm: tilasm, Directory: placed}), nil
+}
+
+// put puts m's folder or .zip, journaling the request journaled under spec. It returns the tilasm and the folder of the
+// version put.
+func (t *Tilasms) put(
+	ctx context.Context, spec connect.Spec, journaled proto.Message, m *planv1.TilasmServicePutRequest,
+) (*planv1.Tilasm, string, error) {
+	if err := t.ready(); err != nil {
+		return nil, "", err
+	}
 	src := m.GetPath()
 	if !filepath.IsAbs(src) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("path: %q is not an absolute path", src))
+		return nil, "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("path: %q is not an absolute path", src))
 	}
 	var existing *planv1.Tilasm
 	if m.GetCode() != "" {
 		var err error
 		if existing, err = tilasmByCode(ctx, t.Store, m.GetWish(), m.GetCode()); err != nil {
-			return nil, Status(err)
+			return nil, "", Status(err)
 		}
 	}
 	files, err := t.stagePath(src, t.ceiling(existing))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer files.clean()
 	var tilasm *planv1.Tilasm
 	var placed string
-	err = write(ctx, t.Store, req.Spec(), m, func(tx *store.Tx) error {
+	err = write(ctx, t.Store, spec, journaled, func(tx *store.Tx) error {
 		if _, err := store.Get[*planv1.Wish](ctx, tx, m.GetWish()); err != nil {
 			return err
 		}
@@ -155,9 +166,9 @@ func (t *Tilasms) Put(
 	})
 	if err != nil {
 		removeIf(placed)
-		return nil, err
+		return nil, "", err
 	}
-	return connect.NewResponse(&planv1.TilasmServicePutResponse{Tilasm: tilasm, Directory: placed}), nil
+	return tilasm, placed, nil
 }
 
 // addVersion moves the staged files into the tilasm's next version, and records it. It returns the version's folder.
@@ -728,10 +739,20 @@ func zipBytes(zw *zip.Writer, name string, data []byte) error {
 func (t *Tilasms) Import(
 	ctx context.Context, req *connect.Request[planv1.TilasmServiceImportRequest],
 ) (*connect.Response[planv1.TilasmServiceImportResponse], error) {
+	tilasm, err := t.importZip(ctx, req.Spec(), req.Msg, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TilasmServiceImportResponse{Tilasm: tilasm}), nil
+}
+
+// importZip imports m's .zip, journaling the request journaled under spec.
+func (t *Tilasms) importZip(
+	ctx context.Context, spec connect.Spec, journaled proto.Message, m *planv1.TilasmServiceImportRequest,
+) (*planv1.Tilasm, error) {
 	if err := t.ready(); err != nil {
 		return nil, err
 	}
-	m := req.Msg
 	file := m.GetFile()
 	if !filepath.IsAbs(file) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("file: %q is not an absolute path", file))
@@ -767,7 +788,7 @@ func (t *Tilasms) Import(
 	}
 	var tilasm *planv1.Tilasm
 	var placed string
-	err = write(ctx, t.Store, req.Spec(), m, func(tx *store.Tx) error {
+	err = write(ctx, t.Store, spec, journaled, func(tx *store.Tx) error {
 		if _, err := store.Get[*planv1.Wish](ctx, tx, m.GetWish()); err != nil {
 			return err
 		}
@@ -819,7 +840,7 @@ func (t *Tilasms) Import(
 		removeIf(placed)
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.TilasmServiceImportResponse{Tilasm: tilasm}), nil
+	return tilasm, nil
 }
 
 // readManifest reads tilasm.json at the root of a tilasm's .zip, or in its one folder.

@@ -1012,6 +1012,8 @@ const (
 	Change_CHANGE_PROJECT Change = 5
 	// The inbox: an item came, or was routed or dismissed.
 	Change_CHANGE_INBOX Change = 6
+	// Its tilasms: one put, restored or imported.
+	Change_CHANGE_TILASM Change = 7
 )
 
 // Enum value maps for Change.
@@ -1024,6 +1026,7 @@ var (
 		4: "CHANGE_BLOCK",
 		5: "CHANGE_PROJECT",
 		6: "CHANGE_INBOX",
+		7: "CHANGE_TILASM",
 	}
 	Change_value = map[string]int32{
 		"CHANGE_UNSPECIFIED": 0,
@@ -1033,6 +1036,7 @@ var (
 		"CHANGE_BLOCK":       4,
 		"CHANGE_PROJECT":     5,
 		"CHANGE_INBOX":       6,
+		"CHANGE_TILASM":      7,
 	}
 )
 
@@ -10885,7 +10889,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x17INBOX_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fINBOX_STATE_NEW\x10\x01\x12\x16\n" +
 	"\x12INBOX_STATE_ROUTED\x10\x02\x12\x19\n" +
-	"\x15INBOX_STATE_DISMISSED\x10\x03*\x8f\x01\n" +
+	"\x15INBOX_STATE_DISMISSED\x10\x03*\xa2\x01\n" +
 	"\x06Change\x12\x16\n" +
 	"\x12CHANGE_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vCHANGE_WISH\x10\x01\x12\x0f\n" +
@@ -10893,7 +10897,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0fCHANGE_QUESTION\x10\x03\x12\x10\n" +
 	"\fCHANGE_BLOCK\x10\x04\x12\x12\n" +
 	"\x0eCHANGE_PROJECT\x10\x05\x12\x10\n" +
-	"\fCHANGE_INBOX\x10\x06*\x8e\x01\n" +
+	"\fCHANGE_INBOX\x10\x06\x12\x11\n" +
+	"\rCHANGE_TILASM\x10\a*\x8e\x01\n" +
 	"\x10ProjectMatchKind\x12\"\n" +
 	"\x1ePROJECT_MATCH_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19PROJECT_MATCH_KIND_REMOTE\x10\x01\x12\x1b\n" +

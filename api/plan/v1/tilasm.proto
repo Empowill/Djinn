@@ -124,6 +124,12 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
+  // export wrote is imported, as Import; any other is put, as Put.
+  rpc PutData(TilasmServicePutDataRequest) returns (TilasmServicePutDataResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message TilasmServicePutRequest {
@@ -275,4 +281,28 @@ message TilasmServiceImportRequest {
 message TilasmServiceImportResponse {
   // The tilasm, its new version last.
   Tilasm tilasm = 1;
+}
+
+message TilasmServicePutDataRequest {
+  // The wish to put it into.
+  string wish = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The name of what was dropped, the folder's or the .zip's: the title when its index.html has none.
+  string name = 2 [(buf.validate.field).string.max_len = 1000];
+  // The files, by their paths in the folder (version 0); or one file, the .zip.
+  repeated TilasmFile files = 3 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 10000
+  ];
+  // Who puts it; the developer by default.
+  string author = 4 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServicePutDataResponse {
+  // The tilasm, its new version last.
+  Tilasm tilasm = 1;
+  // The .zip was a tilasm's export: it was imported.
+  bool imported = 2;
 }

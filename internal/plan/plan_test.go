@@ -27,6 +27,7 @@ type clients struct {
 	inbox     planv1connect.InboxServiceClient
 	tilasms   planv1connect.TilasmServiceClient
 	store     *store.Store
+	url       string // the server's, for its routes other than the services
 }
 
 // serve runs the plan services on a store in memory, behind a real Connect server.
@@ -53,6 +54,7 @@ func serve(t *testing.T, opts ...Option) clients {
 		inbox:     planv1connect.NewInboxServiceClient(srv.Client(), srv.URL),
 		tilasms:   planv1connect.NewTilasmServiceClient(srv.Client(), srv.URL),
 		store:     s,
+		url:       srv.URL,
 	}
 }
 
