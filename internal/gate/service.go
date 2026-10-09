@@ -34,7 +34,7 @@ func (s *service) Hold(
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	name := Name(req.Msg.GetName())
-	give, err := s.g.Take(ctx, name, req.Msg.GetTaskId(), req.Msg.GetWhat(), func(why string) {
+	give, err := s.g.Take(ctx, name, req.Msg.GetTaskId(), req.Msg.GetWhat(), req.Msg.GetDirectory(), func(why string) {
 		_ = stream.Send(&machinev1.GateServiceHoldResponse{State: machinev1.GateState_GATE_STATE_WAITING, Reason: why})
 	})
 	if err != nil {

@@ -1,6 +1,7 @@
 // Package gate grants the gates: shared resources (code generation, the local stack, an end-to-end run, a paid
-// model run) that one holder uses at a time, granted only while the machine is not under pressure, the first wish
-// of the rank first. A holder keeps its gate until it gives it back, or its connection ends.
+// model run) that one holder uses at a time, granted only while the machine is not under pressure and has the memory
+// the command peaked at, the first wish of the rank first. A holder keeps its gate until it gives it back, or its
+// connection ends.
 package gate
 
 import (
@@ -15,6 +16,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/machine"
 )
 
 // Tasks is what the gates need from the tasks: to name a holder, to rank waiters by their wish, and to tell a
@@ -25,11 +27,25 @@ type Tasks interface {
 	Note(taskID string, ev harness.Event)
 }
 
+// Machine is what the gates need from the machine: its pressure, its memory, and the policy that judges them. The
+// monitor is one.
+type Machine interface {
+	Snapshot() machine.Snapshot
+	Policy() machine.Policy
+}
+
+// Costs gives the highest peak memory a command was measured at, in its project: the task's, else the one holding
+// dir; 0 when never measured. machine.Peaks is one.
+type Costs interface {
+	Peak(ctx context.Context, taskID, dir, command string) uint64
+}
+
 // Gates grants the gates. Its zero value is not usable: New makes one.
 type Gates struct {
-	pressure func() string // why the machine is under pressure, "" when it is not
-	tasks    Tasks         // nil: holders outside any task only
-	tick     time.Duration // how often a waiter looks at the pressure again
+	machine Machine       // nil: never under pressure, its memory unknown
+	costs   Costs         // nil: no command measured
+	tasks   Tasks         // nil: holders outside any task only
+	tick    time.Duration // how often a waiter looks at the machine again
 
 	mu    sync.Mutex
 	held  map[string]*waiter // by gate name
@@ -39,21 +55,19 @@ type Gates struct {
 
 // waiter is a holder of a gate, or one that waits for it.
 type waiter struct {
-	name, taskID, who string
-	seq               int
-	since             time.Time
-	granted           chan struct{} // closed when the gate is granted
-	changed           chan struct{} // why changed
-	why               string        // guarded by Gates.mu
+	name, taskID, who, what string
+	peak                    uint64 // the command's highest measured peak memory; 0 when never measured
+	seq                     int
+	since                   time.Time
+	granted                 chan struct{} // closed when the gate is granted
+	changed                 chan struct{} // the cause to wait changed
+	why, cause              string        // guarded by Gates.mu
 }
 
-// New returns the gates of a machine whose pressure is given by pressure (nil: never under pressure), the holders'
-// tasks being tasks (nil: none known).
-func New(pressure func() string, tasks Tasks) *Gates {
-	if pressure == nil {
-		pressure = func() string { return "" }
-	}
-	return &Gates{pressure: pressure, tasks: tasks, tick: time.Second, held: map[string]*waiter{}}
+// New returns the gates of machine m (nil: never under pressure, its memory unknown), the commands' measured costs
+// being costs (nil: none measured), the holders' tasks being tasks (nil: none known).
+func New(m Machine, costs Costs, tasks Tasks) *Gates {
+	return &Gates{machine: m, costs: costs, tasks: tasks, tick: time.Second, held: map[string]*waiter{}}
 }
 
 // Name is a gate's name as Djinn keeps it: names ignore case.
@@ -61,9 +75,10 @@ func Name(s string) string { return strings.ToLower(s) }
 
 // Take waits until the gate is granted, and returns the function that gives it back; calling it again does
 // nothing. taskID, when not empty, is the task the gate is taken for: its events say when it waits, takes and gives
-// the gate back. what says what the holder runs. waiting is called each time the reason to wait changes. Take
-// fails when ctx ends first.
-func (g *Gates) Take(ctx context.Context, name, taskID, what string, waiting func(why string)) (func(), error) {
+// the gate back. what says what the holder runs, in the folder dir: a command measured in its project waits until
+// the machine has the memory it peaked at. waiting is called each time the reason to wait changes. Take fails when
+// ctx ends first.
+func (g *Gates) Take(ctx context.Context, name, taskID, what, dir string, waiting func(why string)) (func(), error) {
 	name = Name(name)
 	who := "a holder outside any task"
 	if taskID != "" {
@@ -75,13 +90,17 @@ func (g *Gates) Take(ctx context.Context, name, taskID, what string, waiting fun
 			return nil, err
 		}
 	}
+	var peak uint64
 	if what != "" {
 		who += ": " + what
+		if g.costs != nil {
+			peak = g.costs.Peak(ctx, taskID, dir, what)
+		}
 	}
 	g.mu.Lock()
 	g.seq++
 	w := &waiter{
-		name: name, taskID: taskID, who: who, seq: g.seq,
+		name: name, taskID: taskID, who: who, what: what, peak: peak, seq: g.seq,
 		granted: make(chan struct{}), changed: make(chan struct{}, 1),
 	}
 	g.queue = append(g.queue, w)
@@ -135,9 +154,15 @@ func (g *Gates) give(w *waiter) {
 }
 
 // pass grants each free gate to its first waiter, the first wish of the rank first, then the first come, unless
-// the machine is under pressure; it tells every other waiter why it waits.
+// the machine is under pressure or lacks the memory the waiter's command peaked at; it tells every other waiter why
+// it waits.
 func (g *Gates) pass(ctx context.Context) {
-	pressure := g.pressure()
+	var snap machine.Snapshot
+	var policy machine.Policy
+	if g.machine != nil {
+		snap, policy = g.machine.Snapshot(), g.machine.Policy()
+	}
+	pressure := policy.Pressure(snap)
 	g.mu.Lock()
 	var ids []string
 	for _, w := range g.queue {
@@ -159,39 +184,41 @@ func (g *Gates) pass(ctx context.Context) {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	var held uint64
+	for _, h := range g.held {
+		held += h.peak
+	}
 	queue := slices.Clone(g.queue)
 	slices.SortStableFunc(queue, func(a, b *waiter) int { return cmp.Or(cmp.Compare(rank(a), rank(b)), cmp.Compare(a.seq, b.seq)) })
 	for _, w := range queue {
-		var why string
+		var why, cause string
 		switch h := g.held[w.name]; {
 		case h != nil:
-			why = fmt.Sprintf("held by %s, for %s", h.who, time.Since(h.since).Round(time.Second))
+			why, cause = fmt.Sprintf("held by %s, for %s", h.who, time.Since(h.since).Round(time.Second)), "held by "+h.who
 		case pressure != "":
 			why = "the machine is under pressure: " + pressure
+			cause = why
 		default:
+			if why = policy.Room(snap, w.what, w.peak, held); why != "" {
+				cause = "memory"
+				break
+			}
+			held += w.peak
 			w.since = time.Now()
 			g.held[w.name] = w
 			g.queue = slices.DeleteFunc(g.queue, func(o *waiter) bool { return o == w })
 			close(w.granted)
 			continue
 		}
-		// The holder's time changes every second: tell the waiter only when the holder or the cause changes.
-		if cause(why) != cause(w.why) {
-			w.why = why
+		// The holder's time and the memory free change every second: tell the waiter only when the cause changes.
+		if cause != w.cause {
+			w.why, w.cause = why, cause
 			select {
 			case w.changed <- struct{}{}:
 			default:
 			}
 		}
 	}
-}
-
-// cause is a reason to wait without the time it gives.
-func cause(why string) string {
-	if i := strings.LastIndex(why, ", for "); i >= 0 && strings.HasPrefix(why, "held by ") {
-		return why[:i]
-	}
-	return why
 }
 
 // note tells the waiter's task, if any, what happens to its gate.

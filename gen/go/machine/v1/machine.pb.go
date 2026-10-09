@@ -756,8 +756,11 @@ type GateServiceHoldRequest struct {
 	// Task the gate is held for: its events say when it waits, takes and gives the gate. By default $DJINN_TASK_ID,
 	// with djinn gate run.
 	TaskId string `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// What the holder runs with the gate, shown to those who wait.
-	What          string `protobuf:"bytes,3,opt,name=what,proto3" json:"what,omitempty"`
+	// What the holder runs with the gate, shown to those who wait. A command measured in its project waits for the
+	// memory it peaked at.
+	What string `protobuf:"bytes,3,opt,name=what,proto3" json:"what,omitempty"`
+	// Folder the command runs in, absolute: it finds the project when no task is given.
+	Directory     string `protobuf:"bytes,4,opt,name=directory,proto3" json:"directory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -809,6 +812,13 @@ func (x *GateServiceHoldRequest) GetTaskId() string {
 func (x *GateServiceHoldRequest) GetWhat() string {
 	if x != nil {
 		return x.What
+	}
+	return ""
+}
+
+func (x *GateServiceHoldRequest) GetDirectory() string {
+	if x != nil {
+		return x.Directory
 	}
 	return ""
 }
@@ -1389,11 +1399,12 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12$\n" +
 	"\x0eholder_task_id\x18\x03 \x01(\tR\fholderTaskId\x120\n" +
 	"\x05since\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12\x18\n" +
-	"\awaiting\x18\x05 \x03(\tR\awaiting\"\x99\x01\n" +
+	"\awaiting\x18\x05 \x03(\tR\awaiting\"\xc1\x01\n" +
 	"\x16GateServiceHoldRequest\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$\xc8\x01\x01r\x1f2\x1d^[A-Za-z][A-Za-z0-9_-]{0,39}$R\x04name\x12$\n" +
 	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1c\n" +
-	"\x04what\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x04what\"^\n" +
+	"\x04what\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x04what\x12&\n" +
+	"\tdirectory\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\tdirectory\"^\n" +
 	"\x17GateServiceHoldResponse\x12+\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x15.machine.v1.GateStateR\x05state\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x18\n" +

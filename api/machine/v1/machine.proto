@@ -173,8 +173,11 @@ message GateServiceHoldRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
-  // What the holder runs with the gate, shown to those who wait.
+  // What the holder runs with the gate, shown to those who wait. A command measured in its project waits for the
+  // memory it peaked at.
   string what = 3 [(buf.validate.field).string.max_len = 200];
+  // Folder the command runs in, absolute: it finds the project when no task is given.
+  string directory = 4 [(buf.validate.field).string.max_len = 4096];
 }
 
 message GateServiceHoldResponse {

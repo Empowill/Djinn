@@ -157,7 +157,8 @@ To use Djinn, see the [README](README.md). To work on it:
 - `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
   `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
 - `djinn gate run <name> -- <command>` runs a command under a gate and records what it cost in its project (CPU
-  time, peak memory, duration); `djinn command list [--project <name>]` shows the costs. `djinn up --worker-cpu 150`
+  time, peak memory, duration); `djinn command list [--project <name>]` shows the costs. Next time, the gate waits
+  until the machine has the memory the command peaked at. `djinn up --worker-cpu 150`
   caps each worker at 150% of a core in a systemd user scope, where systemd gives your user the cpu controller
   ([T17](plan/3da7b334-machine-discovery.md), [T09](plan/3792046b-quality-of-life.md)).
 - `djinn task get <task-id>` gives what its worker uses (CPU, memory, processes) and its peaks, read every 5 seconds

@@ -105,6 +105,30 @@ func TestPressure(t *testing.T) {
 	}
 }
 
+// TestRoom: the machine holds a measured command when the memory free, less what the gates held take, holds its peak
+// and the margin; a command never measured, or a machine whose memory is unknown, always has room.
+func TestRoom(t *testing.T) {
+	p := DefaultPolicy()
+	s := Snapshot{MemoryTotal: 16 * GiB, MemoryAvailable: 4 * GiB}
+	for _, tt := range []struct {
+		name       string
+		s          Snapshot
+		peak, held uint64
+		want       string
+	}{
+		{"room", s, 3 * GiB, 0, ""},
+		{"no margin left", s, 36 * GiB / 10, 0, "e2e peaks at 3.6 GiB, 4.0 GiB free"},
+		{"held", s, 2 * GiB, 2 * GiB, "e2e peaks at 2.0 GiB, 4.0 GiB free, 2.0 GiB of it for the commands holding a gate"},
+		{"held beyond the free", s, 300 << 20, 6 * GiB, "e2e peaks at 300 MiB, 4.0 GiB free, 4.0 GiB of it for the commands holding a gate"},
+		{"never measured", s, 0, 6 * GiB, ""},
+		{"memory unknown", Snapshot{}, 3 * GiB, 0, ""},
+	} {
+		if got := p.Room(tt.s, "e2e", tt.peak, tt.held); got != tt.want {
+			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 // TestMonitor reads the machine once a second at most, and keeps the cores when reading fails.
 func TestMonitor(t *testing.T) {
 	reads := 0
