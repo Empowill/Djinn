@@ -478,6 +478,20 @@ export function WishView({
                     parts={parts}
                     tasks={byId}
                     render={renderTask}
+                    onValidate={() =>
+                      quiet(
+                        act(
+                          () =>
+                            clients.tasks.done({
+                              taskId: azima.id,
+                              note: t("azima.validated_note"),
+                              by: Closer.DEVELOPER,
+                            }),
+                          [Change.TASK],
+                          t("azima.validated", { code: azima.code }),
+                        ),
+                      )
+                    }
                   />
                 )}
                 aside={<SpentLine spent={spent(detail.tasks)} />}

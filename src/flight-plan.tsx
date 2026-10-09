@@ -183,6 +183,19 @@ export function FlightPlan({
                   tasks={tasksOf(wish)}
                   origin={<WishOrigin wish={wish} />}
                   render={(task) => renderTask(wish, task)}
+                  onValidate={() =>
+                    act(
+                      wish.id,
+                      () =>
+                        clients.tasks.done({
+                          taskId: item.azima.id,
+                          note: t("azima.validated_note"),
+                          by: Closer.DEVELOPER,
+                        }),
+                      [Change.TASK],
+                      t("azima.validated", { code: item.azima.code }),
+                    )
+                  }
                 />
               )}
               render={({ wish, item }) => renderTask(wish, item)}

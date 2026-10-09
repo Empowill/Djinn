@@ -140,7 +140,7 @@ func TestAwaitingProof(t *testing.T) {
 		azima("T3", "", true), work("W6", "T3", done), work("W7", "T3", running),
 		azima("T4", "", true), work("W8", "T4", done), work("W9", "T4", failed),
 		azima("T5", "", true), work("W10", "T5", done), work("W11", "T5", resuming),
-		// A box without needs: the file gives the azima none.
+		// A box without needs: its work done, it is to validate all the same; the person checks the box.
 		azima("T6", "", false), work("W12", "T6", done),
 		// Nothing under way: open, whatever its file says.
 		azima("T7", "", true), work("W13", "T7", stopped),
@@ -149,11 +149,16 @@ func TestAwaitingProof(t *testing.T) {
 		azima("T10", "", true), azima("T11", "T10", true), work("W15", "T11", done), work("W16", "T11", pending),
 		// Done stays done.
 		{Id: "T12", Code: "T12", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done, ProofNeeds: needs},
+		// Closed, its plan file saying done, but work part of it runs or waits: in progress until it ends.
+		{Id: "T13", Code: "T13", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W17", "T13", done),
+		work("W18", "T13", running),
+		{Id: "T14", Code: "T14", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W19", "T14", pending),
 	}
 	FillAzimas(tasks)
 	for code, want := range map[string]planv1.AzimaState{
-		"T1": proof, "T2": under, "T3": under, "T4": under, "T5": under, "T6": under, "T7": open,
+		"T1": proof, "T2": under, "T3": under, "T4": under, "T5": under, "T6": proof, "T7": open,
 		"T8": proof, "T9": proof, "T10": under, "T11": under, "T12": planv1.AzimaState_AZIMA_STATE_DONE,
+		"T13": under, "T14": under,
 	} {
 		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
 		if got := tasks[i].GetAzima().GetState(); got != want {

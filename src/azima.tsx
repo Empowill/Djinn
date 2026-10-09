@@ -2,7 +2,7 @@
 // where it stands (open, in progress, awaiting its proof, done: the lamp's, Task.azima), what it waits for (its after
 // codes), and its progress. Opened, what its proof needs, box by box, then its parts, as the Tasks tab shows any task.
 // An azima never waits for the person as work: its proof is no task.
-import { ChevronDown } from "lucide-react";
+import { BadgeCheck, ChevronDown } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import {
@@ -85,6 +85,7 @@ export function AzimaCard({
   tasks,
   origin,
   render,
+  onValidate,
 }: {
   azima: Task;
   // The work part of it, in the order to show.
@@ -94,6 +95,8 @@ export function AzimaCard({
   // Where it comes from, in the flight plan of several wishes: its wish.
   origin?: ReactNode;
   render: (task: Task) => ReactNode;
+  // Validates the azima once its work is done: it is marked done, by you.
+  onValidate?: () => void;
 }) {
   const state = azimaState(azima);
   const [open, setOpen] = useState(
@@ -109,11 +112,17 @@ export function AzimaCard({
     .sort(compareCodes);
   const done = parts.filter((x) => x.status === TaskStatus.DONE).length;
   const proof = state === AzimaState.AWAITING_PROOF;
-  // On hover, what its proof needs, box by box.
+  // On hover, what validating it takes: each box left and what it needs, else that every task is finished.
   const needs = proof
-    ? azima.proofNeeds
-        .map((n) => `${n.box} ${t("azima.needs", { needs: n.needs })}`)
-        .join("\n")
+    ? [
+        t("azima.to_validate_title"),
+        ...(azima.proofNeeds.length
+          ? azima.proofNeeds.map(
+              (n) => `• ${n.box} ${t("azima.needs", { needs: n.needs })}`,
+            )
+          : [t("azima.no_boxes")]),
+        t("azima.how_to_validate"),
+      ].join("\n")
     : undefined;
   return (
     <section
@@ -173,17 +182,28 @@ export function AzimaCard({
         <div className="azima-parts">
           {proof && (
             <div className="azima-proof">
-              <p>{t("azima.proof_title")}</p>
-              <ul>
-                {azima.proofNeeds.map((need, i) => (
-                  <li key={i}>
-                    {need.box}{" "}
-                    <span className="muted-text">
-                      {t("azima.needs", { needs: need.needs })}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <p>{t("azima.to_validate_title")}</p>
+              {azima.proofNeeds.length ? (
+                <ul>
+                  {azima.proofNeeds.map((need, i) => (
+                    <li key={i}>
+                      {need.box}{" "}
+                      <span className="muted-text">
+                        {t("azima.needs", { needs: need.needs })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted-text">{t("azima.no_boxes")}</p>
+              )}
+              <p className="muted-text">{t("azima.how_to_validate")}</p>
+              {onValidate && (
+                <button className="button accent small" onClick={onValidate}>
+                  <BadgeCheck size={14} />
+                  {t("azima.validate")}
+                </button>
+              )}
             </div>
           )}
           {parts.length === 0 ? (

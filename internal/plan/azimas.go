@@ -24,10 +24,12 @@ import (
 func IsAzima(t *planv1.Task) bool { return t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA }
 
 // FillAzimas sets Task.azima on the azimas among tasks, from the tasks of their wish among tasks: give it every task of
-// the wishes read. An azima is done when its status is; in progress when one of its parts has a worker on it or is
-// done, or an azima part of it is under way; open otherwise. In progress with nothing left for Djinn, it awaits its
-// proof: its work finished, its azimas done or awaiting theirs, every unchecked box of its plan file waiting for a
-// proof no worker can give (Task.proof_needs). It is ready when every task it depends on is done.
+// the wishes read. An azima is done when its status is and none of its parts is still to finish: a part that runs or
+// waits keeps it in progress, whatever its plan file says. It is in progress when one of its parts has a worker on it
+// or is done, or an azima part of it is under way; open otherwise. Once every part is finished, its azimas done or to
+// validate in their turn, it is to validate (AWAITING_PROOF): nothing is left for Djinn, and the person checks its
+// plan file's boxes (Task.proof_needs say what each one needs) and validates it. It is ready when every task it
+// depends on is done.
 func FillAzimas(tasks []*planv1.Task) {
 	byID := make(map[string]*planv1.Task, len(tasks))
 	parts := map[string][]*planv1.Task{}
@@ -60,18 +62,23 @@ func FillAzimas(tasks []*planv1.Task) {
 		}
 		states[t.GetId()] = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
 		s := planv1.AzimaState_AZIMA_STATE_OPEN
+		// left tells whether a part is still to finish: work not finished, or an azima neither done nor to validate.
+		left := slices.ContainsFunc(parts[t.GetId()], func(p *planv1.Task) bool {
+			if IsAzima(p) {
+				ps := state(p)
+				return ps != planv1.AzimaState_AZIMA_STATE_DONE && ps != planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
+			}
+			return !Finished(p)
+		})
 		switch {
-		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE:
+		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !left:
 			s = planv1.AzimaState_AZIMA_STATE_DONE
+		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE:
+			// Closed, but work part of it still runs or waits: in progress until it ends.
+			s = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
 		case under(t.GetId(), map[string]bool{}):
 			s = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
-			if len(t.GetProofNeeds()) > 0 && !slices.ContainsFunc(parts[t.GetId()], func(p *planv1.Task) bool {
-				if IsAzima(p) {
-					ps := state(p)
-					return ps != planv1.AzimaState_AZIMA_STATE_DONE && ps != planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
-				}
-				return !Finished(p)
-			}) {
+			if !left {
 				s = planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
 			}
 		}

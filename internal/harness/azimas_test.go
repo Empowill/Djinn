@@ -59,7 +59,8 @@ func TestAzimasAreNeverScheduled(t *testing.T) {
 	}
 	e.until(t, part.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	got := e.get(t, second.GetId())
-	if s := got.GetAzima(); s.GetState() != planv1.AzimaState_AZIMA_STATE_IN_PROGRESS || s.GetReady() || s.GetParts() != 1 ||
+	// Its only part done, nothing is left for Djinn: it is to validate.
+	if s := got.GetAzima(); s.GetState() != planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF || s.GetReady() || s.GetParts() != 1 ||
 		s.GetPartsDone() != 1 {
 		t.Errorf("T2 with its part done: %v", s)
 	}

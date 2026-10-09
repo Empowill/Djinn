@@ -173,9 +173,11 @@ The lead's plan is a graph of azimas, coded `T01`, `T02`…: parts of the plan t
 of. The Tasks tab groups the work under its azima, under **Azimas**, with its progress and what it waits for; the top
 of the wish counts the azimas done before the tasks.
 
-An azima is **Open**, **In progress** or **Done**. In a project that keeps its plan in `plan/*.md`, one whose work is
-finished and whose "Done when" boxes only wait for proofs no worker can give is **Proof awaited**: a person, a machine,
-a release or a real model gives each one. The flight plan lists them among the **Proofs you can give**.
+An azima is **Open**, **In progress**, **To validate** or **Done**. Once every task part of it is finished, it is
+**To validate**: nothing is left for Djinn. Its card says what validating it takes, box by box of its plan file (a
+person, a machine, a release or a real model gives each proof), and its **Validate** button marks it done. An azima
+whose plan file says done stays **In progress** while work part of it still runs or waits. The flight plan lists the
+proofs a person can give among the **Proofs you can give**.
 
 ### The Decisions tab
 

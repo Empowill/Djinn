@@ -1615,11 +1615,11 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
   assert.match(card, /azima-card tone-proof/);
   assert.match(
     card,
-    /<span class="status-badge tone-proof" title="The same scenario runs on macOS\. Needs a Mac">.*<span>Proof awaited<\/span>/,
+    /<span class="status-badge tone-proof" title="Its work is done: to validate\n• The same scenario runs on macOS\. Needs a Mac\n[^"]*then validate it: it is done\.">.*<span>To validate<\/span>/,
   );
   assert.match(
     card,
-    /<span class="azima-needs" title="The same scenario runs on macOS\. Needs a Mac">a Mac<\/span>/,
+    /<span class="azima-needs" title="Its work is done: to validate\n• The same scenario runs on macOS\. Needs a Mac\n[^"]*">a Mac<\/span>/,
   );
   assert.doesNotMatch(card, /tone-waiting/);
 
@@ -1639,7 +1639,7 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
   );
   assert.match(
     page,
-    /title="1 of 4 azimas done, 2 awaiting their proof"[^>]*>.*?<b>1<\/b>done · <b class="tone-proof">2<\/b> awaiting proof \/ 4 azimas<\/span>/,
+    /title="1 of 4 azimas done, 2 to validate"[^>]*>.*?<b>1<\/b>done · <b class="tone-proof">2<\/b> to validate \/ 4 azimas<\/span>/,
   );
   // The flight plan lists the proof a person can give among what waits for them, never as work; a Mac's is not.
   const plan = s.renderToStaticMarkup(
