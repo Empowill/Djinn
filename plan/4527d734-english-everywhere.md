@@ -33,7 +33,7 @@ read, install and contribute.
   folded into them or deleted.
 - [x] The interface texts go through `locales/` (1261 keys, English and French), with a test that
   fails on a missing or unused key.
-- [ ] No French left in the repository outside `locales/fr.json`.
+- [x] No French left in the repository outside `locales/fr.json`.
   - [x] The text: code, tests, fixtures and docs. (6d3c599: the benchmark payloads of `tools/windowcheck/page/`
     and `internal/server/transport_bench_test.go`, the e2e assertions and a recorded answer are in English;
     `docs/v0.2.1-session-harmonisation.djinn.json` is deleted, nothing read it. French is tested from
@@ -44,7 +44,10 @@ read, install and contribute.
     the heuristic. Allowed: `locales/fr.json`, the accent folding of branch names in `internal/harness/worktree.go`
     and its test, the name Clément, and « souhait », « invoquer » in `plan/`. The last French test data,
     `TestNoticesTranslateAndClip` in `internal/ui`, now reads its French from `locales/fr.json`)
-  - [ ] The two README screenshots, taken in French on the Electron app. (needs: a person, on the new interface)
+  - [x] The two README screenshots, taken in French on the Electron app. (retaken in English, dark and light, on the
+    browser build: `go tool task screenshots` runs `e2e/readme.shot.ts` on a demonstration wish imported into a djinn
+    of its own, and writes `docs/screenshots/readme/{questions,tasks}-{dark,light}.png`; the README shows the one of
+    the reader's theme. `mission.png` and `supports.png` are deleted)
 - [ ] The interface maintainer has reviewed the keys and the English wording. (needs: the interface maintainer)
 
 ## Decided along the way

@@ -24,7 +24,10 @@ once. Fewer, clearer commits, and one CI run instead of one per worker: the Git 
 
 Djinn is a local desktop app to work with **Codex** and **Claude Code**: a readable timeline, agents followed live, explicit decisions, and results you can open, annotate and validate.
 
-![A wish in Djinn: steps, team and decisions](docs/screenshots/readme/mission.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/readme/questions-light.png">
+  <img alt="A wish in Djinn: what waits for you, and a question with the lead's recommendation" src="docs/screenshots/readme/questions-dark.png">
+</picture>
 
 ## Install
 
@@ -98,9 +101,12 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - **A notification for each successful step.** Click it to find the result. Projects and wishes list the most recent first.
 - **Your language.** The interface follows the system language (English or French); change it in **Connections & preferences**.
 
-![Djinn's interactive artifacts](docs/screenshots/readme/supports.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/readme/tasks-light.png">
+  <img alt="The same wish: its tasks, what they cost, and the lead's notes" src="docs/screenshots/readme/tasks-dark.png">
+</picture>
 
-_Screenshots of the built-in demonstration, with fictional data._
+_Screenshots of a demonstration wish, with fictional data. `go tool task screenshots` takes them again._
 
 ## Local development
 
