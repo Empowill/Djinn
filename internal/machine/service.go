@@ -42,6 +42,16 @@ func (s *service) Show(
 	if p := snap.Memory; p != nil {
 		out.MemoryPressure = &machinev1.Pressure{SomeAvg10: p.Some, FullAvg10: p.Full}
 	}
+	if d := snap.Disk; d != nil {
+		out.Disk = &machinev1.Disk{Path: d.Path, TotalBytes: d.Total, AvailableBytes: d.Available}
+	}
+	for _, g := range snap.GPUs {
+		out.Gpus = append(out.Gpus, &machinev1.Gpu{
+			Vendor: g.Vendor, Name: g.Name, Driver: g.Driver, DriverVersion: g.DriverVersion, MemoryBytes: g.Memory,
+			UnifiedMemory: g.Unified,
+		})
+	}
+	out.CanRunLocalModel, out.LocalModelReason = s.m.policy.LocalModel(snap)
 	if s.running != nil {
 		out.Running = int32(s.running())
 	}

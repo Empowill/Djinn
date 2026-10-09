@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file machine/v1/machine.proto.
  */
 export const file_machine_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChhtYWNoaW5lL3YxL21hY2hpbmUucHJvdG8SCm1hY2hpbmUudjEiMgoIUHJlc3N1cmUSEgoKc29tZV9hdmcxMBgBIAEoARISCgpmdWxsX2F2ZzEwGAIgASgBIuACCgdNYWNoaW5lEgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkSDQoFY29yZXMYAyABKAUSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQSEgoFbG9hZDEYBiABKAFIAIgBARIqCgxjcHVfcHJlc3N1cmUYByABKAsyFC5tYWNoaW5lLnYxLlByZXNzdXJlEi0KD21lbW9yeV9wcmVzc3VyZRgIIAEoCzIULm1hY2hpbmUudjEuUHJlc3N1cmUSDwoHd29ya2VycxgJIAEoBRIUCgx3b3JrZXJzX3J1bGUYCiABKAkSDwoHcnVubmluZxgLIAEoBRIQCghwcmVzc3VyZRgMIAEoCRItCglyZWFkX3RpbWUYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQggKBl9sb2FkMSIbChlNYWNoaW5lU2VydmljZVNob3dSZXF1ZXN0IkIKGk1hY2hpbmVTZXJ2aWNlU2hvd1Jlc3BvbnNlEiQKB21hY2hpbmUYASABKAsyEy5tYWNoaW5lLnYxLk1hY2hpbmUieAoER2F0ZRIMCgRuYW1lGAEgASgJEg4KBmhvbGRlchgCIAEoCRIWCg5ob2xkZXJfdGFza19pZBgDIAEoCRIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHd2FpdGluZxgFIAMoCSKFAQoWR2F0ZVNlcnZpY2VIb2xkUmVxdWVzdBI1CgRuYW1lGAEgASgJQie6SCTIAQFyHzIdXltBLVphLXpdW0EtWmEtejAtOV8tXXswLDM5fSQSHAoHdGFza19pZBgCIAEoCUILukgI2AEBcgOwAQESFgoEd2hhdBgDIAEoCUIIukgFcgMYyAEiTwoXR2F0ZVNlcnZpY2VIb2xkUmVzcG9uc2USJAoFc3RhdGUYASABKA4yFS5tYWNoaW5lLnYxLkdhdGVTdGF0ZRIOCgZyZWFzb24YAiABKAkiGAoWR2F0ZVNlcnZpY2VMaXN0UmVxdWVzdCI6ChdHYXRlU2VydmljZUxpc3RSZXNwb25zZRIfCgVnYXRlcxgBIAMoCzIQLm1hY2hpbmUudjEuR2F0ZSLJAgoLQ29tbWFuZENvc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBEhIKCnByb2plY3RfaWQYAiABKAkSDwoHY29tbWFuZBgDIAEoCRIMCgRydW5zGAQgASgFEhMKC2NwdV9zZWNvbmRzGAUgASgBEg8KB3NlY29uZHMYBiABKAESGQoRcGVha19tZW1vcnlfYnl0ZXMYByABKAQSGAoQbGFzdF9jcHVfc2Vjb25kcxgIIAEoARIUCgxsYXN0X3NlY29uZHMYCSABKAESHgoWbGFzdF9wZWFrX21lbW9yeV9ieXRlcxgKIAEoBBIWCg5sYXN0X2V4aXRfY29kZRgLIAEoBRItCglsYXN0X3RpbWUYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wOhnS8xgVCgpwcm9qZWN0X2lkCgdjb21tYW5kIjUKGUNvbW1hbmRTZXJ2aWNlTGlzdFJlcXVlc3QSGAoHcHJvamVjdBgBIAEoCUIHukgEcgIYZCJEChpDb21tYW5kU2VydmljZUxpc3RSZXNwb25zZRImCgVjb3N0cxgBIAMoCzIXLm1hY2hpbmUudjEuQ29tbWFuZENvc3Qi6gEKG0NvbW1hbmRTZXJ2aWNlUmVjb3JkUmVxdWVzdBIcCgd0YXNrX2lkGAEgASgJQgu6SAjYAQFyA7ABARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgEhwKB2NvbW1hbmQYAyABKAlCC7pICMgBAXIDGMgBEiMKC2NwdV9zZWNvbmRzGAQgASgBQg66SAsSCSkAAAAAAAAAABIfCgdzZWNvbmRzGAUgASgBQg66SAsSCSkAAAAAAAAAABIZChFwZWFrX21lbW9yeV9ieXRlcxgGIAEoBBIRCglleGl0X2NvZGUYByABKAUiRQocQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXNwb25zZRIlCgRjb3N0GAEgASgLMhcubWFjaGluZS52MS5Db21tYW5kQ29zdCpUCglHYXRlU3RhdGUSGgoWR0FURV9TVEFURV9VTlNQRUNJRklFRBAAEhYKEkdBVEVfU1RBVEVfV0FJVElORxABEhMKD0dBVEVfU1RBVEVfSEVMRBACMnAKDk1hY2hpbmVTZXJ2aWNlEl4KBFNob3cSJS5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1JlcXVlc3QaJi5tYWNoaW5lLnYxLk1hY2hpbmVTZXJ2aWNlU2hvd1Jlc3BvbnNlIgeQAgHI8xgBMsABCgtHYXRlU2VydmljZRJXCgRIb2xkEiIubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXF1ZXN0GiMubWFjaGluZS52MS5HYXRlU2VydmljZUhvbGRSZXNwb25zZSIEyPMYATABElgKBExpc3QSIi5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlcXVlc3QaIy5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlTGlzdFJlc3BvbnNlIgeQAgHI8xgBMtMBCg5Db21tYW5kU2VydmljZRJeCgRMaXN0EiUubWFjaGluZS52MS5Db21tYW5kU2VydmljZUxpc3RSZXF1ZXN0GiYubWFjaGluZS52MS5Db21tYW5kU2VydmljZUxpc3RSZXNwb25zZSIHkAIByPMYARJhCgZSZWNvcmQSJy5tYWNoaW5lLnYxLkNvbW1hbmRTZXJ2aWNlUmVjb3JkUmVxdWVzdBooLm1hY2hpbmUudjEuQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXNwb25zZSIEyPMYAkKeAQoOY29tLm1hY2hpbmUudjFCDE1hY2hpbmVQcm90b1ABWjVnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9tYWNoaW5lL3YxO21hY2hpbmV2MaICA01YWKoCCk1hY2hpbmUuVjHKAgpNYWNoaW5lXFYx4gIWTWFjaGluZVxWMVxHUEJNZXRhZGF0YeoCC01hY2hpbmU6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
+  fileDesc("ChhtYWNoaW5lL3YxL21hY2hpbmUucHJvdG8SCm1hY2hpbmUudjEiMgoIUHJlc3N1cmUSEgoKc29tZV9hdmcxMBgBIAEoARISCgpmdWxsX2F2ZzEwGAIgASgBItgDCgdNYWNoaW5lEgoKAm9zGAEgASgJEgwKBGFyY2gYAiABKAkSDQoFY29yZXMYAyABKAUSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQSEgoFbG9hZDEYBiABKAFIAIgBARIqCgxjcHVfcHJlc3N1cmUYByABKAsyFC5tYWNoaW5lLnYxLlByZXNzdXJlEi0KD21lbW9yeV9wcmVzc3VyZRgIIAEoCzIULm1hY2hpbmUudjEuUHJlc3N1cmUSDwoHd29ya2VycxgJIAEoBRIUCgx3b3JrZXJzX3J1bGUYCiABKAkSDwoHcnVubmluZxgLIAEoBRIQCghwcmVzc3VyZRgMIAEoCRItCglyZWFkX3RpbWUYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEh4KBGRpc2sYDiABKAsyEC5tYWNoaW5lLnYxLkRpc2sSHQoEZ3B1cxgPIAMoCzIPLm1hY2hpbmUudjEuR3B1EhsKE2Nhbl9ydW5fbG9jYWxfbW9kZWwYECABKAgSGgoSbG9jYWxfbW9kZWxfcmVhc29uGBEgASgJQggKBl9sb2FkMSJCCgREaXNrEgwKBHBhdGgYASABKAkSEwoLdG90YWxfYnl0ZXMYAiABKAQSFwoPYXZhaWxhYmxlX2J5dGVzGAMgASgEInkKA0dwdRIOCgZ2ZW5kb3IYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZkcml2ZXIYAyABKAkSFgoOZHJpdmVyX3ZlcnNpb24YBCABKAkSFAoMbWVtb3J5X2J5dGVzGAUgASgEEhYKDnVuaWZpZWRfbWVtb3J5GAYgASgIIhsKGU1hY2hpbmVTZXJ2aWNlU2hvd1JlcXVlc3QiQgoaTWFjaGluZVNlcnZpY2VTaG93UmVzcG9uc2USJAoHbWFjaGluZRgBIAEoCzITLm1hY2hpbmUudjEuTWFjaGluZSJ4CgRHYXRlEgwKBG5hbWUYASABKAkSDgoGaG9sZGVyGAIgASgJEhYKDmhvbGRlcl90YXNrX2lkGAMgASgJEikKBXNpbmNlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgd3YWl0aW5nGAUgAygJIoUBChZHYXRlU2VydmljZUhvbGRSZXF1ZXN0EjUKBG5hbWUYASABKAlCJ7pIJMgBAXIfMh1eW0EtWmEtel1bQS1aYS16MC05Xy1dezAsMzl9JBIcCgd0YXNrX2lkGAIgASgJQgu6SAjYAQFyA7ABARIWCgR3aGF0GAMgASgJQgi6SAVyAxjIASJPChdHYXRlU2VydmljZUhvbGRSZXNwb25zZRIkCgVzdGF0ZRgBIAEoDjIVLm1hY2hpbmUudjEuR2F0ZVN0YXRlEg4KBnJlYXNvbhgCIAEoCSIYChZHYXRlU2VydmljZUxpc3RSZXF1ZXN0IjoKF0dhdGVTZXJ2aWNlTGlzdFJlc3BvbnNlEh8KBWdhdGVzGAEgAygLMhAubWFjaGluZS52MS5HYXRlIskCCgtDb21tYW5kQ29zdBIUCgJpZBgBIAEoCUIIukgFcgOwAQESEgoKcHJvamVjdF9pZBgCIAEoCRIPCgdjb21tYW5kGAMgASgJEgwKBHJ1bnMYBCABKAUSEwoLY3B1X3NlY29uZHMYBSABKAESDwoHc2Vjb25kcxgGIAEoARIZChFwZWFrX21lbW9yeV9ieXRlcxgHIAEoBBIYChBsYXN0X2NwdV9zZWNvbmRzGAggASgBEhQKDGxhc3Rfc2Vjb25kcxgJIAEoARIeChZsYXN0X3BlYWtfbWVtb3J5X2J5dGVzGAogASgEEhYKDmxhc3RfZXhpdF9jb2RlGAsgASgFEi0KCWxhc3RfdGltZRgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXA6GdLzGBUKCnByb2plY3RfaWQKB2NvbW1hbmQiNQoZQ29tbWFuZFNlcnZpY2VMaXN0UmVxdWVzdBIYCgdwcm9qZWN0GAEgASgJQge6SARyAhhkIkQKGkNvbW1hbmRTZXJ2aWNlTGlzdFJlc3BvbnNlEiYKBWNvc3RzGAEgAygLMhcubWFjaGluZS52MS5Db21tYW5kQ29zdCLqAQobQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXF1ZXN0EhwKB3Rhc2tfaWQYASABKAlCC7pICNgBAXIDsAEBEhsKCWRpcmVjdG9yeRgCIAEoCUIIukgFcgMYgCASHAoHY29tbWFuZBgDIAEoCUILukgIyAEBcgMYyAESIwoLY3B1X3NlY29uZHMYBCABKAFCDrpICxIJKQAAAAAAAAAAEh8KB3NlY29uZHMYBSABKAFCDrpICxIJKQAAAAAAAAAAEhkKEXBlYWtfbWVtb3J5X2J5dGVzGAYgASgEEhEKCWV4aXRfY29kZRgHIAEoBSJFChxDb21tYW5kU2VydmljZVJlY29yZFJlc3BvbnNlEiUKBGNvc3QYASABKAsyFy5tYWNoaW5lLnYxLkNvbW1hbmRDb3N0KlQKCUdhdGVTdGF0ZRIaChZHQVRFX1NUQVRFX1VOU1BFQ0lGSUVEEAASFgoSR0FURV9TVEFURV9XQUlUSU5HEAESEwoPR0FURV9TVEFURV9IRUxEEAIycAoOTWFjaGluZVNlcnZpY2USXgoEU2hvdxIlLm1hY2hpbmUudjEuTWFjaGluZVNlcnZpY2VTaG93UmVxdWVzdBomLm1hY2hpbmUudjEuTWFjaGluZVNlcnZpY2VTaG93UmVzcG9uc2UiB5ACAcjzGAEywAEKC0dhdGVTZXJ2aWNlElcKBEhvbGQSIi5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlSG9sZFJlcXVlc3QaIy5tYWNoaW5lLnYxLkdhdGVTZXJ2aWNlSG9sZFJlc3BvbnNlIgTI8xgBMAESWAoETGlzdBIiLm1hY2hpbmUudjEuR2F0ZVNlcnZpY2VMaXN0UmVxdWVzdBojLm1hY2hpbmUudjEuR2F0ZVNlcnZpY2VMaXN0UmVzcG9uc2UiB5ACAcjzGAEy0wEKDkNvbW1hbmRTZXJ2aWNlEl4KBExpc3QSJS5tYWNoaW5lLnYxLkNvbW1hbmRTZXJ2aWNlTGlzdFJlcXVlc3QaJi5tYWNoaW5lLnYxLkNvbW1hbmRTZXJ2aWNlTGlzdFJlc3BvbnNlIgeQAgHI8xgBEmEKBlJlY29yZBInLm1hY2hpbmUudjEuQ29tbWFuZFNlcnZpY2VSZWNvcmRSZXF1ZXN0GigubWFjaGluZS52MS5Db21tYW5kU2VydmljZVJlY29yZFJlc3BvbnNlIgTI8xgCQp4BCg5jb20ubWFjaGluZS52MUIMTWFjaGluZVByb3RvUAFaNWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL21hY2hpbmUvdjE7bWFjaGluZXYxogIDTVhYqgIKTWFjaGluZS5WMcoCCk1hY2hpbmVcVjHiAhZNYWNoaW5lXFYxXEdQQk1ldGFkYXRh6gILTWFjaGluZTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
 
 /**
  * Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of
@@ -145,6 +145,36 @@ export type Machine = Message<"machine.v1.Machine"> & {
    * @generated from field: google.protobuf.Timestamp read_time = 13;
    */
   readTime?: Timestamp | undefined;
+
+  /**
+   * The disk of Djinn's data folder, where the worktrees live; absent when it could not be read.
+   *
+   * @generated from field: machine.v1.Disk disk = 14;
+   */
+  disk?: Disk | undefined;
+
+  /**
+   * The graphics processors, read once at start-up; empty when Djinn found none, or does not read them (Windows,
+   * an Intel Mac).
+   *
+   * @generated from field: repeated machine.v1.Gpu gpus = 15;
+   */
+  gpus: Gpu[];
+
+  /**
+   * Whether a local open-weight model can run here, for dispatch: a usable GPU, or enough memory to run it on the
+   * CPU, and disk space for its weights.
+   *
+   * @generated from field: bool can_run_local_model = 16;
+   */
+  canRunLocalModel: boolean;
+
+  /**
+   * Why it can or cannot.
+   *
+   * @generated from field: string local_model_reason = 17;
+   */
+  localModelReason: string;
 };
 
 /**
@@ -153,6 +183,97 @@ export type Machine = Message<"machine.v1.Machine"> & {
  */
 export const MachineSchema: GenMessage<Machine> = /*@__PURE__*/
   messageDesc(file_machine_v1_machine, 1);
+
+/**
+ * Disk is the space of the file system that holds a folder.
+ *
+ * @generated from message machine.v1.Disk
+ */
+export type Disk = Message<"machine.v1.Disk"> & {
+  /**
+   * The folder read.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * Size of its file system, in bytes.
+   *
+   * @generated from field: uint64 total_bytes = 2;
+   */
+  totalBytes: bigint;
+
+  /**
+   * Space available to Djinn, in bytes.
+   *
+   * @generated from field: uint64 available_bytes = 3;
+   */
+  availableBytes: bigint;
+};
+
+/**
+ * Describes the message machine.v1.Disk.
+ * Use `create(DiskSchema)` to create a new message.
+ */
+export const DiskSchema: GenMessage<Disk> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 2);
+
+/**
+ * Gpu is a graphics processor of the machine.
+ *
+ * @generated from message machine.v1.Gpu
+ */
+export type Gpu = Message<"machine.v1.Gpu"> & {
+  /**
+   * Maker: nvidia, amd, intel, apple, or the PCI vendor identifier of another.
+   *
+   * @generated from field: string vendor = 1;
+   */
+  vendor: string;
+
+  /**
+   * Name, as its driver gives it; its PCI identifiers when none does.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * Driver: nvidia, nouveau, amdgpu, i915, xe; metal on Apple Silicon. Empty when none is bound.
+   *
+   * @generated from field: string driver = 3;
+   */
+  driver: string;
+
+  /**
+   * Version of the driver; empty when unknown.
+   *
+   * @generated from field: string driver_version = 4;
+   */
+  driverVersion: string;
+
+  /**
+   * Memory of its own, in bytes; with unified memory, the machine's. 0 when unknown.
+   *
+   * @generated from field: uint64 memory_bytes = 5;
+   */
+  memoryBytes: bigint;
+
+  /**
+   * Whether it shares the machine's memory (Apple Silicon).
+   *
+   * @generated from field: bool unified_memory = 6;
+   */
+  unifiedMemory: boolean;
+};
+
+/**
+ * Describes the message machine.v1.Gpu.
+ * Use `create(GpuSchema)` to create a new message.
+ */
+export const GpuSchema: GenMessage<Gpu> = /*@__PURE__*/
+  messageDesc(file_machine_v1_machine, 3);
 
 /**
  * @generated from message machine.v1.MachineServiceShowRequest
@@ -165,7 +286,7 @@ export type MachineServiceShowRequest = Message<"machine.v1.MachineServiceShowRe
  * Use `create(MachineServiceShowRequestSchema)` to create a new message.
  */
 export const MachineServiceShowRequestSchema: GenMessage<MachineServiceShowRequest> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 2);
+  messageDesc(file_machine_v1_machine, 4);
 
 /**
  * @generated from message machine.v1.MachineServiceShowResponse
@@ -184,7 +305,7 @@ export type MachineServiceShowResponse = Message<"machine.v1.MachineServiceShowR
  * Use `create(MachineServiceShowResponseSchema)` to create a new message.
  */
 export const MachineServiceShowResponseSchema: GenMessage<MachineServiceShowResponse> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 3);
+  messageDesc(file_machine_v1_machine, 5);
 
 /**
  * Gate is a gate held or waited for.
@@ -233,7 +354,7 @@ export type Gate = Message<"machine.v1.Gate"> & {
  * Use `create(GateSchema)` to create a new message.
  */
 export const GateSchema: GenMessage<Gate> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 4);
+  messageDesc(file_machine_v1_machine, 6);
 
 /**
  * @generated from message machine.v1.GateServiceHoldRequest
@@ -267,7 +388,7 @@ export type GateServiceHoldRequest = Message<"machine.v1.GateServiceHoldRequest"
  * Use `create(GateServiceHoldRequestSchema)` to create a new message.
  */
 export const GateServiceHoldRequestSchema: GenMessage<GateServiceHoldRequest> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 5);
+  messageDesc(file_machine_v1_machine, 7);
 
 /**
  * @generated from message machine.v1.GateServiceHoldResponse
@@ -293,7 +414,7 @@ export type GateServiceHoldResponse = Message<"machine.v1.GateServiceHoldRespons
  * Use `create(GateServiceHoldResponseSchema)` to create a new message.
  */
 export const GateServiceHoldResponseSchema: GenMessage<GateServiceHoldResponse> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 6);
+  messageDesc(file_machine_v1_machine, 8);
 
 /**
  * @generated from message machine.v1.GateServiceListRequest
@@ -306,7 +427,7 @@ export type GateServiceListRequest = Message<"machine.v1.GateServiceListRequest"
  * Use `create(GateServiceListRequestSchema)` to create a new message.
  */
 export const GateServiceListRequestSchema: GenMessage<GateServiceListRequest> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 7);
+  messageDesc(file_machine_v1_machine, 9);
 
 /**
  * @generated from message machine.v1.GateServiceListResponse
@@ -325,7 +446,7 @@ export type GateServiceListResponse = Message<"machine.v1.GateServiceListRespons
  * Use `create(GateServiceListResponseSchema)` to create a new message.
  */
 export const GateServiceListResponseSchema: GenMessage<GateServiceListResponse> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 8);
+  messageDesc(file_machine_v1_machine, 10);
 
 /**
  * CommandCost is what a command of a project costs, over the runs Djinn measured. The peak memory is the resident
@@ -425,7 +546,7 @@ export type CommandCost = Message<"machine.v1.CommandCost"> & {
  * Use `create(CommandCostSchema)` to create a new message.
  */
 export const CommandCostSchema: GenMessage<CommandCost> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 9);
+  messageDesc(file_machine_v1_machine, 11);
 
 /**
  * @generated from message machine.v1.CommandServiceListRequest
@@ -444,7 +565,7 @@ export type CommandServiceListRequest = Message<"machine.v1.CommandServiceListRe
  * Use `create(CommandServiceListRequestSchema)` to create a new message.
  */
 export const CommandServiceListRequestSchema: GenMessage<CommandServiceListRequest> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 10);
+  messageDesc(file_machine_v1_machine, 12);
 
 /**
  * @generated from message machine.v1.CommandServiceListResponse
@@ -463,7 +584,7 @@ export type CommandServiceListResponse = Message<"machine.v1.CommandServiceListR
  * Use `create(CommandServiceListResponseSchema)` to create a new message.
  */
 export const CommandServiceListResponseSchema: GenMessage<CommandServiceListResponse> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 11);
+  messageDesc(file_machine_v1_machine, 13);
 
 /**
  * @generated from message machine.v1.CommandServiceRecordRequest
@@ -524,7 +645,7 @@ export type CommandServiceRecordRequest = Message<"machine.v1.CommandServiceReco
  * Use `create(CommandServiceRecordRequestSchema)` to create a new message.
  */
 export const CommandServiceRecordRequestSchema: GenMessage<CommandServiceRecordRequest> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 12);
+  messageDesc(file_machine_v1_machine, 14);
 
 /**
  * @generated from message machine.v1.CommandServiceRecordResponse
@@ -543,7 +664,7 @@ export type CommandServiceRecordResponse = Message<"machine.v1.CommandServiceRec
  * Use `create(CommandServiceRecordResponseSchema)` to create a new message.
  */
 export const CommandServiceRecordResponseSchema: GenMessage<CommandServiceRecordResponse> = /*@__PURE__*/
-  messageDesc(file_machine_v1_machine, 13);
+  messageDesc(file_machine_v1_machine, 15);
 
 /**
  * GateState is where a holder stands with its gate.
@@ -586,7 +707,8 @@ export const GateStateSchema: GenEnum<GateState> = /*@__PURE__*/
  */
 export const MachineService: GenService<{
   /**
-   * Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.
+   * Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
+   * once, and whether it can run a local model.
    *
    * @generated from rpc machine.v1.MachineService.Show
    */

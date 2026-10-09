@@ -1,10 +1,13 @@
-// Package machine discovers what the machine has (cores, memory) and how loaded it is (load, pressure), and turns
-// it into the number of workers Djinn runs at once, and whether a new worker or a gate may start now.
+// Package machine discovers what the machine has (cores, memory, disk, GPUs) and how loaded it is (load, pressure),
+// and turns it into the number of workers Djinn runs at once, whether a new worker or a gate may start now, and
+// whether a local model can run.
 package machine
 
 import (
+	"cmp"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -31,6 +34,8 @@ type Snapshot struct {
 	// MemoryLevel is macOS's memory pressure level (kern.memorystatus_vm_pressure_level): 1 normal, 2 warning,
 	// 4 critical; 0 when unknown.
 	MemoryLevel int
+	Disk        *Disk // the data folder's; nil when unknown
+	GPUs        []GPU
 	Time        time.Time
 }
 
@@ -53,6 +58,12 @@ type Policy struct {
 	// MemoryFree of the total. On macOS, the system's own memory pressure level at warning or above.
 	LoadPerCore float64
 	MemoryFree  float64
+	// A local model runs on an NVIDIA or AMD GPU, its driver loaded, with ModelGPUMemory of its own; on Apple
+	// Silicon with ModelMemory of unified memory; else on the CPU, slowly, with ModelMemory. Its weights need
+	// ModelDisk free on the disk of the data folder.
+	ModelGPUMemory uint64
+	ModelMemory    uint64
+	ModelDisk      uint64
 }
 
 // DefaultPolicy is the policy Djinn runs with. A worker is mostly an agent waiting for its model; the heavy commands
@@ -61,6 +72,7 @@ func DefaultPolicy() Policy {
 	return Policy{
 		CoresPerWorker: 2, MemoryPerWorker: 2 * GiB, MemoryReserve: 2 * GiB, MaxWorkers: 16,
 		CPUPressure: 50, MemoryPressure: 10, LoadPerCore: 2, MemoryFree: 0.10,
+		ModelGPUMemory: 6 * GiB, ModelMemory: 16 * GiB, ModelDisk: 10 * GiB,
 	}
 }
 
@@ -111,6 +123,61 @@ func (p Policy) Pressure(s Snapshot) string {
 			p.MemoryFree*100)
 	}
 	return ""
+}
+
+// LocalModel says whether a local open-weight model can run on the machine, and why: dispatch asks one only where it
+// can (T16). The first usable GPU decides; without one, the memory.
+func (p Policy) LocalModel(s Snapshot) (bool, string) {
+	if s.Disk != nil && s.Disk.Available < p.ModelDisk {
+		return false, fmt.Sprintf("%s free on the disk of %s, %s at least for a model's weights", size(s.Disk.Available),
+			s.Disk.Path, size(p.ModelDisk))
+	}
+	var unusable []string
+	for _, g := range s.GPUs {
+		ok, why := p.usable(g, s.MemoryTotal)
+		if ok {
+			return true, why
+		}
+		unusable = append(unusable, why)
+	}
+	noGPU := "no GPU found"
+	if len(unusable) > 0 {
+		noGPU = strings.Join(unusable, "; ")
+	}
+	switch {
+	case s.MemoryTotal >= p.ModelMemory:
+		return true, fmt.Sprintf("on the CPU, slowly, with %s of memory: %s", size(s.MemoryTotal), noGPU)
+	case s.MemoryTotal == 0:
+		return false, noGPU + ", and the memory is unknown"
+	}
+	return false, fmt.Sprintf("%s, and %s of memory (%s at least without a GPU)", noGPU, size(s.MemoryTotal),
+		size(p.ModelMemory))
+}
+
+// usable says whether a local model runs on the GPU g, the machine having memory bytes, and why.
+func (p Policy) usable(g GPU, memory uint64) (bool, string) {
+	switch {
+	case g.Unified:
+		m := cmp.Or(g.Memory, memory)
+		if m < p.ModelMemory {
+			return false, fmt.Sprintf("the %s has %s of unified memory, %s at least", g.Name, size(m), size(p.ModelMemory))
+		}
+		return true, fmt.Sprintf("on the %s, through %s, with %s of unified memory", g.Name, g.Driver, size(m))
+	case g.Vendor != "nvidia" && g.Vendor != "amd":
+		return false, fmt.Sprintf("the %s GPU %s is not counted: only NVIDIA, AMD and Apple ones are", g.Vendor, g.Name)
+	case g.Vendor == "nvidia" && g.Driver != "nvidia", g.Vendor == "amd" && g.Driver != "amdgpu":
+		return false, fmt.Sprintf("the %s has no driver a model runs on (%s)", g.Name, cmp.Or(g.Driver, "none"))
+	case g.Memory == 0:
+		return false, fmt.Sprintf("the memory of the %s is unknown", g.Name)
+	case g.Memory < p.ModelGPUMemory:
+		return false, fmt.Sprintf("the %s has %s of its own memory, %s at least", g.Name, size(g.Memory),
+			size(p.ModelGPUMemory))
+	}
+	driver := g.Driver
+	if g.DriverVersion != "" {
+		driver += " " + g.DriverVersion
+	}
+	return true, fmt.Sprintf("on the %s, with %s of its own memory, driver %s", g.Name, size(g.Memory), driver)
 }
 
 // size writes bytes in GiB, or MiB below one.
