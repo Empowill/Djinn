@@ -13,7 +13,6 @@ import {
   Play,
   ScrollText,
   Sparkles,
-  Terminal,
   Trash2,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
@@ -28,6 +27,7 @@ import {
   type KeptWorktree,
   type MarkKind,
   type Project,
+  type Provider,
   type Task,
   TaskStatus,
   type Wish,
@@ -78,6 +78,7 @@ import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
+import { LeadButton, WishDescription, recordedAgent } from "./wish-head";
 
 export function WishView({
   wish,
@@ -171,6 +172,23 @@ export function WishView({
       }
     />
   );
+  // lead resumes the wish's lead, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
+  // that runs a program already, a session Djinn does not know.
+  const lead = (provider?: Provider) => {
+    let note = "";
+    quiet(
+      act(
+        async () => {
+          ({ note } = await clients.wishes.resume({
+            wishId: wish.id,
+            provider,
+          }));
+        },
+        [Change.WISH],
+        () => note,
+      ),
+    );
+  };
   const attention = attentionOf(open, waiting, wish.ready ? [wish] : []);
   const tone = wishTone(wish, open.length, running);
 
@@ -239,21 +257,14 @@ export function WishView({
               <span>{t("wish.activate")}</span>
             </button>
           )}
-          <button
-            className="button secondary small"
-            title={t("wish.resume_detail")}
-            onClick={() =>
-              quiet(
-                act(
-                  () => clients.wishes.resume({ wishId: wish.id }),
-                  [Change.WISH],
-                ),
-              )
+          <LeadButton
+            recorded={recordedAgent(wish.lead)}
+            loadAgents={async () =>
+              (await clients.ui.getEnvironment({})).providers
             }
-          >
-            <Terminal size={14} />
-            <span>{t("wish.resume")}</span>
-          </button>
+            onLead={() => lead()}
+            onPick={(provider) => lead(provider)}
+          />
           <button
             className="button secondary small"
             onClick={() =>
@@ -307,6 +318,19 @@ export function WishView({
               {projects.map((p) => p.name).join(" · ") || t("wish.no_project")}
             </span>
             <h1>{wish.title}</h1>
+            <WishDescription
+              key={wish.id + wish.description}
+              title={wish.title}
+              description={wish.description}
+              onSave={(text) =>
+                quiet(
+                  act(
+                    () => clients.wishes.describe({ wishId: wish.id, text }),
+                    [Change.WISH],
+                  ),
+                )
+              }
+            />
             <div className="review-pills">
               <StatusBadge tone={tone} label={wishStateText(wish)} />
               {open.length > 0 && (

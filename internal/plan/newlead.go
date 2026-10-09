@@ -15,21 +15,25 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// The files of a new lead's brief, in the wish's folder of Djinn's data folder, next to its page: the stable part,
-// that claude appends to its system prompt, and the part that moves.
-const (
-	LeadRulesFile = "lead-rules.md"
-	LeadBriefFile = "lead-brief.md"
-)
+// LeadFirstFile holds the first message of a new lead, in the wish's folder of Djinn's data folder, next to its page:
+// the lead reads it there when the shell cannot carry it.
+const LeadFirstFile = "lead-first.md"
 
-// maxBriefArg is the most of a brief that goes on the command line as the first message; a longer one is read from
-// its file. Linux takes 128 KiB in one argument.
-const maxBriefArg = 64 << 10
+// maxFirstArg is the most of a first message that goes on the command line; a longer one is read from its file.
+// Linux takes 128 KiB in one argument.
+const maxFirstArg = 64 << 10
 
-// newLead prepares a new lead for a wish that has none to resume: the command line that starts provider's agent in
-// dir (startFolder: a project's folder, never the home folder) on the wish's brief, and the lead it starts.
-// first, when set, comes before where the wish stands: the request a routed wish was made for.
-// The lead holds a session only when Djinn chooses it ahead: claude's. A server without data folder keeps the shell.
+// StartLine is how every new lead starts, whatever its agent: from the brief, which Djinn computes from the plan. A
+// lead of another agent than the last one continues the wish from there, without its session.
+func StartLine(wishID string) string {
+	return fmt.Sprintf("You lead the Djinn wish %s. Run `djinn wish brief %s`: where the wish stands and how to "+
+		"lead it, computed by Djinn from its plan. Then continue the wish from what it says.", wishID, wishID)
+}
+
+// newLead prepares a new lead for a wish: the command line that starts provider's agent in dir (startFolder: a
+// project's folder, never the home folder) on StartLine, the same for every agent, and the lead it starts. first,
+// when set, comes before: the request a routed wish was made for. The lead holds a session only when Djinn chooses
+// it ahead: claude's. A server without data folder keeps the shell.
 func (w *Wishes) newLead(
 	ctx context.Context, wish *planv1.Wish, provider planv1.Provider, dir, first string,
 ) (line, folder string, lead *planv1.Lead, note string, err error) {
@@ -44,26 +48,28 @@ func (w *Wishes) newLead(
 	if provider == planv1.Provider_PROVIDER_UNSPECIFIED {
 		provider = planv1.Provider_PROVIDER_CLAUDE
 	}
-	brief, err := LeadBrief(ctx, w.Store, home, wish.GetId(), first)
-	if err != nil {
-		return "", "", nil, "", Status(err)
+	msg := StartLine(wish.GetId())
+	if first != "" {
+		msg = stripCredentials(first) + "\n\n" + msg
 	}
 	own := filepath.Join(home, PagesDir, strings.ToLower(wish.GetId()))
 	if err := os.MkdirAll(own, 0o700); err != nil {
 		return "", "", nil, "", connect.NewError(connect.CodeInternal, err)
 	}
-	rules, moving := filepath.Join(own, LeadRulesFile), filepath.Join(own, LeadBriefFile)
-	for file, text := range map[string]string{rules: brief.Stable, moving: brief.Moving} {
-		if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
-			return "", "", nil, "", connect.NewError(connect.CodeInternal, fmt.Errorf("write the brief: %w", err))
-		}
+	if err := os.WriteFile(filepath.Join(own, LeadFirstFile), []byte(msg), 0o600); err != nil {
+		return "", "", nil, "", connect.NewError(connect.CodeInternal, fmt.Errorf("write the first message: %w", err))
 	}
 	lead = &planv1.Lead{Provider: provider, Directory: dir}
 	if provider == planv1.Provider_PROVIDER_CLAUDE {
 		lead.SessionId = store.NewID()
 	}
-	if line, err = briefLine(runtime.GOOS, lead, own, brief); err != nil {
+	if line, err = leadLine(runtime.GOOS, lead, own, msg); err != nil {
 		return "", "", nil, "", err
+	}
+	// The lead recorded before, which stays the wish's lead unless the new one is claude's.
+	kept := ""
+	if old := wish.GetLead(); old.GetSessionId() != "" && !HoldsHome(old.GetDirectory()) {
+		kept = providerName(old.GetProvider()) + " session " + old.GetSessionId()
 	}
 	switch provider {
 	case planv1.Provider_PROVIDER_CLAUDE:
@@ -72,24 +78,29 @@ func (w *Wishes) newLead(
 	case planv1.Provider_PROVIDER_CODEX:
 		note = "A new codex lead started from the wish's brief (djinn wish brief). Djinn does not know its session: " +
 			"djinn wish set-lead " + wish.GetId() + " <session> --provider codex records it."
+		if kept != "" {
+			note += " Until then, the wish's lead stays the " + kept + "."
+		}
 	default:
 		note = "A new antigravity lead started from the wish's brief (djinn wish brief). An antigravity lead cannot be " +
 			"resumed in a terminal: the next resume starts a new one."
+		if kept != "" {
+			note = "A new antigravity lead started from the wish's brief (djinn wish brief). An antigravity lead cannot " +
+				"be resumed in a terminal: the wish's lead stays the " + kept + ", which the next resume takes back " +
+				"once this one exits."
+		}
 	}
 	return line, dir, lead, note, nil
 }
 
-// briefLine is the command line that starts a lead's agent on brief, through the user's shell on goos; folder holds
-// the brief's files. Claude appends the stable part to its system prompt, from its file, and gets the part that moves as its first message:
-// the prefix it shares with every lead is read from the cache. Codex and Antigravity take no system prompt at the
-// command line: the whole brief is their first message, stable part first. A message the shell cannot carry
-// (cmd.exe and a line break, or one too long) is replaced by the request to read its file.
-func briefLine(goos string, lead *planv1.Lead, folder string, brief Brief) (string, error) {
+// leadLine is the command line that starts a lead's agent on msg, its first message, through the user's shell on
+// goos; folder holds the message's file. Every agent gets the same message. One the shell cannot carry (cmd.exe and
+// a line break, or one too long) is replaced by the request to read its file.
+func leadLine(goos string, lead *planv1.Lead, folder, msg string) (string, error) {
 	sep := "/"
 	if goos == "windows" {
 		sep = `\`
 	}
-	rules, moving := folder+sep+LeadRulesFile, folder+sep+LeadBriefFile
 	quote := func(s string) (string, error) {
 		q, ok := quoteArg(goos, s)
 		if !ok {
@@ -98,24 +109,19 @@ func briefLine(goos string, lead *planv1.Lead, folder string, brief Brief) (stri
 		}
 		return q, nil
 	}
-	first := func(text, read string) (msg string, byFile bool, err error) {
-		if q, ok := quoteArg(goos, text); ok && len(text) <= maxBriefArg {
-			return q, false, nil
+	arg, byFile := "", false
+	if q, ok := quoteArg(goos, msg); ok && len(msg) <= maxFirstArg {
+		arg = q
+	} else {
+		var err error
+		if arg, err = quote("Read " + folder + sep + LeadFirstFile + ", written by Djinn, and do what it says."); err != nil {
+			return "", err
 		}
-		msg, err = quote(read)
-		return msg, true, err
+		byFile = true
 	}
 	switch lead.GetProvider() {
 	case planv1.Provider_PROVIDER_CLAUDE:
-		rulesArg, err := quote(rules)
-		if err != nil {
-			return "", err
-		}
-		msg, byFile, err := first(brief.Moving, "Read "+moving+": where the wish stands now, written by Djinn. Then lead it.")
-		if err != nil {
-			return "", err
-		}
-		line := "claude --session-id " + lead.GetSessionId() + " --append-system-prompt-file " + rulesArg
+		line := "claude --session-id " + lead.GetSessionId()
 		if byFile {
 			dir, err := quote(folder)
 			if err != nil {
@@ -123,17 +129,11 @@ func briefLine(goos string, lead *planv1.Lead, folder string, brief Brief) (stri
 			}
 			line += " --add-dir " + dir
 		}
-		return line + " " + msg, nil
-	case planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_ANTIGRAVITY:
-		msg, _, err := first(brief.Text(), "Read "+rules+", then "+moving+": how to lead this wish, and where it stands "+
-			"now, written by Djinn. Then lead it.")
-		if err != nil {
-			return "", err
-		}
-		if lead.GetProvider() == planv1.Provider_PROVIDER_CODEX {
-			return "codex " + msg, nil
-		}
-		return "agy -i " + msg, nil
+		return line + " " + arg, nil
+	case planv1.Provider_PROVIDER_CODEX:
+		return "codex " + arg, nil
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		return "agy -i " + arg, nil
 	}
 	return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
 		"a lead runs claude, codex or antigravity, not %s", providerName(lead.GetProvider())))

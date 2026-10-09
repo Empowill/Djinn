@@ -34,6 +34,14 @@ type Leads interface {
 // LeadTerminal is the name of the terminal of a wish's lead.
 func LeadTerminal(wishID string) string { return "lead-" + strings.ToLower(wishID) }
 
+// leadProvider is the agent of a recorded lead: claude when the record names none.
+func leadProvider(lead *planv1.Lead) planv1.Provider {
+	if p := lead.GetProvider(); p != planv1.Provider_PROVIDER_UNSPECIFIED {
+		return p
+	}
+	return planv1.Provider_PROVIDER_CLAUDE
+}
+
 // resumeLine is the command line that resumes the lead's session, as its agent's command line takes it. The session
 // identifier was checked against a pattern without spaces or quotes: the line goes through the user's shell as it is.
 func resumeLine(lead *planv1.Lead) (string, error) {
@@ -113,7 +121,11 @@ func (w *Wishes) Resume(
 	// A session recorded in the home folder is not resumed: Djinn never runs a lead there, and claude finds a
 	// session only from the folder it was made in. A new lead starts from the brief, in a project.
 	atHome := wish.GetLead().GetSessionId() != "" && HoldsHome(wish.GetLead().GetDirectory())
-	if wish.GetLead().GetSessionId() != "" && !atHome {
+	// A lead of another agent than the recorded one cannot open its session: it starts from the brief, which says
+	// how to take the wish over.
+	other := req.Msg.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED &&
+		req.Msg.GetProvider() != leadProvider(wish.GetLead())
+	if wish.GetLead().GetSessionId() != "" && !atHome && !other {
 		if line, dir, err = sessionLine(wish); err != nil {
 			return nil, err
 		}

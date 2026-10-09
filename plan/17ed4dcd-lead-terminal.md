@@ -54,6 +54,11 @@ included, so the session that builds Djinn can move into Djinn and keep going.
 - [x] The window's terminal and every lead open in a project, never in the home folder, where Djinn starts from a
   menu or the Dock: with no project, the terminal asks for one, and a lead does not start (`TestLeadStartsInAProject`,
   `TestWindowTerminalOpensInAProject`, `TestOpenStartsInAFolderGiven`, e2e `terminal-project.spec.ts`).
+- [x] The lead's terminal runs a lead of another agent: the arrow beside **Lead** lists claude, codex and antigravity
+  as found on this machine (`UiService.GetEnvironment`, `agy` for antigravity), the missing ones disabled with why,
+  the recorded lead's marked; picking another starts a new lead of that agent in the lead's terminal, from the same
+  first message as every lead: run `djinn wish brief <wish>` and continue (`TestResumeAnotherAgent`,
+  `TestEnvironmentProviders`, the screens test of the split button, e2e `lead-agent.spec.ts` with a fake `agy`).
 - [ ] This flight plan's session resumes inside Djinn's terminal and goes on by voice. (needs: a person, by voice)
 
 ## Decided along the way
@@ -100,6 +105,16 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   a restart button once the program ended. Keys typed in the terminal never reach the app's
   shortcuts (Escape, Ctrl+K…). Copy and paste: Ctrl+Shift+C / Ctrl+Shift+V, Cmd+C / Cmd+V on macOS.
 
+- **Any agent takes a wish over from the brief, not from a session.** Every new lead, claude, codex or
+  antigravity, gets one first message, the same for all: run `djinn wish brief <wish>`, then continue from what it
+  says (`plan.StartLine`). The brief is a status computed by Djinn from the store: the wish's description first (a few
+  lines, `djinn wish describe`, edited in the wish's head), its azimas, what runs and waits, its open questions, its
+  latest decisions and blocks, the last lead and when a lead last acted (the journal's latest spawn, block, question…
+  that names no worker), then the rules. No lead writes a hand-off for the next one: the plan is the hand-off.
+  Picking the recorded lead's agent resumes its session; another agent starts a new lead (`WishService.Resume` with
+  `provider`). A new claude lead becomes the wish's lead; codex once `djinn wish set-lead` gives its session; an
+  antigravity lead cannot be resumed, so the record stays. A terminal that runs a program is never replaced: the note
+  says to exit it there.
 - **Restart**: the running terminals are noted in `restart.json` (name, the exact command line, folder) and run
   again by the new Djinn with that same command: `claude --resume <id>` for a lead, the shell for `main`.
   `terminal.Manager.Running` lists them.

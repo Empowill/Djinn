@@ -10,8 +10,23 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **Every command comes from a proto.** Each public method of `api/` is a command: `QuestionService.Answer` is
   `djinn question answer`. Arguments, help and validation follow the [convention](cli-convention.md). Exit codes:
   `0` success, `1` the call failed, `2` the command line is wrong.
-- **The brief says how to lead.** `djinn wish brief <wish>` prints Djinn's rules, the projects' rules and where the
-  wish stands. Djinn writes it from its store (`internal/plan/brief.go`), without a model.
+- **The brief says where the wish stands, and how to lead it.** `djinn wish brief <wish>` is a status on its own,
+  computed by Djinn from its store (`internal/plan/brief.go`), without a model: the wish's description first, then its
+  azimas and their states, the tasks running and waiting, the open questions, the latest decisions and blocks, and
+  the last lead (its agent, its session, when a lead last acted through Djinn); then Djinn's rules and the projects'
+  rules. Reconstructing the state is not the lead's job.
+- **A wish describes itself.** Its description is a few lines: what it is for, its scope, where it goes.
+  `djinn wish describe <wish> --text "…"` sets it; the developer edits it in the wish's head, under its title (a
+  click, saved when the field is left). Until someone writes one, the title stands for it.
+- **Every lead starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
+  and antigravity: run `djinn wish brief <wish>`, then continue the wish from what it says (`StartLine` in
+  `internal/plan/newlead.go`). Nothing in it is about one agent or the wish's state: a lead of another agent than the
+  last one takes the wish over from the brief, without the old session. In the window, the arrow beside **Lead** lists
+  the agents found on this machine (`UiService.GetEnvironment`: `claude`, `codex`, `agy`), those missing shown
+  disabled; picking the recorded lead's agent resumes its session, another starts a new lead of that agent in the
+  lead's terminal (`djinn wish resume <wish> --provider antigravity`). A new claude lead becomes the wish's lead; a
+  codex one once `djinn wish set-lead … --provider codex` gives its session; an antigravity one leaves the record as
+  it is. While the lead's terminal runs a program, nothing starts, and Djinn says to exit it there.
 - **A lead runs in a project, never in the home folder.** `djinn wish resume` resumes the lead's session in the
   folder it was recorded in (`djinn wish set-lead --directory`): claude finds a session only from the folder it was
   made in. A new lead starts in the wish's first project, else the first of Djinn's projects as the window lists them.
@@ -57,11 +72,11 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   change ([watch](providers.md#watch-a-command-no-agent)).
 - **Every request finds its wish.** A request that is not about the wish goes through
   `djinn wish route "<request>" --wish-id <wish> --ask`: a card asks the developer to open a new wish, whose lead
-  starts on it, to file it in an existing wish, or to keep it in this one; then the lead does its work. The new lead reads the request once, on its first line; its brief leaves
-  the request block out of its latest blocks. A skill's [wish template](wish-templates.md) (`metadata.djinn.wish`)
+  starts on it, to file it in an existing wish, or to keep it in this one; then the lead does its work. The new lead
+  reads the request on its first line, before the line that sends it to the brief. A skill's [wish template](wish-templates.md) (`metadata.djinn.wish`)
   makes the new wish follow the skill, its watcher started; the brief tells the lead to propose one for a request
   that comes back.
-- **Blocks.** What Djinn does not compute (an analysis, a hand-off, a decision taken outside a question) is a block:
+- **Blocks.** What Djinn does not compute (an analysis, a decision taken outside a question) is a block:
   `djinn block put`. Djinn shows it as written.
 - **The page.** `djinn wish sync <wish>` renders the wish's page in Go and prints its file, kept up to date. The lead
   republishes that file as it is; it never writes the HTML.

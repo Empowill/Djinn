@@ -149,7 +149,7 @@ export const SettingsSchema: GenMessage<Settings> = /*@__PURE__*/
  */
 export type Provider = Message<"ui.v1.Provider"> & {
   /**
-   * Identifier: codex or claude.
+   * Identifier: codex, claude or antigravity.
    *
    * @generated from field: string id = 1;
    */
@@ -170,7 +170,7 @@ export type Provider = Message<"ui.v1.Provider"> & {
   available: boolean;
 
   /**
-   * The command, as resolved on the PATH when available.
+   * The command, as resolved on the PATH when available: claude, codex, agy.
    *
    * @generated from field: string command = 4;
    */

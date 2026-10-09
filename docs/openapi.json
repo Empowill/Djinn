@@ -2638,6 +2638,10 @@
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
             "description": "When the wish was made."
           },
+          "description": {
+            "description": "A few lines that say what the wish is for, its scope and where it goes: djinn wish describe sets it, the person edits it in the wish's head, and the brief opens with it. Empty until someone writes one: the title stands for it.",
+            "type": "string"
+          },
           "grantTime": {
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
             "description": "When the user granted the wish."
@@ -2809,6 +2813,33 @@
             "description": "How many worktrees of its tasks were removed: clean, with no commit beyond the project's current branch.",
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceDescribeRequest": {
+        "properties": {
+          "text": {
+            "description": "The description: a few lines. Empty takes the wish back to its title.",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceDescribeResponse": {
+        "properties": {
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish, with its description."
           }
         },
         "type": "object"
@@ -3054,7 +3085,7 @@
         "properties": {
           "provider": {
             "$ref": "#/components/schemas/plan.v1.Provider",
-            "description": "Kind of agent for a new lead, when the wish has none to resume: claude (the default), codex or antigravity."
+            "description": "Kind of agent for the lead: unset or the recorded lead's resumes it; another starts a new lead of that agent from the brief. A wish with no lead to resume starts one of this kind: claude (the default), codex or antigravity."
           },
           "wishId": {
             "description": "The wish.",
@@ -4719,7 +4750,7 @@
     },
     "/plan.v1.WishService/Brief": {
       "post": {
-        "description": "The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions, decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache. No local path, no secret.",
+        "description": "The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.",
         "operationId": "WishService_Brief",
         "requestBody": {
           "content": {
@@ -4789,6 +4820,44 @@
           }
         },
         "summary": "djinn wish delete",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Describe": {
+      "post": {
+        "description": "Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had. Empty text takes it back to the title.",
+        "operationId": "WishService_Describe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceDescribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceDescribeResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish describe",
         "tags": [
           "WishService"
         ]
@@ -5101,7 +5170,7 @@
     },
     "/plan.v1.WishService/Resume": {
       "post": {
-        "description": "Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead. A lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.",
+        "description": "Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead. A provider other than the recorded lead's starts a new lead of that agent from the brief the same way: a claude one becomes the wish's lead, a codex one once djinn wish set-lead gives its session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.",
         "operationId": "WishService_Resume",
         "requestBody": {
           "content": {

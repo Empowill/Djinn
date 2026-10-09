@@ -193,7 +193,10 @@ To use Djinn, see the [README](README.md). To work on it:
   `SKILL.md`) makes that skill's wish, its watcher started and its lead on the skill: `.agents/skills/babysit-pr` for a
   GitHub pull request, `.agents/skills/babysit-mr` for a GitLab merge request
   ([`docs/wish-templates.md`](docs/wish-templates.md)).
-- `djinn wish brief <wish-id>`: the brief a new lead starts from, when `djinn wish resume` finds no session.
+- `djinn wish brief <wish-id>`: where the wish stands and how to lead it, computed from the store; every new lead, of
+  any agent, starts by running it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
+  (also edited under the wish's title). `djinn wish resume <wish-id> --provider antigravity` (or the arrow beside Lead)
+  starts a lead of another agent than the recorded one's.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
   --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)
   compares them ([T22](plan/1689571a-fast-workers.md)).

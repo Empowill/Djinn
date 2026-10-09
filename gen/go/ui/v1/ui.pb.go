@@ -267,13 +267,13 @@ func (x *Settings) GetShortcut() string {
 // An agent command line.
 type Provider struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Identifier: codex or claude.
+	// Identifier: codex, claude or antigravity.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// Name shown in the window.
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	// The command is found on this machine.
 	Available bool `protobuf:"varint,3,opt,name=available,proto3" json:"available,omitempty"`
-	// The command, as resolved on the PATH when available.
+	// The command, as resolved on the PATH when available: claude, codex, agy.
 	Command       string `protobuf:"bytes,4,opt,name=command,proto3" json:"command,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

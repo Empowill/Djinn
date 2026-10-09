@@ -403,6 +403,31 @@ func (w *Wishes) Allow(
 	return connect.NewResponse(&planv1.WishServiceAllowResponse{Wish: wish}), nil
 }
 
+// Describe sets the wish's description, in place of what it had; empty takes it back to the title.
+func (w *Wishes) Describe(
+	ctx context.Context, req *connect.Request[planv1.WishServiceDescribeRequest],
+) (*connect.Response[planv1.WishServiceDescribeResponse], error) {
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		wish.Description = strings.TrimSpace(req.Msg.GetText())
+		if wish.Description == strings.TrimSpace(wish.GetTitle()) {
+			wish.Description = "" // The title stands for it already.
+		}
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceDescribeResponse{Wish: wish}), nil
+}
+
 // AllowanceOf is the right wish allows its workers in the project projectID: ALLOWANCE_NONE when it allows none.
 func AllowanceOf(wish *planv1.Wish, projectID string) planv1.Allowance {
 	for _, a := range wish.GetAllowances() {

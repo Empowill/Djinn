@@ -96,8 +96,10 @@ func Home() (string, error) {
 	return filepath.Join(config, name), nil
 }
 
-// providers are the agent command lines Djinn knows.
-var providers = []struct{ id, name string }{{"codex", "Codex"}, {"claude", "Claude"}}
+// providers are the agent command lines Djinn knows: the agent, its name, and the program that runs it.
+var providers = []struct{ id, name, program string }{
+	{"codex", "Codex", "codex"}, {"claude", "Claude", "claude"}, {"antigravity", "Antigravity", "agy"},
+}
 
 func (s *Service) GetEnvironment(
 	context.Context, *connect.Request[uiv1.UiServiceGetEnvironmentRequest],
@@ -113,9 +115,9 @@ func (s *Service) GetEnvironment(
 		res.Shortcut = s.Shortcuts.State()
 	}
 	for _, p := range providers {
-		command, err := exec.LookPath(p.id)
+		command, err := exec.LookPath(p.program)
 		if err != nil {
-			command = p.id
+			command = p.program
 		}
 		res.Providers = append(res.Providers, &uiv1.Provider{
 			Id: p.id, Name: p.name, Available: err == nil, Command: command,

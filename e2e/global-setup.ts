@@ -13,15 +13,17 @@ const binary = path.resolve(
 export default async function globalSetup() {
   // A data directory of its own: the tests never touch the developer's state nor the address of their djinn.
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-"));
-  // A fake claude, first on the PATH of djinn: the lead's terminal runs it, and it only says how it was called.
+  // A fake claude and a fake agy (Antigravity), first on the PATH of djinn: the lead's terminal runs them, and they
+  // only say how they were called.
   const bin = path.join(home, "bin");
   fs.mkdirSync(bin);
   if (process.platform !== "win32")
-    fs.writeFileSync(
-      path.join(bin, "claude"),
-      '#!/bin/sh\necho "fake-claude $* in $(pwd)"\nexec cat\n',
-      { mode: 0o755 },
-    );
+    for (const agent of ["claude", "agy"])
+      fs.writeFileSync(
+        path.join(bin, agent),
+        `#!/bin/sh\necho "fake-${agent} $* in $(pwd)"\nexec cat\n`,
+        { mode: 0o755 },
+      );
   // The window's terminal opens in a folder of its own: without a project, djinn would ask for one instead.
   const shell = path.join(home, "shell");
   fs.mkdirSync(shell);
