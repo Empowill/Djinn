@@ -239,7 +239,7 @@ func TestResize(t *testing.T) {
 // TestReadResumes checks the scrollback alone: a read from an offset gets what follows it, and a read from an
 // offset no longer kept starts at the oldest byte kept.
 func TestReadResumes(t *testing.T) {
-	term := &Terminal{changed: make(chan struct{})}
+	term := &Terminal{changed: make(chan struct{}), screen: newScreen(80, 24)}
 	var all []byte
 	for i := range 40 {
 		piece := bytes.Repeat([]byte{byte('a' + i%26)}, 50_000)

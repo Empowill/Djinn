@@ -29,6 +29,30 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   republishes that file as it is; it never writes the HTML.
 - **The developer's word.** `djinn wish grant <wish>` says a wish is done. Only the developer says it.
 
+### Writing to the lead
+
+Djinn types into the lead's terminal as the developer would: the news of the wish (`Q02 answered: A. Continue.`) and
+what `djinn wish tell` or the window's button says. Its terminal reads on the screen as it shows now, not on what it
+once drew:
+
+- **Never into a choice.** A hint that ends a line, or a part of it between `·`, with a key, `to` and what it does
+  (`Esc to cancel`, `Enter to confirm`, `Esc to exit`, `Press Enter to continue`) is a choice: a permission prompt, the folder trust, a first run's
+  onboarding. The text waits until the developer answers it: a digit in it would pick an option, its Enter confirm
+  one. Trusting a folder stays the developer's ([providers](providers.md)). A choice covered since holds nothing, nor
+  a sentence about one that ends with a period.
+- **Never into a line under way.** What the developer types holds the text until it is sent or cleared (Enter,
+  Ctrl+C, Ctrl+U, Esc twice, a word erased by Ctrl+W or Alt+Backspace), or until 30 seconds without a key: Djinn
+  follows the keys, not the prompt, and may lose track of an edit.
+- **Only to a lead.** The terminal must run the line Djinn starts a lead with (`claude`, `codex`, `agy` through the
+  shell). A shell the window opened under the lead's name gets nothing: the text would run as a command. Close it,
+  then `djinn wish resume`.
+
+**Who may write.** Djinn does not know who calls it. Any process of the developer's that reaches Djinn's socket, a
+worker included, may run `djinn wish tell` and speak to the lead as the developer, as it may run `djinn wish grant`:
+the same trust, the local user's. Nothing in code keeps a worker from it.
+A simple guard, not in place: the command line could refuse `wish tell` and `wish grant` when `DJINN_TASK_ID` is set,
+as it is for every worker. It stops a mistake, not a worker that clears its environment or calls the socket itself.
+
 ## Workers: processes Djinn starts
 
 A worker is one agent process per task: Claude Code, Codex or Antigravity, in the task's own worktree. The commands

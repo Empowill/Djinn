@@ -585,7 +585,7 @@ type WishServiceClient interface {
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
 	// Write to the wish's lead in its terminal, as if you typed it there, then Enter. The text waits while something
 	// is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
-	// djinn wish resume starts it.
+	// djinn wish resume starts it. A terminal of its name that runs another program, a shell, gets nothing.
 	Tell(context.Context, *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
@@ -881,7 +881,7 @@ type WishServiceHandler interface {
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
 	// Write to the wish's lead in its terminal, as if you typed it there, then Enter. The text waits while something
 	// is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
-	// djinn wish resume starts it.
+	// djinn wish resume starts it. A terminal of its name that runs another program, a shell, gets nothing.
 	Tell(context.Context, *connect.Request[v1.WishServiceTellRequest]) (*connect.Response[v1.WishServiceTellResponse], error)
 	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)

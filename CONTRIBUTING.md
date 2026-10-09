@@ -154,7 +154,8 @@ To use Djinn, see the [README](README.md). To work on it:
   While its terminal runs, the lead hears of each answer, approval, and task that ends or waits: Djinn types one line
   there (`Q02 answered: A. Continue.`), gathered by the second, once nothing is being typed and no choice is on screen.
   `djinn wish tell <wish-id> "…"` (or the button at the bottom right of the window, on a wish) writes to the lead the
-  same way, as if you typed it in its terminal.
+  same way, as if you typed it in its terminal. Only to a lead: a shell open under its name gets nothing
+  ([who may write](docs/agent-protocol.md#writing-to-the-lead)).
 - `djinn wish brief <wish-id>`: the brief a new lead starts from, when `djinn wish resume` finds no session.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
   --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)

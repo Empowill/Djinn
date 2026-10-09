@@ -4368,7 +4368,7 @@ export const WishService: GenService<{
   /**
    * Write to the wish's lead in its terminal, as if you typed it there, then Enter. The text waits while something
    * is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
-   * djinn wish resume starts it.
+   * djinn wish resume starts it. A terminal of its name that runs another program, a shell, gets nothing.
    *
    * @generated from rpc plan.v1.WishService.Tell
    */

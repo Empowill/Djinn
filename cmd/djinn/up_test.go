@@ -323,6 +323,11 @@ func TestWishResume(t *testing.T) {
 	}
 	lead := opened.Msg.GetTerminal()
 	read(t, terminals, lead.GetId(), fmt.Sprintf("fake-claude --resume %s in %s", session, folder))
+	// What the developer writes reaches the lead, as typed there.
+	if code, out, errs := runDjinn(t, env, "wish", "tell", wish.GetId(), "Q01 answered: A. Continue."); code != 0 {
+		t.Fatalf("tell: exit %d\n%s%s", code, out, errs)
+	}
+	read(t, terminals, lead.GetId(), "Q01 answered: A. Continue.")
 
 	// The window is asked to show the wish and its lead, even one that starts watching after.
 	ui := uiv1connect.NewUiServiceClient(httpClient, base)
@@ -358,6 +363,28 @@ func TestWishResume(t *testing.T) {
 	code, out, errs = runDjinn(t, env, "wish", "resume", wish.GetId())
 	if code != 1 || !strings.Contains(errs, "already running in another terminal") || !strings.Contains(errs, `"main"`) {
 		t.Fatalf("resume while main runs the session: exit %d\n%s%s", code, out, errs)
+	}
+
+	// The window opened a shell under the lead's name: what is told there would run as a command. Nothing is written.
+	shell, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{
+		Name: name, Command: []string{"/bin/sh"}, Directory: folder,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs = runDjinn(t, env, "wish", "tell", wish.GetId(), "touch told")
+	if code != 1 || !strings.Contains(errs, "another program than the lead") || !strings.Contains(errs, "runs sh") {
+		t.Fatalf("tell a shell: exit %d\n%s%s", code, out, errs)
+	}
+	if _, err := terminals.Write(ctx, connect.NewRequest(&terminalv1.TerminalServiceWriteRequest{
+		Id: shell.Msg.GetTerminal().GetId(), Data: []byte("echo shell-ready\r"),
+	})); err != nil {
+		t.Fatal(err)
+	}
+	read(t, terminals, shell.Msg.GetTerminal().GetId(), "shell-ready")
+	time.Sleep(1500 * time.Millisecond) // Past the second a told line waits for the keyboard.
+	if _, err := os.Stat(filepath.Join(folder, "told")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the shell ran what was told: %v", err)
 	}
 }
 
