@@ -150,6 +150,11 @@ To use Djinn, see the [README](README.md). To work on it:
   started. `djinn task depend <task-id> --after W1,W2 --also W6=W5` sets what tasks wait for, in place of what they
   had, all or none; the tasks of a wish form a graph without cycle, and one that would close a cycle is refused,
   naming it.
+- In a project whose settings name a test command ([`docs/team-settings.md`](docs/team-settings.md#integration)), Djinn
+  integrates finished work by itself: at an azima's end, or after an hour and three tasks done, it merges the tasks'
+  branches in a worktree of its own, makes the generated files again on a conflict only in them, runs the tests
+  through a gate, and moves the wish's branch when they pass ([T30](plan/43303f46-integration.md)). `djinn wish
+  set-integration <wish-id> --branch feat/x` names the branch.
 - The plan of a wish is a graph of azimas (`T07`): tasks no worker runs, which work is part of. `djinn task spawn …
   --part-of T07` spawns work in one, `djinn task group <task-id> --part-of T07` moves it, `djinn task spawn <wish>
   --kind azima --title "…"` makes one. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes
