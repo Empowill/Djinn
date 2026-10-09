@@ -39,6 +39,7 @@ func files(t *testing.T, dir string) map[string]string {
 // command reads an empty input: Djinn writes nothing to it. Dismissing an item and routing one run no command: the
 // source ran once, as declared, and the project's folder is as it was.
 func TestSourceReadsOnly(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	dir := t.TempDir()
@@ -106,6 +107,7 @@ func TestSourceReadsOnly(t *testing.T) {
 // TestSourceRefused: where a project lists the commands its workers may run, a source must be one of them; one
 // that is not never runs.
 func TestSourceRefused(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	dir := t.TempDir()

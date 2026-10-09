@@ -34,6 +34,7 @@ func kinds(events []Event) []string {
 // the format the Claude Agent SDK documents (system init, assistant and user messages with content blocks, a
 // final result carrying the usage and total_cost_usd).
 func TestParseClaude(t *testing.T) {
+	t.Parallel()
 	var events []Event
 	var results []*turnEnd
 	for _, l := range fixtureLines(t, "testdata/claude/tool-call.jsonl") {
@@ -97,6 +98,7 @@ func TestParseClaude(t *testing.T) {
 // decide; with the project's .agents permissions, Djinn passes them as settings; outside any project the worker
 // only reads. A worker in a project reads AGENTS.md as well as CLAUDE.md.
 func TestClaudeArgs(t *testing.T) {
+	t.Parallel()
 	base := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 		"--permission-prompts", "none"}
 	const agentsMd = `"pluginConfigs":{"cc-plugin-agents-md@builtin":{"options":{"instructionFiles":"claude-md-and-agents-md"}}}`
@@ -149,6 +151,7 @@ func TestClaudeArgs(t *testing.T) {
 // TestScopePrefix: a worker runs under its scope's prefix (systemd-run, played by the fake), its own program found
 // first, and keeps the scope's cgroup.
 func TestScopePrefix(t *testing.T) {
+	t.Parallel()
 	env, args, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
 	record := filepath.Join(t.TempDir(), "prefix")
 	env = append(env, "DJINN_FAKE_PREFIX="+record)
@@ -184,6 +187,7 @@ func TestScopePrefix(t *testing.T) {
 }
 
 func TestClaudeWorkerStops(t *testing.T) {
+	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "process-dies", end: "wait"}.env(t)
 	w, err := Claude{Command: os.Args[0], Grace: 5 * time.Second}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env})
 	if err != nil {
@@ -203,6 +207,7 @@ func TestClaudeWorkerStops(t *testing.T) {
 }
 
 func TestClaudeWorkerKilledAfterGrace(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows kills at once: no grace to test")
 	}

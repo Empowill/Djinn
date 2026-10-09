@@ -16,6 +16,7 @@ import (
 // TestPauseProcess: a worker's process group stops on SIGSTOP and its output with it, goes on with SIGCONT, and a
 // stop while paused ends it at once, not after the grace delay.
 func TestPauseProcess(t *testing.T) {
+	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "success", end: "tick"}.env(t)
 	w, err := Claude{Command: os.Args[0], Grace: time.Minute}.Start(t.Context(), Spec{TaskID: "t1", Dir: t.TempDir(), Prompt: "x", Env: env})
 	if err != nil {
@@ -40,7 +41,7 @@ func TestPauseProcess(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond) // What was written before the stop is still read.
 	before := ticks.Load()
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond) // Ten ticks, were it not paused.
 	if after := ticks.Load(); after != before {
 		t.Errorf("%d ticks while paused", after-before)
 	}

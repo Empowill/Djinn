@@ -30,6 +30,7 @@ func (e *env) continueTask(t *testing.T, id, prompt string) (*planv1.Task, error
 // worktree and branch, then done, its usage summed. Its events follow on: who continued it and the prompt's first
 // line, the prompt, its new start, its end. No other task appears.
 func TestContinue(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))
 	first := e.ended(t, e.mustSpawn(t, wishID, "Add the feature", "text first\nusage 1000 100 0.02", nil).GetId())
@@ -105,6 +106,7 @@ func TestContinue(t *testing.T) {
 // TestContinueWaitsForASlot: a continued task goes back through the scheduler: on a full machine it waits, says why,
 // and starts once a slot frees.
 func TestContinueWaitsForASlot(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 1}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity))
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -130,6 +132,7 @@ func TestContinueWaitsForASlot(t *testing.T) {
 // TestContinueRefused: a task that runs, has lost its worktree, runs an agent that cannot resume a session, has no
 // session, came from another Djinn, or continues in a fork is not continued, and says why.
 func TestContinueRefused(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))
 
@@ -201,6 +204,7 @@ func TestContinueRefused(t *testing.T) {
 // TestForkClosesParent: a fork of a task cut short, failed or stopped continues it: the parent is done, closed by the
 // lead with "continued in W…", and Djinn no longer resumes it. A fork of a done task leaves it as it is.
 func TestForkClosesParent(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))
 
@@ -242,6 +246,7 @@ func TestForkClosesParent(t *testing.T) {
 
 // TestContinueCommand: djinn task continue plans a task again from the command line, with its prompt as a flag.
 func TestContinueCommand(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))
 	first := e.ended(t, e.mustSpawn(t, wishID, "First", "text one", nil).GetId())

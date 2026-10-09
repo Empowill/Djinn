@@ -25,6 +25,7 @@ func writeFile(t *testing.T, dir, name, content string) {
 }
 
 func TestLoadPermissions(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if p, err := LoadPermissions(dir); p != nil || err != nil {
 		t.Errorf("no file: %v, %v", p, err)
@@ -50,6 +51,7 @@ func TestLoadPermissions(t *testing.T) {
 }
 
 func TestCommandAllowed(t *testing.T) {
+	t.Parallel()
 	p := &djinnv1.Permissions{Commands: []string{"go tool task test", "git"}, DeniedCommands: []string{"git push"}}
 	for command, want := range map[string]bool{
 		"go tool task test":            true,
@@ -74,6 +76,7 @@ func TestCommandAllowed(t *testing.T) {
 // decides when present, Git or not; then the agent's own configuration, in Git or when the folder holds an agent
 // configuration file; otherwise read-only until the developer allows editing.
 func TestDecideAccess(t *testing.T) {
+	t.Parallel()
 	const (
 		readOnly = planv1.TaskAccess_TASK_ACCESS_READ_ONLY
 		agents   = planv1.TaskAccess_TASK_ACCESS_AGENTS
@@ -134,6 +137,7 @@ func TestDecideAccess(t *testing.T) {
 // TestRepoPermissions: Djinn's own .agents/permissions.txtpb is valid, and .claude/settings.json, for a contributor
 // who runs claude in the repository without Djinn, holds exactly what Djinn translates from it.
 func TestRepoPermissions(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..")
 	p, err := LoadPermissions(root)
 	if err != nil || p == nil {
@@ -161,6 +165,7 @@ func TestRepoPermissions(t *testing.T) {
 }
 
 func TestCodexDecision(t *testing.T) {
+	t.Parallel()
 	const command, file = "item/commandExecution/requestApproval", "item/fileChange/requestApproval"
 	listed := &djinnv1.Permissions{Edit: true, Commands: []string{"go test"}, DeniedCommands: []string{"go test -exec"}}
 	network := json.RawMessage(`{"host":"proxy.golang.org"}`)

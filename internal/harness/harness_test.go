@@ -33,10 +33,20 @@ type env struct {
 	last    string // the wish e.wish made last
 }
 
+// testProviders are the providers of a test: a watcher's waits are the test's, not a second.
+func testProviders() map[planv1.Provider]Provider {
+	providers := Providers()
+	providers[planv1.Provider_PROVIDER_WATCH] = fastWatch
+	return providers
+}
+
+// fastWatch is a watcher whose command makes a paragraph after 50 ms of silence, and starts again 50 ms after it ends.
+var fastWatch = Watch{Quiet: 50 * time.Millisecond, Backoff: 50 * time.Millisecond, Gap: 50 * time.Millisecond}
+
 // up starts the services on the database in home, as djinn up does: recover, schedule, then serve.
 func up(t *testing.T, home string, opts ...Option) *env {
 	t.Helper()
-	return upWith(t, home, Providers(), opts...)
+	return upWith(t, home, testProviders(), opts...)
 }
 
 // upWith is up with these providers.
@@ -161,6 +171,7 @@ func checkSeqs(t *testing.T, events []*planv1.TaskEvent, first int64) {
 }
 
 func TestSpawnInGit(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	e := up(t, t.TempDir())
 	wishID, projectID := e.wish(t, repo)
@@ -227,6 +238,7 @@ func TestSpawnInGit(t *testing.T) {
 }
 
 func TestSpawnOutsideGit(t *testing.T) {
+	t.Parallel()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -252,6 +264,7 @@ func TestSpawnOutsideGit(t *testing.T) {
 }
 
 func TestSpawnRefused(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, projectID := e.wish(t, t.TempDir())
 	other, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
@@ -281,6 +294,7 @@ func TestSpawnRefused(t *testing.T) {
 }
 
 func TestStopLongWorker(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
 	task := e.spawn(t, wishID, "text working\nsleep 1h")
@@ -312,6 +326,7 @@ func TestStopLongWorker(t *testing.T) {
 // needs, and its events survive the restart. The next start resumes it, in the same task, worktree and session, and
 // it finishes. A task a crash left running is resumed the same way.
 func TestNothingLostOnShutdown(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	home := t.TempDir()
 	e := up(t, home)
@@ -412,6 +427,7 @@ func putTask(t *testing.T, db *store.Store, task *planv1.Task, prompt string) {
 }
 
 func TestWatchUnknown(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: store.NewID()}))
 	if err == nil {
@@ -427,6 +443,7 @@ func TestWatchUnknown(t *testing.T) {
 // TestRecoverLeavesPlannedTasks: a task that no worker ever started, such as the plan of an imported wish, stays
 // pending across a restart; only a started one is interrupted.
 func TestRecoverLeavesPlannedTasks(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	planned := &planv1.Task{Id: "01a118d0-0000-7000-8000-000000000001", WishId: "01a118d0-0000-7000-8000-0000000000aa",

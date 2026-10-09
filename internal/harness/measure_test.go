@@ -17,7 +17,7 @@ import (
 func measuredClaude(t *testing.T, read MeasureFunc) (*env, *planv1.Task) {
 	t.Helper()
 	env, _, _ := fake{provider: "claude", fixture: "success", end: "wait"}.env(t)
-	providers := Providers()
+	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = envProvider{Claude{Command: os.Args[0]}, env}
 	e := upWith(t, t.TempDir(), providers, WithMeasure(20*time.Millisecond, read))
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -33,6 +33,7 @@ func measuredClaude(t *testing.T, read MeasureFunc) (*env, *planv1.Task) {
 // TestMeasurePeaks: the task keeps the latest reading of its worker and the peaks; the machine lists the worker
 // while it runs; once it is stopped, the task keeps its peaks.
 func TestMeasurePeaks(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	readings := []machine.Group{
 		{Processes: 1, CPU: 0, Memory: 100 << 20},
@@ -76,6 +77,7 @@ func TestMeasurePeaks(t *testing.T) {
 
 // TestNotMeasured: the fake agent runs in Djinn's process, and a harness without a measure reads no worker.
 func TestNotMeasured(t *testing.T) {
+	t.Parallel()
 	read := func(int, string) (machine.Group, error) {
 		t.Error("an in-process worker read")
 		return machine.Group{}, nil
@@ -91,6 +93,7 @@ func TestNotMeasured(t *testing.T) {
 
 // TestWorth: a reading is written when it moved enough to show, or a minute after the last one written.
 func TestWorth(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	was := &planv1.Resources{CpuPercent: 40, MemoryBytes: 1000, Processes: 3, PeakCpuPercent: 80, PeakMemoryBytes: 2000,
 		ReadTime: timestamppb.New(at)}

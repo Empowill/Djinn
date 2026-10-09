@@ -52,9 +52,10 @@ test("a held Space reaches the program as a run of spaces", async ({
   // In raw mode, as Claude Code reads its keys, count the spaces that arrive.
   await typeLine(
     page,
-    "stty raw -echo; n=$(dd bs=1 count=20 2>/dev/null | od -v -An -tx1 | tr -s ' ' '\\n' | grep -c '^20$'); stty sane; echo spaces=$n",
+    "stty raw -echo; echo raw-ready; n=$(dd bs=1 count=20 2>/dev/null | od -v -An -tx1 | tr -s ' ' '\\n' | grep -c '^20$'); stty sane; echo spaces=$n",
   );
-  await page.waitForTimeout(500);
+  // The program reads its keys raw from now on.
+  await expect(line(page, "raw-ready")).toHaveCount(1);
   // Count the key downs the page sees as repeats, as a real key repeat sends them.
   await page.evaluate(() => {
     const w = window as unknown as { repeats: number };

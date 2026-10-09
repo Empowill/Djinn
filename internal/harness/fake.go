@@ -23,6 +23,7 @@ import (
 //	usage 1200 300 0.02   it has spent so far 1200 tokens in, 300 out, $0.02
 //	write notes.md Hi     it writes Hi in notes.md, in its folder, when it may edit (else: permission denied)
 //	sleep 5s              it works for a while
+//	wait                  it works until a message comes (Send), which it says back at the end as the others
 //	fail no tests         it fails with this reason
 //	exit 2                its process exits with this code
 //
@@ -32,7 +33,7 @@ type Fake struct{}
 
 func (Fake) Start(ctx context.Context, spec Spec) (Worker, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{})}
+	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1)}
 	go w.play(ctx, spec)
 	return w, nil
 }
@@ -42,6 +43,8 @@ type fakeWorker struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	res    Result
+
+	sent chan struct{} // a message came (wait)
 
 	mu    sync.Mutex
 	inbox []string
@@ -62,6 +65,10 @@ func (w *fakeWorker) Send(text string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.inbox = append(w.inbox, text)
+	select {
+	case w.sent <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -166,6 +173,20 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 			}
 			select {
 			case <-time.After(d):
+				continue
+			case <-ctx.Done():
+				w.res = stopped
+				return
+			}
+		case "wait":
+			w.mu.Lock()
+			waiting := len(w.inbox) == 0
+			w.mu.Unlock()
+			if !waiting {
+				continue
+			}
+			select {
+			case <-w.sent:
 				continue
 			case <-ctx.Done():
 				w.res = stopped

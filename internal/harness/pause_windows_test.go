@@ -10,6 +10,7 @@ import (
 
 // TestPauseProcess: on Windows a worker's process refuses to pause, and says why.
 func TestPauseProcess(t *testing.T) {
+	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "success", end: "wait"}.env(t)
 	w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{TaskID: "t1", Dir: t.TempDir(), Prompt: "x", Env: env})
 	if err != nil {

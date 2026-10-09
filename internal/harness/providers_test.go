@@ -413,6 +413,7 @@ func stderrEvents(name string, lines []string) []Event {
 // TestCatalog replays every case of the catalog through the real process path, the test binary playing the
 // provider, and checks the events Djinn records and how the worker ends.
 func TestCatalog(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for _, c := range catalog() {
 		name := c.provider + "/" + c.fixture
@@ -489,6 +490,7 @@ func TestCatalog(t *testing.T) {
 }
 
 func TestProviderArgs(t *testing.T) {
+	t.Parallel()
 	agy := []struct {
 		spec Spec
 		want []string
@@ -563,6 +565,7 @@ func TestProviderArgs(t *testing.T) {
 
 // TestProviderMissing: a provider whose program is not installed fails to start with a clear error.
 func TestProviderMissing(t *testing.T) {
+	t.Parallel()
 	for _, p := range []Provider{
 		Claude{Command: "djinn-no-such-claude"}, Codex{Command: "djinn-no-such-codex"}, Antigravity{Command: "djinn-no-such-agy"},
 	} {
@@ -576,6 +579,7 @@ func TestProviderMissing(t *testing.T) {
 // TestSpawnMissingProvider: djinn task spawn --provider codex, codex not installed, fails with an error that names
 // it, and the task records why.
 func TestSpawnMissingProvider(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	e.h.providers[planv1.Provider_PROVIDER_CODEX] = Codex{Command: "codex-djinn-missing"}
 	wishID, _ := e.wish(t, t.TempDir())
@@ -608,6 +612,7 @@ func (r recorder) Start(ctx context.Context, spec Spec) (Worker, error) {
 // TestSpawnOutsideProject: a task of a wish without any project runs read-only, in an empty folder of its own
 // under Djinn's data folder.
 func TestSpawnOutsideProject(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	rec := recorder{specs: make(chan Spec, 1)}

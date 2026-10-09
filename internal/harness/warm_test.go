@@ -42,7 +42,7 @@ func warmProviders(t *testing.T) (map[planv1.Provider]Provider, func(taskID stri
 	t.Helper()
 	env, _, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
 	dir := t.TempDir()
-	providers := Providers()
+	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = envClaude{Claude: Claude{Command: os.Args[0], Grace: time.Second}, env: env, dir: dir}
 	return providers, func(taskID string) string { return filepath.Join(dir, "input-"+taskID) }
 }
@@ -78,6 +78,7 @@ func warmBranches(t *testing.T, repo string) string {
 // TestWarmWorker: a process loaded ahead is taken by the next task of its project, and replaced; the task gets
 // the warm worker's worktree, renamed after it, and its first message is the task's prompt.
 func TestWarmWorker(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	providers, input := warmProviders(t)
 	e := upWith(t, t.TempDir(), providers, WithWarm(), WithTick(20*time.Millisecond))
@@ -155,6 +156,7 @@ func TestWarmWorker(t *testing.T) {
 // Spawn fills them, so that a task of the project takes it; when the settings change, it is replaced. A task that
 // asks for another model starts cold and leaves it.
 func TestWarmTakesTheProjectSettings(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	writeFile(t, repo, ".agents/settings.txtpb", "model: \"team-model\"\nmax_budget_usd: 2\n")
 	home := t.TempDir()
@@ -213,6 +215,7 @@ func TestWarmTakesTheProjectSettings(t *testing.T) {
 // TestWarmWithinTheMachine: the warm workers fit in the slots the running workers leave, and none waits while the
 // machine is under pressure.
 func TestWarmWithinTheMachine(t *testing.T) {
+	t.Parallel()
 	providers, _ := warmProviders(t)
 	var mu sync.Mutex
 	slots, pressure := 1, ""
@@ -232,9 +235,10 @@ func TestWarmWithinTheMachine(t *testing.T) {
 
 	// A task runs in the only slot: the warm worker gives its place.
 	set(2, "")
-	running := e.mustSpawn(t, wishID, "Sleep", "sleep 2s", nil)
+	running := e.mustSpawn(t, wishID, "Busy", "wait", nil)
 	set(1, "")
 	waitFor(t, "the warm worker to leave the slot", func() bool { return e.h.WarmCount() == 0 })
+	e.release(t, running.GetId())
 	e.ended(t, running.GetId())
 	waitFor(t, "the warm worker back", func() bool { return e.h.WarmCount() == 1 })
 
@@ -253,6 +257,7 @@ func TestWarmWithinTheMachine(t *testing.T) {
 // TestWarmLeftovers: a djinn up that died leaves the worktree of a warm worker no task took; the next one removes
 // it, and only it.
 func TestWarmLeftovers(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	home := t.TempDir()
 	e := up(t, home)

@@ -18,6 +18,9 @@ import (
 // app from opening.
 const loginTimeout = 10 * time.Second
 
+// loginWaitDelay is how long a child of the profile may keep the output open once the shell is done. Tests shorten it.
+var loginWaitDelay = time.Second
+
 // pathMark marks the PATH in what a login shell prints: a profile may print more.
 const pathMark = "djinn-login-path="
 
@@ -82,7 +85,7 @@ func loginPath(ctx context.Context, shell string) (string, error) {
 	cmd := exec.CommandContext(ctx, shell, "-i", "-l", "-c", `printf '\n%s%s\n' "$1" "$PATH"`, "djinn", pathMark)
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	cmd.WaitDelay = time.Second // A child of the profile may keep the output open.
+	cmd.WaitDelay = loginWaitDelay
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("%s: %w", shell, err)
 	}

@@ -56,7 +56,7 @@ func (p switchProvider) play(env []string) {
 // claudePlaying makes claude workers play env, then what play gives.
 func claudePlaying(env []string) (map[planv1.Provider]Provider, switchProvider) {
 	sw := switchProvider{Provider: Claude{Command: os.Args[0]}, mu: &sync.Mutex{}, env: &env}
-	providers := Providers()
+	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = sw
 	return providers, sw
 }
@@ -97,6 +97,7 @@ var resetAt = time.Unix(1791436800, 0)
 // task does not fail, it waits for the reset the provider gave, and no other claude worker starts meanwhile. Once
 // the reset is past, the scheduler resumes it on its session, and it finishes.
 func TestSessionLimitWaitsThenResumes(t *testing.T) {
+	t.Parallel()
 	limit, _, _ := fake{provider: "claude", fixture: "session-limit"}.env(t)
 	success, args, _ := fake{provider: "claude", fixture: "success"}.env(t)
 	providers, sw := claudePlaying(limit)
@@ -170,6 +171,7 @@ func TestSessionLimitWaitsThenResumes(t *testing.T) {
 // TestSessionLimitBounded: a task the limit stops each time it resumes waits after a backoff once the reset it was
 // given is past (15 minutes, doubled each time), and after 3 resumes it fails, saying so.
 func TestSessionLimitBounded(t *testing.T) {
+	t.Parallel()
 	limit, _, _ := fake{provider: "claude", fixture: "session-limit"}.env(t)
 	providers, _ := claudePlaying(limit)
 	clock := &fakeClock{at: time.Date(2026, 10, 8, 4, 28, 30, 0, time.UTC)}
@@ -207,6 +209,7 @@ func TestSessionLimitBounded(t *testing.T) {
 // TestResumeRules: at the start, a task cut short resumes; one stopped by a person, one already resumed as another
 // task (a fork of it), one imported, never do; one resumed 3 times already fails.
 func TestResumeRules(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	wishID, projectID := e.wish(t, gitRepo(t))

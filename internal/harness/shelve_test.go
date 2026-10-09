@@ -13,6 +13,7 @@ import (
 // TestWishPauseStopsItsWorkers: pausing a wish stops its worker, and the task waits to resume with its wish; making
 // the wish active again starts the worker on its session, told why, without spending a resume.
 func TestWishPauseStopsItsWorkers(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(20*time.Millisecond))
 	wishID, _ := e.wish(t, gitRepo(t))
 	long := e.mustSpawn(t, wishID, "Long", ticks(), nil)
@@ -41,8 +42,11 @@ func TestWishPauseStopsItsWorkers(t *testing.T) {
 		t.Errorf("a pause spent a resume: %v", got)
 	}
 	all := func() string { return strings.Join(eventTexts(e.storedEvents(t, id)), "\n") }
-	waitFor(t, "the worker started again", func() bool { return strings.Contains(all(), "resumed "+byWish+": started fake") })
-	if !strings.Contains(all(), "resuming: "+whyWishPaused) || !strings.Contains(all(), wishLine) {
+	// The line that tells the worker why comes once it has started again.
+	waitFor(t, "the worker started again, and told why", func() bool {
+		return strings.Contains(all(), "resumed "+byWish+": started fake") && strings.Contains(all(), wishLine)
+	})
+	if !strings.Contains(all(), "resuming: "+whyWishPaused) {
 		t.Errorf("events:\n%s", all())
 	}
 	e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))

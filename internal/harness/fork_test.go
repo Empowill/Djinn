@@ -23,6 +23,7 @@ func connectCode(err error) connect.Code {
 
 // TestForkArguments: each agent is asked for a fork its own way, or refuses it.
 func TestForkArguments(t *testing.T) {
+	t.Parallel()
 	spec := Spec{TaskID: "t2", Dir: "/w", Resume: "s1", Fork: true}
 	args := strings.Join(Claude{}.args(spec), " ")
 	if !strings.HasSuffix(args, "--resume s1 --fork-session --session-id t2") {
@@ -40,6 +41,7 @@ func TestForkArguments(t *testing.T) {
 // TestSpawnFork: a task starts from a copy of another task's session, or of the lead's, with a session of its own;
 // the default stays a worker that starts from its prompt alone.
 func TestSpawnFork(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, nativeFolder(t))

@@ -122,6 +122,7 @@ func openRestored(t *testing.T, home string) *store.Store {
 }
 
 func TestRoundTrip(t *testing.T) {
+	t.Parallel()
 	for _, ext := range []string{".tar.gz", ".zip"} {
 		t.Run(ext, func(t *testing.T) {
 			ctx := context.Background()
@@ -198,6 +199,7 @@ func TestRoundTrip(t *testing.T) {
 // TestConsistentWhileWriting backs up while a writer commits wishes, each with its journal entry: every backup
 // holds as many entries as wishes.
 func TestConsistentWhileWriting(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	home, s := newHome(t)
 	var stop atomic.Bool
@@ -227,7 +229,7 @@ func TestConsistentWhileWriting(t *testing.T) {
 		},
 	}
 	var archives []string
-	for i := range 6 {
+	for i := range 4 { // Two of each kind.
 		for written.Load() < int64(10*(i+1)) {
 			time.Sleep(time.Millisecond)
 		}
@@ -261,6 +263,7 @@ func TestConsistentWhileWriting(t *testing.T) {
 }
 
 func TestRestoreRefusesARunningDjinn(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	src, s := newHome(t)
 	archive := filepath.Join(t.TempDir(), "backup.zip")
@@ -295,6 +298,7 @@ func TestRestoreRefusesARunningDjinn(t *testing.T) {
 }
 
 func TestRestoreKeepsTheOldFolderAside(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	src, s := newHome(t)
 	writeFile(t, src, "state.json", "new")
@@ -334,6 +338,7 @@ func TestRestoreKeepsTheOldFolderAside(t *testing.T) {
 }
 
 func TestRestoreRefusesForeignArchives(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	write := func(name string, files map[string]string) string {
@@ -381,6 +386,7 @@ func TestRestoreRefusesForeignArchives(t *testing.T) {
 }
 
 func TestService(t *testing.T) {
+	t.Parallel()
 	home, s := newHome(t)
 	writeFile(t, home, "state.json", "{}")
 	_, h := Handler(s, home, "test")

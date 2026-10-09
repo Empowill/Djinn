@@ -13,6 +13,7 @@ import (
 // TestDepend: a task's dependencies are set after it was made, by code; a cycle, a wait on itself or a task of
 // another wish is refused; none clears them; a planned task waits for its new dependencies.
 func TestDepend(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	// No slot: the planned tasks wait, for their dependencies first.
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))

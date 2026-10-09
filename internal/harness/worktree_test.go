@@ -9,6 +9,7 @@ import (
 )
 
 func TestBranchName(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct{ template, code, title, want string }{
 		{"", "W1", "Fix the login page", "w1-fix-the-login-page-89abcdef"},
 		{"", "W12", "Café's naïve façade — über piñata!", "w12-cafe-s-naive-facade-uber-pinata-89abcdef"},
@@ -55,6 +56,7 @@ func gitRepo(t *testing.T) string {
 }
 
 func TestWorktree(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	path := worktreeDir(t.TempDir(), "p1", "t1")
 	// The project is a folder inside the repository: the worker runs in the same folder of the worktree.
@@ -94,6 +96,7 @@ func TestWorktree(t *testing.T) {
 }
 
 func TestWorktreeDeletedByHand(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	path := worktreeDir(t.TempDir(), "p1", "t1")
 	if _, err := addWorktree(t.Context(), repo, path, "w1-t1"); err != nil {

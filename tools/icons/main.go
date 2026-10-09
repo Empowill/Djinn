@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // source is the drawing, relative to the root of the module.
@@ -213,6 +214,18 @@ func pngAt(img image.Image, size int) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// pngsAt encodes the drawing at each of sizes, side by side.
+func pngsAt(img image.Image, sizes []int) ([][]byte, error) {
+	out := make([][]byte, len(sizes))
+	errs := make([]error, len(sizes))
+	var wg sync.WaitGroup
+	for i, size := range sizes {
+		wg.Go(func() { out[i], errs[i] = pngAt(img, size) })
+	}
+	wg.Wait()
+	return out, errors.Join(errs...)
+}
+
 // scale shrinks img to size × size by averaging the area each pixel covers, in premultiplied colour: sharp at
 // every size, with no halo on the transparent corners.
 func scale(img image.Image, size int) *image.NRGBA {
@@ -220,6 +233,14 @@ func scale(img image.Image, size int) *image.NRGBA {
 	out := image.NewNRGBA(image.Rect(0, 0, size, size))
 	fx := float64(b.Dx()) / float64(size)
 	fy := float64(b.Dy()) / float64(size)
+	// The same premultiplied colour as At, without a value boxed per pixel: the drawing is large.
+	at := func(x, y int) (r, g, b, a uint32) { return img.At(x, y).RGBA() }
+	if fast, ok := img.(image.RGBA64Image); ok {
+		at = func(x, y int) (r, g, b, a uint32) {
+			c := fast.RGBA64At(x, y)
+			return uint32(c.R), uint32(c.G), uint32(c.B), uint32(c.A)
+		}
+	}
 	for y := 0; y < size; y++ {
 		y0, y1 := float64(y)*fy, float64(y+1)*fy
 		for x := 0; x < size; x++ {
@@ -229,7 +250,7 @@ func scale(img image.Image, size int) *image.NRGBA {
 				wy := min(y1, float64(sy+1)) - max(y0, float64(sy))
 				for sx := int(x0); float64(sx) < x1 && sx < b.Dx(); sx++ {
 					wx := min(x1, float64(sx+1)) - max(x0, float64(sx))
-					cr, cg, cb, ca := img.At(b.Min.X+sx, b.Min.Y+sy).RGBA() // premultiplied, 16 bits
+					cr, cg, cb, ca := at(b.Min.X+sx, b.Min.Y+sy) // premultiplied, 16 bits
 					k := wx * wy
 					r, g, bl, a, w = r+k*float64(cr), g+k*float64(cg), bl+k*float64(cb), a+k*float64(ca), w+k
 				}
@@ -249,11 +270,12 @@ func makeICO(img image.Image) ([]byte, error) {
 	var head, body bytes.Buffer
 	_ = binary.Write(&head, binary.LittleEndian, [3]uint16{0, 1, uint16(len(icoSizes))})
 	offset := 6 + 16*len(icoSizes)
-	for _, size := range icoSizes {
-		data, err := pngAt(img, size)
-		if err != nil {
-			return nil, err
-		}
+	pngs, err := pngsAt(img, icoSizes)
+	if err != nil {
+		return nil, err
+	}
+	for i, size := range icoSizes {
+		data := pngs[i]
 		side := uint8(size % 256) // 0 means 256
 		_ = binary.Write(&head, binary.LittleEndian, struct {
 			Width, Height, Colors, Reserved uint8
@@ -268,11 +290,16 @@ func makeICO(img image.Image) ([]byte, error) {
 // makeICNS writes a macOS icon whose entries are PNG images (macOS 10.7 and later).
 func makeICNS(img image.Image) ([]byte, error) {
 	var body bytes.Buffer
-	for _, t := range icnsTypes {
-		data, err := pngAt(img, t.size)
-		if err != nil {
-			return nil, err
-		}
+	sizes := make([]int, len(icnsTypes))
+	for i, t := range icnsTypes {
+		sizes[i] = t.size
+	}
+	pngs, err := pngsAt(img, sizes)
+	if err != nil {
+		return nil, err
+	}
+	for i, t := range icnsTypes {
+		data := pngs[i]
 		body.WriteString(t.kind)
 		_ = binary.Write(&body, binary.BigEndian, uint32(8+len(data)))
 		body.Write(data)
