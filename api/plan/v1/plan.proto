@@ -66,8 +66,8 @@ message Wish {
   // Djinn proposes to grant the wish: it has tasks, all finished, no question is open, and no task waits for an
   // answer or failed. Computed on every read, never stored. Only the user grants a wish.
   bool ready = 10;
-  // Kind of agent chosen when the wish was made: its lead runs it, and so does every task that names no other. Not
-  // set on a wish made before the choice: Claude.
+  // Kind of agent of the wish, chosen when it was made and changed by djinn wish set-provider: its lead runs it, and so
+  // does every task that names no other. Not set on a wish made before the choice: Claude.
   Provider provider = 11;
   // The lead's terminal runs a program in this djinn up, which djinn wish tell writes to. Set by the list of the
   // wishes, never stored.
@@ -731,6 +731,12 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.autostart) = true;
   }
+  // Change the wish's agent: its lead from now on, and every task to come that names no other; the tasks that run go
+  // on with theirs. The lead that runs is stopped, and a new one starts with the new agent from the wish's brief (djinn
+  // wish brief): its plan, questions and decisions. The old lead's conversation does not pass to the new agent.
+  rpc SetProvider(WishServiceSetProviderRequest) returns (WishServiceSetProviderResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
   // The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
   // what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
   // decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
@@ -1064,6 +1070,32 @@ message WishServiceResumeResponse {
   bool attached = 5;
   // What to know, when there is something: no session to resume, a terminal that runs something else.
   string note = 6;
+}
+
+message WishServiceSetProviderRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The new kind of agent: claude, codex or antigravity.
+  Provider provider = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum = {
+      in: [1, 3, 4]
+    }
+  ];
+}
+
+message WishServiceSetProviderResponse {
+  // The wish, with its new agent.
+  Wish wish = 1;
+  // Name of the lead's terminal in the window; empty when this server runs no terminal.
+  string terminal = 2;
+  // The command line the new lead runs, program first; empty when none started.
+  repeated string command = 3;
+  // What to know: the conversation not carried over, the old lead's session, how to start the new lead.
+  string note = 4;
 }
 
 message WishServiceBriefRequest {

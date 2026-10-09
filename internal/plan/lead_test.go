@@ -22,6 +22,7 @@ type fakeLeads struct {
 	opened  []string            // line of each program started
 	shown   []string            // wish/terminal of each show
 	told    []string            // terminal: text of each tell
+	stopped []string            // name of each terminal stopped while it ran
 	waiting bool                // what Tell says of the texts told
 	watch   func()              // what Watch was given
 	err     error
@@ -49,6 +50,14 @@ func (f *fakeLeads) Open(name, line, dir, exclusive string) ([]string, string, b
 func (f *fakeLeads) Show(wishID, terminal string) { f.shown = append(f.shown, wishID+"/"+terminal) }
 
 func (f *fakeLeads) Running(name string) bool { _, ok := f.running[name]; return ok }
+
+func (f *fakeLeads) Stop(name string) error {
+	if f.running[name] != nil {
+		f.stopped = append(f.stopped, name)
+	}
+	delete(f.running, name)
+	return nil
+}
 
 func (f *fakeLeads) Tell(name, text string) (bool, error) {
 	if !f.Running(name) {

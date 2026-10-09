@@ -82,6 +82,8 @@ const (
 	WishServiceSetLeadProcedure = "/plan.v1.WishService/SetLead"
 	// WishServiceResumeProcedure is the fully-qualified name of the WishService's Resume RPC.
 	WishServiceResumeProcedure = "/plan.v1.WishService/Resume"
+	// WishServiceSetProviderProcedure is the fully-qualified name of the WishService's SetProvider RPC.
+	WishServiceSetProviderProcedure = "/plan.v1.WishService/SetProvider"
 	// WishServiceBriefProcedure is the fully-qualified name of the WishService's Brief RPC.
 	WishServiceBriefProcedure = "/plan.v1.WishService/Brief"
 	// WishServiceTellProcedure is the fully-qualified name of the WishService's Tell RPC.
@@ -578,6 +580,10 @@ type WishServiceClient interface {
 	// to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
 	// (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
+	// Change the wish's agent: its lead from now on, and every task to come that names no other; the tasks that run go
+	// on with theirs. The lead that runs is stopped, and a new one starts with the new agent from the wish's brief (djinn
+	// wish brief): its plan, questions and decisions. The old lead's conversation does not pass to the new agent.
+	SetProvider(context.Context, *connect.Request[v1.WishServiceSetProviderRequest]) (*connect.Response[v1.WishServiceSetProviderResponse], error)
 	// The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
 	// what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
 	// decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
@@ -669,6 +675,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Resume")),
 			connect.WithClientOptions(opts...),
 		),
+		setProvider: connect.NewClient[v1.WishServiceSetProviderRequest, v1.WishServiceSetProviderResponse](
+			httpClient,
+			baseURL+WishServiceSetProviderProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("SetProvider")),
+			connect.WithClientOptions(opts...),
+		),
 		brief: connect.NewClient[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse](
 			httpClient,
 			baseURL+WishServiceBriefProcedure,
@@ -740,24 +752,25 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // wishServiceClient implements WishServiceClient.
 type wishServiceClient struct {
-	make       *connect.Client[v1.WishServiceMakeRequest, v1.WishServiceMakeResponse]
-	list       *connect.Client[v1.WishServiceListRequest, v1.WishServiceListResponse]
-	export     *connect.Client[v1.WishServiceExportRequest, v1.WishServiceExportResponse]
-	_import    *connect.Client[v1.WishServiceImportRequest, v1.WishServiceImportResponse]
-	importData *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
-	setLead    *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
-	resume     *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
-	brief      *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
-	tell       *connect.Client[v1.WishServiceTellRequest, v1.WishServiceTellResponse]
-	snapshot   *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
-	allow      *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
-	grant      *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
-	pause      *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
-	activate   *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
-	move       *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
-	render     *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
-	sync       *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
-	watch      *connect.Client[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse]
+	make        *connect.Client[v1.WishServiceMakeRequest, v1.WishServiceMakeResponse]
+	list        *connect.Client[v1.WishServiceListRequest, v1.WishServiceListResponse]
+	export      *connect.Client[v1.WishServiceExportRequest, v1.WishServiceExportResponse]
+	_import     *connect.Client[v1.WishServiceImportRequest, v1.WishServiceImportResponse]
+	importData  *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
+	setLead     *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
+	resume      *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
+	setProvider *connect.Client[v1.WishServiceSetProviderRequest, v1.WishServiceSetProviderResponse]
+	brief       *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
+	tell        *connect.Client[v1.WishServiceTellRequest, v1.WishServiceTellResponse]
+	snapshot    *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
+	allow       *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
+	grant       *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
+	pause       *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
+	activate    *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
+	move        *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
+	render      *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
+	sync        *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
+	watch       *connect.Client[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse]
 }
 
 // Make calls plan.v1.WishService.Make.
@@ -793,6 +806,11 @@ func (c *wishServiceClient) SetLead(ctx context.Context, req *connect.Request[v1
 // Resume calls plan.v1.WishService.Resume.
 func (c *wishServiceClient) Resume(ctx context.Context, req *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error) {
 	return c.resume.CallUnary(ctx, req)
+}
+
+// SetProvider calls plan.v1.WishService.SetProvider.
+func (c *wishServiceClient) SetProvider(ctx context.Context, req *connect.Request[v1.WishServiceSetProviderRequest]) (*connect.Response[v1.WishServiceSetProviderResponse], error) {
+	return c.setProvider.CallUnary(ctx, req)
 }
 
 // Brief calls plan.v1.WishService.Brief.
@@ -874,6 +892,10 @@ type WishServiceHandler interface {
 	// to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
 	// (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
+	// Change the wish's agent: its lead from now on, and every task to come that names no other; the tasks that run go
+	// on with theirs. The lead that runs is stopped, and a new one starts with the new agent from the wish's brief (djinn
+	// wish brief): its plan, questions and decisions. The old lead's conversation does not pass to the new agent.
+	SetProvider(context.Context, *connect.Request[v1.WishServiceSetProviderRequest]) (*connect.Response[v1.WishServiceSetProviderResponse], error)
 	// The brief of a wish: a short text to start an agent on it, written by Djinn from the store, no model. First
 	// what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
 	// decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
@@ -961,6 +983,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Resume")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceSetProviderHandler := connect.NewUnaryHandler(
+		WishServiceSetProviderProcedure,
+		svc.SetProvider,
+		connect.WithSchema(wishServiceMethods.ByName("SetProvider")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceBriefHandler := connect.NewUnaryHandler(
 		WishServiceBriefProcedure,
 		svc.Brief,
@@ -1043,6 +1071,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceSetLeadHandler.ServeHTTP(w, r)
 		case WishServiceResumeProcedure:
 			wishServiceResumeHandler.ServeHTTP(w, r)
+		case WishServiceSetProviderProcedure:
+			wishServiceSetProviderHandler.ServeHTTP(w, r)
 		case WishServiceBriefProcedure:
 			wishServiceBriefHandler.ServeHTTP(w, r)
 		case WishServiceTellProcedure:
@@ -1100,6 +1130,10 @@ func (UnimplementedWishServiceHandler) SetLead(context.Context, *connect.Request
 
 func (UnimplementedWishServiceHandler) Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Resume is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) SetProvider(context.Context, *connect.Request[v1.WishServiceSetProviderRequest]) (*connect.Response[v1.WishServiceSetProviderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.SetProvider is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {

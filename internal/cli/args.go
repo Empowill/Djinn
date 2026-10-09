@@ -282,12 +282,12 @@ func scalar(fd protoreflect.FieldDescriptor, s string) (protoreflect.Value, erro
 		}
 		return protoreflect.ValueOfBool(b), nil
 	case protoreflect.EnumKind:
-		for _, ev := range values(fd.Enum()) {
+		for _, ev := range values(fd) {
 			if strings.EqualFold(s, short(ev)) || strings.EqualFold(s, string(ev.Name())) {
 				return protoreflect.ValueOfEnum(ev.Number()), nil
 			}
 		}
-		for _, ev := range values(fd.Enum()) {
+		for _, ev := range values(fd) {
 			if key, ok := words[short(ev)]; ok && locales.Means(s, key) {
 				return protoreflect.ValueOfEnum(ev.Number()), nil
 			}
@@ -368,7 +368,7 @@ func expect(fd protoreflect.FieldDescriptor) string {
 	switch fd.Kind() {
 	case protoreflect.EnumKind:
 		var names []string
-		for _, ev := range values(fd.Enum()) {
+		for _, ev := range values(fd) {
 			names = append(names, short(ev))
 		}
 		return "one of " + strings.Join(names, ", ")
@@ -389,13 +389,17 @@ func expect(fd protoreflect.FieldDescriptor) string {
 // words are the enum values a person may also type in their own language, by their key in locales/: yes and no.
 var words = map[string]string{"yes": "answer.yes", "no": "answer.no"}
 
-// values are the values of an enum a user can type: all but the zero one.
-func values(ed protoreflect.EnumDescriptor) []protoreflect.EnumValueDescriptor {
+// values are the values of an enum field a user can type: all but the zero one, within its rules (in, not_in).
+func values(fd protoreflect.FieldDescriptor) []protoreflect.EnumValueDescriptor {
+	ed, r := fd.Enum(), rules(fd).GetEnum()
 	var out []protoreflect.EnumValueDescriptor
 	for i := range ed.Values().Len() {
-		if ev := ed.Values().Get(i); ev.Number() != 0 {
-			out = append(out, ev)
+		ev := ed.Values().Get(i)
+		n := int32(ev.Number())
+		if n == 0 || len(r.GetIn()) > 0 && !slices.Contains(r.GetIn(), n) || slices.Contains(r.GetNotIn(), n) {
+			continue
 		}
+		out = append(out, ev)
 	}
 	return out
 }

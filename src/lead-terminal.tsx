@@ -150,6 +150,8 @@ function LeadTerminal({
         if (!focus.terminal) return;
         ended.current = undefined;
         setName(focus.terminal);
+        // Attach again even under the same name: a new lead may run there now, its program a new one.
+        setGeneration((g) => g + 1);
         setCollapsed(false);
       }),
     [djinn],

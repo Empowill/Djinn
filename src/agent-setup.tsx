@@ -100,6 +100,11 @@ const agentStates: Record<
   },
 };
 
+// agentStateText names where an agent stands: ready, not installed, not signed in.
+export function agentStateText(agent: AgentEnvironment): string {
+  return t(agentStates[agent.state].label);
+}
+
 // A step that runs: an agent's install or sign-in command, in the panel's terminal.
 interface Step {
   agentId: string;

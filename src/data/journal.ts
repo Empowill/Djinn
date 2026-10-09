@@ -7,9 +7,11 @@ import { type Timestamp, anyUnpack } from "@bufbuild/protobuf/wkt";
 import {
   type Block,
   type Command,
+  type Provider,
   type WishExport,
   file_plan_v1_plan,
 } from "../../gen/ts/plan/v1/plan_pb";
+import { providerName } from "../provider";
 
 // The kind of the blocks that tell the story of the wish: they go to the journal, not to the notes.
 export const LOG_KIND = "log";
@@ -84,6 +86,8 @@ function summary(command: Command, exp: WishExport): string {
     }
     case "plan.v1.WishServiceMoveRequest":
       return String(r.to ?? "");
+    case "plan.v1.WishServiceSetProviderRequest":
+      return providerName(Number(r.provider) as Provider);
   }
   if (typeof r.taskId === "string") return task(r.taskId);
   return "";

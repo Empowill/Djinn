@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -252,6 +253,106 @@ func TestResumeFromBrief(t *testing.T) {
 		WishId: make("Fake lead"), Provider: planv1.Provider_PROVIDER_FAKE,
 	})); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("a fake lead: %v, want invalid_argument", err)
+	}
+}
+
+func TestSetProvider(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the lines are checked for the shells of Unix")
+	}
+	ctx := t.Context()
+	home := t.TempDir()
+	c, leads := serveLeads(t, home)
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Switch agents", ProjectIds: []string{project.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := made.Msg.GetWish().GetId()
+	terminal := LeadTerminal(id)
+	set := func(p planv1.Provider) *planv1.WishServiceSetProviderResponse {
+		t.Helper()
+		res, err := c.wishes.SetProvider(ctx, connect.NewRequest(&planv1.WishServiceSetProviderRequest{WishId: id, Provider: p}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	// A claude lead runs, on a session Djinn chose.
+	started, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := started.Msg.GetWish().GetLead().GetSessionId()
+
+	// To codex: the claude lead stops, a codex lead starts from the brief, which says it takes over; the claude
+	// session is set aside, and named.
+	res := set(planv1.Provider_PROVIDER_CODEX)
+	got := leads.opened[len(leads.opened)-1]
+	if res.GetWish().GetProvider() != planv1.Provider_PROVIDER_CODEX || res.GetWish().GetLead() != nil ||
+		!slices.Equal(leads.stopped, []string{terminal}) || len(leads.opened) != 2 ||
+		!strings.HasPrefix(got, "codex '# Leading a wish") || !strings.Contains(got, "- Agent: codex, since ") ||
+		!strings.Contains(got, "whose conversation did not pass to you") || res.GetTerminal() != terminal ||
+		!strings.HasPrefix(strings.Join(res.GetCommand(), " "), "/bin/sh -c codex ") {
+		t.Errorf("set codex = %v; stopped %q, opened %q", res, leads.stopped, got)
+	}
+	if !strings.Contains(res.GetNote(), "does not pass") || !strings.Contains(res.GetNote(), "claude --resume "+old) {
+		t.Errorf("note = %q", res.GetNote())
+	}
+	// The same agent again: nothing stops, nothing starts.
+	if res = set(planv1.Provider_PROVIDER_CODEX); !strings.Contains(res.GetNote(), "already") || len(leads.stopped) != 1 ||
+		len(leads.opened) != 2 {
+		t.Errorf("set codex again = %v; stopped %q", res, leads.stopped)
+	}
+	snap, err := c.wishes.Snapshot(ctx, connect.NewRequest(&planv1.WishServiceSnapshotRequest{WishId: id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := 0
+	for _, cmd := range snap.Msg.GetExport().GetCommands() {
+		if cmd.GetMethod() == planv1connect.WishServiceSetProviderProcedure {
+			changes++
+		}
+	}
+	if changes != 1 {
+		t.Errorf("%d changes of agent journaled, want 1: the same agent again changes nothing", changes)
+	}
+	// A claude session recorded meanwhile (djinn wish set-lead) is the new agent's: back to claude resumes it.
+	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{
+		WishId: id, SessionId: session, Provider: planv1.Provider_PROVIDER_CLAUDE,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if res = set(planv1.Provider_PROVIDER_CLAUDE); res.GetWish().GetLead().GetSessionId() != session ||
+		!strings.HasPrefix(leads.opened[len(leads.opened)-1], "claude --resume "+session) || len(leads.stopped) != 2 {
+		t.Errorf("set claude = %v; opened %q", res, leads.opened)
+	}
+	// Only an agent that can lead.
+	for _, p := range []planv1.Provider{planv1.Provider_PROVIDER_UNSPECIFIED, planv1.Provider_PROVIDER_FAKE} {
+		if _, err := c.wishes.SetProvider(ctx, connect.NewRequest(&planv1.WishServiceSetProviderRequest{
+			WishId: id, Provider: p,
+		})); code(err) != connect.CodeInvalidArgument {
+			t.Errorf("set %s: %v, want invalid_argument", p, err)
+		}
+	}
+
+	// Without terminals, the wish changes, and the next resume starts the new lead.
+	bare := serve(t)
+	w, err := bare.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "No terminal"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := bare.wishes.SetProvider(ctx, connect.NewRequest(&planv1.WishServiceSetProviderRequest{
+		WishId: w.Msg.GetWish().GetId(), Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}))
+	if err != nil || r.Msg.GetWish().GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY ||
+		!strings.Contains(r.Msg.GetNote(), "djinn wish resume") || r.Msg.GetTerminal() != "" {
+		t.Errorf("set without terminals = %v, %v", r, err)
 	}
 }
 

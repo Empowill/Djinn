@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -173,8 +174,16 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 		b.WriteString("- Projects: " + strings.Join(names, ", ") + ".\n")
 	}
-	fmt.Fprintf(&b, "- Agent: %s, chosen with the wish. You run it, and so does every task you spawn without "+
-		"`--provider`; give `--provider` for a task that needs another.\n", providerName(WishProvider(wish)))
+	how := "chosen with the wish"
+	for _, c := range exp.GetCommands() {
+		if c.GetMethod() == planv1connect.WishServiceSetProviderProcedure {
+			how = "since " + when(c.GetAt().AsTime()) + ", when the developer changed the wish's agent: you take over " +
+				"from a lead of another agent whose conversation did not pass to you. This brief, the blocks and the " +
+				"tasks' results hold the thread"
+		}
+	}
+	fmt.Fprintf(&b, "- Agent: %s, %s. You run it, and so does every task you spawn without "+
+		"`--provider`; give `--provider` for a task that needs another.\n", providerName(WishProvider(wish)), how)
 	if ready {
 		b.WriteString("- Djinn proposes to grant it: every task is finished and no question is open. Granting is the developer's word.\n")
 	}

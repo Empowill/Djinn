@@ -131,7 +131,7 @@ func valueSchema(fd protoreflect.FieldDescriptor) map[string]any {
 	switch fd.Kind() {
 	case protoreflect.EnumKind:
 		var names []string
-		for _, ev := range values(fd.Enum()) {
+		for _, ev := range values(fd) {
 			names = append(names, short(ev))
 		}
 		return map[string]any{"type": "string", "enum": names}

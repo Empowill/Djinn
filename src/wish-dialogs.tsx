@@ -3,9 +3,20 @@
 import { ArrowRight, FolderOpen } from "lucide-react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 
-import { type Project, Provider, type Skill } from "../gen/ts/plan/v1/plan_pb";
+import {
+  type Project,
+  Provider,
+  type Skill,
+  type Wish,
+} from "../gen/ts/plan/v1/plan_pb";
 import { NotificationAccess, ProviderState } from "../gen/ts/ui/v1/ui_pb";
-import { AgentSetupPanel, agentOf, needsSetup, useAgents } from "./agent-setup";
+import {
+  AgentSetupPanel,
+  agentOf,
+  agentStateText,
+  needsSetup,
+  useAgents,
+} from "./agent-setup";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
 import { MAX_ACTIVE } from "./data/format";
@@ -18,7 +29,12 @@ import {
   systemLanguage,
   t,
 } from "./i18n";
-import { defaultProvider, setDefaultProvider, wishProviders } from "./provider";
+import {
+  defaultProvider,
+  providerName,
+  setDefaultProvider,
+  wishProviders,
+} from "./provider";
 import { type Theme, chosenTheme, setTheme } from "./theme";
 
 // MakeWish makes a wish (WishService.Make): a sentence and the projects it works on. With three wishes active, it
@@ -167,6 +183,102 @@ export function MakeWish({
             disabled={busy || !title.trim()}
           >
             {full ? t("make.submit_paused") : t("make.submit")}
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </form>
+    </ModalFrame>
+  );
+}
+
+// ChangeProvider changes the agent of a wish (WishService.SetProvider): the lead that runs stops, and one of the new
+// agent starts from the wish's brief. The conversation of the old lead cannot follow: the dialog says so before.
+export function ChangeProvider({
+  wish,
+  onChanged,
+  onClose,
+}: {
+  wish: Wish;
+  onChanged: (provider: Provider) => void;
+  onClose: () => void;
+}) {
+  const clients = useClients();
+  const current =
+    wish.provider === Provider.UNSPECIFIED ? Provider.CLAUDE : wish.provider;
+  const [provider, setProvider] = useState<Provider>(current);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const agents = useAgents();
+  const agentFor = (p: Provider) =>
+    agents.env?.providers.find((a) => a.id === agentOf[p]);
+  const agent = agentFor(provider);
+  const name = providerName(provider);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await clients.wishes.setProvider({ wishId: wish.id, provider });
+      onChanged(provider);
+    } catch (err) {
+      setError(message(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <ModalFrame
+      title={t("provider.title")}
+      eyebrow={wish.title}
+      onClose={onClose}
+    >
+      <form className="form-fields" onSubmit={(e) => void submit(e)}>
+        <label>
+          <span>{t("make.provider")}</span>
+          <select
+            autoFocus
+            value={provider}
+            onChange={(e) => setProvider(Number(e.target.value) as Provider)}
+          >
+            {wishProviders.map((p) => {
+              const env = agentFor(p.provider);
+              return (
+                <option key={p.provider} value={p.provider}>
+                  {env ? `${p.name} · ${agentStateText(env)}` : p.name}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+        {agents.checking && !agents.env && (
+          <p className="form-tip">{t("settings.agent_checking")}</p>
+        )}
+        {agent && needsSetup(agent) && (
+          <div className="agent-warning" role="status">
+            <span>
+              {agent.state === ProviderState.MISSING
+                ? t("agents.make_missing", { agent: agent.name })
+                : t("agents.make_signed_out", { agent: agent.name })}
+            </span>
+          </div>
+        )}
+        {provider !== current && (
+          <>
+            <p className="form-tip">
+              {t("provider.handover", { agent: name })}
+            </p>
+            <p className="form-tip">{t("provider.tasks", { agent: name })}</p>
+          </>
+        )}
+        {error && <p className="login-message">{error}</p>}
+        <div className="modal-footer">
+          <button type="button" className="button secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="submit"
+            className="button accent"
+            disabled={busy || provider === current}
+          >
+            {t("provider.submit", { agent: name })}
             <ArrowRight size={14} />
           </button>
         </div>

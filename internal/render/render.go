@@ -780,6 +780,8 @@ func summary(
 			projects[m.GetProjectId()])
 	case *planv1.WishServiceMoveRequest:
 		return fmt.Sprint(m.GetTo())
+	case *planv1.WishServiceSetProviderRequest:
+		return strings.ToLower(strings.TrimPrefix(m.GetProvider().String(), "PROVIDER_"))
 	case interface{ GetTaskId() string }:
 		return taskCode(m.GetTaskId())
 	}
