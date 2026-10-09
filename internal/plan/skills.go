@@ -233,16 +233,16 @@ func (k *Skills) List(
 	res := &planv1.SkillServiceListResponse{}
 	for _, p := range projects {
 		for _, s := range ProjectSkills(p.GetDirectory()) {
-			res.Skills = append(res.Skills, &planv1.Skill{
+			res.Skills = append(res.Skills, withTemplate(&planv1.Skill{
 				Project: p.GetName(), Name: s.Name, Directory: s.Dir, Description: s.Description,
-			})
+			}))
 		}
 		summoned, err := SummonedSkills(ctx, k.Store, p)
 		if err != nil {
 			return nil, Status(err)
 		}
 		for _, s := range summoned {
-			res.Skills = append(res.Skills, summonedSkill(p, s))
+			res.Skills = append(res.Skills, withTemplate(summonedSkill(p, s)))
 		}
 	}
 	return connect.NewResponse(res), nil
@@ -298,4 +298,19 @@ func ProjectNamed(ctx context.Context, r store.Reader, name string) (*planv1.Pro
 		}
 	}
 	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s: djinn project list shows them, %w", name, store.ErrNotFound))
+}
+
+// withTemplate adds to skill the title of its wish template, or why it cannot be used.
+func withTemplate(skill *planv1.Skill) *planv1.Skill {
+	if skill.GetDirectory() == "" || skill.GetMissing() != "" {
+		return skill
+	}
+	t, err := ReadTemplate(skill.GetDirectory())
+	switch {
+	case err != nil:
+		skill.TemplateError = err.Error()
+	case t != nil:
+		skill.Template = t.Title
+	}
+	return skill
 }

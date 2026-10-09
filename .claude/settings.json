@@ -15,7 +15,9 @@
       "Bash(git diff *)",
       "PowerShell(git diff *)",
       "Bash(git log *)",
-      "PowerShell(git log *)"
+      "PowerShell(git log *)",
+      "Bash(sh .agents/skills/babysit-pr/watch.sh *)",
+      "PowerShell(sh .agents/skills/babysit-pr/watch.sh *)"
     ],
     "defaultMode": "auto",
     "deny": [

@@ -66,6 +66,26 @@ message Wish {
   // Djinn proposes to grant the wish: it has tasks, all finished, no question is open, and no task waits for an
   // answer or failed. Computed on every read, never stored. Only the user grants a wish.
   bool ready = 10;
+  // The skill the wish was made from, when a request matched its wish template; unset otherwise.
+  WishTemplate template = 11;
+}
+
+// WishTemplate is the skill a wish was made from: a request matched the wish template its SKILL.md declares, under
+// metadata.djinn.wish. Djinn started the template's watcher, and the wish's lead starts with the skill. When the
+// watcher prints its done line, Djinn asks whether to grant the wish; only the answer grants it.
+message WishTemplate {
+  // The skill's name: its folder's name.
+  string skill = 1;
+  // The project that holds the skill, or summons it; the watcher runs in its folder.
+  string project_id = 2;
+  // The watcher's command line, its placeholders filled from the request; empty without a watcher.
+  string watch = 3;
+  // A line of the watcher that means the work is done ("MERGED"): a line that is it, or starts with it before a
+  // space or a sign. Empty: no line offers to grant the wish.
+  string done_when = 4;
+  // The watcher's command starts again after each exit, for a command that exits on each change; its done line
+  // ends it.
+  bool restart = 5;
 }
 
 // WishState is where a wish stands. A djinn grants three wishes at a time, never more: three are active at most.
@@ -182,6 +202,10 @@ enum Provider {
   PROVIDER_CODEX = 3;
   // Antigravity, Google's agy command, in headless stream-json mode.
   PROVIDER_ANTIGRAVITY = 4;
+  // A watcher: no agent and no model, the prompt is a command line Djinn runs in the project's folder. Each
+  // paragraph it prints (output, then a pause or its exit) is an event, and its first line is told to the wish's
+  // lead. It takes no slot of the machine.
+  PROVIDER_WATCH = 5;
 }
 
 // Usage is what a worker spent, as its provider reports it.
@@ -267,6 +291,11 @@ message Task {
   google.protobuf.Timestamp resume_after = 27;
   // How many times Djinn resumed the task by itself. At 3, a task cut short again fails instead.
   int32 resumes = 28;
+  // A watcher's command starts again after each exit, until the task is stopped (djinn task spawn --restart).
+  bool restart = 29;
+  // The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an
+  // agent.
+  string last_line = 30;
 }
 
 // TaskEventKind says what a worker event is. Its content stays free text.
@@ -370,6 +399,59 @@ message Question {
   repeated Round rounds = 11;
   // How many times the lead revised it.
   int32 revision = 12;
+  // Where a request may go, when djinn wish route --ask asked this question: each option is a destination, in the
+  // same order. Answering it files the request, or makes the new wish and starts its lead.
+  Route route = 13;
+  // Djinn asked it when the watcher of the wish's template printed its done line: answering A grants the wish, B
+  // keeps it open. Djinn never grants a wish itself.
+  bool grant = 14;
+}
+
+// Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
+// into a new one. Djinn computes it without a model, from the wishes' titles, their projects and their latest
+// blocks.
+message Route {
+  // The request, as it was said.
+  string request = 1;
+  // The wish the request came to; it is never proposed.
+  string from_wish_id = 2;
+  // The destinations, the recommended one first.
+  repeated RouteOption options = 3;
+}
+
+// RouteKind is what a destination of a request does.
+enum RouteKind {
+  // Not set.
+  ROUTE_KIND_UNSPECIFIED = 0;
+  // File the request in an existing wish, as a block, and tell its lead.
+  ROUTE_KIND_FILE = 1;
+  // Make a new wish, active, and start its lead on the request.
+  ROUTE_KIND_NEW = 2;
+  // Make a new wish paused: it waits for a place, three wishes being active.
+  ROUTE_KIND_QUEUE = 3;
+  // Pause an active wish to make room, then make the new wish and start its lead on the request.
+  ROUTE_KIND_SWAP = 4;
+}
+
+// RouteOption is one destination of a request.
+message RouteOption {
+  // What it does.
+  RouteKind kind = 1;
+  // The wish to file the request in; empty for a new wish.
+  string wish_id = 2;
+  // The title of that wish, or the title proposed for the new one.
+  string title = 3;
+  // The projects of the new wish.
+  repeated string project_ids = 4;
+  // The active wish paused to make room, for a swap.
+  string pause_wish_id = 5;
+  // How close the wish is to the request: higher is closer. 0 for a new wish.
+  int32 score = 6;
+  // Why, in a few words.
+  string reason = 7;
+  // The skill whose wish template the request matched, for a new wish: its title comes from it, its watcher starts
+  // with it, and its lead starts with the skill.
+  WishTemplate template = 8;
 }
 
 // A round of a question before it is decided: a request to investigate, or the lead's revision.
@@ -652,6 +734,11 @@ message Skill {
   string description = 5;
   // Why a summoned skill cannot be found; empty when it is.
   string missing = 6;
+  // The title of the wish template its SKILL.md declares (metadata.djinn.wish), placeholders and all; empty without
+  // one.
+  string template = 7;
+  // Why its wish template cannot be used; empty when it can, or without one.
+  string template_error = 8;
 }
 
 message SkillServiceSummonRequest {
@@ -802,12 +889,50 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Find the wish a request belongs to, without a model. Djinn ranks the wishes by the words of their titles, the
+  // projects the request names or links to (a GitLab or GitHub link whose repository is a project's remote), and
+  // their latest blocks. It proposes to file the request in the closest ones, or to open a new wish with a title
+  // and a project. A request that matches the wish template of a skill in those projects (metadata.djinn.wish in
+  // its SKILL.md) proposes the template's wish: its title, its watcher, its lead started with the skill. With
+  // --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
+  // and starts its watcher and its lead in its own terminal.
+  rpc Route(WishServiceRouteRequest) returns (WishServiceRouteResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
   // itself: the first message names everything, then each change follows; changes close together come as one. A
   // task's events come from TaskService.Watch.
   rpc Watch(WishServiceWatchRequest) returns (stream WishServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
+}
+
+message WishServiceRouteRequest {
+  // The request, as it was said.
+  string request = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 4000
+  ];
+  // The wish the request came to: the lead's own. It is not proposed, and --ask asks there.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Ask the proposal as a question on the wish --wish-id, the recommended destination first.
+  bool ask = 3;
+  // The title of a new wish; by default Djinn makes one from the request.
+  string title = 4 [(buf.validate.field).string.max_len = 500];
+  // The project of a new wish; repeat for each one. By default the projects the request names or links to, else
+  // those of the wish --wish-id.
+  repeated string project_ids = 5 [(buf.validate.field).repeated.items.string.uuid = true];
+}
+
+message WishServiceRouteResponse {
+  // The proposal.
+  Route route = 1;
+  // With --ask, the question asked.
+  Question question = 2;
 }
 
 message WishServiceWatchRequest {
@@ -1475,6 +1600,8 @@ message TaskServiceSpawnRequest {
   string fork = 11 [(buf.validate.field).string.max_len = 64];
   // Start the worker from a copy of the lead's conversation, as --fork does from a task.
   bool from_lead = 12;
+  // For a watcher (--provider watch): start its command again after each exit, until the task is stopped.
+  bool restart = 13;
 }
 
 message TaskServiceSpawnResponse {

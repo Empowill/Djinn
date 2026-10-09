@@ -2,7 +2,8 @@
 
 A provider is the agent a task's worker runs: Claude Code, Codex, Antigravity, or the fake one. Each lives in
 `internal/harness/` (`claude.go`, `codex.go`, `agy.go`, `fake.go`) and turns what its agent says into the same
-task events: `STATUS`, `TEXT`, `TOOL_CALL`, `TOOL_RESULT`, `USAGE`, `ERROR`, `LOG`, `OTHER`.
+task events: `STATUS`, `TEXT`, `TOOL_CALL`, `TOOL_RESULT`, `USAGE`, `ERROR`, `LOG`, `OTHER`. A
+[watcher](#watch-a-command-no-agent) (`watch.go`) runs a command instead of an agent.
 
 > **The rule of this file.** Every real case met while trying a provider with a real model becomes a fixture in
 > `internal/harness/testdata/<provider>/` and a row of that provider's table below, with the test that replays
@@ -234,6 +235,44 @@ The limits Djinn recognizes, in the failure a worker ends with (`internal/harnes
 `rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your
 session limit · resets …" or "Claude AI usage limit reached|<time>"; Codex's `usageLimitExceeded`; agy's
 `RESOURCE_EXHAUSTED` (supposed); a rate limit or HTTP 429 from any of them.
+
+## Watch: a command, no agent
+
+`djinn task spawn <wish> "Watch !41" --provider watch --prompt "mrwatch -watch 41" --restart` runs the command
+in the project's folder: no agent, no model, no token. Each paragraph it prints (output, then a second of silence,
+or its exit; 200 lines at most) is a `TEXT` event, its raw line kept with its colours, and its first line wakes the
+wish's lead, typed in the lead's terminal as an answer is:
+
+```
+Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watching.
+```
+
+- **Its loop.** With `--restart`, the command starts again after each exit, until the task is stopped: a command
+  that exits on each change (`mrwatch -watch`) becomes a lasting watcher. It starts again at once after exit 0 (a
+  second apart at least), after a failure one second later, doubling up to a minute. Without `--restart`, the task
+  ends with the command: done on exit 0, failed otherwise, and the lead reads "… has ended" (or "Djinn: W70's
+  watcher: <command> has ended.", when its last paragraph came before its exit).
+- **What the lead is told.** The first line of each paragraph, without colours nor control characters, 200
+  characters at most. A paragraph that says again what the last one said is recorded, and wakes no one; nor does
+  the last one of a watcher stopped on request. A wish without a lead keeps the paragraphs in the task's events.
+  The task keeps the last first line (`last_line`), which the window shows under the task.
+- **No slot.** A watcher sleeps until its command prints: it takes no worker slot, does not count as running for
+  the machine, starts under pressure, and holds no write scope. Its wish and its dependencies still hold it.
+- **No shell.** The command line is split into words: quotes group them, a backslash keeps a quote, a backslash or
+  a space; a pipe or a `&&` is only a word. Run `sh -c "…"` for a shell, where the project allows it.
+- **What it may run.** A watcher needs a project. Where the project lists its commands
+  (`.agents/permissions.txtpb`), the command must be one of them, and not denied: a watcher has no reviewer to
+  approve it. A folder outside Git without agent configuration runs no watcher.
+- **Resumed.** A watcher `djinn up` cut short starts again at the next start, on its command, in its project's
+  folder, however many times (the limit of 3 resumes is for agents). It reads no message (`djinn task send`
+  refuses); `djinn task pause` holds its command still, and the next run waits.
+
+A skill's [wish template](wish-templates.md) starts a watcher with the wish it makes; its done line ends a watcher
+that restarts, done, and asks whether to grant the wish.
+
+Tests: `TestWatchParagraphs`, `TestWatcher` (no slot, the restart loop, the line to the lead, pause),
+`TestWatcherEnds`, `TestWatcherResumes`, `TestWatcherPermissions` (`watch_test.go`, the test binary plays the
+command), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
 
 ## Claude
 

@@ -755,7 +755,8 @@
           "PROVIDER_CLAUDE",
           "PROVIDER_FAKE",
           "PROVIDER_CODEX",
-          "PROVIDER_ANTIGRAVITY"
+          "PROVIDER_ANTIGRAVITY",
+          "PROVIDER_WATCH"
         ],
         "type": "string"
       },
@@ -777,6 +778,10 @@
           "createTime": {
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
             "description": "When the question was asked."
+          },
+          "grant": {
+            "description": "Djinn asked it when the watcher of the wish's template printed its done line: answering A grants the wish, B keeps it open. Djinn never grants a wish itself.",
+            "type": "boolean"
           },
           "id": {
             "description": "Identifier, a UUIDv7.",
@@ -812,6 +817,10 @@
               "$ref": "#/components/schemas/plan.v1.Round"
             },
             "type": "array"
+          },
+          "route": {
+            "$ref": "#/components/schemas/plan.v1.Route",
+            "description": "Where a request may go, when djinn wish route --ask asked this question: each option is a destination, in the same order. Answering it files the request, or makes the new wish and starts its lead."
           },
           "text": {
             "description": "The question itself.",
@@ -1073,6 +1082,80 @@
         ],
         "type": "string"
       },
+      "plan.v1.Route": {
+        "description": "Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or into a new one. Djinn computes it without a model, from the wishes' titles, their projects and their latest blocks.",
+        "properties": {
+          "fromWishId": {
+            "description": "The wish the request came to; it is never proposed.",
+            "type": "string"
+          },
+          "options": {
+            "description": "The destinations, the recommended one first.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.RouteOption"
+            },
+            "type": "array"
+          },
+          "request": {
+            "description": "The request, as it was said.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.RouteKind": {
+        "description": "RouteKind is what a destination of a request does.",
+        "enum": [
+          "ROUTE_KIND_UNSPECIFIED",
+          "ROUTE_KIND_FILE",
+          "ROUTE_KIND_NEW",
+          "ROUTE_KIND_QUEUE",
+          "ROUTE_KIND_SWAP"
+        ],
+        "type": "string"
+      },
+      "plan.v1.RouteOption": {
+        "description": "RouteOption is one destination of a request.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/plan.v1.RouteKind",
+            "description": "What it does."
+          },
+          "pauseWishId": {
+            "description": "The active wish paused to make room, for a swap.",
+            "type": "string"
+          },
+          "projectIds": {
+            "description": "The projects of the new wish.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "description": "Why, in a few words.",
+            "type": "string"
+          },
+          "score": {
+            "description": "How close the wish is to the request: higher is closer. 0 for a new wish.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "template": {
+            "$ref": "#/components/schemas/plan.v1.WishTemplate",
+            "description": "The skill whose wish template the request matched, for a new wish: its title comes from it, its watcher starts with it, and its lead starts with the skill."
+          },
+          "title": {
+            "description": "The title of that wish, or the title proposed for the new one.",
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish to file the request in; empty for a new wish.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.Skill": {
         "description": "A skill as a project sees it: its own, or summoned from another project.",
         "properties": {
@@ -1098,6 +1181,14 @@
           },
           "source": {
             "description": "Where a summoned skill comes from, as <project>/<skill>; empty for the project's own.",
+            "type": "string"
+          },
+          "template": {
+            "description": "The title of the wish template its SKILL.md declares (metadata.djinn.wish), placeholders and all; empty without one.",
+            "type": "string"
+          },
+          "templateError": {
+            "description": "Why its wish template cannot be used; empty when it can, or without one.",
             "type": "string"
           }
         },
@@ -1257,6 +1348,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "lastLine": {
+            "description": "The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an agent.",
+            "type": "string"
+          },
           "maxBudgetUsd": {
             "description": "Most the task may spend, in US dollars, over all its runs; 0 for no cap.",
             "type": "number"
@@ -1272,6 +1367,10 @@
           "provider": {
             "$ref": "#/components/schemas/plan.v1.Provider",
             "description": "Kind of agent that works on the task."
+          },
+          "restart": {
+            "description": "A watcher's command starts again after each exit, until the task is stopped (djinn task spawn --restart).",
+            "type": "boolean"
           },
           "resumeAfter": {
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
@@ -1620,6 +1719,10 @@
             "$ref": "#/components/schemas/plan.v1.Provider",
             "description": "Kind of agent; by default claude."
           },
+          "restart": {
+            "description": "For a watcher (--provider watch): start its command again after each exit, until the task is stopped.",
+            "type": "boolean"
+          },
           "title": {
             "description": "What the task does, in a sentence.",
             "maxLength": 500,
@@ -1780,6 +1883,10 @@
           "state": {
             "$ref": "#/components/schemas/plan.v1.WishState",
             "description": "Where the wish stands: active, paused or granted. Three wishes are active at most."
+          },
+          "template": {
+            "$ref": "#/components/schemas/plan.v1.WishTemplate",
+            "description": "The skill the wish was made from, when a request matched its wish template; unset otherwise."
           },
           "title": {
             "description": "What is wished, in a sentence.",
@@ -2142,6 +2249,53 @@
         },
         "type": "object"
       },
+      "plan.v1.WishServiceRouteRequest": {
+        "properties": {
+          "ask": {
+            "description": "Ask the proposal as a question on the wish --wish-id, the recommended destination first.",
+            "type": "boolean"
+          },
+          "projectIds": {
+            "description": "The project of a new wish; repeat for each one. By default the projects the request names or links to, else those of the wish --wish-id.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "request": {
+            "description": "The request, as it was said.",
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "title": {
+            "description": "The title of a new wish; by default Djinn makes one from the request.",
+            "maxLength": 500,
+            "type": "string"
+          },
+          "wishId": {
+            "description": "The wish the request came to: the lead's own. It is not proposed, and --ask asks there.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceRouteResponse": {
+        "properties": {
+          "question": {
+            "$ref": "#/components/schemas/plan.v1.Question",
+            "description": "With --ask, the question asked."
+          },
+          "route": {
+            "$ref": "#/components/schemas/plan.v1.Route",
+            "description": "The proposal."
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.WishServiceSetLeadRequest": {
         "properties": {
           "directory": {
@@ -2210,6 +2364,32 @@
           "WISH_STATE_GRANTED"
         ],
         "type": "string"
+      },
+      "plan.v1.WishTemplate": {
+        "description": "WishTemplate is the skill a wish was made from: a request matched the wish template its SKILL.md declares, under metadata.djinn.wish. Djinn started the template's watcher, and the wish's lead starts with the skill. When the watcher prints its done line, Djinn asks whether to grant the wish; only the answer grants it.",
+        "properties": {
+          "doneWhen": {
+            "description": "A line of the watcher that means the work is done (\"MERGED\"): a line that is it, or starts with it before a space or a sign. Empty: no line offers to grant the wish.",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "The project that holds the skill, or summons it; the watcher runs in its folder.",
+            "type": "string"
+          },
+          "restart": {
+            "description": "The watcher's command starts again after each exit, for a command that exits on each change; its done line ends it.",
+            "type": "boolean"
+          },
+          "skill": {
+            "description": "The skill's name: its folder's name.",
+            "type": "string"
+          },
+          "watch": {
+            "description": "The watcher's command line, its placeholders filled from the request; empty without a watcher.",
+            "type": "string"
+          }
+        },
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -3720,6 +3900,44 @@
           }
         },
         "summary": "djinn wish resume",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/Route": {
+      "post": {
+        "description": "Find the wish a request belongs to, without a model. Djinn ranks the wishes by the words of their titles, the projects the request names or links to (a GitLab or GitHub link whose repository is a project's remote), and their latest blocks. It proposes to file the request in the closest ones, or to open a new wish with a title and a project. A request that matches the wish template of a skill in those projects (metadata.djinn.wish in its SKILL.md) proposes the template's wish: its title, its watcher, its lead started with the skill. With --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish and starts its watcher and its lead in its own terminal.",
+        "operationId": "WishService_Route",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceRouteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceRouteResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish route",
         "tags": [
           "WishService"
         ]

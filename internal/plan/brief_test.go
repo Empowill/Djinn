@@ -133,7 +133,7 @@ func TestBrief(t *testing.T) {
 }
 
 // serveLeads serves the plan with fake terminals and pages in home, as djinn up does.
-func serveLeads(t *testing.T, home string) (clients, *fakeLeads) {
+func serveLeads(t *testing.T, home string, opts ...Option) (clients, *fakeLeads) {
 	t.Helper()
 	s, err := store.Open(t.Context(), "", Entities()...)
 	if err != nil {
@@ -142,7 +142,7 @@ func serveLeads(t *testing.T, home string) (clients, *fakeLeads) {
 	t.Cleanup(func() { s.Close() })
 	leads := &fakeLeads{}
 	mux := http.NewServeMux()
-	for prefix, h := range Handlers(s, WithLeads(leads), WithPages(NewPages(s, home, "v0-test"))) {
+	for prefix, h := range Handlers(s, append([]Option{WithLeads(leads), WithPages(NewPages(s, home, "v0-test"))}, opts...)...) {
 		mux.Handle(prefix, h)
 	}
 	srv := httptest.NewServer(mux)
@@ -152,6 +152,7 @@ func serveLeads(t *testing.T, home string) (clients, *fakeLeads) {
 		wishes:    planv1connect.NewWishServiceClient(srv.Client(), srv.URL),
 		questions: planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL),
 		blocks:    planv1connect.NewBlockServiceClient(srv.Client(), srv.URL),
+		marks:     planv1connect.NewMarkServiceClient(srv.Client(), srv.URL),
 		store:     s,
 	}, leads
 }

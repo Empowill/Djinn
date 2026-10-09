@@ -78,7 +78,7 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) er
 		}
 		t = proto.CloneOf(t)
 		ev := Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS}
-		if t.GetResumes() >= maxResumes {
+		if t.GetResumes() >= maxResumes && !watching(t) { // A watcher watches across restarts, however many.
 			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, exhausted(t.GetError())
 			ev.Text = "failed: " + t.GetError()
 		} else {
@@ -91,12 +91,13 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) er
 }
 
 // resumable tells whether Djinn may resume an interrupted task by itself: planned on this machine (not imported), not
-// resumed already as another task (a fork of it), its wish not granted, and in Git its worktree still there.
+// resumed already as another task (a fork of it), its wish not granted, and in Git its worktree still there (but for
+// a watcher, which has none).
 func resumable(t *planv1.Task, tasks []*planv1.Task, wish *planv1.Wish, project *planv1.Project) bool {
 	if !t.GetScheduled() || wish == nil || wish.GetState() == planv1.WishState_WISH_STATE_GRANTED || render.ForkedAs(t, tasks) != "" {
 		return false
 	}
-	if project.GetGit() {
+	if project.GetGit() && !watching(t) { // A watcher runs in the project's folder.
 		if t.GetWorktree() == "" {
 			return false
 		}
@@ -224,6 +225,13 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create the task's folder: %w", err)
 		}
+	case r.watcher:
+		// In its project's folder, on its command: it has no session to resume, and nothing to be told.
+		readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
+		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Restart: t.GetRestart()}
+		r.base = t.GetUsage()
+		text := fmt.Sprintf("resumed %s: started watch in %s%s", byRestart, dir, watchText(t))
+		return h.start(r, provider, spec, text)
 	case t.GetWorktree() != "":
 		prefix, err := git(h.ctx, project.GetDirectory(), "rev-parse", "--show-prefix")
 		if err != nil {

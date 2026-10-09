@@ -97,13 +97,14 @@ func (h *Harness) generation() <-chan struct{} {
 	return h.changed
 }
 
-// Running is the number of workers that run now. A paused worker does not count: it takes no slot.
+// Running is the number of workers that run now. A paused worker does not count: it takes no slot; nor does a
+// watcher, which sleeps until its command prints.
 func (h *Harness) Running() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	n := 0
 	for _, r := range h.runs {
-		if !r.paused {
+		if !r.paused && !r.watcher {
 			n++
 		}
 	}

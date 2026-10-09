@@ -100,6 +100,8 @@ const (
 	WishServiceRenderProcedure = "/plan.v1.WishService/Render"
 	// WishServiceSyncProcedure is the fully-qualified name of the WishService's Sync RPC.
 	WishServiceSyncProcedure = "/plan.v1.WishService/Sync"
+	// WishServiceRouteProcedure is the fully-qualified name of the WishService's Route RPC.
+	WishServiceRouteProcedure = "/plan.v1.WishService/Route"
 	// WishServiceWatchProcedure is the fully-qualified name of the WishService's Watch RPC.
 	WishServiceWatchProcedure = "/plan.v1.WishService/Watch"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
@@ -608,6 +610,14 @@ type WishServiceClient interface {
 	// change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
 	// republish it where you put it last time. Delete the file to stop.
 	Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error)
+	// Find the wish a request belongs to, without a model. Djinn ranks the wishes by the words of their titles, the
+	// projects the request names or links to (a GitLab or GitHub link whose repository is a project's remote), and
+	// their latest blocks. It proposes to file the request in the closest ones, or to open a new wish with a title
+	// and a project. A request that matches the wish template of a skill in those projects (metadata.djinn.wish in
+	// its SKILL.md) proposes the template's wish: its title, its watcher, its lead started with the skill. With
+	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
+	// and starts its watcher and its lead in its own terminal.
+	Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error)
 	// Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
 	// itself: the first message names everything, then each change follows; changes close together come as one. A
 	// task's events come from TaskService.Watch.
@@ -723,6 +733,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Sync")),
 			connect.WithClientOptions(opts...),
 		),
+		route: connect.NewClient[v1.WishServiceRouteRequest, v1.WishServiceRouteResponse](
+			httpClient,
+			baseURL+WishServiceRouteProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Route")),
+			connect.WithClientOptions(opts...),
+		),
 		watch: connect.NewClient[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse](
 			httpClient,
 			baseURL+WishServiceWatchProcedure,
@@ -750,6 +766,7 @@ type wishServiceClient struct {
 	move       *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
 	render     *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
 	sync       *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
+	route      *connect.Client[v1.WishServiceRouteRequest, v1.WishServiceRouteResponse]
 	watch      *connect.Client[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse]
 }
 
@@ -833,6 +850,11 @@ func (c *wishServiceClient) Sync(ctx context.Context, req *connect.Request[v1.Wi
 	return c.sync.CallUnary(ctx, req)
 }
 
+// Route calls plan.v1.WishService.Route.
+func (c *wishServiceClient) Route(ctx context.Context, req *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error) {
+	return c.route.CallUnary(ctx, req)
+}
+
 // Watch calls plan.v1.WishService.Watch.
 func (c *wishServiceClient) Watch(ctx context.Context, req *connect.Request[v1.WishServiceWatchRequest]) (*connect.ServerStreamForClient[v1.WishServiceWatchResponse], error) {
 	return c.watch.CallServerStream(ctx, req)
@@ -890,6 +912,14 @@ type WishServiceHandler interface {
 	// change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
 	// republish it where you put it last time. Delete the file to stop.
 	Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error)
+	// Find the wish a request belongs to, without a model. Djinn ranks the wishes by the words of their titles, the
+	// projects the request names or links to (a GitLab or GitHub link whose repository is a project's remote), and
+	// their latest blocks. It proposes to file the request in the closest ones, or to open a new wish with a title
+	// and a project. A request that matches the wish template of a skill in those projects (metadata.djinn.wish in
+	// its SKILL.md) proposes the template's wish: its title, its watcher, its lead started with the skill. With
+	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
+	// and starts its watcher and its lead in its own terminal.
+	Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error)
 	// Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
 	// itself: the first message names everything, then each change follows; changes close together come as one. A
 	// task's events come from TaskService.Watch.
@@ -1001,6 +1031,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Sync")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceRouteHandler := connect.NewUnaryHandler(
+		WishServiceRouteProcedure,
+		svc.Route,
+		connect.WithSchema(wishServiceMethods.ByName("Route")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceWatchHandler := connect.NewServerStreamHandler(
 		WishServiceWatchProcedure,
 		svc.Watch,
@@ -1041,6 +1077,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceRenderHandler.ServeHTTP(w, r)
 		case WishServiceSyncProcedure:
 			wishServiceSyncHandler.ServeHTTP(w, r)
+		case WishServiceRouteProcedure:
+			wishServiceRouteHandler.ServeHTTP(w, r)
 		case WishServiceWatchProcedure:
 			wishServiceWatchHandler.ServeHTTP(w, r)
 		default:
@@ -1114,6 +1152,10 @@ func (UnimplementedWishServiceHandler) Render(context.Context, *connect.Request[
 
 func (UnimplementedWishServiceHandler) Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Sync is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Route is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest], *connect.ServerStream[v1.WishServiceWatchResponse]) error {

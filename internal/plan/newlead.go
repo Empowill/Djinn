@@ -28,9 +28,10 @@ const maxBriefArg = 64 << 10
 
 // newLead prepares a new lead for a wish that has none to resume: the command line that starts provider's agent in
 // dir (the wish's first project; the wish's own folder without one) on the wish's brief, and the lead it starts.
+// first, when set, comes before where the wish stands: the request a routed wish was made for.
 // The lead holds a session only when Djinn chooses it ahead: claude's. A server without data folder keeps the shell.
 func (w *Wishes) newLead(
-	ctx context.Context, wish *planv1.Wish, provider planv1.Provider, dir string,
+	ctx context.Context, wish *planv1.Wish, provider planv1.Provider, dir, first string,
 ) (line, folder string, lead *planv1.Lead, note string, err error) {
 	home := w.home()
 	if home == "" {
@@ -43,6 +44,9 @@ func (w *Wishes) newLead(
 	brief, err := BuildBrief(ctx, w.Store, home, wish.GetId())
 	if err != nil {
 		return "", "", nil, "", Status(err)
+	}
+	if first != "" {
+		brief.Moving = first + "\n\n" + brief.Moving
 	}
 	own := filepath.Join(home, PagesDir, strings.ToLower(wish.GetId()))
 	if err := os.MkdirAll(own, 0o700); err != nil {

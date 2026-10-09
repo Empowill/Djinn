@@ -86,6 +86,10 @@ func Planned(t *planv1.Task) bool {
 	return false
 }
 
+// Watcher tells whether the task is a watcher: a command, no agent. It takes no slot and writes nothing, so neither
+// the machine nor the write scopes hold it, and it holds no other task.
+func Watcher(t *planv1.Task) bool { return t.GetProvider() == planv1.Provider_PROVIDER_WATCH }
+
 // Resuming tells whether the task is one Djinn resumes.
 func Resuming(t *planv1.Task) bool { return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING }
 
@@ -131,12 +135,19 @@ func (s *Situation) Order() []*planv1.Task {
 	return out
 }
 
-// Start counts the task as started: it writes in its project, and takes a slot.
-func (s *Situation) Start(t *planv1.Task) { s.started[t.GetId()] = true }
+// Start counts the task as started: it writes in its project, and takes a slot. A watcher does neither.
+func (s *Situation) Start(t *planv1.Task) {
+	if !Watcher(t) {
+		s.started[t.GetId()] = true
+	}
+}
 
 // writing tells whether a task writes in its project now: its worker runs or is paused, it was just started, or it waits for
 // the answer to its edit question and may start again any time.
 func (s *Situation) writing(t *planv1.Task) bool {
+	if Watcher(t) {
+		return false
+	}
 	switch t.GetStatus() {
 	case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_WAITING:
 		return true
@@ -146,7 +157,7 @@ func (s *Situation) writing(t *planv1.Task) bool {
 
 // Blocker says why the task cannot start now (why), or why it never will (failed); both empty when it can start.
 // Its wish must be active (not paused nor granted); then come the dependencies, its provider's usage limit, the write
-// scopes, and the machine.
+// scopes, and the machine; a watcher only waits for its wish and its dependencies.
 // A wish the situation does not know does not hold the task.
 func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 	if wish, ok := s.wishes[t.GetWishId()]; ok && !plan.Active(wish) {
@@ -179,6 +190,9 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 	}
 	if why := s.limited(t); why != "" {
 		return why, ""
+	}
+	if Watcher(t) {
+		return "", "" // It sleeps until its command prints: no slot, and it writes nothing.
 	}
 	// In Git, worktrees separate the writers.
 	if id := t.GetProjectId(); id != "" && !s.git[id] {

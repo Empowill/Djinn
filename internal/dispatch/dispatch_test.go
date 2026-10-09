@@ -120,3 +120,43 @@ func TestDependencyResumes(t *testing.T) {
 		})
 	}
 }
+
+// TestWatcherTakesNoSlot: a watcher starts on a full machine under pressure, outside Git next to a writer of the
+// whole folder; it takes no slot from the task after it, and holds no writer back. Its wish and its dependencies
+// still hold it.
+func TestWatcherTakesNoSlot(t *testing.T) {
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	task := func(id string, s planv1.TaskStatus, p planv1.Provider, deps ...string) *planv1.Task {
+		return &planv1.Task{Id: id, WishId: "w", Code: id, Status: s, Provider: p, Scheduled: true, ProjectId: "folder",
+			DependsOn: deps, CreateTime: timestamppb.Now()}
+	}
+	running := task("writer", planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.Provider_PROVIDER_CLAUDE)
+	watchers := []*planv1.Task{
+		task("watch", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.Provider_PROVIDER_WATCH),
+		task("watch-after", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.Provider_PROVIDER_WATCH, "writer"),
+	}
+	full := &Machine{Slots: 1, Rule: "test", Running: 1, Pressure: "simulated"}
+	got := map[string]string{}
+	for _, d := range New(append([]*planv1.Task{running}, watchers...), []*planv1.Wish{wish}, nil, full).Pass() {
+		got[d.Task.GetId()] = d.Why
+	}
+	if want := map[string]string{"watch": "", "watch-after": "waits for writer (running)"}; !maps.Equal(got, want) {
+		t.Errorf("under pressure: %v, want %v", got, want)
+	}
+
+	// A running watcher holds no agent: neither its slot nor its folder.
+	watching := task("watching", planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.Provider_PROVIDER_WATCH)
+	agent := task("agent", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.Provider_PROVIDER_CLAUDE)
+	free := &Machine{Slots: 1, Rule: "test"}
+	s := New([]*planv1.Task{watching, task("watch-new", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.Provider_PROVIDER_WATCH), agent},
+		[]*planv1.Wish{wish}, nil, free)
+	for _, d := range s.Pass() {
+		if d.Why != "" || d.Failed != "" {
+			t.Errorf("%s waits: %q %q", d.Task.GetId(), d.Why, d.Failed)
+		}
+	}
+	paused := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_PAUSED, Rank: 1}
+	if why, _ := New(watchers[:1], []*planv1.Wish{paused}, nil, nil).Blocker(watchers[0]); why != "its wish is paused" {
+		t.Errorf("a watcher of a paused wish: %q", why)
+	}
+}

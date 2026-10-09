@@ -52,7 +52,10 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
 	"again at every turn, so use them only when the whole context is needed.\n" +
 	"- **What Djinn does not compute is a block**: a decision taken outside a question, an analysis, a hand-off.\n" +
-	"- **No secret, no local path** in the plan: name the project.\n\n" +
+	"- **No secret, no local path** in the plan: name the project.\n" +
+	"- **Every request finds its wish.** A request that is not about this wish goes through " +
+	"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to file it in " +
+	"another wish or to open a new one with its own lead. Hand it over: do not do its work here.\n\n" +
 	"## Commands\n\n" +
 	"`<wish>` is the wish's identifier, given below.\n\n" +
 	"- `djinn wish brief <wish>`: this brief, up to date.\n" +
@@ -170,6 +173,16 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			names[i] = p.GetName()
 		}
 		b.WriteString("- Projects: " + strings.Join(names, ", ") + ".\n")
+	}
+	if t := wish.GetTemplate(); t != nil {
+		fmt.Fprintf(&b, "- Made from the wish template of the skill `%s`: follow that skill.", t.GetSkill())
+		if t.GetWatch() != "" {
+			fmt.Fprintf(&b, " Its watcher runs `%s` and wakes you on each change.", stripCredentials(t.GetWatch()))
+		}
+		if t.GetDoneWhen() != "" {
+			fmt.Fprintf(&b, " When it prints `%s`, Djinn asks the developer whether to grant the wish.", t.GetDoneWhen())
+		}
+		b.WriteString("\n")
 	}
 	if ready {
 		b.WriteString("- Djinn proposes to grant it: every task is finished and no question is open. Granting is the developer's word.\n")

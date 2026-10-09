@@ -280,6 +280,18 @@ export function FlightPlan({
                       [],
                     )
                   }
+                  onHold={(pause) =>
+                    quiet(
+                      act(
+                        wish.id,
+                        () =>
+                          pause
+                            ? clients.tasks.pause({ taskId: item.id })
+                            : clients.tasks.resume({ taskId: item.id }),
+                        [Change.TASK],
+                      ),
+                    )
+                  }
                 />
               ))}
             </section>

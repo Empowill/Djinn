@@ -72,6 +72,8 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [ ] [T22 · Workers that start fast, with the right context, and are measured](plan/1689571a-fast-workers.md) (in progress)
 - [x] [T08 · Data: what we store, and why](plan/716b9f97-data.md)
 - [ ] [T13 · Sessions across projects](plan/58ae4a59-cross-project-sessions.md) (in progress)
+- [ ] [T26 · Every request finds its wish: routing](plan/e1210c5e-request-routing.md) (in progress)
+- [ ] [T27 · Wish templates, drawn from skills](plan/bac5e018-wish-templates.md) (in progress)
 
 **Phase 3 · Comfort**
 
@@ -83,6 +85,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [ ] [T23 · Summon a skill from another project](plan/a5c284be-summon-skills.md) (in progress)
 - [ ] [T24 · A wish online: sync now, collaborate later](plan/7dc376e9-wish-online.md) (in progress)
 - [ ] [T25 · Review and decide at a glance](plan/4a699d0f-review-at-a-glance.md) (in progress)
+- [ ] [T28 · An inbox: what comes from outside becomes a proposed wish](plan/d6fb2417-inbox.md)
 
 **After v1**
 

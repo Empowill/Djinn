@@ -114,7 +114,7 @@ func (w *Wishes) Resume(
 			return nil, Status(err)
 		}
 		var note string
-		if line, dir, started, note, err = w.newLead(ctx, wish, req.Msg.GetProvider(), dir); err != nil {
+		if line, dir, started, note, err = w.newLead(ctx, wish, req.Msg.GetProvider(), dir, ""); err != nil {
 			return nil, err
 		}
 		res.Note, exclusive = note, started.GetSessionId()

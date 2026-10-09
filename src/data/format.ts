@@ -7,6 +7,7 @@ import {
   type Mark,
   MarkKind,
   type Project,
+  Provider,
   type Question,
   RoundKind,
   type Task,
@@ -62,11 +63,12 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
 };
 
 // taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the
-// limit; one cut short and resumed as another task (forkedAs) says which.
+// limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches.
 export function taskStatusText(
-  task: Pick<Task, "status" | "resumeAfter">,
+  task: Pick<Task, "status" | "resumeAfter"> & Partial<Pick<Task, "provider">>,
   forkedAs = "",
 ): string {
+  if (watcherRuns(task)) return t("task.status_watching");
   if (task.status === TaskStatus.RESUMING && task.resumeAfter)
     return t("task.status_limit");
   if (task.status === TaskStatus.INTERRUPTED && forkedAs)
@@ -84,16 +86,18 @@ export type Tone =
   | "failed"
   | "interrupted"
   | "stopped"
-  | "paused";
+  | "paused"
+  | "watching";
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
-// None of them is the person's move.
+// None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints.
 export function taskTone(
-  task: Pick<Task, "status" | "resumeAfter">,
+  task: Pick<Task, "status" | "resumeAfter"> & Partial<Pick<Task, "provider">>,
   forkedAs = "",
 ): Tone {
   const status = task.status;
+  if (watcherRuns(task)) return "watching";
   if (status === TaskStatus.RESUMING && task.resumeAfter) return "paused";
   if (status === TaskStatus.INTERRUPTED && forkedAs) return "stopped";
   switch (status) {
@@ -110,9 +114,18 @@ export function taskTone(
       return "stopped";
     case TaskStatus.WAITING:
       return "waiting";
+    case TaskStatus.PAUSED:
+      return "paused";
     default:
       return "planned";
   }
+}
+
+// watcherRuns tells whether the task is a watcher whose command runs: a command, no agent (Provider.WATCH).
+export function watcherRuns(
+  task: Pick<Task, "status"> & Partial<Pick<Task, "provider">>,
+): boolean {
+  return task.provider === Provider.WATCH && task.status === TaskStatus.RUNNING;
 }
 
 export function taskFinished(status: TaskStatus): boolean {
