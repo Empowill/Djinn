@@ -18,7 +18,9 @@ import (
 )
 
 // winProc is a program attached to a Windows pseudo-console (ConPTY, Windows 10 1809 and later), in a Job Object
-// that holds it and every process it starts.
+// that holds it and every process it starts. The job kills them all when its last handle closes: djinn ending
+// without closing its terminals (a crash, a kill) ends their programs, as on Unix the kernel hangs up a
+// pseudo-terminal once djinn's side of it closes; nothing is left to hold their folders.
 type winProc struct {
 	out     windows.Handle // the console's output, read by one goroutine at a time; 0 once closed
 	process windows.Handle
@@ -32,6 +34,7 @@ type winProc struct {
 	jmu    sync.Mutex
 	job    windows.Handle // 0 once closed
 	killed atomic.Bool
+	hung   atomic.Bool // hung up or killed: closing ends what is left of the job
 
 	once sync.Once
 }
@@ -96,6 +99,9 @@ func (p *winProc) spawn(path string, command []string, dir string, env []string)
 	}
 	if p.job, err = windows.CreateJobObject(nil, nil); err != nil {
 		return err
+	}
+	if err := p.killOnClose(true); err != nil {
+		return fmt.Errorf("job object: %w", err)
 	}
 	si := &windows.StartupInfoEx{ProcThreadAttributeList: attrs.List()}
 	si.Cb = uint32(unsafe.Sizeof(*si))
@@ -196,11 +202,15 @@ func (p *winProc) active() int {
 }
 
 // hangup closes the pseudo-console, which sends its programs CTRL_CLOSE_EVENT; aside, as closing may wait for them,
-// and the delay before kill starts now.
-func (p *winProc) hangup() { go p.closeConsole() }
+// and the delay before kill starts now. A program that ends then may leave a child that holds on: close ends it.
+func (p *winProc) hangup() {
+	p.hung.Store(true)
+	go p.closeConsole()
+}
 
 // kill ends the program and every process it started, which the job holds.
 func (p *winProc) kill() {
+	p.hung.Store(true)
 	p.jmu.Lock()
 	defer p.jmu.Unlock()
 	if p.job != 0 {
@@ -209,10 +219,21 @@ func (p *winProc) kill() {
 	}
 }
 
-// close closes the console, its input and the job, which has no kill-on-close limit: a program the terminal started
-// apart, a window, keeps running. The output is closed by the read that finds it ended.
+// close closes the console, its input and the job. Hung up, the terminal ends what is left of the job first: the
+// program ended on CTRL_CLOSE_EVENT, but a child of it may hold on, and its folder. Ended by itself, the program
+// leaves alone a program it started apart, a window: the job loses its kill-on-close limit before it closes. The
+// output is closed by the read that finds it ended.
 func (p *winProc) close() {
 	p.once.Do(func() {
+		p.jmu.Lock()
+		if p.job != 0 {
+			if p.hung.Load() {
+				_ = windows.TerminateJobObject(p.job, 1)
+			} else {
+				_ = p.killOnClose(false)
+			}
+		}
+		p.jmu.Unlock()
 		p.closeConsole()
 		p.wmu.Lock()
 		closeHandles(p.in)
@@ -220,9 +241,20 @@ func (p *winProc) close() {
 		p.wmu.Unlock()
 		p.jmu.Lock()
 		closeHandles(p.job, p.process)
-		p.job = 0
+		p.job, p.process = 0, 0
 		p.jmu.Unlock()
 	})
+}
+
+// killOnClose sets whether the job kills its processes once its last handle closes, djinn's own when it dies.
+func (p *winProc) killOnClose(on bool) error {
+	var limits windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	if on {
+		limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	}
+	_, err := windows.SetInformationJobObject(p.job, windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits)))
+	return err
 }
 
 // closeConsole closes the pseudo-console once. Before Windows 11 24H2 it returns only once its output is read:
