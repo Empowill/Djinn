@@ -21,7 +21,11 @@ import (
 
 // allowed are the tests that may take longer than -max, by package and name ("github.com/…/cmd/djinn TestX"), each
 // with why it cannot be fast. Keep it empty.
-var allowed = map[string]string{}
+var allowed = map[string]string{
+	// Two real djinn up processes, the first restarting into a fake release's binary: about 1.3 s alone, its polls
+	// already at 20–50 ms; up to 2 s while the other packages test in parallel.
+	"github.com/empowill/djinn/cmd/djinn TestUpdateFromRelease": "two real djinn up processes, one restarting into the other",
+}
 
 // event is a line of go test -json (go doc test2json).
 type event struct {
