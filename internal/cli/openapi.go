@@ -25,7 +25,7 @@ func OpenAPI() ([]byte, error) {
 			}
 			addSchema(schemas, md.Input())
 			addSchema(schemas, md.Output())
-			paths[path] = map[string]any{"post": map[string]any{
+			op := map[string]any{
 				"operationId": string(sd.Name()) + "_" + string(md.Name()),
 				"summary":     "djinn " + command(sd) + " " + kebab(string(md.Name())),
 				"description": comment(md),
@@ -42,7 +42,11 @@ func OpenAPI() ([]byte, error) {
 					"4XX": map[string]any{"$ref": "#/components/responses/Error"},
 					"5XX": map[string]any{"$ref": "#/components/responses/Error"},
 				},
-			}}
+			}
+			if readOnly(md) {
+				op["x-read-only"] = true
+			}
+			paths[path] = map[string]any{"post": op}
 		}
 	}
 	doc := map[string]any{
@@ -59,6 +63,8 @@ func OpenAPI() ([]byte, error) {
 				"`curl --unix-socket <data>/djinn.sock http://localhost/plan.v1.ProjectService/List " +
 				"-H 'Content-Type: application/json' -d '{}'`; on Windows or with `djinn up --browser`, " +
 				"`http://127.0.0.1:PORT/?token=…`, whose token goes in an `Authorization: Bearer` header.\n\n" +
+				"A method marked `x-read-only` changes nothing. Connect serves it as a GET too, the request in the query: " +
+				"`GET /plan.v1.ProjectService/List?encoding=json&message=%7B%7D`.\n\n" +
 				"The streaming methods use Connect's streaming protocol and are not described here: " +
 				strings.Join(streams, ", ") + ".",
 		},

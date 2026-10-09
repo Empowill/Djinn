@@ -19,6 +19,22 @@ service adds a command, with its help, its arguments and their validation.
   the data directory, and the command prints its PID. `--addr` or `$DJINN_ADDR` turns this off. The other
   methods fail with a hint to run `djinn up`.
 
+## Reads and writes
+
+Every public method that answers once says what it changes, in its proto:
+
+- `option idempotency_level = NO_SIDE_EFFECTS;` when it only reads: the lists, `task get`, `machine show`,
+  `wish brief`.
+- `option (djinn.v1.writes) = WRITES_CHANGE;` when it adds or changes something, in Djinn or on the machine.
+- `option (djinn.v1.writes) = WRITES_DELETE;` when it deletes something, or may overwrite a file it is given:
+  `task delete`, `task clean` (a worktree), `block delete`, `skill unsummon`, `wish export` and `wish render`
+  (`--file`).
+
+`TestEveryMethodSaysWhatItChanges` fails on a method that says neither, or both. The streams (`gate hold`, `wish
+watch`, `task watch`) are not classified: they are neither tools nor GETs. A read is served as a `GET` of the
+Connect protocol too, the request in the query: `GET /plan.v1.ProjectService/List?encoding=json&message=%7B%7D`.
+connect-go does it from the option; a write answers a `GET` with 405.
+
 ## Arguments
 
 The arguments are the fields of the request.
@@ -93,6 +109,9 @@ as above.
 - **The answer is the response in protobuf JSON**, with the proto field names, as `--json` prints it. A call that
   fails is a tool error with the server's message (`not_found: no question Q99`).
 - **Autostart** works as on the command line: `wish_resume` starts `djinn up` when none answers.
+- **Each tool says what it changes**, in its `annotations`: a [read](#reads-and-writes) has `readOnlyHint: true`,
+  so a client may run it without asking; a write has `readOnlyHint: false`, and `destructiveHint: true` only when
+  it deletes. Both are always set: MCP takes a tool that says nothing for one that may delete.
 
 No MCP library: the server is `internal/cli/mcp.go`, the protocol's `initialize`, `ping`, `tools/list`,
 `tools/call` and `notifications/cancelled`.
@@ -101,8 +120,9 @@ No MCP library: the server is `internal/cli/mcp.go`, the protocol's `initialize`
 
 [`openapi.json`](openapi.json) describes the same public methods for any HTTP client, in OpenAPI 3.1: each is a
 `POST` of the [Connect protocol](https://connectrpc.com/docs/protocol) on `/<package>.<Service>/<Method>`, its body
-the request in protobuf JSON. `go tool task gen` writes it (`tools/openapi`), and `TestOpenAPIIsFresh` fails when it
-lags behind the protos. Streaming methods are named there, not described.
+the request in protobuf JSON. A [read](#reads-and-writes) carries `x-read-only: true`. `go tool task gen` writes it
+(`tools/openapi`), and `TestOpenAPIIsFresh` fails when it lags behind the protos. Streaming methods are named there,
+not described.
 
 ## How it works
 

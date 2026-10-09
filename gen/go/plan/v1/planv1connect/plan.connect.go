@@ -176,6 +176,7 @@ func NewQuestionServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+QuestionServiceListProcedure,
 			connect.WithSchema(questionServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		enlighten: connect.NewClient[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse](
@@ -265,6 +266,7 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 		QuestionServiceListProcedure,
 		svc.List,
 		connect.WithSchema(questionServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	questionServiceEnlightenHandler := connect.NewUnaryHandler(
@@ -349,6 +351,7 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+ProjectServiceListProcedure,
 			connect.WithSchema(projectServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -395,6 +398,7 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		ProjectServiceListProcedure,
 		svc.List,
 		connect.WithSchema(projectServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -452,6 +456,7 @@ func NewSkillServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+SkillServiceListProcedure,
 			connect.WithSchema(skillServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		unsummon: connect.NewClient[v1.SkillServiceUnsummonRequest, v1.SkillServiceUnsummonResponse](
@@ -513,6 +518,7 @@ func NewSkillServiceHandler(svc SkillServiceHandler, opts ...connect.HandlerOpti
 		SkillServiceListProcedure,
 		svc.List,
 		connect.WithSchema(skillServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	skillServiceUnsummonHandler := connect.NewUnaryHandler(
@@ -629,6 +635,7 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+WishServiceListProcedure,
 			connect.WithSchema(wishServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		export: connect.NewClient[v1.WishServiceExportRequest, v1.WishServiceExportResponse](
@@ -665,6 +672,7 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+WishServiceBriefProcedure,
 			connect.WithSchema(wishServiceMethods.ByName("Brief")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		snapshot: connect.NewClient[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse](
@@ -905,6 +913,7 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		WishServiceListProcedure,
 		svc.List,
 		connect.WithSchema(wishServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceExportHandler := connect.NewUnaryHandler(
@@ -941,6 +950,7 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		WishServiceBriefProcedure,
 		svc.Brief,
 		connect.WithSchema(wishServiceMethods.ByName("Brief")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceSnapshotHandler := connect.NewUnaryHandler(
@@ -1141,6 +1151,7 @@ func NewBlockServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+BlockServiceListProcedure,
 			connect.WithSchema(blockServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		delete: connect.NewClient[v1.BlockServiceDeleteRequest, v1.BlockServiceDeleteResponse](
@@ -1201,6 +1212,7 @@ func NewBlockServiceHandler(svc BlockServiceHandler, opts ...connect.HandlerOpti
 		BlockServiceListProcedure,
 		svc.List,
 		connect.WithSchema(blockServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	blockServiceDeleteHandler := connect.NewUnaryHandler(
@@ -1268,6 +1280,7 @@ func NewMarkServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+MarkServiceListProcedure,
 			connect.WithSchema(markServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -1315,6 +1328,7 @@ func NewMarkServiceHandler(svc MarkServiceHandler, opts ...connect.HandlerOption
 		MarkServiceListProcedure,
 		svc.List,
 		connect.WithSchema(markServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/plan.v1.MarkService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1391,12 +1405,14 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+TaskServiceListProcedure,
 			connect.WithSchema(taskServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse](
 			httpClient,
 			baseURL+TaskServiceGetProcedure,
 			connect.WithSchema(taskServiceMethods.ByName("Get")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		stop: connect.NewClient[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse](
@@ -1555,12 +1571,14 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		TaskServiceListProcedure,
 		svc.List,
 		connect.WithSchema(taskServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	taskServiceGetHandler := connect.NewUnaryHandler(
 		TaskServiceGetProcedure,
 		svc.Get,
 		connect.WithSchema(taskServiceMethods.ByName("Get")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	taskServiceStopHandler := connect.NewUnaryHandler(

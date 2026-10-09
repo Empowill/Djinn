@@ -12,7 +12,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -399,5 +402,44 @@ func TestModuleVersion(t *testing.T) {
 	}
 	if got := moduleVersion("dev"); got != "dev" {
 		t.Errorf("moduleVersion(dev) from a checkout = %q, want dev", got)
+	}
+}
+
+// TestReadOnlyMethodsAnswerAGet calls a method that only reads as a GET on a real djinn up, the request in the
+// query; a method that writes refuses the GET.
+func TestReadOnlyMethodsAnswerAGet(t *testing.T) {
+	home := t.TempDir()
+	env := environ(home, t.TempDir())
+	_, addr := up(t, home, env)
+	if code, out, errs := runDjinn(t, env, "project", "add", t.TempDir(), "--name", "lamp"); code != 0 {
+		t.Fatalf("djinn project add: exit %d\n%s%s", code, out, errs)
+	}
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(method, message string) (int, string) {
+		t.Helper()
+		u := base + "/plan.v1.ProjectService/" + method + "?encoding=json&message=" + url.QueryEscape(message)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, u, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := httpClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.StatusCode, string(body)
+	}
+	if code, body := get("List", "{}"); code != http.StatusOK || !strings.Contains(body, `"name":"lamp"`) {
+		t.Errorf("GET List: %d %s, want 200 with the project", code, body)
+	}
+	if code, body := get("Add", `{"directory":"/tmp"}`); code != http.StatusMethodNotAllowed {
+		t.Errorf("GET Add: %d %s, want 405", code, body)
 	}
 }

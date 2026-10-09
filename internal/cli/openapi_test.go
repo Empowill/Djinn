@@ -35,6 +35,7 @@ func TestOpenAPI(t *testing.T) {
 			Post struct {
 				OperationID string `json:"operationId"`
 				Summary     string
+				ReadOnly    bool `json:"x-read-only"`
 				RequestBody struct {
 					Content map[string]struct {
 						Schema struct {
@@ -70,6 +71,9 @@ func TestOpenAPI(t *testing.T) {
 	op := doc.Paths["/plan.v1.QuestionService/Answer"].Post
 	if op.OperationID != "QuestionService_Answer" || op.Summary != "djinn question answer" {
 		t.Errorf("operation %+v", op)
+	}
+	if op.ReadOnly || !doc.Paths["/plan.v1.ProjectService/List"].Post.ReadOnly {
+		t.Error("x-read-only marks the methods that only read, and only them")
 	}
 	if ref := op.RequestBody.Content["application/json"].Schema.Ref; ref != "#/components/schemas/plan.v1.QuestionServiceAnswerRequest" {
 		t.Errorf("request %q", ref)

@@ -13,6 +13,7 @@ service MachineService {
   // Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.
   rpc Show(MachineServiceShowRequest) returns (MachineServiceShowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
 
@@ -75,6 +76,7 @@ service GateService {
   // List the gates held or waited for.
   rpc List(GateServiceListRequest) returns (GateServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
 
@@ -139,6 +141,7 @@ service CommandService {
   // List what the commands of the projects cost, the most run first.
   rpc List(CommandServiceListRequest) returns (CommandServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
   // task's, or the one whose folder holds the directory; a command outside any project is not recorded.
