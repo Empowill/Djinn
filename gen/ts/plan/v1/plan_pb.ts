@@ -735,7 +735,8 @@ export const TaskSchema: GenMessage<Task> = /*@__PURE__*/
 
 /**
  * Resources is what a task's worker uses of the machine: its process group and every process it started, even one
- * that left the group. Linux reads /proc; macOS, ps.
+ * that left the group. Linux reads the cgroup of the worker's systemd scope when it runs in one, else /proc; macOS,
+ * ps.
  *
  * @generated from message plan.v1.Resources
  */
@@ -748,7 +749,8 @@ export type Resources = Message<"plan.v1.Resources"> & {
   cpuPercent: number;
 
   /**
-   * Resident memory, in bytes: the sum over its processes, a page they share counted once per process.
+   * Resident memory, in bytes: the sum over its processes, a page they share counted once per process. From a
+   * cgroup, what the kernel charges it (memory.current): its processes' memory once, and the page cache they filled.
    *
    * @generated from field: uint64 memory_bytes = 2;
    */
@@ -769,7 +771,7 @@ export type Resources = Message<"plan.v1.Resources"> & {
   peakCpuPercent: number;
 
   /**
-   * Highest memory_bytes read, over all the task's workers.
+   * Highest memory_bytes read, or held between two readings (a cgroup's memory.peak), over all the task's workers.
    *
    * @generated from field: uint64 peak_memory_bytes = 5;
    */

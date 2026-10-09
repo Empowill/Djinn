@@ -16,8 +16,9 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// MeasureFunc reads what the worker whose process leads group pid uses: machine.ReadWorker.
-type MeasureFunc func(pid int) (machine.Group, error)
+// MeasureFunc reads what the worker whose process leads group pid uses, from its cgroup when it runs in a scope:
+// machine.ReadWorker.
+type MeasureFunc func(pid int, cgroup string) (machine.Group, error)
 
 // WithMeasure reads what each worker uses every interval, with read, and keeps on its task the latest reading and
 // the peaks. djinn up gives machine.ReadWorker, where the system lets it measure workers (machine.NotMeasured).
@@ -48,7 +49,7 @@ func (h *Harness) newMeter(r *run) *meter {
 	m := &meter{proc: p, pid: p.PID(), at: time.Now(), written: r.task.GetResources()}
 	// A warm worker ran before its task took it: its CPU time so far is not the task's.
 	if m.pid != 0 {
-		if g, err := h.measureRead(m.pid); err == nil {
+		if g, err := h.measureRead(m.pid, p.Cgroup()); err == nil {
 			m.cpu = g.CPU
 		}
 	}
@@ -62,7 +63,7 @@ func (h *Harness) measure(r *run, m *meter) {
 	if pid == 0 {
 		return // A watcher between two runs of its command.
 	}
-	g, err := h.measureRead(pid)
+	g, err := h.measureRead(pid, m.proc.Cgroup())
 	now := time.Now()
 	if err != nil || g.Processes == 0 {
 		return
@@ -79,7 +80,7 @@ func (h *Harness) measure(r *run, m *meter) {
 	res := &planv1.Resources{
 		CpuPercent: cpu, MemoryBytes: g.Memory, Processes: int32(g.Processes),
 		PeakCpuPercent:  max(t.GetResources().GetPeakCpuPercent(), cpu),
-		PeakMemoryBytes: max(t.GetResources().GetPeakMemoryBytes(), g.Memory),
+		PeakMemoryBytes: max(t.GetResources().GetPeakMemoryBytes(), g.Memory, g.Peak),
 		ReadTime:        timestamppb.New(now),
 	}
 	t.Resources = res // Replaced at each reading, never changed: Uses shares it.

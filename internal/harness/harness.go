@@ -21,6 +21,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -68,7 +69,7 @@ type Harness struct {
 
 	answering sync.Mutex // one answer to an edit question at a time
 
-	prefix []string // the command every worker runs under (WithPrefix)
+	scopes *machine.Scopes // the systemd scopes the workers run in, one each (WithScopes); nil: none
 
 	clock func() time.Time // nil: the machine's (WithClock)
 
@@ -541,7 +542,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
-	spec.Prefix = h.prefix
+	spec.Scope = h.scope(t.GetCode())
 	w, err := provider.Start(h.ctx, spec)
 	if err != nil {
 		return err

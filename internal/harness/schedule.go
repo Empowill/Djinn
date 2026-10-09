@@ -17,6 +17,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -37,9 +38,17 @@ type Option func(*Harness)
 // WithCapacity limits the workers that run at once, and stops new ones while the machine is under pressure.
 func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c } }
 
-// WithPrefix runs every worker under prefix, its own command appended: djinn up --worker-cpu gives a systemd scope
-// that caps the worker's CPU (machine.CPULimit).
-func WithPrefix(prefix []string) Option { return func(h *Harness) { h.prefix = prefix } }
+// WithScopes runs each worker in a systemd scope of its own, which stopping, pausing and measuring it take whole, its
+// CPU and memory capped as scopes says (djinn up --worker-cpu, --worker-memory; machine.ProbeScopes).
+func WithScopes(scopes *machine.Scopes) Option { return func(h *Harness) { h.scopes = scopes } }
+
+// scope gives each process of the worker name (a task's code) a scope of its own; nil without scopes.
+func (h *Harness) scope(name string) func() machine.Scope {
+	if h.scopes == nil {
+		return nil
+	}
+	return func() machine.Scope { return h.scopes.New(name) }
+}
 
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
 // machine falls without telling anyone.

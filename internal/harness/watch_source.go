@@ -160,7 +160,7 @@ func (h *Harness) startSource(c Watch, s wantedSource, receive ReceiveFunc) (*so
 		return nil, err
 	}
 	c.Gap = s.src.Every
-	w, err := c.Start(h.ctx, Spec{Dir: s.dir, Prompt: s.src.Watch, Permissions: perms, Prefix: h.prefix, Restart: true})
+	w, err := c.Start(h.ctx, Spec{Dir: s.dir, Prompt: s.src.Watch, Permissions: perms, Scope: h.scope("inbox"), Restart: true})
 	if err != nil {
 		return nil, err
 	}

@@ -1428,14 +1428,14 @@
         "type": "object"
       },
       "plan.v1.Resources": {
-        "description": "Resources is what a task's worker uses of the machine: its process group and every process it started, even one that left the group. Linux reads /proc; macOS, ps.",
+        "description": "Resources is what a task's worker uses of the machine: its process group and every process it started, even one that left the group. Linux reads the cgroup of the worker's systemd scope when it runs in one, else /proc; macOS, ps.",
         "properties": {
           "cpuPercent": {
             "description": "CPU used since the reading before, in percent of one core: 200 is two cores busy.",
             "type": "number"
           },
           "memoryBytes": {
-            "description": "Resident memory, in bytes: the sum over its processes, a page they share counted once per process.",
+            "description": "Resident memory, in bytes: the sum over its processes, a page they share counted once per process. From a cgroup, what the kernel charges it (memory.current): its processes' memory once, and the page cache they filled.",
             "format": "uint64",
             "type": [
               "string",
@@ -1447,7 +1447,7 @@
             "type": "number"
           },
           "peakMemoryBytes": {
-            "description": "Highest memory_bytes read, over all the task's workers.",
+            "description": "Highest memory_bytes read, or held between two readings (a cgroup's memory.peak), over all the task's workers.",
             "format": "uint64",
             "type": [
               "string",

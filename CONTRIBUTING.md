@@ -155,12 +155,16 @@ To use Djinn, see the [README](README.md). To work on it:
 - `djinn mcp` serves the commands as MCP tools on stdio, for an agent that speaks MCP (`wish_set_lead` is
   `djinn wish set-lead`; [convention](docs/cli-convention.md#mcp)).
 - `djinn gate run <name> -- <command>` runs a command under a gate and records what it cost in its project (CPU
-  time, peak memory, duration); `djinn command list [--project <name>]` shows the costs. `djinn up --worker-cpu 150`
-  caps each worker at 150% of a core in a systemd user scope, where systemd gives your user the cpu controller
-  ([T17](plan/3da7b334-machine-discovery.md), [T09](plan/3792046b-quality-of-life.md)).
+  time, peak memory, duration); `djinn command list [--project <name>]` shows the costs. On Linux with a user systemd,
+  each worker runs in a systemd user scope of its own (`djinn-<task code>-<uuid8>`), which stopping, pausing and
+  measuring take whole, even a process that left its group; elsewhere `djinn up` says so once, and workers run in their
+  process group. `djinn up --worker-cpu 150` caps each worker at 150% of a core, `--worker-memory 4096` at 4 GiB, where
+  systemd gives your user the cpu and memory controllers ([T17](plan/3da7b334-machine-discovery.md),
+  [T09](plan/3792046b-quality-of-life.md)).
 - `djinn task get <task-id>` gives what its worker uses (CPU, memory, processes) and its peaks, read every 5 seconds
-  from its process group on Linux and macOS; `djinn machine show` lists every running worker's, the busiest first, and
-  the Tasks tab shows them. Not measured on Windows yet ([T17](plan/3da7b334-machine-discovery.md)).
+  from its scope's cgroup on Linux (else from its process group), from its process group on macOS; `djinn machine
+  show` lists every running worker's, the busiest first, and the Tasks tab shows them. Not measured on Windows yet
+  ([T17](plan/3da7b334-machine-discovery.md)).
 - `go tool task bench-dispatch`: the scheduler's decisions on hand-written dispatch cases, as a table
   ([T16](plan/263f074f-dispatch-bench.md)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`

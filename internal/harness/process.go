@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/empowill/djinn/internal/machine"
 )
 
 // Grace is how long a worker asked to stop has before it is killed.
@@ -18,9 +20,10 @@ const Grace = 5 * time.Second
 
 // process is a worker's process: its output read line by line, stopped in two steps.
 type process struct {
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
-	grace time.Duration
+	cmd    *exec.Cmd
+	cgroup string // the cgroup of its scope; empty without one
+	stdin  io.WriteCloser
+	grace  time.Duration
 	// lines are the lines of the output, then of the error output, as they come; closed once both end.
 	lines chan line
 	done  chan struct{} // closed when the process has ended and its output is read
@@ -35,16 +38,22 @@ type line struct {
 	stderr bool
 }
 
-// startProcess starts name in dir with args, under prefix when not empty. The process gets Djinn's environment
-// plus env, which Djinn passes on without reading. On Unix it leads a process group of its own, so that stopping it
-// stops what it started.
-func startProcess(dir, name string, args, env, prefix []string, grace time.Duration) (*process, error) {
-	return startCommand(dir, name, args, env, prefix, grace, false)
+// startProcess starts name in dir with args, in a scope of its own when scope is set. The process gets Djinn's
+// environment plus env, which Djinn passes on without reading. On Unix it leads a process group of its own, so that
+// stopping it stops what it started; in a scope, its cgroup holds even what left the group.
+func startProcess(dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration) (*process, error) {
+	return startCommand(dir, name, args, env, scope, grace, false)
 }
 
 // startCommand is startProcess; with blanks, the empty lines of the output are lines too.
-func startCommand(dir, name string, args, env, prefix []string, grace time.Duration, blanks bool) (*process, error) {
-	if len(prefix) > 0 {
+func startCommand(
+	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool,
+) (*process, error) {
+	var sc machine.Scope
+	if scope != nil {
+		sc = scope()
+	}
+	if prefix := sc.Prefix; len(prefix) > 0 {
 		// The prefix runs the program found here, and a missing one fails here, as without a prefix.
 		path, err := exec.LookPath(name)
 		if err != nil {
@@ -73,7 +82,7 @@ func startCommand(dir, name string, args, env, prefix []string, grace time.Durat
 		}
 		return nil, err
 	}
-	p := &process{cmd: cmd, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
+	p := &process{cmd: cmd, cgroup: sc.Cgroup, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
 	var read sync.WaitGroup
 	read.Add(2)
 	go p.scan(&read, outR, false)
@@ -107,25 +116,26 @@ func (p *process) scan(wg *sync.WaitGroup, r io.Reader, stderr bool) {
 	}
 }
 
-// Stop asks the process to stop, then kills it, and what it started, after the grace delay.
+// Stop asks the process to stop, then kills it, and what it started, after the grace delay: in a scope, every
+// process left in its cgroup.
 func (p *process) Stop() {
 	p.stop.Do(func() {
-		terminate(p.cmd)
+		terminate(p)
 		go func() {
 			select {
 			case <-p.done:
 			case <-time.After(p.grace):
 			}
-			kill(p.cmd)
+			kill(p)
 		}()
 	})
 }
 
 // Pause stops the process, and what it started, where they are.
-func (p *process) Pause() error { return pause(p.cmd) }
+func (p *process) Pause() error { return pause(p) }
 
 // Resume lets them go on.
-func (p *process) Resume() error { return resume(p.cmd) }
+func (p *process) Resume() error { return resume(p) }
 
 func exitResult(cmd *exec.Cmd, err error) Result {
 	if errors.Is(err, exec.ErrWaitDelay) {

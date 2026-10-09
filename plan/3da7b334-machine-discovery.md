@@ -44,6 +44,16 @@ overloaded. Part of the orchestrator (T07).
   from /proc on Linux, `TestMeasurePeaks`, `TestNotMeasured` and `TestWorth` in `internal/harness`; "a running task
   shows what its worker uses now" in `tests/screens.test.mjs`. macOS reads `ps`: not run on a Mac yet. Windows says it
   is not measured yet)
+- [x] On Linux with a user systemd, each worker runs in a systemd user scope of its own, which measuring, pausing and
+  stopping take whole, even a process that left its group; a memory ceiling per worker can be set; without a user
+  systemd, or off Linux, `djinn up` says so once and workers run as before. (`TestScopePrefix`, `TestReadProbe`,
+  `TestCheckQuota`, `TestCheckMemoryMax`, `TestReadCgroup` on fixture cgroup files, `TestCgroupFiles`,
+  `TestProbeScopesFallback` with no systemd-run then a fake one on PATH, and `TestProbeScopes` in `internal/machine`;
+  `TestScopePrefix`, `TestMeasurePeaks` and `TestScopeTakesTheTree` in `internal/harness`, which on a machine with a
+  user systemd measures, freezes and stops a real scope whose child left its session, and reads its 512 MiB
+  `memory.max`, and skips elsewhere, as in CI; `TestWorkerScopesFallback` in `cmd/djinn`. On this Ubuntu 22.04 laptop
+  the probe made its scope and said the cpu controller is not delegated. A worker killed at its memory ceiling is not
+  tried yet)
 
 ## Decided along the way
 - **The minimum first** (`internal/machine`): cores (`runtime.NumCPU`), memory, load and pressure, read live (at
@@ -88,5 +98,23 @@ overloaded. Part of the orchestrator (T07).
   in the journal) only when it moved enough to show: a process more or less, 5 points of CPU, 5% of memory, or a
   minute gone; `djinn machine show` gives every reading. The fake agent runs in Djinn's process: not measured. Not
   read by the scheduler yet.
+- **A scope per worker** (`machine.Scopes`, `harness.WithScopes`): at start, on Linux, `djinn up` starts one probe
+  scope as a worker's would be (`systemd-run --user --scope --quiet --collect --unit=djinn-probe-<uuid8> [-p
+  CPUQuota=…%] [-p MemoryMax=…] -- sh -c …`), and reads from inside its cgroup, its `cpu.max` and `memory.max`. Then
+  every process a worker starts (an agent, each run of a watcher's command, a warm worker, an inbox source's command)
+  runs under the same prefix, in a scope of its own, `djinn-<task code>-<uuid8>.scope` (`warm`, `inbox` for those
+  without a task); the uuid8 is drawn at each start: systemd keeps the name of an ended scope a little while, and the
+  same name again fails one time in two. The scope keeps the process: same PID, process group and streams. Its cgroup
+  is the probe's slice plus the unit, known before it exists. With it: pausing freezes the cgroup (`cgroup.freeze`)
+  and resuming thaws it; stopping sends SIGTERM to the group and to each process of the cgroup outside it, then thaws,
+  and after the grace delay kills the group and the cgroup (`cgroup.kill`, since Linux 5.14); measuring reads
+  `cgroup.procs`, `cpu.stat` (`usage_usec`, ended processes included), `memory.current` (what the kernel charges: the
+  page cache the worker filled too) and `memory.peak` (since 5.19), which the task's peak takes. Until systemd made
+  the cgroup, or without the memory controller, all of it goes by the process group and /proc, as before. Without
+  systemd-run, without a user systemd (no bus, as in CI), or off Linux, `djinn up` prints why once and workers run in
+  their process group. `--worker-cpu` (`CPUQuota`) and `--worker-memory` in MiB (`Policy.WorkerMemory`, `MemoryMax`,
+  0 by default) are properties of that scope; a cap whose controller systemd does not delegate to the user (Ubuntu
+  22.04 delegates memory and pids, not cpu) is dropped, saying why, and the scope stays. Past the memory ceiling the
+  kernel reclaims, then kills a process of the worker; Djinn does not say so yet.
 - **Not used yet.** The scheduler and the gates do not read the costs yet: a heavy command waiting for a gate
   (the capacity, above) is the next step.

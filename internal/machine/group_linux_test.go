@@ -24,7 +24,7 @@ func TestReadWorker(t *testing.T) {
 		listing.at = time.Time{} // Listed again.
 		listing.mu.Unlock()
 		var err error
-		if g, err = ReadWorker(cmd.Process.Pid); err != nil {
+		if g, err = ReadWorker(cmd.Process.Pid, ""); err != nil {
 			t.Fatal(err)
 		}
 		if g.Processes == 2 {

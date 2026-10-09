@@ -9,6 +9,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/machine"
 )
 
 // Provider starts the workers of one kind of agent.
@@ -51,9 +52,9 @@ type Spec struct {
 	// SkillsDir is a folder of Djinn's own holding .claude/skills/<name> and .agents/skills/<name>, a link to each
 	// skill's folder in its source project; empty without skills, or when the links could not be made.
 	SkillsDir string
-	// Prefix is a command the worker's process runs under, its own command appended: a systemd scope that caps
-	// its CPU (djinn up --worker-cpu). Empty: the process runs as is.
-	Prefix []string
+	// Scope, when set, gives each process the worker starts a systemd scope of its own (Harness.WithScopes): the
+	// process runs under its prefix, and stopping, pausing and measuring take its cgroup. Nil: it runs as is.
+	Scope func() machine.Scope
 	// Restart starts a watcher's command again after each exit, until it is stopped. Agents ignore it.
 	Restart bool
 }
@@ -97,6 +98,8 @@ type Pauser interface {
 type Process interface {
 	// PID is the process of the agent, or of a watcher's command; 0 while none runs.
 	PID() int
+	// Cgroup is the cgroup of the scope it runs in (Spec.Scope); empty without one.
+	Cgroup() string
 }
 
 // ErrReadOnly is returned by Start when the provider cannot keep its agent from writing: it cannot run a

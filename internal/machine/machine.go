@@ -50,6 +50,10 @@ type Policy struct {
 	MemoryPerWorker uint64
 	MemoryReserve   uint64
 	MaxWorkers      int
+	// WorkerMemory, when above 0, is the most memory a worker may hold, in bytes, where it runs in a systemd scope
+	// of its own (Scopes, djinn up --worker-memory): past it, the kernel reclaims, then kills a process of the worker.
+	// 0, the default: no ceiling.
+	WorkerMemory uint64
 	// The machine is under pressure when, over the last 10 seconds, tasks waited for the CPU at least CPUPressure
 	// percent of the time, or for memory at least MemoryPressure percent (PSI "some").
 	CPUPressure    float64

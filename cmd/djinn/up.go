@@ -5,12 +5,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -62,6 +64,9 @@ func runUp(args []string) (restart bool, err error) {
 	workerCPU := flags.Int("worker-cpu", 0, "cap each worker's CPU at this percent of one core (150 is a core and a "+
 		"half), in a systemd user scope of its own; Linux with systemd only, and only where systemd gives your user the "+
 		"cpu controller, else workers run uncapped and djinn says why; 0 caps nothing; default $DJINN_WORKER_CPU")
+	workerMemory := flags.Int("worker-memory", 0, "cap each worker's memory at this many MiB, in its systemd user "+
+		"scope: past it the kernel reclaims, then kills a process of the worker; Linux with systemd only, and only "+
+		"where systemd gives your user the memory controller; 0 caps nothing; default $DJINN_WORKER_MEMORY")
 	if err := flags.Parse(args); err != nil {
 		return false, err
 	}
@@ -84,6 +89,14 @@ func runUp(args []string) (restart bool, err error) {
 	if most := 100 * runtime.NumCPU(); *workerCPU < 0 || *workerCPU > most {
 		return false, fmt.Errorf("--worker-cpu %d: expected 1 to %d (percent of one core), or 0 for no cap", *workerCPU, most)
 	}
+	if *workerMemory == 0 && os.Getenv("DJINN_WORKER_MEMORY") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_MEMORY"), workerMemory); err != nil {
+			return false, fmt.Errorf("DJINN_WORKER_MEMORY: %w", err)
+		}
+	}
+	if *workerMemory < 0 {
+		return false, fmt.Errorf("--worker-memory %d: expected MiB, or 0 for no cap", *workerMemory)
+	}
 	home, err := ui.Home()
 	if err != nil {
 		return false, err
@@ -105,6 +118,7 @@ func runUp(args []string) (restart bool, err error) {
 	// The workers stop before the database closes: deferred calls run last first.
 	policy := machine.DefaultPolicy()
 	policy.Workers = *maxWorkers
+	policy.WorkerMemory = uint64(*workerMemory) << 20
 	read := readMachine
 	if read == nil {
 		read = machine.Reader(home)
@@ -117,13 +131,8 @@ func runUp(args []string) (restart bool, err error) {
 	if *warmWorkers {
 		opts = append(opts, harness.WithWarm())
 	}
-	if *workerCPU > 0 {
-		if prefix, err := machine.CPULimit(ctx, *workerCPU); err != nil {
-			fmt.Fprintf(os.Stderr, "djinn: %v; workers run uncapped\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "djinn: each worker runs in a systemd scope, its CPU capped at %d%% of a core\n", *workerCPU)
-			opts = append(opts, harness.WithPrefix(prefix))
-		}
+	if scopes := workerScopes(ctx, os.Stderr, *workerCPU, policy.WorkerMemory); scopes != nil {
+		opts = append(opts, harness.WithScopes(scopes))
 	}
 	workers := harness.New(db, home, harness.Providers(), opts...)
 	defer workers.Close()
@@ -355,4 +364,33 @@ func showRunning(addr string, flags *flag.FlagSet) error {
 	}
 	fmt.Println("djinn is already running: open " + addr + ignored)
 	return nil
+}
+
+// workerScopes are the systemd scopes the workers run in, one each, their CPU capped at cpu percent of a core and
+// their memory at memory bytes (0: uncapped); nil where there are none: djinn up says why, once, and workers run in
+// their process group.
+func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64) *machine.Scopes {
+	scopes, notes, err := machine.ProbeScopes(ctx, cpu, memory)
+	if err != nil {
+		uncapped := ""
+		if cpu > 0 || memory > 0 {
+			uncapped = ", uncapped"
+		}
+		fmt.Fprintf(w, "djinn: %v; workers run in their process group%s\n", err, uncapped)
+		return nil
+	}
+	for _, note := range notes {
+		fmt.Fprintf(w, "djinn: %s\n", note)
+	}
+	var caps []string
+	if scopes.CPU > 0 {
+		caps = append(caps, fmt.Sprintf("its CPU capped at %d%% of a core", scopes.CPU))
+	}
+	if scopes.Memory > 0 {
+		caps = append(caps, fmt.Sprintf("its memory at %d MiB", scopes.Memory>>20))
+	}
+	if len(caps) > 0 {
+		fmt.Fprintf(w, "djinn: each worker runs in a systemd scope of its own, %s\n", strings.Join(caps, ", "))
+	}
+	return scopes
 }
