@@ -27,6 +27,9 @@ type Leads interface {
 	Show(wishID, terminal string)
 	// Running tells whether the terminal called name runs a program.
 	Running(name string) bool
+	// Stop asks the program of the terminal called name to end, as a terminal that closes does, kills it if it is
+	// still there after a grace, and returns once it ended. Nothing runs there: nothing to do.
+	Stop(name string) error
 	// Tell types text into the terminal called name as the developer would, then Enter, once nothing is being typed
 	// there and no choice is on screen; it returns at once, with whether the text waits, ErrNoLead when the terminal
 	// runs no program, or ErrNotLead when it runs another program than a lead's line (LeadLine). Texts told arrive
@@ -159,7 +162,18 @@ func (w *Wishes) Resume(
 	if w.Leads == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
 	}
-	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
+	res, err := w.resume(ctx, req.Msg.GetWishId(), req.Msg.GetProvider())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(res), nil
+}
+
+// resume shows the wish and resumes its lead, or starts one of provider from the brief when it has no session.
+func (w *Wishes) resume(
+	ctx context.Context, wishID string, provider planv1.Provider,
+) (*planv1.WishServiceResumeResponse, error) {
+	wish, err := store.Get[*planv1.Wish](ctx, w.Store, wishID)
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -184,7 +198,7 @@ func (w *Wishes) Resume(
 			return nil, Status(err)
 		}
 		var note string
-		if line, dir, started, note, err = w.newLead(ctx, wish, req.Msg.GetProvider(), dir); err != nil {
+		if line, dir, started, note, err = w.newLead(ctx, wish, provider, dir); err != nil {
 			return nil, err
 		}
 		res.Note, exclusive = note, started.GetSessionId()
@@ -208,6 +222,78 @@ func (w *Wishes) Resume(
 		}
 	}
 	w.Leads.Show(wish.GetId(), res.GetTerminal())
+	return res, nil
+}
+
+// SetProvider changes the wish's agent, then stops its lead and starts one of the new agent from the brief.
+func (w *Wishes) SetProvider(
+	ctx context.Context, req *connect.Request[planv1.WishServiceSetProviderRequest],
+) (*connect.Response[planv1.WishServiceSetProviderResponse], error) {
+	provider := req.Msg.GetProvider()
+	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
+	if err != nil {
+		return nil, Status(err)
+	}
+	from := WishProvider(wish)
+	res := &planv1.WishServiceSetProviderResponse{Wish: wish}
+	if from == provider {
+		// Nothing to journal: the brief reads a change of agent from the journal.
+		if err := fill(ctx, w.Store, wish); err != nil {
+			return nil, Status(err)
+		}
+		res.Note = "The wish already runs " + providerName(provider) + ": nothing changed."
+		return connect.NewResponse(res), nil
+	}
+	var old *planv1.Lead // the lead set aside, its session of the old agent
+	err = write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		from = WishProvider(wish)
+		wish.Provider = provider
+		// A session of another agent cannot lead any more: the next resume starts the new one from the brief. One of
+		// the new agent, recorded by djinn wish set-lead, is kept: it is resumed.
+		if lead := wish.GetLead(); lead != nil && cmp.Or(lead.GetProvider(), planv1.Provider_PROVIDER_CLAUDE) != provider {
+			old, wish.Lead = lead, nil
+		}
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	res.Wish = wish
+	notes := []string{fmt.Sprintf("The wish runs %s now, instead of %s: its lead, and every task to come that "+
+		"names no other agent. The tasks that run go on with theirs. The conversation of the %s lead does not pass to "+
+		"the new one, which starts from the wish's brief.", providerName(provider), providerName(from), providerName(from))}
+	if old.GetSessionId() != "" {
+		if line, err := resumeLine(old); err == nil {
+			notes = append(notes, "The session of the old lead stays with "+providerName(old.GetProvider())+": "+line+
+				" in its folder reads it again.")
+		}
+	}
+	if w.Leads == nil {
+		if err := fill(ctx, w.Store, wish); err != nil {
+			return nil, Status(err)
+		}
+		res.Note = strings.Join(append(notes, "djinn wish resume "+wish.GetId()+" starts the new lead."), " ")
+		return connect.NewResponse(res), nil
+	}
+	terminal := LeadTerminal(wish.GetId())
+	if err := w.Leads.Stop(terminal); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf(
+			"the wish runs %s now, but its lead did not stop: %w. Exit it in its terminal, then djinn wish resume %s",
+			providerName(provider), err, wish.GetId()))
+	}
+	resumed, err := w.resume(ctx, wish.GetId(), provider)
+	if err != nil {
+		return nil, err
+	}
+	res.Wish, res.Terminal, res.Command = resumed.GetWish(), resumed.GetTerminal(), resumed.GetCommand()
+	if n := resumed.GetNote(); n != "" {
+		notes = append(notes, n)
+	}
+	res.Note = strings.Join(notes, " ")
 	return connect.NewResponse(res), nil
 }
 

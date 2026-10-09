@@ -66,6 +66,7 @@ import { CountPill, StatusBadge } from "./status";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
+import { ChangeProvider } from "./wish-dialogs";
 import { WishTask } from "./wish-task";
 
 export function WishView({
@@ -92,6 +93,7 @@ export function WishView({
   ).length;
   const granted = wish.state === WishState.GRANTED;
   const [history, setHistory] = useState(false);
+  const [changing, setChanging] = useState(false);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
@@ -115,6 +117,16 @@ export function WishView({
 
   return (
     <div className="wish-view review">
+      {changing && (
+        <ChangeProvider
+          wish={wish}
+          onClose={() => setChanging(false)}
+          onChanged={(provider) => {
+            setChanging(false);
+            onToast(t("provider.changed", { agent: providerName(provider) }));
+          }}
+        />
+      )}
       <header className="topbar">
         <div className="breadcrumbs">
           {projects.map((project) => (
@@ -130,13 +142,14 @@ export function WishView({
           <strong>{wish.title}</strong>
         </div>
         <div className="topbar-actions">
-          <span
-            className="wish-provider muted-text"
+          <button
+            className="button secondary small wish-provider"
             title={t("wish.provider_detail")}
+            onClick={() => setChanging(true)}
           >
             <Bot size={14} aria-hidden="true" />
             {providerName(wish.provider)}
-          </span>
+          </button>
           <button
             className="button secondary small"
             title={t("wish.resume_detail")}

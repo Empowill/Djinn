@@ -1790,7 +1790,7 @@
           },
           "provider": {
             "$ref": "#/components/schemas/plan.v1.Provider",
-            "description": "Kind of agent chosen when the wish was made: its lead runs it, and so does every task that names no other. Not set on a wish made before the choice: Claude."
+            "description": "Kind of agent of the wish, chosen when it was made and changed by djinn wish set-provider: its lead runs it, and so does every task that names no other. Not set on a wish made before the choice: Claude."
           },
           "rank": {
             "description": "Place among the active wishes, from 1: the first one has priority. 0 for a paused or granted wish.",
@@ -2203,6 +2203,48 @@
           "wish": {
             "$ref": "#/components/schemas/plan.v1.Wish",
             "description": "The wish, with its lead."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.WishServiceSetProviderRequest": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/plan.v1.Provider",
+            "description": "The new kind of agent: claude, codex or antigravity."
+          },
+          "wishId": {
+            "description": "The wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wishId",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "plan.v1.WishServiceSetProviderResponse": {
+        "properties": {
+          "command": {
+            "description": "The command line the new lead runs, program first; empty when none started.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "note": {
+            "description": "What to know: the conversation not carried over, the old lead's session, how to start the new lead.",
+            "type": "string"
+          },
+          "terminal": {
+            "description": "Name of the lead's terminal in the window; empty when this server runs no terminal.",
+            "type": "string"
+          },
+          "wish": {
+            "$ref": "#/components/schemas/plan.v1.Wish",
+            "description": "The wish, with its new agent."
           }
         },
         "type": "object"
@@ -3840,6 +3882,44 @@
           }
         },
         "summary": "djinn wish set-lead",
+        "tags": [
+          "WishService"
+        ]
+      }
+    },
+    "/plan.v1.WishService/SetProvider": {
+      "post": {
+        "description": "Change the wish's agent: its lead from now on, and every task to come that names no other; the tasks that run go on with theirs. The lead that runs is stopped, and a new one starts with the new agent from the wish's brief (djinn wish brief): its plan, questions and decisions. The old lead's conversation does not pass to the new agent.",
+        "operationId": "WishService_SetProvider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.WishServiceSetProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.WishServiceSetProviderResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn wish set-provider",
         "tags": [
           "WishService"
         ]

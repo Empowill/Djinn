@@ -317,6 +317,23 @@ func (l leads) Open(name, line, dir, exclusive string) ([]string, string, bool, 
 
 func (l leads) Running(name string) bool { return l.terminals.Lookup(name) != nil }
 
+// stopWait is how long Stop waits for a lead to end: its grace, then the kill and the last of its output.
+const stopWait = terminal.Grace + 5*time.Second
+
+func (l leads) Stop(name string) error {
+	t := l.terminals.Lookup(name)
+	if t == nil {
+		return nil
+	}
+	t.Hangup()
+	select {
+	case <-t.Done():
+		return nil
+	case <-time.After(stopWait):
+		return fmt.Errorf("%s still runs after %s", name, stopWait)
+	}
+}
+
 func (l leads) Tell(name, text string) (bool, error) {
 	t, err := leadIn(l.terminals, name)
 	if err != nil {

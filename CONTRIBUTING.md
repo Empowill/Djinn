@@ -156,6 +156,9 @@ To use Djinn, see the [README](README.md). To work on it:
   `djinn wish tell <wish-id> "…"` (or the button at the bottom right of the window, on a wish) writes to the lead the
   same way, as if you typed it in its terminal. Only to a lead: a shell open under its name gets nothing
   ([who may write](docs/agent-protocol.md#writing-to-the-lead)).
+- `djinn wish set-provider <wish-id> codex` (or the agent's name at the top of the wish, in the window) changes the
+  wish's agent: the lead and every task to come that names no other; the tasks that run keep theirs. The lead that runs
+  stops, and one of the new agent starts from the wish's brief: the old lead's conversation does not pass to it.
 - `djinn wish brief <wish-id>`: the brief a new lead starts from, when `djinn wish resume` finds no session.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
   --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)
