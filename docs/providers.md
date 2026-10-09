@@ -236,10 +236,20 @@ typed: cmd.exe does not read the C runtime's `\"`. Claude Code and Antigravity i
 (`irm … | iex`), so their Windows install line names it: `powershell -NoProfile -Command "irm … | iex"`.
 
 **The lead.** A lead runs `claude` interactive in the window's terminal, not `-p`. Claude Code skips its workspace
-trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet (a
-wish without a project starts in its own folder of Djinn's data) first asks to trust it, there, in the window.
-Djinn never answers it: trusting a folder is the user's decision. A first run of interactive Claude Code on a
-machine also shows its onboarding (theme, sign-in) once.
+trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet first
+asks to trust it, there, in the window. Djinn never answers it: trusting a folder is the user's decision. A first run
+of interactive Claude Code on a machine also shows its onboarding (theme, sign-in) once.
+
+**A lead without a project** starts in one folder for every such wish, `<data folder>/wishes`, not in the wish's own
+`<data folder>/wishes/<wish>`, which keeps its page and brief: the line names the brief's files by their absolute
+paths. Outside a Git repository, Claude Code keys the trust on the folder it starts in, and that trust covers every
+subfolder ("Project allow rules and workspace trust" in its permissions documentation). So the question comes once
+per data folder, not at each wish, and a lead recorded in a wish's own folder before is covered too. **Verified** on
+claude 2.1.295 without any prompt, with a `CLAUDE_CONFIG_DIR` of its own: started in a subfolder of a trusted folder,
+it opens on its prompt; in a subfolder of an untrusted one, it asks. The binary walks up from the working folder to
+the Git root, or to the root of the disk outside Git, and saves an accepted trust on the folder itself (or the Git
+root). Codex starts in the same folder and reads the brief there; a stable folder only helps its own trust prompt,
+if it shows one (**supposed**, not run).
 
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.

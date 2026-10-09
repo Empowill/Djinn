@@ -226,6 +226,27 @@ func TestResumeFromBrief(t *testing.T) {
 			t.Errorf("%s: opened %q, resume %v", p, got, res)
 		}
 	}
+	// Without a project, every lead starts in one folder, the parent of each wish's own: Claude Code's trust covers
+	// the subfolders of the folder trusted, so it asks once. The brief stays in the wish's own folder.
+	for _, p := range []planv1.Provider{planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX} {
+		if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: last})); err != nil {
+			t.Fatal(err)
+		}
+		w, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Alone with " + p.String()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		last = w.Msg.GetWish().GetId()
+		res := resume(last, p)
+		got, want := leads.opened[len(leads.opened)-1], " in "+filepath.Join(home, PagesDir)
+		if !strings.HasSuffix(got, want) || (p == planv1.Provider_PROVIDER_CLAUDE &&
+			res.GetWish().GetLead().GetDirectory() != filepath.Join(home, PagesDir)) {
+			t.Errorf("%s without a project: opened %q, lead %v, want%s", p, got, res.GetWish().GetLead(), want)
+		}
+		if _, err := os.Stat(filepath.Join(home, PagesDir, last, LeadBriefFile)); err != nil {
+			t.Errorf("%s without a project: %v", p, err)
+		}
+	}
 	// The fake agent has no terminal.
 	if _, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{
 		WishId: make("Fake lead"), Provider: planv1.Provider_PROVIDER_FAKE,
