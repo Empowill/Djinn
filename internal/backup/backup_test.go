@@ -23,6 +23,7 @@ import (
 	backupv1 "github.com/empowill/djinn/gen/go/backup/v1"
 	"github.com/empowill/djinn/gen/go/backup/v1/backupv1connect"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
@@ -334,6 +335,74 @@ func TestRestoreKeepsTheOldFolderAside(t *testing.T) {
 	}
 	if out2.Aside == out.Aside || !strings.HasPrefix(out2.Aside, out.Aside) {
 		t.Errorf("second aside = %s", out2.Aside)
+	}
+}
+
+// refusing is a rename that refuses the first try of each move, as Windows refuses one while an antivirus scans a
+// file, and records the moves it refused, by the paths they went to. It pauses no time.
+func refusing() (fsx.Renamer, *[]string) {
+	var refused []string
+	tried := map[string]bool{}
+	rename := func(oldpath, newpath string) error {
+		if move := oldpath + " -> " + newpath; !tried[move] {
+			tried[move] = true
+			refused = append(refused, newpath)
+			return errors.New("Access is denied")
+		}
+		return os.Rename(oldpath, newpath)
+	}
+	return fsx.Renamer{Func: rename, Wait: time.Second, Sleep: func(time.Duration) {}}, &refused
+}
+
+// TestCreateRetriesARefusedRename: the archive is put in place though its rename is refused a moment.
+func TestCreateRetriesARefusedRename(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	home, s := newHome(t)
+	writeFile(t, home, "state.json", "state")
+	archive := filepath.Join(t.TempDir(), "backup.tar.gz")
+	r, refused := refusing()
+	if _, err := create(ctx, home, archive, "test", s.Snapshot, r); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(*refused, []string{archive}) {
+		t.Errorf("refused %v, want the archive's rename once", *refused)
+	}
+	if !slices.Contains(entries(t, archive), "state.json") {
+		t.Errorf("the archive lacks state.json")
+	}
+}
+
+// TestRestoreRetriesARefusedRename: each move of a restore (the old folder aside, the restored one in place, the
+// worktrees) goes through though refused a moment.
+func TestRestoreRetriesARefusedRename(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src, s := newHome(t)
+	writeFile(t, src, "state.json", "new")
+	archive := filepath.Join(t.TempDir(), "backup.tar.gz")
+	if _, err := Create(ctx, src, archive, "test", s.Snapshot); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(t.TempDir(), "djinn")
+	writeFile(t, home, "state.json", "old")
+	writeFile(t, home, "projects/p1/worktrees/t1/main.go", "work in progress")
+	r, refused := refusing()
+	out, err := restore(ctx, home, archive, time.Now(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{out.Aside, home, filepath.Join(home, "projects", "p1", "worktrees")}; !slices.Equal(*refused, want) {
+		t.Errorf("refused %v, want the 3 moves once each: %v", *refused, want)
+	}
+	if got := readFile(t, filepath.Join(home, "state.json")); got != "new" {
+		t.Errorf("state = %q, want the restored one", got)
+	}
+	if got := readFile(t, filepath.Join(out.Aside, "state.json")); got != "old" {
+		t.Errorf("state aside = %q, want the old one", got)
+	}
+	if got := readFile(t, filepath.Join(home, "projects", "p1", "worktrees", "t1", "main.go")); got != "work in progress" {
+		t.Errorf("worktree = %q, want it at its path", got)
 	}
 }
 
