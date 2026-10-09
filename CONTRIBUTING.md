@@ -154,7 +154,8 @@ To use Djinn, see the [README](README.md). To work on it:
   integrates finished work by itself: at an azima's end, or after an hour and three tasks done, it merges the tasks'
   branches in a worktree of its own, makes the generated files again on a conflict only in them, runs the tests
   through a gate, and moves the wish's branch when they pass ([T30](plan/43303f46-integration.md)). `djinn wish
-  set-integration <wish-id> --branch feat/x` names the branch.
+  set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or red tests, start a correction
+  worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you.
 - The plan of a wish is a graph of azimas (`T07`): tasks no worker runs, which work is part of. `djinn task spawn …
   --part-of T07` spawns work in one, `djinn task group <task-id> --part-of T07` moves it, `djinn task spawn <wish>
   --kind azima --title "…"` makes one. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes

@@ -251,6 +251,14 @@ func (h *Harness) Recover(ctx context.Context) error {
 // reason, and the scheduler starts it as soon as it can. What the worker may do is decided when it starts
 // (prepare).
 func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
+	return h.spawn(ctx, procedure, req, nil)
+}
+
+// spawn is Spawn, of a correction worker when correction is set: Djinn spawns it by itself, and its worktree starts
+// on the failed merge.
+func (h *Harness) spawn(
+	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, correction *planv1.TaskCorrection,
+) (*planv1.Task, error) {
 	if req.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		return h.spawnAzima(ctx, procedure, req)
 	}
@@ -261,7 +269,7 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	task := &planv1.Task{
 		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
 		CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
-		WriteScopes: scopes, Scheduled: true,
+		WriteScopes: scopes, Scheduled: true, Correction: correction,
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
 
@@ -385,7 +393,7 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	var prep prepared
 	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+		if err := tx.Journal(spawner(task), procedure, req); err != nil {
 			return err
 		}
 		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
@@ -421,6 +429,15 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	return h.launch(ctx, r, provider, project, prep, prompt)
 }
 
+// spawner is who spawns task, as the journal records it: Djinn for a correction worker, the developer's side
+// otherwise.
+func spawner(task *planv1.Task) string {
+	if task.GetCorrection() != nil {
+		return actorHarness
+	}
+	return actorLocal
+}
+
 // after is what a spawn says comes before its task: --after, and --depends-on, its former name.
 func after(req *planv1.TaskServiceSpawnRequest) []string {
 	return append(slices.Clip(req.GetDependsOn()), req.GetAfter()...)
@@ -433,7 +450,7 @@ func (h *Harness) plan(
 ) (*planv1.Task, error) {
 	task.WaitReason = why
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+		if err := tx.Journal(spawner(task), procedure, req); err != nil {
 			return err
 		}
 		var err error
@@ -532,9 +549,12 @@ func (h *Harness) launch(
 		task.Branch = branchName(r.branch, task.GetCode(), task.GetTitle(), task.GetId())
 		task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
 		var err error
-		if wk != nil {
+		switch f := task.GetCorrection().GetFailure(); {
+		case f != nil:
+			dir, err = correctionWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), f)
+		case wk != nil:
 			dir = wk.spec.Dir
-		} else {
+		default:
 			dir, err = addWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch())
 		}
 		if err != nil {

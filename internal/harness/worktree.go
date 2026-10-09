@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
 )
 
@@ -102,6 +103,28 @@ func addWorktree(ctx context.Context, dir, path, branch string) (string, error) 
 	}
 	if _, err := git(ctx, dir, "worktree", "add", "--quiet", "-b", branch, path, "HEAD"); err != nil {
 		return "", err
+	}
+	return filepath.Join(path, filepath.FromSlash(prefix)), nil
+}
+
+// correctionWorktree adds the worktree path of a correction worker to the repository holding dir, on a new branch from
+// the failure's base, and returns the project's folder within it. For a conflict, the branch that conflicted is merged
+// there again, its conflicts left for the worker.
+func correctionWorktree(ctx context.Context, dir, path, branch string, f *planv1.IntegrationFailure) (string, error) {
+	prefix, err := git(ctx, dir, "rev-parse", "--show-prefix")
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	if _, err := git(ctx, dir, "worktree", "add", "--quiet", "-b", branch, path, f.GetBase()); err != nil {
+		return "", err
+	}
+	if b := f.GetMergeBranch(); b != "" {
+		if _, err := git(ctx, path, "merge", "--no-ff", "--no-edit", "--quiet", b); err != nil && len(conflicted(ctx, path)) == 0 {
+			return "", fmt.Errorf("merge %s again: %w", b, err)
+		}
 	}
 	return filepath.Join(path, filepath.FromSlash(prefix)), nil
 }

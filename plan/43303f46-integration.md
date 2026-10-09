@@ -49,7 +49,9 @@ lead spends its tokens on mechanical work.
 - [x] The commit cadence: at an azima's end, or after an hour and three tasks done since the last commit; at once for a
   task another waits for. (TestDue, TestLastCommit, with a fake clock: TestIntegrateACleanBatch,
   TestIntegrateABranchNoCheckoutHolds, TestIntegrateADoneWorker)
-- [ ] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
+- [x] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
+  (TestCorrectACodeConflict, TestCorrectRedTests, TestCorrectionAttemptsThenAQuestion,
+  TestAnswerAFailedIntegration, TestACorrectionWorkerThatFails)
 - [ ] A task waits for its dependencies to be integrated, and starts from the integration branch.
 - [ ] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
   conflict, red), and propose installing once a batch is integrated.

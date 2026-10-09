@@ -32,7 +32,7 @@ import (
 
 // How the journal records the integration.
 const (
-	methodIntegrate = "harness/integrate" // a task's integration moved on, or Djinn recorded a wish's integration branch; the request is the task, or the wish
+	methodIntegrate = "harness/integrate" // a task's integration moved on, Djinn recorded a wish's integration branch, or asked what to do with work that failed; the request is the task, the wish, or the question
 	methodCommit    = "harness/commit"    // a batch was committed into its wish's integration branch; the request is the commit (planv1.IntegrationCommit)
 )
 
@@ -141,6 +141,7 @@ func (h *Harness) integratePass(ctx context.Context) {
 	type key struct{ wish, project string }
 	waiting := map[key][]*planv1.Task{}
 	byWish := map[string][]*planv1.Task{}
+	h.correctionsEnded(ctx, tasks)
 	for _, t := range tasks {
 		byWish[t.GetWishId()] = append(byWish[t.GetWishId()], t)
 		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING &&
@@ -184,14 +185,15 @@ func (h *Harness) running(id string) bool {
 }
 
 // due returns the batches of waiting, a wish's finished work in one project in the order it ended, to commit now
-// (the developer's rule): each task another task waits for, at once and alone, so that the graph never stalls; then
+// (the developer's rule): each task another task waits for, and each correction worker's, at once and alone, so that
+// the graph never stalls; then
 // the others together when an azima one of them is part of ends, none of its parts being planned or under way any
 // more, or once every has passed since the last commit and n of them are done. tasks are all the wish's.
 func due(waiting, tasks []*planv1.Task, last, now time.Time, every time.Duration, n int) [][]*planv1.Task {
 	var out [][]*planv1.Task
 	var rest []*planv1.Task
 	for _, t := range waiting {
-		if awaited(t, tasks) {
+		if awaited(t, tasks) || t.GetCorrection() != nil {
 			out = append(out, []*planv1.Task{t})
 		} else {
 			rest = append(rest, t)
@@ -283,7 +285,14 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		in, text, commit = pending(branch, ""), "integration: djinn up stopped during it; Djinn integrates the work again", nil
 	}
 	in.Branch = branch
+	if in.GetFailure() != nil {
+		h.failed(ctx, wish, project, settings, batch, in, text)
+		return
+	}
 	h.settleIntegration(ctx, batch, in, text, commit)
+	if in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		h.settleCorrected(ctx, batch, in)
+	}
 }
 
 // integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish made before
@@ -329,13 +338,10 @@ func (h *Harness) commitBatch(
 	if err != nil {
 		return wait("the branch " + branch + " is not in the project's repository")
 	}
-	ids := make([]string, len(batch))
-	for i, t := range batch {
-		ids[i] = t.GetId()
-	}
+	taskIDs := ids(batch)
 	key := wish.GetId() + "/" + project.GetId()
 	done, ok := h.tested[key]
-	if !ok || done.old != old || !slices.Equal(done.ids, ids) {
+	if !ok || done.old != old || !slices.Equal(done.ids, taskIDs) {
 		h.settleIntegration(ctx, batch, &planv1.TaskIntegration{
 			State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, Branch: branch,
 		}, "integration: integrating into "+branch+", with "+codes(batch), nil)
@@ -344,12 +350,13 @@ func (h *Harness) commitBatch(
 		if done.sha, in, text = h.mergeAndTest(ctx, wish, project, settings, branch, old, batch); in != nil {
 			return in, text, nil
 		}
-		done.old, done.ids = old, ids
+		done.old, done.ids = old, taskIDs
 		h.tested[key] = done
 	}
 	sha := done.sha
 	commit := &planv1.IntegrationCommit{
-		WishId: wish.GetId(), ProjectId: project.GetId(), Branch: branch, OldSha: old, NewSha: sha, TaskIds: ids,
+		WishId: wish.GetId(), ProjectId: project.GetId(), Branch: branch, OldSha: old, NewSha: sha,
+		TaskIds: append(taskIDs, correctedIDs(batch)...),
 	}
 	committed := &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, Sha: sha}
 	if sha == old {
@@ -391,16 +398,21 @@ func (h *Harness) commitBatch(
 }
 
 // mergeAndTest merges batch's branches from old in the wish's integration worktree, and runs the tests there. It
-// returns the commit tested green; or where the batch stands when it is not, and the event that says it.
+// returns the commit tested green; or where the batch stands when it is not, and the event that says it. A conflict
+// in code, or red tests, says what failed as a correction worker starts from it (IntegrationFailure).
 func (h *Harness) mergeAndTest(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch, old string, batch []*planv1.Task,
 ) (string, *planv1.TaskIntegration, string) {
-	fail := func(state planv1.IntegrationState, why string) (string, *planv1.TaskIntegration, string) {
+	fail := func(state planv1.IntegrationState, why string, f *planv1.IntegrationFailure) (string, *planv1.TaskIntegration, string) {
 		what := "conflict"
 		if state == planv1.IntegrationState_INTEGRATION_STATE_RED {
 			what = "red"
 		}
-		return "", &planv1.TaskIntegration{State: state, Reason: why}, "integration: " + what + ": " + why + "; " + branch + " stays as it was"
+		if f != nil {
+			f.State, f.Reason = state, why
+		}
+		return "", &planv1.TaskIntegration{State: state, Reason: why, Failure: f},
+			"integration: " + what + ": " + why + "; " + branch + " stays as it was"
 	}
 	wait := func(why string) (string, *planv1.TaskIntegration, string) {
 		return "", pending(branch, why), "integration: waiting: " + why
@@ -416,21 +428,29 @@ func (h *Harness) mergeAndTest(
 	if err != nil {
 		return wait("prepare the integration worktree: " + err.Error())
 	}
-	for _, t := range batch {
+	for i, t := range batch {
+		base, err := git(ctx, wt, "rev-parse", "HEAD")
+		if err != nil {
+			return wait(err.Error())
+		}
+		// What a correction starts from, when this merge conflicts: the merges before it, and this one again.
+		conflict := func(files []string) *planv1.IntegrationFailure {
+			return &planv1.IntegrationFailure{Base: base, MergeBranch: t.GetBranch(), Files: files, TaskIds: ids(batch[:i+1])}
+		}
 		msg := fmt.Sprintf("Merge branch '%s' into %s", t.GetBranch(), branch)
 		if _, err := git(ctx, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, t.GetBranch()); err == nil {
 			h.integrationStep(ctx, t, "integration: merged "+t.GetBranch())
 			continue
 		} else if conflicts := conflicted(ctx, wt); len(conflicts) == 0 {
 			_, _ = git(ctx, wt, "merge", "--abort")
-			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, fmt.Sprintf("merge %s: %v", t.GetCode(), err))
+			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, fmt.Sprintf("merge %s: %v", t.GetCode(), err), nil)
 		} else if !generatedOnly(conflicts, prefix, settings.Generated) || settings.Generate == "" {
 			_, _ = git(ctx, wt, "merge", "--abort")
 			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, fmt.Sprintf("%s conflicts with %s in %s",
-				t.GetCode(), branch, strings.Join(conflicts, ", ")))
+				t.GetCode(), branch, strings.Join(conflicts, ", ")), conflict(conflicts))
 		} else if why := h.settleGenerated(ctx, t, wt, dir, settings.Generate, conflicts); why != "" {
 			_, _ = git(ctx, wt, "merge", "--abort")
-			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, why)
+			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, why, conflict(conflicts))
 		}
 	}
 	h.integrationStep(ctx, batch[0], "integration: testing "+codes(batch)+": "+settings.Test)
@@ -439,13 +459,15 @@ func (h *Harness) mergeAndTest(
 	case ctx.Err() != nil:
 		return wait("djinn up stopped during the tests")
 	case err != nil:
-		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, fmt.Sprintf("%s could not run: %v", settings.Test, err))
-	case code != 0:
-		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, fmt.Sprintf("%s exited %d%s", settings.Test, code, tail(out)))
+		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, fmt.Sprintf("%s could not run: %v", settings.Test, err), nil)
 	}
 	sha, err := git(ctx, wt, "rev-parse", "HEAD")
 	if err != nil {
 		return wait(err.Error())
+	}
+	if code != 0 {
+		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, fmt.Sprintf("%s exited %d%s", settings.Test, code, tail(out)),
+			&planv1.IntegrationFailure{Base: sha, Command: settings.Test, Output: tail(out), TaskIds: ids(batch)})
 	}
 	return sha, nil, ""
 }
@@ -531,7 +553,18 @@ func (h *Harness) settleIntegration(
 
 // sameIntegration tells whether a and b say the same, whenever they said it.
 func sameIntegration(a, b *planv1.TaskIntegration) bool {
-	return a.GetState() == b.GetState() && a.GetBranch() == b.GetBranch() && a.GetSha() == b.GetSha() && a.GetReason() == b.GetReason()
+	return a.GetState() == b.GetState() && a.GetBranch() == b.GetBranch() && a.GetSha() == b.GetSha() && a.GetReason() == b.GetReason() &&
+		a.GetCorrectedBy() == b.GetCorrectedBy() && a.GetAttempts() == b.GetAttempts() && a.GetQuestionId() == b.GetQuestionId() &&
+		proto.Equal(a.GetFailure(), b.GetFailure())
+}
+
+// ids lists the tasks' identifiers.
+func ids(batch []*planv1.Task) []string {
+	out := make([]string, len(batch))
+	for i, t := range batch {
+		out[i] = t.GetId()
+	}
+	return out
 }
 
 // codes lists the tasks' codes: "W2, W3".

@@ -112,38 +112,42 @@ func TestResolveSettings(t *testing.T) {
 		want      Settings
 	}{
 		{"neither file", nil, nil, Settings{
-			Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, TestFrom: def,
+			Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the repository's only", team, nil, Settings{
 			Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def,
+			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the developer's win, setting by setting", team, &planv1.ProjectSettings{Model: proto.String("sonnet")}, Settings{
 			Provider: claude, Model: "sonnet", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def,
+			ProviderFrom: repo, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"a provider brings its model, not the other file's", team, &planv1.ProjectSettings{Provider: &codex}, Settings{
 			Provider: codex, MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def,
+			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"an explicit zero lifts the team's budget", team, &planv1.ProjectSettings{MaxBudgetUsd: proto.Float64(0)}, Settings{
 			Provider: claude, Model: "opus", Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: dev, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def,
+			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: dev, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the developer's branch wins", team, &planv1.ProjectSettings{Branch: proto.String("me/{slug}-{uuid8}")}, Settings{
 			Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "me/{slug}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: dev, GeneratedFrom: def, GenerateFrom: def, TestFrom: def,
+			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: dev, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the developer's only", nil, &planv1.ProjectSettings{Provider: &codex, Model: proto.String("gpt-5.1-codex")}, Settings{
 			Provider: codex, Model: "gpt-5.1-codex", Branch: DefaultBranch,
-			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, TestFrom: def,
+			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, TestFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the integration's, the developer's winning", &planv1.ProjectSettings{
 			Generated: []string{"gen/**", "docs/openapi.json"}, Generate: proto.String("go tool task gen"), Test: proto.String("go tool task test"),
 		}, &planv1.ProjectSettings{Test: proto.String("go tool task test-go")}, Settings{
 			Provider: claude, Branch: DefaultBranch, Generated: []string{"gen/**", "docs/openapi.json"}, Generate: "go tool task gen",
 			Test: "go tool task test-go", ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: repo,
-			GenerateFrom: repo, TestFrom: dev,
+			GenerateFrom: repo, TestFrom: dev, CorrectionAttempts: 2, AttemptsFrom: def,
+		}},
+		{"no correction worker", nil, &planv1.ProjectSettings{CorrectionAttempts: proto.Int32(0)}, Settings{
+			Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def,
+			GeneratedFrom: def, GenerateFrom: def, TestFrom: def, AttemptsFrom: dev,
 		}},
 	} {
 		if got := ResolveSettings(c.repo, c.dev); !reflect.DeepEqual(got, c.want) {
@@ -185,16 +189,16 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, test= DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, test= DEFAULT, correction_attempts=2 DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 
 	writeSettings(t, repoFile, "provider: PROVIDER_CLAUDE\nmodel: \"opus\"\nmax_budget_usd: 3\nbranch: \"djinn/{code}-{uuid8}\"\n"+
-		"generated: \"gen/**\"\ngenerated: \"docs/openapi.json\"\ngenerate: \"go tool task gen\"\ntest: \"go tool task test\"\n")
+		"generated: \"gen/**\"\ngenerated: \"docs/openapi.json\"\ngenerate: \"go tool task gen\"\ntest: \"go tool task test\"\ncorrection_attempts: 3\n")
 	writeSettings(t, devFile, "model: \"sonnet\"\nbranch: \"me/{slug}-{uuid8}\"\ntest: \"go tool task test-go\"\n")
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/openapi.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
-		"test=go tool task test-go DEVELOPER"; got != want {
+		"test=go tool task test-go DEVELOPER, correction_attempts=3 REPOSITORY"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
@@ -203,7 +207,7 @@ func TestProjectShow(t *testing.T) {
 	res = show()
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/openapi.json REPOSITORY, "+
-		"generate=go tool task gen REPOSITORY, test=go tool task test REPOSITORY"; got != want {
+		"generate=go tool task gen REPOSITORY, test=go tool task test REPOSITORY, correction_attempts=3 REPOSITORY"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
 	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {

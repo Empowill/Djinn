@@ -822,6 +822,49 @@
         },
         "type": "object"
       },
+      "plan.v1.IntegrationFailure": {
+        "description": "IntegrationFailure is a batch's merge or tests that failed, as a correction worker starts from it.",
+        "properties": {
+          "base": {
+            "description": "The commit the correction's branch starts from: the batch's merges before the one that conflicted, or all of them when the tests failed.",
+            "type": "string"
+          },
+          "command": {
+            "description": "For red tests, the test command, and the end of its output.",
+            "type": "string"
+          },
+          "files": {
+            "description": "For a conflict, the files in conflict, as the repository names them.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mergeBranch": {
+            "description": "For a conflict, the branch whose merge conflicted: merged again in the correction's worktree, its conflicts left there.",
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "What failed, in a sentence.",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/plan.v1.IntegrationState",
+            "description": "CONFLICT or RED."
+          },
+          "taskIds": {
+            "description": "The tasks whose work is in base and merge_branch: what the correction corrects, and what its success commits.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.IntegrationState": {
         "description": "IntegrationState is where a task's finished work stands on its way into its wish's integration branch.",
         "enum": [
@@ -1241,7 +1284,7 @@
         "description": "ProjectSetting is one setting of a project, as its workers get it.",
         "properties": {
           "name": {
-            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test.",
+            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test, correction_attempts.",
             "type": "string"
           },
           "source": {
@@ -1893,6 +1936,10 @@
             "description": "The task was continued (TaskService.Continue): its next worker resumes its own session on the last prompt of its events, instead of being told Djinn restarted. Cleared as that worker starts.",
             "type": "boolean"
           },
+          "correction": {
+            "$ref": "#/components/schemas/plan.v1.TaskCorrection",
+            "description": "For a correction worker, which Djinn starts by itself when a batch's merge conflicts in code or its tests fail: what it corrects. Its worktree starts on the failed merge, and its branch integrates like any task's."
+          },
           "createTime": {
             "$ref": "#/components/schemas/google.protobuf.Timestamp",
             "description": "When the task was created."
@@ -2078,6 +2125,21 @@
         ],
         "type": "object"
       },
+      "plan.v1.TaskCorrection": {
+        "description": "TaskCorrection is what a correction worker corrects.",
+        "properties": {
+          "attempt": {
+            "description": "Which attempt it is, from 1, for this failure: past the project's correction_attempts, Djinn asks the person.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "failure": {
+            "$ref": "#/components/schemas/plan.v1.IntegrationFailure",
+            "description": "The failure, as its worktree starts from it."
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.TaskEvent": {
         "description": "An event of a task's worker: what it said, the tools it called, what it spent.",
         "properties": {
@@ -2143,12 +2205,29 @@
       "plan.v1.TaskIntegration": {
         "description": "TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a worker ends done, Djinn commits its worktree on its branch, merges it with the batch into the integration branch in a worktree of its own, makes the generated files again on a conflict only in them, tests the result through a gate, and moves the branch when it passes.",
         "properties": {
+          "attempts": {
+            "description": "How many correction workers were started for it in a row.",
+            "format": "int32",
+            "type": "integer"
+          },
           "branch": {
             "description": "The integration branch, in the task's project.",
             "type": "string"
           },
+          "correctedBy": {
+            "description": "The correction worker that corrects the work, or did: for COMMITTED, the work went in with it (\"corrected by W5\").",
+            "type": "string"
+          },
+          "failure": {
+            "$ref": "#/components/schemas/plan.v1.IntegrationFailure",
+            "description": "For CONFLICT and RED, what failed, as a correction worker starts from it; unset when no worker can correct it (a command that could not run, a merge that failed without conflicts)."
+          },
+          "questionId": {
+            "description": "The question Djinn asked once the attempts were spent: try again, leave it, or the person takes it.",
+            "type": "string"
+          },
           "reason": {
-            "description": "For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch.",
+            "description": "For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch; for COMMITTED with a correction worker's work, \"corrected by W5\".",
             "type": "string"
           },
           "sha": {

@@ -36,6 +36,7 @@ test: "go tool task test"
 | `generated`      | The files code generation makes, as globs (`gen/**`), repeated: see [integration](#integration). | none |
 | `generate`       | The command that makes them, in the project's folder.                   | none                       |
 | `test`           | The command that tests the project, in the project's folder. Set, Djinn integrates finished work. | none: no integration |
+| `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
@@ -137,7 +138,18 @@ Djinn brings it there by itself, no model ([T30](../plan/43303f46-integration.md
    by a fast-forward. With changes not committed, it is left as it is, and so is the branch: moved under it, your
    next commit would undo the batch. The tasks stay pending, saying why, and the branch moves once your changes are
    committed or put aside, without testing again.
-5. **Red**, or a **conflict** in code: the branch stays as it was, and each task of the batch says what failed.
+5. **Red**, or a **conflict** in code: the branch stays as it was, and each task of the batch says what failed. The
+   tasks of the batch after a conflict, whose merge was not tried, go back to wait for the next batch.
+6. **A correction worker** starts by itself: a work task part of the same azima as the failed task, of its provider,
+   its worktree on the failed merge (the merges before it and that merge again, its conflicts left in place; or all
+   the batch merged, for red tests), what failed in its first prompt: the files in conflict, or the test command and
+   the end of its output. It does not commit: Djinn commits what it leaves, which concludes the merge, and its branch
+   integrates like any task's, at once and alone. Green, the failed tasks are committed with it, saying
+   `corrected by W5`. A correction whose work fails in turn, or whose worker fails, counts as an attempt.
+7. Past `correction_attempts` (2 by default), Djinn **asks you** on the wish: try again (a new correction worker, its
+   attempts counted again), leave it (the work stays out of the branch), or you take it (the question says how to
+   find the failed merge). The question blocks nothing else: the rest of the wish goes on. A correction worker you
+   stop leaves it to you, asked the same.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
 branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.

@@ -294,23 +294,39 @@ func TestIntegrateGeneratedConflict(t *testing.T) {
 	}
 }
 
+// noCorrection makes the project start no correction worker: Djinn asks at once (correct_test.go).
+func (in *integration) noCorrection(t *testing.T) {
+	t.Helper()
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 0\n")
+}
+
 func TestIntegrateCodeConflict(t *testing.T) {
 	in := integrating(t)
+	in.noCorrection(t)
 	old := in.tip(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/README.md": "# One\n"})
 	w2 := in.finished(t, "W2", map[string]string{"app/README.md": "# Two\n", "app/gen/index.txt": "two\n"})
 	w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
 
 	in.pass(t, time.Hour)
-	if got := in.states(t, w1, w2, w3); got != "W1 CONFLICT, W2 CONFLICT, W3 CONFLICT" {
+	// W3's merge was not tried: it goes with the next batch.
+	if got := in.states(t, w1, w2, w3); got != "W1 CONFLICT, W2 CONFLICT, W3 PENDING" {
 		t.Fatalf("a conflict in code: %s", got)
 	}
-	got, texts := in.integration(t, w3)
-	if want := "W2 conflicts with " + in.branch + " in app/README.md"; got.GetReason() != want {
-		t.Errorf("W3's reason %q; want %q", got.GetReason(), want)
+	if _, texts := in.integration(t, w3); texts[len(texts)-1] != "waiting: not merged, W2 having conflicted before; it goes with the next batch" {
+		t.Errorf("W3's events %q", texts)
 	}
-	if last := texts[len(texts)-1]; last != "conflict: "+got.GetReason()+"; "+in.branch+" stays as it was" {
-		t.Errorf("W3's last event %q", last)
+	got, texts := in.integration(t, w1)
+	if want := "W2 conflicts with " + in.branch + " in app/README.md"; got.GetReason() != want {
+		t.Errorf("W1's reason %q; want %q", got.GetReason(), want)
+	}
+	q := in.question(t, w1)
+	if last := texts[len(texts)-1]; last != "conflict: "+got.GetReason()+"; "+in.branch+" stays as it was; Djinn asks you "+q.GetCode() {
+		t.Errorf("W1's last event %q", last)
+	}
+	if !strings.Contains(q.GetText(), "The project's settings start no correction worker") {
+		t.Errorf("the question %q", q.GetText())
 	}
 	if in.tip(t) != old || len(in.commits(t)) != 0 || len(in.runs) != 0 {
 		t.Errorf("the branch moved to %s from %s; commits %v; runs %v", in.tip(t), old, in.commits(t), in.runs)
@@ -322,7 +338,7 @@ func TestIntegrateCodeConflict(t *testing.T) {
 	if out := in.git(t, integrationDir(in.home, in.projectID, in.wishID), "status", "--porcelain"); out != "" {
 		t.Errorf("the integration worktree holds %q", out)
 	}
-	// A failed batch waits for its correction: it is not tried again.
+	// A failed batch waits for its correction, or the person: it is not tried again.
 	in.pass(t, time.Hour)
 	if got := in.states(t, w1); got != "W1 CONFLICT" {
 		t.Errorf("tried again: %s", got)
@@ -331,6 +347,7 @@ func TestIntegrateCodeConflict(t *testing.T) {
 
 func TestIntegrateRedTests(t *testing.T) {
 	in := integrating(t)
+	in.noCorrection(t)
 	old := in.tip(t)
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin\nFAIL"
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})

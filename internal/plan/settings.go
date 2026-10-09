@@ -91,6 +91,10 @@ func secretIn(b []byte) (int, string) {
 // DefaultBranch is the branch template of a project whose files set none.
 const DefaultBranch = "{code}-{slug}-{uuid8}"
 
+// DefaultCorrectionAttempts is how many correction workers Djinn starts for a failed integration, one after the other,
+// before it asks the person, in a project whose files set none.
+const DefaultCorrectionAttempts = 2
+
 // Settings are a project's settings as its workers get them, each with where it comes from.
 type Settings struct {
 	Provider     planv1.Provider
@@ -101,8 +105,10 @@ type Settings struct {
 	// them, and the command that tests the project; empty when not set.
 	Generated      []string
 	Generate, Test string
+	// How many correction workers Djinn starts for a batch that conflicts in code or tests red, before it asks.
+	CorrectionAttempts int
 
-	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, TestFrom planv1.SettingSource
+	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, TestFrom, AttemptsFrom planv1.SettingSource
 }
 
 // ResolveSettings merges the repository's settings and the developer's, either nil when there is none. The
@@ -111,9 +117,9 @@ type Settings struct {
 func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 	def := planv1.SettingSource_SETTING_SOURCE_DEFAULT
 	s := Settings{
-		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch, CorrectionAttempts: DefaultCorrectionAttempts,
 		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
-		TestFrom: def,
+		TestFrom: def, AttemptsFrom: def,
 	}
 	for _, f := range []struct {
 		settings *planv1.ProjectSettings
@@ -143,6 +149,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.Test != nil {
 			s.Test, s.TestFrom = f.settings.GetTest(), f.from
+		}
+		if f.settings.CorrectionAttempts != nil {
+			s.CorrectionAttempts, s.AttemptsFrom = int(f.settings.GetCorrectionAttempts()), f.from
 		}
 	}
 	return s
@@ -201,5 +210,6 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "generated", Value: strings.Join(s.Generated, ","), Source: s.GeneratedFrom},
 		{Name: "generate", Value: s.Generate, Source: s.GenerateFrom},
 		{Name: "test", Value: s.Test, Source: s.TestFrom},
+		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 	}
 }
