@@ -3,7 +3,6 @@
 // journal and the rights its workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent.
 // Djinn proposes; only the user grants.
 import {
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Clock3,
@@ -17,7 +16,7 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import {
@@ -35,6 +34,7 @@ import {
   WishState,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
+import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
 import { useClients, useData, useWishDetail } from "./data/djinn";
 import {
   type OpenQuestion,
@@ -49,7 +49,6 @@ import {
 import {
   allowanceOf,
   isActive,
-  isOpen,
   projectsOf,
   taskStatusText,
   taskTone,
@@ -63,6 +62,7 @@ import { AttentionBar, attentionOf } from "./attention";
 import { MarkButtons, type OnMark, useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { useKeepPlace } from "./scroll-anchor";
+import { DecisionLog } from "./decision-log";
 import { CountPill, StatusBadge } from "./status";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { SpentLine } from "./usage";
@@ -84,8 +84,8 @@ export function WishView({
   const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
   const codes = new Map(detail.tasks.map((task) => [task.id, task.code]));
-  const notes = detail.blocks.filter((b) => !isLog(b));
-  const decided = detail.questions.filter((q) => !isOpen(q));
+  const notes = detail.blocks.filter((b) => !isLog(b) && !isDecisionBlock(b));
+  const decisions = decisionsOf(detail.questions, detail.blocks, detail.tasks);
   const running = detail.tasks.filter(
     (task) => task.status === TaskStatus.RUNNING,
   ).length;
@@ -93,8 +93,10 @@ export function WishView({
     (task) => task.status === TaskStatus.DONE,
   ).length;
   const granted = wish.state === WishState.GRANTED;
-  const [history, setHistory] = useState(false);
   const [view, setView] = useState<View>("main");
+  // What a link between a decision and a task brings into sight in the other tab: its id.
+  const [focus, setFocus] = useState("");
+  const show = (to: View, id = "") => (setView(to), setFocus(id));
   const moving = movingTasks(detail.tasks);
   const finished = finishedTasks(detail.tasks);
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
@@ -291,8 +293,16 @@ export function WishView({
             view={view}
             main={t("tabs.wish")}
             tasks={detail.tasks.length}
-            onView={setView}
+            decisions={decisions.length}
+            onView={(to) => show(to)}
           />
+          {view === "decisions" && (
+            <DecisionLog
+              items={decisions.map((item) => ({ item }))}
+              focus={focus}
+              onTask={(id) => show("tasks", id)}
+            />
+          )}
           {view === "tasks" &&
             (detail.tasks.length === 0 ? (
               <p className="muted-text" role="tabpanel">
@@ -309,6 +319,11 @@ export function WishView({
                     task={task}
                     codes={codes}
                     forkedAs={forkedAs(task, detail.tasks)}
+                    decision={decisionOf(task, decisions)}
+                    focused={focus === task.id}
+                    onDecision={() =>
+                      show("decisions", decisionOf(task, decisions)?.id)
+                    }
                     project={allProjects.find((p) => p.id === task.projectId)}
                     onStop={() =>
                       quiet(
@@ -445,43 +460,6 @@ export function WishView({
                     />
                   ))}
                 </section>
-              )}
-
-              {decided.length > 0 && (
-                <div className="decision-history">
-                  <button
-                    className="text-button"
-                    onClick={() => setHistory(!history)}
-                    aria-expanded={history}
-                  >
-                    <CheckCircle2 size={14} />
-                    {t("panels.decisions_recorded", { count: decided.length })}
-                    <ChevronDown
-                      size={13}
-                      className={history ? "rotated" : ""}
-                    />
-                  </button>
-                  <AnimatePresence>
-                    {history && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                      >
-                        {decided.map((q) => (
-                          <WishQuestion
-                            key={q.id}
-                            question={q}
-                            onAnswer={async () => {}}
-                            onMark={(kind, remove) =>
-                              mark(wish.id, q.id, kind, remove)
-                            }
-                          />
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
               )}
 
               <Journal wish={wish} blocks={detail.blocks} />

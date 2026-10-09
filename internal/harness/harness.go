@@ -263,6 +263,11 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), req.GetDependsOn()); err != nil {
 		return nil, plan.Status(err)
 	}
+	if ref := req.GetDecision(); ref != "" {
+		if task.Decision, err = plan.Decision(ctx, h.store, wish.GetId(), ref); err != nil {
+			return nil, plan.Status(err)
+		}
+	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		return nil, plan.Status(err)
@@ -519,7 +524,7 @@ func accessText(t *planv1.Task, question *planv1.Question) string {
 // configuration: may its worker edit the project's files?
 func editQuestion(t *planv1.Task, project *planv1.Project) *planv1.Question {
 	return &planv1.Question{
-		Id: store.NewID(), WishId: t.GetWishId(), CreateTime: timestamppb.Now(),
+		Id: store.NewID(), WishId: t.GetWishId(), CreateTime: timestamppb.Now(), Icon: "🔓",
 		Text: fmt.Sprintf("May the worker of task %s change the files of %s? It reads only until you answer: %s is outside Git, "+
 			"and has no agent configuration (no %s, AGENTS.md nor configuration file of its agent).",
 			t.GetCode(), project.GetName(), project.GetDirectory(), filepath.ToSlash(PermissionsFile)),

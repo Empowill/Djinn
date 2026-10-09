@@ -1,8 +1,8 @@
 // A question of a wish, on Clément's question card, laid out to decide at a glance: its title, the recommendation
 // boxed first, the options as buttons, then what is at stake. Two lamp buttons: "Rub the lamp" answers with the
 // recommended option in one click (a mark the lamp turns into the answer), "Enlighten me" asks the lead to find out
-// more first (QuestionService.Enlighten). Answered, it is a decision. Its rounds, each request and each revision,
-// fold below.
+// more first (QuestionService.Enlighten). Answered, it is a decision: no mark asks to read or approve it again, and
+// the decision log shows it. Its rounds, each request and each revision, fold below.
 import {
   ArrowRight,
   Check,
@@ -52,7 +52,7 @@ export function WishQuestion({
   expanded?: boolean;
   // Answers the question; resolves once djinn has it. A rejection keeps the card open.
   onAnswer: (choice: Choice, note: string) => Promise<void>;
-  // Marks the question read or approved; approving an open one answers it with the recommended option.
+  // Marks an open question read, or approves it, which answers it with the recommended option.
   onMark?: OnMark;
   // Asks the lead to investigate before deciding.
   onEnlighten?: (note: string) => Promise<void>;
@@ -137,7 +137,9 @@ export function WishQuestion({
         ) : (
           <div className="question-heading">{heading}</div>
         )}
-        {onMark && <MarkButtons item={q} approve={answered} onMark={onMark} />}
+        {onMark && !answered && (
+          <MarkButtons item={q} approve={false} onMark={onMark} />
+        )}
       </div>
       {body && (
         <div className="question-inner">

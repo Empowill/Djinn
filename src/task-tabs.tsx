@@ -1,16 +1,18 @@
 // The tasks have a tab of their own, in a wish's view and in the flight plan, next to the rest. In it, a list: at the
 // top what moves or waits for someone, by status (running, cut short and failed first, then waiting and paused, the
-// planned ones last); at the bottom every finished task, the latest ended first.
+// planned ones last); at the bottom every finished task, the latest ended first. The decisions have the next tab
+// (src/decision-log.tsx).
 import { type ReactNode } from "react";
 
 import { t } from "./i18n";
 
-export type View = "main" | "tasks";
+export type View = "main" | "tasks" | "decisions";
 
 export function ViewTabs({
   view,
   main,
   tasks,
+  decisions,
   onView,
 }: {
   view: View;
@@ -18,11 +20,14 @@ export function ViewTabs({
   main: string;
   // How many tasks the Tasks tab holds.
   tasks: number;
+  // How many decisions the Decisions tab holds.
+  decisions: number;
   onView: (view: View) => void;
 }) {
   const tabs = [
     { id: "main", label: main, count: -1 },
     { id: "tasks", label: t("wish.tasks"), count: tasks },
+    { id: "decisions", label: t("tabs.decisions"), count: decisions },
   ] as const;
   return (
     <div className="view-tabs" role="tablist">

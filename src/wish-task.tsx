@@ -1,6 +1,7 @@
 // A task of a wish: its code, what it does, where it stands, what it spent, and, opened, its facts, its worker's
 // last word and its events as they come (TaskService.Watch), with a box to send the running worker an instruction
-// (TaskService.Send). A watcher (a command, no agent) shows the first line of its last paragraph, and pauses.
+// (TaskService.Send). A watcher (a command, no agent) shows the first line of its last paragraph, and pauses. A task
+// that comes from a decision links back to it.
 import {
   Activity,
   AlertCircle,
@@ -36,6 +37,7 @@ import {
   TaskEventKind,
   TaskStatus,
 } from "../gen/ts/plan/v1/plan_pb";
+import { type Decision } from "./data/decisions";
 import { useTaskEvents } from "./data/djinn";
 import {
   taskFinished,
@@ -44,6 +46,7 @@ import {
   usd,
   when,
 } from "./data/format";
+import { DecisionLink } from "./decision-log";
 import { language, t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
@@ -85,9 +88,12 @@ export function WishTask({
   codes,
   origin,
   forkedAs = "",
+  decision,
+  focused = false,
   onStop,
   onSend,
   onHold,
+  onDecision,
   onDone,
 }: {
   task: Task;
@@ -98,15 +104,27 @@ export function WishTask({
   origin?: ReactNode;
   // The task that took over this one, cut short: its code.
   forkedAs?: string;
+  // The decision the task comes from, which onDecision shows.
+  decision?: Decision;
+  // Brought into sight and opened, from its decision.
+  focused?: boolean;
   onStop: () => void;
   onSend: (text: string) => Promise<unknown>;
   // Pauses the task's worker (true) or lets it go on (false): offered for a watcher.
   onHold?: (pause: boolean) => void;
+  onDecision?: () => void;
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
   onDone?: (note: string) => Promise<unknown>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(focused);
   const [closing, setClosing] = useState(false);
+  useEffect(() => {
+    if (!focused) return;
+    setOpen(true);
+    document
+      .getElementById(`task-${task.id}`)
+      ?.scrollIntoView({ block: "center" });
+  }, [focused, task.id]);
   const watcher = task.provider === Provider.WATCH;
   const holdable =
     watcher &&
@@ -126,7 +144,7 @@ export function WishTask({
   const tone = taskTone(task, forkedAs);
   return (
     <article
-      className={`wish-task tone-${tone} ${open ? "open" : ""}`}
+      className={`wish-task tone-${tone} ${open ? "open" : ""} ${focused ? "focused" : ""}`}
       id={`task-${task.id}`}
     >
       <div className="wish-task-row">
@@ -177,6 +195,11 @@ export function WishTask({
           </button>
         )}
       </div>
+      {decision && onDecision && (
+        <p className="wish-task-note wish-task-decision">
+          <DecisionLink decision={decision} onOpen={onDecision} />
+        </p>
+      )}
       {closing && onDone && closable(task.status) && (
         <DoneBox onDone={onDone} onCancel={() => setClosing(false)} />
       )}

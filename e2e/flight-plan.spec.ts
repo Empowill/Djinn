@@ -166,11 +166,14 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await oilCard.getByLabel("Note with the answer").fill("Pour it.");
   await oilCard.getByRole("button", { name: "Confirm the answer" }).click();
   await expect(oilCard).toHaveCount(0);
-  await expect(
-    page
-      .locator(".plan-decisions .question-card")
-      .filter({ hasText: "May the worker pour the oil?" }),
-  ).toBeVisible();
+  // It is a decision of its wish, taken by you, in the Decisions tab.
+  await page.getByRole("tab", { name: /^Decisions/ }).click();
+  const decided = page
+    .locator(".decision-row")
+    .filter({ hasText: "May the worker pour the oil?" });
+  await expect(decided.locator(".wish-origin")).toHaveText(`2${oilTitle}`);
+  await expect(decided.locator(".status-badge")).toHaveText("Decided by you");
+  await page.getByRole("tab", { name: /^Flight plan/ }).click();
   const [answered] = JSON.parse(
     djinn("question", "list", "--wish-id", oilId, "--json"),
   ).questions;

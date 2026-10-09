@@ -286,7 +286,12 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   );
   assert.doesNotMatch(html, /Trim the wick|Light the wick/);
   assert.match(html, /<strong>wick<\/strong> carries the oil\./);
-  assert.match(html, /1 decision recorded/);
+  // The answered question is in the Decisions tab, apart, with no mark.
+  assert.match(
+    html,
+    /role="tab" id="view-tab-decisions" aria-selected="false" class="">Decisions<span class="count">1<\/span>/,
+  );
+  assert.doesNotMatch(html, /Light it tonight\?/);
   // Nothing waits for an answer: no yes/no card waiting.
   assert.doesNotMatch(html, /Confirm the answer/);
   // The bar at the top lists what waits for you: here, the grant, which it links to.
@@ -574,15 +579,18 @@ test("the flight plan merges the active wishes: their questions, the blocking on
     html,
     /class="wish-origin" title="Find the oil"><b>2<\/b>Find the oil/,
   );
-  // What waits, the latest decisions; the tasks of both wishes in their own tab.
+  // What waits; the tasks and the decisions of both wishes in their own tabs.
   assert.match(html, /W2 waits for your answer to Q01 before it may edit\./);
   assert.match(
     html,
     /id="view-tab-tasks"[^>]*>Tasks<span class="count">3<\/span>/,
   );
   assert.doesNotMatch(html, /Taste the oils/);
-  assert.match(html, /Latest decisions/);
-  assert.match(html, /Tonight\?/);
+  assert.match(
+    html,
+    /id="view-tab-decisions"[^>]*>Decisions<span class="count">1<\/span>/,
+  );
+  assert.doesNotMatch(html, /Tonight\?/);
   // What each wish spent: the first with its cost, the second in tokens only.
   assert.match(
     html,
@@ -616,7 +624,7 @@ test("the flight plan hides its empty sections", async () => {
       h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
     ),
   );
-  assert.doesNotMatch(html, /Your move|Who runs now|Latest decisions|Spent/);
+  assert.doesNotMatch(html, /Your move|Who runs now|Spent/);
   assert.match(html, /Nothing waits for you, and nothing runs\./);
 });
 

@@ -1,12 +1,14 @@
 // The window's status language: one colour, one icon and one word per state, never the colour alone. Done is green,
 // running blue with a live dot, waiting for you orange, investigating violet, planned grey, failed red, interrupted
-// amber, stopped and paused muted, watching teal with an eye. The colours are tokens of review.css, checked for contrast in both themes.
+// amber, stopped and paused muted, watching teal with an eye; a decision the developer took is human, rose with a person.
+// The colours are tokens of review.css, checked for contrast in both themes.
 import {
   CheckCircle2,
   CircleDashed,
   CircleOff,
   CirclePause,
   CircleStop,
+  CircleUserRound,
   Eye,
   Hand,
   type LucideIcon,
@@ -29,6 +31,7 @@ const icons: Record<Tone, LucideIcon | null> = {
   stopped: CircleStop,
   paused: CirclePause,
   watching: Eye,
+  human: CircleUserRound,
 };
 
 // ToneIcon is a state's icon; running is a live dot.

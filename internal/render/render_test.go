@@ -302,7 +302,7 @@ func TestBusyPage(t *testing.T) {
 		{Id: "b2", Kind: "report", Content: "# Long report\n\n" + strings.Repeat("A line of the report.\n", 40)},
 	}
 	for i := range blockRun + 1 {
-		exp.Blocks = append(exp.Blocks, &planv1.Block{Id: fmt.Sprintf("r%d", i), Kind: "decision", Title: fmt.Sprintf("Run %d", i), Content: "Short."})
+		exp.Blocks = append(exp.Blocks, &planv1.Block{Id: fmt.Sprintf("r%d", i), Kind: "finding", Title: fmt.Sprintf("Run %d", i), Content: "Short."})
 	}
 	for i := range 40 {
 		exp.Blocks = append(exp.Blocks, &planv1.Block{
@@ -345,7 +345,7 @@ func TestBusyPage(t *testing.T) {
 
 	// Who runs now: the running worker as a card, the finished work folded below.
 	running := between(html, `<section id="running">`, "</section>")
-	if !strings.Contains(running, "W3") || strings.Count(running, `<article class="worker">`) != 1 {
+	if !strings.Contains(running, "W3") || strings.Count(running, `<article class="worker"`) != 1 {
 		t.Errorf("who runs now shows the running worker only:\n%s", running)
 	}
 	if finished := between(running, `<details class="fold finished">`, "</details>"); !strings.Contains(finished, ">W1<") {
@@ -376,10 +376,10 @@ func TestBusyPage(t *testing.T) {
 	// Decisions: the 15 latest, the latest first, then the 5 before them folded.
 	decisions := between(html, `<section id="decisions">`, "</section>")
 	shown, older, _ := strings.Cut(decisions, `<details class="fold older">`)
-	if n := strings.Count(shown, "<tr>\n      <td"); n != shownDecisions {
+	if n := strings.Count(shown, `class="at"><time>`); n != shownDecisions {
 		t.Errorf("%d decisions shown, want %d", n, shownDecisions)
 	}
-	if n := strings.Count(older, "<tr>\n      <td"); n != 5 {
+	if n := strings.Count(older, `class="at"><time>`); n != 5 {
 		t.Errorf("%d decisions folded, want 5", n)
 	}
 	if strings.Index(shown, "Decision 19") > strings.Index(shown, "Decision 18") || strings.Contains(shown, "Decision 04") {
@@ -400,7 +400,7 @@ func TestBusyPage(t *testing.T) {
 	if n := strings.Count(notes, "<details"); n != 1+blockRun+1 {
 		t.Errorf("%d blocks folded, want the long one and the run of %d", n, blockRun+1)
 	}
-	if run := between(notes, `<article class="block series">`, "</article>"); !strings.Contains(run, "<h3>decision: 4 blocks</h3>") ||
+	if run := between(notes, `<article class="block series">`, "</article>"); !strings.Contains(run, "<h3>finding: 4 blocks</h3>") ||
 		strings.Count(run, "<li><details>") != blockRun+1 {
 		t.Errorf("a run of one kind is gathered in one card, a folded line each:\n%s", run)
 	}
@@ -573,7 +573,7 @@ func TestColourLanguage(t *testing.T) {
 	if strings.Index(counts, "Waiting for you") > strings.Index(counts, "Done") {
 		t.Error("the counts show what needs an eye first")
 	}
-	for _, class := range []string{"ok", "run", "wait", "amber", "bad", "fail", "idle", "stop", "pause", "later"} {
+	for _, class := range []string{"ok", "run", "wait", "amber", "bad", "fail", "idle", "stop", "pause", "later", "human"} {
 		if !regexp.MustCompile(`(^|[ ,\n])\.` + class + `[ ,{]`).MatchString(pageCSS) {
 			t.Errorf("the style sheet gives no colour to %s", class)
 		}
@@ -597,7 +597,7 @@ func TestContrast(t *testing.T) {
 			colours[m[1]] = m[2]
 		}
 		pairs := [][2]string{{"text", "bg"}, {"text", "surface"}, {"muted", "bg"}, {"muted", "surface"}, {"muted", "surface-soft"}}
-		for _, s := range []string{"ok", "run", "wait", "amber", "bad", "idle", "pause"} {
+		for _, s := range []string{"ok", "run", "wait", "amber", "bad", "idle", "pause", "human"} {
 			pairs = append(pairs, [2]string{s, s + "-soft"}, [2]string{s, "surface"}, [2]string{s, "bg"})
 		}
 		for _, p := range pairs {

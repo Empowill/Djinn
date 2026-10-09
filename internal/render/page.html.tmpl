@@ -90,7 +90,7 @@
       <thead><tr><th>{{index .T "page.task"}}</th><th>{{index .T "page.status"}}</th><th>{{index .T "page.took"}}</th><th>{{index .T "page.spent"}}</th></tr></thead>
       <tbody>
       {{- range .Finished}}
-      <tr>
+      <tr id="t-{{.Code}}">
         <td data-label="{{index $.T "page.task"}}"><span class="code">{{.Code}}</span> {{.Title}}{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{if .Closed}}<p class="closed">{{.Closed}}</p>{{end}}</td>
         <td data-label="{{index $.T "page.status"}}">{{template "st" (pair .StatusClass .Status)}}</td>
         <td data-label="{{index $.T "page.took"}}" class="num">{{.Time}}</td>
@@ -116,7 +116,7 @@
       <thead><tr><th>{{index .T "page.task"}}</th><th>{{index .T "page.after_col"}}</th><th>{{index .T "page.wait_col"}}</th></tr></thead>
       <tbody>
       {{- range .Planned}}
-      <tr>
+      <tr id="t-{{.Code}}">
         <td data-label="{{index $.T "page.task"}}"><span class="code">{{.Code}}</span> {{.Title}}</td>
         <td data-label="{{index $.T "page.after_col"}}" class="after">{{.After}}</td>
         <td data-label="{{index $.T "page.wait_col"}}" class="reason">{{.Wait}}</td>
@@ -204,7 +204,7 @@
   <div class="sec-head"><h2>{{index $h 0}} <span class="n">{{index . 1}}</span></h2><p class="sub">{{index $h 1}}</p></div>
 {{- end}}
 {{- define "worker"}}{{$t := index . 0}}{{$T := index . 1}}
-  <article class="worker">
+  <article class="worker" id="t-{{$t.Code}}">
     <div class="w-head">{{template "st" (pair $t.StatusClass $t.Status)}}<span class="code">{{$t.Code}}</span><h3>{{$t.Title}}</h3></div>
     {{- template "task-meta" $t}}
     {{- if $t.LastWord}}
@@ -213,7 +213,7 @@
   </article>
 {{- end}}
 {{- define "task"}}
-<li class="row {{.StatusClass}}">
+<li class="row {{.StatusClass}}" id="t-{{.Code}}">
   <div class="task-head">{{template "st" (pair .StatusClass .Status)}}<span class="code">{{.Code}}</span><span class="title">{{.Title}}</span></div>
   {{- template "task-meta" .}}
   {{- if .Error}}<p class="error">{{.Error}}</p>{{end}}
@@ -231,9 +231,13 @@
     <thead><tr><th>{{index $T "page.when"}}</th><th>{{index $T "page.decision"}}</th><th>{{index $T "page.why"}}</th></tr></thead>
     <tbody>
     {{- range $ds}}
-    <tr>
+    <tr{{if .Human}} class="human"{{end}}>
       <td data-label="{{index $T "page.when"}}" class="at"><time>{{.At}}</time></td>
-      <td data-label="{{index $T "page.decision"}}"><span class="asked"><span class="code">{{.Code}}</span>{{.Text}}</span><b class="chosen">→ {{.Choice}}</b></td>
+      <td data-label="{{index $T "page.decision"}}">
+        {{- if .Choice}}<span class="asked"><span class="ico">{{.Icon}}</span>{{if .Code}}<span class="code">{{.Code}}</span>{{end}}{{.Text}}</span><b class="chosen">→ {{.Choice}}</b>
+        {{- else}}<b class="chosen"><span class="ico">{{.Icon}}</span>{{.Text}}</b>{{end}}
+        <span class="who">{{if .Human}}{{template "st" (pair "human" .Who)}}{{else}}<span class="by">{{.Who}}</span>{{end}}
+        {{- if .Tasks}}<span class="led">{{index $T "page.led_to"}} {{range $i, $c := .Tasks}}{{if $i}}, {{end}}<a class="code" href="#t-{{$c}}">{{$c}}</a>{{end}}</span>{{end}}</span></td>
       <td data-label="{{index $T "page.why"}}" class="why">
         {{- if .LongNote}}<details class="note"><summary>{{.NoteLine}}</summary><div class="md">{{.Note}}</div></details>
         {{- else if .Note}}<div class="md">{{.Note}}</div>{{end}}</td>

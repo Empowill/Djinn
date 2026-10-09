@@ -38,7 +38,7 @@ func TestBrief(t *testing.T) {
 	}
 	failed := &planv1.Task{
 		Id: store.NewID(), WishId: wish.GetId(), Code: "W2", Title: "Write the docs", Status: planv1.TaskStatus_TASK_STATUS_FAILED,
-		Error: "create the worktree: " + repo + " is locked", CreateTime: timestamppb.Now(),
+		Error: "create the worktree: " + repo + " is locked", CreateTime: timestamppb.Now(), Decision: "Q01",
 	}
 	// One Djinn resumes by itself, and one cut short that another task took over: neither is the lead's move.
 	resuming := &planv1.Task{
@@ -93,6 +93,9 @@ func TestBrief(t *testing.T) {
 		"`djinn wish sync <wish>`", "republish that file as it is, in one call",
 		"**W3** Reopen the leads: resuming by itself, the account's session limit, resets at 07:20",
 		"**W4** Pause a worker: resumed as W5",
+		// The decisions say who took them, and what they led to.
+		"- 💬 **Q01** Which store? → A: SQLite", ", by the developer; led to W2\n", "- 📌 **No CGO** (block ", "), by the lead\n",
+		"`--decision Q03`", "--icon 🔒",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the brief lacks %q:\n%s", want, text)

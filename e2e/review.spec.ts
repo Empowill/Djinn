@@ -112,7 +112,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "put",
     wishId,
     "--kind",
-    "decision",
+    "section",
     "--title",
     "Ship on Friday",
     "--content",
@@ -234,7 +234,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "true",
   );
   expect(djinn("wish", "brief", wishId)).toContain(
-    "- **read** block Ship on Friday (decision), ",
+    "- **read** block Ship on Friday (section), ",
   );
 
   djinn("wish", "pause", wishId);

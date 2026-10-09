@@ -411,6 +411,10 @@ func (q *Questions) Ask(
 	question := &planv1.Question{
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
 		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
+		Icon: req.Msg.GetIcon(),
+	}
+	if err := checkIcon(question.GetIcon()); err != nil {
+		return nil, err
 	}
 	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		if _, err := store.Get[*planv1.Wish](ctx, tx, question.GetWishId()); err != nil {

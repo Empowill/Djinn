@@ -23,6 +23,12 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
 - **Theme**: the system's by default, dark or light in the settings. Every surface takes its colours from the tokens
   of `src/theme.css`: Clément's greys became a neutral ramp (`--n-XX` is `#XXXXXX` in the dark theme), read again on
   a light ground; the terminal's colours (`--term-*`) and Mermaid read the same tokens.
+- **Decision log** (W59): a decision is an answered question or a block of kind decision, nothing else; they live in
+  a "Decisions" tab, read only. `Question.icon` (15) and `Block.icon` (12), one emoji, set with `--icon` (`💬` and
+  `📌` by default; Djinn's own questions carry 🔓, 🧭, 🏁); `Task.decision` (32), set with `djinn task spawn
+  --decision` (an answered question's code, or a decision block's id), links a task to its decision. Who decided is
+  computed (`render.Decisions`): the developer for an answered question or an approved block (the tone *human*),
+  else the worker the block is about, else the lead. Marks stay on open questions and on the other blocks only.
 
 ## Done when
 
@@ -54,6 +60,13 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   the same order. (screens "the Tasks tab lists what moves or waits by status…", "a task no worker runs can be marked
   done…"; data "the Tasks tab: what moves or waits by status…"; `TestFinishedNewestFirst`, `TestMovingByStatus`,
   `TestBriefFinished`; e2e `task-done.spec.ts`)
+- [x] A "Decisions" tab in a wish and in the flight plan: the answered questions and the decision blocks, the latest
+  first, without a button; who decided, the developer's in the human tone with an icon and a word; one emoji per
+  decision; links to the tasks it led to, and from a task to its decision. The page's decision table and the brief
+  follow. (`TestIcon`, `TestDecision`, `TestSpawnDecision`, `TestDecisions`, `TestDecisionTable`, `TestContrast`,
+  `TestBrief`; data "the decisions are the answered questions and the decision blocks…", "the Decisions tab lists
+  them without a button…", "a task links back to the decision it comes from"; "the status colours keep their
+  contrast…"; e2e `decision-log.spec.ts`, screens `test-results/e2e/decision-log-*.png`)
 - [ ] Clément has reviewed the layout and the visual language. (needs: Clément's review)
 - [x] The light theme on the dialogs, the agent chat and the terminal, then the system's theme by default. (tokens
   in `src/theme.css`; tests "the theme's tokens keep their contrast in the dark and the light theme" and "the

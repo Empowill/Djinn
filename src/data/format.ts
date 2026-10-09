@@ -87,7 +87,8 @@ export type Tone =
   | "interrupted"
   | "stopped"
   | "paused"
-  | "watching";
+  | "watching"
+  | "human";
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
