@@ -275,18 +275,18 @@ func TestRun(t *testing.T) {
 		{name: "prefixes", args: []string{"q", "ans", "Q03", "b"}, wantOut: "code: Q03", wantCalled: true},
 		{name: "text output", args: []string{"question", "answer", "Q03", "B", "--note", "ok"}, wantOut: "answer:\n  choice: b\n  note: ok\n", wantCalled: true},
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
-		{name: "list output", args: []string{"p", "l"}, wantOut: "- id: " + projectID + "\n  name: api\n", wantCalled: true},
+		{name: "list output", args: []string{"pr", "l"}, wantOut: "- id: " + projectID + "\n  name: api\n", wantCalled: true},
 		{name: "server error", args: []string{"q", "answer", "Q99", "a"}, wantCode: 1, wantErr: "not_found: no question Q99", wantCalled: true},
 		{name: "validation before sending", args: []string{"q", "answer"}, wantCode: 2, wantErr: "<question>: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\n  <choice>: value is required; expected one of yes, no, a, b, c, d"},
 		{name: "rule on a positional", args: []string{"q", "ask", "Which?", "W1"}, wantCode: 2, wantErr: "<wish-id>: must be a valid UUID; expected a UUID"},
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
 		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},
 		{name: "ambiguous method", args: []string{"question", "a"}, wantCode: 2, wantErr: `question method "a" is ambiguous: ask, answer`},
-		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, machine, mark, project, question, skill, task, wish`},
+		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, machine, mark, plan, project, question, skill, task, wish`},
 		{name: "internal service is hidden", args: []string{"ui", "get-environment"}, wantCode: 2, wantErr: `unknown command "ui"`},
 		{name: "version", args: []string{"v"}, wantOut: "djinn test\n"},
 		{name: "help comes from the proto comments", args: []string{"q", "answer", "--help"}, wantOut: "Usage: djinn question answer <question> <choice> [flags]\n\nAnswer a question, which turns it into a decision."},
-		{name: "help command", args: []string{"help", "p"}, wantOut: "Methods:\n  add    Add a folder as a project."},
+		{name: "help command", args: []string{"help", "pr"}, wantOut: "Methods:\n  add    Add a folder as a project."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -322,8 +322,8 @@ func TestEveryPublicMethodIsExpressible(t *testing.T) {
 			}
 		}
 	}
-	if methods != 53 {
-		t.Errorf("found %d public methods, want 53", methods)
+	if methods != 55 {
+		t.Errorf("found %d public methods, want 55", methods)
 	}
 }
 

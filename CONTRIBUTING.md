@@ -146,6 +146,11 @@ To use Djinn, see the [README](README.md). To work on it:
   yet.
 - `djinn task depend <task-id> --depends-on W1 --depends-on W2` sets what a task waits for, in place of what it had;
   the tasks of a wish form a graph without cycle, and one that would close a cycle is refused, naming it.
+- The plan of a wish is a graph of azimas (`T07`): tasks no worker runs, which work is part of. `djinn task spawn …
+  --part-of T07` spawns work in one, `djinn task group <task-id> --part-of T07` moves it, `djinn task spawn <wish>
+  --kind azima --title "…"` makes one. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes
+  each one's `after:` back from the store ([T07](plan/8e8d3d76-orchestrator.md)). The Tasks tab groups work under its
+  azima.
 - `djinn task done <task-id> --note "…"` closes a task no worker runs (planned, cut short, failed, stopped,
   imported) once its work is done, with who closed it and why; "Mark done" on its card does it in the window.
   `djinn task delete` stays for a task made by mistake.

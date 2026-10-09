@@ -3,6 +3,7 @@ id: 01a11876-6480-7ec2-9833-abd058ae4a59
 code: T13
 phase: 2
 status: in-progress
+after: T07
 ---
 
 # T13 · Sessions across projects
@@ -108,6 +109,12 @@ projects it touches, and a project is not necessarily a Git repository.
   folder". The native dialog itself is not opened by a test.)
 
 ## Decided along the way
+- **A wish's plan is a graph of azimas** (10/10, [T07](8e8d3d76-orchestrator.md)): the parts of the plan (T01…) are
+  tasks of kind `AZIMA` in the wish, which no worker runs, and work is part of one (`Task.part_of`). They travel with
+  the wish like any task, their dependencies and parts included, and each project keeps its own in `plan/*.md`, which
+  `djinn plan sync <wish>` reads from every project of the wish (`--project-id` for one) and writes `after:` back into.
+  An azima found in no project of this machine keeps what the store holds. The same plan synced into two wishes gives
+  the second one new ids: a task id is the machine's.
 - **The export format is a proto**, `WishExport` in `api/plan/v1`, version 1: the wish, its project
   references (name, remote URL, Git or not), its tasks, their events, its questions, its blocks and
   the commands of the journal that changed it. A `.djinn` file is the binary protobuf; a `.json`

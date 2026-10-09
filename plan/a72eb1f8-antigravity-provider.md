@@ -3,6 +3,7 @@ id: 01a1188a-d9b7-7999-a9e1-6350a72eb1f8
 code: T18
 phase: 2
 status: in-progress
+after: T07
 ---
 
 # T18 · Antigravity as a worker provider

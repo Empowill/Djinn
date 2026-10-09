@@ -10,7 +10,7 @@ service adds a command, with its help, its arguments and their validation.
   `VISIBILITY_INTERNAL` methods (the window's `UiService`) never do.
 - The command is the service name without `Service`, then the method, both in kebab-case:
   `QuestionService.Answer` is `djinn question answer`.
-- A unique prefix is enough: `djinn q answer`, `djinn p l`. An ambiguous one is an error that lists the
+- A unique prefix is enough: `djinn q answer`, `djinn pr l`. An ambiguous one is an error that lists the
   candidates (`djinn question a` matches `ask` and `answer`).
 - `djinn version` prints the version.
 - A method marked `option (djinn.v1.autostart) = true` starts `djinn up` in the background when no djinn

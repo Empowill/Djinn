@@ -34,6 +34,19 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
+- **The plan is a graph of azimas.** An azima (Arabic ʿazīma, the incantation that binds and commands a djinn) is a
+  part of the plan, coded `T07`: a task of kind `AZIMA` that no worker runs, the scheduler never starts, and that never
+  waits for the developer. `djinn plan sync <wish>` reads them from the projects' `plan/*.md` and writes each one's
+  `after:` line back from the store; `djinn task spawn <wish> --kind azima --title "…"` makes one. The lead plans work
+  as a graph, never as a line:
+  - spawn each task `--part-of <azima>`: the azima it belongs to, a grouping and never a wait;
+  - give it `--depends-on` only the tasks whose result it needs, several if need be: two tasks that do not need each
+    other run side by side;
+  - work on the ready azimas first, the brief's "Azimas" section: an azima is ready once every task it depends on is
+    done, in progress once a part runs or is done, done once marked done (`djinn task done`) or its file says so;
+  - re-sequence as the plan learns: `djinn task depend <task> --depends-on …` replaces what a task waits for, `djinn
+    task group <task> --part-of T07` its azima. Djinn refuses a cycle, through dependencies and azimas together,
+    naming it.
 - **Watchers.** To wait on something outside, the lead spawns a watcher instead of polling:
   `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model
   and no slot, and each new paragraph it prints wakes the lead. `--restart` starts again a command that exits on each

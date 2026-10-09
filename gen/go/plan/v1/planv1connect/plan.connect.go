@@ -39,6 +39,8 @@ const (
 	MarkServiceName = "plan.v1.MarkService"
 	// TaskServiceName is the fully-qualified name of the TaskService service.
 	TaskServiceName = "plan.v1.TaskService"
+	// PlanServiceName is the fully-qualified name of the PlanService service.
+	PlanServiceName = "plan.v1.PlanService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -144,6 +146,8 @@ const (
 	TaskServiceCleanProcedure = "/plan.v1.TaskService/Clean"
 	// TaskServiceDependProcedure is the fully-qualified name of the TaskService's Depend RPC.
 	TaskServiceDependProcedure = "/plan.v1.TaskService/Depend"
+	// TaskServiceGroupProcedure is the fully-qualified name of the TaskService's Group RPC.
+	TaskServiceGroupProcedure = "/plan.v1.TaskService/Group"
 	// TaskServiceDeleteProcedure is the fully-qualified name of the TaskService's Delete RPC.
 	TaskServiceDeleteProcedure = "/plan.v1.TaskService/Delete"
 	// TaskServiceDoneProcedure is the fully-qualified name of the TaskService's Done RPC.
@@ -152,6 +156,8 @@ const (
 	TaskServiceContinueProcedure = "/plan.v1.TaskService/Continue"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
+	// PlanServiceSyncProcedure is the fully-qualified name of the PlanService's Sync RPC.
+	PlanServiceSyncProcedure = "/plan.v1.PlanService/Sync"
 )
 
 // QuestionServiceClient is a client for the plan.v1.QuestionService service.
@@ -1645,6 +1651,11 @@ type TaskServiceClient interface {
 	// wish form a graph without cycle: a dependency that would close one is refused, naming it. A task not started yet
 	// waits for its new dependencies; a finished one only records them; one whose worker runs is refused until it ends.
 	Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error)
+	// Set the azima a task is part of, in place of the one it had: an azima of its wish, by code (T07) or
+	// identifier; none takes it out of any. A grouping, never a wait: the task still waits only for what it depends on.
+	// One that would close a cycle with what the tasks depend on is refused, naming it; so is a task whose worker runs,
+	// until it ends.
+	Group(context.Context, *connect.Request[v1.TaskServiceGroupRequest]) (*connect.Response[v1.TaskServiceGroupResponse], error)
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
@@ -1729,6 +1740,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Depend")),
 			connect.WithClientOptions(opts...),
 		),
+		group: connect.NewClient[v1.TaskServiceGroupRequest, v1.TaskServiceGroupResponse](
+			httpClient,
+			baseURL+TaskServiceGroupProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Group")),
+			connect.WithClientOptions(opts...),
+		),
 		delete: connect.NewClient[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse](
 			httpClient,
 			baseURL+TaskServiceDeleteProcedure,
@@ -1767,6 +1784,7 @@ type taskServiceClient struct {
 	watch     *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
 	clean     *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
 	depend    *connect.Client[v1.TaskServiceDependRequest, v1.TaskServiceDependResponse]
+	group     *connect.Client[v1.TaskServiceGroupRequest, v1.TaskServiceGroupResponse]
 	delete    *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
 	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
 	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
@@ -1818,6 +1836,11 @@ func (c *taskServiceClient) Depend(ctx context.Context, req *connect.Request[v1.
 	return c.depend.CallUnary(ctx, req)
 }
 
+// Group calls plan.v1.TaskService.Group.
+func (c *taskServiceClient) Group(ctx context.Context, req *connect.Request[v1.TaskServiceGroupRequest]) (*connect.Response[v1.TaskServiceGroupResponse], error) {
+	return c.group.CallUnary(ctx, req)
+}
+
 // Delete calls plan.v1.TaskService.Delete.
 func (c *taskServiceClient) Delete(ctx context.Context, req *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {
 	return c.delete.CallUnary(ctx, req)
@@ -1865,6 +1888,11 @@ type TaskServiceHandler interface {
 	// wish form a graph without cycle: a dependency that would close one is refused, naming it. A task not started yet
 	// waits for its new dependencies; a finished one only records them; one whose worker runs is refused until it ends.
 	Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error)
+	// Set the azima a task is part of, in place of the one it had: an azima of its wish, by code (T07) or
+	// identifier; none takes it out of any. A grouping, never a wait: the task still waits only for what it depends on.
+	// One that would close a cycle with what the tasks depend on is refused, naming it; so is a task whose worker runs,
+	// until it ends.
+	Group(context.Context, *connect.Request[v1.TaskServiceGroupRequest]) (*connect.Response[v1.TaskServiceGroupResponse], error)
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
@@ -1945,6 +1973,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Depend")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceGroupHandler := connect.NewUnaryHandler(
+		TaskServiceGroupProcedure,
+		svc.Group,
+		connect.WithSchema(taskServiceMethods.ByName("Group")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceDeleteHandler := connect.NewUnaryHandler(
 		TaskServiceDeleteProcedure,
 		svc.Delete,
@@ -1989,6 +2023,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceCleanHandler.ServeHTTP(w, r)
 		case TaskServiceDependProcedure:
 			taskServiceDependHandler.ServeHTTP(w, r)
+		case TaskServiceGroupProcedure:
+			taskServiceGroupHandler.ServeHTTP(w, r)
 		case TaskServiceDeleteProcedure:
 			taskServiceDeleteHandler.ServeHTTP(w, r)
 		case TaskServiceDoneProcedure:
@@ -2042,6 +2078,10 @@ func (UnimplementedTaskServiceHandler) Depend(context.Context, *connect.Request[
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Depend is not implemented"))
 }
 
+func (UnimplementedTaskServiceHandler) Group(context.Context, *connect.Request[v1.TaskServiceGroupRequest]) (*connect.Response[v1.TaskServiceGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Group is not implemented"))
+}
+
 func (UnimplementedTaskServiceHandler) Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Delete is not implemented"))
 }
@@ -2056,4 +2096,84 @@ func (UnimplementedTaskServiceHandler) Continue(context.Context, *connect.Reques
 
 func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Send is not implemented"))
+}
+
+// PlanServiceClient is a client for the plan.v1.PlanService service.
+type PlanServiceClient interface {
+	// Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the
+	// title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on.
+	// A file whose status is done marks its azima done; read not done again, an azima it closed opens again. Then
+	// write what each azima depends on back into its file's front matter, as "after: T02 T05", so that Git carries the
+	// graph. The store stays the source of truth: an azima made here takes its file's after line, once.
+	Sync(context.Context, *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error)
+}
+
+// NewPlanServiceClient constructs a client for the plan.v1.PlanService service. By default, it uses
+// the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewPlanServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) PlanServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	planServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("PlanService").Methods()
+	return &planServiceClient{
+		sync: connect.NewClient[v1.PlanServiceSyncRequest, v1.PlanServiceSyncResponse](
+			httpClient,
+			baseURL+PlanServiceSyncProcedure,
+			connect.WithSchema(planServiceMethods.ByName("Sync")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// planServiceClient implements PlanServiceClient.
+type planServiceClient struct {
+	sync *connect.Client[v1.PlanServiceSyncRequest, v1.PlanServiceSyncResponse]
+}
+
+// Sync calls plan.v1.PlanService.Sync.
+func (c *planServiceClient) Sync(ctx context.Context, req *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error) {
+	return c.sync.CallUnary(ctx, req)
+}
+
+// PlanServiceHandler is an implementation of the plan.v1.PlanService service.
+type PlanServiceHandler interface {
+	// Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the
+	// title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on.
+	// A file whose status is done marks its azima done; read not done again, an azima it closed opens again. Then
+	// write what each azima depends on back into its file's front matter, as "after: T02 T05", so that Git carries the
+	// graph. The store stays the source of truth: an azima made here takes its file's after line, once.
+	Sync(context.Context, *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error)
+}
+
+// NewPlanServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewPlanServiceHandler(svc PlanServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	planServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("PlanService").Methods()
+	planServiceSyncHandler := connect.NewUnaryHandler(
+		PlanServiceSyncProcedure,
+		svc.Sync,
+		connect.WithSchema(planServiceMethods.ByName("Sync")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.PlanService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case PlanServiceSyncProcedure:
+			planServiceSyncHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedPlanServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedPlanServiceHandler struct{}
+
+func (UnimplementedPlanServiceHandler) Sync(context.Context, *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.PlanService.Sync is not implemented"))
 }

@@ -366,6 +366,56 @@ message Task {
   // What its worker uses of the machine, read every few seconds while it runs: the latest reading and the peaks over
   // all its workers. Absent until a reading, and where Djinn does not measure workers (Windows, the fake agent).
   Resources resources = 34;
+  // What the task is: work a worker does, the default, or an azima of the plan, which no worker ever runs.
+  TaskKind kind = 35;
+  // The azima the task is part of (an azima of its wish), by identifier; empty for none. A grouping, never a
+  // wait: only depends_on makes a task wait. The tasks of a wish, through depends_on and part_of together, form a
+  // graph without cycle.
+  string part_of = 36;
+  // For an azima read from a plan file (djinn plan sync): the file, as its project names it
+  // ("plan/8e8d3d76-orchestrator.md"), and its phase there ("2", "later"). Empty for an azima of no file.
+  string plan_file = 37;
+  string phase = 38;
+  // For an azima: where it stands, computed on every read from its parts and what it depends on, never stored.
+  Azima azima = 39;
+}
+
+// TaskKind says what a task is.
+enum TaskKind {
+  // Not set: work, as every task was before kinds.
+  TASK_KIND_UNSPECIFIED = 0;
+  // Work: a worker runs it, once every task it depends on is done.
+  TASK_KIND_WORK = 1;
+  // An azima (Arabic ʿazīma, the incantation that binds and commands a djinn; resolve): a part of the plan (T07).
+  // No worker ever runs it, and the scheduler never starts it. Work is part of it
+  // (Task.part_of); it depends on other tasks like work does. It is done when marked done (djinn task done) or when
+  // its plan file says so (djinn plan sync); it never waits for the person.
+  TASK_KIND_AZIMA = 2;
+}
+
+// Azima is where an azima stands, computed on every read from the tasks of its wish; never stored.
+message Azima {
+  // Open, in progress or done.
+  AzimaState state = 1;
+  // Every task it depends on is done: its work may go.
+  bool ready = 2;
+  // The tasks part of it, how many of them are done, and how many have a worker on them now (running, paused, or
+  // resuming).
+  int32 parts = 3;
+  int32 parts_done = 4;
+  int32 parts_running = 5;
+}
+
+// AzimaState is where an azima stands.
+enum AzimaState {
+  // Not set: the task is not an azima.
+  AZIMA_STATE_UNSPECIFIED = 0;
+  // None of its parts runs nor is done.
+  AZIMA_STATE_OPEN = 1;
+  // One of its parts runs or is done, or an azima part of it is under way.
+  AZIMA_STATE_IN_PROGRESS = 2;
+  // Marked done, or its plan file says done.
+  AZIMA_STATE_DONE = 3;
 }
 
 // Resources is what a task's worker uses of the machine: its process group and every process it started, even one
@@ -408,6 +458,8 @@ enum Closer {
   CLOSER_LEAD = 1;
   // The developer, in the window.
   CLOSER_DEVELOPER = 2;
+  // djinn plan sync: the azima's plan file says done. A sync that reads it not done any more opens it again.
+  CLOSER_PLAN_FILE = 3;
 }
 
 // TaskEventKind says what a worker event is. Its content stays free text.
@@ -1872,6 +1924,14 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Set the azima a task is part of, in place of the one it had: an azima of its wish, by code (T07) or
+  // identifier; none takes it out of any. A grouping, never a wait: the task still waits only for what it depends on.
+  // One that would close a cycle with what the tasks depend on is refused, naming it; so is a task whose worker runs,
+  // until it ends.
+  rpc Group(TaskServiceGroupRequest) returns (TaskServiceGroupResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
   // events. A task a worker of this Djinn ran stays, as the record of that work.
   rpc Delete(TaskServiceDeleteRequest) returns (TaskServiceDeleteResponse) {
@@ -1955,6 +2015,12 @@ message TaskServiceSpawnRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.pattern = "^([Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
   ];
+  // The azima the task belongs to: its code (T07) or its identifier. A grouping, never a wait: say what the task
+  // waits for with depends_on.
+  string part_of = 15 [(buf.validate.field).string.max_len = 64];
+  // What the task is; by default work, for a worker. azima makes an azima (T1, T2…): no worker, no prompt, never
+  // scheduled; work is spawned part of it.
+  TaskKind kind = 16 [(buf.validate.field).enum.defined_only = true];
 }
 
 message TaskServiceSpawnResponse {
@@ -2098,6 +2164,21 @@ message TaskServiceDependResponse {
   Task task = 1;
 }
 
+message TaskServiceGroupRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The azima: its code (T07) or its identifier. Empty: the task is part of no azima.
+  string part_of = 2 [(buf.validate.field).string.max_len = 64];
+}
+
+message TaskServiceGroupResponse {
+  // The task, with its azima.
+  Task task = 1;
+}
+
 message TaskServiceDeleteRequest {
   // The task.
   string task_id = 1 [
@@ -2146,4 +2227,41 @@ message TaskServiceContinueRequest {
 message TaskServiceContinueResponse {
   // The task, planned again: running, or waiting with its reason.
   Task task = 1;
+}
+
+// The plan of a wish as a graph of azimas: tasks of kind AZIMA that no worker runs, which work is part of. The store
+// holds the graph; a project's plan/ folder holds one Markdown file per azima, for Git to carry.
+service PlanService {
+  // Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the
+  // title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on.
+  // A file whose status is done marks its azima done; read not done again, an azima it closed opens again. Then
+  // write what each azima depends on back into its file's front matter, as "after: T02 T05", so that Git carries the
+  // graph. The store stays the source of truth: an azima made here takes its file's after line, once.
+  rpc Sync(PlanServiceSyncRequest) returns (PlanServiceSyncResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+message PlanServiceSyncRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Only this project's plan folder; by default every project of the wish that has one.
+  string project_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message PlanServiceSyncResponse {
+  // The azimas of the files read, as the store holds them now, by code.
+  repeated Task azimas = 1;
+  // The codes of the azimas made, and of those changed.
+  repeated string made = 2;
+  repeated string changed = 3;
+  // The files whose after line was written, as their project names them.
+  repeated string written = 4;
 }

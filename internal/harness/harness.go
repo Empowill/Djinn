@@ -41,6 +41,7 @@ const (
 	methodReceived = "harness/received" // the worker took a message in; the request is the event
 	methodHold     = "harness/hold"     // the task's worker was paused or resumed; the request is the task
 	methodMeasure  = "harness/measure"  // what the task's worker uses was read; the request is the reading
+	methodAzima    = "harness/azima"    // djinn up found an azima stored as work, from before kinds; the request is the task
 )
 
 // maxText is the most of an event's text, and of its raw line, that is kept.
@@ -187,11 +188,15 @@ func (h *Harness) Close() {
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
 // what resuming them needs (provider, session, worktree). Then every interrupted task Djinn may resume waits for the
-// scheduler to resume it (queueInterrupted).
+// scheduler to resume it (queueInterrupted). First, the azimas stored as work before tasks had kinds become azimas
+// (migrateAzimas).
 func (h *Harness) Recover(ctx context.Context) error {
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
+		return err
+	}
+	if err := h.migrateAzimas(ctx, tasks); err != nil {
 		return err
 	}
 	for _, t := range tasks {
@@ -231,6 +236,9 @@ func (h *Harness) Recover(ctx context.Context) error {
 // reason, and the scheduler starts it as soon as it can. What the worker may do is decided when it starts
 // (prepare).
 func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
+	if req.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
+		return h.spawnAzima(ctx, procedure, req)
+	}
 	scopes, err := cleanScopes(req.GetWriteScopes())
 	if err != nil {
 		return nil, err
@@ -302,6 +310,9 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--restart is for a watcher (--provider watch)"))
 	}
 	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), req.GetDependsOn()); err != nil {
+		return nil, plan.Status(err)
+	}
+	if task.PartOf, err = resolveAzima(ctx, h.store, wish.GetId(), req.GetPartOf()); err != nil {
 		return nil, plan.Status(err)
 	}
 	if ref := req.GetDecision(); ref != "" {

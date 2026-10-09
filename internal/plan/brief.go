@@ -56,6 +56,12 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"ended, failed, stopped or was cut short a new turn of its own session, in its worktree, as the same task. " +
 	"Fork it only to start a different task from its context: a fork of a task cut short closes it, " +
 	"\"continued in\" the fork.\n" +
+	"- **The plan is a graph of azimas.** An azima (`T07`) is a task of the plan that no worker runs, nothing waits " +
+	"for the developer on it. Work is part of an azima and waits only for what it depends on, so plan it as a graph, " +
+	"never a line: spawn each task `--part-of <azima>`, and `--depends-on` only the tasks whose result it needs, " +
+	"several if need be. Two tasks that do not need each other run side by side. Work on the ready azimas first; an " +
+	"azima is done when you mark it done (`djinn task done`) or its plan file says so. `djinn task depend` and " +
+	"`djinn task group` re-sequence the plan as it learns; Djinn refuses a cycle.\n" +
 	"- **What Djinn does not compute is a block**: a decision taken outside a question, an analysis, a hand-off.\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
@@ -76,8 +82,12 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn question ask \"<question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔒` (one " +
 	"emoji for the subject); " +
 	"`djinn question list --wish-id <wish> --open`.\n" +
-	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\"` (`--project-id`, `--depends-on W1`, `--later`, " +
-	"`--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`); " +
+	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --depends-on W1` (`--project-id`, " +
+	"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`); " +
+	"`djinn task spawn <wish> --kind azima --title \"…\" --depends-on T02` makes an azima; " +
+	"`djinn task depend <task> --depends-on W1 --depends-on T02` sets what a task waits for, in place of what it had; " +
+	"`djinn task group <task> --part-of T07` sets its azima; " +
+	"`djinn plan sync <wish>` reads the azimas from the projects' plan files and writes their `after:` lines back; " +
 	"`djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +
 	"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
 	"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task done <task> --note " +
@@ -298,8 +308,16 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 	}
 
+	codes := map[string]string{}
+	for _, t := range exp.GetTasks() {
+		codes[t.GetId()] = t.GetCode()
+	}
+	azimasBrief(&b, exp.GetTasks(), codes)
 	var running, waiting, done []*planv1.Task
 	for _, t := range exp.GetTasks() {
+		if IsAzima(t) {
+			continue
+		}
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
 			running = append(running, t)
@@ -318,6 +336,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		b.WriteString("\n## Running\n\n")
 		for _, t := range running {
 			fmt.Fprintf(&b, "- **%s** %s (%s", t.GetCode(), clipLine(t.GetTitle()), providerName(t.GetProvider()))
+			if e := codes[t.GetPartOf()]; e != "" {
+				b.WriteString(", part of " + e)
+			}
 			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
 				b.WriteString(", paused")
 			}
@@ -330,7 +351,11 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	if len(waiting) > 0 {
 		b.WriteString("\n## Waiting\n\n")
 		for _, t := range waiting {
-			fmt.Fprintf(&b, "- **%s** %s: %s\n", t.GetCode(), clipLine(t.GetTitle()), waitText(t))
+			fmt.Fprintf(&b, "- **%s** %s", t.GetCode(), clipLine(t.GetTitle()))
+			if e := codes[t.GetPartOf()]; e != "" {
+				b.WriteString(" (part of " + e + ")")
+			}
+			b.WriteString(": " + waitText(t) + "\n")
 		}
 	}
 	if len(done) > 0 {
@@ -375,10 +400,100 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	return stripCredentials(b.String())
 }
 
+// azimasBrief writes the plan's azimas as a graph: the ready ones first, under way before open, then the blocked ones
+// with what they wait for, then the done ones on one line. Nothing without an azima.
+func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string) {
+	var ready, blocked, done []*planv1.Task
+	for _, t := range WithAzimas(tasks) {
+		switch e := t.GetAzima(); {
+		case !IsAzima(t):
+		case e.GetState() == planv1.AzimaState_AZIMA_STATE_DONE:
+			done = append(done, t)
+		case e.GetReady():
+			ready = append(ready, t)
+		default:
+			blocked = append(blocked, t)
+		}
+	}
+	if len(ready)+len(blocked)+len(done) == 0 {
+		return
+	}
+	byCode := func(a, b *planv1.Task) int { return CompareCodes(a.GetCode(), b.GetCode()) }
+	slices.SortFunc(ready, func(a, b *planv1.Task) int {
+		under := func(t *planv1.Task) int {
+			return b2i(t.GetAzima().GetState() != planv1.AzimaState_AZIMA_STATE_IN_PROGRESS)
+		}
+		return cmp.Or(cmp.Compare(under(a), under(b)), byCode(a, b))
+	})
+	slices.SortFunc(blocked, byCode)
+	slices.SortFunc(done, byCode)
+	b.WriteString("\n## Azimas\n\n")
+	b.WriteString("The plan as a graph, the ready azimas first. Spawn their work `--part-of <azima>`.\n\n")
+	status := map[*planv1.Task]string{}
+	for _, t := range append(slices.Clone(ready), blocked...) {
+		e := t.GetAzima()
+		text := "open"
+		if e.GetState() == planv1.AzimaState_AZIMA_STATE_IN_PROGRESS {
+			text = "in progress"
+		}
+		if n := e.GetParts(); n > 0 {
+			text += fmt.Sprintf(", %d of %d parts done", e.GetPartsDone(), n)
+			if r := e.GetPartsRunning(); r > 0 {
+				text += fmt.Sprintf(", %d running", r)
+			}
+		}
+		status[t] = text
+	}
+	byID := map[string]*planv1.Task{}
+	for _, t := range tasks {
+		byID[t.GetId()] = t
+	}
+	after := func(t *planv1.Task) (all, waits []string) {
+		for _, id := range t.GetDependsOn() {
+			code := codes[id]
+			all = append(all, code)
+			if byID[id].GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+				waits = append(waits, code)
+			}
+		}
+		slices.SortFunc(all, CompareCodes)
+		slices.SortFunc(waits, CompareCodes)
+		return all, waits
+	}
+	for _, t := range ready {
+		fmt.Fprintf(b, "- **%s** %s: ready, %s\n", t.GetCode(), clipLine(t.GetTitle()), status[t])
+	}
+	for _, t := range blocked {
+		all, waits := after(t)
+		fmt.Fprintf(b, "- **%s** %s: waits for %s", t.GetCode(), clipLine(t.GetTitle()), strings.Join(waits, ", "))
+		if len(all) > len(waits) {
+			b.WriteString(" (after " + strings.Join(all, ", ") + ")")
+		}
+		b.WriteString("; " + status[t] + "\n")
+	}
+	if len(done) > 0 {
+		names := make([]string, len(done))
+		for i, t := range done {
+			names[i] = t.GetCode()
+		}
+		fmt.Fprintf(b, "- Done: %s.\n", strings.Join(names, ", "))
+	}
+}
+
+func b2i(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
 // CloserWord names who marked a task done by hand.
 func CloserWord(c planv1.Closer) string {
-	if c == planv1.Closer_CLOSER_DEVELOPER {
+	switch c {
+	case planv1.Closer_CLOSER_DEVELOPER:
 		return "developer"
+	case planv1.Closer_CLOSER_PLAN_FILE:
+		return "plan file"
 	}
 	return "lead"
 }

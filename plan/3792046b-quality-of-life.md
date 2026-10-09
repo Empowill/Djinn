@@ -3,6 +3,7 @@ id: 01a1184f-cf1d-7255-b174-2c913792046b
 code: T09
 phase: 3
 status: in-progress
+after: T03 T10
 ---
 
 # T09 · Quality of life and clean-up

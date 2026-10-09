@@ -2,8 +2,10 @@
 // waits, of what runs, of the decisions. Every item keeps its wish. The order is the page's (the Go page of a
 // wish sorts the same way); what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
 import {
+  AzimaState,
   type Question,
   type Task,
+  TaskKind,
   TaskStatus,
   type Usage,
   type Wish,
@@ -37,8 +39,10 @@ export interface FlightPlan {
   // The wishes Djinn proposes to grant.
   ready: Wish[];
   running: Item<Task>[];
-  // The tasks that move or wait, by status, then those done or stopped, the latest ended first: the Tasks tab.
+  // The tasks that move or wait, by status, then those done or stopped, the latest ended first: the Tasks tab. Work
+  // part of an azima is in its azima's group, between them.
   moving: Item<Task>[];
+  azimas: Item<AzimaGroup>[];
   finished: Item<Task>[];
   // Every decision of the wishes, the latest first: the Decisions tab.
   decisions: Item<Decision>[];
@@ -80,9 +84,71 @@ export function newestEnded(a: Task, b: Task): number {
   );
 }
 
-// finishedTasks are the tasks at the bottom of the Tasks tab, the latest ended first.
+// isAzima tells an azima: a task of the plan that no worker runs. Work is part of one; it never waits for anyone.
+export function isAzima(task: Task): boolean {
+  return task.kind === TaskKind.AZIMA;
+}
+
+// loose are the tasks the Tasks tab lists on their own: work part of no azima among tasks.
+function loose(tasks: readonly Task[]): Task[] {
+  const azimas = new Set(tasks.filter(isAzima).map((x) => x.id));
+  return tasks.filter((x) => !isAzima(x) && !azimas.has(x.partOf));
+}
+
+// workCount is how many tasks of work there are: the azimas are the plan, not work.
+export function workCount(tasks: readonly Task[]): number {
+  return tasks.filter((x) => !isAzima(x)).length;
+}
+
+// finishedTasks are the tasks at the bottom of the Tasks tab, the latest ended first: work part of no azima.
 export function finishedTasks(tasks: readonly Task[]): Task[] {
-  return tasks.filter((x) => finishedTask(x)).sort(newestEnded);
+  return loose(tasks)
+    .filter((x) => finishedTask(x))
+    .sort(newestEnded);
+}
+
+// AzimaGroup is an azima and the work part of it: what moves or waits by status first, then what is finished, the
+// latest ended first.
+export interface AzimaGroup {
+  azima: Task;
+  parts: Task[];
+}
+
+// compareCodes orders codes as a person reads them, T2 before T10: the lamp's order (internal/plan.CompareCodes).
+export function compareCodes(a: string, b: string): number {
+  const split = (code: string): [string, number] => {
+    const m = /^(\D*)(\d+)$/.exec(code);
+    return m ? [m[1].toUpperCase(), Number(m[2])] : [code.toUpperCase(), -1];
+  };
+  const [pa, na] = split(a);
+  const [pb, nb] = split(b);
+  return pa < pb ? -1 : pa > pb ? 1 : na - nb || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+// azimaRank orders the azimas as the brief does: the ready ones first, those under way before the open ones, then
+// the blocked ones, the done ones last. Where an azima stands is the lamp's (Task.azima).
+function azimaRank(task: Task): number {
+  const state = task.azima?.state ?? AzimaState.OPEN;
+  if (state === AzimaState.DONE || task.status === TaskStatus.DONE) return 3;
+  if (task.azima && !task.azima.ready) return 2;
+  return state === AzimaState.IN_PROGRESS ? 0 : 1;
+}
+
+// azimaGroups are the azimas among tasks with their parts, in the order of azimaRank, then by code.
+export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
+  return tasks
+    .filter(isAzima)
+    .sort((a, b) => azimaRank(a) - azimaRank(b) || compareCodes(a.code, b.code))
+    .map((azima) => {
+      const parts = tasks.filter((x) => x.partOf === azima.id);
+      return {
+        azima,
+        parts: [
+          ...parts.filter((x) => !finishedTask(x)).sort(byMotion),
+          ...parts.filter((x) => finishedTask(x)).sort(newestEnded),
+        ],
+      };
+    });
 }
 
 // The order of the tasks that move or wait: what runs or broke first (running, cut short, failed, resuming), then
@@ -113,9 +179,12 @@ export function byMotion(a: Task, b: Task): number {
   return motionRank(a) - motionRank(b);
 }
 
-// movingTasks are the tasks at the top of the Tasks tab: what moves or waits for someone, by status.
+// movingTasks are the tasks at the top of the Tasks tab: what moves or waits for someone, by status; work part of no
+// azima.
 export function movingTasks(tasks: readonly Task[]): Task[] {
-  return tasks.filter((x) => !finishedTask(x)).sort(byMotion);
+  return loose(tasks)
+    .filter((x) => !finishedTask(x))
+    .sort(byMotion);
 }
 
 // openQuestions are a wish's questions that wait for your answer, the blocking ones first, then in the order they were
@@ -184,6 +253,7 @@ export function flightPlan(
     ready: [],
     running: [],
     moving: [],
+    azimas: [],
     finished: [],
     decisions: [],
     loaded: true,
@@ -202,9 +272,13 @@ export function flightPlan(
         item.status === TaskStatus.RESUMING
       )
         plan.running.push({ wish, item });
-      if (finishedTask(item)) plan.finished.push({ wish, item });
-      else plan.moving.push({ wish, item });
     }
+    for (const item of movingTasks(detail.tasks))
+      plan.moving.push({ wish, item });
+    for (const item of finishedTasks(detail.tasks))
+      plan.finished.push({ wish, item });
+    for (const item of azimaGroups(detail.tasks))
+      plan.azimas.push({ wish, item });
     for (const item of decisionsOf(
       detail.questions,
       detail.blocks,

@@ -301,6 +301,8 @@ func services(
 	out[uiPrefix] = uiHandler
 	taskPrefix, taskHandler := harness.Handler(h)
 	out[taskPrefix] = taskHandler
+	planPrefix, planHandler := harness.PlanHandler(h)
+	out[planPrefix] = planHandler
 	terminalPrefix, terminalHandler := terminal.Handler(terminals)
 	out[terminalPrefix] = terminalHandler
 	return out
