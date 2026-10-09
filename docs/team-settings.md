@@ -18,6 +18,13 @@ provider: PROVIDER_CLAUDE
 model: "opus"
 max_budget_usd: 3
 branch: "djinn/{code}-{slug}-{uuid8}"
+
+# Djinn integrates their finished work by itself: go tool task gen makes gen/** and docs/openapi.json, go tool task
+# test tests the project.
+generated: "gen/**"
+generated: "docs/openapi.json"
+generate: "go tool task gen"
+test: "go tool task test"
 ```
 
 | Setting          | What it sets, when a task names none                                   | Not set                    |
@@ -26,6 +33,9 @@ branch: "djinn/{code}-{slug}-{uuid8}"
 | `model`          | Their model, a model of that provider. `""`: the provider's default.   | the provider's default     |
 | `max_budget_usd` | The most one worker may spend, when its provider can enforce it. `0`: no limit. | no limit          |
 | `branch`         | The branch of a worker's worktree, a template: see [below](#branch-names). | `{code}-{slug}-{uuid8}` |
+| `generated`      | The files code generation makes, as globs (`gen/**`), repeated: see [integration](#integration). | none |
+| `generate`       | The command that makes them, in the project's folder.                   | none                       |
+| `test`           | The command that tests the project, in the project's folder. Set, Djinn integrates finished work. | none: no integration |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
@@ -106,6 +116,31 @@ The file is shared and versioned: it holds no key. Djinn refuses a file, comment
 it holds one (`api_key`, `token`, `password`…), where a word starts like a well-known key (`sk-`, `ghp_`,
 `AKIA`…), or where a long run of letters and digits looks like one. The error gives the line, never the value. A
 worker's keys stay where its agent keeps them.
+
+## Integration
+
+A worker's work counts once it is in its wish's branch, tested. In a project whose settings name a `test` command,
+Djinn brings it there by itself, no model ([T30](../plan/43303f46-integration.md)):
+
+1. When a worker ends done, its task's work is **pending** (`djinn task get` shows `integration`).
+2. Djinn commits a **batch** when an azima ends (none of its parts is planned or under way any more), or once an hour
+   has passed and three tasks are done since the last commit, whichever comes first. A task another task waits for
+   is committed at once, alone. `djinn wish set-integration <wish> --commit-after-minutes 30 --commit-after-tasks 2`
+   changes the hour and the count, for that wish.
+3. In a worktree of its own per wish and project, under Djinn's data folder (`projects/<project id>/integration/<wish
+   id>`), detached at the integration branch's tip, never in your checkout: it commits what each worker left in its
+   worktree on the task's branch (its title as the message; workers never commit), then merges each branch with
+   `--no-ff`, in the order the tasks ended. A conflict only in `generated` files takes the task's side and runs
+   `generate` under the gate `gen`. Then `test` runs under the gate `test`.
+4. **Green**: the integration branch moves to the result, Git checking it is still where the batch started; each task
+   is **committed**, with the commit, and the journal records the batch. Your checkout of that branch, clean, follows
+   by a fast-forward. With changes not committed, it is left as it is, and so is the branch: moved under it, your
+   next commit would undo the batch. The tasks stay pending, saying why, and the branch moves once your changes are
+   committed or put aside, without testing again.
+5. **Red**, or a **conflict** in code: the branch stays as it was, and each task of the batch says what failed.
+
+The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
+branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.
 
 ## Left out, on purpose
 

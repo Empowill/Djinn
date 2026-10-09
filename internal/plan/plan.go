@@ -335,6 +335,9 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 			wish.ProjectIds = append(wish.ProjectIds, project.GetId())
 		}
 	}
+	if err := integrationBranches(ctx, tx, wish); err != nil {
+		return nil, err
+	}
 	if req.GetPaused() {
 		wish.State = planv1.WishState_WISH_STATE_PAUSED
 		return wish, tx.Put(wish)

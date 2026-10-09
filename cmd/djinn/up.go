@@ -134,16 +134,26 @@ func runUp(args []string) (restart bool, err error) {
 	if scopes := workerScopes(ctx, os.Stderr, *workerCPU, policy.WorkerMemory); scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))
 	}
+	// The integration of finished work runs its gen and test commands under the gates, as djinn gate run does.
+	var gates *gate.Gates
+	opts = append(opts, harness.WithGates(func(ctx context.Context, name, taskID, what, dir string) (func(), error) {
+		held, err := gates.Take(ctx, gate.Request{Name: name, TaskID: taskID, What: what, Dir: dir}, nil)
+		if err != nil {
+			return nil, err
+		}
+		return held.Give, nil
+	}))
 	workers := harness.New(db, home, harness.Providers(), opts...)
 	defer workers.Close()
 	if err := workers.Recover(ctx); err != nil {
 		return false, err
 	}
 	workers.Schedule()
-	gates := gate.New(monitor, machine.NewPeaks(db), workers)
+	gates = gate.New(monitor, machine.NewPeaks(db), workers)
 	workers.HeldGates(gates.Held, gates.Waiting)
 	workers.GatesOutside(gates.Outside)
 	gates.Freed(workers.Wake)
+	workers.Integrate()
 	if machine.NotMeasured == "" {
 		// A gate's holder is a process of its own, in no worker's scope: read from its processes.
 		gates.Measure(5*time.Second, func(pid int) (machine.Group, error) { return machine.ReadWorker(pid, "") })

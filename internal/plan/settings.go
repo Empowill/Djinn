@@ -97,8 +97,12 @@ type Settings struct {
 	Model        string
 	MaxBudgetUSD float64
 	Branch       string // a template: {code}, {slug}, {uuid8}
+	// How Djinn integrates the project's finished work (T30): the generated files as globs, the command that makes
+	// them, and the command that tests the project; empty when not set.
+	Generated      []string
+	Generate, Test string
 
-	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom planv1.SettingSource
+	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, TestFrom planv1.SettingSource
 }
 
 // ResolveSettings merges the repository's settings and the developer's, either nil when there is none. The
@@ -108,7 +112,8 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 	def := planv1.SettingSource_SETTING_SOURCE_DEFAULT
 	s := Settings{
 		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch,
-		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def,
+		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
+		TestFrom: def,
 	}
 	for _, f := range []struct {
 		settings *planv1.ProjectSettings
@@ -129,6 +134,15 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.Branch != nil {
 			s.Branch, s.BranchFrom = f.settings.GetBranch(), f.from
+		}
+		if len(f.settings.GetGenerated()) > 0 {
+			s.Generated, s.GeneratedFrom = f.settings.GetGenerated(), f.from
+		}
+		if f.settings.Generate != nil {
+			s.Generate, s.GenerateFrom = f.settings.GetGenerate(), f.from
+		}
+		if f.settings.Test != nil {
+			s.Test, s.TestFrom = f.settings.GetTest(), f.from
 		}
 	}
 	return s
@@ -184,5 +198,8 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "model", Value: s.Model, Source: s.ModelFrom},
 		{Name: "max_budget_usd", Value: budget, Source: s.BudgetFrom},
 		{Name: "branch", Value: s.Branch, Source: s.BranchFrom},
+		{Name: "generated", Value: strings.Join(s.Generated, ","), Source: s.GeneratedFrom},
+		{Name: "generate", Value: s.Generate, Source: s.GenerateFrom},
+		{Name: "test", Value: s.Test, Source: s.TestFrom},
 	}
 }
