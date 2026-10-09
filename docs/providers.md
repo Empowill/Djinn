@@ -281,7 +281,12 @@ command), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
 above), then `--session-id <task id>` (or `--resume <session>`; a fork adds `--fork-session` and keeps
 `--session-id <task id>` for its new session), `--model`, `--max-budget-usd`. The prompt is a stream-json user
 message on the input; the input stays open for more messages and is closed once each has its result, which ends
-the process. A warm worker (`djinn up --warm-workers`) is the same command started before its task: it waits for
+the process. A message sent while a turn runs is folded into that turn: claude writes one result for both, so
+Djinn does not count one result per message but takes the result's `queued_turn_count` (the messages still held
+for later turns) as the number still waiting; at 0 it closes the input. A result without that field (older
+versions, and agy) counts one message. If messages still wait after such a result and the agent writes nothing
+for `harness.Quiet` (10 minutes), Djinn takes them as answered, says so in a `STATUS`, and closes the input.
+A warm worker (`djinn up --warm-workers`) is the same command started before its task: it waits for
 its first message, which is the task's prompt.
 
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
@@ -310,6 +315,7 @@ error subtype (`error_max_turns`, `error_during_execution`…) fails the turn ev
 | Process dies mid-turn                         | `claude/process-dies.jsonl`      | by hand                                     | error "claude ended before the end of its turn"; task failed                                                        |
 | Max turns reached, `is_error` false           | `claude/max-turns.jsonl`         | by hand                                     | error `error_max_turns` from the subtype; task failed, though claude exits 0                                        |
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
+| Message sent during the turn                  | `claude/mid-turn-message.jsonl`  | by hand, from W59's real result             | one result with `queued_turn_count` 0 answers both messages: the input is closed and the worker ends               |
 | Session limit reached                         | `claude/session-limit.jsonl`     | **real**, claude 2.1.293                    | `rate_limit_event` `rejected` gives the limit and its `resetsAt`; error "You've hit your session limit · resets 7:20am (Europe/Paris)"; the task waits for the reset, then resumes |
 
 ## Codex

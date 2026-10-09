@@ -133,6 +133,14 @@ func catalog() []catalogCase {
 					t.Errorf("input = %q", input)
 				}
 			}},
+		// A message sent during the turn is folded into it: one result, queued_turn_count 0, and the worker ends.
+		{provider: "claude", fixture: "mid-turn-message", send: []string{"Also check the docs."},
+			want: []string{"STATUS", "TEXT", "TEXT", "USAGE"},
+			check: func(t *testing.T, _ []Event, _, input string) {
+				if n := strings.Count(input, `"type":"user"`); n != 2 || !strings.Contains(input, "Also check the docs.") {
+					t.Errorf("input = %q", input)
+				}
+			}},
 		{provider: "claude", fixture: "budget-first-call", end: "eof:1", spec: Spec{MaxBudgetUSD: 0.1},
 			want: []string{"STATUS", "TOOL_CALL", "ERROR", "USAGE"}, exit: 1, err: "Reached maximum budget ($0.1)",
 			check: func(t *testing.T, events []Event, _, _ string) {
@@ -426,7 +434,13 @@ func TestCatalog(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			// A worker left waiting on its input would hang the test: it is stopped, and that fails the case.
+			hung := time.AfterFunc(10*time.Second, func() {
+				t.Errorf("the worker still runs after 10s")
+				w.Stop()
+			})
 			events := collect(w)
+			hung.Stop()
 			res := w.Wait()
 
 			// The error output is read apart from the output: its events come in any order among the others.
