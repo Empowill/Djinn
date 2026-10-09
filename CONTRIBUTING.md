@@ -69,7 +69,8 @@ Each one is a decision. Changing one is a discussion first.
 - **Whoever writes a text translates it.** Every text a person reads is a key of
   `locales/en.json` (`t()` in `src/i18n.ts`, `locales.T` in Go). Add the English source and every
   translation in the same change. Keys are flat, `area.name`; plurals are `key.one`, `key.other`.
-  Tests fail on a missing or unused key. No translation platform.
+  Tests fail on a missing or unused key, and on French outside `locales/fr.json` (`TestNoFrench`). No translation
+  platform.
 - **Build tools stay out of Djinn.** Task, buf and the protoc plugins are module tools, never
   imported by `cmd/djinn`. `go version -m bin/djinn` lists no build tool.
 - **Open source, decentralized.** No company's internal names in code or docs. No cloud tracker:

@@ -14,6 +14,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/locales"
 )
 
 // fakeNotifier records the notifications instead of showing them.
@@ -125,11 +126,11 @@ func TestNoticesShowTheQuestionsOfActiveWishes(t *testing.T) {
 
 func TestNoticesTranslateAndClip(t *testing.T) {
 	n, notes := newNotices(t, "fr")
-	w := makeWish(t, n.Store, "Livrer", planv1.WishState_WISH_STATE_UNSPECIFIED)
-	long := strings.Repeat("mot ", 200)
+	w := makeWish(t, n.Store, "Ship", planv1.WishState_WISH_STATE_UNSPECIFIED)
+	long := strings.Repeat("word ", 200)
 	ask(t, n.Store, &planv1.Question{WishId: w.GetId(), Text: long})
 	got := notes.next(t)
-	if got.Actions[0].Title != "Oui" || len([]rune(got.Body)) > maxBody {
+	if got.Actions[0].Title != locales.T("fr", "notify.yes", nil) || got.Actions[0].Title == "Yes" || len([]rune(got.Body)) > maxBody {
 		t.Errorf("notification = %+v (%d characters)", got, len([]rune(got.Body)))
 	}
 }

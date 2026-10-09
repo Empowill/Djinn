@@ -39,6 +39,11 @@ read, install and contribute.
     `docs/v0.2.1-session-harmonisation.djinn.json` is deleted, nothing read it. French is tested from
     `locales/fr.json` only: `TestFrench` and `TestWishState` in `internal/render`, e2e "in French › the interface
     follows the system's language". `plan/` quotes the French words it decides on, « souhait », « invoquer »)
+  - [x] A test keeps it so. (`TestNoFrench` in `locales/french_test.go` reads every file of the repository, tracked
+    or new, and fails on a French letter or quote mark, or on two French words on one line; `TestFrenchSigns` checks
+    the heuristic. Allowed: `locales/fr.json`, the accent folding of branch names in `internal/harness/worktree.go`
+    and its test, the name Clément, and « souhait », « invoquer » in `plan/`. The last French test data,
+    `TestNoticesTranslateAndClip` in `internal/ui`, now reads its French from `locales/fr.json`)
   - [ ] The two README screenshots, taken in French on the Electron app. (needs: a person, on the new interface)
 - [ ] The interface maintainer has reviewed the keys and the English wording. (needs: the interface maintainer)
 
