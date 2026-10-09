@@ -144,8 +144,11 @@ To use Djinn, see the [README](README.md). To work on it:
 - `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. Not on Windows
   yet.
-- `djinn task depend <task-id> --depends-on W1 --depends-on W2` sets what a task waits for, in place of what it had;
-  the tasks of a wish form a graph without cycle, and one that would close a cycle is refused, naming it.
+- `djinn task spawn … --after W1,W2` gives a task what comes before it (`--depends-on`, its former name, still works);
+  `--blocks W5` puts the new task before a planned one, W5 waiting for it from the same step, refused once W5 has
+  started. `djinn task depend <task-id> --after W1,W2 --also W6=W5` sets what tasks wait for, in place of what they
+  had, all or none; the tasks of a wish form a graph without cycle, and one that would close a cycle is refused,
+  naming it.
 - The plan of a wish is a graph of azimas (`T07`): tasks no worker runs, which work is part of. `djinn task spawn …
   --part-of T07` spawns work in one, `djinn task group <task-id> --part-of T07` moves it, `djinn task spawn <wish>
   --kind azima --title "…"` makes one. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes

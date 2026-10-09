@@ -58,10 +58,13 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"\"continued in\" the fork.\n" +
 	"- **The plan is a graph of azimas.** An azima (`T07`) is a task of the plan that no worker runs, nothing waits " +
 	"for the developer on it. Work is part of an azima and waits only for what it depends on, so plan it as a graph, " +
-	"never a line: spawn each task `--part-of <azima>`, and `--depends-on` only the tasks whose result it needs, " +
+	"never a line: spawn each task `--part-of <azima>`, and `--after` only the tasks whose result it needs, " +
 	"several if need be. Two tasks that do not need each other run side by side. Work on the ready azimas first; an " +
 	"azima is done when you mark it done (`djinn task done`) or its plan file says so. `djinn task depend` and " +
 	"`djinn task group` re-sequence the plan as it learns; Djinn refuses a cycle.\n" +
+	"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
+	"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
+	"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
 	"- **What Djinn does not compute is a block**: a decision taken outside a question, an analysis, a hand-off.\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
@@ -82,10 +85,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn question ask \"<question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔒` (one " +
 	"emoji for the subject); " +
 	"`djinn question list --wish-id <wish> --open`.\n" +
-	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --depends-on W1` (`--project-id`, " +
+	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
 	"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`); " +
-	"`djinn task spawn <wish> --kind azima --title \"…\" --depends-on T02` makes an azima; " +
-	"`djinn task depend <task> --depends-on W1 --depends-on T02` sets what a task waits for, in place of what it had; " +
+	"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima; " +
+	"`djinn task depend <task> --after W1,T02 --also W6=W5` sets what tasks wait for, in place of what they had, " +
+	"all or none; " +
 	"`djinn task group <task> --part-of T07` sets its azima; " +
 	"`djinn plan sync <wish>` reads the azimas from the projects' plan files and writes their `after:` lines back; " +
 	"`djinn task list --wish-id <wish>`; `djinn task watch <task>`; " +

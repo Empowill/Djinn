@@ -48,8 +48,12 @@ The arguments are the fields of the request.
 | enum                                        | The value without its type prefix, any case: `b`, `B`; `yes` and `no` also in the user's language |
 | `google.protobuf.Timestamp`                 | RFC 3339: `2026-10-07T09:00:00Z`                         |
 | a message holding only a `oneof` of scalars | One input, stored in the first member whose rules pass   |
+| a message of a required string, then a repeated string | One input `key=a,b`: `--also W6=W5,W3`; `W7=` for an empty list |
 | `string directory` or `*_directory`         | A folder: a relative path is made absolute, from the current directory, before sending |
 | `string file` or `*_file`                   | A file, made absolute the same way: the server reads or writes it on this machine |
+
+A pair is how `djinn task depend --also` sets several tasks in one call: `TaskAfter` has `task` (required) then
+`after`, so `W6=W5,W3` fills both. In MCP it is a string read the same way.
 
 The `oneof` rule is how a question is named by its code or its identifier: `QuestionRef` has `code` (pattern
 `^Q[0-9]{2,3}$`) then `id` (a UUID), so `Q03` lands in `code` and a UUID in `id`. An input no member accepts

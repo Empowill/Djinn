@@ -138,7 +138,7 @@ func fieldSchema(fd protoreflect.FieldDescriptor) map[string]any {
 // Schema ECMAScript.
 func valueSchema(fd protoreflect.FieldDescriptor) map[string]any {
 	switch {
-	case ref(fd) != nil:
+	case ref(fd) != nil, isPair(fd):
 		return map[string]any{"type": "string"}
 	case fd.Kind() == protoreflect.MessageKind:
 		return map[string]any{"type": "string", "format": "date-time"}

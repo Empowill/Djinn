@@ -149,7 +149,7 @@ after: T08 T17
   `harness/recover`: an event is journaled as the event itself.
 
 - **Planned tasks** (`Task.depends_on`, `write_scopes`, `scheduled`, `wait_reason`): `djinn task spawn` takes
-  `--depends-on` (a code of the wish, any case, or an id), `--write-scopes` and `--later`. A task that cannot start
+  `--after` (a code of the wish, any case, or an id; `--depends-on` before W113), `--write-scopes` and `--later`. A task that cannot start
   now is created `pending` with its reason, and an event `waiting: …` each time the reason changes; `djinn task
   watch` follows a planned task until it ends. `--later` only plans: the call never starts a worker. Without it, a
   task that can start starts in the call, as before, and a start error is the call's error.
@@ -219,6 +219,17 @@ after: T08 T17
   dependencies, in place of those it had, tasks of its wish by code; the tasks of a wish form a graph without cycle,
   and a dependency that would close one is refused, naming it ("W1 → W3 → W1"). A task whose worker runs is refused
   until it ends: its worker writes the task as it goes. (`TestDepend`)
+- **A task gets its place at its spawn, never after** (W113, 10/10): spawning N, then depending W5 on it, left a gap in
+  which a pass could start W5. `djinn task spawn --after W1,W2` (`TaskServiceSpawnRequest.after`; `depends_on` kept,
+  read as a synonym, so that nothing breaks) gives a task what comes before it; `--blocks W5` adds the new task to
+  W5's dependencies under the same `h.sched` lock and in the same transaction as the spawn, checked again inside it.
+  It is refused for a task that has started, saying where it stands ("task W5 has started (running)"), and for one
+  that would close a cycle ("W1 → the new task → W3 → W1"), through `part_of` too; an azima can block as work does.
+  `djinn task depend` sets several tasks at once (`--after` for the task, `--also W6=W5,W3` for each other one, a
+  `TaskAfter` the command line reads as `key=a,b`), all or none in one transaction under `h.sched`, the resulting graph
+  checked for cycles. Every list of tasks takes commas: `--after W1,W2`. The brief and `docs/agent-protocol.md` tell
+  the lead: `--after` at spawn, `--blocks` to insert before, never spawn then depend. (`TestSpawnBlocksWhilePassesRun`,
+  scheduler passes in a tight loop; `TestSpawnAfterAndBlocks`; `TestDependSeveral`)
 - **Azimas: the plan is a graph Djinn understands** (10/10; an azima, Arabic ʿazīma, the incantation that binds and
   commands a djinn). `Task.kind` is `WORK` (the default: a worker runs it) or `AZIMA` (`T07`: no worker ever, never
   scheduled, never waiting for the person, never in the moving or waiting work). Work is part of an azima
@@ -240,7 +251,7 @@ after: T08 T17
   the next `djinn up` (`migrateAzimas`, journaled `harness/azima`, `TestMigrateAzimas`).
 - **The lead plans with them**: the brief shows the azimas as a graph, the ready ones first (under way before open),
   then the blocked ones with what they wait for, the done ones on one line (`TestBriefAzimas`), and its rules say to
-  spawn work `--part-of` its azima and `--depends-on` only what it needs. The Tasks tab groups work under its azima,
+  spawn work `--part-of` its azima and `--after` only what it needs. The Tasks tab groups work under its azima,
   which shows what it waits for and its progress (`screens.test.mjs`, `e2e/azimas.spec.ts`); the page and the flight
   plan never list an azima as work or as waiting for the person.
 - **A follow-up continues the task, it does not copy it** (W83: every resume through a fork left a duplicate):
