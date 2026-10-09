@@ -1,5 +1,7 @@
 //go:build !windows
 
+// Not on Windows: the restarted djinn is stopped with SIGINT, and the lead terminals run /bin/sh.
+
 package main
 
 import (

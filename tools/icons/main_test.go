@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -84,6 +85,9 @@ func TestICOAndICNSHoldEverySize(t *testing.T) {
 }
 
 func TestDesktopPutsTheIconAndTheEntryInTheUsersFolder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the desktop entry is for Linux (the command does nothing elsewhere), and its paths are POSIX ones")
+	}
 	dir := t.TempDir()
 	if err := desktop(root, dir, "/opt/my tools/djinn"); err != nil {
 		t.Fatal(err)

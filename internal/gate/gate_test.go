@@ -334,7 +334,7 @@ func TestRunCost(t *testing.T) {
 		t.Errorf("CPU %.3f s, duration %.3f s", got.GetCpuSeconds(), got.GetSeconds())
 	}
 	switch peak := got.GetPeakMemoryBytes(); runtime.GOOS {
-	case "linux", "darwin":
+	case "linux", "darwin", "windows": // Windows through a Job Object (watch_windows.go)
 		if peak < 64<<20 {
 			t.Errorf("peak memory %d", peak)
 		}

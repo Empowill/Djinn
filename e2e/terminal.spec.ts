@@ -22,6 +22,10 @@ async function typeLine(page: Page, text: string) {
 }
 
 test.describe.configure({ mode: "serial" });
+test.skip(
+  process.platform === "win32",
+  "the terminal runs PowerShell on Windows; these tests drive a POSIX shell",
+);
 
 test("the terminal shows at the bottom and runs a command", async ({
   page,

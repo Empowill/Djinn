@@ -1,5 +1,7 @@
 //go:build !windows
 
+// Not on Windows: it starts djinn up through up(), of up_test.go.
+
 package main
 
 import (

@@ -6,6 +6,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # By hand on any branch, once this trigger is on main: gh workflow run ci.yml --ref <branch>
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -35,16 +37,10 @@ jobs:
       # Go, interface and end-to-end tests (browser mode, headless Chromium).
       - run: go tool task test
 
-  go:
-    name: Go tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, windows-2025]
-    runs-on: ${{ matrix.os }}
+  macos:
+    name: Go tests (macos-15)
+    runs-on: macos-15
     timeout-minutes: 30
-    # Windows is vetted, not yet run (plan T11): it reports without blocking until it is green once.
-    continue-on-error: ${{ startsWith(matrix.os, 'windows') }}
     steps:
       # Keep the files as committed: gofmt and the golden files expect LF.
       - run: git config --global core.autocrlf false
@@ -59,3 +55,43 @@ jobs:
       - run: npm ci
       # test-go builds the interface first: the djinn package embeds it.
       - run: go tool task test-go
+
+  # Every test a contributor runs (go tool task test), in three steps that each report even when one before fails.
+  # The end-to-end tests drive the browser mode in headless Chromium: no native window. The specs that need a POSIX
+  # shell skip, and say why.
+  windows:
+    name: Tests (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 40
+    # It reports without blocking until it is green once (plan T11); then this line goes.
+    continue-on-error: true
+    steps:
+      # Keep the files as committed: gofmt and the golden files expect LF. Worktrees nest deep paths.
+      - run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install the headless browser of the end-to-end tests
+        run: npx playwright install chromium
+      # test-go builds the interface first: the djinn package embeds it.
+      - run: go tool task test-go
+      - if: ${{ !cancelled() }}
+        run: go tool task test-ui
+      - if: ${{ !cancelled() }}
+        run: go tool task e2e
+      - name: Keep the traces and screenshots of the end-to-end tests that failed
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-windows
+          path: test-results/e2e
+          if-no-files-found: ignore
+          retention-days: 7

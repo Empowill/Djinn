@@ -1,5 +1,5 @@
 // Starts `djinn up --browser` on a free port, waits until it answers, and hands its URL (with the token) to the
-// specs through DJINN_URL. The teardown stops it with SIGINT and checks that it exits cleanly.
+// specs through DJINN_URL. The teardown stops it with SIGINT and checks that it exits cleanly; on Windows it kills it.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -68,6 +68,19 @@ export default async function globalSetup() {
   process.env.DJINN_E2E_HOME = home;
 
   return async () => {
+    if (process.platform === "win32") {
+      // Windows sends another process no signal: djinn ends at once, as after a crash. A process it started may
+      // still hold a file of its data directory a moment.
+      djinn.kill();
+      await exited;
+      fs.rmSync(home, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 250,
+      });
+      return;
+    }
     djinn.kill("SIGINT");
     const code = await exited;
     fs.rmSync(home, { recursive: true, force: true });

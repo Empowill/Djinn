@@ -173,13 +173,14 @@ func firstFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string
 	return "", nil
 }
 
-// portableFolder is the lead's folder as an export carries it: the scrubber has replaced a project's folder by its
-// name and the home folder by ~; a path still absolute names this machine only, and is left out.
+// portableFolder is the lead's folder as an export carries it, with forward slashes whatever the system: the
+// scrubber has replaced a project's folder by its name and the home folder by ~; a path still absolute names this
+// machine only, and is left out.
 func portableFolder(dir string) string {
 	if filepath.IsAbs(dir) || strings.HasPrefix(dir, "/") || strings.HasPrefix(dir, `\`) {
 		return ""
 	}
-	return dir
+	return strings.ReplaceAll(dir, `\`, "/")
 }
 
 // localFolder puts back this machine's folder in a lead's folder from an export: ~ is the home folder, and a path

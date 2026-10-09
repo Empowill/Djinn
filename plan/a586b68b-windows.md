@@ -2,7 +2,7 @@
 id: 01a11855-a8d2-782a-a628-9a70a586b68b
 code: T11
 phase: 1
-status: open
+status: in-progress
 ---
 
 # T11 · Windows
@@ -40,13 +40,23 @@ checked against Windows first, because it is where the constraints are.
 ## Done when
 - [ ] `go install`, then `djinn up`, opens the window on Windows 11 and a stream reaches it. (needs: a Windows 11
   machine; `GOOS=windows go vet -tags headless ./...` passes on Linux, 08/10)
-- [ ] `task test` and `task e2e` pass on Windows. (needs: a Windows machine, or the CI's Windows job green)
+- [ ] `task test` and `task e2e` pass on Windows. (needs: the CI's Windows job green. It runs test-go, test-ui and e2e
+  since 09/10, still `continue-on-error`; the failures of its first run (09/10) are fixed but not yet seen green)
 - [ ] A worker runs in a worktree on Windows, with its CPU and memory measured. (needs: a Windows machine, and the
   per-worker measure, not built: Job Objects, T17)
 
 ## How we test on Windows
 - The unit tests run on Windows (`go tool task test`). Cross-checks from Linux:
   `GOOS=windows go vet ./...` type-checks the code and the tests for Windows.
+- The CI's Windows job (`.github/workflows/ci.yml`) runs `test-go`, `test-ui` and `e2e` (browser mode, headless
+  Chromium), each step reporting even when one before fails; it reports without blocking until it is green once.
+  On a branch without a pull request, once the workflow's `workflow_dispatch` is on main:
+  `gh workflow run ci.yml --ref <branch>`.
+- What only Unix can run skips on Windows and says why: tests that stop djinn with a signal or run a shell script
+  (`//go:build !windows` files, with their reason), the terminal specs that drive a POSIX shell, pausing a worker.
+- Windows' temporary folder has a short 8.3 name (`RUNNER~1`); djinn stores a project's folder resolved, so a test
+  comparing folders resolves its own (`filepath.EvalSymlinks`).
+- `djinn gate run` counts a command's children through a Job Object on Windows (CPU time and peak memory).
 - The native window is checked in one dedicated session on a maintainer's Windows machine, when
   enough Windows-relevant work has landed: `go install`, `djinn up`, `go tool task test`,
   `go tool task check-window`, `go tool task e2e`. Not after every change.
