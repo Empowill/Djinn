@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +63,13 @@ type Policy struct {
 	// commands holding a gate, holds its highest peak plus CommandMargin; a command never measured goes as it comes.
 	// Djinn's recommendation: the developer may change it.
 	CommandMargin uint64
+	// Another worker starts only when the memory available, less what the workers running may still take, holds the
+	// typical peak of a worker of its provider plus WorkerMargin. The typical peak is the median of the peaks of the
+	// latest WorkerPeaks finished workers of that provider; WorkerPeak while none is measured. A running worker may
+	// still take the typical peak of its provider less what it uses now; one not read yet, all of it.
+	WorkerPeak   uint64
+	WorkerPeaks  int
+	WorkerMargin uint64
 	// A local model runs on an NVIDIA or AMD GPU, its driver loaded, with ModelGPUMemory of its own; on Apple
 	// Silicon with ModelMemory of unified memory; else on the CPU, slowly, with ModelMemory. Its weights need
 	// ModelDisk free on the disk of the data folder.
@@ -76,6 +84,7 @@ func DefaultPolicy() Policy {
 	return Policy{
 		CoresPerWorker: 2, MemoryPerWorker: 2 * GiB, MemoryReserve: 2 * GiB, MaxWorkers: 16,
 		CPUPressure: 50, MemoryPressure: 10, LoadPerCore: 2, MemoryFree: 0.10, CommandMargin: 512 << 20,
+		WorkerPeak: GiB, WorkerPeaks: 10, WorkerMargin: 512 << 20,
 		ModelGPUMemory: 6 * GiB, ModelMemory: 16 * GiB, ModelDisk: 10 * GiB,
 	}
 }
@@ -143,6 +152,50 @@ func (p Policy) Room(s Snapshot, command string, peak, held uint64) string {
 		why += fmt.Sprintf(", %s of it for the commands holding a gate", size(min(held, s.MemoryAvailable)))
 	}
 	return why
+}
+
+// Typical is the typical peak memory of a worker, and how many measured peaks gave it: the median of the first
+// WorkerPeaks of peaks, the latest first; WorkerPeak and 0 when none is measured. With an even count, the mean of the
+// two in the middle.
+func (p Policy) Typical(peaks []uint64) (uint64, int) {
+	var measured []uint64
+	for _, v := range peaks {
+		if v > 0 && (p.WorkerPeaks <= 0 || len(measured) < p.WorkerPeaks) {
+			measured = append(measured, v)
+		}
+	}
+	n := len(measured)
+	if n == 0 {
+		return p.WorkerPeak, 0
+	}
+	slices.Sort(measured)
+	if n%2 == 1 {
+		return measured[n/2], n
+	}
+	return measured[n/2-1]/2 + measured[n/2]/2, n
+}
+
+// WorkerRoom says why the machine cannot hold another worker of provider yet, or "" when it can: the memory
+// available, less held (what the workers running may still take), holds peak, the typical peak of a worker of
+// provider measured over measured workers (Typical), plus WorkerMargin. A machine whose memory is unknown (available
+// 0) has room.
+func (p Policy) WorkerRoom(available, held uint64, provider string, peak uint64, measured int) string {
+	free := available - min(held, available)
+	if available == 0 || free >= peak+p.WorkerMargin {
+		return ""
+	}
+	how := "none measured yet"
+	switch {
+	case measured == 1:
+		how = "the one measured"
+	case measured > 1:
+		how = fmt.Sprintf("the median of the last %d measured", measured)
+	}
+	why := fmt.Sprintf("a %s worker peaks at %s (%s), %s free", provider, size(peak), how, size(available))
+	if held > 0 {
+		why += fmt.Sprintf(", %s of it for the workers running", size(min(held, available)))
+	}
+	return why + fmt.Sprintf(", %s kept", size(p.WorkerMargin))
 }
 
 // LocalModel says whether a local open-weight model can run on the machine, and why: dispatch asks one only where it
@@ -256,6 +309,15 @@ func (m *Monitor) Capacity() (slots int, rule, pressure string) {
 	s := m.Snapshot()
 	slots, rule = m.policy.Slots(s)
 	return slots, rule, m.policy.Pressure(s)
+}
+
+// Available is the memory available to new programs now, in bytes; 0 when unknown.
+func (m *Monitor) Available() uint64 {
+	s := m.Snapshot()
+	if s.MemoryTotal == 0 {
+		return 0
+	}
+	return s.MemoryAvailable
 }
 
 // Pressure says why the machine is under pressure now, or "".

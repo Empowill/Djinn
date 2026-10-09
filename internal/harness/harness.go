@@ -21,6 +21,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -80,6 +81,8 @@ type Harness struct {
 
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
+	available  func() uint64 // the memory available; nil: the memory holds no worker back
+	policy     machine.Policy
 	tick       time.Duration // a pass at least this often
 	sched      sync.Mutex    // one scheduling decision at a time: a spawn, a pass, a planned task stopped
 	kick       chan struct{} // wakes the scheduler

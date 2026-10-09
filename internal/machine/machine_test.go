@@ -282,3 +282,49 @@ func TestLocalModel(t *testing.T) {
 		}
 	}
 }
+
+// TestTypical: the typical peak of a worker is the median of the latest measured, WorkerPeak while none is.
+func TestTypical(t *testing.T) {
+	p := DefaultPolicy()
+	p.WorkerPeaks = 3
+	for _, tt := range []struct {
+		name  string
+		peaks []uint64
+		want  uint64
+		n     int
+	}{
+		{"none measured", nil, GiB, 0},
+		{"odd", []uint64{3 * GiB, GiB, 2 * GiB}, 2 * GiB, 3},
+		{"even", []uint64{GiB, 3 * GiB}, 2 * GiB, 2},
+		{"the latest only", []uint64{GiB, GiB, 2 * GiB, 9 * GiB, 9 * GiB}, GiB, 3},
+		{"zero is not measured", []uint64{0, 2 * GiB, 0}, 2 * GiB, 1},
+	} {
+		if got, n := p.Typical(tt.peaks); got != tt.want || n != tt.n {
+			t.Errorf("%s: %d over %d, want %d over %d", tt.name, got, n, tt.want, tt.n)
+		}
+	}
+}
+
+// TestWorkerRoom: another worker starts only when the memory available, less what the running ones may still take,
+// holds its typical peak and the margin, and the reason names those numbers.
+func TestWorkerRoom(t *testing.T) {
+	p := DefaultPolicy()
+	for _, tt := range []struct {
+		name                  string
+		available, held, peak uint64
+		measured              int
+		want                  string
+	}{
+		{"room", 4 * GiB, GiB, 2 * GiB, 3, ""},
+		{"tight", 2 * GiB, 0, 2 * GiB, 3, "a claude worker peaks at 2.0 GiB (the median of the last 3 measured), 2.0 GiB free, 512 MiB kept"},
+		{"held", 3 * GiB, 2 * GiB, GiB, 0,
+			"a claude worker peaks at 1.0 GiB (none measured yet), 3.0 GiB free, 2.0 GiB of it for the workers running, 512 MiB kept"},
+		{"one measured", GiB, 4 * GiB, GiB, 1,
+			"a claude worker peaks at 1.0 GiB (the one measured), 1.0 GiB free, 1.0 GiB of it for the workers running, 512 MiB kept"},
+		{"memory unknown", 0, GiB, GiB, 0, ""},
+	} {
+		if got := p.WorkerRoom(tt.available, tt.held, "claude", tt.peak, tt.measured); got != tt.want {
+			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}

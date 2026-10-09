@@ -110,7 +110,7 @@ func runUp(args []string) (restart bool, err error) {
 		read = machine.Reader(home)
 	}
 	monitor := machine.NewMonitor(policy, read)
-	opts := []harness.Option{harness.WithCapacity(monitor.Capacity)}
+	opts := []harness.Option{harness.WithCapacity(monitor.Capacity), harness.WithMemory(monitor.Available, policy)}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
 	}

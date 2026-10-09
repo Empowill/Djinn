@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/machine"
 )
 
 func TestOverlap(t *testing.T) {
@@ -257,5 +259,62 @@ func TestRestartQueue(t *testing.T) {
 	}
 	if want := []string{"p1", "p2"}; !slices.Equal(starts, want) {
 		t.Errorf("once its wish is active: started %v, want %v", starts, want)
+	}
+}
+
+// TestMemoryHoldsWorker: a worker starts only when the memory available, less what the running workers may still
+// take, holds the typical peak of its provider (the median of its finished workers, a default when none is
+// measured); the reason names those numbers. A resumed task the memory holds keeps its turn: a lighter one behind it
+// waits. Once the memory frees, it starts.
+func TestMemoryHoldsWorker(t *testing.T) {
+	at := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	var tasks []*planv1.Task
+	// Three finished claude workers peaked at 1, 1.5 and 4 GiB: a claude worker typically peaks at 1.5 GiB.
+	for i, peak := range []uint64{machine.GiB, 3 * machine.GiB / 2, 4 * machine.GiB} {
+		tasks = append(tasks, &planv1.Task{Id: fmt.Sprint("done", i), WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			Provider: planv1.Provider_PROVIDER_CLAUDE, EndTime: timestamppb.New(at.Add(-time.Duration(i) * time.Hour)),
+			Resources: &planv1.Resources{PeakMemoryBytes: peak}})
+	}
+	// One claude worker runs at 1 GiB: it may take 0.5 GiB more.
+	tasks = append(tasks, &planv1.Task{Id: "busy", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Resources: &planv1.Resources{MemoryBytes: machine.GiB}})
+	resumed := &planv1.Task{Id: "r", Code: "W5", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RESUMING, Scheduled: true,
+		CreateTime: timestamppb.New(at)}
+	codex := &planv1.Task{Id: "c", Code: "W6", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+		Provider: planv1.Provider_PROVIDER_CODEX, CreateTime: timestamppb.New(at.Add(-time.Hour))}
+	tasks = append(tasks, resumed, codex)
+	pass := func(available uint64) map[string]string {
+		m := &Machine{Slots: 4, Rule: "test", Running: 1, Available: available, Policy: machine.DefaultPolicy()}
+		got := map[string]string{}
+		for _, d := range New(tasks, []*planv1.Wish{wish}, nil, m).At(at).Pass() {
+			got[d.Task.GetId()] = d.Why
+		}
+		return got
+	}
+
+	// 2.2 GiB free, 0.5 of it for the running worker: W5 needs 1.5 GiB and the 512 MiB kept. W6, a codex worker
+	// never measured (1 GiB), would fit, but waits for it.
+	tight := "a claude worker peaks at 1.5 GiB (the median of the last 3 measured), 2.2 GiB free, " +
+		"512 MiB of it for the workers running, 512 MiB kept"
+	if got, want := pass(22*machine.GiB/10), map[string]string{"r": tight, "c": "W5 goes first: " + tight}; !maps.Equal(got, want) {
+		t.Errorf("tight: %v, want %v", got, want)
+	}
+	// 3 GiB free: W5 starts; W6 waits, the 1.5 GiB W5 may take counted.
+	want := map[string]string{"r": "", "c": "a codex worker peaks at 1.0 GiB (none measured yet), 3.0 GiB free, " +
+		"2.0 GiB of it for the workers running, 512 MiB kept"}
+	if got := pass(3 * machine.GiB); !maps.Equal(got, want) {
+		t.Errorf("freed: %v, want %v", got, want)
+	}
+	// W5 runs at 1.5 GiB, the busy worker ended: W6 starts.
+	resumed.Status, resumed.Resources = planv1.TaskStatus_TASK_STATUS_RUNNING, &planv1.Resources{MemoryBytes: 3 * machine.GiB / 2}
+	tasks[3].Status = planv1.TaskStatus_TASK_STATUS_DONE
+	if got := pass(3 * machine.GiB); got["c"] != "" {
+		t.Errorf("once W5 reached its peak: %v", got)
+	}
+	// A machine whose memory is unknown holds no worker back.
+	resumed.Status = planv1.TaskStatus_TASK_STATUS_RESUMING
+	if got := pass(0); got["r"] != "" || got["c"] != "" {
+		t.Errorf("memory unknown: %v", got)
 	}
 }
