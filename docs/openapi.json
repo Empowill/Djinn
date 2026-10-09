@@ -2582,6 +2582,393 @@
         ],
         "type": "string"
       },
+      "plan.v1.Tilasm": {
+        "description": "A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out. A folder with an index.html and its sources, kept in Djinn's data folder, tilasms/<id>/v<n>/, never in a project. Putting it again adds a version; the latest is what its links show. The word comes from the Arabic ṭilasm, the origin of \"talisman\".",
+        "properties": {
+          "author": {
+            "description": "Who made it: a task's code (W12), the lead, the developer.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "cites": {
+            "description": "The azimas and tasks of the wish it explains, by identifier.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "code": {
+            "description": "Short code to dictate, like L01, unique within the wish.",
+            "pattern": "^L[0-9]{2,3}$",
+            "type": "string"
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When it was made."
+          },
+          "id": {
+            "description": "Identifier, a UUIDv7. Its links name it: djinn://tilasm/<id>.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxBytes": {
+            "description": "Most a version may hold, in bytes, its files summed: a put beyond it is refused, saying so.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "title": {
+            "description": "Title, in a line.",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "updateTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When its last version was put."
+          },
+          "versions": {
+            "description": "Its versions, the first first; the last one is the tilasm as its links show it.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.TilasmVersion"
+            },
+            "type": "array"
+          },
+          "wishId": {
+            "description": "Wish the tilasm belongs to.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmRef": {
+        "description": "TilasmRef points to a tilasm by its code or by its identifier. Set one of: code, id.",
+        "properties": {
+          "code": {
+            "description": "Short code, like L01.",
+            "pattern": "^[Ll][0-9]{2,3}$",
+            "type": "string"
+          },
+          "id": {
+            "description": "Identifier, a UUID.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceExportRequest": {
+        "properties": {
+          "file": {
+            "description": "The .zip to write; a relative path starts from the current directory. By default, the tilasm's title with .zip in the Downloads folder.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.TilasmRef",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
+          "wish": {
+            "description": "The wish, when a code is given and several wishes have it.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tilasm"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceExportResponse": {
+        "properties": {
+          "file": {
+            "description": "The file written.",
+            "type": "string"
+          },
+          "size": {
+            "description": "Its size, in bytes.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceGetRequest": {
+        "properties": {
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.TilasmRef",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
+          "version": {
+            "description": "An earlier version to read; by default the latest.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wish": {
+            "description": "The wish, when a code is given and several wishes have it.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tilasm"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceGetResponse": {
+        "properties": {
+          "directory": {
+            "description": "The folder of the version's files.",
+            "type": "string"
+          },
+          "files": {
+            "description": "Its files, relative to that folder, with forward slashes.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text": {
+            "description": "The text of its index.html, without tags, scripts nor styles.",
+            "type": "string"
+          },
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.Tilasm",
+            "description": "The tilasm."
+          },
+          "version": {
+            "description": "The version read.",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceHistoryRequest": {
+        "properties": {
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.TilasmRef",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
+          "wish": {
+            "description": "The wish, when a code is given and several wishes have it.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tilasm"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceHistoryResponse": {
+        "properties": {
+          "directory": {
+            "description": "The tilasm's folder: version n is in its folder v<n>.",
+            "type": "string"
+          },
+          "versions": {
+            "description": "The versions, the first first.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.TilasmVersion"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceImportRequest": {
+        "properties": {
+          "author": {
+            "description": "Who imports it; the author of the file's tilasm by default.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "file": {
+            "description": "The .zip to import, as djinn tilasm export writes it; a relative path starts from the current directory.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "wish": {
+            "description": "The wish to import it into.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceImportResponse": {
+        "properties": {
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.Tilasm",
+            "description": "The tilasm, its new version last."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceListRequest": {
+        "properties": {
+          "search": {
+            "description": "Words to find, case ignored, in the code, the title or the text of the latest version; \"talisman\" or \"tilasm\" alone finds them all.",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "wish": {
+            "description": "Only the tilasms of this wish.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceListResponse": {
+        "properties": {
+          "tilasms": {
+            "description": "The tilasms, by wish then code.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.Tilasm"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmServicePutRequest": {
+        "properties": {
+          "author": {
+            "description": "Who makes it: your task's code (W12) for a worker; lead by default.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "cites": {
+            "description": "An azima or a task of the wish it explains, by code (T29, W12) or identifier; repeat it for each. A new version keeps what it cited unless some are given.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "code": {
+            "description": "The tilasm to put again, by its code (L01): a new version of it. Without it, a new tilasm with the next code.",
+            "pattern": "^[Ll][0-9]{2,3}$",
+            "type": "string"
+          },
+          "path": {
+            "description": "The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory.",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "title": {
+            "description": "Title, in a line; by default the <title> of its index.html, or the folder's name. A new version keeps the title it had unless one is given.",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "wish": {
+            "description": "The wish it explains.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TilasmServicePutResponse": {
+        "properties": {
+          "directory": {
+            "description": "The folder of the version put.",
+            "type": "string"
+          },
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.Tilasm",
+            "description": "The tilasm, its new version last."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceRestoreRequest": {
+        "properties": {
+          "author": {
+            "description": "Who restores it; lead by default.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.TilasmRef",
+            "description": "The tilasm: its code (L01) or its identifier."
+          },
+          "version": {
+            "description": "The version to restore.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "wish": {
+            "description": "The wish, when a code is given and several wishes have it.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tilasm",
+          "version"
+        ],
+        "type": "object"
+      },
+      "plan.v1.TilasmServiceRestoreResponse": {
+        "properties": {
+          "tilasm": {
+            "$ref": "#/components/schemas/plan.v1.Tilasm",
+            "description": "The tilasm, the restored version last."
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.TilasmVersion": {
+        "description": "TilasmVersion is one put of a tilasm: its files stay in tilasms/<id>/v<number>/.",
+        "properties": {
+          "author": {
+            "description": "Who put it.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "createTime": {
+            "$ref": "#/components/schemas/google.protobuf.Timestamp",
+            "description": "When it was put."
+          },
+          "files": {
+            "description": "How many files it holds.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "number": {
+            "description": "Its number, from 1.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "restoredFrom": {
+            "description": "The version it copies, when it was restored from an earlier one; 0 otherwise.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "description": "Its files summed, in bytes.",
+            "format": "int64",
+            "type": [
+              "string",
+              "integer"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.Usage": {
         "description": "Usage is what a worker spent, as its provider reports it.",
         "properties": {
@@ -4641,6 +5028,275 @@
         ]
       }
     },
+    "/plan.v1.TilasmService/Export": {
+      "post": {
+        "description": "Export a tilasm as a .zip: the files of its latest version, and its manifest, tilasm.json.",
+        "operationId": "TilasmService_Export",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceExportResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn tilasm export",
+        "tags": [
+          "TilasmService"
+        ]
+      }
+    },
+    "/plan.v1.TilasmService/Get": {
+      "post": {
+        "description": "Read a tilasm: its manifest, the text of its index.html without the tags, and the folder of its files.",
+        "operationId": "TilasmService_Get",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceGetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceGetResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn tilasm get",
+        "tags": [
+          "TilasmService"
+        ],
+        "x-read-only": true
+      }
+    },
+    "/plan.v1.TilasmService/History": {
+      "post": {
+        "description": "The versions of a tilasm, the first first, with their folders.",
+        "operationId": "TilasmService_History",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceHistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceHistoryResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn tilasm history",
+        "tags": [
+          "TilasmService"
+        ],
+        "x-read-only": true
+      }
+    },
+    "/plan.v1.TilasmService/Import": {
+      "post": {
+        "description": "Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.",
+        "operationId": "TilasmService_Import",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceImportResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn tilasm import",
+        "tags": [
+          "TilasmService"
+        ]
+      }
+    },
+    "/plan.v1.TilasmService/List": {
+      "post": {
+        "description": "List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.",
+        "operationId": "TilasmService_List",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceListRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceListResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn tilasm list",
+        "tags": [
+          "TilasmService"
+        ],
+        "x-read-only": true
+      }
+    },
+    "/plan.v1.TilasmService/Put": {
+      "post": {
+        "description": "Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new version of that one, its links unchanged.",
+        "operationId": "TilasmService_Put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServicePutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServicePutResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn tilasm put",
+        "tags": [
+          "TilasmService"
+        ]
+      }
+    },
+    "/plan.v1.TilasmService/Restore": {
+      "post": {
+        "description": "Restore an earlier version: it comes back as a new version, and the others stay.",
+        "operationId": "TilasmService_Restore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.TilasmServiceRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.TilasmServiceRestoreResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn tilasm restore",
+        "tags": [
+          "TilasmService"
+        ]
+      }
+    },
     "/plan.v1.WishService/Activate": {
       "post": {
         "description": "Make a paused or granted wish active again, last by rank; its stopped workers start again. Three wishes are active at most: when three are, it takes the third place, and the third wish is paused.",
@@ -5308,6 +5964,10 @@
     {
       "description": "Tasks: one worker each, an agent process in the task's own worktree.",
       "name": "TaskService"
+    },
+    {
+      "description": "Tilasms, or talismans: the material that explains a wish, kept on this machine and linked from anywhere. A put replaces a tilasm with a new version, and the earlier ones can be read and restored.",
+      "name": "TilasmService"
     },
     {
       "description": "Wishes: what you ask Djinn for, across projects.",

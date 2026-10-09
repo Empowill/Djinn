@@ -204,6 +204,14 @@ var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Filename:      "djinn/v1/options.proto",
 	},
 	{
+		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
+		ExtensionType: ([]string)(nil),
+		Field:         51005,
+		Name:          "djinn.v1.alias",
+		Tag:           "bytes,51005,rep,name=alias",
+		Filename:      "djinn/v1/options.proto",
+	},
+	{
 		ExtendedType:  (*descriptorpb.MessageOptions)(nil),
 		ExtensionType: ([]*Unique)(nil),
 		Field:         51002,
@@ -230,12 +238,21 @@ var (
 	E_Writes = &file_djinn_v1_options_proto_extTypes[2]
 )
 
+// Extension fields to descriptorpb.ServiceOptions.
+var (
+	// Another name of the service's command: djinn talisman answers as djinn tilasm. Typed in full, or by a prefix no
+	// command's own name takes.
+	//
+	// repeated string alias = 51005;
+	E_Alias = &file_djinn_v1_options_proto_extTypes[3]
+)
+
 // Extension fields to descriptorpb.MessageOptions.
 var (
 	// Groups of fields that must be unique among stored messages of this type.
 	//
 	// repeated djinn.v1.Unique unique = 51002;
-	E_Unique = &file_djinn_v1_options_proto_extTypes[3]
+	E_Unique = &file_djinn_v1_options_proto_extTypes[4]
 )
 
 var File_djinn_v1_options_proto protoreflect.FileDescriptor
@@ -258,7 +275,8 @@ const file_djinn_v1_options_proto_rawDesc = "" +
 	"visibility\x12\x1e.google.protobuf.MethodOptions\x18\xb9\x8e\x03 \x01(\x0e2\x14.djinn.v1.VisibilityR\n" +
 	"visibility:>\n" +
 	"\tautostart\x12\x1e.google.protobuf.MethodOptions\x18\xbb\x8e\x03 \x01(\bR\tautostart:J\n" +
-	"\x06writes\x12\x1e.google.protobuf.MethodOptions\x18\xbc\x8e\x03 \x01(\x0e2\x10.djinn.v1.WritesR\x06writes:K\n" +
+	"\x06writes\x12\x1e.google.protobuf.MethodOptions\x18\xbc\x8e\x03 \x01(\x0e2\x10.djinn.v1.WritesR\x06writes:7\n" +
+	"\x05alias\x12\x1f.google.protobuf.ServiceOptions\x18\xbd\x8e\x03 \x03(\tR\x05alias:K\n" +
 	"\x06unique\x12\x1f.google.protobuf.MessageOptions\x18\xba\x8e\x03 \x03(\v2\x10.djinn.v1.UniqueR\x06uniqueB\x90\x01\n" +
 	"\fcom.djinn.v1B\fOptionsProtoP\x01Z1github.com/empowill/djinn/gen/go/djinn/v1;djinnv1\xa2\x02\x03DXX\xaa\x02\bDjinn.V1\xca\x02\bDjinn\\V1\xe2\x02\x14Djinn\\V1\\GPBMetadata\xea\x02\tDjinn::V1b\x06proto3"
 
@@ -281,20 +299,22 @@ var file_djinn_v1_options_proto_goTypes = []any{
 	(Writes)(0),                         // 1: djinn.v1.Writes
 	(*Unique)(nil),                      // 2: djinn.v1.Unique
 	(*descriptorpb.MethodOptions)(nil),  // 3: google.protobuf.MethodOptions
-	(*descriptorpb.MessageOptions)(nil), // 4: google.protobuf.MessageOptions
+	(*descriptorpb.ServiceOptions)(nil), // 4: google.protobuf.ServiceOptions
+	(*descriptorpb.MessageOptions)(nil), // 5: google.protobuf.MessageOptions
 }
 var file_djinn_v1_options_proto_depIdxs = []int32{
 	3, // 0: djinn.v1.visibility:extendee -> google.protobuf.MethodOptions
 	3, // 1: djinn.v1.autostart:extendee -> google.protobuf.MethodOptions
 	3, // 2: djinn.v1.writes:extendee -> google.protobuf.MethodOptions
-	4, // 3: djinn.v1.unique:extendee -> google.protobuf.MessageOptions
-	0, // 4: djinn.v1.visibility:type_name -> djinn.v1.Visibility
-	1, // 5: djinn.v1.writes:type_name -> djinn.v1.Writes
-	2, // 6: djinn.v1.unique:type_name -> djinn.v1.Unique
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	4, // [4:7] is the sub-list for extension type_name
-	0, // [0:4] is the sub-list for extension extendee
+	4, // 3: djinn.v1.alias:extendee -> google.protobuf.ServiceOptions
+	5, // 4: djinn.v1.unique:extendee -> google.protobuf.MessageOptions
+	0, // 5: djinn.v1.visibility:type_name -> djinn.v1.Visibility
+	1, // 6: djinn.v1.writes:type_name -> djinn.v1.Writes
+	2, // 7: djinn.v1.unique:type_name -> djinn.v1.Unique
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	5, // [5:8] is the sub-list for extension type_name
+	0, // [0:5] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
 }
 
@@ -310,7 +330,7 @@ func file_djinn_v1_options_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_options_proto_rawDesc), len(file_djinn_v1_options_proto_rawDesc)),
 			NumEnums:      2,
 			NumMessages:   1,
-			NumExtensions: 4,
+			NumExtensions: 5,
 			NumServices:   0,
 		},
 		GoTypes:           file_djinn_v1_options_proto_goTypes,
