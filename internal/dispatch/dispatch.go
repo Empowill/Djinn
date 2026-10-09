@@ -84,6 +84,9 @@ type Decision struct {
 	Why string
 	// Why it never will start: it fails.
 	Failed string
+	// It waits for a dependency's work to be committed into the wish's integration branch: the integration commits
+	// that work at once.
+	Commit bool
 }
 
 // Planned tells whether Djinn starts the task by itself, once it is ready: a task planned on this machine, or one
@@ -118,7 +121,7 @@ func (s *Situation) Pass() []Decision {
 		if why == "" && failed == "" {
 			s.Start(t)
 		}
-		out = append(out, Decision{Task: t, Why: why, Failed: failed})
+		out = append(out, Decision{Task: t, Why: why, Failed: failed, Commit: why != "" && s.awaitsCommit(t)})
 	}
 	return out
 }
@@ -191,6 +194,11 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 		}
 		switch d.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_DONE:
+			// Work Djinn integrates counts once committed into the wish's integration branch, which the task starts
+			// from (T30); until then it waits, through a conflict or red tests a worker corrects too.
+			if waits, state := uncommitted(d); waits && why == "" {
+				why = fmt.Sprintf("waits for %s to be committed%s", d.GetCode(), state)
+			}
 			continue
 		case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
 			// Failed covers a task resumed maxResumes times without finishing: Djinn resumes it no more.
@@ -226,6 +234,34 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 		}
 	}
 	return s.full(t), ""
+}
+
+// awaitsCommit tells whether a dependency of t is done, its work waiting to be committed.
+func (s *Situation) awaitsCommit(t *planv1.Task) bool {
+	for _, id := range t.GetDependsOn() {
+		if d, ok := s.byID[id]; ok {
+			d = s.forkedAs(d)
+			if waits, _ := uncommitted(d); waits && d.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// uncommitted tells whether the work of d, a task done, waits to be committed into its wish's integration branch:
+// not when it is committed, nor when Djinn does not integrate it. state is " (conflict)" or " (red)" when its batch
+// met one, "" while it waits for its batch or is being committed.
+func uncommitted(d *planv1.Task) (waits bool, state string) {
+	switch d.GetIntegration().GetState() {
+	case planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED, planv1.IntegrationState_INTEGRATION_STATE_COMMITTED:
+		return false, ""
+	case planv1.IntegrationState_INTEGRATION_STATE_CONFLICT:
+		return true, " (conflict)"
+	case planv1.IntegrationState_INTEGRATION_STATE_RED:
+		return true, " (red)"
+	}
+	return true, ""
 }
 
 // forkedAs is the task that took over d: d itself, or, when d was cut short and resumed as a fork of its session

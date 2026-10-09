@@ -65,7 +65,7 @@ export function WishQuestion({
   const rubbable = !!q.recommendation && recommended !== undefined;
   const [expanded, setExpanded] = useState(open);
   // The recommended option is chosen until you pick one: a revision that recommends another moves it.
-  const [picked, setChoice] = useState<Choice>();
+  const [picked, setPicked] = useState<Choice>();
   const choice =
     picked ?? (q.options.length ? (recommended ?? Choice.A) : Choice.YES);
   const [note, setNote] = useState("");
@@ -187,7 +187,7 @@ export function WishQuestion({
                       <button
                         key={index}
                         className={`option ${selected ? "selected" : ""}`}
-                        onClick={() => setChoice(choiceOf(index))}
+                        onClick={() => setPicked(choiceOf(index))}
                         aria-pressed={selected}
                       >
                         <strong className="option-letter">

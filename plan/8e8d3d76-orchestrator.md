@@ -88,6 +88,9 @@ after: T08 T17
   `internal/harness` freezes, measures and stops a real scope whose child left its session, and skips without a user
   systemd; `TestProbeScopesFallback`, `TestReadCgroup`, `TestScopePrefix` in `internal/machine`;
   `TestWorkerScopesFallback` in `cmd/djinn`; T17 has the rest)
+- [x] An azima whose work is done and whose plan file only waits for proofs no worker can give says so, apart from
+  in progress and done, in the brief and the window. (`TestReadDoneWhen`, `TestProvers`, `TestAwaitingProof`,
+  `TestBriefAzimas`, `TestSyncPlan`; `screens.test.mjs`: "an azima whose work is done awaits its proof")
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -254,6 +257,23 @@ after: T08 T17
   spawn work `--part-of` its azima and `--after` only what it needs. The Tasks tab groups work under its azima,
   which shows what it waits for and its progress (`screens.test.mjs`, `e2e/azimas.spec.ts`); the page and the flight
   plan never list an azima as work or as waiting for the person.
+- **An azima whose work is done awaits its proof** (W124: T01, T03, T04… read "in progress" with nothing left for
+  Djinn to do). `AzimaState` `AWAITING_PROOF`, between in progress and done: under way, every work task part of it
+  finished (done, stopped, or cut short for good, `plan.Finished`), every azima part of it done or awaiting too, and
+  every unchecked Done-when box of its plan file saying `(needs: …)` or holding boxes that do (`plan.FillAzimas`,
+  `TestAwaitingProof`). `djinn plan sync` reads the boxes strictly (`plan.ReadDoneWhen`): top-level and nested boxes
+  over several lines, a struck box (`~~…~~`) left out, a section without boxes left, a file without the section (T09)
+  giving none, needs only in a parenthesis that opens on them (T16's "(Go side done…; needs: …)" stays work); it keeps
+  them on the azima, box by box (`Task.proof_needs`: the box's text, its needs, who gives the proof). Who gives it is
+  read from the plain words of the needs, no model (`plan.Provers`): a Mac, a Windows machine, a review by a named
+  person ("Clément's review"), a release, a real model, a person, else the needs' own words (`TestReadDoneWhen`,
+  `TestProvers`). A file whose boxes are all checked closes its azima whatever its status line says, and the sync
+  reports it (`all_checked`, T17's case; `TestSyncPlan`). The brief lists these azimas apart, "Work done, waiting for
+  its proof: T11 needs a Windows machine, Clément's review" (`TestBriefAzimas`), and tells the lead to spawn no work
+  for them. The window gives them their own tone and label ("Proof awaited", "Preuve attendue"), what they need on
+  hover and in their card; the wish's head counts them apart ("3 done · 18 awaiting proof / 30 azimas"); the flight
+  plan lists the proofs a person can give (needs that name a person or a review) under "Proofs you can give", among
+  what waits for you, never as work (`screens.test.mjs`, `data-flight.test.mjs`).
 - **A follow-up continues the task, it does not copy it** (W83: every resume through a fork left a duplicate):
   `djinn task continue <task> --prompt "…"` (`TaskService.Continue`) makes a done, failed, stopped or interrupted task
   `resuming` again, `Task.continuing` set: the scheduler starts it like any task (slots, dependencies, pressure, the

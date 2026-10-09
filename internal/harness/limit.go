@@ -52,9 +52,9 @@ func limitWhat(kind string) string {
 }
 
 var (
-	// "resets 7:20am (Europe/Paris)", "resets at 19:05", "resets 7am"
+	// "resets 7:20am (Europe/Paris)", "resets at 19:05", "resets 7am".
 	resetClock = regexp.MustCompile(`(?i)resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)?(?:\s*\(([^)\s]+)\))?`)
-	// "Claude AI usage limit reached|1791436800"
+	// "Claude AI usage limit reached|1791436800".
 	resetUnix = regexp.MustCompile(`limit reached\|(\d{9,11})\b`)
 )
 

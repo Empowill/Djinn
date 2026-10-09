@@ -52,7 +52,10 @@ the context its task needs, no more.
   wish: every lead of the same projects reads the same bytes, from the cache. Text goes through the export's
   scrubber (no project folder, no home folder, no data folder) and URLs lose their credentials. Empty sections are
   hidden. `plan.StableBrief` gives the stable part alone.
-- **A new lead starts from it** (T13): `djinn wish resume <wish>` without a lead session writes the two parts next
+- **A new lead starts from it** (T13). *Since T21, every new lead, of any agent, gets one first message, the same for
+  all: run `djinn wish brief <wish>`, then continue (`plan.StartLine`, written to `lead-first.md`); the brief opens
+  with the wish and ends with the rules, and the system prompt file below is gone. What follows is the first way.*
+  `djinn wish resume <wish>` without a lead session wrote the two parts next
   to the wish's page (`lead-rules.md`, `lead-brief.md` in the data folder) and runs, through the user's shell,
   `claude --session-id <new> --append-system-prompt-file <lead-rules.md> '<the moving part>'`. The session is
   recorded as the wish's lead once the terminal runs, so the next resume resumes it. `--append-system-prompt-file`

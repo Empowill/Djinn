@@ -45,8 +45,9 @@ const (
 
 // The gates the integration's commands run under, as a worker's would: djinn gate run gen, djinn gate run test.
 const (
-	genGate  = "gen"
-	testGate = "test"
+	genGate     = "gen"
+	testGate    = "test"
+	installGate = "install"
 )
 
 // TakeGate takes the gate name, for the task taskID, to run the command what in the folder dir, and returns how to
@@ -61,6 +62,23 @@ func WithGates(take TakeGate) Option { return func(h *Harness) { h.gates = take 
 
 // WithCommands runs the integration's commands with run, instead of the processes they name. Tests give a fake.
 func WithCommands(run RunCommand) Option { return func(h *Harness) { h.commands = run } }
+
+// Built is a batch of finished work committed into a wish's integration branch, in a project whose settings name an
+// install command: djinn up proposes to install it, and to restart on it (WithBuilt).
+type Built struct {
+	WishID, WishTitle, ProjectID, Project, Branch, Sha string
+	// The tasks of the batch, by code.
+	Tasks []string
+	// What changed: the titles of the commits the batch brought, the latest first.
+	Changes []string
+	// What to check, one line per task: its code and title, then the last paragraph its worker wrote.
+	Checks []string
+	// The install command.
+	Install string
+}
+
+// WithBuilt calls built after each batch committed in a project whose settings name an install command.
+func WithBuilt(built func(Built)) Option { return func(h *Harness) { h.built = built } }
 
 // WithIntegrateTick sets how often the integration looks at the work waiting without being woken: an hour passes
 // without telling anyone.
@@ -267,6 +285,8 @@ type tested struct {
 // integrateBatch commits the work of batch, tasks of wish in project, into the wish's integration branch, and records
 // where each task's work stands.
 func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, batch []*planv1.Task) {
+	h.integrateMu.Lock() // An install uses the integration worktree too.
+	defer h.integrateMu.Unlock()
 	branch, why := h.integrationBranch(ctx, wish, project)
 	settings, err := plan.LoadSettings(h.home, project)
 	switch {
@@ -292,7 +312,106 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	h.settleIntegration(ctx, batch, in, text, commit)
 	if in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 		h.settleCorrected(ctx, batch, in)
+		h.wake() // The tasks that waited for this work to be committed may start, from it.
 	}
+	if commit != nil && settings.Install != "" && h.built != nil {
+		h.built(h.build(ctx, wish, project, settings, batch, commit))
+	}
+}
+
+// How long the lists of a build proposed are: the commits' titles, and a worker's last paragraph.
+const (
+	buildChanges = 30
+	buildCheck   = 400
+)
+
+// build is the batch committed by commit, to propose for installing.
+func (h *Harness) build(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
+	commit *planv1.IntegrationCommit,
+) Built {
+	b := Built{
+		WishID: wish.GetId(), WishTitle: wish.GetTitle(), ProjectID: project.GetId(), Project: project.GetName(),
+		Branch: commit.GetBranch(), Sha: commit.GetNewSha(), Install: settings.Install,
+	}
+	out, err := git(ctx, project.GetDirectory(), "log", "--no-merges", "--format=%s", "-n", fmt.Sprint(buildChanges),
+		commit.GetOldSha()+".."+commit.GetNewSha())
+	if err != nil {
+		log.Printf("djinn: integrate: the commits of %s: %v", codes(batch), err)
+	}
+	if out != "" {
+		b.Changes = strings.Split(out, "\n")
+	}
+	for _, t := range batch {
+		b.Tasks = append(b.Tasks, t.GetCode())
+		check := t.GetCode() + " " + t.GetTitle()
+		if last := h.lastWords(ctx, t.GetId()); last != "" {
+			check += ": " + last
+		}
+		b.Checks = append(b.Checks, check)
+	}
+	return b
+}
+
+// lastWords is the last paragraph the worker of the task wrote, on one line, where it says what it did and what to
+// check; "" when it wrote nothing.
+func (h *Harness) lastWords(ctx context.Context, taskID string) string {
+	events, err := store.List[*planv1.TaskEvent](ctx, h.store, store.Where{"task_id": taskID})
+	if err != nil {
+		return ""
+	}
+	var last *planv1.TaskEvent
+	for _, e := range events {
+		if e.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && strings.TrimSpace(e.GetText()) != "" &&
+			(last == nil || e.GetSeq() > last.GetSeq()) {
+			last = e
+		}
+	}
+	if last == nil {
+		return ""
+	}
+	paragraphs := strings.Split(strings.TrimSpace(last.GetText()), "\n\n")
+	words := strings.Join(strings.Fields(paragraphs[len(paragraphs)-1]), " ")
+	if r := []rune(words); len(r) > buildCheck {
+		words = string(r[:buildCheck-1]) + "…"
+	}
+	return words
+}
+
+// Install runs the install command of the project's settings on sha, a build of the wish's integration branch there:
+// in the wish's integration worktree, checked out at it, never the person's checkout, under the install gate, while
+// no batch is integrated. It returns the end of the command's output, and an error when it did not end well.
+func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string) (string, error) {
+	wish, err1 := store.Get[*planv1.Wish](ctx, h.store, wishID)
+	project, err2 := store.Get[*planv1.Project](ctx, h.store, projectID)
+	if err := errors.Join(err1, err2); err != nil {
+		return "", err
+	}
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil {
+		return "", err
+	}
+	if settings.Install == "" {
+		return "", errors.New("the project's settings name no install command")
+	}
+	branch := plan.IntegrationBranchOf(wish, projectID)
+	if _, err := git(ctx, project.GetDirectory(), "merge-base", "--is-ancestor", sha, "refs/heads/"+branch); branch == "" || err != nil {
+		return "", fmt.Errorf("%s is not a commit of the wish's integration branch %s", short8(sha), branch)
+	}
+	h.integrateMu.Lock()
+	defer h.integrateMu.Unlock()
+	dir, _, err := integrationWorktree(ctx, project.GetDirectory(), integrationDir(h.home, projectID, wishID), sha)
+	if err != nil {
+		return "", fmt.Errorf("prepare the integration worktree: %w", err)
+	}
+	out, code, err := h.command(ctx, installGate, "", settings.Install, dir)
+	switch {
+	case err != nil:
+		return out, fmt.Errorf("%s could not run: %w", settings.Install, err)
+	case code != 0:
+		return out, fmt.Errorf("%s exited %d%s", settings.Install, code, tail(out))
+	}
+	return out, nil
 }
 
 // integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish made before

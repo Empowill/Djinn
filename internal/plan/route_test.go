@@ -211,7 +211,7 @@ func TestRouteAnswered(t *testing.T) {
 	lamp := &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: t.TempDir(), Git: true,
 		Remote: "https://github.com/acme/lamp.git"}
 	c.put(t, shop, lamp)
-	make := func(title string, p *planv1.Project) *planv1.Wish {
+	makeWish := func(title string, p *planv1.Project) *planv1.Wish {
 		t.Helper()
 		res, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
 			Title: title, ProjectIds: []string{p.GetId()},
@@ -221,8 +221,8 @@ func TestRouteAnswered(t *testing.T) {
 		}
 		return res.Msg.GetWish()
 	}
-	here := make("Lamp: the sidebar", lamp)
-	babysit := make("Babysit !37 · shop", shop)
+	here := makeWish("Lamp: the sidebar", lamp)
+	babysit := makeWish("Babysit !37 · shop", shop)
 	for id, s := range map[string]string{here.GetId(): session, babysit.GetId(): "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"} {
 		if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: s}); err != nil {
 			t.Fatal(err)
@@ -267,9 +267,9 @@ func TestRouteAnswered(t *testing.T) {
 	if got := c.requests(t, made.GetId()); !slices.Equal(got, []string{request}) {
 		t.Errorf("requests filed = %q", got)
 	}
-	moving, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadBriefFile))
-	if err != nil || !strings.HasPrefix(string(moving), FirstLine(here.GetTitle(), request)+"\n\n# The wish: Babysit shop!41") {
-		t.Errorf("the new lead's brief: %q, %v", moving, err)
+	first, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadFirstFile))
+	if err != nil || string(first) != FirstLine(here.GetTitle(), request)+"\n\n"+StartLine(made.GetId()) {
+		t.Errorf("the new lead's first message: %q, %v", first, err)
 	}
 	// The new lead first; then the lead of the wish the request came to, reopened to be told.
 	if len(leads.opened) != opened+2 || !strings.HasPrefix(leads.opened[opened], "claude --session-id "+made.GetLead().GetSessionId()) ||

@@ -416,7 +416,7 @@ test("a task says how long it runs as a counter, two units at most", () => {
   assert.equal(f.taskTime({ status: S.PENDING }, now).text, "");
 });
 
-test("the azimas' progress counts the azimas done, apart from the work", () => {
+test("the azimas' progress counts the azimas done, those awaiting their proof apart, and not the work", () => {
   const S = f.TaskStatus;
   const tasks = [
     { id: "a", kind: f.TaskKind.AZIMA, azima: { state: f.AzimaState.DONE } },
@@ -426,9 +426,14 @@ test("the azimas' progress counts the azimas done, apart from the work", () => {
       azima: { state: f.AzimaState.IN_PROGRESS },
     },
     { id: "c", kind: f.TaskKind.AZIMA, status: S.DONE },
+    {
+      id: "d",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.AWAITING_PROOF },
+    },
     { id: "w1", status: S.DONE, partOf: "b" },
     { id: "w2", status: S.RUNNING, partOf: "b" },
   ];
-  assert.deepEqual(f.azimasDone(tasks), { done: 2, count: 3 });
+  assert.deepEqual(f.azimasDone(tasks), { done: 2, proof: 1, count: 4 });
   assert.equal(f.workCount(tasks), 2);
 });

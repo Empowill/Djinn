@@ -25,6 +25,12 @@ export {
 } from "@/src/data/flight.ts";
 export { AzimaCard } from "@/src/azima.tsx";
 export { FolderField, ShortcutField } from "@/src/wish-dialogs.tsx";
+export {
+  LeadButton,
+  LeadMenu,
+  WishDescription,
+  recordedAgent,
+} from "@/src/wish-head.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
 export { memory, resourcesDetail } from "@/src/usage.tsx";
 export { TilasmList } from "@/src/tilasms.tsx";
@@ -1316,4 +1322,366 @@ test("a djinn:// link in Markdown stays a link that opens what it names in place
   assert.match(view, /id="view-tab-tilasms" aria-selected="true"/);
   assert.match(view, new RegExp(`<iframe[^>]*src="/tilasm/${id}/"`));
   assert.match(view, /<section class="tilasm-view" aria-label="Model">/);
+});
+
+test("the Tasks tab says where each task's work stands on its way into the wish's branch", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const work = (state, extra = {}) => ({
+    state,
+    branch: "feat/x",
+    sha: "1a2b3c4d5e6f",
+    reason: "",
+    correctedBy: "",
+    ...extra,
+  });
+  const tasks = [
+    ["W1", undefined],
+    ["W2", work(s.IntegrationState.PENDING)],
+    ["W3", work(s.IntegrationState.COMMITTED)],
+    [
+      "W4",
+      work(s.IntegrationState.CONFLICT, {
+        reason: "W4 conflicts with feat/x in a.go",
+        correctedBy: "W9",
+      }),
+    ],
+    ["W5", work(s.IntegrationState.RED, { reason: "test exited 1" })],
+    ["W6", work(s.IntegrationState.INTEGRATING)],
+  ].map(([code, integration], i) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status: s.TaskStatus.DONE,
+    createTime: at(1),
+    endTime: at(10 - i),
+    integration,
+  }));
+  const card = (task) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, { task, onStop() {}, async onSend() {} }),
+    );
+  const notes = tasks.map((task) => {
+    const m = card(task).match(
+      /<p class="wish-task-note wish-task-work work-([a-z]+)">([^<]*)<\/p>/,
+    );
+    return m ? `${task.code} ${m[1]}: ${m[2]}` : `${task.code} done`;
+  });
+  assert.deepEqual(notes, [
+    "W1 done",
+    "W2 waiting: Done, waiting to be committed",
+    "W3 done: Committed into feat/x as 1a2b3c4d",
+    "W4 failed: Conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9",
+    "W5 failed: Red tests, not committed: test exited 1",
+    "W6 running: Being committed into feat/x",
+  ]);
+  // A task that waits for another's work to be committed says so.
+  const waits = card({
+    id: "W7",
+    code: "W7",
+    title: "Next",
+    status: s.TaskStatus.PENDING,
+    createTime: at(1),
+    waitReason: "waits for W2 to be committed",
+  });
+  assert.match(waits, /waits for W2 to be committed/);
+});
+
+test("the update banner proposes to install a build committed, with what changed and what to check", () => {
+  const build = {
+    wishTitle: "Run Djinn on itself",
+    project: "djinn",
+    branch: "feat/wails-go",
+    sha: "1a2b3c4d5e6f",
+    tasks: ["W5", "W6"],
+    changes: ["Work of W6", "Work of W5"],
+    checks: ["W5 Work of W5: To check: the banner shows the build."],
+  };
+  const banner = (phase = { kind: "idle" }, dismissedBuild = "") =>
+    s.renderToStaticMarkup(
+      h(s.UpdateBannerView, {
+        state: {
+          current: "v1",
+          ready: "",
+          notResumed: [],
+          notesUrl: "",
+          build,
+        },
+        phase,
+        dismissed: false,
+        dismissedBuild,
+        onInstall() {},
+        onDismiss() {},
+        onNotes() {},
+      }),
+    );
+  const html = banner();
+  assert.match(
+    html,
+    /W5, W6 committed into feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
+  );
+  assert.match(
+    html,
+    /What changed<\/strong><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul>/,
+  );
+  assert.match(
+    html,
+    /What to check<\/strong><ul><li>W5 Work of W5: To check: the banner shows the build.<\/li><\/ul>/,
+  );
+  assert.match(html, /<button type="button">Install and restart<\/button>/);
+  // While it installs, the buttons go.
+  const installing = banner({ kind: "installing" });
+  assert.match(installing, /Installing…/);
+  assert.doesNotMatch(installing, /<button/);
+  // Dismissed, that build no longer shows.
+  assert.equal(banner({ kind: "idle" }, build.sha), "");
+  // A build that installed no newer Djinn says it is installed, and restarts nothing.
+  assert.match(
+    s.renderToStaticMarkup(
+      h(s.UpdateBannerView, {
+        state: { current: "v1", ready: "", notResumed: [], notesUrl: "" },
+        phase: { kind: "installed", sha: build.sha },
+        dismissed: false,
+        onInstall() {},
+        onDismiss() {},
+        onNotes() {},
+      }),
+    ),
+    /Installed 1a2b3c4d/,
+  );
+});
+
+test("an azima whose work is done awaits its proof: its own label and tone, what it needs, the pill apart, and the flight plan lists what a person can give", async () => {
+  const wishId = "01a11833-a440-7479-a067-52615c91da71";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const need = (box, needs, provers, reviewer = "") => ({
+    box,
+    needs,
+    provers,
+    reviewer,
+  });
+  const azima = (code, title, state, extra = {}) => ({
+    id: code,
+    wishId,
+    code,
+    title,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    proofNeeds: [],
+    azima: { state, ready: true, parts: 1, partsDone: 1 },
+    ...extra,
+  });
+  const tasks = [
+    azima("T1", "Lay the ground", s.AzimaState.DONE, {
+      status: s.TaskStatus.DONE,
+    }),
+    azima("T3", "The interface", s.AzimaState.AWAITING_PROOF, {
+      proofNeeds: [
+        need(
+          "Clément has reviewed the switch.",
+          "Clément's review",
+          [s.Prover.REVIEW],
+          "Clément",
+        ),
+      ],
+    }),
+    azima("T6", "Native e2e", s.AzimaState.AWAITING_PROOF, {
+      proofNeeds: [
+        need("The same scenario runs on macOS.", "a Mac", [s.Prover.MAC]),
+      ],
+    }),
+    azima("T7", "The orchestrator", s.AzimaState.IN_PROGRESS),
+    {
+      id: "w1",
+      wishId,
+      code: "W1",
+      title: "Switch",
+      status: s.TaskStatus.DONE,
+      partOf: "T3",
+    },
+    {
+      id: "w2",
+      wishId,
+      code: "W2",
+      title: "Drive",
+      status: s.TaskStatus.DONE,
+      partOf: "T6",
+    },
+  ];
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const card = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: tasks[2],
+      parts: [tasks[5]],
+      tasks: byId,
+      render: () => null,
+    }),
+  );
+  assert.match(card, /azima-card tone-proof/);
+  assert.match(
+    card,
+    /<span class="status-badge tone-proof" title="The same scenario runs on macOS\. Needs a Mac">.*<span>Proof awaited<\/span>/,
+  );
+  assert.match(
+    card,
+    /<span class="azima-needs" title="The same scenario runs on macOS\. Needs a Mac">a Mac<\/span>/,
+  );
+  assert.doesNotMatch(card, /tone-waiting/);
+
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+    service(s.TaskService, { list: () => ({ tasks }) });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+  close();
+  // The wish's head counts the azimas awaiting their proof apart from the done ones.
+  const page = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
+  );
+  assert.match(
+    page,
+    /title="1 of 4 azimas done, 2 awaiting their proof"[^>]*>.*?<b>1<\/b>done · <b class="tone-proof">2<\/b> awaiting proof \/ 4 azimas<\/span>/,
+  );
+  // The flight plan lists the proof a person can give among what waits for them, never as work; a Mac's is not.
+  const plan = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+    ),
+  );
+  const yourMove = plan.slice(plan.indexOf('id="action-center"'));
+  assert.match(
+    yourMove,
+    /<h3>Proofs you can give<span class="count">1<\/span><\/h3>/,
+  );
+  assert.match(
+    yourMove,
+    /status-badge tone-proof" title="Needs Clément&#x27;s review"><svg[^]*?<span>Clément&#x27;s review<\/span>/,
+  );
+  assert.match(yourMove, /T3: Clément has reviewed the switch\./);
+  assert.doesNotMatch(plan, /The same scenario runs on macOS/);
+  assert.match(
+    plan,
+    /id="view-tab-tasks"[^>]*>Tasks<span class="count">2<\/span>/,
+  );
+  const fp = s.flightPlan([lamp], {
+    [wishId]: { tasks, questions: [], blocks: [], loaded: true },
+  });
+  assert.deepEqual(
+    fp.azimas.map((x) => x.item.azima.code),
+    ["T7", "T3", "T6", "T1"],
+  );
+  assert.equal(fp.moving.length + fp.waiting.length, 0);
+});
+
+test("Lead is split: the button resumes the recorded lead, the arrow lists this machine's agents", () => {
+  const agents = [
+    { id: "codex", name: "Codex", available: false, command: "codex" },
+    { id: "claude", name: "Claude", available: true, command: "/bin/claude" },
+    {
+      id: "antigravity",
+      name: "Antigravity",
+      available: true,
+      command: "/bin/agy",
+    },
+  ];
+  const recorded = s.recordedAgent({
+    provider: s.Provider.UNSPECIFIED,
+    sessionId: "s1",
+    directory: "/tmp/lamp",
+  });
+  assert.equal(recorded, s.Provider.CLAUDE);
+  assert.equal(
+    s.recordedAgent({ provider: s.Provider.CODEX, sessionId: "" }),
+    undefined,
+  );
+  const props = {
+    recorded,
+    agents,
+    loadAgents: async () => agents,
+    onLead() {},
+    onPick() {},
+  };
+
+  // Closed: Lead, then the arrow, which says it opens a menu.
+  const closed = s.renderToStaticMarkup(h(s.LeadButton, props));
+  assert.match(closed, /<span>Lead<\/span><\/button>/);
+  assert.match(
+    closed,
+    /aria-label="Choose the agent"[^>]*aria-haspopup="menu" aria-expanded="false"/,
+  );
+  assert.doesNotMatch(closed, /role="menu"/);
+
+  // Open: claude, codex, antigravity in that order; the recorded one marked, the missing one disabled with why.
+  const open = s.renderToStaticMarkup(
+    h(s.LeadButton, { ...props, open: true }),
+  );
+  assert.match(open, /aria-expanded="true"/);
+  assert.match(
+    open,
+    /<div class="lead-menu" role="menu" aria-label="Choose the agent">/,
+  );
+  const order = ["Claude", "Codex", "Antigravity"].map((name) =>
+    open.indexOf(`<span class="lead-agent-name">${name}`),
+  );
+  assert.ok(
+    order[0] > 0 && order[0] < order[1] && order[1] < order[2],
+    order.join(),
+  );
+  assert.match(
+    open,
+    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude<svg[^]*?The wish&#x27;s lead: resumes its session/,
+  );
+  assert.match(
+    open,
+    /<button role="menuitem" class="lead-agent" disabled=""><span class="lead-agent-name">Codex<\/span><span class="lead-agent-detail">codex is not installed on this machine<\/span>/,
+  );
+  assert.match(
+    open,
+    /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Starts a new lead from the brief<\/span>/,
+  );
+  // The agents not yet known: the menu says it loads.
+  const loading = s.renderToStaticMarkup(
+    h(s.LeadMenu, { recorded, onPick() {} }),
+  );
+  assert.match(loading, /Loading…/);
+});
+
+test("the wish's description shows under its title, the title until one is written, and edits in place", () => {
+  const titled = s.renderToStaticMarkup(
+    h(s.WishDescription, {
+      title: "Ship the lamp",
+      description: "",
+      onSave() {},
+    }),
+  );
+  assert.match(
+    titled,
+    /<p class="wish-description" role="button" tabindex="0" title="Click to describe the wish[^"]*">Ship the lamp<\/p>/,
+  );
+  const described = s.renderToStaticMarkup(
+    h(s.WishDescription, {
+      title: "Ship the lamp",
+      description: "Light the house.\nNot the street.",
+      onSave() {},
+    }),
+  );
+  assert.match(described, />Light the house.\nNot the street.<\/p>/);
+  const editing = s.renderToStaticMarkup(
+    h(s.WishDescription, {
+      title: "Ship the lamp",
+      description: "Light the house.\nNot the street.",
+      editing: true,
+      onSave() {},
+    }),
+  );
+  assert.match(
+    editing,
+    /<textarea class="wish-description-edit" aria-label="Description" rows="2" autofocus="">Light the house.\nNot the street.<\/textarea>/,
+  );
 });

@@ -206,7 +206,7 @@ func handleLinks(apps string, env []string) error {
 	cmd := exec.Command(xdgMime, "default", entryFile, linkType)
 	cmd.Env = env
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("xdg-mime default: %v: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("xdg-mime default: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

@@ -26,7 +26,7 @@ func checkIcon(icon string) error {
 // oneEmoji tells a single emoji: parts joined by a zero-width joiner, each one pictograph or one flag (two regional
 // indicators), with the marks, modifiers and tags that dress it.
 func oneEmoji(s string) bool {
-	for part := range strings.SplitSeq(s, "‍") {
+	for part := range strings.SplitSeq(s, "\u200d") {
 		bases, flags := 0, 0
 		for _, r := range part {
 			switch {

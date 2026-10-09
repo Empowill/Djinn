@@ -25,7 +25,9 @@ func IsAzima(t *planv1.Task) bool { return t.GetKind() == planv1.TaskKind_TASK_K
 
 // FillAzimas sets Task.azima on the azimas among tasks, from the tasks of their wish among tasks: give it every task of
 // the wishes read. An azima is done when its status is; in progress when one of its parts has a worker on it or is
-// done, or an azima part of it is under way; open otherwise. It is ready when every task it depends on is done.
+// done, or an azima part of it is under way; open otherwise. In progress with nothing left for Djinn, it awaits its
+// proof: its work finished, its azimas done or awaiting theirs, every unchecked box of its plan file waiting for a
+// proof no worker can give (Task.proof_needs). It is ready when every task it depends on is done.
 func FillAzimas(tasks []*planv1.Task) {
 	byID := make(map[string]*planv1.Task, len(tasks))
 	parts := map[string][]*planv1.Task{}
@@ -49,12 +51,39 @@ func FillAzimas(tasks []*planv1.Task) {
 		}
 		return false
 	}
+	// state is where an azima stands, its azima parts first; a cycle the store refuses reads as in progress.
+	states := map[string]planv1.AzimaState{}
+	var state func(t *planv1.Task) planv1.AzimaState
+	state = func(t *planv1.Task) planv1.AzimaState {
+		if s, ok := states[t.GetId()]; ok {
+			return s
+		}
+		states[t.GetId()] = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
+		s := planv1.AzimaState_AZIMA_STATE_OPEN
+		switch {
+		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE:
+			s = planv1.AzimaState_AZIMA_STATE_DONE
+		case under(t.GetId(), map[string]bool{}):
+			s = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
+			if len(t.GetProofNeeds()) > 0 && !slices.ContainsFunc(parts[t.GetId()], func(p *planv1.Task) bool {
+				if IsAzima(p) {
+					ps := state(p)
+					return ps != planv1.AzimaState_AZIMA_STATE_DONE && ps != planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
+				}
+				return !Finished(p)
+			}) {
+				s = planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
+			}
+		}
+		states[t.GetId()] = s
+		return s
+	}
 	for _, t := range tasks {
 		if !IsAzima(t) {
 			t.Azima = nil
 			continue
 		}
-		e := &planv1.Azima{State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true}
+		e := &planv1.Azima{State: state(t), Ready: true}
 		for _, p := range parts[t.GetId()] {
 			e.Parts++
 			if p.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
@@ -69,14 +98,18 @@ func FillAzimas(tasks []*planv1.Task) {
 				e.Ready = false
 			}
 		}
-		switch {
-		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE:
-			e.State = planv1.AzimaState_AZIMA_STATE_DONE
-		case under(t.GetId(), map[string]bool{}):
-			e.State = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
-		}
 		t.Azima = e
 	}
+}
+
+// Finished tells a task of work finished: done, stopped on request, or cut short for good. Djinn resumes by itself
+// every task it can (RESUMING), so one left interrupted (resumed as a fork, imported, its worktree gone) is history.
+func Finished(t *planv1.Task) bool {
+	switch t.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+		return true
+	}
+	return false
 }
 
 // WithAzimas is tasks with Task.azima set on their azimas, as clones: the store's own messages stay as they are.
@@ -134,13 +167,19 @@ type AzimaFile struct {
 	Title  string
 	// After is what the file says the azima depends on, by code.
 	After []string
+	// DoneWhen is what its Done-when section says: its boxes, and what the unchecked ones need.
+	DoneWhen DoneWhen
 }
 
 // Done tells whether the file says its azima is done.
 func (f AzimaFile) Done() bool { return strings.EqualFold(f.Status, "done") }
 
-// ReadAzimaFiles reads the plan files of a project's folder: plan/*.md with a front matter that gives a code. A file
-// without one (the README) is not an azima's.
+// Closes tells whether the file closes its azima: its status says done, or every box of its Done-when section is
+// checked.
+func (f AzimaFile) Closes() bool { return f.Done() || f.DoneWhen.AllChecked() }
+
+// ReadAzimaFiles reads the plan files of a project's folder: plan/*.md with a front matter that gives a code, and their
+// Done-when section. A file without one (the README) is not an azima's.
 func ReadAzimaFiles(project string) ([]AzimaFile, error) {
 	names, err := filepath.Glob(filepath.Join(project, PlanDir, "*.md"))
 	if err != nil {
@@ -192,6 +231,7 @@ func parseAzimaFile(data []byte) (AzimaFile, bool) {
 	if f.Code == "" {
 		return f, false
 	}
+	f.DoneWhen = ReadDoneWhen(body)
 	sc := bufio.NewScanner(bytes.NewReader(body))
 	for sc.Scan() {
 		if title, ok := strings.CutPrefix(sc.Text(), "# "); ok {

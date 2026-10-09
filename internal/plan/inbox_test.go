@@ -210,7 +210,7 @@ func TestInbox(t *testing.T) {
 	if len(leads.opened) <= opened {
 		t.Errorf("no lead started")
 	}
-	first, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadBriefFile))
+	first, err := os.ReadFile(filepath.Join(home, PagesDir, made.GetId(), LeadFirstFile))
 	if err != nil || !strings.HasPrefix(string(first), InboxFirstLine("babysit-mr", mr)+" This wish follows the skill babysit-mr") {
 		t.Errorf("the lead's first line:\n%s", first)
 	}

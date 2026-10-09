@@ -31,7 +31,7 @@ func ProbeScopes(ctx context.Context, cpu int, memory uint64) (*Scopes, []string
 		if errors.As(err, &exit) && why != "" {
 			return nil, nil, fmt.Errorf("%w: systemd-run --user failed: %s", ErrNoScope, why)
 		}
-		return nil, nil, fmt.Errorf("%w: systemd-run --user failed: %v", ErrNoScope, err)
+		return nil, nil, fmt.Errorf("%w: systemd-run --user failed: %w", ErrNoScope, err)
 	}
 	notes, err := readProbe(out.String(), s)
 	if err != nil {

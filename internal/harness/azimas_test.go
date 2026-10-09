@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -219,7 +220,8 @@ func copyPlan(t *testing.T) string {
 // TestSyncPlan: on a copy of the repository's plan, the azimas a wish imported before kinds (T01…T24, without the
 // last ones) become azimas and keep the graph the store holds; the missing ones are made, one taking its file's after
 // line; every file then says what its azima depends on; a file's status closes and opens its azima; a second sync
-// changes nothing.
+// changes nothing; the boxes that wait for a proof go on their azima; a file whose boxes are all checked closes its
+// azima whatever its status says, and is reported.
 func TestSyncPlan(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -305,8 +307,8 @@ func TestSyncPlan(t *testing.T) {
 			task.GetTitle() != f.Title || task.GetAzima() == nil {
 			t.Errorf("%s: %v", f.Code, task)
 		}
-		// A file that says done marks its azima done, closed by its file.
-		if done := task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE; done != f.Done() ||
+		// A file that says done, or checks every box, marks its azima done, closed by its file.
+		if done := task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE; done != f.Closes() ||
 			done && task.GetClosed().GetActor() != planv1.Closer_CLOSER_PLAN_FILE {
 			t.Errorf("%s: %v, its file says %s", f.Code, task.GetStatus(), f.Status)
 		}
@@ -343,18 +345,45 @@ func TestSyncPlan(t *testing.T) {
 	if res := sync(); len(res.GetMade())+len(res.GetChanged())+len(res.GetWritten()) != 0 {
 		t.Errorf("second sync: %v", res)
 	}
-	// A file read not done again opens the azima it closed.
+	// The boxes waiting for a proof no worker can give go on the azima; a box without needs leaves it none, as does a
+	// file without a Done-when section.
+	proofs := 0
+	for _, f := range files {
+		got := byCode[f.Code].GetProofNeeds()
+		if len(got) != len(f.DoneWhen.Needs) || !slices.EqualFunc(got, f.DoneWhen.Needs, func(a, b *planv1.ProofNeed) bool { return proto.Equal(a, b) }) {
+			t.Errorf("%s needs %v, its file %v", f.Code, got, f.DoneWhen.Needs)
+		}
+		if len(got) > 0 {
+			proofs++
+		}
+	}
+	if proofs == 0 || len(byCode["T09"].GetProofNeeds()) != 0 {
+		t.Errorf("%d azimas wait for a proof; T09, without a Done-when section, %v", proofs, byCode["T09"].GetProofNeeds())
+	}
+
+	// A file that says in-progress with every box checked is reported, and its azima stays done.
 	t08 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T08" })
 	path := filepath.Join(dir, files[t08].Path)
 	data, err = os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(strings.Replace(string(data), "status: done", "status: in-progress", 1)), 0o600); err != nil {
+	text := strings.Replace(string(data), "status: done", "status: in-progress", 1)
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if res := sync(); !slices.Equal(res.GetChanged(), []string{"T08"}) {
-		t.Errorf("T08 reopened: %v", res.GetChanged())
+	if res := sync(); !slices.Equal(res.GetAllChecked(), []string{files[t08].Path}) || len(res.GetChanged()) != 0 {
+		t.Errorf("T08 all checked: %v", res)
+	}
+	if got := e.get(t, id("T08")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("T08: %v", got)
+	}
+	// A box unchecked again opens the azima the file closed.
+	if err := os.WriteFile(path, []byte(strings.Replace(text, "- [x]", "- [ ]", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if res := sync(); !slices.Equal(res.GetChanged(), []string{"T08"}) || len(res.GetAllChecked()) != 0 {
+		t.Errorf("T08 reopened: %v", res)
 	}
 	if got := e.get(t, id("T08")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
 		t.Errorf("T08: %v", got)
