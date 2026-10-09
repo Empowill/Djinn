@@ -71,6 +71,32 @@ func TestAssets(t *testing.T) {
 	}
 }
 
+// TestAssetsCached checks that the browser keeps a file and gets it again only when it changed: an embedded file
+// has no date, and the Mermaid frame, 3.6 MB, loads once per diagram.
+func TestAssetsCached(t *testing.T) {
+	h := handler()
+	rec, _ := get(t, h, "/assets/app.js", nil)
+	tag := rec.Header().Get("Etag")
+	if !strings.HasPrefix(tag, `"`) || len(tag) < 10 {
+		t.Fatalf("ETag %q, want a quoted hash", tag)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("Cache-Control %q, want no-cache", got)
+	}
+	rec, body := get(t, h, "/assets/app.js", http.Header{"If-None-Match": {tag}})
+	if rec.Code != http.StatusNotModified || body != "" {
+		t.Errorf("with its ETag: status %d, body %q, want 304 and no body", rec.Code, body)
+	}
+	if other, _ := get(t, h, "/assets/style.css", nil); other.Header().Get("Etag") == tag {
+		t.Error("two files share an ETag")
+	}
+	if page, _ := get(t, h, "/missions/42", http.Header{"If-None-Match": {tag}}); page.Code != http.StatusOK ||
+		page.Header().Get("Etag") == "" {
+		t.Errorf("a route of the interface: status %d, ETag %q, want 200 and index.html's own ETag",
+			page.Code, page.Header().Get("Etag"))
+	}
+}
+
 // TestUnknownService checks that a call to a service the server does not serve reads as unimplemented.
 func TestUnknownService(t *testing.T) {
 	srv := httptest.NewServer(handler())

@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -96,8 +98,26 @@ var types = map[string]string{
 // assets serves the files of ui. A path that matches no file gets index.html, so that the interface handles its
 // own routes, unless it names a file by its extension: a missing script is a 404, not a page. Any method but GET
 // and HEAD is a 404 too: a call to a service this server does not serve reads as unimplemented, not as a page.
+//
+// Each file carries an ETag, the hash of its content: an embedded file has no date, so without it the browser
+// fetched the file again on every use, the 3.6 MB Mermaid frame once per diagram. The browser keeps the file and
+// asks each time whether it changed (no-cache): the server answers 304 with no body until Djinn is updated.
 func assets(ui fs.FS) http.Handler {
 	files := http.FileServerFS(ui)
+	var tags sync.Map // name → ETag; ui does not change while the server runs
+	tag := func(w http.ResponseWriter, name string) {
+		t, ok := tags.Load(name)
+		if !ok {
+			b, err := fs.ReadFile(ui, name)
+			if err != nil {
+				return
+			}
+			sum := sha256.Sum256(b)
+			t, _ = tags.LoadOrStore(name, `"`+hex.EncodeToString(sum[:16])+`"`)
+		}
+		w.Header().Set("Etag", t.(string))
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.NotFound(w, r)
@@ -108,6 +128,7 @@ func assets(ui fs.FS) http.Handler {
 			if t, ok := types[path.Ext(name)]; ok {
 				w.Header().Set("Content-Type", t)
 			}
+			tag(w, name)
 			files.ServeHTTP(w, r)
 			return
 		}
@@ -115,6 +136,7 @@ func assets(ui fs.FS) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		tag(w, "index.html")
 		http.ServeFileFS(w, r, ui, "index.html")
 	})
 }
