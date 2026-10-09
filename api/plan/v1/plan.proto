@@ -43,6 +43,55 @@ message Summon {
   google.protobuf.Timestamp create_time = 3;
 }
 
+// ProjectSettings are the defaults of a project's workers, the few a team shares. The team writes them in the
+// repository, in .agents/settings.txtpb; a developer may write their own in Djinn's data folder, in
+// projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
+// own flags win over both. Djinn reads both files each time a task is spawned; djinn project show says where each
+// setting comes from. A file that cannot be read stops the project's tasks from spawning, with why, until it is
+// fixed; Djinn itself still starts. The files hold no secret: a value or a field name that looks like one is
+// refused. Docs: docs/team-settings.md.
+message ProjectSettings {
+  // Kind of agent of the workers, when a task names none. Not set: claude. A watcher is never a default.
+  optional Provider provider = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0, 5]
+  }];
+  // Model of the workers, when a task names none: a model of the provider above. A file that sets the provider sets
+  // its model with it: without a model there, the provider's own default, whatever the other file says. Empty: the
+  // provider's own default. It applies only to a task that runs this provider.
+  optional string model = 2 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+  ];
+  // Most a worker may spend, in US dollars, when a task gives none and its provider can enforce it. 0: no limit.
+  optional double max_budget_usd = 3 [(buf.validate.field).double = {
+    gte: 0
+    lte: 10000
+  }];
+}
+
+// SettingSource is where a project setting comes from.
+enum SettingSource {
+  // Not set.
+  SETTING_SOURCE_UNSPECIFIED = 0;
+  // Djinn's own default: neither file sets it.
+  SETTING_SOURCE_DEFAULT = 1;
+  // The repository's .agents/settings.txtpb, shared by the team.
+  SETTING_SOURCE_REPOSITORY = 2;
+  // The developer's own file, in Djinn's data folder.
+  SETTING_SOURCE_DEVELOPER = 3;
+}
+
+// ProjectSetting is one setting of a project, as its workers get it.
+message ProjectSetting {
+  // Its name, as the files write it: provider, model, max_budget_usd.
+  string name = 1;
+  // Its value, as text; empty for the provider's own default model, or no budget limit.
+  string value = 2;
+  // Where it comes from.
+  SettingSource source = 3;
+}
+
 // A wish is what you ask Djinn for, and what it works to grant. It may span several projects.
 message Wish {
   // Identifier, a UUIDv7.
@@ -711,6 +760,12 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
+  // .agents/settings.txtpb or your own file.
+  rpc Show(ProjectServiceShowRequest) returns (ProjectServiceShowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
 }
 
 message ProjectServiceAddRequest {
@@ -733,6 +788,28 @@ message ProjectServiceListRequest {}
 message ProjectServiceListResponse {
   // The projects.
   repeated Project projects = 1;
+}
+
+message ProjectServiceShowRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+}
+
+message ProjectServiceShowResponse {
+  // The project.
+  Project project = 1;
+  // The settings its workers get, when a task names none, and where each comes from.
+  repeated ProjectSetting settings = 2;
+  // The team's file, in the project's folder; empty for a project without one on this machine.
+  string repository_file = 3;
+  // Your own file, in Djinn's data folder. It wins over the team's, setting by setting.
+  string developer_file = 4;
+  // Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is
+  // fixed.
+  repeated string problems = 5;
 }
 
 // Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe

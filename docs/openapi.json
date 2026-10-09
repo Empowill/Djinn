@@ -789,6 +789,68 @@
         },
         "type": "object"
       },
+      "plan.v1.ProjectServiceShowRequest": {
+        "properties": {
+          "project": {
+            "description": "The project, by name (case ignored) or identifier.",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "plan.v1.ProjectServiceShowResponse": {
+        "properties": {
+          "developerFile": {
+            "description": "Your own file, in Djinn's data folder. It wins over the team's, setting by setting.",
+            "type": "string"
+          },
+          "problems": {
+            "description": "Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is fixed.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/plan.v1.Project",
+            "description": "The project."
+          },
+          "repositoryFile": {
+            "description": "The team's file, in the project's folder; empty for a project without one on this machine.",
+            "type": "string"
+          },
+          "settings": {
+            "description": "The settings its workers get, when a task names none, and where each comes from.",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.ProjectSetting"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "plan.v1.ProjectSetting": {
+        "description": "ProjectSetting is one setting of a project, as its workers get it.",
+        "properties": {
+          "name": {
+            "description": "Its name, as the files write it: provider, model, max_budget_usd.",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/plan.v1.SettingSource",
+            "description": "Where it comes from."
+          },
+          "value": {
+            "description": "Its value, as text; empty for the provider's own default model, or no budget limit.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "plan.v1.Provider": {
         "description": "Provider is the kind of agent a worker runs.",
         "enum": [
@@ -1206,6 +1268,16 @@
           }
         },
         "type": "object"
+      },
+      "plan.v1.SettingSource": {
+        "description": "SettingSource is where a project setting comes from.",
+        "enum": [
+          "SETTING_SOURCE_UNSPECIFIED",
+          "SETTING_SOURCE_DEFAULT",
+          "SETTING_SOURCE_REPOSITORY",
+          "SETTING_SOURCE_DEVELOPER"
+        ],
+        "type": "string"
       },
       "plan.v1.Skill": {
         "description": "A skill as a project sees it: its own, or summoned from another project.",
@@ -2923,6 +2995,45 @@
           }
         },
         "summary": "djinn project list",
+        "tags": [
+          "ProjectService"
+        ],
+        "x-read-only": true
+      }
+    },
+    "/plan.v1.ProjectService/Show": {
+      "post": {
+        "description": "Show a project, and the defaults its workers get: each setting and where it comes from, the repository's .agents/settings.txtpb or your own file.",
+        "operationId": "ProjectService_Show",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/plan.v1.ProjectServiceShowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/plan.v1.ProjectServiceShowResponse"
+                }
+              }
+            },
+            "description": "The response."
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "djinn project show",
         "tags": [
           "ProjectService"
         ],

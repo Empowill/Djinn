@@ -236,7 +236,20 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	kind := cmp.Or(req.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
+	project, err := pickProject(ctx, h.store, wish, req.GetProjectId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	task.ProjectId = project.GetId()
+	// The project's settings fill what the request leaves out (docs/team-settings.md). A watcher runs a command:
+	// none applies to it.
+	var settings plan.Settings
+	if req.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+		if settings, err = plan.LoadSettings(h.home, project); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
+		}
+	}
+	kind := cmp.Or(req.GetProvider(), settings.Provider, planv1.Provider_PROVIDER_CLAUDE)
 	src, err := forkSource(ctx, h.store, wish, req)
 	if err != nil {
 		return nil, plan.Status(err)
@@ -259,11 +272,14 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	if !ok {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", kind))
 	}
-	project, err := pickProject(ctx, h.store, wish, req.GetProjectId())
-	if err != nil {
-		return nil, plan.Status(err)
+	if kind != planv1.Provider_PROVIDER_WATCH {
+		if task.Model == "" && kind == settings.Provider {
+			task.Model = settings.Model
+		}
+		if task.MaxBudgetUsd == 0 {
+			task.MaxBudgetUsd = settings.MaxBudgetUSD
+		}
 	}
-	task.ProjectId = project.GetId()
 	if kind == planv1.Provider_PROVIDER_WATCH {
 		if project == nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a watcher runs its command in a project: the wish has none"))

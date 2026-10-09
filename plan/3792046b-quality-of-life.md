@@ -130,7 +130,20 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     --worker-cpu 150` printed "systemd does not give the cpu controller to your user", and ran)
   - [ ] Checked capping on a systemd that delegates the cpu controller to users. (needs: a machine where it does,
     or a person with root to add `Delegate=cpu cpuset io memory pids` to `user@.service` once)
-- [ ] Shared team settings versioned in the repository. (needs: an agent; only `.agents/permissions.txtpb` exists)
+- [x] Shared team settings versioned in the repository. `.agents/settings.txtpb` (`plan.v1.ProjectSettings`, validated)
+  gives the project's workers their default `provider`, `model` and `max_budget_usd`; the developer's own file,
+  `projects/<project id>/settings.txtpb` in the data folder, wins setting by setting, a task's flags over both; a file
+  that sets the provider sets its model with it. `djinn project show <project>` gives each setting's source
+  (`repository`, `developer`, `default`), both paths, and why a file cannot be read; such a file stops the project's
+  tasks from spawning, with that message, and Djinn still starts. A field name, a key prefix or a long run of letters
+  and digits that looks like a secret is refused, comments included, without repeating it.
+  ([docs/team-settings.md](../docs/team-settings.md); `TestReadSettings`, `TestSettingsRefuseSecrets`,
+  `TestResolveSettings`, `TestProjectShow` in `internal/plan`, `TestSpawnTakesTheProjectSettings` in
+  `internal/harness`; tried on a `djinn up --browser` in a temporary DJINN_HOME: `djinn project show app` gave
+  `model: sonnet, source: developer` over the team's `opus`, and listed a developer file with `api_key` under
+  `problems`)
+  - [ ] Warm workers start without the settings: a project whose files set a model or a budget gets none. (needs: an
+    agent, if warm workers stay)
 - [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check; pause by signal is built
   for Linux and macOS alike in T07, `internal/harness/process_unix.go`, and tested on Linux only)
 - [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)

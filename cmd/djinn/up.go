@@ -187,7 +187,7 @@ func runUp(args []string) (restart bool, err error) {
 	// The pages of the synced wishes follow every change, until djinn up stops.
 	pages := plan.NewPages(db, home, version)
 	go pages.Run(ctx)
-	svc := services(db, workers, terminals, uiSvc, pages)
+	svc := services(db, home, workers, terminals, uiSvc, pages)
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
@@ -251,16 +251,16 @@ func runUp(args []string) (restart bool, err error) {
 	return false, err
 }
 
-// services returns the Connect services, by path prefix: the window's, the plan's on the database, the tasks' on
-// the harness, and the terminals'.
+// services returns the Connect services, by path prefix: the window's, the plan's on the database and the data
+// folder home, the tasks' on the harness, and the terminals'.
 func services(
-	db *store.Store, h *harness.Harness, terminals *terminal.Manager, uiSvc *ui.Service, pages *plan.Pages,
+	db *store.Store, home string, h *harness.Harness, terminals *terminal.Manager, uiSvc *ui.Service, pages *plan.Pages,
 ) map[string]http.Handler {
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
 	language := render.SystemLanguage()
 	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithLeads(leads{terminals, uiSvc}), plan.WithPages(pages),
-		plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher))
+		plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home))
 	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a
 	// template.
 	wishes := &plan.Wishes{Store: db, Leads: leads{terminals, uiSvc}, Language: language}
