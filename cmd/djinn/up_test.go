@@ -3,7 +3,8 @@
 // These tests run djinn itself: the test binary turns into the djinn command when DJINN_TEST_MAIN is set, so a
 // process it starts, and the djinn up that one starts in the background, are this same build. Each test has a data
 // directory of its own, and stops the processes it started by their PID, never by their name: the developer's own
-// djinn keeps running. The build is headless, so djinn up serves the browser: no window opens.
+// djinn keeps running. The build is headless, so djinn up serves the browser: no window opens. Not on Windows: they
+// stop djinn up with SIGINT, which Windows cannot send another process, and the fake claude is a shell script.
 package main
 
 import (

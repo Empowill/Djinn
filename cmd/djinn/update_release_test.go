@@ -1,5 +1,7 @@
 //go:build !windows
 
+// Not on Windows: the fake go command is a shell script, and the old djinn is stopped with SIGINT.
+
 package main
 
 import (

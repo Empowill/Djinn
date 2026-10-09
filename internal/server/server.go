@@ -82,6 +82,17 @@ func (w *answerWriter) Flush() {
 // Unwrap lets an http.ResponseController reach the writer underneath.
 func (w *answerWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
+// types are the content types of the interface's files, set here. On Windows Go reads them from the registry, where
+// another program may have changed them (.js as text/plain), and a browser refuses a module script that is not
+// JavaScript.
+var types = map[string]string{
+	".css":  "text/css; charset=utf-8",
+	".html": "text/html; charset=utf-8",
+	".js":   "text/javascript; charset=utf-8",
+	".json": "application/json",
+	".svg":  "image/svg+xml",
+}
+
 // assets serves the files of ui. A path that matches no file gets index.html, so that the interface handles its
 // own routes, unless it names a file by its extension: a missing script is a 404, not a page. Any method but GET
 // and HEAD is a 404 too: a call to a service this server does not serve reads as unimplemented, not as a page.
@@ -94,6 +105,9 @@ func assets(ui fs.FS) http.Handler {
 		}
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if info, err := fs.Stat(ui, name); err == nil && !info.IsDir() {
+			if t, ok := types[path.Ext(name)]; ok {
+				w.Header().Set("Content-Type", t)
+			}
 			files.ServeHTTP(w, r)
 			return
 		}

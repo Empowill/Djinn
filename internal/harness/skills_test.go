@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -77,6 +78,9 @@ func TestSkillArgs(t *testing.T) {
 func TestClaudeAbsolute(t *testing.T) {
 	if got := claudeAbsolute("/home/a/skills"); got != "//home/a/skills" {
 		t.Errorf("claudeAbsolute = %q", got)
+	}
+	if got := claudeAbsolute(`C:\Users\a\skills`); runtime.GOOS == "windows" && got != "//c/Users/a/skills" {
+		t.Errorf("claudeAbsolute on Windows = %q", got)
 	}
 }
 
@@ -187,7 +191,7 @@ func TestSummonAtLaunch(t *testing.T) {
 		dir := skillsDir(home, task.GetId())
 		switch c.name {
 		case "claude":
-			if !strings.Contains(string(args), "--add-dir\n"+dir+"\n") || !strings.Contains(string(args), "Read(/"+filepath.ToSlash(src)+"/**)") {
+			if !strings.Contains(string(args), "--add-dir\n"+dir+"\n") || !strings.Contains(string(args), "Read("+claudeAbsolute(src)+"/**)") {
 				t.Errorf("claude args = %s", args)
 			}
 		case "antigravity":
@@ -195,7 +199,9 @@ func TestSummonAtLaunch(t *testing.T) {
 				t.Errorf("agy args = %s", args)
 			}
 		case "codex":
-			if !strings.Contains(string(input), `"developerInstructions":"Skills summoned`) || !strings.Contains(string(input), filepath.Join(src, "SKILL.md")) {
+			// As JSON writes it: Windows' backslashes come doubled.
+			skill, _ := json.Marshal(filepath.Join(src, "SKILL.md"))
+			if !strings.Contains(string(input), `"developerInstructions":"Skills summoned`) || !strings.Contains(string(input), strings.Trim(string(skill), `"`)) {
 				t.Errorf("codex input = %s", input)
 			}
 		}

@@ -17,13 +17,24 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
+// resolvedTempDir is a temporary folder named as djinn stores a project's once added: Windows names the temporary
+// folder with a short 8.3 name (RUNNER~1), which djinn resolves to the long one.
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 // gitRepo makes a Git repository in a new folder, with remote as its origin.
 func gitRepo(t *testing.T, name, remote string) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
-	dir := filepath.Join(t.TempDir(), name)
+	dir := filepath.Join(resolvedTempDir(t), name)
 	for _, args := range [][]string{{"init", "-q", dir}, {"-C", dir, "remote", "add", "origin", remote}} {
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)

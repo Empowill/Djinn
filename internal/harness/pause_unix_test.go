@@ -1,5 +1,8 @@
 //go:build !windows
 
+// Not on Windows: pausing is SIGSTOP to the worker's process group, which Windows lacks; pause_windows_test.go
+// checks that a pause is refused there.
+
 package harness
 
 import (

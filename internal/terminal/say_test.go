@@ -1,5 +1,7 @@
 //go:build !windows
 
+// Not on Windows: these tests drive /bin/sh on a pseudo-terminal (see terminal_test.go).
+
 package terminal
 
 import (

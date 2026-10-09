@@ -1,5 +1,8 @@
 //go:build !windows
 
+// Not on Windows: these tests stop djinn up with SIGTERM and SIGKILL to play a crash, and Windows sends a process
+// no signal but a kill.
+
 package main
 
 import (
