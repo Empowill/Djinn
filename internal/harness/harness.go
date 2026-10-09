@@ -303,11 +303,18 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	sit, err := h.situation(ctx, tasks)
+	// It takes its turn in the scheduler's pass: the planned tasks before it, the ones Djinn resumes first, take the
+	// free slots before it does.
+	sit, err := h.situation(ctx, append(tasks, task))
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	why, failed := sit.Blocker(task)
+	var why, failed string
+	for _, d := range sit.Pass() {
+		if d.Task == task {
+			why, failed = d.Why, d.Failed
+		}
+	}
 	switch {
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))

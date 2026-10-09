@@ -171,3 +171,91 @@ func TestWatcherTakesNoSlot(t *testing.T) {
 		t.Errorf("a watcher of a paused wish: %q", why)
 	}
 }
+
+// TestRestartQueue plays the passes after a restart: 6 tasks Djinn resumes over 2 wishes, a planned one, and 2
+// resumed tasks of a paused wish, on a machine of 2 slots where each pass ends the oldest worker. The first wish's
+// resumed tasks start first, then the second's, each wish in its own order, then the planned one: 2 at a time, the
+// others waiting for a slot, saying so; nothing starts under pressure; the paused wish's tasks wait for it, then
+// start once it is active. No task starts twice.
+func TestRestartQueue(t *testing.T) {
+	at := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+	first := &planv1.Wish{Id: "first", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	second := &planv1.Wish{Id: "second", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 2}
+	paused := &planv1.Wish{Id: "paused", State: planv1.WishState_WISH_STATE_PAUSED}
+	wishes := []*planv1.Wish{first, second, paused}
+	var tasks []*planv1.Task
+	task := func(id, wish string, s planv1.TaskStatus, age time.Duration) {
+		tasks = append(tasks, &planv1.Task{Id: id, WishId: wish, Code: id, Status: s, Scheduled: true,
+			CreateTime: timestamppb.New(at.Add(-age))})
+	}
+	resuming, pending := planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.TaskStatus_TASK_STATUS_PENDING
+	// The second wish's tasks are older, the planned one older still: the rank comes first, then resumed before new.
+	task("planned", "first", pending, 3*time.Hour)
+	for i, id := range []string{"s1", "s2", "s3"} {
+		task(id, "second", resuming, 2*time.Hour-time.Duration(i)*time.Minute)
+	}
+	for i, id := range []string{"f1", "f2", "f3"} {
+		task(id, "first", resuming, time.Hour-time.Duration(i)*time.Minute)
+	}
+	task("p1", "paused", resuming, 4*time.Hour)
+	task("p2", "paused", resuming, 4*time.Hour)
+
+	byID := map[string]*planv1.Task{}
+	for _, tk := range tasks {
+		byID[tk.GetId()] = tk
+	}
+	var running, starts []string
+	// pass makes one scheduling pass on machine m and starts what it decides; it returns why each other task waits.
+	pass := func(m *Machine) map[string]string {
+		m.Slots, m.Rule, m.Running = 2, "test", len(running)
+		waits := map[string]string{}
+		for _, d := range New(tasks, wishes, nil, m).At(at).Pass() {
+			switch {
+			case d.Failed != "":
+				t.Fatalf("%s fails: %s", d.Task.GetId(), d.Failed)
+			case d.Why != "":
+				waits[d.Task.GetId()] = d.Why
+			default:
+				d.Task.Status = planv1.TaskStatus_TASK_STATUS_RUNNING
+				running, starts = append(running, d.Task.GetId()), append(starts, d.Task.GetId())
+			}
+		}
+		if len(running) > 2 {
+			t.Fatalf("%d workers run: %v", len(running), running)
+		}
+		return waits
+	}
+
+	if waits := pass(&Machine{Pressure: "swap in use"}); len(starts) != 0 || waits["f1"] != "the machine is under pressure: swap in use" {
+		t.Fatalf("under pressure: started %v, waits %v", starts, waits)
+	}
+	for range 20 {
+		waits := pass(&Machine{})
+		for id, why := range waits {
+			want := "2 workers run, the most this machine holds (test)"
+			if byID[id].GetWishId() == "paused" {
+				want = "its wish is paused"
+			}
+			if why != want {
+				t.Errorf("after %v started, %s waits: %q, want %q", starts, id, why, want)
+			}
+		}
+		if len(running) == 0 {
+			break
+		}
+		byID[running[0]].Status, running = planv1.TaskStatus_TASK_STATUS_DONE, running[1:]
+	}
+	if want := []string{"f1", "f2", "f3", "s1", "s2", "s3", "planned"}; !slices.Equal(starts, want) {
+		t.Errorf("started %v, want %v", starts, want)
+	}
+
+	// Active again, the paused wish's tasks start, in their order.
+	paused.State, paused.Rank, starts = planv1.WishState_WISH_STATE_ACTIVE, 3, nil
+	for range 5 {
+		pass(&Machine{})
+		running = nil
+	}
+	if want := []string{"p1", "p2"}; !slices.Equal(starts, want) {
+		t.Errorf("once its wish is active: started %v, want %v", starts, want)
+	}
+}
