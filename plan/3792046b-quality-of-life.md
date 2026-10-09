@@ -146,8 +146,9 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   `internal/harness`; tried on a `djinn up --browser` in a temporary DJINN_HOME: `djinn project show app` gave
   `model: sonnet, source: developer` over the team's `opus`, and listed a developer file with `api_key` under
   `problems`)
-  - [ ] Warm workers start without the settings: a project whose files set a model or a budget gets none. (needs: an
-    agent, if warm workers stay)
+  - [x] Warm workers start with the settings: a warm worker's model and budget are the ones Spawn fills from the
+    project's files, so a task of a project with settings takes it; when the files change, it is replaced, and a
+    project whose tasks go to another agent warms no claude. (`TestWarmTakesTheProjectSettings` in `internal/harness`)
 - [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check; pause by signal is built
   for Linux and macOS alike in T07, `internal/harness/process_unix.go`, and tested on Linux only)
 - [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)

@@ -76,9 +76,10 @@ the context its task needs, no more.
   worktree are already the task's; the placeholder branch (`djinn-warm-…`) is renamed after the task. The scheduler
   starts the next one. They live in the slots the running workers leave (running + warm ≤ the machine's slots), the
   first wish first, and none waits while the machine is under pressure. A task that asks for anything the warm worker
-  was not started with starts cold: a model, a budget, a fork, other rights (`.agents/permissions.txtpb` or the wish's
-  allowance changed), a project whose HEAD moved, a planned task (its identifier is older). Stopping Djinn stops them
-  and removes their worktrees; a crash's leftovers (a worktree in the data folder on a `djinn-warm-` branch) are
+  was not started with starts cold: another model or budget than the project's settings give
+  (`TestWarmTakesTheProjectSettings`), a fork, other rights (`.agents/permissions.txtpb` or the wish's allowance
+  changed), a project whose HEAD moved, a planned task (its identifier is older). Stopping Djinn stops them and
+  removes their worktrees; a crash's leftovers (a worktree in the data folder on a `djinn-warm-` branch) are
   removed at the next start. Only Claude warms (`harness.Warmer`).
 - **What a warm worker costs while it waits: no token, memory.** *Supposed: about 300 MB each* (claude 2.1.293 is a
   250 MB single-file Bun program; a loaded Node or Bun agent sits at a few hundred MB). The fake binary's figure would
