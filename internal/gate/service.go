@@ -3,6 +3,7 @@ package gate
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"buf.build/go/protovalidate"
 	"connectrpc.com/connect"
@@ -24,7 +25,8 @@ type service struct {
 }
 
 // Hold takes the gate, says why it waits, then that it holds it, and gives it back when the call ends: the
-// client is done, interrupted or gone, or djinn up stops.
+// client is done, interrupted or gone, or djinn up stops. When Djinn takes it back first (its holder's process
+// ended, or its timeout passed), the stream says so and ends.
 func (s *service) Hold(
 	ctx context.Context, req *connect.Request[machinev1.GateServiceHoldRequest],
 	stream *connect.ServerStream[machinev1.GateServiceHoldResponse],
@@ -34,7 +36,10 @@ func (s *service) Hold(
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	name := Name(req.Msg.GetName())
-	give, err := s.g.Take(ctx, name, req.Msg.GetTaskId(), req.Msg.GetWhat(), req.Msg.GetDirectory(), func(why string) {
+	hold, err := s.g.Take(ctx, Request{
+		Name: name, TaskID: req.Msg.GetTaskId(), What: req.Msg.GetWhat(), Dir: req.Msg.GetDirectory(),
+		PID: int(req.Msg.GetPid()), Timeout: time.Duration(req.Msg.GetTimeoutSeconds()) * time.Second,
+	}, func(why string) {
 		_ = stream.Send(&machinev1.GateServiceHoldResponse{State: machinev1.GateState_GATE_STATE_WAITING, Reason: why})
 	})
 	if err != nil {
@@ -43,12 +48,18 @@ func (s *service) Hold(
 		}
 		return plan.Status(err)
 	}
-	defer give()
+	defer hold.Give()
 	if err := stream.Send(&machinev1.GateServiceHoldResponse{State: machinev1.GateState_GATE_STATE_HELD, Reason: "gate " + name + " held"}); err != nil {
 		return err
 	}
-	<-ctx.Done()
-	return nil
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-hold.Done():
+		return stream.Send(&machinev1.GateServiceHoldResponse{
+			State: machinev1.GateState_GATE_STATE_TAKEN_BACK, Reason: "gate " + name + " taken back: " + hold.TakenBack(),
+		})
+	}
 }
 
 func (s *service) List(
@@ -56,9 +67,12 @@ func (s *service) List(
 ) (*connect.Response[machinev1.GateServiceListResponse], error) {
 	res := &machinev1.GateServiceListResponse{}
 	for _, st := range s.g.List() {
-		gate := &machinev1.Gate{Name: st.Name, Holder: st.Holder, HolderTaskId: st.HolderTaskID, Waiting: st.Waiting}
+		gate := &machinev1.Gate{
+			Name: st.Name, Holder: st.Holder, HolderTaskId: st.HolderTaskID, Waiting: st.Waiting, TakesSlot: st.TakesSlot,
+			Resources: st.Use,
+		}
 		if !st.Since.IsZero() {
-			gate.Since = timestamppb.New(st.Since)
+			gate.Since, gate.ExpireTime = timestamppb.New(st.Since), timestamppb.New(st.Until)
 		}
 		res.Gates = append(res.Gates, gate)
 	}

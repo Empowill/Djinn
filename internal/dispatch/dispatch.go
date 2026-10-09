@@ -25,6 +25,8 @@ type Machine struct {
 	Pressure string
 	// Running is the number of workers that run now.
 	Running int
+	// Gates is the number of gates held outside the running workers: each takes a slot.
+	Gates int
 }
 
 // Situation is what a pass knows: every task, every wish, which projects are in Git, and the machine. Its zero
@@ -267,13 +269,22 @@ func (s *Situation) full() string {
 	if m.Pressure != "" {
 		return "the machine is under pressure: " + m.Pressure
 	}
-	if running := m.Running + len(s.started); running >= m.Slots {
-		if running == 1 {
-			return "1 worker runs, the most this machine holds (" + m.Rule + ")"
-		}
-		return fmt.Sprintf("%d workers run, the most this machine holds (%s)", running, m.Rule)
+	running := m.Running + len(s.started)
+	if running+m.Gates < m.Slots {
+		return ""
 	}
-	return ""
+	workers := "1 worker runs"
+	if running != 1 {
+		workers = fmt.Sprintf("%d workers run", running)
+	}
+	switch m.Gates {
+	case 0:
+	case 1:
+		workers += " and 1 gate is held outside the workers"
+	default:
+		workers += fmt.Sprintf(" and %d gates are held outside the workers", m.Gates)
+	}
+	return workers + ", the most this machine holds (" + m.Rule + ")"
 }
 
 // Overlap tells whether two sets of write scopes share a path: one names the other, or a folder holding it. No

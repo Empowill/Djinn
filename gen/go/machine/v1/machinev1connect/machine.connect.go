@@ -130,7 +130,8 @@ func (UnimplementedMachineServiceHandler) Show(context.Context, *connect.Request
 // GateServiceClient is a client for the machine.v1.GateService service.
 type GateServiceClient interface {
 	// Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
-	// that the gate is held. Interrupt it to give the gate back.
+	// that the gate is held. Interrupt it to give the gate back. Djinn takes it back when the holder's process ends or
+	// its timeout passes. Held outside a running worker, a gate takes a worker's slot.
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest]) (*connect.ServerStreamForClient[v1.GateServiceHoldResponse], error)
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
@@ -182,7 +183,8 @@ func (c *gateServiceClient) List(ctx context.Context, req *connect.Request[v1.Ga
 // GateServiceHandler is an implementation of the machine.v1.GateService service.
 type GateServiceHandler interface {
 	// Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
-	// that the gate is held. Interrupt it to give the gate back.
+	// that the gate is held. Interrupt it to give the gate back. Djinn takes it back when the holder's process ends or
+	// its timeout passes. Held outside a running worker, a gate takes a worker's slot.
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest], *connect.ServerStream[v1.GateServiceHoldResponse]) error
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)

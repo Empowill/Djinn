@@ -126,7 +126,8 @@ message MachineServiceShowResponse {
 // machine is not under pressure. To run a command under a gate: djinn gate run <name> -- <command>.
 service GateService {
   // Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
-  // that the gate is held. Interrupt it to give the gate back.
+  // that the gate is held. Interrupt it to give the gate back. Djinn takes it back when the holder's process ends or
+  // its timeout passes. Held outside a running worker, a gate takes a worker's slot.
   rpc Hold(GateServiceHoldRequest) returns (stream GateServiceHoldResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
@@ -145,6 +146,9 @@ enum GateState {
   GATE_STATE_WAITING = 1;
   // The gate is held, until the call ends.
   GATE_STATE_HELD = 2;
+  // Djinn took the gate back before the call ended: its holder's process ended, or it held the gate past its
+  // timeout; the reason says which.
+  GATE_STATE_TAKEN_BACK = 3;
 }
 
 // Gate is a gate held or waited for.
@@ -159,6 +163,13 @@ message Gate {
   google.protobuf.Timestamp since = 4;
   // Who waits for it, the next one first.
   repeated string waiting = 5;
+  // Its holder is no running worker (a person's terminal, a lead, a script): the gate takes a worker's slot while it
+  // is held, so no new worker starts on it.
+  bool takes_slot = 6;
+  // What its holder's process uses, at the last reading; unset when its process is not known or not measured.
+  plan.v1.Resources resources = 7;
+  // When Djinn takes it back if its holder has not given it back by then.
+  google.protobuf.Timestamp expire_time = 8;
 }
 
 message GateServiceHoldRequest {
@@ -178,6 +189,12 @@ message GateServiceHoldRequest {
   string what = 3 [(buf.validate.field).string.max_len = 200];
   // Folder the command runs in, absolute: it finds the project when no task is given.
   string directory = 4 [(buf.validate.field).string.max_len = 4096];
+  // Process holding the gate, when known: djinn gate run gives its own. Djinn reads what it uses while it holds the
+  // gate (Linux and macOS), and takes the gate back once it ends.
+  int32 pid = 5 [(buf.validate.field).int32.gte = 0];
+  // How long the gate may be held, in seconds: Djinn takes it back after that even if the holder still runs, so a
+  // forgotten hold never blocks the others. 0: one hour.
+  uint32 timeout_seconds = 6 [(buf.validate.field).uint32.lte = 86400];
 }
 
 message GateServiceHoldResponse {

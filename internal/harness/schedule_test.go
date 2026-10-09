@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -126,6 +127,36 @@ func TestDependsOn(t *testing.T) {
 		if _, err := e.spawnReq(t, wishID, "Lost", "x", &planv1.TaskServiceSpawnRequest{DependsOn: []string{dep}}); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("on dependency %s: %v", dep, err)
 		}
+	}
+}
+
+// TestGateHeldOutside: a gate held outside the running workers (a person's terminal, a lead, a script) takes a slot:
+// on a full machine a new worker waits, saying so, and starts once the gate is given back, woken with no tick. A
+// running worker holds its own gates in its slot (Works).
+func TestGateHeldOutside(t *testing.T) {
+	l := &limit{slots: 2}
+	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
+	var outside atomic.Int32
+	e.h.GatesOutside(func() int { return int(outside.Load()) })
+	wishID, _ := e.wish(t, gitRepo(t))
+	busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", nil)
+	if !e.h.Works(busy.GetId()) {
+		t.Errorf("the running worker of %s does not work", busy.GetCode())
+	}
+
+	outside.Store(1)
+	next := e.mustSpawn(t, wishID, "Next", "text one", nil)
+	if next.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
+		next.GetWaitReason() != "1 worker runs and 1 gate is held outside the workers, the most this machine holds (set by the test)" {
+		t.Fatalf("spawned beside a gate held outside: %v", next)
+	}
+	if e.h.Works(next.GetId()) {
+		t.Errorf("the planned %s works", next.GetCode())
+	}
+	outside.Store(0)
+	e.h.Wake()
+	if got := e.ended(t, next.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("once the gate is given back: %v", got)
 	}
 }
 

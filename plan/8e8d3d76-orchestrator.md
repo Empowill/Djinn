@@ -77,6 +77,11 @@ status: in-progress
 - [x] A yes to an edit question takes a slot like any task: on a full machine the task waits, resuming, with its
   reason, and starts once a slot frees. (`TestAskToEditWaitsForASlot`, `TestAskToEdit`, `TestAskToEditUnableToRead` in
   `internal/harness`)
+- [x] A gate held outside `djinn gate run` weighs on the machine like one taken through it: held outside a running
+  worker, it takes a slot (no new worker starts on it), it is measured when its holder's process is known, and it
+  goes back once that process ends or its timeout passes. (`TestOutside`, `TestHolderEnds`, `TestTimeout` in
+  `internal/gate`; `TestGateHeldOutside` in `internal/harness`: on a full machine a new worker waits, saying "1 worker
+  runs and 1 gate is held outside the workers", and starts once the gate is given back)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -172,7 +177,23 @@ status: in-progress
   on its session, told it may now edit, with its first prompt; no resume is spent. A yes while the read-only worker
   runs restarts it in its own slot. A task Djinn resumes already keeps waiting as it did, then resumes allowed to edit;
   one imported from another Djinn records the grant and starts no worker.
-- **What is not limited yet**: a gate held outside `djinn gate run` bypasses the slots.
+- **A gate held outside a running worker takes a slot** (`gate.Gates.Outside`, read by the scheduler through
+  `Harness.GatesOutside`): held with no task, or for a task whose worker does not run (a person's terminal, a lead, a
+  script, `djinn gate hold`), it counts as a worker in the capacity, and the wait reason says so ("2 workers run and 1
+  gate is held outside the workers, the most this machine holds"). A running worker's gate, `djinn gate run`'s
+  included, stays in the worker's own slot (`Harness.Works`). Giving one back wakes the scheduler (`Gates.Freed`).
+  It is not refused on a full machine: it only keeps new workers from starting. Each gate held outside counts one
+  slot, even two held by one process.
+- **A holder's process and its timeout** (`GateServiceHoldRequest.pid` and `timeout_seconds`): `djinn gate run` gives
+  its own process; a direct hold gives one with `--pid`. Djinn reads what that process and its descendants use every
+  5 s while it holds the gate (`machine.ReadWorker`, Linux and macOS), shown in `djinn gate list` with its peaks
+  (`Gate.resources`), and takes the gate back once it ends (signal 0 on Unix, `GetExitCodeProcess` on Windows). Every
+  gate is taken back after its timeout, an hour by default and a day at most, so a forgotten hold never blocks Djinn;
+  `Gate.expire_time` says when. Taken back, the stream says `GATE_STATE_TAKEN_BACK` with why ("its process 4242
+  ended", "held past its timeout of 1h0m0s") and ends, the task's events say `gate <name>: taken back: …`, and
+  `djinn gate run` prints it while its command goes on. A direct hold's use is shown, not recorded as a command's
+  cost: only `djinn gate run` knows its command ended by itself. Without a pid, Djinn does not learn the holder's
+  process from the connection (the Unix socket's peer credentials could give it).
 - **Pause** (`djinn task pause <task>`, `djinn task resume <task>`, `TaskService.Pause` and `Resume`): on Linux and
   macOS, SIGSTOP then SIGCONT to the worker's process group (`process_unix.go`); the fake holds its script before its
   next step. The task is `paused` (`TASK_STATUS_PAUSED`, an event `paused: …` then `resumed`, journaled

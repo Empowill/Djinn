@@ -111,6 +111,15 @@ func (h *Harness) Running() int {
 	return n
 }
 
+// Works tells whether a worker of the task runs now and takes a slot: what it runs, a gate's command included, is in
+// that slot. A paused worker or a watcher takes none.
+func (h *Harness) Works(taskID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	r, ok := h.runs[taskID]
+	return ok && !r.paused && !r.watcher
+}
+
 // planned tells whether Djinn starts the task by itself, once it is ready.
 func planned(t *planv1.Task) bool { return dispatch.Planned(t) }
 
@@ -173,6 +182,12 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 	if h.capacity != nil {
 		m = &dispatch.Machine{Running: h.Running()}
 		m.Slots, m.Rule, m.Pressure = h.capacity()
+		h.mu.Lock()
+		outside := h.outside
+		h.mu.Unlock()
+		if outside != nil {
+			m.Gates = outside()
+		}
 	}
 	return dispatch.New(tasks, wishes, git, m).At(h.now()), nil
 }
@@ -212,6 +227,15 @@ func (h *Harness) HeldGates(held, waiting func(taskID string) []string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.held, h.waiting = held, waiting
+}
+
+// GatesOutside tells the harness how many gates are held outside its running workers, by a person's terminal, a
+// lead or a script: each takes a slot, so no new worker starts on it while it is held. djinn up gives the gates'
+// (gate.Gates.Outside).
+func (h *Harness) GatesOutside(n func() int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.outside = n
 }
 
 // setWaiting records why a planned task waits, when the reason changed, with an event.

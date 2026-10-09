@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,11 +26,18 @@ import (
 	"github.com/empowill/djinn/internal/machine"
 )
 
-// tasks is a fake harness: tasks by id with their wish's rank, and the events noted.
+// tasks is a fake harness: tasks by id with their wish's rank, those whose worker runs, and the events noted.
 type tasks struct {
 	mu    sync.Mutex
 	rank  map[string]int
+	works map[string]bool
 	notes []string
+}
+
+func (f *tasks) Works(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.works[id]
 }
 
 func (f *tasks) Describe(_ context.Context, id string) (string, error) {
@@ -124,9 +133,9 @@ func run(t *testing.T, g *Gates, name, taskID, what string) (<-chan func(), <-ch
 	t.Helper()
 	granted, waits := make(chan func(), 1), make(chan string, 16)
 	go func() {
-		give, err := g.Take(t.Context(), name, taskID, what, "", func(why string) { waits <- why })
+		hold, err := g.Take(t.Context(), Request{Name: name, TaskID: taskID, What: what}, func(why string) { waits <- why })
 		if err == nil {
-			granted <- give
+			granted <- hold.Give
 		}
 	}()
 	return granted, waits
@@ -190,7 +199,7 @@ func TestOneAtATime(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("notes = %q\nwant %q", got, want)
 	}
-	if _, err := g.Take(t.Context(), "codegen", "W9", "", "", nil); err == nil {
+	if _, err := g.Take(t.Context(), Request{Name: "codegen", TaskID: "W9"}, nil); err == nil {
 		t.Error("took a gate for an unknown task")
 	}
 }
@@ -209,7 +218,7 @@ func TestWaiting(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	left := make(chan error, 1)
 	go func() {
-		_, err := g.Take(ctx, "e2e", "W2", "", "", nil)
+		_, err := g.Take(ctx, Request{Name: "e2e", TaskID: "W2"}, nil)
 		left <- err
 	}()
 	_, outside := take(t, g, "e2e", "")
@@ -308,21 +317,138 @@ func TestMemory(t *testing.T) {
 // TestTakeGivesUp: a waiter that leaves is forgotten; the gate goes to the next one.
 func TestTakeGivesUp(t *testing.T) {
 	g := New(nil, nil, nil)
-	give, err := g.Take(t.Context(), "e2e", "", "", "", nil)
+	hold, err := g.Take(t.Context(), Request{Name: "e2e"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	left := make(chan error, 1)
-	go func() { _, err := g.Take(ctx, "e2e", "", "", "", nil); left <- err }()
+	go func() { _, err := g.Take(ctx, Request{Name: "e2e"}, nil); left <- err }()
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 	if err := await(t, left, "the waiter leaving"); !errors.Is(err, context.Canceled) {
 		t.Errorf("left with %v", err)
 	}
-	give()
+	hold.Give()
 	if l := g.List(); len(l) != 0 {
 		t.Errorf("after all left: %+v", l)
+	}
+}
+
+// TestOutside: a gate held outside a running worker (no task, or a task whose worker does not run: a lead, a person)
+// takes a slot; a running worker's gate is in the worker's own slot. Giving one back frees its slot (Freed), and the
+// list shows which ones take a slot and until when they may be held.
+func TestOutside(t *testing.T) {
+	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}, works: map[string]bool{"W1": true}}
+	g := New(nil, nil, f)
+	var freed atomic.Int32
+	g.Freed(func() { freed.Add(1) })
+	grant := func(name, taskID string) func() {
+		c, _ := take(t, g, name, taskID)
+		return await(t, c, "the grant of "+name)
+	}
+	worker := grant("test", "W1")
+	if n := g.Outside(); n != 0 {
+		t.Errorf("a running worker's gate: %d outside", n)
+	}
+	direct, lead := grant("e2e", ""), grant("stack", "W2")
+	if n := g.Outside(); n != 2 {
+		t.Errorf("two gates held outside the workers: %d", n)
+	}
+	l := g.List()
+	if len(l) != 3 || !l[0].TakesSlot || !l[1].TakesSlot || l[2].TakesSlot || l[0].Until.Sub(l[0].Since) != DefaultTimeout {
+		t.Errorf("list = %+v", l)
+	}
+	direct()
+	if n := g.Outside(); n != 1 || freed.Load() != 1 {
+		t.Errorf("once given back: %d outside, freed %d times", n, freed.Load())
+	}
+	lead()
+	worker()
+}
+
+// TestHolderEnds: a gate held directly, by a process Djinn knows, is measured while it is held, and taken back once
+// that process ends: the stream says so and ends, and the slot frees.
+func TestHolderEnds(t *testing.T) {
+	g := New(nil, nil, nil)
+	g.tick = 10 * time.Millisecond
+	read := Read(machine.ReadWorker)
+	if machine.NotMeasured != "" {
+		read = func(int) (machine.Group, error) { return machine.Group{Processes: 1, Memory: 50 << 20}, nil }
+	}
+	g.Measure(10*time.Millisecond, read)
+	freed := make(chan struct{}, 4)
+	g.Freed(func() { freed <- struct{}{} })
+	client := server(t, g)
+
+	holder := exec.Command(os.Args[0])
+	holder.Env = append(os.Environ(), helperEnv+"=sleep")
+	if err := holder.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = holder.Process.Kill() })
+	pid := holder.Process.Pid
+	stream, err := client.Hold(t.Context(), connect.NewRequest(&machinev1.GateServiceHoldRequest{
+		Name: "e2e", What: "by hand", Pid: int32(pid),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() || stream.Msg().GetState() != machinev1.GateState_GATE_STATE_HELD {
+		t.Fatalf("hold: %v, %v", stream.Msg(), stream.Err())
+	}
+	var gate *machinev1.Gate
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		res, err := client.List(t.Context(), connect.NewRequest(&machinev1.GateServiceListRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gate = res.Msg.GetGates()[0]; gate.GetResources().GetMemoryBytes() > 0 {
+			break
+		}
+	}
+	if !gate.GetTakesSlot() || gate.GetResources().GetProcesses() < 1 || gate.GetResources().GetMemoryBytes() == 0 ||
+		gate.GetExpireTime().AsTime().Sub(gate.GetSince().AsTime()) != DefaultTimeout || g.Outside() != 1 {
+		t.Fatalf("held by process %d: %v", pid, gate)
+	}
+
+	_ = holder.Process.Kill()
+	_ = holder.Wait()
+	if !stream.Receive() || stream.Msg().GetState() != machinev1.GateState_GATE_STATE_TAKEN_BACK ||
+		stream.Msg().GetReason() != fmt.Sprintf("gate e2e taken back: its process %d ended", pid) {
+		t.Fatalf("once its holder ended: %v, %v", stream.Msg(), stream.Err())
+	}
+	if stream.Receive() {
+		t.Errorf("the stream goes on: %v", stream.Msg())
+	}
+	waitFree(t, g)
+	await(t, freed, "the slot freed")
+	if n := g.Outside(); n != 0 {
+		t.Errorf("%d gates still held outside", n)
+	}
+}
+
+// TestTimeout: a gate held past its timeout is taken back, its task told, and goes to the next waiter: a forgotten
+// hold never blocks the others.
+func TestTimeout(t *testing.T) {
+	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
+	g := New(nil, nil, f)
+	g.tick = 10 * time.Millisecond
+	hold, err := g.Take(t.Context(), Request{Name: "e2e", TaskID: "W1", Timeout: 50 * time.Millisecond}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _ := take(t, g, "e2e", "W2")
+	await(t, hold.Done(), "the gate taken back")
+	if why := hold.TakenBack(); why != "held past its timeout of 50ms" {
+		t.Errorf("taken back because %q", why)
+	}
+	await(t, next, "the next waiter's grant")()
+	hold.Give() // Taken back already: nothing to give.
+	notes := f.noted()
+	if !slices.Contains(notes, "W1 gate e2e: taken back: held past its timeout of 50ms") ||
+		slices.ContainsFunc(notes, func(n string) bool { return strings.HasPrefix(n, "W1 gate e2e: given back") }) {
+		t.Errorf("notes = %q", notes)
 	}
 }
 
