@@ -426,6 +426,9 @@ message Task {
   // Where the task's finished work stands on its way into its wish's integration branch: unset for a task whose work
   // Djinn does not integrate (outside Git, an azima, a project that names no test command, not done).
   TaskIntegration integration = 40;
+  // The tilasms of the wish that cite it (djinn tilasm put --cites), by code (L01): computed on every read, never
+  // stored.
+  repeated string tilasms = 41;
 }
 
 // TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a
@@ -2174,6 +2177,13 @@ message TaskServiceSpawnRequest {
   // a cycle. Repeat it, or separate them with commas: --blocks W5,W6.
   repeated string blocks = 18 [
     (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // A tilasm of the wish given to the worker as context, by code (L01) or identifier: the worker's first prompt holds
+  // its text and the folder of its files. Repeat it, or separate them with commas: --tilasm L01,L02.
+  repeated string tilasm = 19 [
+    (buf.validate.field).repeated.max_items = 20,
     (buf.validate.field).repeated.items.string.min_len = 1,
     (buf.validate.field).repeated.items.string.max_len = 1000
   ];

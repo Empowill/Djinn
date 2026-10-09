@@ -2144,7 +2144,10 @@ type Task struct {
 	Azima *Azima `protobuf:"bytes,39,opt,name=azima,proto3" json:"azima,omitempty"`
 	// Where the task's finished work stands on its way into its wish's integration branch: unset for a task whose work
 	// Djinn does not integrate (outside Git, an azima, a project that names no test command, not done).
-	Integration   *TaskIntegration `protobuf:"bytes,40,opt,name=integration,proto3" json:"integration,omitempty"`
+	Integration *TaskIntegration `protobuf:"bytes,40,opt,name=integration,proto3" json:"integration,omitempty"`
+	// The tilasms of the wish that cite it (djinn tilasm put --cites), by code (L01): computed on every read, never
+	// stored.
+	Tilasms       []string `protobuf:"bytes,41,rep,name=tilasms,proto3" json:"tilasms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2455,6 +2458,13 @@ func (x *Task) GetAzima() *Azima {
 func (x *Task) GetIntegration() *TaskIntegration {
 	if x != nil {
 		return x.Integration
+	}
+	return nil
+}
+
+func (x *Task) GetTilasms() []string {
+	if x != nil {
+		return x.Tilasms
 	}
 	return nil
 }
@@ -8937,7 +8947,10 @@ type TaskServiceSpawnRequest struct {
 	// Each one gets the new task as one more dependency, in the same step as the spawn, so that no scheduler pass
 	// starts it in between. Refused for a task that has started (running, paused, done…) and for one that would close
 	// a cycle. Repeat it, or separate them with commas: --blocks W5,W6.
-	Blocks        []string `protobuf:"bytes,18,rep,name=blocks,proto3" json:"blocks,omitempty"`
+	Blocks []string `protobuf:"bytes,18,rep,name=blocks,proto3" json:"blocks,omitempty"`
+	// A tilasm of the wish given to the worker as context, by code (L01) or identifier: the worker's first prompt holds
+	// its text and the folder of its files. Repeat it, or separate them with commas: --tilasm L01,L02.
+	Tilasm        []string `protobuf:"bytes,19,rep,name=tilasm,proto3" json:"tilasm,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -9094,6 +9107,13 @@ func (x *TaskServiceSpawnRequest) GetAfter() []string {
 func (x *TaskServiceSpawnRequest) GetBlocks() []string {
 	if x != nil {
 		return x.Blocks
+	}
+	return nil
+}
+
+func (x *TaskServiceSpawnRequest) GetTilasm() []string {
+	if x != nil {
+		return x.Tilasm
 	}
 	return nil
 }
@@ -10708,7 +10728,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\routput_tokens\x18\x02 \x01(\x03R\foutputTokens\x12*\n" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
-	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xa4\v\n" +
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xbe\v\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -10758,7 +10778,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\tplan_file\x18% \x01(\tR\bplanFile\x12\x14\n" +
 	"\x05phase\x18& \x01(\tR\x05phase\x12$\n" +
 	"\x05azima\x18' \x01(\v2\x0e.plan.v1.AzimaR\x05azima\x12:\n" +
-	"\vintegration\x18( \x01(\v2\x18.plan.v1.TaskIntegrationR\vintegration:\x13\xd2\xf3\x18\x0f\n" +
+	"\vintegration\x18( \x01(\v2\x18.plan.v1.TaskIntegrationR\vintegration\x12\x18\n" +
+	"\atilasms\x18) \x03(\tR\atilasms:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\xc1\x01\n" +
 	"\x0fTaskIntegration\x12/\n" +
@@ -11207,7 +11228,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16MarkServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"@\n" +
 	"\x17MarkServiceListResponse\x12%\n" +
-	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xbf\x06\n" +
+	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xea\x06\n" +
 	"\x17TaskServiceSpawnRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12 \n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -11230,7 +11251,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\apart_of\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18@R\x06partOf\x12/\n" +
 	"\x04kind\x18\x10 \x01(\x0e2\x11.plan.v1.TaskKindB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04kind\x12'\n" +
 	"\x05after\x18\x11 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x05after\x12)\n" +
-	"\x06blocks\x18\x12 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x06blocks\"=\n" +
+	"\x06blocks\x18\x12 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x06blocks\x12)\n" +
+	"\x06tilasm\x18\x13 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x14\"\ar\x05\x10\x01\x18\xe8\aR\x06tilasm\"=\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"j\n" +
 	"\x16TaskServiceListRequest\x12$\n" +

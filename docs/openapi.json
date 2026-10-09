@@ -2011,6 +2011,13 @@
             "$ref": "#/components/schemas/plan.v1.TaskStatus",
             "description": "Where the task stands."
           },
+          "tilasms": {
+            "description": "The tilasms of the wish that cite it (djinn tilasm put --cites), by code (L01): computed on every read, never stored.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "title": {
             "description": "What the task does.",
             "type": "string"
@@ -2565,6 +2572,14 @@
           "restart": {
             "description": "For a watcher (--provider watch): start its command again after each exit, until the task is stopped.",
             "type": "boolean"
+          },
+          "tilasm": {
+            "description": "A tilasm of the wish given to the worker as context, by code (L01) or identifier: the worker's first prompt holds its text and the folder of its files. Repeat it, or separate them with commas: --tilasm L01,L02.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
           },
           "title": {
             "description": "What the task does, in a sentence.",

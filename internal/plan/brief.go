@@ -34,6 +34,7 @@ const (
 	briefDone      = 5
 	briefBlocks    = 5
 	briefMarks     = 10
+	briefTilasms   = 20
 	briefBlockText = 600
 	briefLineMax   = 300
 )
@@ -66,6 +67,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
 	"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
 	"- **What Djinn does not compute is a block**: a decision taken outside a question, an analysis, a hand-off.\n" +
+	"- **To explain a concept, make a tilasm** (the developer may say talisman): a folder with an `index.html` and its " +
+	"sources (a diagram, a data model walked through, a comparison), kept by Djinn outside the projects. " +
+	"`djinn tilasm put <folder> --wish <wish> --cites T07` makes it, `L01`, and names the azimas and tasks it " +
+	"explains; `--code L01` replaces it, its link unchanged. Cite it in blocks and questions by its link, " +
+	"`djinn://tilasm/<id>`, rather than explaining again; `--tilasm L01` gives it to a worker as context.\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
 	"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to open a new wish " +
@@ -86,7 +92,7 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"emoji for the subject); " +
 	"`djinn question list --wish-id <wish> --open`.\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
-	"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`); " +
+	"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`); " +
 	"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima; " +
 	"`djinn task depend <task> --after W1,T02 --also W6=W5` sets what tasks wait for, in place of what they had, " +
 	"all or none; " +
@@ -100,6 +106,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
 	"card; without `--ask`, the proposal only.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\" --icon 🧱`; `djinn block list <wish>`.\n" +
+	"- `djinn tilasm put <folder> --wish <wish> --cites T07 --code L01`; `djinn tilasm list --wish <wish> --search " +
+	"\"…\"`; `djinn tilasm get <code>` (its text, the folder of its files); `djinn tilasm history <code>`, " +
+	"`djinn tilasm restore <code> <version>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for your " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, after you investigated.\n" +
 	"- `djinn mark list <wish>`: what the developer read or approved in the window, without a word. An approved " +
@@ -316,7 +325,11 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	for _, t := range exp.GetTasks() {
 		codes[t.GetId()] = t.GetCode()
 	}
-	azimasBrief(&b, exp.GetTasks(), codes)
+	var tilasms []*planv1.Tilasm
+	for _, t := range exp.GetTilasms() {
+		tilasms = append(tilasms, t.GetTilasm())
+	}
+	azimasBrief(&b, exp.GetTasks(), codes, tilasms)
 	var running, waiting, done []*planv1.Task
 	for _, t := range exp.GetTasks() {
 		if IsAzima(t) {
@@ -381,6 +394,8 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 	}
 
+	tilasmsBrief(&b, exp.GetTilasms())
+
 	blocks := slices.Clone(exp.GetBlocks())
 	if len(blocks) > 0 {
 		slices.SortStableFunc(blocks, func(x, y *planv1.Block) int {
@@ -405,8 +420,9 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 }
 
 // azimasBrief writes the plan's azimas as a graph: the ready ones first, under way before open, then the blocked ones
-// with what they wait for, then the done ones on one line. Nothing without an azima.
-func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string) {
+// with what they wait for, then the done ones on one line; each with the tilasms that explain it. Nothing without an
+// azima.
+func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string, tilasms []*planv1.Tilasm) {
 	var ready, blocked, done []*planv1.Task
 	for _, t := range WithAzimas(tasks) {
 		switch e := t.GetAzima(); {
@@ -446,6 +462,9 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 				text += fmt.Sprintf(", %d running", r)
 			}
 		}
+		if ls := citing(tilasms, t.GetId()); len(ls) > 0 {
+			text += "; explained by " + strings.Join(ls, ", ")
+		}
 		status[t] = text
 	}
 	byID := map[string]*planv1.Task{}
@@ -479,8 +498,33 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 		names := make([]string, len(done))
 		for i, t := range done {
 			names[i] = t.GetCode()
+			if ls := citing(tilasms, t.GetId()); len(ls) > 0 {
+				names[i] += " (explained by " + strings.Join(ls, ", ") + ")"
+			}
 		}
 		fmt.Fprintf(b, "- Done: %s.\n", strings.Join(names, ", "))
+	}
+}
+
+// tilasmsBrief lists the wish's tilasms, in code order: each one's code, title, link and what it explains.
+func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport) {
+	if len(tilasms) == 0 {
+		return
+	}
+	b.WriteString("\n## Tilasms\n\n")
+	b.WriteString("The material that explains the wish. `djinn tilasm get <code>` gives one's text and the folder of its " +
+		"files; cite one by its link.\n\n")
+	for _, t := range tilasms[:min(len(tilasms), briefTilasms)] {
+		tilasm := t.GetTilasm()
+		fmt.Fprintf(b, "- **%s** %s: %s", tilasm.GetCode(), cmp.Or(clipLine(tilasm.GetTitle()), "(untitled)"),
+			TilasmLink(tilasm.GetId()))
+		if codes := t.GetCiteCodes(); len(codes) > 0 {
+			b.WriteString(", explains " + strings.Join(codes, ", "))
+		}
+		b.WriteString("\n")
+	}
+	if n := len(tilasms) - briefTilasms; n > 0 {
+		fmt.Fprintf(b, "- And %d more: `djinn tilasm list --wish <wish>`.\n", n)
 	}
 }
 

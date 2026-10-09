@@ -316,6 +316,17 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 			task.MaxBudgetUsd = settings.MaxBudgetUSD
 		}
 	}
+	if len(req.GetTilasm()) > 0 {
+		// The tilasms open the first prompt as they are now: a resumed worker reads the same.
+		if kind == planv1.Provider_PROVIDER_WATCH {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--tilasm is for an agent: a watcher runs a command"))
+		}
+		material, err := plan.TilasmContext(ctx, h.store, h.home, wish.GetId(), req.GetTilasm())
+		if err != nil {
+			return nil, plan.Status(err)
+		}
+		prompt += "\n\n" + material
+	}
 	if kind == planv1.Provider_PROVIDER_WATCH {
 		if project == nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a watcher runs its command in a project: the wish has none"))

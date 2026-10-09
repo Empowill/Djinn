@@ -53,7 +53,9 @@ be referenced by simple links that open it natively in the app from anywhere."
   journal), `TestTilasmExportImport` (a `.zip` with `tilasm.json`, imported into its wish, another wish, another
   machine), `TestTilasmCeiling` (50 MiB, a field, refused beyond, saying so), `TestTilasmSearch`.
 - [ ] The *Tilasms* tab of a wish: list, open in an isolated frame (scripts run, the network is refused), search,
-  history, export, import by drop. (needs: a screens test and an e2e)
+  history, export, import by drop. (needs: a screens test and an e2e) — 09/10: the Tasks tab does not show a task's
+  tilasms yet, W117 not being merged when W118 ended; `Task.tilasms`, filled by `djinn task get|list`, and each
+  tilasm's `cites` in the wish's snapshot are there for it to show them.
 - [ ] `djinn://tilasm/<id>` opens the app on the tilasm from outside, Djinn running or not, on Linux (a desktop entry
   for `x-scheme-handler/djinn`), macOS (`CFBundleURLTypes` in Djinn.app) and Windows (the registry, by the
   installer). (needs: Linux by test; a Mac and a Windows machine by hand)
@@ -65,8 +67,10 @@ be referenced by simple links that open it natively in the app from anywhere."
   answers as tilasm", "an alias by a prefix no command takes", from `option (djinn.v1.alias)`; `TestTilasmSearch`:
   "talisman" or "tilasm", in English or French, finds them all, the search the tab will call.)
 - [ ] The first tilasm, the objects in the database drawn from the protos, is put and opens from its link.
-- [ ] The brief lists the wish's tilasms, and the rules tell the lead to make one to explain a concept, and to cite
-  it.
+- [x] The brief lists the wish's tilasms, and the rules tell the lead to make one to explain a concept, and to cite
+  it. (09/10, `TestBriefListsTilasms`; the citations both ways, `TestTilasmCitationsBothWays` and `TestSpawnTilasm` for
+  `djinn task get|list`; a worker given a tilasm, `djinn task spawn --tilasm`, `TestTilasmContext` and
+  `TestSpawnTilasm`)
 
 ## Tests must be fast
 
