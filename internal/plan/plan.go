@@ -29,7 +29,7 @@ import (
 func Entities() []proto.Message {
 	return []proto.Message{
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
-		&machinev1.CommandCost{},
+		&planv1.InboxItem{}, &machinev1.CommandCost{},
 	}
 }
 
@@ -88,6 +88,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Settle: wishes.settle}, opt)
 	out[p] = h
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
+	out[p] = h
+	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h
 	return out
 }

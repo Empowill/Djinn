@@ -472,6 +472,69 @@ test("the flight plan hides its empty sections", async () => {
   assert.match(html, /Nothing waits for you, and nothing runs\./);
 });
 
+test("the inbox shows each item with its proposed route, the recommended destination first", async () => {
+  const lamp = wish(
+    "01a11833-a440-7479-a067-52615c91da71",
+    "Ship the lamp",
+    s.WishState.ACTIVE,
+    1,
+  );
+  const item = {
+    id: "01a12079-0000-7000-8000-000000000001",
+    source: "babysit-mr",
+    projectId: "p1",
+    key: "https://gitlab.example.com/acme/gong/-/merge_requests/12",
+    text: "Babysit !12 · Fix the wick\nhttps://gitlab.example.com/acme/gong/-/merge_requests/12",
+    state: s.InboxState.NEW,
+    route: {
+      request: "Babysit !12",
+      options: [
+        {
+          kind: s.RouteKind.NEW,
+          title: "Babysit !12",
+          projectIds: ["p1"],
+          reason: "the skill babysit-mr makes this wish",
+          template: { skill: "babysit-mr", projectId: "p1" },
+        },
+        { kind: s.RouteKind.FILE, wishId: lamp.id, title: lamp.title },
+      ],
+    },
+  };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+    service(s.ProjectService, {
+      list: () => ({ projects: [{ id: "p1", name: "gong" }] }),
+    });
+    service(s.InboxService, { list: () => ({ items: [item] }) });
+    service(s.TaskService, { list: () => ({ tasks: [] }) });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  await djinn.store.changed("", [
+    s.Change.WISH,
+    s.Change.PROJECT,
+    s.Change.INBOX,
+  ]);
+  const html = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+    ),
+  );
+  assert.match(html, /Inbox/);
+  assert.match(html, /From babysit-mr/);
+  assert.match(html, /<h3>Babysit !12 · Fix the wick<\/h3>/);
+  const made = html.indexOf(
+    "New wish “Babysit !12”, in gong, from the skill babysit-mr",
+  );
+  const filed = html.indexOf("File it in “Ship the lamp”");
+  assert.ok(made > 0 && filed > made);
+  assert.match(html, /Rub the lamp/);
+  assert.match(html, /Dismiss/);
+});
+
 test("the folder of a new project has a folder dialog's button only when the window has one", () => {
   const typed = s.renderToStaticMarkup(
     h(s.FolderField, { value: "/tmp/lamp", onChange() {} }),

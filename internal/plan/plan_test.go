@@ -24,6 +24,7 @@ type clients struct {
 	blocks    planv1connect.BlockServiceClient
 	marks     planv1connect.MarkServiceClient
 	skills    planv1connect.SkillServiceClient
+	inbox     planv1connect.InboxServiceClient
 	store     *store.Store
 }
 
@@ -48,6 +49,7 @@ func serve(t *testing.T, opts ...Option) clients {
 		blocks:    planv1connect.NewBlockServiceClient(srv.Client(), srv.URL),
 		marks:     planv1connect.NewMarkServiceClient(srv.Client(), srv.URL),
 		skills:    planv1connect.NewSkillServiceClient(srv.Client(), srv.URL),
+		inbox:     planv1connect.NewInboxServiceClient(srv.Client(), srv.URL),
 		store:     s,
 	}
 }

@@ -26,6 +26,8 @@ type process struct {
 	done  chan struct{} // closed when the process has ended and its output is read
 	res   Result
 	stop  sync.Once
+	// blanks keeps the empty lines of the output: an inbox source's item ends on one.
+	blanks bool
 }
 
 type line struct {
@@ -37,6 +39,11 @@ type line struct {
 // plus env, which Djinn passes on without reading. On Unix it leads a process group of its own, so that stopping it
 // stops what it started.
 func startProcess(dir, name string, args, env, prefix []string, grace time.Duration) (*process, error) {
+	return startCommand(dir, name, args, env, prefix, grace, false)
+}
+
+// startCommand is startProcess; with blanks, the empty lines of the output are lines too.
+func startCommand(dir, name string, args, env, prefix []string, grace time.Duration, blanks bool) (*process, error) {
 	if len(prefix) > 0 {
 		// The prefix runs the program found here, and a missing one fails here, as without a prefix.
 		path, err := exec.LookPath(name)
@@ -66,7 +73,7 @@ func startProcess(dir, name string, args, env, prefix []string, grace time.Durat
 		}
 		return nil, err
 	}
-	p := &process{cmd: cmd, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{})}
+	p := &process{cmd: cmd, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
 	var read sync.WaitGroup
 	read.Add(2)
 	go p.scan(&read, outR, false)
@@ -89,7 +96,7 @@ func (p *process) scan(wg *sync.WaitGroup, r io.Reader, stderr bool) {
 	br := bufio.NewReader(r)
 	for {
 		s, err := br.ReadString('\n')
-		if s = strings.TrimRight(s, "\r\n"); s != "" {
+		if s = strings.TrimRight(s, "\r\n"); s != "" || (p.blanks && err == nil) {
 			p.lines <- line{text: s, stderr: stderr}
 		}
 		if err != nil {

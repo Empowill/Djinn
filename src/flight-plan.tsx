@@ -12,6 +12,7 @@ import { useData, useWishDetails } from "./data/djinn";
 import { flightPlan, spent } from "./data/flight";
 import { investigating, waitsForYou, wishTone } from "./data/format";
 import { t } from "./i18n";
+import { Inbox } from "./inbox";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
@@ -78,6 +79,7 @@ export function FlightPlan({
         </div>
 
         <div className="overview-content">
+          <Inbox onOpen={onOpen} onToast={onToast} />
           {wishes.length > 0 && (
             <section className="plan-wishes" aria-label={t("sidebar.wishes")}>
               {wishes.map((wish) => {

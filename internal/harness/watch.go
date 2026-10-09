@@ -50,8 +50,11 @@ type Watch struct {
 	Grace time.Duration
 	// Backoff is the first wait before a command that failed starts again; 0 for one second.
 	Backoff time.Duration
-	// Gap is the least time between two starts of a command that exits 0 at once; 0 for one second.
+	// Gap is the least time between two starts of a command that exits 0 at once, and between two starts of one
+	// that fails; 0 for one second.
 	Gap time.Duration
+	// Items ends a paragraph on an empty line too: each one is an item of an inbox source.
+	Items bool
 }
 
 // Watched is a paragraph a watcher's command printed, on its event; or, without a first line, the end of a command
@@ -184,11 +187,13 @@ func (w *watchWorker) loop() {
 			return
 		}
 		started := time.Now()
-		p, err := startProcess(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Prefix, w.c.Grace)
+		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Prefix, w.c.Grace, w.c.Items)
 		if err != nil {
 			w.res = Result{ExitCode: -1, Err: err}
 			return
 		}
+		// A watcher reads no message: its command reads an empty input, and Djinn never writes to it.
+		_ = p.stdin.Close()
 		w.running(p)
 		res := w.read(p)
 		w.running(nil)
@@ -206,7 +211,7 @@ func (w *watchWorker) loop() {
 			if ran > watchMaxBackoff {
 				backoff = w.c.Backoff
 			}
-			wait = backoff
+			wait = max(backoff, w.c.Gap)
 			backoff = min(2*backoff, watchMaxBackoff)
 			why := fmt.Sprintf("exit code %d", res.ExitCode)
 			if res.Err != nil {
@@ -289,6 +294,9 @@ func (w *watchWorker) read(p *process) Result {
 			}
 			text := cleanLine(l.text)
 			if text == "" {
+				if w.c.Items {
+					flush(true)
+				}
 				continue
 			}
 			lines, raw = append(lines, text), append(raw, l.text)

@@ -266,6 +266,8 @@ func services(
 	wishes := &plan.Wishes{Store: db, Leads: leads{terminals, uiSvc}, Language: language}
 	h.TellLeads(wishes.Tell)
 	h.OnWatched(wishes.Watched)
+	// The inbox sources of the projects' skills run until djinn up stops; what they print waits for a click.
+	h.RunSources((&plan.Inbox{Wishes: wishes}).Receive)
 	out[demoPrefix] = demoHandler
 	out[uiPrefix] = uiHandler
 	taskPrefix, taskHandler := harness.Handler(h)
