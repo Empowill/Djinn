@@ -12,6 +12,7 @@ import (
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/render"
 )
@@ -25,6 +26,11 @@ type Machine struct {
 	Pressure string
 	// Running is the number of workers that run now.
 	Running int
+	// Available is the memory available to new programs, in bytes; 0 when unknown, and then the memory holds no
+	// worker back. Policy weighs it against what a worker of the task's provider typically takes
+	// (machine.Policy.WorkerRoom).
+	Available uint64
+	Policy    machine.Policy
 }
 
 // Situation is what a pass knows: every task, every wish, which projects are in Git, and the machine. Its zero
@@ -38,6 +44,10 @@ type Situation struct {
 	machine *Machine
 	started map[string]bool
 	now     time.Time
+	// The first task the memory held in this pass, and why: the tasks after it wait for it.
+	short    *planv1.Task
+	shortWhy string
+	peaks    map[string][]uint64 // the peak memory of the finished workers of each provider, the latest first
 }
 
 // New is the situation of tasks and wishes, all of them as the store lists them (oldest first), the projects in Git being git (a project not in it is
@@ -206,7 +216,7 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 			}
 		}
 	}
-	return s.full(), ""
+	return s.full(t), ""
 }
 
 // forkedAs is the task that took over d: d itself, or, when d was cut short and resumed as a fork of its session
@@ -258,8 +268,9 @@ func provider(t *planv1.Task) string {
 	return strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 }
 
-// full says why no worker may start now, or "" when one may.
-func (s *Situation) full() string {
+// full says why the task's worker may not start now, or "" when it may: a slot is free, and the memory holds a
+// worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
+func (s *Situation) full(t *planv1.Task) string {
 	m := s.machine
 	if m == nil {
 		return ""
@@ -273,7 +284,58 @@ func (s *Situation) full() string {
 		}
 		return fmt.Sprintf("%d workers run, the most this machine holds (%s)", running, m.Rule)
 	}
-	return ""
+	if m.Available == 0 {
+		return ""
+	}
+	if s.short != nil {
+		return fmt.Sprintf("%s goes first: %s", s.short.GetCode(), s.shortWhy)
+	}
+	peak, measured := s.typical(provider(t))
+	why := m.Policy.WorkerRoom(m.Available, s.growing(), provider(t), peak, measured)
+	if why != "" {
+		s.short, s.shortWhy = t, why
+	}
+	return why
+}
+
+// typical is the typical peak memory of a worker of the provider, and how many measured workers gave it
+// (machine.Policy.Typical): the finished workers of that provider, the latest first.
+func (s *Situation) typical(name string) (uint64, int) {
+	if s.peaks == nil {
+		var ended []*planv1.Task
+		for _, t := range s.tasks {
+			if t.GetEndTime() != nil && t.GetResources().GetPeakMemoryBytes() > 0 && !Watcher(t) {
+				ended = append(ended, t)
+			}
+		}
+		slices.SortStableFunc(ended, func(a, b *planv1.Task) int {
+			return b.GetEndTime().AsTime().Compare(a.GetEndTime().AsTime())
+		})
+		s.peaks = map[string][]uint64{}
+		for _, t := range ended {
+			s.peaks[provider(t)] = append(s.peaks[provider(t)], t.GetResources().GetPeakMemoryBytes())
+		}
+	}
+	return s.machine.Policy.Typical(s.peaks[name])
+}
+
+// growing is the memory the workers running may still take: for each, the typical peak of its provider less what it
+// uses now (all of it before its first reading), and in full for each worker this pass started.
+func (s *Situation) growing() uint64 {
+	var sum uint64
+	for _, t := range s.tasks {
+		running := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && !Watcher(t)
+		if !running && !s.started[t.GetId()] {
+			continue
+		}
+		peak, _ := s.typical(provider(t))
+		if uses := t.GetResources().GetMemoryBytes(); running && uses < peak {
+			sum += peak - uses
+		} else if !running {
+			sum += peak
+		}
+	}
+	return sum
 }
 
 // Overlap tells whether two sets of write scopes share a path: one names the other, or a folder holding it. No

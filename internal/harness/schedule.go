@@ -17,6 +17,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -36,6 +37,13 @@ type Option func(*Harness)
 
 // WithCapacity limits the workers that run at once, and stops new ones while the machine is under pressure.
 func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c } }
+
+// WithMemory holds a new worker until the memory available (0 when unknown) holds the typical peak of a worker of
+// its provider, as p weighs it (machine.Policy.WorkerRoom). djinn up gives the machine's; without it, the memory
+// holds no worker back. It needs WithCapacity.
+func WithMemory(available func() uint64, p machine.Policy) Option {
+	return func(h *Harness) { h.available, h.policy = available, p }
+}
 
 // WithPrefix runs every worker under prefix, its own command appended: djinn up --worker-cpu gives a systemd scope
 // that caps the worker's CPU (machine.CPULimit).
@@ -173,6 +181,9 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 	if h.capacity != nil {
 		m = &dispatch.Machine{Running: h.Running()}
 		m.Slots, m.Rule, m.Pressure = h.capacity()
+		if h.available != nil {
+			m.Available, m.Policy = h.available(), h.policy
+		}
 	}
 	return dispatch.New(tasks, wishes, git, m).At(h.now()), nil
 }

@@ -48,6 +48,12 @@ overloaded. Part of the orchestrator (T07).
   command goes at once, one never measured as it comes. (`TestMemory` in `internal/gate`, with a fake machine and fake
   costs: `go tool task e2e` at 3.1 GiB waits with 1.8 GiB free, then goes once 8 GiB are; a second heavy command waits
   while it holds its gate. `TestRoom` and `TestCosts` in `internal/machine`)
+- [x] Another worker starts only when the free memory holds the typical peak of a worker of its provider, and the
+  task says why it waits, with those numbers; a resumed task keeps its turn. (`TestMemoryHoldsWorker` in
+  `internal/dispatch`: 2.2 GiB free holds a resumed claude worker typically at 1.5 GiB, and a lighter codex one
+  behind it, then 3 GiB starts the first; `TestMemoryHoldsWorker` in `internal/harness`, a fake machine at 2 GiB
+  holds the second worker, at 3 GiB starts it, the first still running; `TestTypical` and `TestWorkerRoom` in
+  `internal/machine`; `TestRestartQueue` in `internal/dispatch` unchanged)
 
 ## Decided along the way
 - **The minimum first** (`internal/machine`): cores (`runtime.NumCPU`), memory, load and pressure, read live (at
@@ -90,8 +96,8 @@ overloaded. Part of the orchestrator (T07).
   most once a second; Windows: not measured yet (`worker_measure` says so, and the Tasks tab). The task keeps the
   latest reading and the peaks over all its workers; a new worker clears the latest. It is written (`harness/measure`
   in the journal) only when it moved enough to show: a process more or less, 5 points of CPU, 5% of memory, or a
-  minute gone; `djinn machine show` gives every reading. The fake agent runs in Djinn's process: not measured. Not
-  read by the scheduler yet.
+  minute gone; `djinn machine show` gives every reading. The fake agent runs in Djinn's process: not measured. The
+  scheduler reads the peaks (below).
 - **A gate waits for the memory** (`Policy.Room`, `CommandMargin` a field of `machine.DefaultPolicy`). This default
   rule is Djinn's recommendation, and the developer may change it: a gate goes to a command measured in its project
   only when there is no pressure and the memory available, less the peaks of the commands holding a gate, is at least
@@ -103,3 +109,16 @@ overloaded. Part of the orchestrator (T07).
   While it waits, the reason names the command, its peak and the memory free (`waiting: go tool task e2e peaks at
   3.1 GiB, 1.8 GiB free`), told again only when the cause changes, not as the memory moves. A heavy command that
   waits does not keep its gate from a lighter one behind it. The scheduler does not read the costs yet.
+- **A worker waits for the memory** (`Policy.WorkerRoom`, `WorkerPeak`, `WorkerPeaks` and `WorkerMargin` fields of
+  `machine.DefaultPolicy`). Once a slot is free and there is no pressure, a worker starts only when the memory
+  available, less what the workers running may still take, is at least the typical peak of a worker of its provider
+  plus 512 MiB. The typical peak is the median of the peak memory (`Task.resources`) of the latest 10 finished
+  workers of that provider (a task with an end time and a peak, the latest ended first; with an even count, the mean
+  of the two in the middle); 1 GiB while none is measured (the fake agent, a new provider, Windows). A running worker
+  may still take that typical peak less what it uses now, one not read yet all of it, a worker the same pass starts
+  all of it; a paused one nothing. The reason names the peak, how it was found, the memory free and what the
+  running workers may take (`waiting: a claude worker peaks at 1.5 GiB (the median of the last 3 measured), 2.2 GiB
+  free, 512 MiB of it for the workers running, 512 MiB kept`). The first task the memory holds holds the ones after
+  it (`W5 goes first: …`): a resumed task keeps its turn, and a lighter worker never takes the turn of a heavier one.
+  It holds with `djinn up --workers` too, as the pressure does. A machine whose memory is unknown holds no worker
+  back. The memory is read at most once a second, with the rest.

@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -190,6 +191,47 @@ func TestSlots(t *testing.T) {
 	l.set(2, "")
 	if got := e.ended(t, waiting.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Errorf("after the pressure: %v", got)
+	}
+}
+
+// TestMemoryHoldsWorker: on a tight machine the next worker waits, a slot free, with a reason naming the typical
+// peak of a worker and the memory free; once the memory frees, it starts, the first one still running. The fake
+// worker runs in Djinn's process, never measured: its typical peak is the policy's default.
+func TestMemoryHoldsWorker(t *testing.T) {
+	var mu sync.Mutex
+	free := uint64(2 * machine.GiB)
+	available := func() uint64 {
+		mu.Lock()
+		defer mu.Unlock()
+		return free
+	}
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 4}).capacity), WithMemory(available, machine.DefaultPolicy()),
+		WithTick(20*time.Millisecond))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	first := e.mustSpawn(t, wishID, "First", "sleep 30s", nil)
+	if first.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Fatalf("first: %v", first)
+	}
+	// The first may still take its 1 GiB: 1 GiB is left, not the 1 GiB and 512 MiB a second needs.
+	second := e.mustSpawn(t, wishID, "Second", "text ok", nil)
+	want := "a fake worker peaks at 1.0 GiB (none measured yet), 2.0 GiB free, 1.0 GiB of it for the workers running, " +
+		"512 MiB kept"
+	if second.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || second.GetWaitReason() != want {
+		t.Fatalf("second: %v, want it waiting because %q", second, want)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if got := e.get(t, second.GetId()); got.GetStartTime() != nil {
+		t.Fatalf("started on a tight machine: %v", got)
+	}
+	mu.Lock()
+	free = 3 * machine.GiB
+	mu.Unlock()
+	if got := e.ended(t, second.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("once the memory freed: %v", got)
+	}
+	if got := e.get(t, first.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Errorf("the first should still run: %v", got)
 	}
 }
 
