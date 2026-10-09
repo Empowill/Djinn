@@ -41,7 +41,8 @@ checked against Windows first, because it is where the constraints are.
 - [ ] `go install`, then `djinn up`, opens the window on Windows 11 and a stream reaches it. (needs: a Windows 11
   machine; `GOOS=windows go vet -tags headless ./...` passes on Linux, 08/10)
 - [ ] `task test` and `task e2e` pass on Windows. (needs: the CI's Windows job green. It runs test-go, test-ui and e2e
-  since 09/10, still `continue-on-error`; the failures of its first run (09/10) are fixed but not yet seen green)
+  since 09/10, still `continue-on-error`; the failures of its first run (09/10) are fixed but not yet seen green: W72
+  checked each one again against the log of run 37913958476)
 - [ ] A worker runs in a worktree on Windows, with its CPU and memory measured. (needs: a Windows machine, and the
   per-worker measure, not built: Job Objects, T17)
 
