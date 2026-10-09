@@ -163,14 +163,22 @@ test("a question shows its options by letter and its recommendation; answered, w
     /<strong class="option-letter">B<\/strong><p>Paraffin<\/p>/,
   );
   assert.match(open, /<strong>A<\/strong>, for the smell\./);
-  assert.match(open, /Confirm this choice/);
-  // The recommendation is boxed first, its option marked; nothing to rub without onMark.
+  // Two gestures, no third: the lamp is rubbed on the recommended option, preselected.
+  assert.doesNotMatch(open, /Confirm/);
+  assert.match(
+    open,
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">A</,
+  );
+  assert.match(
+    open,
+    /title="Answer with the selected option and your note"><svg[^]*?Rub the lamp<\/button>/,
+  );
+  // The recommendation is boxed first, its option marked.
   assert.ok(open.indexOf("Recommendation · A") < open.indexOf("Olive"));
   assert.match(open, /Olive<\/p><span class="option-recommended">Recommended/);
   // Nothing waits for it, nothing said before what: it can wait, grey.
   assert.match(open, /question-card open can-wait/);
   assert.match(open, /status-badge tone-later[^>]*>.*<span>Can wait<\/span>/);
-  assert.doesNotMatch(open, /Rub the lamp/);
   // Needed before the merge: orange, under those words.
   const before = s.renderToStaticMarkup(
     h(s.WishQuestion, {
@@ -212,13 +220,17 @@ test("a question shows its options by letter and its recommendation; answered, w
       onEnlighten: async () => {},
     }),
   );
-  assert.match(lamp, /title="Apply the recommendation"[^>]*>.*Rub the lamp/);
-  assert.match(lamp, /Enlighten me/);
+  // Enlighten on the left, then the lamp; B, recommended, is the one rubbed.
+  assert.ok(lamp.indexOf("Enlighten me") < lamp.indexOf("Rub the lamp"));
+  assert.match(
+    lamp,
+    /<button class="option selected" aria-pressed="true"><strong class="option-letter">B</,
+  );
   assert.match(lamp, /aria-pressed="true"[^>]*>.*Read<\/button>/);
   assert.match(lamp, /Blocks W2/);
   assert.match(lamp, /What is at stake<\/h4>.*<h2>Cost<\/h2>/);
   assert.match(lamp, /question-card open is-blocking/);
-  // No option named: no rub, the choice is yours.
+  // No option named: nothing selected, the lamp waits for your pick.
   const vague = s.renderToStaticMarkup(
     h(s.WishQuestion, {
       question: {
@@ -233,7 +245,11 @@ test("a question shows its options by letter and its recommendation; answered, w
       onMark: async () => {},
     }),
   );
-  assert.doesNotMatch(vague, /Rub the lamp/);
+  assert.doesNotMatch(vague, /option selected/);
+  assert.match(
+    vague,
+    /title="Pick an option first" disabled=""><svg[^]*?Rub the lamp<\/button>/,
+  );
 
   // Being investigated, then revised: its own state, the note, the badge, the history folded.
   const digging = s.renderToStaticMarkup(
@@ -373,7 +389,7 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   );
   assert.doesNotMatch(html, /Light it tonight\?/);
   // Nothing waits for an answer: no yes/no card waiting.
-  assert.doesNotMatch(html, /Confirm the answer/);
+  assert.doesNotMatch(html, /placeholder="Your answer"/);
   // The bar at the top lists what waits for you: here, the grant, which it links to.
   assert.match(
     html,

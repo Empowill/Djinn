@@ -206,10 +206,10 @@ recommendation first, then the options A to D, then what is at stake. Its colour
 when a task waits for the answer, orange under the words the lead gave ("before the merge"), grey when it **Can wait**.
 The cards, the bar of what waits for you and the brief list them in that order.
 
-- Pick an option, add a note if you like, then **Confirm this choice**. A question without options takes a
-  written answer.
-- **Rub the lamp** applies the recommendation in one click, when it names an option.
-- **Enlighten me** asks the lead to dig first, with what to dig into if you like. The question shows
+- **Rub the lamp** answers with the option selected and your note: the recommended one is selected first, so one
+  click takes it; pick another and the lamp sends that one. With no option recommended, pick one first. A question
+  without options takes a written answer, sent the same way.
+- **Enlighten me**, on its left, asks the lead to dig first, with what to dig into if you like. The question shows
   **Being investigated** until the lead revises it; you may still decide now. Its rounds fold below the card.
 
 Your answer goes to the lead and the workers. An answered question is a decision.

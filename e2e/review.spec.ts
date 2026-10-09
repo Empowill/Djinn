@@ -214,7 +214,8 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await revised.scrollIntoViewIfNeeded();
   await shoot(page, "review-wish-revised-dark");
 
-  // Rub the lamp: one click answers with the recommended option, and the lead reads it from the command line.
+  // Rub the lamp: one click answers with the option selected, here the recommended one, and the lead reads it from
+  // the command line.
   await revised.getByRole("button", { name: "Rub the lamp" }).click();
   await expect(revised).toHaveCount(0);
   const [q01] = JSON.parse(
@@ -222,13 +223,6 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   ).questions;
   expect(q01.answer.choice).toBe("CHOICE_B");
   expect(q01.revision).toBe(1);
-  const marks = JSON.parse(djinn("mark", "list", wishId, "--json")).marks;
-  expect(marks).toEqual([
-    expect.objectContaining({
-      label: "Q01",
-      mark: expect.objectContaining({ kind: "MARK_KIND_APPROVED" }),
-    }),
-  ]);
 
   // A block marked read, seen in the brief.
   const block = page
