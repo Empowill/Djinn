@@ -3,12 +3,22 @@
 # A maintainer reads the draft and publishes it: only then is it the latest, the one install.sh takes.
 #
 # The tag carries the built interface (dist/): no Node here, and `go install …@vX.Y.Z` builds the same Djinn.
-# Every step runs by hand too: `go tool task release-build`, `release-build-macos`, `release-sums`.
+# Every step runs by hand too: `go tool task release-build`, `release-build-macos`, `release-macos-app`,
+# `release-sums`.
+#
+# A dry run builds the macOS archive and Djinn.app from a branch, with no tag and no release, and keeps them as the
+# run's artifact: `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`, then `gh run download`. GitHub
+# offers it once this file, with its workflow_dispatch, is on the default branch.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version the dry run stamps, a release tag such as v0.0.0-dryrun
+        default: v0.0.0-dryrun
 
 permissions:
   contents: read
@@ -16,6 +26,7 @@ permissions:
 jobs:
   check:
     name: The tag is a release
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,20 +106,32 @@ jobs:
           path: bin/release/*.tar.gz
           if-no-files-found: error
 
+  # The universal binary, and Djinn.app around it: one bundle for arm64 and amd64 Macs. The only job of a dry run.
   macos:
-    name: macOS universal
+    name: macOS universal and Djinn.app
     needs: check
+    if: ${{ !cancelled() && (needs.check.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: macos-15
+    env:
+      VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # A tag carries the built interface; a branch does not: the dry run builds it.
+      - if: github.event_name == 'workflow_dispatch'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - if: github.event_name == 'workflow_dispatch'
+        run: npm ci && go tool task ui
       # Signing and notarization, once the project has an Apple Developer ID (plan/71f9c331-releases.md). The secrets
       # live in this repository's settings, never in a file: APPLE_CERTIFICATE_P12 (base64 of the Developer ID
       # Application certificate), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, and an App Store Connect API key
       # for notarytool: APPLE_API_KEY_P8 (base64), APPLE_API_KEY_ID, APPLE_API_ISSUER_ID. Then uncomment the codesign
-      # line of the release-build-macos task, and:
+      # lines of the release-build-macos and release-macos-app tasks, and:
       #
       # - name: Import the signing certificate into a throwaway keychain
       #   env:
@@ -124,7 +147,8 @@ jobs:
       #     security set-key-partition-list -S apple-tool:,apple: -s -k "" "$keychain"
       #     security list-keychains -d user -s "$keychain"
       #     rm "$RUNNER_TEMP/cert.p12"
-      - run: go tool task release-build-macos VERSION="$GITHUB_REF_NAME"
+      # Builds the archive, then Djinn.app around the same binary (release-macos-app).
+      - run: go tool task release-build-macos VERSION="$VERSION"
         # env:
         #   APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
       # - name: Notarize
@@ -135,17 +159,60 @@ jobs:
       #   run: |
       #     echo "$APPLE_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/key.p8"
       #     ditto -c -k bin/release/djinn_darwin_universal "$RUNNER_TEMP/notarize.zip"
-      #     xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --wait \
-      #       --key "$RUNNER_TEMP/key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID"
+      #     key=(--key "$RUNNER_TEMP/key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID")
+      #     xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --wait "${key[@]}"
+      #     # The app takes the ticket inside it (staple), so that Gatekeeper accepts it offline: zip it again after.
+      #     xcrun notarytool submit bin/release/djinn_darwin_universal_app.zip --wait "${key[@]}"
+      #     xcrun stapler staple bin/release/.app/Djinn.app
+      #     ditto -c -k --keepParent bin/release/.app/Djinn.app bin/release/djinn_darwin_universal_app.zip
       #     rm "$RUNNER_TEMP/key.p8"
       - name: The binary is universal, starts and knows its version
         run: |
           lipo -info bin/release/djinn_darwin_universal/djinn | grep -q "x86_64 arm64"
-          DJINN_HOME="$RUNNER_TEMP/djinn-home" bin/release/djinn_darwin_universal/djinn version | grep -Fx "djinn $GITHUB_REF_NAME"
+          DJINN_HOME="$RUNNER_TEMP/djinn-home" bin/release/djinn_darwin_universal/djinn version | grep -Fx "djinn $VERSION"
+      # Unzipped as Finder does, the app is whole: its Info.plist reads, names what the bundle holds, and its djinn runs.
+      - name: Djinn.app is well formed
+        run: |
+          ditto -x -k bin/release/djinn_darwin_universal_app.zip "$RUNNER_TEMP/app"
+          app="$RUNNER_TEMP/app/Djinn.app"
+          plist="$app/Contents/Info.plist"
+          plutil -lint "$plist"
+          read_key() { /usr/libexec/PlistBuddy -c "Print :$1" "$plist"; }
+          test "$(read_key CFBundleIdentifier)" = io.github.empowill.djinn
+          test "$(read_key CFBundleShortVersionString)" = "$(echo "${VERSION#v}" | cut -d- -f1)"
+          test -x "$app/Contents/MacOS/$(read_key CFBundleExecutable)"
+          test -s "$app/Contents/Resources/$(read_key CFBundleIconFile)"
+          cmp "$app/Contents/MacOS/djinn" bin/release/djinn_darwin_universal/djinn
+          DJINN_HOME="$RUNNER_TEMP/djinn-home" "$app/Contents/MacOS/djinn" version | grep -Fx "djinn $VERSION"
+          # Apple silicon runs only signed code: the linker signs the arm64 half ad hoc, never the amd64 one.
+          codesign --verify --arch arm64 "$app/Contents/MacOS/djinn"
+          # Unsigned: Gatekeeper refuses it, as expected until the project signs and notarizes (plan T19).
+          spctl --assess --type execute "$app" || echo "Gatekeeper refuses the unsigned app, as expected"
+      # Opened as from Finder, the app starts djinn up, which Launch Services knows by the app's identifier. Not
+      # blocking: a check of the runner's session, new; it runs on its own data, and stops by its PID.
+      - name: Djinn.app opens
+        continue-on-error: true
+        run: |
+          app="$RUNNER_TEMP/app/Djinn.app"
+          open --env DJINN_HOME="$RUNNER_TEMP/app-home" "$app"
+          pid=""
+          for _ in $(seq 30); do
+            pid=$(pgrep -f "$app/Contents/MacOS/djinn up" | head -n 1)
+            [ -n "$pid" ] && break
+            sleep 1
+          done
+          test -n "$pid"
+          trap 'kill "$pid"' EXIT
+          sleep 5
+          asn=$(lsappinfo find bundleid=io.github.empowill.djinn)
+          echo "Launch Services knows io.github.empowill.djinn as: $asn"
+          test -n "$asn"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: darwin-universal
-          path: bin/release/*.tar.gz
+          path: |
+            bin/release/*.tar.gz
+            bin/release/*.zip
           if-no-files-found: error
 
   windows:

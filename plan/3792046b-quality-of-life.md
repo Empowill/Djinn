@@ -36,7 +36,8 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     `build/icon.ico`, into `cmd/djinn/*.syso`, not committed). Built here for amd64; to check by hand
     in Explorer and the task bar on a real Windows. (needs: a Windows machine)
   - [ ] macOS: the Dock shows the icon at run time; Finder and Launchpad need an `.app` bundle with
-    `build/icon.icns` (T19). (needs: a Mac, and the bundle of T19)
+    `build/icon.icns` (T19). The release builds it: `djinn_darwin_universal_app.zip`, `Djinn.app` with
+    `Contents/Resources/djinn.icns` (`tools/macapp`). (needs: a Mac, to open it from Finder)
 - [ ] **The page keeps your place.** When something above what you are reading changes (a
   question answered and removed, a section added), the window stays on what you read: it never
   jumps up. Browsers do it by scroll anchoring; WebKit, the engine of the window on macOS and
@@ -66,7 +67,9 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     bus, macOS without a bundle) leaves them off and the window opens. `UiService.NotifyQuestion`, never called,
     is gone. (`window_none.go`; `noticeService.ServiceStartup` returns no error)
   - [ ] Seen on GNOME, with a click and a button (by hand). (needs: a person on Linux)
-  - [ ] macOS: needs the `.app` bundle and its identifier. (needs: T19, then a Mac)
+  - [ ] macOS: needs the `.app` bundle and its identifier. T19 builds `Djinn.app`, identifier
+    `io.github.empowill.djinn`; Wails asks for a signed app too, and the bundle is unsigned. (needs: a Mac, to see
+    whether the ad hoc signature suffices)
   - [ ] A global shortcut. (needs: an agent)
 - [x] OpenAPI documentation of the public methods. (`docs/openapi.json`, OpenAPI 3.1, written by `go tool task gen`
   through `tools/openapi`; `TestOpenAPIIsFresh`, `TestOpenAPI`; Redocly lint: valid, one warning on the localhost

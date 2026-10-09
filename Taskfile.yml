@@ -187,7 +187,7 @@ tasks:
       - go run ./tools/releasepack pack bin/release/{{.NAME}}
 
   release-build-macos:
-    desc: "Build the universal macOS release archive (arm64 and amd64 joined by lipo) into bin/release/, from the interface in dist/: task release-build-macos VERSION=v0.1.0. macOS only"
+    desc: "Build the universal macOS release archive (arm64 and amd64 joined by lipo) and Djinn.app around it into bin/release/, from the interface in dist/: task release-build-macos VERSION=v0.1.0. macOS only"
     platforms: [darwin]
     requires:
       vars: [VERSION]
@@ -209,6 +209,25 @@ tasks:
       #   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" {{.DIR}}/djinn
       #   then the archive goes through `xcrun notarytool submit --wait`; a bare binary cannot be stapled.
       - go run ./tools/releasepack pack {{.DIR}}
+      - task: release-macos-app
+        vars: { VERSION: "{{.VERSION}}" }
+
+  release-macos-app:
+    desc: "Lay out Djinn.app, the macOS app bundle, around a macOS djinn and zip it into bin/release/djinn_darwin_universal_app.zip: task release-macos-app VERSION=v0.1.0 [BINARY=bin/release/djinn_darwin_universal/djinn]. Runs anywhere: on Linux, try it on a GOOS=darwin build"
+    requires:
+      vars: [VERSION]
+    vars:
+      BINARY: '{{.BINARY | default "bin/release/djinn_darwin_universal/djinn"}}'
+      DIR: bin/release/.app
+    cmds:
+      - go run ./tools/macapp bundle --binary "{{.BINARY}}" --version {{.VERSION}} {{.DIR}}
+      # Signing comes here, once an Apple Developer ID exists (plan/71f9c331-releases.md). The binary is signed
+      # already (release-build-macos); this signs the launcher and seals Info.plist and the resources. A signed bundle
+      # keeps part of its signature in extended attributes, which only ditto zips, in place of the line after:
+      #   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" {{.DIR}}/Djinn.app
+      #   ditto -c -k --keepParent {{.DIR}}/Djinn.app bin/release/djinn_darwin_universal_app.zip
+      # The release workflow then notarizes the zip and staples the app.
+      - go run ./tools/macapp zip {{.DIR}}/Djinn.app bin/release/djinn_darwin_universal_app.zip
 
   release-sums:
     desc: Write bin/release/SHA256SUMS over the release archives
