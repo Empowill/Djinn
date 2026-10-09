@@ -1,0 +1,742 @@
+package harness
+
+import (
+	"bytes"
+	"cmp"
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"slices"
+	"strings"
+	"time"
+
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
+)
+
+// Integration (T30): a worker's work counts once it is in its wish's integration branch, tested. When a worker ends
+// done in a project that names a test command, its task's integration is pending; Djinn then commits the work in
+// batches, by itself, no model: in a worktree of its own per wish and project, never the person's checkout, it
+// merges each task's branch, makes the generated files again on a conflict only in them, runs the project's tests
+// through a gate, and moves the integration branch when they pass.
+
+// How the journal records the integration.
+const (
+	methodIntegrate = "harness/integrate" // a task's integration moved on, or Djinn recorded a wish's integration branch; the request is the task, or the wish
+	methodCommit    = "harness/commit"    // a batch was committed into its wish's integration branch; the request is the commit (planv1.IntegrationCommit)
+)
+
+// When a batch is committed when no azima ends: once an hour has passed and three tasks are done since the last
+// commit. A wish sets its own (Wish.commit_after_minutes, Wish.commit_after_tasks).
+const (
+	DefaultCommitAfter = time.Hour
+	DefaultCommitTasks = 3
+)
+
+// The gates the integration's commands run under, as a worker's would: djinn gate run gen, djinn gate run test.
+const (
+	genGate  = "gen"
+	testGate = "test"
+)
+
+// TakeGate takes the gate name, for the task taskID, to run the command what in the folder dir, and returns how to
+// give it back. djinn up takes the gates of internal/gate, as djinn gate run does.
+type TakeGate func(ctx context.Context, name, taskID, what, dir string) (give func(), err error)
+
+// RunCommand runs args in dir, and returns the end of its output and its exit code; an error when it could not run.
+type RunCommand func(ctx context.Context, dir string, args []string) (out string, code int, err error)
+
+// WithGates runs the integration's commands under the gates take gives; without it, they run at once.
+func WithGates(take TakeGate) Option { return func(h *Harness) { h.gates = take } }
+
+// WithCommands runs the integration's commands with run, instead of the processes they name. Tests give a fake.
+func WithCommands(run RunCommand) Option { return func(h *Harness) { h.commands = run } }
+
+// WithIntegrateTick sets how often the integration looks at the work waiting without being woken: an hour passes
+// without telling anyone.
+func WithIntegrateTick(d time.Duration) Option { return func(h *Harness) { h.integrateTick = d } }
+
+// Integrate starts committing the tasks' finished work into their wishes' integration branches, by itself: woken
+// when a task ends done, and every minute for the hour. djinn up calls it once the harness has recovered; Close
+// stops it, and a batch it was on is integrated again at the next start.
+func (h *Harness) Integrate() {
+	h.integrating.Do(func() {
+		h.integrateDone = make(chan struct{})
+		go func() {
+			defer close(h.integrateDone)
+			tick := time.NewTicker(cmp.Or(h.integrateTick, time.Minute))
+			defer tick.Stop()
+			for {
+				h.integratePass(h.ctx)
+				select {
+				case <-h.ctx.Done():
+					return
+				case <-h.integrateKick:
+				case <-tick.C:
+				}
+			}
+		}()
+	})
+}
+
+// kickIntegrate asks the integration for a pass: a task's work waits.
+func (h *Harness) kickIntegrate() {
+	select {
+	case h.integrateKick <- struct{}{}:
+	default:
+	}
+}
+
+// pendIntegration marks the work of t, a task its worker just finished, as waiting for its batch, when Djinn
+// integrates it: a work task on a branch of its own, in a project whose settings name a test command.
+func (h *Harness) pendIntegration(t *planv1.Task) bool {
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || t.GetBranch() == "" || plan.IsAzima(t) {
+		return false
+	}
+	project, err := store.Get[*planv1.Project](context.Background(), h.store, t.GetProjectId())
+	if err != nil || !project.GetGit() {
+		return false
+	}
+	if settings, err := plan.LoadSettings(h.home, project); err != nil || settings.Test == "" {
+		return false
+	}
+	t.Integration = &planv1.TaskIntegration{
+		State: planv1.IntegrationState_INTEGRATION_STATE_PENDING, UpdateTime: timestamppb.New(h.now()),
+	}
+	return true
+}
+
+// recoverIntegrations puts back to pending the work a previous djinn up was integrating when it stopped: its batch
+// is integrated again.
+func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task) {
+	var cut []*planv1.Task
+	for _, t := range tasks {
+		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING {
+			cut = append(cut, t)
+		}
+	}
+	if len(cut) > 0 {
+		h.settleIntegration(ctx, cut, pending(cut[0].GetIntegration().GetBranch(), ""),
+			"integration: djinn up stopped during it; Djinn integrates the work again", nil)
+	}
+}
+
+// integratePass commits each batch of finished work that is due, wish by wish and project by project.
+func (h *Harness) integratePass(ctx context.Context) {
+	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
+	if err != nil {
+		log.Printf("djinn: integrate: %v", err)
+		return
+	}
+	type key struct{ wish, project string }
+	waiting := map[key][]*planv1.Task{}
+	byWish := map[string][]*planv1.Task{}
+	for _, t := range tasks {
+		byWish[t.GetWishId()] = append(byWish[t.GetWishId()], t)
+		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING &&
+			t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !h.running(t.GetId()) {
+			k := key{t.GetWishId(), t.GetProjectId()}
+			waiting[k] = append(waiting[k], t)
+		}
+	}
+	keys := make([]key, 0, len(waiting))
+	for k := range waiting {
+		keys = append(keys, k)
+	}
+	slices.SortFunc(keys, func(a, b key) int { return cmp.Or(cmp.Compare(a.wish, b.wish), cmp.Compare(a.project, b.project)) })
+	for _, k := range keys {
+		if ctx.Err() != nil {
+			return
+		}
+		wish, err1 := store.Get[*planv1.Wish](ctx, h.store, k.wish)
+		project, err2 := store.Get[*planv1.Project](ctx, h.store, k.project)
+		if err := errors.Join(err1, err2); err != nil {
+			log.Printf("djinn: integrate: %v", err)
+			continue
+		}
+		batch := waiting[k]
+		slices.SortStableFunc(batch, func(a, b *planv1.Task) int {
+			return a.GetEndTime().AsTime().Compare(b.GetEndTime().AsTime())
+		})
+		every := time.Duration(wish.GetCommitAfterMinutes()) * time.Minute
+		for _, b := range due(batch, byWish[k.wish], lastCommit(wish, byWish[k.wish], k.project), h.now(),
+			cmp.Or(every, DefaultCommitAfter), int(cmp.Or(wish.GetCommitAfterTasks(), DefaultCommitTasks))) {
+			h.integrateBatch(ctx, wish, project, b)
+		}
+	}
+}
+
+// running tells whether a worker runs for the task id: a task continued after it was done.
+func (h *Harness) running(id string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.runs[id] != nil
+}
+
+// due returns the batches of waiting, a wish's finished work in one project in the order it ended, to commit now
+// (the developer's rule): each task another task waits for, at once and alone, so that the graph never stalls; then
+// the others together when an azima one of them is part of ends, none of its parts being planned or under way any
+// more, or once every has passed since the last commit and n of them are done. tasks are all the wish's.
+func due(waiting, tasks []*planv1.Task, last, now time.Time, every time.Duration, n int) [][]*planv1.Task {
+	var out [][]*planv1.Task
+	var rest []*planv1.Task
+	for _, t := range waiting {
+		if awaited(t, tasks) {
+			out = append(out, []*planv1.Task{t})
+		} else {
+			rest = append(rest, t)
+		}
+	}
+	if len(rest) > 0 && (azimaEnds(rest, tasks) || now.Sub(last) >= every && len(rest) >= n) {
+		out = append(out, rest)
+	}
+	return out
+}
+
+// awaited tells whether a planned task waits for t.
+func awaited(t *planv1.Task, tasks []*planv1.Task) bool {
+	return slices.ContainsFunc(tasks, func(o *planv1.Task) bool {
+		return dispatch.Planned(o) && slices.Contains(o.GetDependsOn(), t.GetId())
+	})
+}
+
+// azimaEnds tells whether an azima one of batch's tasks is part of has ended: every work part of it is finished,
+// done or not, so no part of it is still to come.
+func azimaEnds(batch, tasks []*planv1.Task) bool {
+	for _, t := range batch {
+		azima := t.GetPartOf()
+		if azima == "" {
+			continue
+		}
+		ended := true
+		for _, o := range tasks {
+			if o.GetPartOf() != azima || plan.IsAzima(o) {
+				continue
+			}
+			switch o.GetStatus() {
+			case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
+			default:
+				ended = false
+			}
+		}
+		if ended {
+			return true
+		}
+	}
+	return false
+}
+
+// lastCommit is when wish last committed finished work into its integration branch in the project projectID: when it
+// was made, before any.
+func lastCommit(wish *planv1.Wish, tasks []*planv1.Task, projectID string) time.Time {
+	last := wish.GetCreateTime().AsTime()
+	for _, t := range tasks {
+		if t.GetProjectId() == projectID && t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+			if at := t.GetIntegration().GetUpdateTime().AsTime(); at.After(last) {
+				last = at
+			}
+		}
+	}
+	return last
+}
+
+// pending is the integration of work that waits for its batch, and why when it waits for something else.
+func pending(branch, why string) *planv1.TaskIntegration {
+	return &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING, Branch: branch, Reason: why}
+}
+
+// tested is a batch whose tests passed while its branch could not move, from old to sha: committing it again needs no
+// new run.
+type tested struct {
+	old, sha string
+	ids      []string
+}
+
+// integrateBatch commits the work of batch, tasks of wish in project, into the wish's integration branch, and records
+// where each task's work stands.
+func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, batch []*planv1.Task) {
+	branch, why := h.integrationBranch(ctx, wish, project)
+	settings, err := plan.LoadSettings(h.home, project)
+	switch {
+	case why != "":
+	case err != nil:
+		why = err.Error()
+	case settings.Test == "":
+		why = "the project's settings name no test command"
+	}
+	if why != "" {
+		h.settleIntegration(ctx, batch, pending(branch, why), "integration: waiting: "+why, nil)
+		return
+	}
+	in, text, commit := h.commitBatch(ctx, wish, project, settings, branch, batch)
+	if ctx.Err() != nil && in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		in, text, commit = pending(branch, ""), "integration: djinn up stopped during it; Djinn integrates the work again", nil
+	}
+	in.Branch = branch
+	h.settleIntegration(ctx, batch, in, text, commit)
+}
+
+// integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish made before
+// Djinn recorded it takes the branch the project's checkout is on now, recorded on the wish.
+func (h *Harness) integrationBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (string, string) {
+	if b := plan.IntegrationBranchOf(wish, project.GetId()); b != "" {
+		return b, ""
+	}
+	b := plan.CheckedOutBranch(ctx, project.GetDirectory())
+	if b == "" {
+		return "", "the project's checkout is on no branch: name the integration branch with djinn wish set-integration"
+	}
+	plan.SetIntegrationBranch(wish, project.GetId(), b)
+	ctx = context.WithoutCancel(ctx)
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		cur, err := store.Get[*planv1.Wish](ctx, tx, wish.GetId())
+		if err != nil {
+			return err
+		}
+		plan.SetIntegrationBranch(cur, project.GetId(), b)
+		if err := tx.Journal(actorHarness, methodIntegrate, cur); err != nil {
+			return err
+		}
+		return tx.Put(cur)
+	})
+	if err != nil {
+		return "", "record the integration branch: " + err.Error()
+	}
+	return b, ""
+}
+
+// commitBatch commits each task's work on its branch, merges the branches into the integration branch in the wish's
+// integration worktree, tests the result, and moves the branch when the tests pass. It returns where the batch's work
+// stands, the event that says it, and the commit to journal when the branch moved.
+func (h *Harness) commitBatch(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch string, batch []*planv1.Task,
+) (*planv1.TaskIntegration, string, *planv1.IntegrationCommit) {
+	repo := project.GetDirectory()
+	wait := func(why string) (*planv1.TaskIntegration, string, *planv1.IntegrationCommit) {
+		return pending(branch, why), "integration: waiting: " + why, nil
+	}
+	old, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	if err != nil {
+		return wait("the branch " + branch + " is not in the project's repository")
+	}
+	ids := make([]string, len(batch))
+	for i, t := range batch {
+		ids[i] = t.GetId()
+	}
+	key := wish.GetId() + "/" + project.GetId()
+	done, ok := h.tested[key]
+	if !ok || done.old != old || !slices.Equal(done.ids, ids) {
+		h.settleIntegration(ctx, batch, &planv1.TaskIntegration{
+			State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, Branch: branch,
+		}, "integration: integrating into "+branch+", with "+codes(batch), nil)
+		var in *planv1.TaskIntegration
+		var text string
+		if done.sha, in, text = h.mergeAndTest(ctx, wish, project, settings, branch, old, batch); in != nil {
+			return in, text, nil
+		}
+		done.old, done.ids = old, ids
+		h.tested[key] = done
+	}
+	sha := done.sha
+	commit := &planv1.IntegrationCommit{
+		WishId: wish.GetId(), ProjectId: project.GetId(), Branch: branch, OldSha: old, NewSha: sha, TaskIds: ids,
+	}
+	committed := &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, Sha: sha}
+	if sha == old {
+		delete(h.tested, key)
+		return committed, "integration: committed: " + branch + " holds the work already, at " + short8(sha), nil
+	}
+	// The person's checkout of the branch, if any, follows it when clean. One with changes is left alone, and the
+	// branch with it: moved under it, its next commit would undo the batch.
+	holder, err := checkoutOf(ctx, repo, branch)
+	if err != nil {
+		return wait(err.Error())
+	}
+	if holder != "" {
+		if changes, err := git(ctx, holder, "status", "--porcelain", "--untracked-files=no"); err != nil || changes != "" {
+			return wait(fmt.Sprintf("tested green as %s; %s stays at %s: your checkout of it, %s, has changes not committed "+
+				"and is left as it is; Djinn moves the branch once they are committed or put aside", short8(sha), branch, short8(old), holder))
+		}
+	}
+	if _, err := git(ctx, repo, "update-ref", "-m", "djinn: integrate "+codes(batch), "refs/heads/"+branch, sha, old); err != nil {
+		delete(h.tested, key)
+		return wait(branch + " moved during the integration: Djinn integrates the work again")
+	}
+	delete(h.tested, key)
+	text := fmt.Sprintf("integration: committed into %s as %s, with %s", branch, short8(sha), codes(batch))
+	if holder != "" {
+		// A two-way merge from the old tip to the new one: what a fast-forward does to the files, refused when one in
+		// the way is not tracked.
+		if _, err := git(ctx, holder, "read-tree", "-m", "-u", old, sha); err != nil {
+			if _, back := git(ctx, repo, "update-ref", "refs/heads/"+branch, old, sha); back != nil {
+				log.Printf("djinn: integrate: put %s back at %s: %v", branch, old, back)
+			}
+			h.tested[key] = done
+			return wait(fmt.Sprintf("tested green as %s; %s stays at %s: your checkout of it, %s, cannot follow: %v",
+				short8(sha), branch, short8(old), holder, err))
+		}
+		text += "; your checkout of it, " + holder + ", follows"
+	}
+	return committed, text, commit
+}
+
+// mergeAndTest merges batch's branches from old in the wish's integration worktree, and runs the tests there. It
+// returns the commit tested green; or where the batch stands when it is not, and the event that says it.
+func (h *Harness) mergeAndTest(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch, old string, batch []*planv1.Task,
+) (string, *planv1.TaskIntegration, string) {
+	fail := func(state planv1.IntegrationState, why string) (string, *planv1.TaskIntegration, string) {
+		what := "conflict"
+		if state == planv1.IntegrationState_INTEGRATION_STATE_RED {
+			what = "red"
+		}
+		return "", &planv1.TaskIntegration{State: state, Reason: why}, "integration: " + what + ": " + why + "; " + branch + " stays as it was"
+	}
+	wait := func(why string) (string, *planv1.TaskIntegration, string) {
+		return "", pending(branch, why), "integration: waiting: " + why
+	}
+	for _, t := range batch {
+		if err := commitWork(ctx, t); err != nil {
+			return wait(fmt.Sprintf("commit %s's work on its branch: %v", t.GetCode(), err))
+		}
+	}
+	repo := project.GetDirectory()
+	wt := integrationDir(h.home, project.GetId(), wish.GetId())
+	dir, prefix, err := integrationWorktree(ctx, repo, wt, old)
+	if err != nil {
+		return wait("prepare the integration worktree: " + err.Error())
+	}
+	for _, t := range batch {
+		msg := fmt.Sprintf("Merge branch '%s' into %s", t.GetBranch(), branch)
+		if _, err := git(ctx, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, t.GetBranch()); err == nil {
+			h.integrationStep(ctx, t, "integration: merged "+t.GetBranch())
+			continue
+		} else if conflicts := conflicted(ctx, wt); len(conflicts) == 0 {
+			_, _ = git(ctx, wt, "merge", "--abort")
+			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, fmt.Sprintf("merge %s: %v", t.GetCode(), err))
+		} else if !generatedOnly(conflicts, prefix, settings.Generated) || settings.Generate == "" {
+			_, _ = git(ctx, wt, "merge", "--abort")
+			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, fmt.Sprintf("%s conflicts with %s in %s",
+				t.GetCode(), branch, strings.Join(conflicts, ", ")))
+		} else if why := h.settleGenerated(ctx, t, wt, dir, settings.Generate, conflicts); why != "" {
+			_, _ = git(ctx, wt, "merge", "--abort")
+			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, why)
+		}
+	}
+	h.integrationStep(ctx, batch[0], "integration: testing "+codes(batch)+": "+settings.Test)
+	out, code, err := h.command(ctx, testGate, batch[0].GetId(), settings.Test, dir)
+	switch {
+	case ctx.Err() != nil:
+		return wait("djinn up stopped during the tests")
+	case err != nil:
+		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, fmt.Sprintf("%s could not run: %v", settings.Test, err))
+	case code != 0:
+		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, fmt.Sprintf("%s exited %d%s", settings.Test, code, tail(out)))
+	}
+	sha, err := git(ctx, wt, "rev-parse", "HEAD")
+	if err != nil {
+		return wait(err.Error())
+	}
+	return sha, nil, ""
+}
+
+// settleGenerated settles a merge of task t whose conflicts are all in generated files: it takes the task's side,
+// makes them again with the command generate, in dir, and commits the merge in the worktree wt. It returns why it
+// could not.
+func (h *Harness) settleGenerated(ctx context.Context, t *planv1.Task, wt, dir, generate string, conflicts []string) string {
+	if _, err := git(ctx, wt, append([]string{"checkout", "--theirs", "--"}, conflicts...)...); err != nil {
+		return err.Error()
+	}
+	if _, err := git(ctx, wt, append([]string{"add", "--"}, conflicts...)...); err != nil {
+		return err.Error()
+	}
+	out, code, err := h.command(ctx, genGate, t.GetId(), generate, dir)
+	switch {
+	case err != nil:
+		return fmt.Sprintf("%s conflicts in generated files (%s), and %s could not run: %v", t.GetCode(), strings.Join(conflicts, ", "), generate, err)
+	case code != 0:
+		return fmt.Sprintf("%s conflicts in generated files (%s), and %s exited %d%s", t.GetCode(), strings.Join(conflicts, ", "), generate, code, tail(out))
+	}
+	if _, err := git(ctx, wt, "add", "--all"); err != nil {
+		return err.Error()
+	}
+	if _, err := git(ctx, wt, "commit", "--no-edit", "--quiet"); err != nil {
+		return err.Error()
+	}
+	h.integrationStep(ctx, t, fmt.Sprintf("integration: merged %s; its conflict, only in generated files (%s), settled by %s",
+		t.GetBranch(), strings.Join(conflicts, ", "), generate))
+	return ""
+}
+
+// integrationStep adds an event to the task t, saying a step of its integration.
+func (h *Harness) integrationStep(ctx context.Context, t *planv1.Task, text string) {
+	h.writeAlone(ctx, actorHarness, methodEvent, nil, t.GetId(), nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+}
+
+// settleIntegration records where the work of batch stands, with an event saying text on each task, and the commit
+// when the branch moved, in one transaction. Each task is read again first: only its integration changes, whatever
+// happened to it meanwhile. A task already where in says gets nothing new.
+func (h *Harness) settleIntegration(
+	ctx context.Context, batch []*planv1.Task, in *planv1.TaskIntegration, text string, commit *planv1.IntegrationCommit,
+) {
+	ctx = context.WithoutCancel(ctx)
+	in.UpdateTime = timestamppb.New(h.now())
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		if commit != nil {
+			if err := tx.Journal(actorHarness, methodCommit, commit); err != nil {
+				return err
+			}
+		}
+		for _, b := range batch {
+			t, err := store.Get[*planv1.Task](ctx, tx, b.GetId())
+			if err != nil {
+				return err
+			}
+			b.Integration = in
+			if sameIntegration(t.GetIntegration(), in) {
+				continue
+			}
+			t.Integration = proto.CloneOf(in)
+			if err := tx.Journal(actorHarness, methodIntegrate, t); err != nil {
+				return err
+			}
+			if err := tx.Put(t); err != nil {
+				return err
+			}
+			seq, err := lastSeq(ctx, tx, t.GetId())
+			if err != nil {
+				return err
+			}
+			if err := tx.Put(newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("djinn: integrate %s: %v", codes(batch), err)
+	}
+	h.notify()
+}
+
+// sameIntegration tells whether a and b say the same, whenever they said it.
+func sameIntegration(a, b *planv1.TaskIntegration) bool {
+	return a.GetState() == b.GetState() && a.GetBranch() == b.GetBranch() && a.GetSha() == b.GetSha() && a.GetReason() == b.GetReason()
+}
+
+// codes lists the tasks' codes: "W2, W3".
+func codes(batch []*planv1.Task) string {
+	c := make([]string, len(batch))
+	for i, t := range batch {
+		c[i] = t.GetCode()
+	}
+	return strings.Join(c, ", ")
+}
+
+// short8 is a commit's first eight characters.
+func short8(sha string) string { return sha[:min(8, len(sha))] }
+
+// commitWork commits what the worker of t left in its worktree on the task's branch, with the task's title: workers
+// never commit. A worktree removed already has nothing left.
+func commitWork(ctx context.Context, t *planv1.Task) error {
+	wt := t.GetWorktree()
+	if wt == "" {
+		return nil
+	}
+	if _, err := os.Stat(wt); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	changes, err := git(ctx, wt, "status", "--porcelain")
+	if err != nil || changes == "" {
+		return err
+	}
+	if _, err := git(ctx, wt, "add", "--all"); err != nil {
+		return err
+	}
+	_, err = git(ctx, wt, "commit", "--quiet", "-m", cmp.Or(t.GetTitle(), t.GetCode()))
+	return err
+}
+
+// integrationDir is the worktree a wish integrates its work in, for one project: in Djinn's data folder, next to the
+// tasks' worktrees.
+func integrationDir(home, projectID, wishID string) string {
+	return filepath.Join(home, "projects", projectID, "integration", wishID)
+}
+
+// integrationWorktree makes wt, a worktree of the repository holding repo, ready to merge into: detached at old,
+// without changes. It returns the project's folder within it, and the project's folder in the repository ("app/"; ""
+// at its root).
+func integrationWorktree(ctx context.Context, repo, wt, old string) (string, string, error) {
+	prefix, err := git(ctx, repo, "rev-parse", "--show-prefix")
+	if err != nil {
+		return "", "", err
+	}
+	dir := filepath.Join(wt, filepath.FromSlash(prefix))
+	if top, err := git(ctx, wt, "rev-parse", "--show-toplevel"); err == nil && samePath(top, wt) {
+		_, _ = git(ctx, wt, "merge", "--abort")
+		if _, err := git(ctx, wt, "reset", "--quiet", "--hard", old); err != nil {
+			return "", "", err
+		}
+		_, err = git(ctx, wt, "clean", "-fdq")
+		return dir, prefix, err
+	}
+	// Not a worktree any more, if it ever was: it is Djinn's own folder, made again.
+	if err := os.RemoveAll(wt); err != nil {
+		return "", "", err
+	}
+	if _, err := git(ctx, repo, "worktree", "prune"); err != nil {
+		return "", "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(wt), 0o700); err != nil {
+		return "", "", err
+	}
+	_, err = git(ctx, repo, "worktree", "add", "--quiet", "--detach", wt, old)
+	return dir, prefix, err
+}
+
+// samePath tells whether a and b are the same folder, symbolic links resolved.
+func samePath(a, b string) bool {
+	ra, err1 := filepath.EvalSymlinks(a)
+	rb, err2 := filepath.EvalSymlinks(b)
+	return err1 == nil && err2 == nil && filepath.Clean(ra) == filepath.Clean(rb)
+}
+
+// conflicted lists the files a merge left in conflict in the worktree wt, as the repository names them.
+func conflicted(ctx context.Context, wt string) []string {
+	out, err := git(ctx, wt, "diff", "--name-only", "--diff-filter=U")
+	if err != nil || out == "" {
+		return nil
+	}
+	return strings.Split(out, "\n")
+}
+
+// generatedOnly tells whether every file of files, as the repository names them, is a generated one: in the project's
+// folder prefix, matching one of its globs.
+func generatedOnly(files []string, prefix string, globs []string) bool {
+	for _, f := range files {
+		rel, ok := strings.CutPrefix(f, prefix)
+		if !ok || !slices.ContainsFunc(globs, func(g string) bool { return matchGlob(g, rel) }) {
+			return false
+		}
+	}
+	return len(files) > 0
+}
+
+// matchGlob tells whether name, a path with slashes, matches pattern: "**" stands for any number of folders, other
+// parts are path.Match patterns of one name.
+func matchGlob(pattern, name string) bool {
+	return matchParts(strings.Split(path.Clean(pattern), "/"), strings.Split(name, "/"))
+}
+
+func matchParts(pattern, name []string) bool {
+	for len(pattern) > 0 {
+		if pattern[0] == "**" {
+			for i := 0; i <= len(name); i++ {
+				if matchParts(pattern[1:], name[i:]) {
+					return true
+				}
+			}
+			return false
+		}
+		if len(name) == 0 {
+			return false
+		}
+		if ok, _ := path.Match(pattern[0], name[0]); !ok {
+			return false
+		}
+		pattern, name = pattern[1:], name[1:]
+	}
+	return len(name) == 0
+}
+
+// checkoutOf is the folder of the checkout that has branch checked out, "" when none has: the person's, or another
+// worktree.
+func checkoutOf(ctx context.Context, repo, branch string) (string, error) {
+	out, err := git(ctx, repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return "", err
+	}
+	dir := ""
+	for line := range strings.Lines(out) {
+		line = strings.TrimSpace(line)
+		if p, ok := strings.CutPrefix(line, "worktree "); ok {
+			dir = p
+		}
+		if line == "branch refs/heads/"+branch {
+			return filepath.FromSlash(dir), nil
+		}
+	}
+	return "", nil
+}
+
+// command runs the command line, its words split on spaces, in dir, under the gate name taken for the task taskID.
+func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (string, int, error) {
+	args := strings.Fields(line)
+	if len(args) == 0 {
+		return "", -1, errors.New("no command")
+	}
+	if h.gates != nil {
+		give, err := h.gates(ctx, name, taskID, line, dir)
+		if err != nil {
+			return "", -1, fmt.Errorf("gate %s: %w", name, err)
+		}
+		defer give()
+	}
+	run := h.commands
+	if run == nil {
+		run = runCommand
+	}
+	return run(ctx, dir, args)
+}
+
+// runCommand runs args in dir, and returns the end of what it wrote and its exit code.
+func runCommand(ctx context.Context, dir string, args []string) (string, int, error) {
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Dir = dir
+	out := &tailBuffer{max: 16 << 10}
+	cmd.Stdout, cmd.Stderr = out, out
+	err := cmd.Run()
+	var exit *exec.ExitError
+	switch {
+	case errors.As(err, &exit):
+		return out.String(), exit.ExitCode(), nil
+	case err != nil:
+		return out.String(), -1, err
+	}
+	return out.String(), 0, nil
+}
+
+// tailBuffer keeps the last max bytes written to it.
+type tailBuffer struct {
+	bytes.Buffer
+	max int
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	n, _ := b.Buffer.Write(p)
+	if over := b.Len() - b.max; over > 0 {
+		b.Next(over)
+	}
+	return n, nil
+}
+
+// tail is the last lines of a command's output, for a reason: ": " and them, or "" for none.
+func tail(out string) string {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lines = lines[max(0, len(lines)-10):]
+	s := strings.TrimSpace(strings.Join(lines, "\n"))
+	if s == "" {
+		return ""
+	}
+	return ":\n" + s[max(0, len(s)-2000):]
+}

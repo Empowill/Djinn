@@ -100,6 +100,9 @@ const (
 	WishServiceSnapshotProcedure = "/plan.v1.WishService/Snapshot"
 	// WishServiceAllowProcedure is the fully-qualified name of the WishService's Allow RPC.
 	WishServiceAllowProcedure = "/plan.v1.WishService/Allow"
+	// WishServiceSetIntegrationProcedure is the fully-qualified name of the WishService's
+	// SetIntegration RPC.
+	WishServiceSetIntegrationProcedure = "/plan.v1.WishService/SetIntegration"
 	// WishServiceGrantProcedure is the fully-qualified name of the WishService's Grant RPC.
 	WishServiceGrantProcedure = "/plan.v1.WishService/Grant"
 	// WishServicePauseProcedure is the fully-qualified name of the WishService's Pause RPC.
@@ -782,6 +785,9 @@ type WishServiceClient interface {
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
+	// Set where and when the wish's finished work is committed: the integration branch of one of its projects, and
+	// how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.
+	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
@@ -893,6 +899,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Allow")),
 			connect.WithClientOptions(opts...),
 		),
+		setIntegration: connect.NewClient[v1.WishServiceSetIntegrationRequest, v1.WishServiceSetIntegrationResponse](
+			httpClient,
+			baseURL+WishServiceSetIntegrationProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("SetIntegration")),
+			connect.WithClientOptions(opts...),
+		),
 		grant: connect.NewClient[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse](
 			httpClient,
 			baseURL+WishServiceGrantProcedure,
@@ -952,25 +964,26 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // wishServiceClient implements WishServiceClient.
 type wishServiceClient struct {
-	make       *connect.Client[v1.WishServiceMakeRequest, v1.WishServiceMakeResponse]
-	list       *connect.Client[v1.WishServiceListRequest, v1.WishServiceListResponse]
-	export     *connect.Client[v1.WishServiceExportRequest, v1.WishServiceExportResponse]
-	_import    *connect.Client[v1.WishServiceImportRequest, v1.WishServiceImportResponse]
-	importData *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
-	setLead    *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
-	resume     *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
-	brief      *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
-	snapshot   *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
-	allow      *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
-	grant      *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
-	pause      *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
-	activate   *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
-	delete     *connect.Client[v1.WishServiceDeleteRequest, v1.WishServiceDeleteResponse]
-	move       *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
-	render     *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
-	sync       *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
-	route      *connect.Client[v1.WishServiceRouteRequest, v1.WishServiceRouteResponse]
-	watch      *connect.Client[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse]
+	make           *connect.Client[v1.WishServiceMakeRequest, v1.WishServiceMakeResponse]
+	list           *connect.Client[v1.WishServiceListRequest, v1.WishServiceListResponse]
+	export         *connect.Client[v1.WishServiceExportRequest, v1.WishServiceExportResponse]
+	_import        *connect.Client[v1.WishServiceImportRequest, v1.WishServiceImportResponse]
+	importData     *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
+	setLead        *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
+	resume         *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
+	brief          *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
+	snapshot       *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
+	allow          *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
+	setIntegration *connect.Client[v1.WishServiceSetIntegrationRequest, v1.WishServiceSetIntegrationResponse]
+	grant          *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
+	pause          *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
+	activate       *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
+	delete         *connect.Client[v1.WishServiceDeleteRequest, v1.WishServiceDeleteResponse]
+	move           *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
+	render         *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
+	sync           *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
+	route          *connect.Client[v1.WishServiceRouteRequest, v1.WishServiceRouteResponse]
+	watch          *connect.Client[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse]
 }
 
 // Make calls plan.v1.WishService.Make.
@@ -1021,6 +1034,11 @@ func (c *wishServiceClient) Snapshot(ctx context.Context, req *connect.Request[v
 // Allow calls plan.v1.WishService.Allow.
 func (c *wishServiceClient) Allow(ctx context.Context, req *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error) {
 	return c.allow.CallUnary(ctx, req)
+}
+
+// SetIntegration calls plan.v1.WishService.SetIntegration.
+func (c *wishServiceClient) SetIntegration(ctx context.Context, req *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error) {
+	return c.setIntegration.CallUnary(ctx, req)
 }
 
 // Grant calls plan.v1.WishService.Grant.
@@ -1104,6 +1122,9 @@ type WishServiceHandler interface {
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
+	// Set where and when the wish's finished work is committed: the integration branch of one of its projects, and
+	// how long and how many tasks done a batch waits for when no azima ends. Only what is given changes.
+	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
@@ -1211,6 +1232,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Allow")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceSetIntegrationHandler := connect.NewUnaryHandler(
+		WishServiceSetIntegrationProcedure,
+		svc.SetIntegration,
+		connect.WithSchema(wishServiceMethods.ByName("SetIntegration")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceGrantHandler := connect.NewUnaryHandler(
 		WishServiceGrantProcedure,
 		svc.Grant,
@@ -1287,6 +1314,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceSnapshotHandler.ServeHTTP(w, r)
 		case WishServiceAllowProcedure:
 			wishServiceAllowHandler.ServeHTTP(w, r)
+		case WishServiceSetIntegrationProcedure:
+			wishServiceSetIntegrationHandler.ServeHTTP(w, r)
 		case WishServiceGrantProcedure:
 			wishServiceGrantHandler.ServeHTTP(w, r)
 		case WishServicePauseProcedure:
@@ -1352,6 +1381,10 @@ func (UnimplementedWishServiceHandler) Snapshot(context.Context, *connect.Reques
 
 func (UnimplementedWishServiceHandler) Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Allow is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.SetIntegration is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error) {

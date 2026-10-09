@@ -90,6 +90,15 @@ type Harness struct {
 	scheduling sync.Once
 	loopDone   chan struct{} // closed when the scheduler has stopped; nil until Schedule
 
+	// The integration of finished work (integrate.go).
+	gates         TakeGate      // nil: commands run without a gate
+	commands      RunCommand    // nil: the processes the commands name
+	integrateTick time.Duration // a pass at least this often; 0: a minute
+	integrateKick chan struct{} // wakes the integration
+	integrating   sync.Once
+	integrateDone chan struct{}     // closed when the integration has stopped; nil until Integrate
+	tested        map[string]tested // by wish/project; owned by the integration's pass
+
 	// Warm workers (warm.go), guarded by sched.
 	warmOn bool
 	warm   map[string]*warm // by wish/project
@@ -165,6 +174,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}), warm: map[string]*warm{},
+		integrateKick: make(chan struct{}, 1), tested: map[string]tested{},
 	}
 	for _, o := range opts {
 		o(h)
@@ -181,6 +191,10 @@ func (h *Harness) Close() {
 	h.scheduling.Do(func() {}) // No scheduler starts from now on.
 	if h.loopDone != nil {
 		<-h.loopDone
+	}
+	h.integrating.Do(func() {}) // Nor any integration.
+	if h.integrateDone != nil {
+		<-h.integrateDone
 	}
 	h.closeWarm()
 	h.wg.Wait()
@@ -199,6 +213,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	if err := h.migrateAzimas(ctx, tasks); err != nil {
 		return err
 	}
+	h.recoverIntegrations(ctx, tasks)
 	for _, t := range tasks {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
@@ -810,6 +825,7 @@ func (h *Harness) end(r *run, res Result) {
 	default:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_DONE, ""
 	}
+	integrate := h.pendIntegration(t)
 	why := t.GetError()
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		h.limited(r, t)
@@ -824,6 +840,10 @@ func (h *Harness) end(r *run, res Result) {
 		text += ": " + t.GetError()
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+	if integrate {
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, waiting for its batch"})
+		h.kickIntegrate()
+	}
 	// The links to the summoned skills go with the worker; a worker started again makes them anew.
 	_ = os.RemoveAll(skillsDir(h.home, r.id))
 	h.forget(r)

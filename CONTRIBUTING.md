@@ -144,6 +144,11 @@ To use Djinn, see the [README](README.md). To work on it:
 - `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. Not on Windows
   yet.
+- In a project whose settings name a test command ([`docs/team-settings.md`](docs/team-settings.md#integration)), Djinn
+  integrates finished work by itself: at an azima's end, or after an hour and three tasks done, it merges the tasks'
+  branches in a worktree of its own, makes the generated files again on a conflict only in them, runs the tests
+  through a gate, and moves the wish's branch when they pass ([T30](plan/43303f46-integration.md)). `djinn wish
+  set-integration <wish-id> --branch feat/x` names the branch.
 - `djinn task depend <task-id> --depends-on W1 --depends-on W2` sets what a task waits for, in place of what it had;
   the tasks of a wish form a graph without cycle, and one that would close a cycle is refused, naming it.
 - The plan of a wish is a graph of azimas (`T07`): tasks no worker runs, which work is part of. `djinn task spawn …
