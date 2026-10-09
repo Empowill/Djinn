@@ -161,6 +161,8 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   - [x] Warm workers start with the settings: a warm worker's model and budget are the ones Spawn fills from the
     project's files, so a task of a project with settings takes it; when the files change, it is replaced, and a
     project whose tasks go to another agent warms no claude. (`TestWarmTakesTheProjectSettings` in `internal/harness`)
-- [ ] macOS specifics: no cgroups, pause by signal. (needs: an agent, then a Mac to check; pause by signal is built
-  for Linux and macOS alike in T07, `internal/harness/process_unix.go`, and tested on Linux only)
+- [x] macOS specifics: no cgroups, pause by signal. Pause by signal is built for Linux and macOS alike in T07
+  (`internal/harness/process_unix.go`); macOS runs workers in their process group, no scope (W108). Proved on macOS by
+  the CI's macos-15 job, green on 10/10/2026 (run 37997257519): `TestPauseProcess` and `TestPauseResume` run there,
+  skipped only on Windows.
 - [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)
