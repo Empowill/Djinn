@@ -63,6 +63,12 @@ test("without a project, the terminal asks for one, then opens in it", async ({
 
   await page.goto(url);
   const terminal = page.getByRole("region", { name: "Terminal" });
+  // No terminal opens by itself; one asked for has nowhere to start without a project.
+  await expect(terminal.getByText("No terminal is open")).toBeVisible();
+  await terminal
+    .locator(".lead-terminal-empty")
+    .getByRole("button", { name: /New terminal/ })
+    .click();
   await expect(terminal.getByText("Create a project first")).toBeVisible();
   // No shell started: not in the home folder, not anywhere.
   await expect(terminal.locator(".lead-terminal-command")).toHaveCount(0);

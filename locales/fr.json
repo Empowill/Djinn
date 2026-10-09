@@ -423,6 +423,7 @@
   "terminal.lead_tab": "Lead · {wish}",
   "terminal.new_tab": "Nouveau terminal (Ctrl+Maj+T)",
   "terminal.no_project": "Créez d’abord un projet : le terminal s’ouvre dans le dossier de votre premier projet, jamais dans votre dossier personnel.",
+  "terminal.none": "Aucun terminal ouvert : ouvrez-en un ici, ou reprenez le lead du vœu avec Lead.",
   "terminal.restart": "Relancer",
   "terminal.shell_tab": "Shell {n}",
   "terminal.title": "Terminal",

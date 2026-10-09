@@ -58,7 +58,6 @@ test("a terminal opens at a project's root, another with Ctrl+Shift+T, and a tab
   await page.goto(process.env.DJINN_URL!);
   const terminal = page.getByRole("region", { name: "Terminal" });
   const tabs = terminal.getByRole("tab");
-  await expect(tabs.first()).toHaveText("Terminal");
 
   // The project's button opens a tab at its root, shown at once.
   const row = page.locator(".project-nav").filter({ hasText: name });

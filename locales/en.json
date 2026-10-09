@@ -423,6 +423,7 @@
   "terminal.lead_tab": "Lead · {wish}",
   "terminal.new_tab": "New terminal (Ctrl+Shift+T)",
   "terminal.no_project": "Create a project first: the terminal opens in the folder of your first project, never in your home folder.",
+  "terminal.none": "No terminal is open: open one here, or resume the wish's lead with Lead.",
   "terminal.restart": "Restart",
   "terminal.shell_tab": "Shell {n}",
   "terminal.title": "Terminal",

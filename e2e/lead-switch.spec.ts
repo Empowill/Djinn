@@ -1,5 +1,5 @@
 // Each wish shows its own lead, against the real djinn up --browser (see global-setup.ts): the wish shown in the
-// window brings its lead's terminal while it runs, and the window's own terminal otherwise. The leads are a fake
+// window brings its lead's terminal while it runs; otherwise the tab shown stays, and no terminal starts by itself. The leads are a fake
 // claude on djinn's PATH that says how it was called, then repeats what it reads.
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -103,9 +103,10 @@ test("switching the wish switches the terminal to its own lead", async ({
   await expect(rows(page, glassLine)).toHaveCount(1);
   await expect(rows(page, brassLine)).toHaveCount(0);
 
-  // A wish whose lead does not run: the window's terminal.
+  // A wish whose lead does not run: the tab shown stays, and no other terminal starts.
   await page.locator(".wish-nav", { hasText: "Lamp without a lead" }).click();
-  await expect(command).toHaveText("/bin/sh");
+  await expect(command).toContainText(`claude --resume ${sessions.glass}`);
+  await expect(terminal.getByRole("tab", { name: "Terminal" })).toHaveCount(0);
 
   // Back to Brass: the same lead, what it said still there.
   await page.locator(".wish-nav", { hasText: "Brass lamp" }).click();
@@ -113,7 +114,7 @@ test("switching the wish switches the terminal to its own lead", async ({
   await expect(rows(page, brassLine)).toHaveCount(1);
   await expect(rows(page, "polish the brass")).toHaveCount(2);
 
-  // The flight plan shows no wish: the window's terminal.
+  // The flight plan shows no wish: the tab shown stays.
   await page.locator(".plan-nav").click();
-  await expect(command).toHaveText("/bin/sh");
+  await expect(command).toContainText(`claude --resume ${sessions.brass}`);
 });

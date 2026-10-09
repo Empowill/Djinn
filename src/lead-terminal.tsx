@@ -1,8 +1,8 @@
-// The terminal pinned at the bottom of the window: a real terminal (xterm.js) on a pseudo-terminal of djinn up,
-// running the user's shell or the command djinn up was given (--terminal), such as the lead agent. It shows only
-// when djinn serves the page (a DjinnProvider); elsewhere the app renders alone. Its tabs are the window's own
-// terminal, the lead of the wish shown while it runs, and the terminals you open: a new one (+, Ctrl+Shift+T), or
-// one at a project's root (its button in the side panel). Each tab you opened closes with its ×; one shows at a time.
+// The terminal pinned at the bottom of the window: real terminals (xterm.js) on pseudo-terminals of djinn up, each
+// in a tab. It shows only when djinn serves the page (a DjinnProvider); elsewhere the app renders alone. None opens by
+// itself: the lead of the wish shown comes as a tab while it runs, first; you open a terminal with + or Ctrl+Shift+T,
+// or one at a project's root (its button in the side panel). Every tab closes with its ×, or when its program ends
+// (Ctrl+D, exit); a lead's comes back from the Lead button. One shows at a time.
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { type ITheme, Terminal } from "@xterm/xterm";
@@ -103,8 +103,6 @@ interface Tab {
   name: string;
   directory?: string;
 }
-const opened = (name: string) =>
-  name.startsWith("shell-") || name.startsWith("project-");
 // The app asks the terminal for a new tab: in a project's root when given a folder, else a plain shell.
 const OpenTerminalContext = createContext<
   ((project?: { id: string; directory: string }) => void) | undefined
@@ -168,12 +166,11 @@ function LeadTerminal({
   );
   const [status, setStatus] = useState<Status>({ kind: "connecting" });
   const [generation, setGeneration] = useState(0); // A restart opens a new program.
-  const [name, setName] = useState(NAME);
+  // The terminal shown, "" while none is open.
+  const [name, setName] = useState("");
   const [adding, setAdding] = useState(false);
-  // The tabs you opened, in their order; the window's terminal and the lead's come first.
+  // Every terminal the panel holds, each in a tab: the leads first, then the others in the order they came.
   const [tabs, setTabs] = useState<Tab[]>([]);
-  // The lead's tab, while the wish shown has a lead that runs.
-  const [leadTab, setLeadTab] = useState("");
   const projects = useData((s) => s.projects);
   const wishes = useData((s) => s.wishes);
   const data = useStore();
@@ -205,31 +202,36 @@ function LeadTerminal({
     [collapsed],
   );
   useEffect(() => store("djinn.terminal.height", String(height)), [height]);
+  // A terminal joins the tabs once, where it belongs: the leads first.
+  const add = (tab: Tab) =>
+    setTabs((have) =>
+      have.some((x) => x.name === tab.name) ? have : [...have, tab],
+    );
+  const ordered = [
+    ...tabs.filter((x) => x.name.startsWith("lead-")),
+    ...tabs.filter((x) => !x.name.startsWith("lead-")),
+  ].map((x) => x.name);
   // Show the terminal djinn asks for, such as a wish's lead.
   useEffect(
     () =>
       djinn.focus.subscribe((focus) => {
         if (!focus.terminal) return;
         ended.current = undefined;
+        add({ name: focus.terminal });
         setName(focus.terminal);
         setCollapsed(false);
       }),
     [djinn],
   );
-  // Show the lead of the wish shown while it runs, else the window's terminal: never start a lead from here.
+  // Show the lead of the wish shown while it runs: never start a lead from here.
   useEffect(() => {
-    if (wishId === undefined) return;
-    if (!wishId) {
-      setName(NAME);
-      return;
-    }
+    if (!wishId) return;
     let current = true;
     api.running().then(
       (names) => {
-        if (!current) return;
-        const running = names.includes(lead(wishId));
-        setLeadTab(running ? lead(wishId) : "");
-        setName(running ? lead(wishId) : NAME);
+        if (!current || !names.includes(lead(wishId))) return;
+        add({ name: lead(wishId) });
+        setName(lead(wishId));
       },
       () => undefined, // djinn up restarts: the terminal shown stays, and says so.
     );
@@ -238,18 +240,21 @@ function LeadTerminal({
     };
   }, [api, wishId]);
 
-  // The terminals you opened come back as tabs after a reload: djinn up keeps them while it runs.
+  // The terminals that run come back as tabs after a reload: djinn up keeps them while it runs. None opens by itself.
   useEffect(() => {
     let current = true;
     api.running().then(
-      (names) =>
-        current &&
+      (names) => {
+        if (!current) return;
         setTabs((have) => [
           ...have,
           ...names
-            .filter((n) => opened(n) && !have.some((t) => t.name === n))
+            .filter((n) => !have.some((x) => x.name === n))
             .map((n) => ({ name: n })),
-        ]),
+        ]);
+        const first = names.find((n) => n.startsWith("lead-")) ?? names[0];
+        setName((shown) => shown || first || "");
+      },
       () => undefined,
     );
     return () => {
@@ -259,14 +264,16 @@ function LeadTerminal({
   useEffect(() => {
     if (!request) return;
     ended.current = undefined;
-    setTabs((have) => [...have, request]);
+    add(request);
     setName(request.name);
     setCollapsed(false);
   }, [request]);
-  // A tab you opened closes: its program hangs up, and the window's terminal shows.
+  // A tab closes, by its × or when its program ends (Ctrl+D, exit): its program hangs up if it still runs, and the
+  // next tab shows; none left, the panel offers a new terminal. A lead's tab comes back from the Lead button.
   const closeTab = async (tab: string) => {
-    setTabs((have) => have.filter((t) => t.name !== tab));
-    if (name === tab) setName(leadTab || NAME);
+    const rest = ordered.filter((x) => x !== tab);
+    setTabs((have) => have.filter((x) => x.name !== tab));
+    if (name === tab) setName(rest[0] ?? "");
     try {
       if (!(await api.running()).includes(tab)) return;
       const { terminal } = await api.open({ name: tab, cols: 80, rows: 24 });
@@ -275,6 +282,8 @@ function LeadTerminal({
       // Gone already: nothing to hang up.
     }
   };
+  const closeTabRef = useRef(closeTab);
+  closeTabRef.current = closeTab;
   const label = (tab: string) => {
     if (tab === NAME) return t("terminal.title");
     if (tab.startsWith("lead-")) {
@@ -291,7 +300,7 @@ function LeadTerminal({
   // The emulator, the program, and the links between them.
   useEffect(() => {
     const element = host.current;
-    if (!element) return;
+    if (!element || !name) return;
     const term = new Terminal({
       fontFamily: '"IBM Plex Mono", monospace',
       fontSize: 13,
@@ -389,6 +398,11 @@ function LeadTerminal({
               abort.signal,
             );
             if (abort.signal.aborted) return;
+            if (end.exited) {
+              // A terminal ends with its program, Ctrl+D or exit: its tab goes.
+              closeTabRef.current(name);
+              return;
+            }
             if (end.exited) {
               term.write(
                 `\r\n\x1b[2m[exited with code ${end.exitCode}]\x1b[0m\r\n`,
@@ -501,36 +515,32 @@ function LeadTerminal({
           )}
         </button>
         <div className="lead-terminal-tabs" role="tablist">
-          {[NAME, ...(leadTab ? [leadTab] : []), ...tabs.map((x) => x.name)]
-            .filter((tab, i, all) => all.indexOf(tab) === i)
-            .map((tab) => (
-              <span
-                key={tab}
-                className={`lead-terminal-tab ${tab === name ? "selected" : ""}`}
+          {ordered.map((tab) => (
+            <span
+              key={tab}
+              className={`lead-terminal-tab ${tab === name ? "selected" : ""}`}
+            >
+              <button
+                role="tab"
+                aria-selected={tab === name}
+                onClick={() => {
+                  ended.current = undefined;
+                  setName(tab);
+                  setCollapsed(false);
+                }}
               >
-                <button
-                  role="tab"
-                  aria-selected={tab === name}
-                  onClick={() => {
-                    ended.current = undefined;
-                    setName(tab);
-                    setCollapsed(false);
-                  }}
-                >
-                  {label(tab)}
-                </button>
-                {opened(tab) && (
-                  <button
-                    className="lead-terminal-tab-close"
-                    onClick={() => void closeTab(tab)}
-                    title={t("terminal.close_tab")}
-                    aria-label={t("terminal.close_tab")}
-                  >
-                    <X size={11} />
-                  </button>
-                )}
-              </span>
-            ))}
+                {label(tab)}
+              </button>
+              <button
+                className="lead-terminal-tab-close"
+                onClick={() => void closeTab(tab)}
+                title={t("terminal.close_tab")}
+                aria-label={t("terminal.close_tab")}
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
           <button
             className="lead-terminal-tab-new"
             onClick={onNew}
@@ -564,7 +574,16 @@ function LeadTerminal({
           {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       </header>
-      <div className="lead-terminal-screen" ref={host} />
+      <div className="lead-terminal-screen" ref={host} hidden={!name} />
+      {!name && !collapsed && (
+        <div className="lead-terminal-empty">
+          <p>{t("terminal.none")}</p>
+          <button className="button accent" onClick={onNew}>
+            <Plus size={14} />
+            {t("terminal.new_tab")}
+          </button>
+        </div>
+      )}
       {noProject && !collapsed && (
         <div className="lead-terminal-empty">
           <p>{t("terminal.no_project")}</p>
