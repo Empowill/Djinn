@@ -23,6 +23,11 @@ type counting struct {
 	mu            sync.Mutex
 	starts        []string // task identifiers
 	running, peak int
+	// pairs, when not 0, holds each worker until another runs beside it, or until pairs workers have started (none
+	// is left to come): two slots run two workers, however long the harness takes to start one (a git command
+	// costs more than the 50 ms of work on Windows).
+	pairs int
+	live  []*counted
 }
 
 func (c *counting) Start(ctx context.Context, spec Spec) (Worker, error) {
@@ -36,7 +41,17 @@ func (c *counting) Start(ctx context.Context, spec Spec) (Worker, error) {
 	c.starts = append(c.starts, spec.TaskID)
 	c.running++
 	c.peak = max(c.peak, c.running)
-	return &counted{Worker: w, c: c}, nil
+	cw := &counted{Worker: w, c: c, paired: make(chan struct{})}
+	c.live = append(c.live, cw)
+	if c.running >= 2 {
+		for _, l := range c.live {
+			l.pair()
+		}
+	}
+	if len(c.starts) >= c.pairs {
+		cw.pair()
+	}
+	return cw, nil
 }
 
 func (c *counting) seen() (starts []string, peak int) {
@@ -45,18 +60,35 @@ func (c *counting) seen() (starts []string, peak int) {
 	return slices.Clone(c.starts), c.peak
 }
 
-// counted is a worker of counting: it stops counting once the harness has its result, before its slot is free.
+// pairUpTo holds the workers until another runs beside each, until n workers have started in all.
+func (c *counting) pairUpTo(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pairs = n
+}
+
+// counted is a worker of counting: it stops counting once the harness has its result, before its slot is free; held
+// until paired, it keeps its slot meanwhile.
 type counted struct {
 	Worker
-	c    *counting
-	once sync.Once
+	c       *counting
+	once    sync.Once
+	paired  chan struct{} // closed once another worker ran beside it, or none is left to come
+	pairing sync.Once
 }
+
+func (w *counted) pair() { w.pairing.Do(func() { close(w.paired) }) }
 
 func (w *counted) Wait() Result {
 	res := w.Worker.Wait()
+	select {
+	case <-w.paired:
+	case <-time.After(5 * time.Second): // The machine runs one worker at a time: the test says so.
+	}
 	w.once.Do(func() {
 		w.c.mu.Lock()
 		w.c.running--
+		w.c.live = slices.DeleteFunc(w.c.live, func(l *counted) bool { return l == w })
 		w.c.mu.Unlock()
 	})
 	return res
@@ -185,6 +217,7 @@ func TestRestartResumesInOrder(t *testing.T) {
 	db.Close()
 
 	providers, c := countingProviders()
+	c.pairUpTo(7)
 	e = upWith(t, home, providers, WithCapacity((&limit{slots: 2}).capacity))
 	for _, tk := range append(resumed, planned) {
 		got := e.until(t, tk.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
@@ -227,6 +260,7 @@ func TestRestartResumesInOrder(t *testing.T) {
 			t.Errorf("%s while its wish is paused: %v", tk.GetCode(), got)
 		}
 	}
+	c.pairUpTo(9)
 	if _, err := e.wishes.Activate(t.Context(), connect.NewRequest(&planv1.WishServiceActivateRequest{WishId: shelved})); err != nil {
 		t.Fatal(err)
 	}

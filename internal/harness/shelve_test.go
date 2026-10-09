@@ -36,18 +36,16 @@ func TestWishPauseStopsItsWorkers(t *testing.T) {
 	if _, err := e.wishes.Activate(t.Context(), connect.NewRequest(&planv1.WishServiceActivateRequest{WishId: wishID})); err != nil {
 		t.Fatal(err)
 	}
-	e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	got := e.get(t, id)
+	// Told why, the fake ends at once: running lasts too short a moment to be seen (1.5 ms on macOS); its events say
+	// it ran.
+	got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	if got.GetResumes() != 0 {
 		t.Errorf("a pause spent a resume: %v", got)
 	}
-	all := func() string { return strings.Join(eventTexts(e.storedEvents(t, id)), "\n") }
-	// The line that tells the worker why comes once it has started again.
-	waitFor(t, "the worker started again, and told why", func() bool {
-		return strings.Contains(all(), "resumed "+byWish+": started fake") && strings.Contains(all(), wishLine)
-	})
-	if !strings.Contains(all(), "resuming: "+whyWishPaused) {
-		t.Errorf("events:\n%s", all())
+	all := strings.Join(eventTexts(e.storedEvents(t, id)), "\n")
+	for _, want := range []string{"resuming: " + whyWishPaused, "resumed " + byWish + ": started fake", wishLine} {
+		if !strings.Contains(all, want) {
+			t.Errorf("no event %q:\n%s", want, all)
+		}
 	}
-	e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 }
