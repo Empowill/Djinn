@@ -188,8 +188,9 @@ jobs:
           codesign --verify --arch arm64 "$app/Contents/MacOS/djinn"
           # Unsigned: Gatekeeper refuses it, as expected until the project signs and notarizes (plan T19).
           spctl --assess --type execute "$app" || echo "Gatekeeper refuses the unsigned app, as expected"
-      # Opened as from Finder, the app starts djinn up, which Launch Services knows by the app's identifier. Not
-      # blocking: a check of the runner's session, new; it runs on its own data, and stops by its PID.
+      # Opened as from Finder, with no arguments, the app's djinn runs up (it knows its bundle by its path): it
+      # writes its address, and Launch Services knows it by the app's identifier. Not blocking: a check of the
+      # runner's session, new; it runs on its own data, and stops by its PID.
       - name: Djinn.app opens
         continue-on-error: true
         run: |
@@ -197,12 +198,13 @@ jobs:
           open --env DJINN_HOME="$RUNNER_TEMP/app-home" "$app"
           pid=""
           for _ in $(seq 30); do
-            pid=$(pgrep -f "$app/Contents/MacOS/djinn up" | head -n 1)
-            [ -n "$pid" ] && break
+            pid=$(pgrep -f "^$app/Contents/MacOS/djinn( -psn_.*)?\$" | head -n 1)
+            [ -n "$pid" ] && test -s "$RUNNER_TEMP/app-home/server.addr" && break
             sleep 1
           done
           test -n "$pid"
           trap 'kill "$pid"' EXIT
+          test -s "$RUNNER_TEMP/app-home/server.addr"
           sleep 5
           asn=$(lsappinfo find bundleid=io.github.empowill.djinn)
           echo "Launch Services knows io.github.empowill.djinn as: $asn"

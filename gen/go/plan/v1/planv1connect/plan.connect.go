@@ -1368,7 +1368,8 @@ type TaskServiceClient interface {
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
 	// Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
-	// until it is resumed. A worker that holds a gate is not paused: wait, or stop it. Not possible on Windows yet.
+	// until it is resumed. A worker that holds or waits for a gate is not paused: wait, or stop it. Not possible on
+	// Windows yet.
 	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
@@ -1538,7 +1539,8 @@ type TaskServiceHandler interface {
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
 	// Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
-	// until it is resumed. A worker that holds a gate is not paused: wait, or stop it. Not possible on Windows yet.
+	// until it is resumed. A worker that holds or waits for a gate is not paused: wait, or stop it. Not possible on
+	// Windows yet.
 	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)

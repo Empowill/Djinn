@@ -9,10 +9,12 @@
 //
 //	Djinn.app/Contents/Info.plist          the identifier, the version from the tag, the icon's name
 //	Djinn.app/Contents/PkgInfo
-//	Djinn.app/Contents/MacOS/djinn-app     the launcher Finder runs: `djinn up` through a login shell
-//	Djinn.app/Contents/MacOS/djinn         the binary, the same as in the release's .tar.gz
+//	Djinn.app/Contents/MacOS/djinn         the binary, the same as in the release's .tar.gz, and the bundle's executable
 //	Djinn.app/Contents/Resources/djinn.icns    build/icon.icns, made from the logo by tools/icons
 //	Djinn.app/Contents/Resources/LICENSE, NOTICE, THIRD_PARTY_NOTICES.md
+//
+// Finder starts the app with no arguments: djinn knows it runs from a bundle by its path, runs up, and takes the PATH
+// of the user's login shell (cmd/djinn/bundle.go). No launcher script stands before it: one binary to sign.
 //
 // The zip holds Djinn.app at its root: Finder unzips it into the app, ready to drag into Applications.
 package main
@@ -39,10 +41,7 @@ const (
 	// Identifier names the app to macOS: notifications, their permission, and the app's settings follow it. It
 	// follows the module path. Changing it once released makes macOS ask for the notifications again.
 	Identifier = "io.github.empowill.djinn"
-	// Launcher is the bundle's executable. It differs from the binary by more than case: APFS ignores case by
-	// default, so Djinn and djinn would be one file.
-	Launcher = "djinn-app"
-	// Binary is djinn itself, beside the launcher.
+	// Binary is djinn itself, the bundle's executable. cmd/djinn knows the bundle by this name.
 	Binary = "djinn"
 	// Icon is the icon's file in Resources.
 	Icon = "djinn.icns"
@@ -56,20 +55,6 @@ const iconSource = "build/icon.icns"
 
 // notices travel with the app, as with every archive of the release (tools/releasepack).
 var notices = []string{"LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"}
-
-// launcher opens Djinn's window when Finder, the Dock or Launchpad start the app, with no arguments. An app started by
-// macOS gets a bare PATH: a login shell gives djinn the PATH of a terminal, where the agents' commands are. Each exec
-// keeps the process, which macOS knows as the app.
-const launcher = `#!/bin/sh
-# Djinn.app starts here (Contents/MacOS/djinn-app): djinn up, with the PATH of a login shell.
-dir=$(cd "$(dirname "$0")" && pwd -P)
-case "${SHELL##*/}" in
-bash | zsh | ksh | sh) shell=$SHELL ;;
-*) shell=/bin/zsh ;;
-esac
-[ -x "$shell" ] || shell=/bin/zsh
-exec "$shell" -lc 'exec "$1" up' djinn-app "$dir/djinn"
-`
 
 func main() {
 	var err error
@@ -145,7 +130,6 @@ func bundle(root, binary, tag, dir string) (string, error) {
 	files := []file{
 		{dst: filepath.Join(contents, "Info.plist"), data: []byte(infoPlist(version)), mode: 0o644},
 		{dst: filepath.Join(contents, "PkgInfo"), data: []byte("APPL????"), mode: 0o644},
-		{dst: filepath.Join(macos, Launcher), data: []byte(launcher), mode: 0o755},
 		{dst: filepath.Join(macos, Binary), src: binary, mode: 0o755},
 		{dst: filepath.Join(resources, Icon), src: filepath.Join(root, filepath.FromSlash(iconSource)), mode: 0o644},
 	}
@@ -175,7 +159,7 @@ func plistKeys(version string) [][2]string {
 	return [][2]string{
 		{"CFBundleDevelopmentRegion", "en"},
 		{"CFBundleDisplayName", "Djinn"},
-		{"CFBundleExecutable", Launcher},
+		{"CFBundleExecutable", Binary},
 		{"CFBundleIconFile", Icon},
 		{"CFBundleIdentifier", Identifier},
 		{"CFBundleInfoDictionaryVersion", "6.0"},

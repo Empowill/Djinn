@@ -56,9 +56,10 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
   notifications need it.
   - [x] `tools/macapp` lays out the bundle around the universal binary and zips it, portable, tested on Linux.
     (`go tool task test-pkg -- ./tools/macapp/...`: `TestBundleLayout`, `TestBundleVersion`,
-    `TestBundleNamesDifferBeyondCase`, `TestBundleRefusesWhatIsMissing`, `TestZipApp`, `TestLauncherStartsDjinnUp`;
-    `go tool task release-macos-app VERSION=v0.0.0-dryrun BINARY=<a GOOS=darwin build>` on Linux wrote
-    `bin/release/djinn_darwin_universal_app.zip`, 12 entries, `djinn` and `djinn-app` 0755)
+    `TestBundleNamesDifferBeyondCase`, `TestBundleRefusesWhatIsMissing`, `TestZipApp`; `TestBundled`,
+    `TestFromFinder`, `TestLoginShell`, `TestLoginPath` in `cmd/djinn`; `go tool task release-macos-app
+    VERSION=v0.0.0-dryrun BINARY=<a GOOS=darwin build>` on Linux wrote `bin/release/djinn_darwin_universal_app.zip`,
+    11 entries, `djinn` 0755)
   - [x] The release workflow builds it next to the bare archive, checks it and ships it with the sums.
     (`release.yml`, job `macos`; `actionlint` v1.7.12 passes; never run)
   - [ ] The dry run passes on GitHub: the bundle is well formed and opens. (needs: the lead to put `release.yml` on
@@ -101,12 +102,15 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
     (`v1.2.3-rc.1` → `1.2.3`), `LSMinimumSystemVersion` 12.0 like the build, the icon's name.
   - `Contents/Resources/djinn.icns`: `build/icon.icns`, which `tools/icons` makes from the logo, as `go-winres` makes
     the `.exe` icon from `build/icon.ico`. The notices sit beside it.
-  - `Contents/MacOS/djinn-app`, the bundle's executable, is a small shell launcher; `djinn` sits beside it. Finder
-    starts an app with no arguments, and `djinn` alone prints its help: the launcher runs `djinn up`. An app started
-    by macOS gets a bare `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), without the agents' commands: the launcher goes
-    through the user's login shell (bash, zsh, ksh or sh; zsh otherwise), which gives the `PATH` of a terminal. Each
-    step `exec`s, so the process macOS started is `djinn up`, and the bundle around it gives it its identifier. The
-    launcher is not named `Djinn`: APFS ignores case by default, and `Djinn` and `djinn` would be one file.
+  - `Contents/MacOS/djinn`, the bundle's executable, is the binary itself (W67's question, B): no launcher script, a
+    weaker thing to sign and notarize. Finder starts an app with no arguments (older macOS with a `-psn_…` one), and
+    `djinn` alone prints its help: `djinn` knows it runs from a bundle by its path, `…/<name>.app/Contents/MacOS/djinn`,
+    and runs `up` (`cmd/djinn/bundle.go`, macOS only). An app started by macOS gets a bare `PATH`
+    (`/usr/bin:/bin:/usr/sbin:/sbin`), without the agents' commands: `djinn` first asks the user's login shell (bash,
+    zsh, ksh or sh from `$SHELL`; zsh otherwise) for its `PATH`, which is a terminal's, and takes it. A shell that
+    fails, hangs past 10 s or prints no `PATH` leaves the bare one, and `djinn` says so. The process macOS started is
+    `djinn up`, and the bundle around it gives it its identifier. The same binary run from a terminal by that path with
+    no arguments starts `up` too.
   - The zip holds `Djinn.app` at its root, with the executable bits: Finder unzips it into the app, ready to drag
     into Applications. Once signed, the bundle must be zipped by `ditto` (its signature lives partly in extended
     attributes); the commands are written, commented, in `release-macos-app` and the workflow.

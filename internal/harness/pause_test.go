@@ -149,20 +149,34 @@ func TestPauseResume(t *testing.T) {
 }
 
 // TestPauseHoldingGate: a worker that holds a gate is not paused, which would freeze the gate for every other
-// worker; it is once it has given the gate back.
+// worker, nor one that waits for a gate, which would hold it frozen once its turn comes; it is once it has given the
+// gate back.
 func TestPauseHoldingGate(t *testing.T) {
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))
 	long := e.mustSpawn(t, wishID, "Long", ticks(), nil)
 	id := long.GetId()
 	var mu sync.Mutex
-	held := map[string][]string{id: {"test"}}
-	e.h.HeldGates(func(taskID string) []string {
-		mu.Lock()
-		defer mu.Unlock()
-		return held[taskID]
-	})
+	held, waiting := map[string][]string{}, map[string][]string{id: {"test"}}
+	of := func(gates map[string][]string) func(string) []string {
+		return func(taskID string) []string {
+			mu.Lock()
+			defer mu.Unlock()
+			return gates[taskID]
+		}
+	}
+	e.h.HeldGates(of(held), of(waiting))
 	_, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), long.GetCode()+" waits for the gate test: wait or stop it") {
+		t.Fatalf("pause while waiting for a gate: %v", err)
+	}
+
+	// Granted, it holds the gate.
+	mu.Lock()
+	delete(waiting, id)
+	held[id] = []string{"test"}
+	mu.Unlock()
+	_, err = e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), long.GetCode()+" holds the gate test: wait or stop it") {
 		t.Fatalf("pause while holding a gate: %v", err)
 	}

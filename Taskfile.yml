@@ -221,9 +221,9 @@ tasks:
       DIR: bin/release/.app
     cmds:
       - go run ./tools/macapp bundle --binary "{{.BINARY}}" --version {{.VERSION}} {{.DIR}}
-      # Signing comes here, once an Apple Developer ID exists (plan/71f9c331-releases.md). The binary is signed
-      # already (release-build-macos); this signs the launcher and seals Info.plist and the resources. A signed bundle
-      # keeps part of its signature in extended attributes, which only ditto zips, in place of the line after:
+      # Signing comes here, once an Apple Developer ID exists (plan/71f9c331-releases.md). The binary, the bundle's
+      # executable, is signed already (release-build-macos); this seals it with Info.plist and the resources. A signed
+      # bundle keeps part of its signature in extended attributes, which only ditto zips, in place of the line after:
       #   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" {{.DIR}}/Djinn.app
       #   ditto -c -k --keepParent {{.DIR}}/Djinn.app bin/release/djinn_darwin_universal_app.zip
       # The release workflow then notarizes the zip and staples the app.

@@ -83,7 +83,8 @@ type Harness struct {
 
 	mu      sync.Mutex
 	closed  bool
-	gates   func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
+	held    func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
+	waiting func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
 	runs    map[string]*run              // by task id
 	changed chan struct{}                // closed at the next change of a task without worker (notifyLocked)
 }
@@ -860,7 +861,8 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 
 // Pause holds the task's worker where it is, without killing it, until Resume: the task is paused, and its slot
 // of the machine is free meanwhile. A worker whose provider cannot pause, or Windows, refuses.
-// A worker that holds a gate is not paused: the gate would stay held, frozen, for every other worker.
+// A worker that holds a gate is not paused: the gate would stay held, frozen, for every other worker. Nor is one
+// that waits for a gate: it would get the gate in its turn, and hold it frozen.
 func (h *Harness) Pause(ctx context.Context, procedure string, req *planv1.TaskServicePauseRequest) (*planv1.Task, error) {
 	return h.hold(ctx, procedure, req, req.GetTaskId(), true)
 }
@@ -882,15 +884,23 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		h.mu.Unlock()
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
 	}
-	if held := h.gates; pause && held != nil {
-		if names := held(id); len(names) > 0 {
-			h.mu.Unlock()
-			gate := "gate"
-			if len(names) > 1 {
-				gate = "gates"
+	if pause {
+		for _, g := range []struct {
+			names func(taskID string) []string
+			verb  string
+		}{{h.held, "holds"}, {h.waiting, "waits for"}} {
+			if g.names == nil {
+				continue
 			}
-			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s holds the %s %s: wait or stop it",
-				task.GetCode(), gate, strings.Join(names, ", ")))
+			if names := g.names(id); len(names) > 0 {
+				h.mu.Unlock()
+				gate := "gate"
+				if len(names) > 1 {
+					gate = "gates"
+				}
+				return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s %s the %s %s: wait or stop it",
+					task.GetCode(), g.verb, gate, strings.Join(names, ", ")))
+			}
 		}
 	}
 	if r.paused == pause {

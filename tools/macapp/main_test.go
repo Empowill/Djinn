@@ -7,11 +7,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -112,7 +110,7 @@ func TestBundleLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"Contents/Info.plist", "Contents/MacOS/djinn", "Contents/MacOS/djinn-app", "Contents/PkgInfo",
+		"Contents/Info.plist", "Contents/MacOS/djinn", "Contents/PkgInfo",
 		"Contents/Resources/LICENSE", "Contents/Resources/NOTICE", "Contents/Resources/THIRD_PARTY_NOTICES.md",
 		"Contents/Resources/djinn.icns",
 	}
@@ -141,18 +139,16 @@ func TestBundleLayout(t *testing.T) {
 		t.Error("PkgInfo")
 	}
 	if runtime.GOOS != "windows" {
-		for _, exe := range []string{"djinn", "djinn-app"} {
-			info, err := os.Stat(filepath.Join(app, "Contents", "MacOS", exe))
-			if err != nil || info.Mode().Perm() != 0o755 {
-				t.Errorf("Contents/MacOS/%s is not executable: %v", exe, info.Mode())
-			}
+		info, err := os.Stat(filepath.Join(app, "Contents", "MacOS", "djinn"))
+		if err != nil || info.Mode().Perm() != 0o755 {
+			t.Errorf("Contents/MacOS/djinn is not executable: %v", info.Mode())
 		}
 	}
 
 	keys, plist := plistDict(t, read("Contents/Info.plist"))
 	for key, value := range map[string]string{
 		"CFBundleIdentifier":         "io.github.empowill.djinn",
-		"CFBundleExecutable":         "djinn-app",
+		"CFBundleExecutable":         "djinn", // djinn itself, no launcher: cmd/djinn knows the bundle by this path.
 		"CFBundleName":               "Djinn",
 		"CFBundlePackageType":        "APPL",
 		"CFBundleIconFile":           "djinn.icns",
@@ -270,7 +266,6 @@ func TestZipApp(t *testing.T) {
 		"Djinn.app/":                          fs.ModeDir | 0o755,
 		"Djinn.app/Contents/MacOS/":           fs.ModeDir | 0o755,
 		"Djinn.app/Contents/MacOS/djinn":      0o755,
-		"Djinn.app/Contents/MacOS/djinn-app":  0o755,
 		"Djinn.app/Contents/Info.plist":       0o644,
 		"Djinn.app/Contents/Resources/NOTICE": 0o644,
 	} {
@@ -278,61 +273,7 @@ func TestZipApp(t *testing.T) {
 			t.Errorf("%s: mode %v (in the zip: %v), want %v", name, got, ok, want)
 		}
 	}
-	if len(modes) != 12 { // 4 folders and 8 files
-		t.Errorf("the zip holds %d entries, want 12: %v", len(modes), modes)
-	}
-}
-
-// The launcher starts the binary beside it with `up`, in the same process, with the PATH a login shell sets. sh
-// reads ~/.profile as a login shell: the test gives it a HOME whose profile adds a folder to PATH.
-func TestLauncherStartsDjinnUp(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the launcher is a shell script, for macOS")
-	}
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh")
-	}
-	tmp := t.TempDir()
-	out := filepath.Join(tmp, "out")
-	djinn := "#!/bin/sh\nprintf '%s\\n%s\\n%s\\n' \"$$\" \"$*\" \"$PATH\" > \"$DJINN_TEST_OUT\"\n"
-	binary := filepath.Join(tmp, "djinn")
-	if err := os.WriteFile(binary, []byte(djinn), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// A folder with a space: the launcher quotes its paths.
-	app, err := bundle(root, binary, "v0.1.0", filepath.Join(tmp, "Applications folder"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := filepath.Join(tmp, "home")
-	if err := os.Mkdir(home, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	profile := "PATH=\"$PATH:/from/the/login/profile\"\nexport PATH\n"
-	if err := os.WriteFile(filepath.Join(home, ".profile"), []byte(profile), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sh, _ := exec.LookPath("sh")
-	cmd := exec.Command(filepath.Join(app, "Contents", "MacOS", "djinn-app"), "-psn_0_12345")
-	cmd.Env = []string{"HOME=" + home, "SHELL=" + sh, "PATH=/usr/bin:/bin", "DJINN_TEST_OUT=" + out, "ENV="}
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("the launcher: %v\n%s", err, output)
-	}
-	data, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("djinn printed %q", data)
-	}
-	if pid, _ := strconv.Atoi(lines[0]); pid != cmd.Process.Pid {
-		t.Errorf("djinn ran as process %s, the launcher as %d: it must exec", lines[0], cmd.Process.Pid)
-	}
-	if lines[1] != "up" {
-		t.Errorf("djinn got %q, want up (Finder's own arguments dropped)", lines[1])
-	}
-	if !strings.HasSuffix(lines[2], ":/from/the/login/profile") {
-		t.Errorf("djinn's PATH %q lacks the login profile's", lines[2])
+	if len(modes) != 11 { // 4 folders and 7 files
+		t.Errorf("the zip holds %d entries, want 11: %v", len(modes), modes)
 	}
 }

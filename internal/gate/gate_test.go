@@ -162,6 +162,49 @@ func TestOneAtATime(t *testing.T) {
 	}
 }
 
+// TestWaiting: Waiting says which gates a task waits for, held by another or kept by the pressure, until it gets
+// them or stops waiting; a holder waits for nothing, and a waiter outside any task is no task's.
+func TestWaiting(t *testing.T) {
+	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
+	p := &pressure{}
+	g := New(p.get, f)
+	g.tick = 10 * time.Millisecond
+	give := await(t, func() <-chan func() { c, _ := take(t, g, "test", "W1"); return c }(), "first grant")
+	test, waits := take(t, g, "Test", "W2")
+	await(t, waits, "reason")
+	p.set("simulated")
+	ctx, cancel := context.WithCancel(t.Context())
+	left := make(chan error, 1)
+	go func() {
+		_, err := g.Take(ctx, "e2e", "W2", "", nil)
+		left <- err
+	}()
+	_, outside := take(t, g, "e2e", "")
+	await(t, outside, "reason outside any task")
+	waiting := func() bool { return slices.Equal(g.Waiting("W2"), []string{"e2e", "test"}) }
+	for deadline := time.Now().Add(5 * time.Second); !waiting() && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !waiting() || g.Waiting("W1") != nil || g.Waiting("") != nil {
+		t.Errorf("waiting: W1 %v, W2 %v, none %v", g.Waiting("W1"), g.Waiting("W2"), g.Waiting(""))
+	}
+
+	// Gone, it waits no more; granted, it holds instead.
+	cancel()
+	if err := await(t, left, "end of the wait"); !errors.Is(err, context.Canceled) {
+		t.Errorf("the wait ended with %v", err)
+	}
+	if got := g.Waiting("W2"); !slices.Equal(got, []string{"test"}) {
+		t.Errorf("W2 waits for %v once it left e2e", got)
+	}
+	p.set("")
+	give()
+	await(t, test, "second grant")()
+	if got := g.Waiting("W2"); got != nil {
+		t.Errorf("W2 still waits for %v once granted", got)
+	}
+}
+
 // TestUnderPressure: no gate is granted while the machine is under pressure; it is once the pressure falls.
 func TestUnderPressure(t *testing.T) {
 	p := &pressure{why: "simulated"}

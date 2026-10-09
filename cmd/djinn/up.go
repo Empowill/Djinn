@@ -120,7 +120,7 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	workers.Schedule()
 	gates := gate.New(monitor.Pressure, workers)
-	workers.HeldGates(gates.Held)
+	workers.HeldGates(gates.Held, gates.Waiting)
 	if *termDir != "" {
 		if *termDir, err = filepath.Abs(*termDir); err != nil {
 			return false, err
