@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -378,16 +379,25 @@ func resolveDeps(ctx context.Context, r store.Reader, wishID string, names []str
 	if err != nil {
 		return nil, err
 	}
+	return resolveIn(tasks, names, "dependency")
+}
+
+// resolveIn turns names, codes (W1, any case) or identifiers of tasks among tasks, repeated or separated by commas or
+// spaces (--after W1,W2; "after: T08 T17"), into task identifiers, without repeats. A name no task has is refused:
+// what says what it named ("dependency W9 is not a task of the wish").
+func resolveIn(tasks []*planv1.Task, names []string, what string) ([]string, error) {
 	var out []string
-	for _, name := range names {
-		i := slices.IndexFunc(tasks, func(t *planv1.Task) bool {
-			return t.GetId() == name || strings.EqualFold(t.GetCode(), name)
-		})
-		if i < 0 {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("dependency %s is not a task of the wish", name))
-		}
-		if id := tasks[i].GetId(); !slices.Contains(out, id) {
-			out = append(out, id)
+	for _, list := range names {
+		for _, name := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+			i := slices.IndexFunc(tasks, func(t *planv1.Task) bool {
+				return t.GetId() == name || strings.EqualFold(t.GetCode(), name)
+			})
+			if i < 0 {
+				return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s %s is not a task of the wish", what, name))
+			}
+			if id := tasks[i].GetId(); !slices.Contains(out, id) {
+				out = append(out, id)
+			}
 		}
 	}
 	return out, nil

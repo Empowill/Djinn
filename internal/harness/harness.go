@@ -309,7 +309,7 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	} else if req.GetRestart() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--restart is for a watcher (--provider watch)"))
 	}
-	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), req.GetDependsOn()); err != nil {
+	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
 	}
 	if task.PartOf, err = resolveAzima(ctx, h.store, wish.GetId(), req.GetPartOf()); err != nil {
@@ -320,9 +320,17 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 			return nil, plan.Status(err)
 		}
 	}
+	// What it blocks is checked now, the decision reads them waiting for it, and they are written with it.
+	blocked, err := h.insertBefore(ctx, h.store, task, req.GetBlocks())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		return nil, plan.Status(err)
+	}
+	for _, b := range blocked {
+		tasks[slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == b.GetId() })] = b
 	}
 	// It takes its turn in the scheduler's pass: the planned tasks before it, the ones Djinn resumes first, take the
 	// free slots before it does.
@@ -376,6 +384,9 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		if prep, err = prepare(ctx, tx, task, wish, project); err != nil {
 			return err
 		}
+		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
+			return err
+		}
 		if err := tx.Put(task); err != nil {
 			return err
 		}
@@ -389,11 +400,19 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		return nil, plan.Status(err)
 	}
 	h.publish(r, prompted)
+	if len(blocked) > 0 {
+		h.wake() // The tasks it blocks say what they wait for now.
+	}
 	return h.launch(ctx, r, provider, project, prep, prompt)
 }
 
-// plan creates a task that waits, with its prompt and why it waits, and closes the parent it continues, if any; the
-// scheduler starts it.
+// after is what a spawn says comes before its task: --after, and --depends-on, its former name.
+func after(req *planv1.TaskServiceSpawnRequest) []string {
+	return append(slices.Clip(req.GetDependsOn()), req.GetAfter()...)
+}
+
+// plan creates a task that waits, with its prompt and why it waits, closes the parent it continues, if any, and makes
+// the tasks it blocks (--blocks) wait for it; the scheduler starts it.
 func (h *Harness) plan(
 	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, task, parent *planv1.Task, prompt, why string,
 ) (*planv1.Task, error) {
@@ -410,6 +429,9 @@ func (h *Harness) plan(
 			if err := closeParent(ctx, tx, parent, task.GetCode()); err != nil {
 				return err
 			}
+		}
+		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
+			return err
 		}
 		if err := tx.Put(task); err != nil {
 			return err

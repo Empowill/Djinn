@@ -141,6 +141,11 @@ func TestMCPListTools(t *testing.T) {
 	if ask.Type != "array" || ask.Items == nil || ask.Items.Type != "string" {
 		t.Errorf("options %+v", ask)
 	}
+	// A pair is read from one string, as on the command line.
+	also := list.Tools[slices.Index(names, "task_depend")].InputSchema.Properties["also"]
+	if also.Type != "array" || also.Items == nil || also.Items.Type != "string" || !strings.Contains(also.Description, "Expects task=after,….") {
+		t.Errorf("also %+v", also)
+	}
 }
 
 func TestMCPCallTool(t *testing.T) {

@@ -1875,7 +1875,8 @@ message MarkServiceListResponse {
 service TaskService {
   // Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
   // yet (a dependency not done, its write scope taken, no slot free, the machine under pressure) waits, and says
-  // why; djinn up starts it as soon as it can.
+  // why; djinn up starts it as soon as it can. --after gives it what comes before it; --blocks puts it before planned
+  // tasks, in the same step, so that none of them starts in between.
   rpc Spawn(TaskServiceSpawnRequest) returns (TaskServiceSpawnResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -1917,9 +1918,12 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_DELETE;
   }
-  // Set what a task waits for: the tasks of its wish that must be done first, in place of those it had. The tasks of a
-  // wish form a graph without cycle: a dependency that would close one is refused, naming it. A task not started yet
-  // waits for its new dependencies; a finished one only records them; one whose worker runs is refused until it ends.
+  // Set what a task waits for: the tasks of its wish that must be done first (--after), in place of those it had; with
+  // --also, several tasks at once, all or none. The tasks of a wish form a graph without cycle: a dependency that
+  // would close one is refused, naming it, and nothing changes. A task not started yet waits for its new
+  // dependencies; a finished one only records them; one whose worker runs is refused until it ends. To put a new
+  // task before a planned one, spawn it with --blocks instead: a pass of the scheduler could start the planned one
+  // between a spawn and a depend.
   rpc Depend(TaskServiceDependRequest) returns (TaskServiceDependResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -1986,11 +1990,11 @@ message TaskServiceSpawnRequest {
   string model = 6 [(buf.validate.field).string.max_len = 200];
   // Most the worker may spend, in US dollars, when the provider can enforce it.
   double max_budget_usd = 7 [(buf.validate.field).double.gte = 0];
-  // A task of the same wish that must be done first: its code (W1) or its identifier.
+  // Same as after, the name it had: kept so that what spawns with --depends-on still works.
   repeated string depends_on = 8 [
     (buf.validate.field).repeated.max_items = 100,
     (buf.validate.field).repeated.items.string.min_len = 1,
-    (buf.validate.field).repeated.items.string.max_len = 64
+    (buf.validate.field).repeated.items.string.max_len = 1000
   ];
   // A path the task writes, in the project's folder; none for the whole folder. Outside Git, tasks whose scopes
   // overlap never run together.
@@ -2016,11 +2020,27 @@ message TaskServiceSpawnRequest {
     (buf.validate.field).string.pattern = "^([Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
   ];
   // The azima the task belongs to: its code (T07) or its identifier. A grouping, never a wait: say what the task
-  // waits for with depends_on.
+  // waits for with after.
   string part_of = 15 [(buf.validate.field).string.max_len = 64];
   // What the task is; by default work, for a worker. azima makes an azima (T1, T2…): no worker, no prompt, never
   // scheduled; work is spawned part of it.
   TaskKind kind = 16 [(buf.validate.field).enum.defined_only = true];
+  // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
+  // Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
+  repeated string after = 17 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // What comes after the task: planned tasks of the same wish, by code or identifier, that wait for it from now on.
+  // Each one gets the new task as one more dependency, in the same step as the spawn, so that no scheduler pass
+  // starts it in between. Refused for a task that has started (running, paused, done…) and for one that would close
+  // a cycle. Repeat it, or separate them with commas: --blocks W5,W6.
+  repeated string blocks = 18 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
 }
 
 message TaskServiceSpawnResponse {
@@ -2154,14 +2174,40 @@ message TaskServiceDependRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  // A task of the same wish that must be done first: its code (W1) or its identifier. Repeat for each one; none
-  // leaves the task waiting for nothing.
+  // Same as after, the name it had: kept so that what depends with --depends-on still works.
   repeated string depends_on = 2 [(buf.validate.field).repeated.items.string.min_len = 1];
+  // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
+  // Repeat it, or separate them with commas: --after W1,W2. None leaves the task waiting for nothing.
+  repeated string after = 3 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // Other tasks of the wish whose dependencies are set in the same step, all or none: --also W6=W5,W3 sets what W6
+  // waits for, --also W7= clears it. The graph they make together has no cycle, or nothing changes.
+  repeated TaskAfter also = 4 [(buf.validate.field).repeated.max_items = 100];
+}
+
+// What one task waits for, in place of what it had.
+message TaskAfter {
+  // The task: its code (W6) or its identifier.
+  string task = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 64
+  ];
+  // What comes before it: tasks of the same wish, by code or identifier; none for nothing.
+  repeated string after = 2 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
 }
 
 message TaskServiceDependResponse {
   // The task, with its dependencies.
   Task task = 1;
+  // The other tasks set (--also), in the order asked.
+  repeated Task also = 2;
 }
 
 message TaskServiceGroupRequest {

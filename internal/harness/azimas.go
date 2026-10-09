@@ -49,7 +49,7 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 		Id: store.NewID(), WishId: wish.GetId(), ProjectId: project.GetId(), Title: req.GetTitle(),
 		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Kind: planv1.TaskKind_TASK_KIND_AZIMA, CreateTime: timestamppb.Now(),
 	}
-	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), req.GetDependsOn()); err != nil {
+	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
 	}
 	if task.PartOf, err = resolveAzima(ctx, h.store, wish.GetId(), req.GetPartOf()); err != nil {
@@ -69,12 +69,18 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 			return err
 		}
 		task.Code = nextAzimaCode(tasks)
+		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
+			return err
+		}
 		return tx.Put(task)
 	})
 	if err != nil {
 		return nil, plan.Status(err)
 	}
 	h.notify()
+	if len(req.GetBlocks()) > 0 {
+		h.wake() // The tasks it blocks say what they wait for now.
+	}
 	return task, nil
 }
 

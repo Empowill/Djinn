@@ -129,11 +129,11 @@ func (s *Tasks) Clean(
 func (s *Tasks) Depend(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceDependRequest],
 ) (*connect.Response[planv1.TaskServiceDependResponse], error) {
-	task, err := s.h.Depend(ctx, req.Spec().Procedure, req.Msg)
+	tasks, err := s.h.Depend(ctx, req.Spec().Procedure, req.Msg)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.TaskServiceDependResponse{Task: task}), nil
+	return connect.NewResponse(&planv1.TaskServiceDependResponse{Task: tasks[0], Also: tasks[1:]}), nil
 }
 
 func (s *Tasks) Group(

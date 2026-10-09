@@ -170,10 +170,29 @@ func supported(fd protoreflect.FieldDescriptor) error {
 		return errors.New("maps are not supported")
 	case fd.Kind() == protoreflect.BytesKind || fd.Kind() == protoreflect.GroupKind:
 		return fmt.Errorf("%s fields are not supported", fd.Kind())
-	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && ref(fd) == nil:
-		return errors.New("only a Timestamp or a message holding a single oneof of scalars is supported")
+	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && ref(fd) == nil && !isPair(fd):
+		return errors.New("only a Timestamp, a message holding a single oneof of scalars, or a string and a list of strings is supported")
 	}
 	return nil
+}
+
+// pair returns the two fields of fd when fd is a message of a required string, then a repeated string, which the
+// command line fills from a single input: key=a,b.
+func pair(fd protoreflect.FieldDescriptor) (key, list protoreflect.FieldDescriptor) {
+	if fd.Kind() != protoreflect.MessageKind || fd.Message().Fields().Len() != 2 || fd.Message().Oneofs().Len() != 0 {
+		return nil, nil
+	}
+	fields := byNumber(fd.Message())
+	key, list = fields[0], fields[1]
+	if !required(key) || key.Kind() != protoreflect.StringKind || !list.IsList() || list.Kind() != protoreflect.StringKind {
+		return nil, nil
+	}
+	return key, list
+}
+
+func isPair(fd protoreflect.FieldDescriptor) bool {
+	key, _ := pair(fd)
+	return key != nil
 }
 
 // ref returns the oneof of fd when fd is a message that holds nothing but a oneof of scalars, which the command
@@ -221,6 +240,25 @@ func set(msg protoreflect.Message, fd protoreflect.FieldDescriptor, s string) er
 			reasons = append(reasons, fmt.Sprintf("%s (%v)", member.Name(), err))
 		}
 		return fmt.Errorf("%q fits none of: %s", s, strings.Join(reasons, ", "))
+	}
+	if key, list := pair(fd); key != nil {
+		k, values, ok := strings.Cut(s, "=")
+		if k = strings.TrimSpace(k); !ok || k == "" {
+			return fmt.Errorf("%q is not %s", s, expect(fd))
+		}
+		sub := dynamicpb.NewMessage(fd.Message())
+		sub.Set(key, protoreflect.ValueOfString(k))
+		for _, v := range strings.Split(values, ",") {
+			if v = strings.TrimSpace(v); v != "" {
+				sub.Mutable(list).List().Append(protoreflect.ValueOfString(v))
+			}
+		}
+		if fd.IsList() {
+			msg.Mutable(fd).List().Append(protoreflect.ValueOfMessage(sub))
+		} else {
+			msg.Set(fd, protoreflect.ValueOfMessage(sub))
+		}
+		return nil
 	}
 	if fd.Kind() == protoreflect.MessageKind {
 		t, err := time.Parse(time.RFC3339Nano, s)
@@ -342,6 +380,14 @@ func text(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 			return text(member, sub.Get(member))
 		}
 		return ""
+	case isPair(fd):
+		key, list := pair(fd)
+		sub := v.Message()
+		values := make([]string, sub.Get(list).List().Len())
+		for i := range values {
+			values[i] = sub.Get(list).List().Get(i).String()
+		}
+		return sub.Get(key).String() + "=" + strings.Join(values, ",")
 	case fd.Kind() == protoreflect.MessageKind:
 		ts := v.Message()
 		fields := ts.Descriptor().Fields()
@@ -364,6 +410,9 @@ func expect(fd protoreflect.FieldDescriptor) string {
 			alts = append(alts, expect(od.Fields().Get(i)))
 		}
 		return strings.Join(alts, " or ")
+	}
+	if key, list := pair(fd); key != nil {
+		return fmt.Sprintf("%s=%s,…", kebab(string(key.Name())), kebab(string(list.Name())))
 	}
 	switch fd.Kind() {
 	case protoreflect.EnumKind:

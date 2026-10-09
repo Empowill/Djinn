@@ -1628,7 +1628,8 @@ func (UnimplementedMarkServiceHandler) List(context.Context, *connect.Request[v1
 type TaskServiceClient interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
 	// yet (a dependency not done, its write scope taken, no slot free, the machine under pressure) waits, and says
-	// why; djinn up starts it as soon as it can.
+	// why; djinn up starts it as soon as it can. --after gives it what comes before it; --blocks puts it before planned
+	// tasks, in the same step, so that none of them starts in between.
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
@@ -1647,9 +1648,12 @@ type TaskServiceClient interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
-	// Set what a task waits for: the tasks of its wish that must be done first, in place of those it had. The tasks of a
-	// wish form a graph without cycle: a dependency that would close one is refused, naming it. A task not started yet
-	// waits for its new dependencies; a finished one only records them; one whose worker runs is refused until it ends.
+	// Set what a task waits for: the tasks of its wish that must be done first (--after), in place of those it had; with
+	// --also, several tasks at once, all or none. The tasks of a wish form a graph without cycle: a dependency that
+	// would close one is refused, naming it, and nothing changes. A task not started yet waits for its new
+	// dependencies; a finished one only records them; one whose worker runs is refused until it ends. To put a new
+	// task before a planned one, spawn it with --blocks instead: a pass of the scheduler could start the planned one
+	// between a spawn and a depend.
 	Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error)
 	// Set the azima a task is part of, in place of the one it had: an azima of its wish, by code (T07) or
 	// identifier; none takes it out of any. A grouping, never a wait: the task still waits only for what it depends on.
@@ -1865,7 +1869,8 @@ func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.Ta
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
 	// yet (a dependency not done, its write scope taken, no slot free, the machine under pressure) waits, and says
-	// why; djinn up starts it as soon as it can.
+	// why; djinn up starts it as soon as it can. --after gives it what comes before it; --blocks puts it before planned
+	// tasks, in the same step, so that none of them starts in between.
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
@@ -1884,9 +1889,12 @@ type TaskServiceHandler interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
-	// Set what a task waits for: the tasks of its wish that must be done first, in place of those it had. The tasks of a
-	// wish form a graph without cycle: a dependency that would close one is refused, naming it. A task not started yet
-	// waits for its new dependencies; a finished one only records them; one whose worker runs is refused until it ends.
+	// Set what a task waits for: the tasks of its wish that must be done first (--after), in place of those it had; with
+	// --also, several tasks at once, all or none. The tasks of a wish form a graph without cycle: a dependency that
+	// would close one is refused, naming it, and nothing changes. A task not started yet waits for its new
+	// dependencies; a finished one only records them; one whose worker runs is refused until it ends. To put a new
+	// task before a planned one, spawn it with --blocks instead: a pass of the scheduler could start the planned one
+	// between a spawn and a depend.
 	Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error)
 	// Set the azima a task is part of, in place of the one it had: an azima of its wish, by code (T07) or
 	// identifier; none takes it out of any. A grouping, never a wait: the task still waits only for what it depends on.

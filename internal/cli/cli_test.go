@@ -35,6 +35,7 @@ const (
 	questionID = "0199c0a1-7b2e-7c3d-8e4f-5a6b7c8d9e0f"
 	wishID     = "0199c0a1-7b2e-7c3d-8e4f-000000000001"
 	projectID  = "0199c0a1-7b2e-7c3d-8e4f-000000000002"
+	taskID     = "0199c0a1-7b2e-7c3d-8e4f-000000000003"
 )
 
 // local returns the descriptor the command line uses for the message of want.
@@ -105,6 +106,20 @@ func TestConvention(t *testing.T) {
 			parseOnly: true,
 		},
 		{name: "empty request", args: nil, want: &planv1.ProjectServiceListRequest{}},
+		{
+			name: "a string and a list of strings in one input, repeated",
+			args: []string{taskID, "--after", "W1,W2", "--also", "W6=W5,W3", "--also", "W7="},
+			want: &planv1.TaskServiceDependRequest{
+				TaskId: taskID, After: []string{"W1,W2"},
+				Also: []*planv1.TaskAfter{{Task: "W6", After: []string{"W5", "W3"}}, {Task: "W7"}},
+			},
+		},
+		{
+			name:      "spaces around the pieces of a pair",
+			args:      []string{taskID, "--also", " W6 = W5 , W3 "},
+			want:      &planv1.TaskServiceDependRequest{TaskId: taskID, Also: []*planv1.TaskAfter{{Task: "W6", After: []string{"W5", "W3"}}}},
+			parseOnly: true,
+		},
 		{
 			name:      "enum ignores case and accepts its full name",
 			args:      []string{"--note=later", "Q03", "CHOICE_c"},
@@ -183,6 +198,7 @@ func TestParseErrors(t *testing.T) {
 		{"bad time", &planv1.QuestionServiceListRequest{}, []string{"--since", "yesterday"}, `--since: "yesterday" is not an RFC 3339 time`},
 		{"bad bool", &planv1.QuestionServiceListRequest{}, []string{"--open=maybe"}, `--open: "maybe" is not a valid bool`},
 		{"positional is not a flag", &planv1.ProjectServiceAddRequest{}, []string{"--directory", "api"}, "unknown flag --directory"},
+		{"pair without its key", &planv1.TaskServiceDependRequest{}, []string{taskID, "--also", "W5,W3"}, `--also: "W5,W3" is not task=after,…`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
