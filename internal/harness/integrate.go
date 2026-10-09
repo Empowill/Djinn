@@ -24,10 +24,10 @@ import (
 )
 
 // Integration (T30): a worker's work counts once it is in its wish's integration branch, tested. When a worker ends
-// done in a project that names a test command, its task's integration is pending; Djinn then commits the work at once,
+// done in a project that names a check, its task's integration is pending; Djinn then commits the work at once,
 // task by task, by itself, no model: in a worktree of its own per wish and project, never the person's checkout, it
-// merges the task's branch, makes the generated files again on a conflict only in them, runs the project's tests
-// through a gate, moves the integration branch when they pass, and removes the task's worktree when clean. Pushing
+// merges the task's branch, makes the generated files again on a conflict only in them, runs the project's commit
+// checks (checks.go) each through a gate, moves the integration branch when they pass, and removes the task's worktree when clean. Pushing
 // the branch to its remote follows on a cadence (push.go).
 
 // How the journal records the integration.
@@ -36,10 +36,10 @@ const (
 	methodCommit    = "harness/commit"    // a batch was committed into its wish's integration branch; the request is the commit (planv1.IntegrationCommit)
 )
 
-// The gates the integration's commands run under, as a worker's would: djinn gate run gen, djinn gate run test.
+// The gates the integration's commands run under, as a worker's would: djinn gate run gen. Each check runs under
+// the gate of its name, djinn gate run test, and the setup under djinn gate run setup.
 const (
 	genGate     = "gen"
-	testGate    = "test"
 	installGate = "install"
 )
 
@@ -109,7 +109,7 @@ func (h *Harness) kickIntegrate() {
 }
 
 // pendIntegration marks the work of t, a task its worker just finished, as waiting to be merged, when Djinn
-// integrates it: a work task on a branch of its own, in a project whose settings name a test command.
+// integrates it: a work task on a branch of its own, in a project whose settings name a check.
 func (h *Harness) pendIntegration(t *planv1.Task) bool {
 	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || t.GetBranch() == "" || plan.IsAzima(t) {
 		return false
@@ -118,7 +118,7 @@ func (h *Harness) pendIntegration(t *planv1.Task) bool {
 	if err != nil || !project.GetGit() {
 		return false
 	}
-	if settings, err := plan.LoadSettings(h.home, project); err != nil || settings.Test == "" {
+	if settings, err := plan.LoadSettings(h.home, project); err != nil || !settings.Integrates() {
 		return false
 	}
 	t.Integration = &planv1.TaskIntegration{
@@ -209,8 +209,8 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	case why != "":
 	case err != nil:
 		why = err.Error()
-	case settings.Test == "":
-		why = "the project's settings name no test command"
+	case !settings.Integrates():
+		why = errNoChecks.Error()
 	}
 	if why != "" {
 		h.settleIntegration(ctx, batch, pending(branch, why), "integration: waiting: "+why, nil)
@@ -347,9 +347,13 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string) (s
 	}
 	h.integrateMu.Lock()
 	defer h.integrateMu.Unlock()
-	dir, _, err := integrationWorktree(ctx, project.GetDirectory(), integrationDir(h.home, projectID, wishID), sha)
+	wt := integrationDir(h.home, projectID, wishID)
+	dir, _, err := integrationWorktree(ctx, project.GetDirectory(), wt, sha)
 	if err != nil {
 		return "", fmt.Errorf("prepare the integration worktree: %w", err)
+	}
+	if why, out, _ := h.setUp(ctx, project, settings, wishID, "", wt, dir); why != "" {
+		return out, fmt.Errorf("%s: %s", setupName, why)
 	}
 	out, code, err := h.command(ctx, installGate, "", settings.Install, dir)
 	switch {
@@ -391,7 +395,7 @@ func (h *Harness) integrationBranch(ctx context.Context, wish *planv1.Wish, proj
 }
 
 // commitBatch commits each task's work on its branch, merges the branches into the integration branch in the wish's
-// integration worktree, tests the result, and moves the branch when the tests pass. It returns where the batch's work
+// integration worktree, checks the result, and moves the branch when the commit checks pass. It returns where the batch's work
 // stands, the event that says it, and the commit to journal when the branch moved.
 func (h *Harness) commitBatch(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch string, batch []*planv1.Task,
@@ -463,9 +467,10 @@ func (h *Harness) commitBatch(
 	return committed, text, commit
 }
 
-// mergeAndTest merges batch's branches from old in the wish's integration worktree, and runs the tests there. It
-// returns the commit tested green; or where the batch stands when it is not, and the event that says it. A conflict
-// in code, or red tests, says what failed as a correction worker starts from it (IntegrationFailure).
+// mergeAndTest merges batch's branches from old in the wish's integration worktree, makes it ready with the setup,
+// and runs the commit checks there. It returns the commit checked green; or where the batch stands when it is not,
+// and the event that says it. A conflict in code, or a red check, says what failed as a correction worker starts from
+// it (IntegrationFailure).
 func (h *Harness) mergeAndTest(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch, old string, batch []*planv1.Task,
 ) (string, *planv1.TaskIntegration, string) {
@@ -514,39 +519,60 @@ func (h *Harness) mergeAndTest(
 			_, _ = git(ctx, wt, "merge", "--abort")
 			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, fmt.Sprintf("%s conflicts with %s in %s",
 				t.GetCode(), branch, strings.Join(conflicts, ", ")), conflict(conflicts))
-		} else if why := h.settleGenerated(ctx, t, wt, dir, settings.Generate, conflicts); why != "" {
+		} else if why := h.settleGenerated(ctx, t, wt, dir, settings.Generate, conflicts, func() string {
+			failed, _, _ := h.setUp(ctx, project, settings, wish.GetId(), t.GetId(), wt, dir)
+			return failed
+		}); why != "" {
 			_, _ = git(ctx, wt, "merge", "--abort")
 			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, why, conflict(conflicts))
 		}
-	}
-	h.integrationStep(ctx, batch[0], "integration: testing "+codes(batch)+": "+settings.Test)
-	out, code, err := h.command(ctx, testGate, batch[0].GetId(), settings.Test, dir)
-	switch {
-	case ctx.Err() != nil:
-		return wait("djinn up stopped during the tests")
-	case err != nil:
-		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, fmt.Sprintf("%s could not run: %v", settings.Test, err), nil)
 	}
 	sha, err := git(ctx, wt, "rev-parse", "HEAD")
 	if err != nil {
 		return wait(err.Error())
 	}
-	if code != 0 {
-		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, fmt.Sprintf("%s exited %d%s", settings.Test, code, tail(out)),
-			&planv1.IntegrationFailure{Base: sha, Command: settings.Test, Output: tail(out), TaskIds: ids(batch)})
+	red := func(command, why, out string) (string, *planv1.TaskIntegration, string) {
+		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, why,
+			&planv1.IntegrationFailure{Base: sha, Command: command, Output: tail(out), TaskIds: ids(batch)})
+	}
+	checks := settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT)
+	if len(checks) == 0 {
+		return sha, nil, ""
+	}
+	if why, out, stopped := h.setUp(ctx, project, settings, wish.GetId(), batch[0].GetId(), wt, dir); stopped {
+		return wait("djinn up stopped during the setup")
+	} else if why != "" {
+		return red(settings.Setup, setupName+": "+why, out)
+	}
+	for _, c := range checks {
+		h.integrationStep(ctx, batch[0], fmt.Sprintf("integration: checking %s: %s (%s)", codes(batch), c.GetName(), c.GetCommand()))
+		run := &planv1.CheckRun{
+			Name: c.GetName(), Command: c.GetCommand(), When: planv1.CheckWhen_CHECK_WHEN_COMMIT, WishId: wish.GetId(),
+			TaskId: batch[0].GetId(), Sha: sha,
+		}
+		if why, out, stopped := h.check(ctx, project.GetId(), run, dir); stopped {
+			return wait("djinn up stopped during the check " + c.GetName())
+		} else if why != "" {
+			return red(c.GetCommand(), why, out)
+		}
 	}
 	return sha, nil, ""
 }
 
 // settleGenerated settles a merge of task t whose conflicts are all in generated files: it takes the task's side,
-// makes them again with the command generate, in dir, and commits the merge in the worktree wt. It returns why it
-// could not.
-func (h *Harness) settleGenerated(ctx context.Context, t *planv1.Task, wt, dir, generate string, conflicts []string) string {
+// makes the worktree ready, makes them again with the command generate, in dir, and commits the merge in the worktree
+// wt. It returns why it could not.
+func (h *Harness) settleGenerated(
+	ctx context.Context, t *planv1.Task, wt, dir, generate string, conflicts []string, ready func() string,
+) string {
 	if _, err := git(ctx, wt, append([]string{"checkout", "--theirs", "--"}, conflicts...)...); err != nil {
 		return err.Error()
 	}
 	if _, err := git(ctx, wt, append([]string{"add", "--"}, conflicts...)...); err != nil {
 		return err.Error()
+	}
+	if why := ready(); why != "" {
+		return fmt.Sprintf("%s conflicts in generated files (%s), and the setup failed: %s", t.GetCode(), strings.Join(conflicts, ", "), why)
 	}
 	out, code, err := h.command(ctx, genGate, t.GetId(), generate, dir)
 	switch {
@@ -689,8 +715,11 @@ func integrationWorktree(ctx context.Context, repo, wt, old string) (string, str
 		_, err = git(ctx, wt, "clean", "-fdq")
 		return dir, prefix, err
 	}
-	// Not a worktree any more, if it ever was: it is Djinn's own folder, made again.
+	// Not a worktree any more, if it ever was: it is Djinn's own folder, made again, and set up again.
 	if err := os.RemoveAll(wt); err != nil {
+		return "", "", err
+	}
+	if err := os.Remove(setupStamp(wt)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", "", err
 	}
 	if _, err := git(ctx, repo, "worktree", "prune"); err != nil {

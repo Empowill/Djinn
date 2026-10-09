@@ -116,7 +116,7 @@ func TestCorrectACodeConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range []string{"could not integrate the work of W2 into " + in.branch, "the merge of " + w2.GetBranch() +
-		" is under way", "- app/README.md", "Settle each conflict", "the tests (`test`)", "run `gen` once the code is settled"} {
+		" is under way", "- app/README.md", "Settle each conflict", "its commit checks (`djinn gate run test -- test`) run through their gates", "run `gen` once the code is settled"} {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("W3's prompt lacks %q:\n%s", s, prompt)
 		}

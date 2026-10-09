@@ -152,14 +152,15 @@ func BuildBrief(ctx context.Context, r store.Reader, home, wishID string) (Brief
 	rank := wish.GetRank()
 	ready := wish.GetState() != planv1.WishState_WISH_STATE_GRANTED && Ready(exp.GetTasks(), exp.GetQuestions())
 	exp = portable(exp, newScrubber(all, home, dataName))
-	return Brief{Stable: stableBrief(projects), Moving: movingBrief(exp, rank, ready)}, nil
+	return Brief{Stable: stableBrief(home, projects), Moving: movingBrief(exp, rank, ready)}, nil
 }
 
 // StableBrief is the part of a brief that changes rarely, for a wish on projects: Djinn's rules, then where each
-// project keeps its own. It names the projects, never their folders.
-func StableBrief(projects []*planv1.Project) string { return stableBrief(projects) }
+// project keeps its own, and the checks Djinn runs on its work, as its settings say with Djinn's data folder home. It
+// names the projects, never their folders.
+func StableBrief(home string, projects []*planv1.Project) string { return stableBrief(home, projects) }
 
-func stableBrief(projects []*planv1.Project) string {
+func stableBrief(home string, projects []*planv1.Project) string {
 	var b strings.Builder
 	b.WriteString(briefRules)
 	b.WriteString("\n## The projects' rules\n\n")
@@ -186,6 +187,9 @@ func stableBrief(projects []*planv1.Project) string {
 			b.WriteString(". Read `" + strings.Join(files, "`, `") + "` at its root first.\n")
 		} else {
 			b.WriteString(". It keeps no rule file at its root.\n")
+		}
+		if settings, err := LoadSettings(home, p); err == nil && settings.ChecksBrief() != "" {
+			b.WriteString("  " + settings.ChecksBrief() + " Djinn says so in each worker's first prompt.\n")
 		}
 	}
 	return b.String()

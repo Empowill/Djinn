@@ -184,7 +184,7 @@ func newBench(ctx context.Context, cfg config, out io.Writer) (*bench, error) {
 		}
 	}
 	b.rules = filepath.Join(dir, "lead-rules.md")
-	stable := plan.StableBrief([]*planv1.Project{{Name: "bench", Directory: b.repo, Git: true}})
+	stable := plan.StableBrief("", []*planv1.Project{{Name: "bench", Directory: b.repo, Git: true}})
 	if err := os.WriteFile(b.rules, []byte(stable), 0o600); err != nil {
 		return nil, err
 	}

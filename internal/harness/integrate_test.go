@@ -31,7 +31,8 @@ type integration struct {
 	gates     []string // the gates taken: "test W1"
 	testCode  int      // what the test command exits with
 	testOut   string
-	afterTest func() // run once by the next test command, then forgotten
+	afterTest func()         // run once by the next test command, then forgotten
+	exits     map[string]int // what the other commands exit with, by their first word: setup, lint
 }
 
 // integrating starts djinn up on a repository with app/README.md, app/gen/index.txt and app/src, a wish on it whose
@@ -78,6 +79,9 @@ func (in *integration) run(_ context.Context, dir string, args []string) (string
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	in.runs = append(in.runs, strings.Join(args, " ")+" in "+dir)
+	if code, ok := in.exits[args[0]]; ok {
+		return args[0] + " ran", code, nil
+	}
 	switch args[0] {
 	case "gen":
 		entries, err := os.ReadDir(filepath.Join(dir, "src"))
@@ -255,7 +259,7 @@ func TestCommitEachTaskAlone(t *testing.T) {
 	want := []string{
 		"integrating into " + in.branch + ", with W1",
 		"merged " + w1.GetBranch(),
-		"testing W1: test",
+		"checking W1: test (test)",
 		"committed into " + in.branch + " as " + got.GetSha()[:8] + ", with W1; your checkout of it, " + in.repo + ", follows",
 	}
 	if !slices.Equal(texts, want) {

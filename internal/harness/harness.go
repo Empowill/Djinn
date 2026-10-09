@@ -148,6 +148,7 @@ type run struct {
 	warm    *warm         // the warm worker the task takes, until launch
 	branch  string        // the branch template of the project's settings, for launch; empty: the default
 	from    string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
+	checks  string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
 	failure string        // the last error the current worker said: it never ends done
 	limit   *Limit        // the usage limit the current worker said it hit: it wins over failure
 }
@@ -412,6 +413,7 @@ func (h *Harness) spawn(
 		return nil, err
 	}
 	r.warm, r.branch, r.from = wk, settings.Branch, plan.IntegrationBranchOf(wish, project.GetId())
+	r.checks = settings.ChecksBrief()
 	var prep prepared
 	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -609,6 +611,10 @@ func (h *Harness) launch(
 	}
 	if task.GetForkOf() != "" {
 		where += ", forked from " + forkText(task.GetForkOf())
+	}
+	if r.checks != "" && task.GetBranch() != "" && !readOnly {
+		// A worker that edits a worktree learns which checks its work meets, to run the commit checks before it ends.
+		spec.Prompt += "\n\n" + r.checks
 	}
 	text := "started " + short(task.GetProvider()) + " " + where + ", " + accessText(task, prep.question) +
 		skillsText(spec.Skills)

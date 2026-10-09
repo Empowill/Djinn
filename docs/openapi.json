@@ -1043,6 +1043,96 @@
         ],
         "description": "Change is a kind of entity that changed, for a reader to read it again."
       },
+      "plan.v1.CheckRun": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "name",
+            "description": "The check's name: lint, test. \"setup\" for the setup command."
+          },
+          "setup": {
+            "type": "boolean",
+            "title": "setup",
+            "description": "It is the setup command, not a check."
+          },
+          "command": {
+            "type": "string",
+            "title": "command",
+            "description": "The command, as the settings named it then."
+          },
+          "when": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.CheckWhen"
+              }
+            ],
+            "title": "when",
+            "description": "When it ran: before a commit or before a push; unspecified for the setup."
+          },
+          "wishId": {
+            "type": "string",
+            "title": "wish_id",
+            "description": "The wish whose integration ran it, and the task whose work it checked before a commit."
+          },
+          "taskId": {
+            "type": "string",
+            "title": "task_id"
+          },
+          "sha": {
+            "type": "string",
+            "title": "sha",
+            "description": "The commit it checked, in the wish's integration worktree."
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "passed",
+            "description": "It passed: it ran and exited 0."
+          },
+          "exitCode": {
+            "type": "integer",
+            "title": "exit_code",
+            "format": "int32",
+            "description": "Its exit code; -1 when it could not run."
+          },
+          "reason": {
+            "type": "string",
+            "title": "reason",
+            "description": "When it failed, why, and the end of its output."
+          },
+          "output": {
+            "type": "string",
+            "title": "output"
+          },
+          "endTime": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/google.protobuf.Timestamp"
+              }
+            ],
+            "title": "end_time",
+            "description": "When it ended, and how long it took, in milliseconds."
+          },
+          "durationMs": {
+            "type": "string",
+            "title": "duration_ms",
+            "format": "int64"
+          }
+        },
+        "title": "CheckRun",
+        "additionalProperties": false,
+        "description": "CheckRun is the last run of a project's check (ProjectCheck), or of its setup command."
+      },
+      "plan.v1.CheckWhen": {
+        "type": "string",
+        "title": "CheckWhen",
+        "enum": [
+          "CHECK_WHEN_UNSPECIFIED",
+          "CHECK_WHEN_COMMIT",
+          "CHECK_WHEN_PUSH"
+        ],
+        "description": "CheckWhen is when Djinn runs a project's check."
+      },
       "plan.v1.Choice": {
         "type": "string",
         "title": "Choice",
@@ -1477,7 +1567,7 @@
           "command": {
             "type": "string",
             "title": "command",
-            "description": "For red tests, the test command, and the end of its output."
+            "description": "For a red check, or a setup that failed, its command, and the end of its output."
           },
           "output": {
             "type": "string",
@@ -2015,6 +2105,14 @@
             },
             "title": "summons",
             "description": "Skills of other projects this project summons: its workers get them at launch, nothing is copied."
+          },
+          "checkRuns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.CheckRun"
+            },
+            "title": "check_runs",
+            "description": "The last run of each of its checks, and of its setup, as Djinn integrated and pushed its wishes' work."
           }
         },
         "title": "Project",
@@ -2042,6 +2140,39 @@
         "title": "ProjectAllowance",
         "additionalProperties": false,
         "description": "ProjectAllowance is the right a wish allows its workers in one project."
+      },
+      "plan.v1.ProjectCheck": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "name",
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+            "description": "Its name, and the gate it runs through: lint, test."
+          },
+          "command": {
+            "type": "string",
+            "title": "command",
+            "maxLength": 500,
+            "minLength": 1,
+            "description": "The command, run in the project's folder: \"go tool task lint\". Its words are split on spaces, without a shell."
+          },
+          "when": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.CheckWhen"
+            },
+            "title": "when",
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "When it runs: before a commit, before a push, or both."
+          }
+        },
+        "title": "ProjectCheck",
+        "additionalProperties": false,
+        "description": "ProjectCheck is a command Djinn runs on a project's work: checks { name: \"lint\" command: \"go tool task lint\" when:\n CHECK_WHEN_COMMIT }."
       },
       "plan.v1.ProjectMatch": {
         "type": "object",
@@ -2196,6 +2327,18 @@
             },
             "title": "problems",
             "description": "Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is\n fixed."
+          },
+          "setup": {
+            "type": "string",
+            "title": "setup",
+            "description": "The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the\n files resolve them. Their last runs are the project's check_runs."
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/plan.v1.ProjectCheck"
+            },
+            "title": "checks"
           }
         },
         "title": "ProjectServiceShowResponse",
@@ -2207,12 +2350,12 @@
           "name": {
             "type": "string",
             "title": "name",
-            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,\n correction_attempts, install."
+            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, setup, checks,\n correction_attempts, install."
           },
           "value": {
             "type": "string",
             "title": "value",
-            "description": "Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The\n generated globs are joined by commas."
+            "description": "Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The\n generated globs are joined by commas; the checks by \"; \", each \"lint: go tool task lint (commit, push)\"."
           },
           "source": {
             "allOf": [
@@ -3460,7 +3603,7 @@
               }
             ],
             "title": "integration",
-            "description": "Where the task's finished work stands on its way into its wish's integration branch: unset for a task whose work\n Djinn does not integrate (outside Git, an azima, a project that names no test command, not done)."
+            "description": "Where the task's finished work stands on its way into its wish's integration branch: unset for a task whose work\n Djinn does not integrate (outside Git, an azima, a project that names no check, not done)."
           },
           "tilasms": {
             "type": "array",
@@ -5289,6 +5432,22 @@
             "type": "boolean",
             "title": "approved",
             "description": "The person said to push (an answer to the question): Djinn pushes at its next pass, whatever the cadence."
+          },
+          "held": {
+            "type": "string",
+            "title": "held",
+            "description": "Why the project's push checks hold the push, at the branch's tip then; empty once they pass."
+          },
+          "heldRuns": {
+            "type": "integer",
+            "title": "held_runs",
+            "format": "int32",
+            "description": "How many times in a row they held it: at the second, or once no work is left to commit, Djinn asks."
+          },
+          "unchecked": {
+            "type": "boolean",
+            "title": "unchecked",
+            "description": "The person said to push without the push checks: the next push skips them, once."
           }
         },
         "title": "WishPush",
