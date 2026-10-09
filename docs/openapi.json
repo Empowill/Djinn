@@ -1314,6 +1314,63 @@
         "additionalProperties": false,
         "description": "IntegrationBranch is the branch a wish integrates its finished work into, in one of its projects."
       },
+      "plan.v1.IntegrationFailure": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.IntegrationState"
+              }
+            ],
+            "title": "state",
+            "description": "CONFLICT or RED."
+          },
+          "base": {
+            "type": "string",
+            "title": "base",
+            "description": "The commit the correction's branch starts from: the batch's merges before the one that conflicted, or all of\n them when the tests failed."
+          },
+          "mergeBranch": {
+            "type": "string",
+            "title": "merge_branch",
+            "description": "For a conflict, the branch whose merge conflicted: merged again in the correction's worktree, its conflicts left\n there."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "files",
+            "description": "For a conflict, the files in conflict, as the repository names them."
+          },
+          "command": {
+            "type": "string",
+            "title": "command",
+            "description": "For red tests, the test command, and the end of its output."
+          },
+          "output": {
+            "type": "string",
+            "title": "output"
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "title": "task_ids",
+            "description": "The tasks whose work is in base and merge_branch: what the correction corrects, and what its success commits."
+          },
+          "reason": {
+            "type": "string",
+            "title": "reason",
+            "description": "What failed, in a sentence."
+          }
+        },
+        "title": "IntegrationFailure",
+        "additionalProperties": false,
+        "description": "IntegrationFailure is a batch's merge or tests that failed, as a correction worker starts from it."
+      },
       "plan.v1.IntegrationState": {
         "type": "string",
         "title": "IntegrationState",
@@ -1947,7 +2004,7 @@
           "name": {
             "type": "string",
             "title": "name",
-            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test."
+            "description": "Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,\n correction_attempts."
           },
           "value": {
             "type": "string",
@@ -3131,6 +3188,15 @@
             },
             "title": "tilasms",
             "description": "The tilasms of the wish that cite it (djinn tilasm put --cites), by code (L01): computed on every read, never\n stored."
+          },
+          "correction": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.TaskCorrection"
+              }
+            ],
+            "title": "correction",
+            "description": "For a correction worker, which Djinn starts by itself when a batch's merge conflicts in code or its tests fail:\n what it corrects. Its worktree starts on the failed merge, and its branch integrates like any task's."
           }
         },
         "title": "Task",
@@ -3180,6 +3246,29 @@
         ],
         "additionalProperties": false,
         "description": "What one task waits for, in place of what it had."
+      },
+      "plan.v1.TaskCorrection": {
+        "type": "object",
+        "properties": {
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.IntegrationFailure"
+              }
+            ],
+            "title": "failure",
+            "description": "The failure, as its worktree starts from it."
+          },
+          "attempt": {
+            "type": "integer",
+            "title": "attempt",
+            "format": "int32",
+            "description": "Which attempt it is, from 1, for this failure: past the project's correction_attempts, Djinn asks the person."
+          }
+        },
+        "title": "TaskCorrection",
+        "additionalProperties": false,
+        "description": "TaskCorrection is what a correction worker corrects."
       },
       "plan.v1.TaskEvent": {
         "type": "object",
@@ -3288,7 +3377,7 @@
           "reason": {
             "type": "string",
             "title": "reason",
-            "description": "For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch."
+            "description": "For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch; for\n COMMITTED with a correction worker's work, \"corrected by W5\"."
           },
           "updateTime": {
             "allOf": [
@@ -3298,6 +3387,31 @@
             ],
             "title": "update_time",
             "description": "When it last changed."
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/plan.v1.IntegrationFailure"
+              }
+            ],
+            "title": "failure",
+            "description": "For CONFLICT and RED, what failed, as a correction worker starts from it; unset when no worker can correct it\n (a command that could not run, a merge that failed without conflicts)."
+          },
+          "correctedBy": {
+            "type": "string",
+            "title": "corrected_by",
+            "description": "The correction worker that corrects the work, or did: for COMMITTED, the work went in with it (\"corrected by W5\")."
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "attempts",
+            "format": "int32",
+            "description": "How many correction workers were started for it in a row."
+          },
+          "questionId": {
+            "type": "string",
+            "title": "question_id",
+            "description": "The question Djinn asked once the attempts were spent: try again, leave it, or the person takes it."
           }
         },
         "title": "TaskIntegration",

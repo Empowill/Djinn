@@ -1,0 +1,314 @@
+package harness
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/store"
+)
+
+// corrector is the fake agent of a test's correction workers: before it plays its script, it does what work says in
+// its folder, and its script becomes what work returns, its own prompt when work returns "".
+type corrector struct {
+	Fake
+	work func(dir, prompt string) string
+}
+
+func (c corrector) Start(ctx context.Context, spec Spec) (Worker, error) {
+	if script := c.work(spec.Dir, spec.Prompt); script != "" {
+		spec.Prompt = script
+	}
+	return c.Fake.Start(ctx, spec)
+}
+
+// correctWith makes the fake agent correct as work says. The test sets it before any worker starts.
+func (in *integration) correctWith(work func(dir, prompt string) string) {
+	in.h.providers[planv1.Provider_PROVIDER_FAKE] = corrector{work: work}
+}
+
+// correction is the correction worker that corrects task's work, once it has ended.
+func (in *integration) correction(t *testing.T, task *planv1.Task) *planv1.Task {
+	t.Helper()
+	got, texts := in.integration(t, task)
+	if got.GetCorrectedBy() == "" {
+		t.Fatalf("%s's work has no correction worker: %v; events %q", task.GetCode(), got, texts)
+	}
+	return in.ended(t, got.GetCorrectedBy())
+}
+
+// question is the question Djinn asked about task's work.
+func (in *integration) question(t *testing.T, task *planv1.Task) *planv1.Question {
+	t.Helper()
+	got, texts := in.integration(t, task)
+	q, err := store.Get[*planv1.Question](t.Context(), in.db, got.GetQuestionId())
+	if err != nil {
+		t.Fatalf("%s's work asks no question: %v; events %q", task.GetCode(), got, texts)
+	}
+	return q
+}
+
+// answer answers q with choice, as the plan services do once the answer is stored.
+func (in *integration) answer(t *testing.T, q *planv1.Question, choice planv1.Choice) {
+	t.Helper()
+	q = proto.CloneOf(q)
+	q.Answer = &planv1.Answer{Choice: choice, CreateTime: timestamppb.Now()}
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal(actorLocal, "test/answer", q); err != nil {
+			return err
+		}
+		return tx.Put(q)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	in.h.Answered(t.Context(), q)
+}
+
+// TestCorrectACodeConflict: a conflict in code starts a correction worker by itself, part of the azima, of the failed
+// task's provider, in a worktree on the failed merge, the conflict in its first prompt; its success commits its work
+// and the failed task's, which says it was corrected.
+func TestCorrectACodeConflict(t *testing.T) {
+	in := integrating(t)
+	old := in.tip(t)
+	azima := in.azima(t, in.wishID, "The readme")
+	partOf := func(task *planv1.Task) { task.PartOf = azima.GetId() }
+	w1 := in.finished(t, "W1", map[string]string{"app/README.md": "# One\n"}, partOf)
+	w2 := in.finished(t, "W2", map[string]string{"app/README.md": "# Two\n"}, partOf)
+	var conflict string
+	in.correctWith(func(dir, _ string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, "README.md"))
+		conflict = string(b)
+		writeFile(t, dir, "README.md", "# One and Two\n")
+		return ""
+	})
+
+	in.pass(t, time.Minute) // The azima's last part done.
+	w3 := in.correction(t, w2)
+	got, texts := in.integration(t, w2)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_CONFLICT || got.GetAttempts() != 1 ||
+		got.GetFailure().GetMergeBranch() != w2.GetBranch() || !slices.Equal(got.GetFailure().GetFiles(), []string{"app/README.md"}) {
+		t.Fatalf("W2's integration %v", got)
+	}
+	want := "conflict: W2 conflicts with " + in.branch + " in app/README.md; " + in.branch + " stays as it was; " +
+		w3.GetCode() + " corrects it, attempt 1 of 2"
+	if texts[len(texts)-1] != want {
+		t.Errorf("W2's last event %q; want %q", texts[len(texts)-1], want)
+	}
+	if w1, _ := in.integration(t, w1); w1.GetCorrectedBy() != w3.GetId() {
+		t.Errorf("W1, merged before W2 in the batch, is not corrected with it: %v", w1)
+	}
+	// The correction worker: work part of the azima, of W2's provider, Djinn's own, its first prompt saying the
+	// conflict, its worktree on W1 merged and W2's merge under way.
+	if w3.GetCode() != "W3" || w3.GetPartOf() != azima.GetId() || w3.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
+		w3.GetCorrection().GetAttempt() != 1 || w3.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("the correction worker %v", w3)
+	}
+	prompt, err := firstPrompt(in.db, w3.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"could not integrate the work of W1, W2 into " + in.branch, "the merge of " + w2.GetBranch() +
+		" is under way", "- app/README.md", "Settle each conflict", "the tests (`test`)", "run `gen` once the code is settled"} {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("W3's prompt lacks %q:\n%s", s, prompt)
+		}
+	}
+	if !strings.Contains(conflict, "<<<<<<<") || !strings.Contains(conflict, "# One") || !strings.Contains(conflict, "# Two") {
+		t.Errorf("W3's worktree did not hold the conflict: %q", conflict)
+	}
+	if got, _ := in.integration(t, w3); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+		t.Fatalf("W3's work: %v", got)
+	}
+
+	// Its work integrates at once, alone, like any task's: its success commits W1's and W2's with it.
+	in.pass(t, time.Second)
+	if got := in.states(t, w1, w2, w3); got != "W1 COMMITTED, W2 COMMITTED, W3 COMMITTED" {
+		t.Fatalf("after the correction: %s", got)
+	}
+	tip := in.tip(t)
+	got, texts = in.integration(t, w2)
+	if got.GetSha() != tip || got.GetReason() != "corrected by W3" || texts[len(texts)-1] != "committed into "+in.branch+" as "+
+		tip[:8]+", corrected by W3" {
+		t.Errorf("W2's integration %v; events %q", got, texts)
+	}
+	if out := in.git(t, in.repo, "show", tip+":app/README.md"); out != "# One and Two" {
+		t.Errorf("README.md in the branch: %q", out)
+	}
+	for _, task := range []*planv1.Task{w1, w2, w3} {
+		if _, err := git(t.Context(), in.repo, "merge-base", "--is-ancestor", task.GetBranch(), tip); err != nil {
+			t.Errorf("%s's branch is not in %s: %v", task.GetCode(), in.branch, err)
+		}
+	}
+	commits := in.commits(t)
+	if len(commits) != 1 || commits[0].GetOldSha() != old || !slices.Equal(commits[0].GetTaskIds(), []string{w3.GetId(), w1.GetId(), w2.GetId()}) {
+		t.Errorf("journal: %v", commits)
+	}
+}
+
+// TestCorrectRedTests: red tests start a correction worker on the merged work, the command and its output in its
+// first prompt.
+func TestCorrectRedTests(t *testing.T) {
+	in := integrating(t)
+	in.testCode, in.testOut = 1, "--- FAIL: TestLogin\nFAIL"
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+	var merged bool
+	in.correctWith(func(dir, _ string) string {
+		_, err := os.Stat(filepath.Join(dir, "src", "c.txt"))
+		merged = err == nil
+		in.mu.Lock()
+		in.testCode = 0
+		in.mu.Unlock()
+		return ""
+	})
+
+	in.pass(t, time.Hour)
+	w4 := in.correction(t, w1)
+	prompt, err := firstPrompt(in.db, w4.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"could not integrate the work of W1, W2, W3", "The command, run in the project's folder: `test`",
+		"    --- FAIL: TestLogin\n    FAIL", "Make the tests pass"} {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("W4's prompt lacks %q:\n%s", s, prompt)
+		}
+	}
+	if !merged || w4.GetTitle() != "Make the tests pass with the work of W1, W2, W3" {
+		t.Errorf("W4 %q started without the merged work: %v", w4.GetTitle(), merged)
+	}
+	in.pass(t, time.Second)
+	if got := in.states(t, w1, w4); got != "W1 COMMITTED, W4 COMMITTED" {
+		t.Errorf("after the correction: %s", got)
+	}
+}
+
+// TestCorrectionAttemptsThenAQuestion: two corrections whose work fails in turn spend the attempts; Djinn then asks
+// the person, and starts nothing more by itself.
+func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
+	in := integrating(t)
+	in.testCode, in.testOut = 1, "--- FAIL: TestLogin"
+	in.correctWith(func(string, string) string { return "" })
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+		WishId: in.wishID, CommitAfterTasks: 1,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	in.pass(t, time.Hour)
+	w2 := in.correction(t, w1)
+	in.pass(t, time.Second)
+	w3 := in.correction(t, w1)
+	if w3.GetId() == w2.GetId() || w3.GetCorrection().GetAttempt() != 2 ||
+		!slices.Equal(w3.GetCorrection().GetFailure().GetTaskIds(), []string{w1.GetId(), w2.GetId()}) {
+		t.Fatalf("the second attempt %v", w3)
+	}
+	in.pass(t, time.Second)
+	if got := in.states(t, w1, w2, w3); got != "W1 RED, W2 RED, W3 RED" {
+		t.Fatalf("two attempts failed: %s", got)
+	}
+	q := in.question(t, w1)
+	got, texts := in.integration(t, w3)
+	if got.GetQuestionId() != q.GetId() || got.GetAttempts() != 2 || got.GetCorrectedBy() != "" ||
+		!strings.HasSuffix(texts[len(texts)-1], "; Djinn asks you "+q.GetCode()) {
+		t.Errorf("W3's integration %v; events %q", got, texts)
+	}
+	if !strings.HasPrefix(q.GetText(), "The work of W1 does not go into "+in.branch+": test exited 1. Djinn started 2 correction workers") ||
+		!slices.Equal(q.GetOptions(), []string{retryOption, "Leave it: the work stays out of " + in.branch, takeOption}) ||
+		!strings.Contains(q.GetContext(), "**The attempts.** W2, W3") {
+		t.Errorf("the question %q, %q:\n%s", q.GetText(), q.GetOptions(), q.GetContext())
+	}
+	// Nothing more starts by itself, and the rest of the wish goes on.
+	in.pass(t, time.Hour)
+	tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil || len(tasks) != 3 {
+		t.Fatalf("%d tasks, %v; want 3", len(tasks), err)
+	}
+
+}
+
+// TestAnswerAFailedIntegration: trying again starts a new correction, its attempts counted from one; taking it leaves
+// the work out, saying so.
+func TestAnswerAFailedIntegration(t *testing.T) {
+	in := integrating(t)
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "test: \"test\"\ncorrection_attempts: 1\n")
+	in.testCode = 1
+	in.correctWith(func(string, string) string { return "" })
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+		WishId: in.wishID, CommitAfterTasks: 1,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	in.pass(t, time.Hour)
+	w2 := in.correction(t, w1)
+	in.pass(t, time.Second)
+	q := in.question(t, w1)
+
+	// Try again: a new correction, its attempts counted from one.
+	in.answer(t, q, planv1.Choice_CHOICE_A)
+	got, texts := in.integration(t, w1)
+	if got.GetQuestionId() != "" || got.GetAttempts() != 1 || got.GetCorrectedBy() == "" ||
+		texts[len(texts)-1] != "you said to try again ("+q.GetCode()+"); W3 corrects it, attempt 1 of 1" {
+		t.Fatalf("tried again: %v; events %q", got, texts)
+	}
+	w3 := in.correction(t, w1)
+	if !slices.Equal(w3.GetCorrection().GetFailure().GetTaskIds(), []string{w1.GetId(), w2.GetId()}) {
+		t.Errorf("W3 corrects %v", w3.GetCorrection().GetFailure().GetTaskIds())
+	}
+	in.pass(t, time.Second)
+	q = in.question(t, w1)
+
+	// I take it: the work stays out, and says so.
+	in.answer(t, q, planv1.Choice_CHOICE_C)
+	got, texts = in.integration(t, w1)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_RED || !strings.HasPrefix(got.GetReason(), "you take it ("+q.GetCode()+"): ") ||
+		texts[len(texts)-1] != "you take it ("+q.GetCode()+"); it stays out of "+in.branch+" until you bring it in" {
+		t.Errorf("taken: %v; events %q", got, texts)
+	}
+}
+
+// TestACorrectionWorkerThatFails: a correction worker that fails counts as an attempt; with the project's
+// correction_attempts spent, Djinn asks.
+func TestACorrectionWorkerThatFails(t *testing.T) {
+	in := integrating(t)
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 1\n")
+	in.correctWith(func(string, string) string { return "fail I cannot settle it" })
+	w1 := in.finished(t, "W1", map[string]string{"app/README.md": "# One\n"})
+	in.finished(t, "W2", map[string]string{"app/README.md": "# Two\n"})
+	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+
+	in.pass(t, time.Hour)
+	w4 := in.correction(t, w1)
+	if w4.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		t.Fatalf("W4 %v", w4)
+	}
+	in.pass(t, time.Second)
+	q := in.question(t, w1)
+	got, texts := in.integration(t, w1)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_CONFLICT || got.GetAttempts() != 1 ||
+		texts[len(texts)-1] != "W4, its correction worker, failed: I cannot settle it; Djinn asks you "+q.GetCode() {
+		t.Errorf("W1's integration %v; events %q", got, texts)
+	}
+	if !strings.Contains(q.GetText(), "Djinn started a correction worker: it did not get it in.") {
+		t.Errorf("the question %q", q.GetText())
+	}
+	// Leave it: the work stays out, and nothing starts.
+	in.answer(t, q, planv1.Choice_CHOICE_B)
+	if got, texts := in.integration(t, w1); !strings.HasPrefix(got.GetReason(), "left out ("+q.GetCode()+"): W2 conflicts") ||
+		texts[len(texts)-1] != "left out of "+in.branch+" ("+q.GetCode()+")" {
+		t.Errorf("left: %v; events %q", got, texts)
+	}
+}

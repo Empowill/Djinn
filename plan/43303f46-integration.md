@@ -56,7 +56,9 @@ lead spends its tokens on mechanical work.
 - [ ] Each task committed alone as it ends; the push automatic at an azima's end, or with three tasks committed and an
   hour since the last push, checked as each merge ends; `ask` mode by a question; a refused push never forced.
   (needs: a test with a fake clock and a bare remote in a temp folder)
-- [ ] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
+- [x] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
+  (TestCorrectACodeConflict, TestCorrectRedTests, TestCorrectionAttemptsThenAQuestion,
+  TestAnswerAFailedIntegration, TestACorrectionWorkerThatFails)
 - [ ] A task waits for its dependencies to be integrated, and starts from the integration branch.
 - [ ] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
   conflict, red), and propose installing once a batch is integrated.

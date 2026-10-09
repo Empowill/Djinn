@@ -25,11 +25,13 @@ const (
 
 // Answered takes the answer to a question: when it is a task's edit question, a yes starts the task's worker again,
 // allowed to edit the project's files and to run no command, through the scheduler when no worker runs it; a no
-// leaves it reading only. Only the first answer counts. The plan services call it once the answer is stored.
+// leaves it reading only. When Djinn asked it about work that failed to integrate, it settles that work
+// (answerIntegration). Only the first answer counts. The plan services call it once the answer is stored.
 func (h *Harness) Answered(ctx context.Context, q *planv1.Question) {
 	if q.GetAnswer() == nil {
 		return
 	}
+	h.answerIntegration(ctx, q)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"edit_question_id": q.GetId()})
 	if err != nil {
 		log.Printf("djinn: question %s: find its task: %v", q.GetCode(), err)

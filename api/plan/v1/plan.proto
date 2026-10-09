@@ -98,6 +98,12 @@ message ProjectSettings {
   // finished work of the project's tasks into their wish's integration branch only once it is set, and moves the
   // branch only when it passes. Its words are split on spaces, without a shell.
   optional string test = 7 [(buf.validate.field).string.max_len = 500];
+  // How many correction workers Djinn starts, one after the other, for a batch whose merge conflicts in code or whose
+  // tests fail, before it asks the person. Not set: 2. 0: it asks at once.
+  optional int32 correction_attempts = 8 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10
+  }];
 }
 
 // SettingSource is where a project setting comes from.
@@ -114,7 +120,8 @@ enum SettingSource {
 
 // ProjectSetting is one setting of a project, as its workers get it.
 message ProjectSetting {
-  // Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test.
+  // Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, test,
+  // correction_attempts.
   string name = 1;
   // Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The
   // generated globs are joined by commas.
@@ -429,6 +436,38 @@ message Task {
   // The tilasms of the wish that cite it (djinn tilasm put --cites), by code (L01): computed on every read, never
   // stored.
   repeated string tilasms = 41;
+  // For a correction worker, which Djinn starts by itself when a batch's merge conflicts in code or its tests fail:
+  // what it corrects. Its worktree starts on the failed merge, and its branch integrates like any task's.
+  TaskCorrection correction = 42;
+}
+
+// TaskCorrection is what a correction worker corrects.
+message TaskCorrection {
+  // The failure, as its worktree starts from it.
+  IntegrationFailure failure = 1;
+  // Which attempt it is, from 1, for this failure: past the project's correction_attempts, Djinn asks the person.
+  int32 attempt = 2;
+}
+
+// IntegrationFailure is a batch's merge or tests that failed, as a correction worker starts from it.
+message IntegrationFailure {
+  // CONFLICT or RED.
+  IntegrationState state = 1;
+  // The commit the correction's branch starts from: the batch's merges before the one that conflicted, or all of
+  // them when the tests failed.
+  string base = 2;
+  // For a conflict, the branch whose merge conflicted: merged again in the correction's worktree, its conflicts left
+  // there.
+  string merge_branch = 3;
+  // For a conflict, the files in conflict, as the repository names them.
+  repeated string files = 4;
+  // For red tests, the test command, and the end of its output.
+  string command = 5;
+  string output = 6;
+  // The tasks whose work is in base and merge_branch: what the correction corrects, and what its success commits.
+  repeated string task_ids = 7;
+  // What failed, in a sentence.
+  string reason = 8;
 }
 
 // TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a
@@ -442,10 +481,20 @@ message TaskIntegration {
   string branch = 2;
   // For COMMITTED, the commit the branch moved to, with the task's work.
   string sha = 3;
-  // For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch.
+  // For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch; for
+  // COMMITTED with a correction worker's work, "corrected by W5".
   string reason = 4;
   // When it last changed.
   google.protobuf.Timestamp update_time = 5;
+  // For CONFLICT and RED, what failed, as a correction worker starts from it; unset when no worker can correct it
+  // (a command that could not run, a merge that failed without conflicts).
+  IntegrationFailure failure = 6;
+  // The correction worker that corrects the work, or did: for COMMITTED, the work went in with it ("corrected by W5").
+  string corrected_by = 7;
+  // How many correction workers were started for it in a row.
+  int32 attempts = 8;
+  // The question Djinn asked once the attempts were spent: try again, leave it, or the person takes it.
+  string question_id = 9;
 }
 
 // IntegrationState is where a task's finished work stands on its way into its wish's integration branch.
