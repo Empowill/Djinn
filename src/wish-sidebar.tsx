@@ -12,6 +12,7 @@ import {
   Inbox,
   Plane,
   Plus,
+  SquareTerminal,
 } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
@@ -19,6 +20,7 @@ import type { Project, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { WishState } from "../gen/ts/plan/v1/plan_pb";
 import { MAX_ACTIVE, isActive, wishTone } from "./data/format";
 import { t } from "./i18n";
+import { useOpenTerminal } from "./lead-terminal";
 import { CountPill, ToneIcon } from "./status";
 
 // What the side panel counts in a wish.
@@ -64,6 +66,8 @@ export function WishSidebar({
   const paused = wishes.filter((w) => w.state === WishState.PAUSED);
   const granted = wishes.filter((w) => w.state === WishState.GRANTED);
   const [showGranted, setShowGranted] = useState(false);
+  // Where djinn serves the page, a project opens a terminal at its root, in a tab of its own.
+  const openTerminal = useOpenTerminal();
   const [dragged, setDragged] = useState("");
 
   const item = (wish: Wish, rank?: number) => {
@@ -255,6 +259,18 @@ export function WishSidebar({
               <FolderOpen size={collapsed ? 16 : 15} />
               {!collapsed && <span>{project.name}</span>}
             </button>
+            {openTerminal && project.directory && !collapsed && (
+              <button
+                className="icon-button project-terminal"
+                onClick={() => openTerminal(project)}
+                title={t("sidebar.project_terminal", { project: project.name })}
+                aria-label={t("sidebar.project_terminal", {
+                  project: project.name,
+                })}
+              >
+                <SquareTerminal size={13} />
+              </button>
+            )}
           </div>
         ))}
       </div>

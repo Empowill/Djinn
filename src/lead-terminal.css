@@ -106,3 +106,51 @@
   margin: 0;
   max-width: 52ch;
 }
+
+/* The terminal's tabs: the window's own, the lead's, and those you opened, each of these with its ×. */
+.lead-terminal-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  flex: 1;
+}
+.lead-terminal-tab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lead-terminal-tab > button {
+  padding: 3px 8px;
+  font-size: var(--font-size-body);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lead-terminal-tab.selected {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+.lead-terminal-tab .lead-terminal-tab-close {
+  padding: 3px 5px 3px 0;
+  opacity: 0.6;
+}
+.lead-terminal-tab .lead-terminal-tab-close:hover {
+  opacity: 1;
+}
+.lead-terminal-tab-new {
+  padding: 3px 6px;
+  color: var(--muted);
+}
+.project-nav .project-terminal {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.project-nav:hover .project-terminal,
+.project-terminal:focus-visible {
+  opacity: 1;
+}

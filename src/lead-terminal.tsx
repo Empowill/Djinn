@@ -1,7 +1,8 @@
 // The terminal pinned at the bottom of the window: a real terminal (xterm.js) on a pseudo-terminal of djinn up,
 // running the user's shell or the command djinn up was given (--terminal), such as the lead agent. It shows only
-// when djinn serves the page (a DjinnProvider); elsewhere the app renders alone. One terminal shows at a time: the
-// lead of the wish the app shows while it runs, else the window's own.
+// when djinn serves the page (a DjinnProvider); elsewhere the app renders alone. Its tabs are the window's own
+// terminal, the lead of the wish shown while it runs, and the terminals you open: a new one (+, Ctrl+Shift+T), or
+// one at a project's root (its button in the side panel). Each tab you opened closes with its ×; one shows at a time.
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { type ITheme, Terminal } from "@xterm/xterm";
@@ -10,8 +11,10 @@ import {
   ChevronDown,
   ChevronUp,
   FolderPlus,
+  Plus,
   RotateCcw,
   SquareTerminal,
+  X,
 } from "lucide-react";
 import {
   type ReactNode,
@@ -92,17 +95,46 @@ function store(key: string, value: string) {
 const ShowWish = createContext<(wishId: string) => void>(() => undefined);
 export const useShowWish = () => useContext(ShowWish);
 
+// A terminal you opened, in a tab of its own: a shell in the first project's folder (shell-…), or in a project's
+// root (project-<id>-…). The names say which, so that the tabs come back from djinn up after a reload.
+interface Tab {
+  name: string;
+  directory?: string;
+}
+const opened = (name: string) =>
+  name.startsWith("shell-") || name.startsWith("project-");
+// The app asks the terminal for a new tab: in a project's root when given a folder, else a plain shell.
+const OpenTerminal = createContext<
+  ((project?: { id: string; directory: string }) => void) | undefined
+>(undefined);
+export const useOpenTerminal = () => useContext(OpenTerminal);
+
 // LeadTerminalFrame lays the app out above the terminal, when there is one.
 export function LeadTerminalFrame({ children }: { children: ReactNode }) {
   const djinn = useDjinn();
   const [wishId, setWishId] = useState<string>();
+  const [request, setRequest] = useState<Tab>();
   if (!djinn) return <>{children}</>;
+  const open = (project?: { id: string; directory: string }) =>
+    setRequest({
+      name: project
+        ? `project-${project.id}-${Date.now().toString(36)}`
+        : `shell-${Date.now().toString(36)}`,
+      directory: project?.directory,
+    });
   return (
     <div className="lead-frame">
       <ShowWish.Provider value={setWishId}>
-        <div className="lead-frame-app">{children}</div>
+        <OpenTerminal.Provider value={open}>
+          <div className="lead-frame-app">{children}</div>
+        </OpenTerminal.Provider>
       </ShowWish.Provider>
-      <LeadTerminal djinn={djinn} wishId={wishId} />
+      <LeadTerminal
+        djinn={djinn}
+        wishId={wishId}
+        request={request}
+        onNew={() => open()}
+      />
     </div>
   );
 }
@@ -116,9 +148,14 @@ type Status =
 function LeadTerminal({
   djinn,
   wishId,
+  request,
+  onNew,
 }: {
   djinn: Djinn;
   wishId: string | undefined;
+  // A tab the app asked for, opened at once.
+  request: Tab | undefined;
+  onNew: () => void;
 }) {
   const api = djinn.terminal;
   const [collapsed, setCollapsed] = useState(
@@ -131,13 +168,34 @@ function LeadTerminal({
   const [generation, setGeneration] = useState(0); // A restart opens a new program.
   const [name, setName] = useState(NAME);
   const [adding, setAdding] = useState(false);
+  // The tabs you opened, in their order; the window's terminal and the lead's come first.
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  // The lead's tab, while the wish shown has a lead that runs.
+  const [leadTab, setLeadTab] = useState("");
+  const projects = useData((s) => s.projects);
+  const wishes = useData((s) => s.wishes);
   const data = useStore();
   // Whether a project has a folder here: the terminal opens in the first one.
   const hasFolder = useData((s) => s.projects.some((p) => p.directory !== ""));
   // The program a restart starts again: the one that ended, not the default of djinn up.
   const ended = useRef<TerminalInfo | undefined>(undefined);
   const host = useRef<HTMLDivElement>(null);
+  const onNewRef = useRef(onNew);
+  onNewRef.current = onNew;
+  // Ctrl+Shift+T opens a terminal from anywhere in the window too.
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && event.code === "KeyT") {
+        event.preventDefault();
+        onNewRef.current();
+      }
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, []);
   const termRef = useRef<Terminal | null>(null);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
   const fitRef = useRef<FitAddon | null>(null);
 
   useEffect(
@@ -165,14 +223,68 @@ function LeadTerminal({
     }
     let current = true;
     api.running().then(
-      (names) =>
-        current && setName(names.includes(lead(wishId)) ? lead(wishId) : NAME),
+      (names) => {
+        if (!current) return;
+        const running = names.includes(lead(wishId));
+        setLeadTab(running ? lead(wishId) : "");
+        setName(running ? lead(wishId) : NAME);
+      },
       () => undefined, // djinn up restarts: the terminal shown stays, and says so.
     );
     return () => {
       current = false;
     };
   }, [api, wishId]);
+
+  // The terminals you opened come back as tabs after a reload: djinn up keeps them while it runs.
+  useEffect(() => {
+    let current = true;
+    api.running().then(
+      (names) =>
+        current &&
+        setTabs((have) => [
+          ...have,
+          ...names
+            .filter((n) => opened(n) && !have.some((t) => t.name === n))
+            .map((n) => ({ name: n })),
+        ]),
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [api]);
+  useEffect(() => {
+    if (!request) return;
+    ended.current = undefined;
+    setTabs((have) => [...have, request]);
+    setName(request.name);
+    setCollapsed(false);
+  }, [request]);
+  // A tab you opened closes: its program hangs up, and the window's terminal shows.
+  const closeTab = async (tab: string) => {
+    setTabs((have) => have.filter((t) => t.name !== tab));
+    if (name === tab) setName(leadTab || NAME);
+    try {
+      if (!(await api.running()).includes(tab)) return;
+      const { terminal } = await api.open({ name: tab, cols: 80, rows: 24 });
+      await api.close(terminal.id);
+    } catch {
+      // Gone already: nothing to hang up.
+    }
+  };
+  const label = (tab: string) => {
+    if (tab === NAME) return t("terminal.title");
+    if (tab.startsWith("lead-")) {
+      const wish = wishes.find((w) => lead(w.id) === tab);
+      return t("terminal.lead_tab", { wish: wish?.title ?? "" });
+    }
+    const project = projects.find((p) => tab.startsWith(`project-${p.id}-`));
+    if (project) return project.name;
+    return t("terminal.shell_tab", {
+      n: tabs.findIndex((x) => x.name === tab) + 1,
+    });
+  };
 
   // The emulator, the program, and the links between them.
   useEffect(() => {
@@ -205,6 +317,11 @@ function LeadTerminal({
     term.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey)
         return true;
+      if (event.code === "KeyT") {
+        onNewRef.current();
+        event.preventDefault();
+        return false;
+      }
       if (event.code === "KeyC") {
         const text = term.getSelection();
         if (text)
@@ -242,13 +359,16 @@ function LeadTerminal({
       try {
         // A restart runs again the program that ended here, not one of another terminal.
         const again = ended.current?.name === name ? ended.current : undefined;
+        const folder = tabsRef.current.find((x) => x.name === name)?.directory;
         const { terminal } = await api.open({
           name,
           cols: term.cols,
           rows: term.rows,
           ...(again
             ? { command: again.command, directory: again.directory }
-            : {}),
+            : folder
+              ? { directory: folder }
+              : {}),
         });
         if (abort.signal.aborted) return;
         id = terminal.id;
@@ -377,6 +497,46 @@ function LeadTerminal({
             <span className="lead-terminal-command">{info.directory}</span>
           )}
         </button>
+        <div className="lead-terminal-tabs" role="tablist">
+          {[NAME, ...(leadTab ? [leadTab] : []), ...tabs.map((x) => x.name)]
+            .filter((tab, i, all) => all.indexOf(tab) === i)
+            .map((tab) => (
+              <span
+                key={tab}
+                className={`lead-terminal-tab ${tab === name ? "selected" : ""}`}
+              >
+                <button
+                  role="tab"
+                  aria-selected={tab === name}
+                  onClick={() => {
+                    ended.current = undefined;
+                    setName(tab);
+                    setCollapsed(false);
+                  }}
+                >
+                  {label(tab)}
+                </button>
+                {opened(tab) && (
+                  <button
+                    className="lead-terminal-tab-close"
+                    onClick={() => void closeTab(tab)}
+                    title={t("terminal.close_tab")}
+                    aria-label={t("terminal.close_tab")}
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </span>
+            ))}
+          <button
+            className="lead-terminal-tab-new"
+            onClick={onNew}
+            title={t("terminal.new_tab")}
+            aria-label={t("terminal.new_tab")}
+          >
+            <Plus size={13} />
+          </button>
+        </div>
         {status.kind === "exited" && (
           <span className="lead-terminal-state">
             {t("terminal.exited", { code: status.code })}
