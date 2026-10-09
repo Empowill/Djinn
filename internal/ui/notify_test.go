@@ -3,15 +3,19 @@ package ui
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -351,4 +355,51 @@ func putJournaled(tx *store.Tx, m proto.Message) error {
 		return err
 	}
 	return tx.Put(m)
+}
+
+// TestNoticesShowAQuestionAskedThroughTheServer: a lead asks with `djinn question ask`, a call to the server. The
+// question reaches the Watch stream the window follows, and a system notification.
+func TestNoticesShowAQuestionAskedThroughTheServer(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	mux := http.NewServeMux()
+	for prefix, h := range plan.Handlers(n.Store) {
+		mux.Handle(prefix, h)
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	wishes := planv1connect.NewWishServiceClient(srv.Client(), srv.URL)
+	made, err := wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Light the way"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	watch, err := wishes.Watch(ctx, connect.NewRequest(&planv1.WishServiceWatchRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watch.Close()
+	if !watch.Receive() { // The first message names everything.
+		t.Fatal(watch.Err())
+	}
+
+	questions := planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL)
+	if _, err := questions.Ask(t.Context(), connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		WishId: wishID, Text: "Which lamp first?", Options: []string{"Brass", "Glass"},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	for watch.Receive() {
+		if strings.EqualFold(watch.Msg().GetWishId(), wishID) &&
+			slices.Contains(watch.Msg().GetChanges(), planv1.Change_CHANGE_QUESTION) {
+			break
+		}
+	}
+	if err := watch.Err(); err != nil {
+		t.Fatalf("the watch never said the question: %v", err)
+	}
+	if got := notes.next(t); got.Title != "Question Q01 · Light the way" || got.WishID != wishID {
+		t.Errorf("notification = %+v", got)
+	}
 }

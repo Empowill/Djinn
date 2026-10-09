@@ -266,7 +266,7 @@ func runUp(args []string) (restart bool, err error) {
 		err = <-served
 	default:
 		if transport == server.Wails {
-			err = openWindow(ctx, "", h, raise, notices)
+			err = openWindow(ctx, "", server.WholeWrites(h), raise, notices)
 		} else {
 			err = openWindow(ctx, url, nil, raise, notices)
 		}

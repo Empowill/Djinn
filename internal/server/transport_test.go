@@ -1,20 +1,25 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	demov1 "github.com/empowill/djinn/gen/go/demo/v1"
@@ -327,4 +332,51 @@ func TestNoCompression(t *testing.T) {
 		t.Errorf("stream: Connect-Content-Encoding %q, want none", e)
 	}
 	stream.Close()
+}
+
+// TestWholeWrites checks that through WholeWrites, as the window's wails:// handler serves, each message of a Connect
+// stream reaches the writer in one Write: on macOS, WebKit held back a payload written after its prefix.
+func TestWholeWrites(t *testing.T) {
+	body, err := proto.Marshal(&demov1.CountRequest{UpTo: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := func(h http.Handler) [][]byte {
+		req := httptest.NewRequest(http.MethodPost, "/demo.v1.DemoService/Count",
+			bytes.NewReader(append([]byte{0, 0, 0, 0, byte(len(body))}, body...)))
+		req.Header.Set("Content-Type", "application/connect+proto")
+		rec := &writes{ResponseRecorder: httptest.NewRecorder()}
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body)
+		}
+		return rec.chunks
+	}
+
+	// Without it, connect-go writes a prefix on its own: the test still sees what it guards against.
+	if chunks := stream(echoHandler()); !slices.ContainsFunc(chunks, func(c []byte) bool { return len(c) == 5 }) {
+		t.Fatalf("connect-go no longer writes a prefix on its own: %d writes", len(chunks))
+	}
+
+	// With it: the three values and the end of the stream, each whole.
+	chunks := stream(server.WholeWrites(echoHandler()))
+	if len(chunks) != 4 {
+		t.Fatalf("%d writes, want 4 (three values, then the end): %q", len(chunks), chunks)
+	}
+	for i, c := range chunks {
+		if len(c) < 5 || int(binary.BigEndian.Uint32(c[1:5])) != len(c)-5 {
+			t.Errorf("write %d is not one whole message: %q", i, c)
+		}
+	}
+}
+
+// writes records each Write and each Flush.
+type writes struct {
+	*httptest.ResponseRecorder
+	chunks [][]byte
+}
+
+func (w *writes) Write(b []byte) (int, error) {
+	w.chunks = append(w.chunks, bytes.Clone(b))
+	return w.ResponseRecorder.Write(b)
 }

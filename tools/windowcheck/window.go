@@ -7,6 +7,8 @@ import (
 	"net/http"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"github.com/empowill/djinn/internal/server"
 )
 
 // showWindow opens a small native window on url, served by assets through wails:// when assets is not nil, and
@@ -17,7 +19,7 @@ func showWindow(ctx context.Context, url string, assets http.Handler) error {
 		Mac:  application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
 	}
 	if assets != nil {
-		opts.Assets = application.AssetOptions{Handler: assets}
+		opts.Assets = application.AssetOptions{Handler: server.WholeWrites(assets)}
 	}
 	app := application.New(opts)
 	app.Window.NewWithOptions(application.WebviewWindowOptions{Title: "Djinn window check", Width: 480, Height: 220, URL: url})
