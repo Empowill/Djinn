@@ -77,9 +77,9 @@ func TestReadmeInstallLines(t *testing.T) {
 }
 
 func TestReleaseNotes(t *testing.T) {
-	notes := read(t, "docs/releases/v0.1.0.md")
-	if !strings.HasPrefix(notes, "# Djinn v0.1.0\n") {
-		t.Errorf("v0.1.0.md does not start with # Djinn v0.1.0")
+	notes := read(t, "docs/releases/v0.1.1.md")
+	if !strings.HasPrefix(notes, "# Djinn v0.1.1\n") {
+		t.Errorf("v0.1.1.md does not start with # Djinn v0.1.1")
 	}
 	workflow := read(t, ".github/workflows/release.yml")
 	if !strings.Contains(workflow, `docs/releases/$GITHUB_REF_NAME.md`) || !strings.Contains(workflow, `--notes-file`) {
@@ -100,7 +100,7 @@ func TestReleaseNotes(t *testing.T) {
 		"Every release ships ready-made binaries for each target",
 	} {
 		if !strings.Contains(notes, azima) {
-			t.Errorf("v0.1.0.md missing azima goal: %s", azima)
+			t.Errorf("v0.1.1.md missing azima goal: %s", azima)
 		}
 	}
 	for _, section := range []string{
@@ -109,7 +109,7 @@ func TestReleaseNotes(t *testing.T) {
 		"## License",
 	} {
 		if !strings.Contains(notes, section) {
-			t.Errorf("v0.1.0.md missing section: %s", section)
+			t.Errorf("v0.1.1.md missing section: %s", section)
 		}
 	}
 }
