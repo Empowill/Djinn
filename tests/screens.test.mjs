@@ -19,7 +19,7 @@ export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
-export { WishTask } from "@/src/wish-task.tsx";
+export { WishTask, promptPreview } from "@/src/wish-task.tsx";
 export { azimaTime, shortModel } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { attentionOf, AttentionBar } from "@/src/attention.tsx";
@@ -872,6 +872,56 @@ test("a task card shows the model chosen for the worker; watchers do not show it
     model: "",
   });
   assert.doesNotMatch(noModel, /task-model/);
+});
+
+test("a task card shows its prompt on hover, and opened shows prompt and no logs until the button", () => {
+  const task = {
+    id: "t1",
+    code: "W1",
+    title: "Trim the wick of the brass lamp",
+    prompt:
+      "First instruction line\nSecond instruction line\nThird line\nFourth line",
+    status: s.TaskStatus.DONE,
+  };
+
+  // Unopened card: title has no native title attribute; tooltip contains full title and prompt preview.
+  const unopened = s.renderToStaticMarkup(h(s.WishTask, { task, onStop() {} }));
+  assert.match(
+    unopened,
+    /<strong class="task-title">Trim the wick of the brass lamp<\/strong>/,
+  );
+  assert.doesNotMatch(unopened, /<strong[^>]*title=/);
+  assert.match(unopened, /<span class="task-tooltip" role="tooltip">/);
+  assert.match(
+    unopened,
+    /<span class="task-tooltip-title">Trim the wick of the brass lamp<\/span>/,
+  );
+  assert.match(
+    unopened,
+    /<span class="task-tooltip-prompt">First instruction line\nSecond instruction line\nThird line…<\/span>/,
+  );
+  assert.doesNotMatch(unopened, /wish-task-body/);
+
+  // Opened card: shows full title, prompt in Markdown with fold, and See logs button without logs.
+  const opened = s.renderToStaticMarkup(
+    h(s.WishTask, { task, focused: true, onStop() {} }),
+  );
+  assert.match(opened, /wish-task-prompt-section/);
+  assert.match(opened, /wish-task-prompt-body/);
+  assert.match(opened, /First instruction line/);
+  assert.match(opened, /wish-task-logs-button/);
+  assert.match(opened, /See logs/);
+  // Logs are deferred: event container is not rendered until logs are toggled.
+  assert.doesNotMatch(opened, /class="wish-task-events"/);
+});
+
+test("promptPreview truncates long prompts to a few lines with an ellipsis", () => {
+  assert.equal(s.promptPreview(""), "");
+  assert.equal(s.promptPreview("Short prompt"), "Short prompt");
+  assert.equal(
+    s.promptPreview("Line 1\nLine 2\nLine 3\nLine 4"),
+    "Line 1\nLine 2\nLine 3…",
+  );
 });
 
 test("a running task shows what its worker uses now; its facts, the peaks too", () => {

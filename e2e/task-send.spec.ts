@@ -45,6 +45,7 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await page.getByRole("button", { name: /Work a while/ }).click();
+    await page.locator(".wish-task-events-fold summary").click();
     await expect(
       page.locator(".wish-event").getByText("working", { exact: true }),
     ).toBeVisible();
