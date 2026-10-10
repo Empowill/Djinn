@@ -50,17 +50,21 @@ install: "go tool task install"
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
-Three more set the *question workers*, the small tasks Djinn starts by itself on a question of a wish: after an
+Four more set the *question workers*, the small tasks Djinn starts by itself on a question of a wish: after an
 answer, `Q03 → tasks` turns the decision into tasks; after "Enlighten me", `Q03: enlighten` investigates and revises
-the question ([agent protocol](agent-protocol.md)). They run the `provider` above, read only, and take no slot.
+the question ([agent protocol](agent-protocol.md)). They run read-only and take no slot: on the project's `provider`
+when that provider can run them read-only (claude, codex), falling back to claude otherwise; or on `question_provider`.
 
 | Setting               | What it sets                                                          | Not set                    |
 | --------------------- | --------------------------------------------------------------------- | -------------------------- |
 | `question_workers`    | `false`: none starts, the lead is told to act on each answer itself.  | on                         |
+| `question_provider`   | Their provider (`PROVIDER_CLAUDE`, `PROVIDER_CODEX`...).              | the project's provider when read-only, else claude |
 | `question_model`      | Their model. `""`: the provider's default.                            | `sonnet` for claude, else the provider's default |
 | `question_budget_usd` | The most one may spend, when its provider can enforce it. `0`: no limit. | 2                       |
 
-A file that sets `provider` resets `question_model` to its default too. `djinn up --question-workers=false` (or
+A file that sets `provider` or `question_provider` resets `question_model` to its default too. When the project's
+provider cannot run read-only (like Antigravity), question workers fall back to claude with `question_model` (`sonnet`),
+and their start event says why (`antigravity cannot run read-only: claude`). `djinn up --question-workers=false` (or
 `DJINN_QUESTION_WORKERS=off`) turns them off for every project.
 
 ## Branch names

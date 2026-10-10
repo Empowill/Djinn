@@ -430,3 +430,72 @@ func TestQuestionWorkerGivesUp(t *testing.T) {
 		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
 	}
 }
+
+// TestQuestionWorkerProvider: when the project's provider cannot run read-only (antigravity), question workers
+// fall back to claude with sonnet, and the start event says why ("antigravity cannot run read-only: claude");
+// an explicit question_provider names the provider they run on instead.
+func TestQuestionWorkerProvider(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_CLAUDE] = Fake{}
+	e := upWith(t, t.TempDir(), providers, WithQuestionWorkers())
+
+	// Fallback to Claude when the project's provider is Antigravity.
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wishID, _ := e.wish(t, dir)
+	q := e.asker(wishID)
+	asked := q.ask(t, "")
+	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_A, "")
+
+	converters := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
+	if len(converters) != 1 {
+		t.Fatalf("%d converters, want 1", len(converters))
+	}
+	c := converters[0]
+	if c.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || c.GetModel() != plan.DefaultQuestionModel {
+		t.Errorf("converter provider = %s, model = %q; want claude, %s", c.GetProvider(), c.GetModel(), plan.DefaultQuestionModel)
+	}
+	e.ended(t, c.GetId())
+	events := e.watch(t.Context(), t, c.GetId(), 0)
+	if !slices.ContainsFunc(events, func(ev *planv1.TaskEvent) bool {
+		return strings.Contains(ev.GetText(), "started claude (antigravity cannot run read-only: claude)")
+	}) {
+		t.Errorf("no start event with fallback text: %v", events)
+	}
+
+	// question_provider explicitly set: runs on that provider without fallback.
+	dirExplicit := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dirExplicit, ".agents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirExplicit, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\nquestion_provider: PROVIDER_FAKE\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wishIDExplicit, _ := e.wish(t, dirExplicit)
+	qExplicit := e.asker(wishIDExplicit)
+	askedExplicit := qExplicit.ask(t, "")
+	qExplicit.answer(t, askedExplicit.GetCode(), planv1.Choice_CHOICE_A, "")
+
+	convertersExplicit := e.roles(t, wishIDExplicit, planv1.TaskRole_TASK_ROLE_CONVERTER)
+	if len(convertersExplicit) != 1 {
+		t.Fatalf("%d converters, want 1", len(convertersExplicit))
+	}
+	ce := convertersExplicit[0]
+	if ce.GetProvider() != planv1.Provider_PROVIDER_FAKE {
+		t.Errorf("converter provider = %s; want fake", ce.GetProvider())
+	}
+	e.ended(t, ce.GetId())
+	eventsExplicit := e.watch(t.Context(), t, ce.GetId(), 0)
+	if !slices.ContainsFunc(eventsExplicit, func(ev *planv1.TaskEvent) bool {
+		return strings.Contains(ev.GetText(), "started fake") && !strings.Contains(ev.GetText(), "cannot run read-only")
+	}) {
+		t.Errorf("start event for explicit provider: %v", eventsExplicit)
+	}
+}
