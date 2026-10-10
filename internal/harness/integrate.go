@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -266,10 +265,7 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		oldSha = commit.GetOldSha()
 	}
 	moves := h.handleMergeMoves(ctx, wish, project, branch, oldSha, in.GetSha(), settled)
-	leadLine := fmt.Sprintf("Djinn: %s merged into %s as %s", codes(batch), branch, short8(in.GetSha()))
-	if len(moves) > 0 {
-		leadLine += ": " + strings.Join(moves, ", ")
-	}
+	leadLine := leadMergeLine(codes(batch), branch, in.GetSha(), moves)
 	h.tellLead(ctx, wish.GetId(), leadLine)
 	h.wake() // The tasks that waited for this work to be committed may start, from it.
 	return true
@@ -1244,22 +1240,8 @@ func (h *Harness) handleMergeMoves(
 			}
 		}
 	}
-	tagRe := regexp.MustCompile(`(?i)(?:push\s+tag|tag)\s+([vV]?[0-9]+[a-zA-Z0-9._-]*)`)
-	for _, t := range batch {
-		last := h.lastWords(ctx, t.GetId())
-		for _, match := range tagRe.FindAllStringSubmatch(last, -1) {
-			if len(match) > 1 {
-				cand := match[1]
-				if _, err := git(ctx, repo, "rev-parse", "--verify", "refs/tags/"+cand); err == nil {
-					if !slices.Contains(tags, cand) {
-						tags = append(tags, cand)
-					}
-				}
-			}
-		}
-	}
 	for _, tag := range tags {
-		moveName := "push tag " + tag
+		moveName := tagMoveName(tag)
 		if !slices.Contains(moves, moveName) {
 			moves = append(moves, moveName)
 			asked := hasQuestion(func(q *planv1.Question) bool {
@@ -1270,13 +1252,7 @@ func (h *Harness) handleMergeMoves(
 				if remote == "" {
 					remote = "origin"
 				}
-				q := &planv1.Question{
-					WishId:  wish.GetId(),
-					Text:    fmt.Sprintf("Push tag %s to %s?", tag, remote),
-					Context: fmt.Sprintf("Run `git push %s %s` to push the release tag to %s.", remote, tag, remote),
-					Options: []string{"Push tag " + tag, "Skip"},
-					Move:    true,
-				}
+				q := tagMoveQuestion(wish.GetId(), tag, remote)
 				if err := h.askMove(ctx, q); err == nil {
 					existing = append(existing, q)
 				}
@@ -1297,36 +1273,19 @@ func (h *Harness) handleMergeMoves(
 	}
 	hasRelease := false
 	for _, f := range files {
-		fl := strings.ToLower(f)
-		if strings.Contains(fl, "release") || strings.Contains(fl, ".goreleaser") {
+		if isReleaseFile(f) {
 			hasRelease = true
 			break
 		}
 	}
-	if !hasRelease {
-		for _, t := range batch {
-			last := strings.ToLower(h.lastWords(ctx, t.GetId()))
-			if strings.Contains(last, "release") {
-				hasRelease = true
-				break
-			}
-		}
-	}
 	if hasRelease {
-		moveName := "start a release"
-		if !slices.Contains(moves, moveName) {
-			moves = append(moves, moveName)
+		if !slices.Contains(moves, releaseMoveName) {
+			moves = append(moves, releaseMoveName)
 			asked := hasQuestion(func(q *planv1.Question) bool {
 				return strings.Contains(strings.ToLower(q.GetText()), "release")
 			})
 			if !asked {
-				q := &planv1.Question{
-					WishId:  wish.GetId(),
-					Text:    "Start release dry run?",
-					Context: fmt.Sprintf("Release files changed in %s. Trigger the release workflow dry run or prepare the release.", short8(sha)),
-					Options: []string{"Start release dry run", "Skip"},
-					Move:    true,
-				}
+				q := releaseMoveQuestion(wish.GetId(), sha)
 				if err := h.askMove(ctx, q); err == nil {
 					existing = append(existing, q)
 				}
@@ -1337,19 +1296,30 @@ func (h *Harness) handleMergeMoves(
 	// 3. needs: box added
 	var diffOut string
 	if oldSha != "" && oldSha != sha {
-		diffOut, _ = git(ctx, repo, "diff", "-U0", oldSha, sha)
+		diffOut, _ = git(ctx, repo, "diff", "-U0", oldSha, sha, "--", plan.PlanDir+"/*.md")
 	} else {
-		diffOut, _ = git(ctx, repo, "show", "-U0", "--format=", sha)
+		diffOut, _ = git(ctx, repo, "show", "-U0", "--format=", sha, "--", plan.PlanDir+"/*.md")
 	}
+	prefix, _ := git(ctx, repo, "rev-parse", "--show-prefix")
+	prefix = strings.TrimSpace(prefix)
+	curFile := ""
 	for _, line := range strings.Split(diffOut, "\n") {
+		if strings.HasPrefix(line, "+++ ") {
+			curFile = strings.TrimPrefix(line, "+++ ")
+			curFile = strings.TrimPrefix(curFile, "b/")
+			if prefix != "" {
+				curFile = strings.TrimPrefix(curFile, prefix)
+			}
+			continue
+		}
+		if !isPlanFile(curFile) {
+			continue
+		}
 		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
 			added := strings.TrimPrefix(line, "+")
-			box, machine, ok := plan.CutNeeds(added)
+			box, machine, ok := plan.ReadTaskItemNeeds(added)
 			if ok {
-				moveName := "check on " + machine
-				if box != "" {
-					moveName = "check " + box + " on " + machine
-				}
+				moveName := needsMoveName(box, machine)
 				if !slices.Contains(moves, moveName) {
 					moves = append(moves, moveName)
 					asked := hasQuestion(func(q *planv1.Question) bool {
@@ -1357,13 +1327,7 @@ func (h *Harness) handleMergeMoves(
 						return strings.Contains(tl, strings.ToLower(machine)) && (box == "" || strings.Contains(tl, strings.ToLower(box)))
 					})
 					if !asked {
-						q := &planv1.Question{
-							WishId:  wish.GetId(),
-							Text:    fmt.Sprintf("Check %s on %s?", box, machine),
-							Context: fmt.Sprintf("A verification is needed on %s:\n- [ ] %s (needs: %s)", machine, box, machine),
-							Options: []string{"Verified", "Not yet"},
-							Move:    true,
-						}
+						q := needsMoveQuestion(wish.GetId(), box, machine)
 						if err := h.askMove(ctx, q); err == nil {
 							existing = append(existing, q)
 						}
@@ -1374,65 +1338,71 @@ func (h *Harness) handleMergeMoves(
 	}
 
 	// 4. Worth a pull request to main
-	prRe := regexp.MustCompile(`(?i)\b(?:pull\s*request|pr)\b`)
-	hasPR := false
-	for _, t := range batch {
-		if prRe.MatchString(h.lastWords(ctx, t.GetId())) {
-			hasPR = true
-			break
-		}
-	}
-	if !hasPR {
-		var logMsgs string
-		if oldSha != "" && oldSha != sha {
-			logMsgs, _ = git(ctx, repo, "log", "--format=%B", oldSha+".."+sha)
+	main, ref, ok := h.isPRWorthy(ctx, wish, project, branch, sha)
+	if ok {
+		if prNum, hasPR := openPRFromBranch(ctx, repo, branch); hasPR {
+			if prNum != "" {
+				moves = append(moves, prGrowsMoveName(prNum))
+			}
+			for _, q := range existing {
+				if q.GetMove() && q.GetAnswer() == nil && strings.Contains(strings.ToLower(q.GetText()), "pull request") {
+					note := "PR open"
+					if prNum != "" {
+						note = fmt.Sprintf("PR #%s open", prNum)
+					}
+					_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_A, note)
+				}
+			}
 		} else {
-			logMsgs, _ = git(ctx, repo, "log", "-1", "--format=%B", sha)
-		}
-		if prRe.MatchString(logMsgs) {
-			hasPR = true
-		}
-	}
-	if hasPR {
-		settings, err := plan.LoadSettings(h.home, project)
-		if err == nil {
-			main, ref, err := mainRef(ctx, repo, settings.MainBranch)
-			if err == nil && !strings.EqualFold(main, branch) {
-				countStr, err := git(ctx, repo, "rev-list", "--count", ref+"..refs/heads/"+branch)
-				count, _ := strconv.Atoi(strings.TrimSpace(countStr))
-				if err == nil && count > 0 {
-					moveName := "open a pull request to " + main
-					if !slices.Contains(moves, moveName) {
-						moves = append(moves, moveName)
-						asked := hasQuestion(func(q *planv1.Question) bool {
-							return strings.Contains(strings.ToLower(q.GetText()), "pull request")
-						})
-						if !asked {
-							title, body := h.draftPR(ctx, wish, project, ref, branch)
-							q := &planv1.Question{
-								WishId:  wish.GetId(),
-								Text:    fmt.Sprintf("Open a pull request to %s?", main),
-								Context: fmt.Sprintf("### %s\n\n%s", title, body),
-								Options: []string{"Open pull request", "Not yet"},
-								Move:    true,
-							}
-							if err := h.askMove(ctx, q); err == nil {
-								existing = append(existing, q)
-							}
-						}
+			allQuestions, _ := store.List[*planv1.Question](ctx, h.store, nil)
+			wishes, _ := store.List[*planv1.Wish](ctx, h.store, nil)
+			wishesByID := make(map[string]*planv1.Wish, len(wishes))
+			for _, w := range wishes {
+				wishesByID[w.GetId()] = w
+			}
+			if !h.hasPRQuestion(ctx, project.GetId(), allQuestions, wishesByID) {
+				moveName := prMoveName(main)
+				if !slices.Contains(moves, moveName) {
+					moves = append(moves, moveName)
+					title, body := h.draftPR(ctx, wish, project, ref, branch)
+					q := prMoveQuestion(wish.GetId(), main, title, body)
+					if err := h.askMove(ctx, q); err == nil {
+						existing = append(existing, q)
 					}
 				}
 			}
 		}
 	}
 
-	// 5. Worker asked moves
+	// 5. Worker asked moves: any moves the worker explicitly asked that were not already detected.
 	for _, t := range batch {
 		for _, q := range existing {
 			if q.GetTaskId() == t.GetId() && q.GetMove() {
-				name := q.GetText()
-				name = strings.TrimSuffix(name, "?")
-				if !slices.Contains(moves, name) {
+				already := false
+				for _, tag := range tags {
+					if strings.Contains(q.GetText(), tag) {
+						already = true
+						break
+					}
+				}
+				if hasRelease && strings.Contains(strings.ToLower(q.GetText()), "release") {
+					already = true
+				}
+				if strings.Contains(strings.ToLower(q.GetText()), "pull request") {
+					already = true
+				}
+				if already {
+					continue
+				}
+				name := strings.TrimSpace(strings.TrimSuffix(q.GetText(), "?"))
+				found := false
+				for _, m := range moves {
+					if strings.EqualFold(m, name) {
+						found = true
+						break
+					}
+				}
+				if !found && name != "" {
 					moves = append(moves, name)
 				}
 			}
@@ -1481,20 +1451,11 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 								continue
 							}
 							needsWords := plan.NeedsWords(needs)
-							prompt := fmt.Sprintf("Check %s on %s?", t.GetCode(), needsWords)
 							var boxes []string
 							for _, n := range needs {
 								boxes = append(boxes, fmt.Sprintf("- [ ] %s (needs: %s)", n.GetBox(), n.GetNeeds()))
 							}
-							ctxt := fmt.Sprintf("Azima %s is awaiting proof:\n\n%s", t.GetCode(), strings.Join(boxes, "\n"))
-							q := &planv1.Question{
-								WishId:  wish.GetId(),
-								TaskId:  t.GetId(),
-								Text:    prompt,
-								Context: ctxt,
-								Options: []string{"Verified", "Not yet"},
-								Move:    true,
-							}
+							q := azimaProofMoveQuestion(wish.GetId(), t.GetId(), t.GetCode(), needsWords, boxes)
 							if err := h.askMove(ctx, q); err == nil {
 								allQuestions = append(allQuestions, q)
 							}
@@ -1554,14 +1515,7 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 								}
 							}
 							if !asked {
-								q := &planv1.Question{
-									WishId: wish.GetId(),
-									Text:   fmt.Sprintf("Install and restart %s?", s),
-									Context: fmt.Sprintf("The build %s on %s has been integrated for %s and is not installed yet. Install and restart?",
-										s, branch, delay.Round(time.Minute)),
-									Options: []string{"Install and restart", "Skip"},
-									Move:    true,
-								}
+								q := installMoveQuestion(wish.GetId(), sha, branch, delay)
 								if err := h.askMove(ctx, q); err == nil {
 									allQuestions = append(allQuestions, q)
 								}
@@ -1578,35 +1532,34 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 				continue
 			}
 
-			p := pushState(wish, projectID)
-			if p != nil && p.GetLast() != nil && p.GetQuestionId() == "" && p.GetHeld() == "" && p.GetRefused() == "" {
+			main, ref, ok := h.isPRWorthy(ctx, wish, project, branch, "")
+			if ok {
+				if prNum, hasPR := openPRFromBranch(ctx, repo, branch); !hasPR {
+					if !h.hasPRQuestion(ctx, projectID, allQuestions, wishesByID) {
+						title, body := h.draftPR(ctx, wish, project, ref, branch)
+						q := prMoveQuestion(wish.GetId(), main, title, body)
+						if err := h.askMove(ctx, q); err == nil {
+							allQuestions = append(allQuestions, q)
+						}
+					}
+				} else {
+					for _, q := range allQuestions {
+						if q.GetMove() && q.GetAnswer() == nil && strings.Contains(strings.ToLower(q.GetText()), "pull request") && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
+							note := "PR open"
+							if prNum != "" {
+								note = fmt.Sprintf("PR #%s open", prNum)
+							}
+							_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_A, note)
+						}
+					}
+				}
+			} else {
+				// If branch caught up to main (count == 0), close any open PR questions
 				main, ref, err := mainRef(ctx, repo, settings.MainBranch)
 				if err == nil && !strings.EqualFold(main, branch) {
-					pushedSha := p.GetLast().GetNewSha()
-					countStr, err := git(ctx, repo, "rev-list", "--count", ref+".."+pushedSha)
+					countStr, err := git(ctx, repo, "rev-list", "--count", ref+"..refs/heads/"+branch)
 					count, _ := strconv.Atoi(strings.TrimSpace(countStr))
-					if err == nil && count > 0 && h.isWishSettled(ctx, wish.GetId()) {
-						asked := false
-						for _, q := range allQuestions {
-							if q.GetMove() && strings.Contains(strings.ToLower(q.GetText()), "pull request") && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
-								asked = true
-								break
-							}
-						}
-						if !asked {
-							title, body := h.draftPR(ctx, wish, project, ref, branch)
-							q := &planv1.Question{
-								WishId:  wish.GetId(),
-								Text:    fmt.Sprintf("Open a pull request to %s?", main),
-								Context: fmt.Sprintf("### %s\n\n%s", title, body),
-								Options: []string{"Open pull request", "Not yet"},
-								Move:    true,
-							}
-							if err := h.askMove(ctx, q); err == nil {
-								allQuestions = append(allQuestions, q)
-							}
-						}
-					} else if err == nil && count == 0 {
+					if err == nil && count == 0 {
 						for _, q := range allQuestions {
 							if q.GetMove() && q.GetAnswer() == nil && strings.Contains(strings.ToLower(q.GetText()), "pull request") && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
 								_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_A, "merged to "+main)
