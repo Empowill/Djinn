@@ -148,6 +148,18 @@ export function WishApp() {
     }
   };
 
+  const pushProject = useCallback(
+    (id: string) => {
+      clients.projects
+        .push({ project: id })
+        .then(() => {
+          void data.changed("", [Change.PROJECT]);
+        })
+        .catch((err) => setToast(message(err)));
+    },
+    [clients, data],
+  );
+
   return (
     <div className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
@@ -187,6 +199,7 @@ export function WishApp() {
           onSelectProject={setProjectId}
           onMove={move}
           onNewProject={() => setModal("project")}
+          onPush={pushProject}
         />
         <button
           className="nav-item import-nav"
@@ -266,7 +279,11 @@ export function WishApp() {
         )}
         {modal === "docs" && <Docs onClose={closeDocs} />}
         {project && (
-          <ProjectPanel project={project} onClose={() => setProjectId("")} />
+          <ProjectPanel
+            project={project}
+            onClose={() => setProjectId("")}
+            onToast={setToast}
+          />
         )}
       </AnimatePresence>
       <Toast text={toast} onClose={closeToast} />

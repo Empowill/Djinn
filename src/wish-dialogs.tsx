@@ -8,6 +8,7 @@ import {
   CheckWhen,
   type Project,
   type ProjectCheck,
+  ProjectPush,
   type ProjectServiceShowResponse,
   type Skill,
 } from "../gen/ts/plan/v1/plan_pb";
@@ -17,7 +18,7 @@ import type {
 } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
-import { MAX_ACTIVE, span, when } from "./data/format";
+import { MAX_ACTIVE, span, syncDescription, when } from "./data/format";
 import { Brand, ModalFrame } from "./frame";
 import {
   chosenLanguage,
@@ -261,19 +262,26 @@ export function FolderField({
   );
 }
 
+// syncDescription says how the integration branch stands against its remote target.
+export { syncDescription };
+
 // ProjectPanel shows a project as djinn knows it, the checks Djinn runs on its work with their last runs
 // (ProjectService.Show), and its skills (SkillService.List): its own and those it summons.
 export function ProjectPanel({
   project,
   onClose,
+  onToast,
 }: {
   project: Project;
   onClose: () => void;
+  onToast?: (text: string) => void;
 }) {
   const clients = useClients();
   const [skills, setSkills] = useState<Skill[] | undefined>();
   const [shown, setShown] = useState<ProjectServiceShowResponse>();
   const [error, setError] = useState("");
+  const [pushing, setPushing] = useState(false);
+
   useEffect(() => {
     let live = true;
     clients.skills
@@ -288,6 +296,48 @@ export function ProjectPanel({
       live = false;
     };
   }, [clients, project.id]);
+
+  const currentPush =
+    shown?.project?.push ?? project.push ?? ProjectPush.STANDARD;
+  const currentSync = shown?.project?.sync ?? project.sync;
+  const isOutOfSync = Boolean(
+    currentSync && (currentSync.ahead > 0 || currentSync.behind > 0),
+  );
+  const syncText = syncDescription(currentSync);
+
+  const handlePush = async () => {
+    setPushing(true);
+    try {
+      await clients.projects.push({ project: project.id });
+      const res = await clients.projects.show({ project: project.id });
+      setShown(res);
+    } catch (err) {
+      const msg = message(err);
+      setError(msg);
+      onToast?.(msg);
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  const handleSetPush = async (nextPush: ProjectPush) => {
+    try {
+      const res = await clients.projects.setPush({
+        project: project.id,
+        push: nextPush,
+      });
+      setShown((prev) =>
+        prev
+          ? { ...prev, project: res.project }
+          : ({ project: res.project } as ProjectServiceShowResponse),
+      );
+    } catch (err) {
+      const msg = message(err);
+      setError(msg);
+      onToast?.(msg);
+    }
+  };
+
   return (
     <ModalFrame
       title={project.name}
@@ -309,6 +359,55 @@ export function ProjectPanel({
           <div>
             <strong>{t("project.remote")}</strong>
             <p>{project.remote}</p>
+          </div>
+        </div>
+      )}
+      {project.git && (
+        <div className="setting-row">
+          <div>
+            <strong>{t("project.push_cadence")}</strong>
+            <p>
+              {currentPush === ProjectPush.ON_DEMAND
+                ? t("project.push_on_demand_detail")
+                : t("project.push_standard_detail")}
+            </p>
+            {isOutOfSync && <p className="project-sync-status">{syncText}</p>}
+          </div>
+          <div className="project-push-actions">
+            {isOutOfSync && (
+              <button
+                type="button"
+                className="button accent small"
+                disabled={pushing}
+                onClick={handlePush}
+              >
+                {pushing ? t("project.pushing") : t("project.push")}
+              </button>
+            )}
+            <div
+              className="segmented-switch"
+              role="group"
+              aria-label={t("project.push_cadence")}
+            >
+              <button
+                type="button"
+                className={
+                  currentPush !== ProjectPush.ON_DEMAND ? "active" : ""
+                }
+                onClick={() => handleSetPush(ProjectPush.STANDARD)}
+              >
+                {t("project.push_standard")}
+              </button>
+              <button
+                type="button"
+                className={
+                  currentPush === ProjectPush.ON_DEMAND ? "active" : ""
+                }
+                onClick={() => handleSetPush(ProjectPush.ON_DEMAND)}
+              >
+                {t("project.push_on_demand")}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -384,5 +385,177 @@ func TestCommittedSince(t *testing.T) {
 	// Only the project's work committed after the push, in the order it was: the count starts again at each push.
 	if got := codes(committedSince(tasks, "p", push)); got != "W2, W3" {
 		t.Errorf("committed since the push: %s", got)
+	}
+}
+
+// TestPushOnDemandNeverPushesOnAzimaOrCadence: in ON_DEMAND mode, the integration branch is never pushed
+// automatically at an azima's end or on the cadence, and no push question is asked.
+func TestPushOnDemandNeverPushesOnAzimaOrCadence(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare := in.remote(t)
+	old := in.tip(t)
+
+	if err := plan.SaveDeveloperPush(in.home, in.projectID, planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND); err != nil {
+		t.Fatal(err)
+	}
+
+	azima := in.azima(t, in.wishID, "Letters")
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	in.pass(t, 0)
+
+	if got := in.remoteTip(t, bare); got != old {
+		t.Fatalf("on demand pushed at azima end: origin at %s, was %s", got, old)
+	}
+	if len(in.pushes(t)) != 0 {
+		t.Fatalf("expected 0 pushes, got %v", in.pushes(t))
+	}
+	if in.pushState(t) != nil && in.pushState(t).GetQuestionId() != "" {
+		t.Fatalf("on demand asked a push question: %v", in.pushQuestion(t))
+	}
+
+	in.later(2 * time.Hour)
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+	in.pass(t, 0)
+
+	if got := in.remoteTip(t, bare); got != old {
+		t.Fatalf("on demand pushed on cadence: origin at %s, was %s", got, old)
+	}
+	if len(in.pushes(t)) != 0 {
+		t.Fatalf("expected 0 pushes, got %v", in.pushes(t))
+	}
+	if in.pushState(t) != nil && in.pushState(t).GetQuestionId() != "" {
+		t.Fatalf("on demand asked a push question: %v", in.pushQuestion(t))
+	}
+}
+
+// TestPushMethod: Harness.Push pushes the integration branch, runs push checks under gates, refuses to force
+// when remote is ahead (asking refusal question), and returns an error when already up to date.
+func TestPushMethod(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	bare := in.remote(t)
+	old := in.tip(t)
+
+	if err := plan.SaveDeveloperPush(in.home, in.projectID, planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND); err != nil {
+		t.Fatal(err)
+	}
+
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.pass(t, 0)
+	if in.remoteTip(t, bare) != old {
+		t.Fatal("pushed before Push method called")
+	}
+
+	push, err := in.h.Push(t.Context(), in.wishID, in.projectID)
+	if err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+	tip := in.tip(t)
+	if got := in.remoteTip(t, bare); got != tip {
+		t.Fatalf("Push did not update remote: origin at %s, want %s", got, tip)
+	}
+	if push == nil || push.GetNewSha() != tip || push.GetCount() != 1 {
+		t.Fatalf("unexpected push record: %v", push)
+	}
+	_, gates := in.ran()
+	if !slices.Contains(gates, "test -") {
+		t.Errorf("gates %q; want push check test to run", gates)
+	}
+
+	// Push when up to date: returns error
+	_, err = in.h.Push(t.Context(), in.wishID, in.projectID)
+	if err == nil || !strings.Contains(err.Error(), "nothing to push") {
+		t.Fatalf("expected nothing to push error, got %v", err)
+	}
+
+	// Push checks held: push check fails, Push returns error and holds push
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	in.pass(t, 0)
+	in.testCode, in.testOut = 1, "test failed"
+	_, err = in.h.Push(t.Context(), in.wishID, in.projectID)
+	if err == nil || !strings.Contains(err.Error(), "the push is held") {
+		t.Fatalf("expected held push error, got %v", err)
+	}
+	if in.remoteTip(t, bare) == in.tip(t) {
+		t.Fatal("remote updated while checks red")
+	}
+	in.testCode, in.testOut = 0, ""
+
+	// Remote is ahead: refusal, refuses to force, asks question
+	other := filepath.Join(t.TempDir(), "other")
+	in.git(t, in.repo, "clone", "--quiet", "--branch", in.branch, bare, other)
+	writeFile(t, other, "CONFLICT", "theirs\n")
+	in.git(t, other, "add", "CONFLICT")
+	in.git(t, other, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit", "--quiet", "-m", "Remote commit")
+	in.git(t, other, "push", "--quiet", "origin", in.branch)
+	theirs := in.remoteTip(t, bare)
+
+	_, err = in.h.Push(t.Context(), in.wishID, in.projectID)
+	if err == nil || !strings.Contains(err.Error(), "refused the push") {
+		t.Fatalf("expected refused push error, got %v", err)
+	}
+	if got := in.remoteTip(t, bare); got != theirs {
+		t.Fatalf("forced push! origin moved to %s from %s", got, theirs)
+	}
+	q := in.pushQuestion(t)
+	if !strings.Contains(q.GetText(), "refused the push") {
+		t.Fatalf("expected refusal question, got %q", q.GetText())
+	}
+}
+
+// TestPushSync: computes ahead and behind commit counts between integration branch and remote tracking ref.
+func TestPushSync(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare := in.remote(t)
+
+	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := store.Get[*planv1.Project](t.Context(), in.db, in.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sync, err := in.h.Sync(t.Context(), wish, project)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if sync.GetAhead() != 0 || sync.GetBehind() != 0 {
+		t.Fatalf("initial sync: ahead=%d behind=%d, want 0/0", sync.GetAhead(), sync.GetBehind())
+	}
+
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	in.pass(t, 0)
+
+	// 2 tasks integrated: 2 task commits + 2 merge commits = 4 commits ahead of origin
+	sync, err = in.h.Sync(t.Context(), wish, project)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if sync.GetAhead() != 4 || sync.GetBehind() != 0 {
+		t.Fatalf("after 2 tasks integrated: ahead=%d behind=%d, want 4/0", sync.GetAhead(), sync.GetBehind())
+	}
+
+	other := filepath.Join(t.TempDir(), "other")
+	in.git(t, in.repo, "clone", "--quiet", "--branch", in.branch, bare, other)
+	writeFile(t, other, "REMOTE", "remote\n")
+	in.git(t, other, "add", "REMOTE")
+	in.git(t, other, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit", "--quiet", "-m", "Remote")
+	in.git(t, other, "push", "--quiet", "origin", in.branch)
+
+	in.git(t, in.repo, "fetch", "origin")
+
+	sync, err = in.h.Sync(t.Context(), wish, project)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if sync.GetAhead() != 4 || sync.GetBehind() != 1 {
+		t.Fatalf("with remote ahead: ahead=%d behind=%d, want 4/1", sync.GetAhead(), sync.GetBehind())
 	}
 }

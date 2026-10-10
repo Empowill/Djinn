@@ -18,7 +18,7 @@ import { type KeyboardEvent, useState } from "react";
 
 import type { Project, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { WishState } from "../gen/ts/plan/v1/plan_pb";
-import { MAX_ACTIVE, isActive, wishTone } from "./data/format";
+import { MAX_ACTIVE, isActive, syncDescription, wishTone } from "./data/format";
 import { t } from "./i18n";
 import { useOpenTerminal } from "./lead-terminal";
 import { CountPill, ToneIcon } from "./status";
@@ -45,6 +45,7 @@ export function WishSidebar({
   onSelectProject,
   onMove,
   onNewProject,
+  onPush,
 }: {
   wishes: Wish[];
   projects: Project[];
@@ -63,6 +64,7 @@ export function WishSidebar({
   // Moves a wish to a rank, from 1: a paused one becomes active there.
   onMove: (wishId: string, to: number) => void;
   onNewProject: () => void;
+  onPush?: (projectId: string) => void;
 }) {
   const active = wishes.filter(isActive);
   const paused = wishes.filter((w) => w.state === WishState.PAUSED);
@@ -255,33 +257,62 @@ export function WishSidebar({
         </button>
       </div>
       <div className="mission-list project-list">
-        {projects.map((project) => (
-          <div
-            key={project.id}
-            className={`project-nav ${selectedProjectId === project.id ? "selected" : ""}`}
-          >
-            <button
-              className="project-select"
-              title={project.directory || t("project.no_folder")}
-              onClick={() => onSelectProject(project.id)}
+        {projects.map((project) => {
+          const sync = project.sync;
+          const isOutOfSync = Boolean(
+            sync && (sync.ahead > 0 || sync.behind > 0),
+          );
+          const syncText = syncDescription(sync);
+          return (
+            <div
+              key={project.id}
+              className={`project-nav ${selectedProjectId === project.id ? "selected" : ""}`}
             >
-              <FolderOpen size={collapsed ? 16 : 15} />
-              {!collapsed && <span>{project.name}</span>}
-            </button>
-            {openTerminal && project.directory && !collapsed && (
-              <button
-                className="icon-button project-terminal"
-                onClick={() => openTerminal(project)}
-                title={t("sidebar.project_terminal", { project: project.name })}
-                aria-label={t("sidebar.project_terminal", {
-                  project: project.name,
-                })}
-              >
-                <SquareTerminal size={13} />
-              </button>
-            )}
-          </div>
-        ))}
+              <div className="project-nav-main">
+                <button
+                  className="project-select"
+                  title={project.directory || t("project.no_folder")}
+                  onClick={() => onSelectProject(project.id)}
+                >
+                  <FolderOpen size={collapsed ? 16 : 15} />
+                  {!collapsed && <span>{project.name}</span>}
+                </button>
+                {openTerminal && project.directory && !collapsed && (
+                  <button
+                    className="icon-button project-terminal"
+                    onClick={() => openTerminal(project)}
+                    title={t("sidebar.project_terminal", {
+                      project: project.name,
+                    })}
+                    aria-label={t("sidebar.project_terminal", {
+                      project: project.name,
+                    })}
+                  >
+                    <SquareTerminal size={13} />
+                  </button>
+                )}
+              </div>
+              {isOutOfSync && !collapsed && (
+                <div className="project-sync-row">
+                  <span className="project-sync-status" title={syncText}>
+                    {syncText}
+                  </span>
+                  <button
+                    type="button"
+                    className="button accent small"
+                    title={t("project.push")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPush?.(project.id);
+                    }}
+                  >
+                    {t("project.push")}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </>
   );

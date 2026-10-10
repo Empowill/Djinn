@@ -33,6 +33,26 @@ message Project {
   repeated Summon summons = 7;
   // The last run of each of its checks, and of its setup, as Djinn integrated and pushed its wishes' work.
   repeated CheckRun check_runs = 8;
+  // Out of sync with its remote on the integration branch.
+  ProjectSync sync = 9;
+  // When Djinn pushes its integration branch: standard cadence or on demand.
+  ProjectPush push = 10;
+}
+
+// ProjectSync says how the project's integration branch stands against its remote target for a wish.
+message ProjectSync {
+  // The wish whose integration branch this is.
+  string wish_id = 1;
+  // The local integration branch.
+  string branch = 2;
+  // The remote name: origin.
+  string remote = 3;
+  // The target branch on remote: feat/x.
+  string target = 4;
+  // How many commits the local branch is ahead of the remote target.
+  int32 ahead = 5;
+  // How many commits the local branch is behind the remote target.
+  int32 behind = 6;
 }
 
 // CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
@@ -189,6 +209,12 @@ message ProjectSettings {
     defined_only: true
     not_in: [0, 5]
   }];
+  // When Djinn pushes the project's integration branch: standard (at each azima's end or on cadence) or on demand.
+  // Not set: standard.
+  optional ProjectPush push = 20 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -201,6 +227,16 @@ enum MergeMain {
   MERGE_MAIN_COMMIT = 2;
   // Never: the person keeps the branch up with main.
   MERGE_MAIN_OFF = 3;
+}
+
+// ProjectPush is when Djinn pushes a project's integration branch: at today's cadence, or only by the developer.
+enum ProjectPush {
+  // Not set: standard.
+  PROJECT_PUSH_UNSPECIFIED = 0;
+  // Standard: pushes at an azima's end or on the cadence; the wish's push_mode still applies.
+  PROJECT_PUSH_STANDARD = 1;
+  // On demand: Djinn commits each task's work into the integration branch as now, but never pushes by itself and asks nothing; only the developer's Push does.
+  PROJECT_PUSH_ON_DEMAND = 2;
 }
 
 // ProjectCheck is a command Djinn runs on a project's work: checks { name: "lint" command: "go tool task lint" when:
@@ -1372,6 +1408,16 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // Push the project's integration branch for a wish: runs push checks under gates, never with --force.
+  rpc Push(ProjectServicePushRequest) returns (ProjectServicePushResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Change when Djinn pushes the project's integration branch (standard cadence or on demand).
+  rpc SetPush(ProjectServiceSetPushRequest) returns (ProjectServiceSetPushResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message ProjectServiceAddRequest {
@@ -1420,6 +1466,42 @@ message ProjectServiceShowResponse {
   // files resolve them. Their last runs are the project's check_runs.
   string setup = 6;
   repeated ProjectCheck checks = 7;
+}
+
+message ProjectServicePushRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The wish whose integration branch to push; empty: the active wish on this project.
+  optional string wish = 2 [(buf.validate.field).string.max_len = 100];
+}
+
+message ProjectServicePushResponse {
+  // The push recorded.
+  IntegrationPush push = 1;
+}
+
+message ProjectServiceSetPushRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // When Djinn pushes: standard cadence or on demand.
+  ProjectPush push = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum = {
+      defined_only: true
+      not_in: [0]
+    }
+  ];
+}
+
+message ProjectServiceSetPushResponse {
+  // The project updated.
+  Project project = 1;
 }
 
 // Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe
