@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // writeSettings writes content at path, creating its folders.
@@ -189,8 +190,9 @@ func TestResolveSettings(t *testing.T) {
 		// Main's are TestMainSettings'.
 		got.MainBranch, got.MergeMain, got.MergeMainEvery, got.InstallReleases = "", 0, 0, false
 		got.MainBranchFrom, got.MergeMainFrom, got.MergeMainEveryFrom, got.InstallReleasesFrom = 0, 0, 0, 0
-		// Push is TestPushSettings'.
+		// Push is TestPushSettings', push strategy is TestPushStrategySettings'.
 		got.Push, got.PushFrom = 0, 0
+		got.PushStrategy, got.PushStrategyFrom = 0, 0
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
@@ -336,7 +338,7 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, push=standard DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -355,7 +357,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, push=standard DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
@@ -365,7 +367,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, push=standard DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, push=standard DEFAULT, push_strategy=wish DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
 	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {
@@ -476,5 +478,122 @@ func TestPushSettings(t *testing.T) {
 	}
 	if err := SaveDeveloperPush(home, "", onDemand); err == nil {
 		t.Error("SaveDeveloperPush without project ID: want error")
+	}
+}
+
+// TestPushStrategySettings: by default Djinn integrates per wish; either file changes it, the developer's
+// winning, SaveDeveloperPushStrategy writes the developer's choice, and a wish's explicit strategy overrides both.
+func TestPushStrategySettings(t *testing.T) {
+	const (
+		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
+		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
+		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+		wish = planv1.SettingSource_SETTING_SOURCE_WISH
+	)
+	wishStrat, azimaStrat := planv1.PushStrategy_PUSH_STRATEGY_WISH, planv1.PushStrategy_PUSH_STRATEGY_AZIMA
+	for _, c := range []struct {
+		name         string
+		repo, dev    *planv1.ProjectSettings
+		wantStrategy planv1.PushStrategy
+		wantFrom     planv1.SettingSource
+		wantWord     string
+	}{
+		{"neither file", nil, nil, wishStrat, def, "wish"},
+		{"the team's azima", &planv1.ProjectSettings{PushStrategy: &azimaStrat}, nil, azimaStrat, repo, "azima"},
+		{"the developer overrides to wish", &planv1.ProjectSettings{PushStrategy: &azimaStrat}, &planv1.ProjectSettings{PushStrategy: &wishStrat}, wishStrat, dev, "wish"},
+	} {
+		s := ResolveSettings(c.repo, c.dev)
+		if s.PushStrategy != c.wantStrategy || s.PushStrategyFrom != c.wantFrom {
+			t.Errorf("%s: push_strategy=%v from=%v; want %v from=%v", c.name, s.PushStrategy, s.PushStrategyFrom, c.wantStrategy, c.wantFrom)
+		}
+		if got := PushStrategyWord(s.PushStrategy); got != c.wantWord {
+			t.Errorf("%s: word=%s; want %s", c.name, got, c.wantWord)
+		}
+	}
+
+	home := t.TempDir()
+	projectID := "01946059-e68b-7cb8-8c1d-6b586e3f4ea2"
+	project := &planv1.Project{Id: projectID}
+
+	if err := SaveDeveloperPushStrategy(home, projectID, azimaStrat); err != nil {
+		t.Fatalf("SaveDeveloperPushStrategy: %v", err)
+	}
+	s, err := LoadSettings(home, project)
+	if err != nil {
+		t.Fatalf("LoadSettings: %v", err)
+	}
+	if s.PushStrategy != azimaStrat || s.PushStrategyFrom != dev {
+		t.Errorf("saved developer push strategy: %v from %v; want azima from developer", s.PushStrategy, s.PushStrategyFrom)
+	}
+
+	if err := SaveDeveloperPushStrategy("", projectID, azimaStrat); err == nil {
+		t.Error("SaveDeveloperPushStrategy without home: want error")
+	}
+	if err := SaveDeveloperPushStrategy(home, "", azimaStrat); err == nil {
+		t.Error("SaveDeveloperPushStrategy without project ID: want error")
+	}
+
+	// Wish resolution: an unspecified strategy falls back to project settings; an explicit strategy overrides.
+	pSettings := Settings{PushStrategy: wishStrat, PushStrategyFrom: def}
+	wUnspecified := &planv1.Wish{PushStrategy: planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED}
+	if gotStrat, gotFrom := ResolveWishPushStrategy(wUnspecified, pSettings); gotStrat != wishStrat || gotFrom != def {
+		t.Errorf("unspecified wish strategy: %v from %v; want %v from %v", gotStrat, gotFrom, wishStrat, def)
+	}
+
+	wAzima := &planv1.Wish{PushStrategy: azimaStrat}
+	if gotStrat, gotFrom := ResolveWishPushStrategy(wAzima, pSettings); gotStrat != azimaStrat || gotFrom != wish {
+		t.Errorf("explicit azima wish strategy: %v from %v; want %v from %v", gotStrat, gotFrom, azimaStrat, wish)
+	}
+
+	pSettingsAzima := Settings{PushStrategy: azimaStrat, PushStrategyFrom: dev}
+	wWish := &planv1.Wish{PushStrategy: wishStrat}
+	if gotStrat, gotFrom := ResolveWishPushStrategy(wWish, pSettingsAzima); gotStrat != wishStrat || gotFrom != wish {
+		t.Errorf("explicit wish override: %v from %v; want %v from %v", gotStrat, gotFrom, wishStrat, wish)
+	}
+
+	// Resolution order with store: built-in default < repository < developer < wish override.
+	sStore, err := store.Open(t.Context(), "", Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sStore.Close()
+
+	projDir := t.TempDir()
+	pEntity := &planv1.Project{Id: store.NewID(), Directory: projDir, Name: "myproj"}
+	if err := sStore.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "/test", &planv1.WishServiceListRequest{}); err != nil {
+			return err
+		}
+		return tx.Put(pEntity)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	w := &planv1.Wish{Id: store.NewID(), ProjectIds: []string{pEntity.GetId()}}
+
+	// (a) built-in default: wish, default
+	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != wishStrat || src != def {
+		t.Errorf("EffectiveWishPushStrategy built-in = %v, %v; want wish, default", strat, src)
+	}
+
+	// (b) repository default: azima, repository
+	repoSettingsFile := filepath.Join(projDir, ".agents", "settings.txtpb")
+	writeSettings(t, repoSettingsFile, "push_strategy: PUSH_STRATEGY_AZIMA\n")
+	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != azimaStrat || src != repo {
+		t.Errorf("EffectiveWishPushStrategy repo = %v, %v; want azima, repository", strat, src)
+	}
+
+	// (c) developer default overrides repository: wish, developer
+	if err := SaveDeveloperPushStrategy(home, pEntity.GetId(), wishStrat); err != nil {
+		t.Fatal(err)
+	}
+	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != wishStrat || src != dev {
+		t.Errorf("EffectiveWishPushStrategy dev = %v, %v; want wish, developer", strat, src)
+	}
+
+	// (d) wish override overrides developer default: azima, wish
+	w.PushStrategy = azimaStrat
+	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != azimaStrat || src != wish {
+		t.Errorf("EffectiveWishPushStrategy wish override = %v, %v; want azima, wish", strat, src)
 	}
 }

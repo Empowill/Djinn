@@ -48,6 +48,7 @@ install: "go tool task install"
 | `merge_main_minutes` | How often, in minutes, Djinn fetches main to look at it, at most. A release the running Djinn finds makes it look at once. | `60` |
 | `install_releases` | For the project a Djinn built from a checkout comes from: a newer release installs by itself while that checkout is on main. `false`: it is only offered. | on |
 | `push`           | When Djinn pushes the integration branch: `PROJECT_PUSH_STANDARD` (today's cadence: at an azima's end or 3 tasks and an hour), `PROJECT_PUSH_ON_DEMAND` (never pushes by itself, only the developer's push does). | `PROJECT_PUSH_STANDARD` |
+| `push_strategy`  | The branch strategy for integration and push: `PUSH_STRATEGY_WISH` (today's behavior: one integration branch per wish and project), `PUSH_STRATEGY_AZIMA` (one integration branch per azima). | `PUSH_STRATEGY_WISH` |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
@@ -267,6 +268,15 @@ now, but never pushes by itself and asks nothing; only the developer's push does
 side panel show when the integration branch is out of sync with its remote and offer a Push button and a cadence switch;
 `djinn project push <project> [--wish <wish>]` pushes from the command line. In On demand, the wish's head says
 "pushes on demand".
+
+A project also sets the default push strategy with `push_strategy`: `PUSH_STRATEGY_WISH` (the default: one
+integration branch per wish and per project) or `PUSH_STRATEGY_AZIMA` (one integration branch per azima).
+`djinn project push-strategy <project> [--strategy wish|azima]` shows or sets the developer's project default.
+Each wish can override this strategy: `djinn wish push-strategy <wish> [--strategy wish|azima]` (or
+`djinn wish set-integration <wish> --push-strategy wish|azima`) shows or sets the push strategy of that wish.
+A wish created without a value takes the project's default, and a project without a value defaults to `wish`.
+To protect branches already created and merged, switching push strategy is refused once any task of the wish has
+already been committed to its integration branch.
 
 Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
 version, to install it and restart on it, with what changed (each task with the last paragraph its worker wrote folded

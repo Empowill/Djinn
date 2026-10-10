@@ -466,3 +466,136 @@ func TestImportState(t *testing.T) {
 		t.Errorf("list = %s", got)
 	}
 }
+
+// TestWishPushStrategy: a wish without a value inherits the project's default; an explicit strategy overrides it;
+// switching the push strategy is refused when work is already merged into the wish's integration branch.
+func TestWishPushStrategy(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	dir := t.TempDir()
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{
+		Directory: dir,
+		Name:      "testapp",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := add.Msg.GetProject().GetId()
+	projectName := add.Msg.GetProject().GetName()
+
+	// 1. Create a wish without strategy -> inherits built-in default "wish" from DEFAULT source.
+	makeRes, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title:      "Wish 1",
+		ProjectIds: []string{projectID},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := makeRes.Msg.GetWish().GetId()
+
+	showRes, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId: wishID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if showRes.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH || showRes.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEFAULT {
+		t.Errorf("initial wish strategy = %v from %v; want wish from default", showRes.Msg.GetStrategy(), showRes.Msg.GetSource())
+	}
+
+	// 2. Change project push strategy to azima -> wish without override now inherits azima from DEVELOPER source.
+	_, err = c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{
+		Project:  projectName,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	showRes2, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId: wishID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if showRes2.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA || showRes2.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("wish strategy after project change = %v from %v; want azima from developer", showRes2.Msg.GetStrategy(), showRes2.Msg.GetSource())
+	}
+
+	// 3. Wish override to "wish" -> returns wish from WISH source.
+	setWishRes, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId:   wishID,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_WISH.Enum(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if setWishRes.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH || setWishRes.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_WISH {
+		t.Errorf("set wish strategy = %v from %v; want wish from wish", setWishRes.Msg.GetStrategy(), setWishRes.Msg.GetSource())
+	}
+
+	// 4. Create a committed task on the wish.
+	c.put(t, &planv1.Task{
+		Id:     store.NewID(),
+		WishId: wishID,
+		Integration: &planv1.TaskIntegration{
+			State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+		},
+	})
+
+	// Switching strategy to azima must be refused because work is already merged.
+	_, err = c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId:   wishID,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(),
+	}))
+	if err == nil {
+		t.Fatal("expected error switching push strategy with committed task, got nil")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "already merged into its integration branch") {
+		t.Errorf("switch error = %v; want FailedPrecondition naming already merged", err)
+	}
+
+	// Setting the same strategy should succeed (no switch).
+	sameRes, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId:   wishID,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_WISH.Enum(),
+	}))
+	if err != nil {
+		t.Errorf("setting same strategy failed: %v", err)
+	}
+	if sameRes.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH {
+		t.Errorf("strategy = %v, want wish", sameRes.Msg.GetStrategy())
+	}
+
+	// Switching via SetIntegration must also be refused.
+	_, err = c.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+		WishId:       wishID,
+		PushStrategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(),
+	}))
+	if err == nil {
+		t.Fatal("expected error in SetIntegration switching push strategy with committed task, got nil")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "already merged into its integration branch") {
+		t.Errorf("SetIntegration switch error = %v; want FailedPrecondition naming already merged", err)
+	}
+
+	// 5. Creating a wish with an explicit push strategy.
+	strat := planv1.PushStrategy_PUSH_STRATEGY_AZIMA
+	makeWithStrat, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title:        "Wish Explicit",
+		ProjectIds:   []string{projectID},
+		PushStrategy: &strat,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	showExplicit, err := c.wishes.PushStrategy(ctx, connect.NewRequest(&planv1.WishServicePushStrategyRequest{
+		WishId: makeWithStrat.Msg.GetWish().GetId(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if showExplicit.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA || showExplicit.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_WISH {
+		t.Errorf("explicit wish strategy = %v from %v; want azima from wish", showExplicit.Msg.GetStrategy(), showExplicit.Msg.GetSource())
+	}
+}

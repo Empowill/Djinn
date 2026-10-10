@@ -393,3 +393,52 @@ func TestProjectPushAndSetPush(t *testing.T) {
 		t.Errorf("pusher received wish=%s project=%s", pusher.pushedWish, pusher.pushedProject)
 	}
 }
+
+func TestProjectPushStrategy(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	dir := t.TempDir()
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{
+		Directory: dir,
+		Name:      "testapp",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectName := add.Msg.GetProject().GetName()
+
+	// Default push strategy is wish from default.
+	show, err := c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{
+		Project: projectName,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if show.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_WISH || show.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEFAULT {
+		t.Errorf("initial strategy = %v from %v; want wish from default", show.Msg.GetStrategy(), show.Msg.GetSource())
+	}
+
+	// Change push strategy to azima.
+	setRes, err := c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{
+		Project:  projectName,
+		Strategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if setRes.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA || setRes.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("set strategy = %v from %v; want azima from developer", setRes.Msg.GetStrategy(), setRes.Msg.GetSource())
+	}
+
+	// Show reflects the changed push strategy.
+	show2, err := c.projects.PushStrategy(ctx, connect.NewRequest(&planv1.ProjectServicePushStrategyRequest{
+		Project: projectName,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if show2.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_AZIMA || show2.Msg.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("after set strategy = %v from %v; want azima from developer", show2.Msg.GetStrategy(), show2.Msg.GetSource())
+	}
+}

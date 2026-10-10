@@ -72,6 +72,9 @@ const (
 	ProjectServicePushProcedure = "/plan.v1.ProjectService/Push"
 	// ProjectServiceSetPushProcedure is the fully-qualified name of the ProjectService's SetPush RPC.
 	ProjectServiceSetPushProcedure = "/plan.v1.ProjectService/SetPush"
+	// ProjectServicePushStrategyProcedure is the fully-qualified name of the ProjectService's
+	// PushStrategy RPC.
+	ProjectServicePushStrategyProcedure = "/plan.v1.ProjectService/PushStrategy"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -115,6 +118,9 @@ const (
 	// WishServiceSetIntegrationProcedure is the fully-qualified name of the WishService's
 	// SetIntegration RPC.
 	WishServiceSetIntegrationProcedure = "/plan.v1.WishService/SetIntegration"
+	// WishServicePushStrategyProcedure is the fully-qualified name of the WishService's PushStrategy
+	// RPC.
+	WishServicePushStrategyProcedure = "/plan.v1.WishService/PushStrategy"
 	// WishServiceGrantProcedure is the fully-qualified name of the WishService's Grant RPC.
 	WishServiceGrantProcedure = "/plan.v1.WishService/Grant"
 	// WishServicePauseProcedure is the fully-qualified name of the WishService's Pause RPC.
@@ -378,6 +384,8 @@ type ProjectServiceClient interface {
 	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
 	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
+	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
+	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -423,16 +431,23 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("SetPush")),
 			connect.WithClientOptions(opts...),
 		),
+		pushStrategy: connect.NewClient[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse](
+			httpClient,
+			baseURL+ProjectServicePushStrategyProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("PushStrategy")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // projectServiceClient implements ProjectServiceClient.
 type projectServiceClient struct {
-	add     *connect.Client[v1.ProjectServiceAddRequest, v1.ProjectServiceAddResponse]
-	list    *connect.Client[v1.ProjectServiceListRequest, v1.ProjectServiceListResponse]
-	show    *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
-	push    *connect.Client[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse]
-	setPush *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
+	add          *connect.Client[v1.ProjectServiceAddRequest, v1.ProjectServiceAddResponse]
+	list         *connect.Client[v1.ProjectServiceListRequest, v1.ProjectServiceListResponse]
+	show         *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
+	push         *connect.Client[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse]
+	setPush      *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
+	pushStrategy *connect.Client[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -460,6 +475,11 @@ func (c *projectServiceClient) SetPush(ctx context.Context, req *connect.Request
 	return c.setPush.CallUnary(ctx, req)
 }
 
+// PushStrategy calls plan.v1.ProjectService.PushStrategy.
+func (c *projectServiceClient) PushStrategy(ctx context.Context, req *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error) {
+	return c.pushStrategy.CallUnary(ctx, req)
+}
+
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
@@ -473,6 +493,8 @@ type ProjectServiceHandler interface {
 	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
 	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
+	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
+	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -514,6 +536,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("SetPush")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServicePushStrategyHandler := connect.NewUnaryHandler(
+		ProjectServicePushStrategyProcedure,
+		svc.PushStrategy,
+		connect.WithSchema(projectServiceMethods.ByName("PushStrategy")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceAddProcedure:
@@ -526,6 +554,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServicePushHandler.ServeHTTP(w, r)
 		case ProjectServiceSetPushProcedure:
 			projectServiceSetPushHandler.ServeHTTP(w, r)
+		case ProjectServicePushStrategyProcedure:
+			projectServicePushStrategyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -553,6 +583,10 @@ func (UnimplementedProjectServiceHandler) Push(context.Context, *connect.Request
 
 func (UnimplementedProjectServiceHandler) SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetPush is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.PushStrategy is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.
@@ -951,6 +985,8 @@ type WishServiceClient interface {
 	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
 	// itself or asks first. Only what is given changes.
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
+	// Show or change the push strategy of a wish: wish (one branch per wish) or azima (one branch per azima).
+	PushStrategy(context.Context, *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
@@ -1075,6 +1111,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("SetIntegration")),
 			connect.WithClientOptions(opts...),
 		),
+		pushStrategy: connect.NewClient[v1.WishServicePushStrategyRequest, v1.WishServicePushStrategyResponse](
+			httpClient,
+			baseURL+WishServicePushStrategyProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("PushStrategy")),
+			connect.WithClientOptions(opts...),
+		),
 		grant: connect.NewClient[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse](
 			httpClient,
 			baseURL+WishServiceGrantProcedure,
@@ -1146,6 +1188,7 @@ type wishServiceClient struct {
 	snapshot       *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
 	allow          *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
 	setIntegration *connect.Client[v1.WishServiceSetIntegrationRequest, v1.WishServiceSetIntegrationResponse]
+	pushStrategy   *connect.Client[v1.WishServicePushStrategyRequest, v1.WishServicePushStrategyResponse]
 	grant          *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
 	pause          *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
 	activate       *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
@@ -1215,6 +1258,11 @@ func (c *wishServiceClient) Allow(ctx context.Context, req *connect.Request[v1.W
 // SetIntegration calls plan.v1.WishService.SetIntegration.
 func (c *wishServiceClient) SetIntegration(ctx context.Context, req *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error) {
 	return c.setIntegration.CallUnary(ctx, req)
+}
+
+// PushStrategy calls plan.v1.WishService.PushStrategy.
+func (c *wishServiceClient) PushStrategy(ctx context.Context, req *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error) {
+	return c.pushStrategy.CallUnary(ctx, req)
 }
 
 // Grant calls plan.v1.WishService.Grant.
@@ -1308,6 +1356,8 @@ type WishServiceHandler interface {
 	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
 	// itself or asks first. Only what is given changes.
 	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
+	// Show or change the push strategy of a wish: wish (one branch per wish) or azima (one branch per azima).
+	PushStrategy(context.Context, *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
@@ -1428,6 +1478,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("SetIntegration")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServicePushStrategyHandler := connect.NewUnaryHandler(
+		WishServicePushStrategyProcedure,
+		svc.PushStrategy,
+		connect.WithSchema(wishServiceMethods.ByName("PushStrategy")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceGrantHandler := connect.NewUnaryHandler(
 		WishServiceGrantProcedure,
 		svc.Grant,
@@ -1508,6 +1564,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceAllowHandler.ServeHTTP(w, r)
 		case WishServiceSetIntegrationProcedure:
 			wishServiceSetIntegrationHandler.ServeHTTP(w, r)
+		case WishServicePushStrategyProcedure:
+			wishServicePushStrategyHandler.ServeHTTP(w, r)
 		case WishServiceGrantProcedure:
 			wishServiceGrantHandler.ServeHTTP(w, r)
 		case WishServicePauseProcedure:
@@ -1581,6 +1639,10 @@ func (UnimplementedWishServiceHandler) Allow(context.Context, *connect.Request[v
 
 func (UnimplementedWishServiceHandler) SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.SetIntegration is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) PushStrategy(context.Context, *connect.Request[v1.WishServicePushStrategyRequest]) (*connect.Response[v1.WishServicePushStrategyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.PushStrategy is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error) {

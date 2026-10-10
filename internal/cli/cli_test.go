@@ -333,6 +333,39 @@ func (f projects) List(_ context.Context, req *connect.Request[planv1.ProjectSer
 	}}), nil
 }
 
+func (f projects) PushStrategy(_ context.Context, req *connect.Request[planv1.ProjectServicePushStrategyRequest]) (*connect.Response[planv1.ProjectServicePushStrategyResponse], error) {
+	f.record(req.Msg)
+	strategy := planv1.PushStrategy_PUSH_STRATEGY_WISH
+	source := planv1.SettingSource_SETTING_SOURCE_DEFAULT
+	if req.Msg.Strategy != nil && req.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		strategy = req.Msg.GetStrategy()
+		source = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+	}
+	return connect.NewResponse(&planv1.ProjectServicePushStrategyResponse{
+		Strategy: strategy,
+		Source:   source,
+	}), nil
+}
+
+type wishes struct {
+	planv1connect.UnimplementedWishServiceHandler
+	*fake
+}
+
+func (f wishes) PushStrategy(_ context.Context, req *connect.Request[planv1.WishServicePushStrategyRequest]) (*connect.Response[planv1.WishServicePushStrategyResponse], error) {
+	f.record(req.Msg)
+	strategy := planv1.PushStrategy_PUSH_STRATEGY_WISH
+	source := planv1.SettingSource_SETTING_SOURCE_DEFAULT
+	if req.Msg.Strategy != nil && req.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		strategy = req.Msg.GetStrategy()
+		source = planv1.SettingSource_SETTING_SOURCE_WISH
+	}
+	return connect.NewResponse(&planv1.WishServicePushStrategyResponse{
+		Strategy: strategy,
+		Source:   source,
+	}), nil
+}
+
 func question() *planv1.Question {
 	return &planv1.Question{
 		Id: questionID, Code: "Q03", Text: "Which store?", Options: []string{"sqlite", "files"},
@@ -362,6 +395,7 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux := http.NewServeMux()
 	mux.Handle(planv1connect.NewQuestionServiceHandler(questions{fake: f}))
 	mux.Handle(planv1connect.NewProjectServiceHandler(projects{fake: f}))
+	mux.Handle(planv1connect.NewWishServiceHandler(wishes{fake: f}))
 	mux.Handle(planv1connect.NewTilasmServiceHandler(tilasms{fake: f}))
 	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
 	mux.Handle(djinnv1connect.NewLoadServiceHandler(loads{fake: f}))
@@ -408,9 +442,13 @@ func TestRun(t *testing.T) {
 		{name: "an alias by a prefix no command takes", args: []string{"tali", "l"}, wantOut: "code: L01", wantCalled: true},
 		{name: "a prefix a command takes is not an alias's", args: []string{"t", "list"}, wantCode: 2, wantErr: `command "t" is ambiguous: task, tilasm`},
 		{name: "help names the alias", args: []string{"help"}, wantOut: "  tilasm, talisman "},
-		{name: "help command", args: []string{"help", "pr"}, wantOut: "Methods:\n  add        Add a folder as a project."},
+		{name: "help command", args: []string{"help", "pr"}, wantOut: "Methods:\n  add             Add a folder as a project."},
 		{name: "paginated list loops across pages", args: []string{"q", "list"}, wantOut: "code: Q01\n  text: First?\n- id: 22222222-2222-2222-2222-222222222222\n  code: Q02\n  text: Second?\n", wantCalled: true},
 		{name: "paginated list with explicit page-token", args: []string{"q", "list", "--page-token", "page-2"}, wantOut: "code: Q02\n  text: Second?\n", wantCalled: true},
+		{name: "project push strategy show", args: []string{"project", "push-strategy", "api"}, wantOut: "strategy: wish\nsource: default\n", wantCalled: true},
+		{name: "project push strategy set", args: []string{"project", "push-strategy", "api", "--strategy", "azima"}, wantOut: "strategy: azima\nsource: developer\n", wantCalled: true},
+		{name: "wish push strategy show", args: []string{"wish", "push-strategy", wishID}, wantOut: "strategy: wish\nsource: default\n", wantCalled: true},
+		{name: "wish push strategy set", args: []string{"wish", "push-strategy", wishID, "--strategy", "azima"}, wantOut: "strategy: azima\nsource: wish\n", wantCalled: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
