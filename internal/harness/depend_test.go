@@ -186,6 +186,8 @@ func TestSpawnAfterAndBlocks(t *testing.T) {
 			t.Errorf("before a task %s: %v", want, err)
 		}
 		if want == "running" {
+			// No slot once W1 stops: the slot it frees would run N, A, B, C and D, and D must stay planned below.
+			l.set(0, "")
 			if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: running.GetId()})); err != nil {
 				t.Fatal(err)
 			}
@@ -199,8 +201,8 @@ func TestSpawnAfterAndBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := e.get(t, d.GetId()); !slices.Contains(got.GetDependsOn(), t1.Msg.GetTask().GetId()) {
-		t.Errorf("D after the azima: %v", got.GetDependsOn())
+	if got := e.get(t, d.GetId()); !slices.Contains(got.GetDependsOn(), t1.Msg.GetTask().GetId()) || got.GetStartTime() != nil {
+		t.Errorf("D after the azima, not started: %v", got)
 	}
 }
 
