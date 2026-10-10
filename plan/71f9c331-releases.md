@@ -49,10 +49,57 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
 ## Done when
 - [ ] A tag produces binaries for every target in the table, with checksums. (needs: a maintainer to push a `v*`
   tag; `release.yml` exists, never run)
+  - [x] The Linux jobs run by hand give the archives and the sums the workflow would (2026-10-10, W187, Ubuntu 22.04
+    amd64, like the `ubuntu-22.04` runner, Go 1.26.7, WebKitGTK 2.50.4). From a checkout, after `npm ci && go tool task
+    ui` in place of a tag's `dist/`, each step of `release.yml` as written: job `check`, `CGO_ENABLED=0 go build -o
+    $RUNNER_TEMP/djinn ./cmd/djinn`; job `linux` (amd64, gtk3), `go tool task release-build VERSION=v0.0.0-dryrun`,
+    which ran `CGO_ENABLED=1 go build -trimpath -tags 'gtk3' -ldflags "-s -w -X main.version=v0.0.0-dryrun -X
+    main.releaseAsset=djinn_linux_amd64"` and `releasepack pack`, then its version loop; job `linux-browser`, both
+    `CGO=0` builds and its version check; job `publish`, the archives alone in a fresh `bin/release/` (as
+    `download-artifact` merges them), `cp LICENSE NOTICE docs/THIRD_PARTY_NOTICES.md scripts/install.sh
+    scripts/install.ps1 bin/release/`, `go tool task release-sums`, then `sha256sum -c SHA256SUMS`: 8 files OK.
+    `djinn_linux_amd64.tar.gz` 14.1 MB (binary 40.5 MB), one top folder `djinn_linux_amd64/` with `djinn` 0755 and the
+    three notices; the browser builds are static, the arm64 one an aarch64 ELF.
+  - [ ] Not reproduced here: the arm64 gtk3 build, both GTK 4 builds (`libwebkitgtk-6.0-dev` is absent on Ubuntu
+    22.04), the macOS and Windows jobs, and `gh release create --draft`. (needs: an arm64 machine or runner, an Ubuntu
+    24.04, and a pushed `v*` tag)
 - [ ] A fresh account with no administrator rights installs a binary and opens the window on
   Linux (with the runtime libraries), macOS and Windows. (needs: a published release, a person on each system)
+  - [x] Linux amd64, from the local release above (2026-10-10, W187): the README's line with the release served from
+    a folder, `env -i HOME=<empty temp> DJINN_HOME=<temp> PATH=/usr/local/bin:/usr/bin:/bin
+    DJINN_RELEASES=file://<folder> sh -c 'curl -fsSL "$DJINN_RELEASES/latest/download/install.sh" | sh'` (no `go`, no
+    `~/go/bin`, no sudo): it took `djinn_linux_amd64`, checked its sum, put in `~/.local/bin/djinn` the very binary of
+    the archive (`cmp`), said to add that folder to `PATH`, and `djinn version` printed `djinn v0.0.0-dryrun`. The same
+    release with one byte added to the archive: refused, "does not match its SHA-256 sum", nothing installed.
+    `djinn up --browser --port 0` (GitHub kept away by `HTTPS_PROXY=http://127.0.0.1:9`): the token URL redirects
+    once to `/` with its cookie, which serves `<title>Djinn</title>` and its script (200); `ProjectService/List`
+    answers 200 with the cookie, 401 without; `djinn project list` answers through `server.addr`; SIGINT stops it
+    with exit 0, removes `server.addr` and closes the port. The failed release check only logs a line. `djinn up` on
+    the X11 desktop (`:1`, GNOME): the window "Djinn" (`WM_CLASS djinn, Djinn`) maps at 2880x2000, the CLI answers
+    through `djinn.sock`, the page shows the empty home ("Make a wish", "Live", "Workers 0/8"; captured by `xwd` with
+    `WEBKIT_DISABLE_COMPOSITING_MODE=1`, since `xwd` reads a blank surface from WebKit's GPU compositing); SIGINT
+    closes the window, exit 0, socket and address removed. The global shortcut Ctrl+Alt+Space was taken by the
+    Djinn already running on that desktop: logged, not fatal. Not a second account, and not a machine without the
+    build packages: see the libraries below.
+  - [x] What the Linux binary loads matches what the README and `install.sh` ask for: `readelf -d` lists
+    `libwebkit2gtk-4.1.so.0`, `libjavascriptcoregtk-4.1.so.0`, `libsoup-3.0.so.0`, `libgtk-3.so.0`, `libgdk-3.so.0`,
+    `libgdk_pixbuf-2.0.so.0`, `libgio/gobject/glib-2.0.so.0`, `libX11.so.6`, `libc.so.6`, and the Ubuntu package
+    `libwebkit2gtk-4.1-0` depends on every one of them (`dpkg -S`, `apt-cache depends`): WebKitGTK 4.1 is the whole
+    runtime need. Newest glibc symbol `GLIBC_2.34`, as decided.
+  - [ ] Open, seen on that desktop: with `HTTP_PROXY` set to a dead proxy and no `NO_PROXY`, the window never
+    reached "Live" (twice: once "Reconnecting to Djinn...", once a dark page); with `NO_PROXY=localhost,127.0.0.1`,
+    or without `HTTP_PROXY`, it did. The window uses `wails://`, so the cause is not established. (needs: a look at
+    what WebKitGTK sends through the proxy; a user behind a proxy without `no_proxy` for localhost may see it)
 - [ ] An update from inside the app replaces the binary in place (T12). (needs: a published release; the release
   check of T12 is built and tested against a fake release)
+  - [x] Against the local release above (2026-10-10, W187): a binary built by release-build's own command with
+    `-X main.version=v0.0.0-alpha -X main.releaseAPI=<a fake GitHub API on 127.0.0.1>`, installed in a fresh
+    `~/.local/bin`, ran `djinn up --browser`; the fake API listed the files of `bin/release/` as the assets of the
+    pre-release `v0.0.0-dryrun`. `djinn update --yes` (the `UiService.Update` call the window's banner makes) read the
+    release list and `SHA256SUMS`, downloaded `djinn_linux_amd64.tar.gz`, then: "restarting on v0.0.0-dryrun, with 0
+    terminals", "now running v0.0.0-dryrun", exit 0. `~/.local/bin/djinn` is now the archive's binary (`cmp`), alone in
+    its folder, and the restarted `djinn up --browser` answers; SIGINT stops it. A test-only build flag points the
+    check away from GitHub; the published binary asks api.github.com.
 - [ ] macOS gets `Djinn.app`, a bundle with an identifier: Finder, Launchpad, the Dock's icon and the system
   notifications need it.
   - [x] `tools/macapp` lays out the bundle around the universal binary and zips it, portable, tested on Linux.
@@ -138,6 +185,9 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
   silicon runs only signed code: the Go linker signs the arm64 half ad hoc, which is enough without quarantine. Wails
   says its macOS notifications need a bundled and signed app: whether the ad hoc signature suffices is to see on a
   Mac. A maintainer holds the Apple account and its secrets (open question below).
+- **A release built by hand installs from its folder.** `install.sh` takes `DJINN_RELEASES=file:///path` (with
+  curl), the folder laid out as GitHub serves it (`latest/download/…`, `download/<tag>/…`): how W187 tried the Linux
+  archive before any release. Tested in `TestInstallFromAFolder`.
 - **Actions are pinned by commit**, with their version in a comment. `actionlint` (with `shellcheck`) checks the
   workflows: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`.
 - **Sizes**, built locally at `-s -w`: Linux amd64 gtk3 36.8 MB (archive 12.9 MB), Windows amd64 37.3 MB (13.1 MB),
