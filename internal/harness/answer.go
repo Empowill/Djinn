@@ -140,13 +140,19 @@ func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, b
 			if err == nil {
 				branch, _ := h.integrationBranch(ctx, wish, project)
 				sha, _ := git(ctx, project.GetDirectory(), "rev-parse", "refs/heads/"+branch)
+				for _, word := range strings.Fields(q.GetText() + " " + q.GetContext()) {
+					clean := strings.Trim(word, "?:.,\"'()[]{}")
+					if len(clean) >= 7 && len(clean) <= 40 && isHex(clean) {
+						if resolved, err := git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", clean+"^{commit}"); err == nil && strings.TrimSpace(resolved) != "" {
+							sha = strings.TrimSpace(resolved)
+							break
+						}
+					}
+				}
 				if sha != "" {
 					if _, err := h.Install(ctx, q.GetWishId(), projectID, sha, nil); err != nil {
 						return fmt.Sprintf("Djinn install failed: %v", err), true
 					}
-					h.mu.Lock()
-					h.installed[projectID] = sha
-					h.mu.Unlock()
 					return "Djinn installed build " + short8(sha), true
 				}
 			}
@@ -375,4 +381,14 @@ func firstPrompt(s *store.Store, taskID string) (string, error) {
 		}
 	}
 	return "", errors.New("its prompt is lost")
+}
+
+// isHex reports whether string s contains only hexadecimal characters.
+func isHex(s string) bool {
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
 }
