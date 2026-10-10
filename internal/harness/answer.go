@@ -84,8 +84,18 @@ func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, b
 		return "left for later", true
 	}
 
-	// 1. Azima proof
-	if q.GetTaskId() != "" {
+	textLower := strings.ToLower(q.GetText() + " " + q.GetContext())
+
+	// 1. Ready to merge / Pull request
+	if strings.Contains(textLower, "ready to merge") {
+		return "Djinn noted: ready to merge", true
+	}
+	if strings.Contains(textLower, "pull request") {
+		return "Djinn noted: open pull request", true
+	}
+
+	// 2. Azima proof
+	if q.GetTaskId() != "" && (strings.Contains(textLower, "proof") || strings.Contains(textLower, "verified") || strings.Contains(textLower, "check") || strings.Contains(textLower, "awaiting proof")) {
 		task, err := store.Get[*planv1.Task](ctx, h.store, q.GetTaskId())
 		if err == nil && plan.IsAzima(task) {
 			_, err := h.Done(ctx, "", &planv1.TaskServiceDoneRequest{
@@ -99,8 +109,6 @@ func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, b
 			return fmt.Sprintf("Djinn marked %s done", task.GetCode()), true
 		}
 	}
-
-	textLower := strings.ToLower(q.GetText() + " " + q.GetContext())
 
 	// 2. Push tag
 	if strings.Contains(textLower, "push tag") {
@@ -160,10 +168,7 @@ func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, b
 		return "install noted", true
 	}
 
-	// 4. PR / Release dry run / Other moves
-	if strings.Contains(textLower, "pull request") {
-		return "Djinn noted: open pull request", true
-	}
+	// 4. Release dry run / Other moves
 	if strings.Contains(textLower, "release") {
 		return "Djinn noted: start release dry run", true
 	}

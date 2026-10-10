@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -1571,6 +1572,12 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 			}
 
 			// (b) PR to main: wish settled, pushed to remote, push checks green, ahead of remote default branch
+			strat, _ := plan.ResolveWishPushStrategy(wish, settings)
+			if strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+				allQuestions = h.azimaPRPass(ctx, wish, project, settings, allQuestions)
+				continue
+			}
+
 			p := pushState(wish, projectID)
 			if p != nil && p.GetLast() != nil && p.GetQuestionId() == "" && p.GetHeld() == "" && p.GetRefused() == "" {
 				main, ref, err := mainRef(ctx, repo, settings.MainBranch)
@@ -2172,4 +2179,403 @@ func (h *Harness) workerStartBranch(ctx context.Context, wish *planv1.Wish, proj
 		return mainName
 	}
 	return plan.IntegrationBranchOf(wish, project.GetId())
+}
+
+// azimaGoal extracts the goal sentence from an azima task.
+func azimaGoal(azima *planv1.Task) string {
+	desc := strings.TrimSpace(azima.GetDescription())
+	if desc != "" {
+		lines := strings.Split(desc, "\n")
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.EqualFold(trimmed, "## Goal") || strings.EqualFold(trimmed, "# Goal") {
+				var goalLines []string
+				for j := i + 1; j < len(lines); j++ {
+					l := strings.TrimSpace(lines[j])
+					if strings.HasPrefix(l, "#") {
+						break
+					}
+					if l == "" && len(goalLines) > 0 {
+						break
+					}
+					if l != "" {
+						goalLines = append(goalLines, l)
+					}
+				}
+				if len(goalLines) > 0 {
+					return strings.Join(goalLines, " ")
+				}
+			}
+		}
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			lower := strings.ToLower(trimmed)
+			for _, prefix := range []string{"**goal.**", "**goal:**", "goal:"} {
+				if strings.HasPrefix(lower, prefix) {
+					goal := strings.TrimSpace(trimmed[len(prefix):])
+					if goal != "" {
+						return goal
+					}
+				}
+			}
+		}
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+				return trimmed
+			}
+		}
+	}
+	return azima.GetTitle()
+}
+
+// azimaPartsDoneAndGreen tells whether all parts under azimaID in wishID are done and green.
+func (h *Harness) azimaPartsDoneAndGreen(ctx context.Context, wishID, azimaID string) (bool, []*planv1.Task) {
+	tasks, err := h.azimaTasks(ctx, wishID, azimaID)
+	if err != nil || len(tasks) == 0 {
+		return false, nil
+	}
+	for _, t := range tasks {
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			return false, nil
+		}
+		in := t.GetIntegration()
+		if in == nil || in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+			return false, nil
+		}
+	}
+	return true, tasks
+}
+
+// draftAzimaPR drafts title and description for an azima's PR from its goal and parts.
+func (h *Harness) draftAzimaPR(ctx context.Context, azima *planv1.Task, parts []*planv1.Task) (string, string) {
+	title := azimaGoal(azima)
+	var b strings.Builder
+	b.WriteString("## Goal\n\n")
+	b.WriteString(title)
+	b.WriteString("\n\n### Parts\n")
+	sortedParts := slices.Clone(parts)
+	slices.SortStableFunc(sortedParts, func(a, b *planv1.Task) int {
+		return cmp.Compare(a.GetCode(), b.GetCode())
+	})
+	for _, p := range sortedParts {
+		b.WriteString("\n- **")
+		b.WriteString(p.GetCode())
+		b.WriteString("**: ")
+		b.WriteString(p.GetTitle())
+		if d := p.GetDecision(); d != "" {
+			b.WriteString(" (decision: ")
+			b.WriteString(d)
+			b.WriteString(")")
+		}
+	}
+	return title, strings.TrimSpace(b.String())
+}
+
+// azimaPRBase computes the base branch for an azima's PR:
+// main for independent azima, or the branch of the azima it depends on for stacked azima.
+func (h *Harness) azimaPRBase(ctx context.Context, repo string, settings plan.Settings, azima *planv1.Task) (string, error) {
+	mainName, mainSha, _ := resolveMainSha(ctx, repo, settings)
+	if mainName == "" {
+		mainName = "main"
+	}
+	deps := h.dependencyAzimas(ctx, azima)
+	var unmerged []*planv1.Task
+	for _, dep := range deps {
+		if dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			continue
+		}
+		depBranch := azimaBranchName(dep)
+		depSha := commitOf(ctx, repo, "refs/heads/"+depBranch)
+		if depSha != "" && mainSha != "" && isAncestor(ctx, repo, depSha, mainSha) {
+			continue
+		}
+		unmerged = append(unmerged, dep)
+	}
+	if len(unmerged) == 0 {
+		return mainName, nil
+	}
+	leaf := unmerged[0]
+	for _, cand := range unmerged {
+		candBranch := azimaBranchName(cand)
+		candSha := commitOf(ctx, repo, "refs/heads/"+candBranch)
+		isLeaf := true
+		for _, other := range unmerged {
+			if cand.GetId() == other.GetId() {
+				continue
+			}
+			otherBranch := azimaBranchName(other)
+			otherSha := commitOf(ctx, repo, "refs/heads/"+otherBranch)
+			if slices.Contains(other.GetDependsOn(), cand.GetId()) || (candSha != "" && otherSha != "" && isAncestor(ctx, repo, candSha, otherSha)) {
+				isLeaf = false
+				break
+			}
+		}
+		if isLeaf {
+			leaf = cand
+			break
+		}
+	}
+	return azimaBranchName(leaf), nil
+}
+
+// detectForge detects whether the project remote uses GitLab ("glab") or GitHub ("gh").
+func detectForge(ctx context.Context, repo string, project *planv1.Project) string {
+	remote := ""
+	if project != nil {
+		remote = project.GetRemote()
+	}
+	if remote == "" && repo != "" {
+		if out, err := git(ctx, repo, "remote", "get-url", "origin"); err == nil {
+			remote = strings.TrimSpace(out)
+		}
+	}
+	if strings.Contains(strings.ToLower(remote), "gitlab") {
+		return "glab"
+	}
+	return "gh"
+}
+
+// forgePR holds information about a pull or merge request on the forge.
+type forgePR struct {
+	Number    int
+	State     string // OPEN, MERGED, CLOSED
+	Base      string
+	Mergeable bool
+	Green     bool
+}
+
+// runCmd runs args in dir, using h.commands if set (e.g. in tests) or runCommand otherwise.
+func (h *Harness) runCmd(ctx context.Context, dir string, args []string) (string, int, error) {
+	run := h.commands
+	if run == nil {
+		run = runCommand
+	}
+	return run(ctx, dir, args)
+}
+
+// queryGhPR queries GitHub via gh for branch's pull request.
+func (h *Harness) queryGhPR(ctx context.Context, repo, branch string) *forgePR {
+	out, code, err := h.runCmd(ctx, repo, []string{"gh", "pr", "view", branch, "--json", "number,state,baseRefName,mergeable"})
+	if err != nil || code != 0 {
+		return nil
+	}
+	var view struct {
+		Number      int    `json:"number"`
+		State       string `json:"state"`
+		BaseRefName string `json:"baseRefName"`
+		Mergeable   string `json:"mergeable"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &view); err != nil || view.Number == 0 {
+		return nil
+	}
+	pr := &forgePR{
+		Number:    view.Number,
+		State:     strings.ToUpper(view.State),
+		Base:      view.BaseRefName,
+		Mergeable: view.Mergeable == "MERGEABLE",
+	}
+	if pr.State == "MERGED" || pr.State == "CLOSED" {
+		return pr
+	}
+	checksOut, code, err := h.runCmd(ctx, repo, []string{"gh", "pr", "checks", strconv.Itoa(view.Number), "--json", "name,bucket"})
+	if err == nil && (code == 0 || checksOut != "") {
+		var checks []struct {
+			Name   string `json:"name"`
+			Bucket string `json:"bucket"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(checksOut)), &checks); err == nil && len(checks) > 0 {
+			allGreen := true
+			for _, c := range checks {
+				if c.Bucket != "pass" && c.Bucket != "skipping" {
+					allGreen = false
+					break
+				}
+			}
+			pr.Green = allGreen
+		}
+	}
+	return pr
+}
+
+// queryGlabMR queries GitLab via glab for branch's merge request.
+func (h *Harness) queryGlabMR(ctx context.Context, repo, branch string) *forgePR {
+	out, code, err := h.runCmd(ctx, repo, []string{"glab", "mr", "view", branch, "--output", "json"})
+	if err != nil || code != 0 {
+		return nil
+	}
+	var view struct {
+		IID                 int    `json:"iid"`
+		ID                  int    `json:"id"`
+		State               string `json:"state"`
+		TargetBranch        string `json:"target_branch"`
+		DetailedMergeStatus string `json:"detailed_merge_status"`
+		HeadPipeline        struct {
+			ID     int    `json:"id"`
+			Status string `json:"status"`
+		} `json:"head_pipeline"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &view); err != nil {
+		return nil
+	}
+	num := view.IID
+	if num == 0 {
+		num = view.ID
+	}
+	if num == 0 {
+		return nil
+	}
+	state := strings.ToUpper(view.State)
+	if state == "OPENED" {
+		state = "OPEN"
+	}
+	mergeable := view.DetailedMergeStatus == "mergeable"
+	green := view.HeadPipeline.Status == "success"
+	return &forgePR{
+		Number:    num,
+		State:     state,
+		Base:      view.TargetBranch,
+		Mergeable: mergeable,
+		Green:     green,
+	}
+}
+
+// queryForgePR queries the forge (gh or glab) for branch's pull or merge request.
+func (h *Harness) queryForgePR(ctx context.Context, repo string, project *planv1.Project, branch string) *forgePR {
+	forge := detectForge(ctx, repo, project)
+	if forge == "glab" {
+		return h.queryGlabMR(ctx, repo, branch)
+	}
+	return h.queryGhPR(ctx, repo, branch)
+}
+
+// retargetForgePR updates the base/target branch of a pull request or merge request on the forge.
+func (h *Harness) retargetForgePR(ctx context.Context, repo string, project *planv1.Project, prNumber int, newBase string) error {
+	forge := detectForge(ctx, repo, project)
+	var args []string
+	if forge == "glab" {
+		args = []string{"glab", "mr", "update", strconv.Itoa(prNumber), "--target-branch", newBase}
+	} else {
+		args = []string{"gh", "pr", "edit", strconv.Itoa(prNumber), "--base", newBase}
+	}
+	out, code, err := h.runCmd(ctx, repo, args)
+	if err != nil || code != 0 {
+		return fmt.Errorf("retarget %s to %s: %s (%w)", forge, newBase, out, err)
+	}
+	return nil
+}
+
+// azimaPRPass manages the PR lifecycle for all azimas of wish in project under azima push strategy:
+// proposing open PR, retargeting when base azima merges, ready-to-merge notification, and marking merged.
+func (h *Harness) azimaPRPass(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings,
+	allQuestions []*planv1.Question,
+) []*planv1.Question {
+	hasQuestion := func(match func(q *planv1.Question) bool) bool {
+		for _, q := range allQuestions {
+			if q.GetMove() && match(q) {
+				return true
+			}
+		}
+		return false
+	}
+	repo := project.GetDirectory()
+	azimas := h.wishAzimas(ctx, wish)
+	for _, azima := range azimas {
+		if ctx.Err() != nil {
+			return allQuestions
+		}
+		branch := azimaBranchName(azima)
+		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
+			continue
+		}
+		if !h.isBranchPushed(ctx, wish, project, branch) {
+			continue
+		}
+		ok, parts := h.azimaPartsDoneAndGreen(ctx, wish.GetId(), azima.GetId())
+		if !ok {
+			continue
+		}
+		base, err := h.azimaPRBase(ctx, repo, settings, azima)
+		if err != nil || base == "" {
+			continue
+		}
+
+		pr := h.queryForgePR(ctx, repo, project, branch)
+		if pr == nil {
+			if azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+				continue
+			}
+			if !hasQuestion(func(q *planv1.Question) bool {
+				return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "pull request")
+			}) {
+				title, desc := h.draftAzimaPR(ctx, azima, parts)
+				q := &planv1.Question{
+					WishId:  wish.GetId(),
+					TaskId:  azima.GetId(),
+					Text:    fmt.Sprintf("Open a pull request for %s to %s?", azima.GetCode(), base),
+					Context: fmt.Sprintf("**Title**: %s\n**Base**: %s\n\n%s", title, base, desc),
+					Options: []string{"Open pull request", "Not yet"},
+					Move:    true,
+				}
+				if err := h.askMove(ctx, q); err == nil {
+					allQuestions = append(allQuestions, q)
+				}
+			}
+			continue
+		}
+
+		if pr.State == "OPEN" {
+			if pr.Base != "" && base != "" && pr.Base != base {
+				if err := h.retargetForgePR(ctx, repo, project, pr.Number, base); err == nil {
+					pr.Base = base
+				}
+			}
+			if pr.Mergeable && pr.Green && azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+				if !hasQuestion(func(q *planv1.Question) bool {
+					return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "ready to merge")
+				}) {
+					q := &planv1.Question{
+						WishId:  wish.GetId(),
+						TaskId:  azima.GetId(),
+						Text:    fmt.Sprintf("Pull request #%d for %s is ready to merge?", pr.Number, azima.GetCode()),
+						Context: fmt.Sprintf("Pull request #%d for azima %s (%s) is mergeable and all checks are green.", pr.Number, azima.GetCode(), azima.GetTitle()),
+						Options: []string{"Ready to merge", "Not yet"},
+						Move:    true,
+					}
+					if err := h.askMove(ctx, q); err == nil {
+						allQuestions = append(allQuestions, q)
+					}
+				}
+			}
+		} else if pr.State == "MERGED" {
+			if azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+				_, _ = h.Done(ctx, "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{
+					TaskId: azima.GetId(),
+					By:     planv1.Closer_CLOSER_LEAD,
+					Note:   fmt.Sprintf("merged in pull request #%d", pr.Number),
+				})
+				azima.Status = planv1.TaskStatus_TASK_STATUS_DONE
+				allTasks, _ := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
+				for _, otherAzima := range azimas {
+					if otherAzima.GetId() == azima.GetId() {
+						continue
+					}
+					for _, depID := range otherAzima.GetDependsOn() {
+						if depID == azima.GetId() {
+							otherBranch := azimaBranchName(otherAzima)
+							if otherPR := h.queryForgePR(ctx, repo, project, otherBranch); otherPR != nil && otherPR.State == "OPEN" {
+								newBase, err := h.azimaPRBase(ctx, repo, settings, otherAzima)
+								if err == nil && newBase != "" && otherPR.Base != newBase {
+									_ = h.retargetForgePR(ctx, repo, project, otherPR.Number, newBase)
+								}
+							}
+						}
+					}
+				}
+				h.followStackedBranches(ctx, allTasks)
+			}
+		}
+	}
+	return allQuestions
 }
