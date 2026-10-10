@@ -1098,11 +1098,7 @@
   min-height: 66px;
   padding: 12px 40px;
   border: 0;
-  background: linear-gradient(
-    0deg,
-    color-mix(in srgb, var(--bg) 93%, transparent),
-    transparent
-  );
+  background: transparent;
   pointer-events: none;
 }
 .wish-creation-footer > * {
@@ -1110,6 +1106,9 @@
 }
 .wish-creation-footer .button.accent {
   min-width: 148px;
+}
+.main-shell:has(> .wish-creation) > .app-statusbar {
+  display: none;
 }
 .wish-creation-spinner {
   animation: wish-creation-spin 1s linear infinite;

@@ -48,11 +48,25 @@ function positiveFinite(value: number, name: string): number {
   return value;
 }
 
+/**
+ * WebKit's native text ranges quantize fractional line advances down to whole
+ * pixels. The native shell opts into an integer row height so the committed
+ * PRE grid and its layout budget use the same advance as the browser.
+ */
+export function resolveWishSmokeLineHeight(
+  fontSize: number,
+  nativeMac = false,
+): number {
+  const lineHeight = SMOKE_BASE_LINE_HEIGHT * (fontSize / SMOKE_BASE_FONT_SIZE);
+  return nativeMac ? Math.ceil(lineHeight) : lineHeight;
+}
+
 function gridAtFont(
   surfaceWidth: number,
   surfaceHeight: number,
   baseCharWidth: number,
   fontSize: number,
+  nativeMac: boolean,
 ): GridSize {
   const scale = fontSize / SMOKE_BASE_FONT_SIZE;
   const width = Math.max(
@@ -66,7 +80,7 @@ function gridAtFont(
     1,
     // A partial final line is clipped by the native pre's overflow box. Keep
     // whole lines inside the surface and align that gap above the rows.
-    Math.floor(surfaceHeight / (SMOKE_BASE_LINE_HEIGHT * scale)),
+    Math.floor(surfaceHeight / resolveWishSmokeLineHeight(fontSize, nativeMac)),
   );
   return { width, height, cells: width * height };
 }
@@ -190,6 +204,7 @@ export function computeWishSmokeLayout(
   surfaceHeight: number,
   baseCharWidthAt10: number,
   devicePixelRatio: number,
+  nativeMac = false,
 ): WishSmokeLayout {
   positiveFinite(surfaceWidth, "surfaceWidth");
   positiveFinite(surfaceHeight, "surfaceHeight");
@@ -201,6 +216,7 @@ export function computeWishSmokeLayout(
     surfaceHeight,
     baseCharWidthAt10,
     SMOKE_BASE_FONT_SIZE,
+    nativeMac,
   );
   let fontSize = SMOKE_BASE_FONT_SIZE;
 
@@ -209,7 +225,7 @@ export function computeWishSmokeLayout(
     let high = low * 2;
     while (
       !fitsGrid(
-        gridAtFont(surfaceWidth, surfaceHeight, baseCharWidthAt10, high),
+        gridAtFont(surfaceWidth, surfaceHeight, baseCharWidthAt10, high, nativeMac),
       )
     ) {
       high *= 2;
@@ -229,6 +245,7 @@ export function computeWishSmokeLayout(
         surfaceHeight,
         baseCharWidthAt10,
         middle,
+        nativeMac,
       );
       if (fitsGrid(size)) high = middle;
       else low = middle;
@@ -237,7 +254,13 @@ export function computeWishSmokeLayout(
     fontSize = roundFontUp(high);
     while (
       !fitsGrid(
-        gridAtFont(surfaceWidth, surfaceHeight, baseCharWidthAt10, fontSize),
+        gridAtFont(
+          surfaceWidth,
+          surfaceHeight,
+          baseCharWidthAt10,
+          fontSize,
+          nativeMac,
+        ),
       )
     )
       fontSize += 0.5;
@@ -249,14 +272,16 @@ export function computeWishSmokeLayout(
     surfaceHeight,
     baseCharWidthAt10,
     fontSize,
+    nativeMac,
   );
   const canvas = boundedCanvas(surfaceWidth, surfaceHeight, devicePixelRatio);
-  const textHeight = grid.height * SMOKE_BASE_LINE_HEIGHT * scale;
+  const lineHeight = resolveWishSmokeLineHeight(fontSize, nativeMac);
+  const textHeight = grid.height * lineHeight;
 
   return {
     fontSize,
     charWidth: baseCharWidthAt10 * scale,
-    lineHeight: SMOKE_BASE_LINE_HEIGHT * scale,
+    lineHeight,
     gridWidth: grid.width,
     gridHeight: grid.height,
     coverage: [

@@ -211,6 +211,10 @@ const ASCII_PALETTE = [
 ];
 const CAMERA_BOTTOM_CUTOFF_ZOOM10 = 0.158724;
 
+function usesNativeMacSmokeLayout(): boolean {
+  return document.documentElement.classList.contains("native-mac");
+}
+
 function createAsciiLayers(asciiOutput: HTMLElement) {
   asciiOutput.replaceChildren();
   const layers = ASCII_PALETTE.map((color, index) => {
@@ -745,6 +749,7 @@ function mountSmoke(
       Math.max(rect.height, 1),
       baseCharWidth,
       window.devicePixelRatio || 1,
+      usesNativeMacSmokeLayout(),
     );
     canvas.width = layout.canvasWidth;
     canvas.height = layout.canvasHeight;
@@ -1400,6 +1405,7 @@ function mountSmokeWorker(
       height,
       baseCharWidth,
       window.devicePixelRatio || 1,
+      usesNativeMacSmokeLayout(),
     );
     return {
       width,
