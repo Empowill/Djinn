@@ -71,11 +71,11 @@ come first." The window (`src/`) keeps Clément's components and CSS approach, w
   paused or done task is refused. A yes to the edit question of a task closed while waiting starts nothing.
   (`TestDone`, `TestDoneStartsDependent`, `TestDoneWaitingThenYes`, `TestDoneCommand`, `TestExportKeepsClosure`)
 - [x] The tasks have their own tab, in a wish and in the flight plan: what moves or waits first, by status (running,
-  interrupted, failed, then waiting, paused, then planned), then every finished task, the latest ended first, with
-  who closed it and why; "Mark done", with an optional note, on any card no worker runs. The page and the brief follow
-  the same order. (screens "the Tasks tab lists what moves or waits by status…", "a task no worker runs can be marked
-  done…"; data "the Tasks tab: what moves or waits by status…"; `TestFinishedNewestFirst`, `TestMovingByStatus`,
-  `TestBriefFinished`; e2e `task-done.spec.ts`)
+  interrupted, failed, then waiting, paused, then planned), then the azimas with the work part of them, the done
+  ones folded, with who closed them and why; "Mark done", with an optional note, on any card no worker runs. The page
+  and the brief follow the same order. (screens "the Tasks tab lists what moves or waits by status…", "a task no
+  worker runs can be marked done…"; data "the Tasks tab: what moves or waits by status…"; `TestFinishedNewestFirst`,
+  `TestMovingByStatus`, `TestBriefFinished`; e2e `task-done.spec.ts`)
 - [x] A "Decisions" tab in a wish and in the flight plan: the answered questions and the decision blocks, the latest
   first, without a button; who decided, the developer's in the human tone with an icon and a word; one emoji per
   decision; links to the tasks it led to, and from a task to its decision. The page's decision table and the brief

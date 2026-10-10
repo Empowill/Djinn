@@ -23,7 +23,6 @@ export { attentionOf } from "@/src/attention.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
 export {
   azimaGroups,
-  finishedTasks,
   flightPlan,
   movingTasks,
 } from "@/src/data/flight.ts";
@@ -898,7 +897,7 @@ test("a task a fork continues links to its fork; a code no card holds stays text
   );
 });
 
-test("the Tasks tab lists what moves or waits by status, then the finished tasks, the latest first", () => {
+test("the Tasks tab lists what moves or waits by status", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const tasks = [
     ["W1", s.TaskStatus.PENDING],
@@ -925,7 +924,6 @@ test("the Tasks tab lists what moves or waits by status, then the finished tasks
   const html = s.renderToStaticMarkup(
     h(s.TaskSections, {
       moving: s.movingTasks(tasks),
-      finished: s.finishedTasks(tasks),
       render: (task) =>
         h(s.WishTask, {
           key: task.id,
@@ -939,26 +937,11 @@ test("the Tasks tab lists what moves or waits by status, then the finished tasks
   const order = [...html.matchAll(/<span class="agent-code">(W\d)</g)].map(
     (m) => m[1],
   );
-  // W7, cut short and not resumed by Djinn, is history: among the finished ones.
-  assert.deepEqual(order, [
-    "W8",
-    "W5",
-    "W3",
-    "W6",
-    "W1",
-    "W4",
-    "W9",
-    "W2",
-    "W7",
-  ]);
-  assert.ok(
-    html.indexOf("Moving or waiting") < html.indexOf("Task W8") &&
-      html.indexOf("Finished") > html.indexOf("Task W1") &&
-      html.indexOf("Finished") < html.indexOf("Task W4"),
-  );
+  assert.deepEqual(order, ["W8", "W5", "W3", "W6", "W1"]);
+  assert.ok(html.indexOf("Moving or waiting") < html.indexOf("Task W8"));
   assert.match(html, /Moving or waiting<span class="count">5<\/span>/);
-  assert.match(html, /Finished<span class="count">4<\/span>/);
-  assert.match(html, /Closed by you, [^<]+: merged/);
+  assert.doesNotMatch(html, /tasks-finished/);
+  assert.doesNotMatch(html, /Finished/);
 });
 
 test("the Tasks tab groups work under its azima, which says what it waits for and its progress, and never waits", () => {
@@ -1022,7 +1005,6 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
     s.renderToStaticMarkup(
       h(s.TaskSections, {
         moving: s.movingTasks(tasks),
-        finished: s.finishedTasks(tasks),
         azimas: groups.filter((x) => !s.azimaFinished(x.azima)),
         doneAzimas: groups.filter((x) => s.azimaFinished(x.azima)),
         fold: `test-${focus}`,
@@ -1043,8 +1025,8 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
     [...html.matchAll(/<span class="agent-code">([TW]\d+)</g)].map((m) => m[1]);
   const html = sections();
   // Work of no azima moves or waits on its own; T2, under way, opened on its parts (running, planned), its finished
-  // one folded; T10 waits; T1, done, folded and not rendered; the finished work of no azima last, never folded.
-  assert.deepEqual(codes(html), ["W4", "T2", "W2", "W3", "T10", "W5"]);
+  // one folded; T10 waits; T1, done, folded and not rendered.
+  assert.deepEqual(codes(html), ["W4", "T2", "W2", "W3", "T10"]);
   const folds = [
     ...html.matchAll(
       /<button type="button" class="fold-line" aria-expanded="false">.*?<\/button>/g,
@@ -1059,7 +1041,6 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
     "W3",
     "W1",
     "T10",
-    "W5",
   ]);
   assert.match(
     sections("W1"),
@@ -1072,11 +1053,11 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
     "W3",
     "T10",
     "T1",
-    "W5",
   ]);
   assert.match(html, /Moving or waiting<span class="count">1<\/span>/);
   assert.match(html, /Azimas<span class="count">3<\/span>/);
-  assert.match(html, /Finished<span class="count">1<\/span>/);
+  assert.doesNotMatch(html, /tasks-finished/);
+  assert.doesNotMatch(html, /Finished/);
   assert.match(html, /Waits for T2</);
   assert.match(html, /after T1</);
   assert.match(html, /1\/3/);
@@ -1213,7 +1194,7 @@ test("the flight plan merges the active wishes: their questions, the blocking on
   assert.match(html, /W2 waits for your answer to Q01 before it may edit\./);
   assert.match(
     html,
-    /id="view-tab-tasks"[^>]*>Tasks<span class="count">3<\/span>/,
+    /id="view-tab-tasks"[^>]*>Tasks<span class="count">2<\/span>/,
   );
   assert.doesNotMatch(html, /Taste the oils/);
   assert.match(
