@@ -2,6 +2,10 @@
 // tests that fail, the build errors, a line per package), and fails when a test fails or when a top-level test took
 // longer than -max: tests stay fast, and a slow one is caught the day it slows down.
 //
+// Linux is the reference: there -max fails. Elsewhere a process costs ten times more (a test spawning git takes
+// 0.7 s on Linux and 7 s on the Windows runner, the same test), so a test over -max is reported and fails only
+// over -max-elsewhere: a test that hangs or grows tenfold is still caught there.
+//
 //	go test -json ./... | go run ./tools/slowtests
 //
 // A test that must stay slow goes in allowed, with why: the list stays empty unless a test has a reason.
@@ -14,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -51,23 +56,49 @@ type result struct {
 }
 
 func main() {
-	limit := flag.Duration("max", 2*time.Second, "the longest a top-level test may take")
+	limit := flag.Duration("max", 2*time.Second, "the longest a top-level test may take, on Linux")
+	elsewhere := flag.Duration("max-elsewhere", 15*time.Second,
+		"the longest a top-level test may take on another system, where one over -max is only reported")
 	flag.Parse()
 	res, err := check(os.Stdin, os.Stdout, *limit)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "slowtests:", err)
 		os.Exit(1)
 	}
+	fail := failLimit(runtime.GOOS, *limit, *elsewhere)
 	if len(res.slow) > 0 {
 		fmt.Fprintf(os.Stderr, "\nThese tests take longer than %s: make them fast (a fake clock, a short tick, a wait on an event "+
 			"instead of a sleep), or say why in tools/slowtests/main.go (allowed).\n", *limit)
+		if fail != *limit {
+			fmt.Fprintf(os.Stderr, "On %s they are reported; only one over %s fails (Linux is the reference).\n",
+				runtime.GOOS, fail)
+		}
 		for _, s := range res.slow {
 			fmt.Fprintf(os.Stderr, "  %s  %s\n", s.elapsed.Round(10*time.Millisecond), s.name)
 		}
 	}
-	if res.failed || len(res.slow) > 0 {
+	if res.failed || len(over(res.slow, fail)) > 0 {
 		os.Exit(1)
 	}
+}
+
+// failLimit is how long a test may take before it fails on goos: limit on Linux, elsewhere on the others.
+func failLimit(goos string, limit, elsewhere time.Duration) time.Duration {
+	if goos == "linux" {
+		return limit
+	}
+	return max(limit, elsewhere)
+}
+
+// over are the tests of tests over limit.
+func over(tests []slow, limit time.Duration) []slow {
+	var out []slow
+	for _, s := range tests {
+		if s.elapsed > limit {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // check reads the events of in, writes to out what go test prints without -json, and says what failed and which

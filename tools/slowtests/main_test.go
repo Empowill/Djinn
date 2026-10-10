@@ -61,3 +61,23 @@ func TestAllowedSayWhy(t *testing.T) {
 		}
 	}
 }
+
+// TestFailLimit: on Linux a test over -max fails; on Windows or macOS, where a process costs ten times more, only one
+// over -max-elsewhere does, the others reported.
+func TestFailLimit(t *testing.T) {
+	for goos, want := range map[string]time.Duration{"linux": 2 * time.Second, "windows": 15 * time.Second, "darwin": 15 * time.Second} {
+		if got := failLimit(goos, 2*time.Second, 15*time.Second); got != want {
+			t.Errorf("failLimit(%s) = %s, want %s", goos, got, want)
+		}
+	}
+	if got := failLimit("windows", 3*time.Second, time.Second); got != 3*time.Second {
+		t.Errorf("a -max-elsewhere under -max: %s, want -max", got)
+	}
+	tests := []slow{{"p TestHangs", 20 * time.Second}, {"p TestGit", 7 * time.Second}}
+	if got := over(tests, 15*time.Second); len(got) != 1 || got[0].name != "p TestHangs" {
+		t.Errorf("over 15 s = %+v, want TestHangs alone", got)
+	}
+	if got := over(tests, 2*time.Second); len(got) != 2 {
+		t.Errorf("over 2 s = %+v, want both", got)
+	}
+}

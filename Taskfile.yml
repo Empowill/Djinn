@@ -85,7 +85,7 @@ tasks:
       - node --test tests/*.test.mjs
 
   test-go:
-    desc: "Run the Go unit tests (builds the interface first if it changed); fails on any test over 2 s (tools/slowtests)"
+    desc: "Run the Go unit tests (builds the interface first if it changed); fails on any test over 2 s on Linux, over 15 s elsewhere (tools/slowtests)"
     deps: [ui]
     set: [pipefail]
     cmds:

@@ -118,7 +118,8 @@ To use Djinn, see the [README](README.md). To work on it:
 
 **Everyday commands** (`go tool task --list` for all)
 - `go tool task test`: every test (Go, interface, end-to-end). Parts: `test-go`, `test-ui`, `e2e`;
-  `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 2 s
+  `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 2 s on Linux,
+  the reference, and over 15 s elsewhere, where a process costs ten times more and a test over 2 s is only reported
   (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
 - `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
