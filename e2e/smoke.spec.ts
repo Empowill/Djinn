@@ -92,15 +92,22 @@ test("sidebar geometry stays stable while creation hides the terminal", async ({
   await expectSameGeometry(existing)(await snapshot());
 });
 
-test("sidebar collapse is immediate, focused, and persistent", async ({
-  page,
-}) => {
+test("sidebar collapse glides, keeps focus, and persists", async ({ page }) => {
   await disableWishSmokeWebGL(page);
   await page.goto(djinnURL());
   const app = page.locator(".wish-app");
   const sidebar = page.locator(".sidebar");
+  const sidebarContent = page.locator(".sidebar-content");
   const toggle = page.locator(".sidebar-toggle");
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const expandedBrand = await page.locator(".sidebar-brand").boundingBox();
+  const expandedContent = await sidebarContent.boundingBox();
+  expect(expandedBrand).not.toBeNull();
+  expect(expandedContent).not.toBeNull();
+  expect(expandedContent!.y).toBeCloseTo(
+    expandedBrand!.y + expandedBrand!.height,
+    0,
+  );
   await page.screenshot({
     path: "test-results/e2e/sidebar-floating-expanded.png",
   });
@@ -109,9 +116,16 @@ test("sidebar collapse is immediate, focused, and persistent", async ({
   await expect(app).toHaveClass(/sidebar-collapsed/);
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(toggle).toBeFocused();
+  await expect(sidebarContent).toHaveAttribute("aria-hidden", "true");
   await expect
     .poll(async () => (await sidebar.boundingBox())?.width ?? -1)
     .toBe(0);
+  expect((await sidebarContent.boundingBox())?.y).toBeCloseTo(
+    expandedContent!.y,
+    0,
+  );
+  expect(await sidebarContent.locator(".new-mission > span").count()).toBe(1);
+  await expect(sidebarContent).toHaveCSS("opacity", "0");
   expect((await page.locator(".main-shell").boundingBox())?.x).toBe(0);
   await page.screenshot({
     path: "test-results/e2e/sidebar-floating-collapsed.png",
@@ -125,6 +139,7 @@ test("sidebar collapse is immediate, focused, and persistent", async ({
   await page.reload();
   await expect(app).toHaveClass(/sidebar-collapsed/);
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(sidebarContent).toHaveAttribute("aria-hidden", "true");
   await expect
     .poll(async () => (await sidebar.boundingBox())?.width ?? -1)
     .toBe(0);
@@ -133,7 +148,64 @@ test("sidebar collapse is immediate, focused, and persistent", async ({
   await expect(app).not.toHaveClass(/sidebar-collapsed/);
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await expect(toggle).toBeFocused();
+  await expect(sidebarContent).not.toHaveAttribute("aria-hidden", "true");
+  await expect(sidebarContent).toHaveCSS("opacity", "1");
   await expect(page.locator(".sidebar .new-mission")).toBeVisible();
+});
+
+test("sidebar collapse honors reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await disableWishSmokeWebGL(page);
+  await page.goto(djinnURL());
+  const content = page.locator(".sidebar-content");
+  const maxTransitionSeconds = () =>
+    content.evaluate((element) =>
+      Math.max(
+        ...getComputedStyle(element)
+          .transitionDuration.split(",")
+          .map((value) => {
+            const duration = value.trim();
+            const number = Number.parseFloat(duration);
+            return duration.endsWith("ms") ? number / 1000 : number;
+          }),
+      ),
+    );
+  await expect.poll(maxTransitionSeconds).toBeLessThanOrEqual(0.00001);
+  await page.locator(".sidebar-toggle").click();
+  await expect.poll(maxTransitionSeconds).toBeLessThanOrEqual(0.00001);
+  await expect(page.locator(".sidebar")).toHaveCSS("width", "0px");
+});
+
+test("creation title keeps its fixed rem size across widths", async ({
+  page,
+}) => {
+  await disableWishSmokeWebGL(page);
+  await page.goto(djinnURL());
+  await page.locator(".sidebar .new-mission").click();
+  const title = page.locator(".wish-creation-intro h1");
+  await expect(title).toBeVisible();
+
+  const measure = () =>
+    title.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        fontSize: style.fontSize,
+        whiteSpace: style.whiteSpace,
+        overflow: style.overflow,
+      };
+    });
+  await expect.poll(measure).toEqual({
+    fontSize: "40px",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+  });
+
+  await page.setViewportSize({ width: 760, height: 720 });
+  await expect.poll(measure).toEqual({
+    fontSize: "40px",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+  });
 });
 
 test("native mac titlebar reserves only its chrome space", async ({ page }) => {

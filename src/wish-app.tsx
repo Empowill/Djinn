@@ -204,7 +204,7 @@ export function WishApp() {
         <div className="sidebar-brand">
           <div className="sidebar-brand-main">
             <Brand />
-            {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
+            <span className="version-tag">EARLY ACCESS</span>
           </div>
           <button
             className="sidebar-toggle"
@@ -221,65 +221,63 @@ export function WishApp() {
             )}
           </button>
         </div>
-        <button
-          className="new-mission"
-          onClick={() => setModal("make")}
-          title={t("app.new_wish")}
+        <div
+          className="sidebar-content"
+          aria-hidden={collapsed ? "true" : undefined}
+          inert={collapsed}
         >
-          <Plus size={16} />
-          {!collapsed && (
-            <>
-              <span>{t("app.new_wish")}</span>
-              <kbd>⌘ N</kbd>
-            </>
-          )}
-        </button>
-        <WishSidebar
-          wishes={wishes}
-          projects={projects}
-          counts={counts}
-          planSelected={plan}
-          onSelectPlan={() => {
-            setSelected(PLAN);
-            setModal(null);
-          }}
-          selectedWishId={wish?.id ?? ""}
-          selectedProjectId={projectId}
-          collapsed={collapsed}
-          onSelectWish={(id) => {
-            setSelected(id);
-            setModal(null);
-          }}
-          onSelectProject={setProjectId}
-          onMove={move}
-          onNewProject={() => setModal("project")}
-        />
-        <button
-          className="nav-item import-nav"
-          onClick={() => importRef.current?.click()}
-          title={t("app.import_wish")}
-          disabled={!loaded}
-        >
-          <Upload size={15} />
-          {!collapsed && <span>{t("app.import_wish")}</span>}
-        </button>
-        <div className="sidebar-bottom">
           <button
-            className="profile"
-            onClick={() => setModal("settings")}
-            title={t("app.connections_preferences")}
+            className="new-mission"
+            onClick={() => setModal("make")}
+            title={t("app.new_wish")}
           >
-            <span className="profile-avatar">C</span>
-            {!collapsed && (
-              <>
-                <span>
-                  {t("app.personal_space")}
-                  <small>{t("app.local_app")}</small>
-                </span>
-                <Settings2 size={15} />
-              </>
-            )}
+            <Plus size={16} />
+            <span>{t("app.new_wish")}</span>
+            <kbd>⌘ N</kbd>
           </button>
+          <WishSidebar
+            wishes={wishes}
+            projects={projects}
+            counts={counts}
+            planSelected={plan}
+            onSelectPlan={() => {
+              setSelected(PLAN);
+              setModal(null);
+            }}
+            selectedWishId={wish?.id ?? ""}
+            selectedProjectId={projectId}
+            collapsed={false}
+            onSelectWish={(id) => {
+              setSelected(id);
+              setModal(null);
+            }}
+            onSelectProject={setProjectId}
+            onMove={move}
+            onNewProject={() => setModal("project")}
+          />
+          <button
+            className="nav-item import-nav"
+            onClick={() => importRef.current?.click()}
+            title={t("app.import_wish")}
+            disabled={!loaded}
+          >
+            <Upload size={15} />
+            <span>{t("app.import_wish")}</span>
+          </button>
+          <div className="sidebar-bottom">
+            <button
+              className="profile"
+              onClick={() => setModal("settings")}
+              title={t("app.connections_preferences")}
+            >
+              <span className="profile-avatar">C</span>
+              <span>
+                {t("app.personal_space")}
+                <small>{t("app.local_app")}</small>
+              </span>
+              <Settings2 size={15} />
+            </button>
+          </div>
         </div>
       </aside>
       <main className="main-shell">

@@ -269,11 +269,133 @@ test("French empty creation keeps the title, caret and smoke visible", async ({
   await expect.poll(hasAscii).toBe(true);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.waitForTimeout(250);
+  await page.evaluate(() => {
+    const root = document.querySelector<HTMLElement>(".wish-smoke-ascii");
+    if (!root) return;
+    let sawBlank = false;
+    const observer = new MutationObserver(() => {
+      const texts = Array.from(
+        root.querySelectorAll("pre"),
+        (pre) => pre.textContent || "",
+      );
+      if (texts.length === 8 && texts.every((text) => !/\S/.test(text)))
+        sawBlank = true;
+    });
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    (
+      window as Window & {
+        __wishSmokeResizeBlank?: () => boolean;
+      }
+    ).__wishSmokeResizeBlank = () => {
+      observer.disconnect();
+      return sawBlank;
+    };
+  });
+
+  const readSmokeLayout = () =>
+    page.evaluate(() => {
+      const surface = document.querySelector<HTMLElement>(".wish-smoke");
+      const ascii = surface?.querySelector<HTMLElement>(".wish-smoke-ascii");
+      const pre = ascii?.querySelector<HTMLElement>("pre");
+      if (!surface || !ascii || !pre) return null;
+      const row = (pre.textContent || "").split("\n")[0] || "";
+      const layerTexts = Array.from(
+        ascii.querySelectorAll("pre"),
+        (layer) => layer.textContent || "",
+      );
+      const preWidth = Number.parseFloat(pre.style.width);
+      const preHeight = Number.parseFloat(pre.style.height);
+      const lineHeight = Number.parseFloat(getComputedStyle(ascii).lineHeight);
+      const surfaceBox = surface.getBoundingClientRect();
+      const asciiBox = ascii.getBoundingClientRect();
+      return {
+        surfaceWidth: surfaceBox.width,
+        surfaceHeight: surfaceBox.height,
+        preWidth,
+        preHeight,
+        charWidth: row.length ? preWidth / row.length : 0,
+        lineHeight,
+        widthGap: surfaceBox.width - preWidth,
+        heightGap: surfaceBox.height - preHeight,
+        bottomDelta: Math.abs(
+          pre.getBoundingClientRect().bottom - asciiBox.bottom,
+        ),
+        rows: (pre.textContent || "").split("\n").length,
+        hasAscii: layerTexts.some((text) => /\S/.test(text)),
+      };
+    });
+  const isCommittedSmokeLayout = (
+    layout: Awaited<ReturnType<typeof readSmokeLayout>>,
+  ) =>
+    layout !== null &&
+    Number.isFinite(layout.preWidth) &&
+    Number.isFinite(layout.preHeight) &&
+    layout.charWidth > 0 &&
+    layout.lineHeight > 0 &&
+    layout.widthGap >= -0.75 &&
+    layout.widthGap < layout.charWidth + 0.75 &&
+    layout.heightGap >= -0.75 &&
+    layout.heightGap < layout.lineHeight + 0.75 &&
+    layout.bottomDelta < 1 &&
+    layout.rows > 1 &&
+    layout.hasAscii;
+  const waitForSmokeLayoutCommit = async (
+    previous: Awaited<ReturnType<typeof readSmokeLayout>>,
+  ) => {
+    await expect
+      .poll(
+        async () => {
+          const current = await readSmokeLayout();
+          if (!isCommittedSmokeLayout(current)) return false;
+          if (!previous || !current) return true;
+          return (
+            Math.abs(current.surfaceWidth - previous.surfaceWidth) > 1 ||
+            Math.abs(current.surfaceHeight - previous.surfaceHeight) > 1 ||
+            Math.abs(current.preWidth - previous.preWidth) > 1 ||
+            Math.abs(current.preHeight - previous.preHeight) > 1
+          );
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    const committed = await readSmokeLayout();
+    expect(isCommittedSmokeLayout(committed)).toBe(true);
+    expect(committed).not.toBeNull();
+    expect(committed!.widthGap).toBeGreaterThanOrEqual(-0.75);
+    expect(committed!.widthGap).toBeLessThan(committed!.charWidth + 0.75);
+    expect(committed!.heightGap).toBeGreaterThanOrEqual(-0.75);
+    expect(committed!.heightGap).toBeLessThan(committed!.lineHeight + 0.75);
+    expect(committed!.bottomDelta).toBeLessThan(1);
+    return committed;
+  };
+
+  let previousLayout = await readSmokeLayout();
   await page.setViewportSize({ width: 1280, height: 900 });
+  previousLayout = await waitForSmokeLayoutCommit(previousLayout);
   await expect(asciiLayers).toHaveCount(8);
   await expect.poll(hasAscii, { timeout: 10_000 }).toBe(true);
+
+  await page.locator(".sidebar-toggle").click();
+  previousLayout = await waitForSmokeLayoutCommit(previousLayout);
+  await page.locator(".sidebar-toggle").click();
+  previousLayout = await waitForSmokeLayoutCommit(previousLayout);
+
   await page.setViewportSize({ width: 1440, height: 1000 });
+  previousLayout = await waitForSmokeLayoutCommit(previousLayout);
   await expect.poll(hasAscii, { timeout: 10_000 }).toBe(true);
+  const sawBlank = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __wishSmokeResizeBlank?: () => boolean;
+        }
+      ).__wishSmokeResizeBlank?.() ?? false,
+  );
+  expect(sawBlank).toBe(false);
   await page.screenshot({ path: "test-results/e2e/wish-creation-fr.png" });
 });
 

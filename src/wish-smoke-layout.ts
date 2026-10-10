@@ -13,6 +13,8 @@ export const SMOKE_MAX_COLUMNS = 240;
 export const SMOKE_MAX_ROWS = 120;
 export const SMOKE_MAX_CANVAS_PIXELS = 1_500_000;
 export const SMOKE_MAX_CANVAS_DIMENSION = 2_048;
+/** Duration used to settle the camera projection after a format resize. */
+export const SMOKE_CAMERA_TRANSITION_MS = 180;
 
 export interface WishSmokeLayout {
   /** CSS font size, rounded up to a half-pixel when the grid needs to shrink. */
@@ -25,6 +27,8 @@ export interface WishSmokeLayout {
   readonly gridHeight: number;
   /** Covered CSS width and height as fractions of the requested surface. */
   readonly coverage: readonly [number, number];
+  /** CSS gap above the bottom-aligned HTML rows. */
+  readonly offsetY: number;
   /** Backing dimensions for the optional canvas, in device pixels. */
   readonly canvasWidth: number;
   readonly canvasHeight: number;
@@ -51,12 +55,51 @@ function gridAtFont(
   fontSize: number,
 ): GridSize {
   const scale = fontSize / SMOKE_BASE_FONT_SIZE;
-  const width = Math.max(1, Math.ceil(surfaceWidth / (baseCharWidth * scale)));
+  const width = Math.max(
+    1,
+    // Keep the rightmost glyph inside the native overflow box. The HTML
+    // surface is right-aligned below, so any unused fractional width remains
+    // a stable gap on the left instead of clipping a character.
+    Math.floor(surfaceWidth / (baseCharWidth * scale)),
+  );
   const height = Math.max(
     1,
-    Math.ceil(surfaceHeight / (SMOKE_BASE_LINE_HEIGHT * scale)),
+    // A partial final line is clipped by the native pre's overflow box. Keep
+    // whole lines inside the surface and align that gap above the rows.
+    Math.floor(surfaceHeight / (SMOKE_BASE_LINE_HEIGHT * scale)),
   );
   return { width, height, cells: width * height };
+}
+
+/**
+ * Return the horizontal camera scale used by the reference smoke projection.
+ * Keeping this value separate from the CSS resolution lets callers interpolate
+ * a format change without changing the fluid simulation or zoom.
+ */
+export function computeWishSmokeCameraScale(
+  surfaceWidth: number,
+  surfaceHeight: number,
+): number {
+  positiveFinite(surfaceWidth, "surfaceWidth");
+  positiveFinite(surfaceHeight, "surfaceHeight");
+  const aspect = surfaceWidth / surfaceHeight;
+  const fit = Math.min(1.65, aspect * 1.35);
+  return aspect / fit;
+}
+
+/** Smoothly interpolate one camera scale without changing the fluid state. */
+export function interpolateWishSmokeCameraScale(
+  start: number,
+  target: number,
+  elapsedMs: number,
+): number {
+  if (!Number.isFinite(start) || !Number.isFinite(target)) return target;
+  const progress = Math.max(
+    0,
+    Math.min(1, elapsedMs / SMOKE_CAMERA_TRANSITION_MS),
+  );
+  const eased = progress * progress * (3 - 2 * progress);
+  return start + (target - start) * eased;
 }
 
 function fitsGrid(size: GridSize): boolean {
@@ -208,6 +251,7 @@ export function computeWishSmokeLayout(
     fontSize,
   );
   const canvas = boundedCanvas(surfaceWidth, surfaceHeight, devicePixelRatio);
+  const textHeight = grid.height * SMOKE_BASE_LINE_HEIGHT * scale;
 
   return {
     fontSize,
@@ -216,9 +260,13 @@ export function computeWishSmokeLayout(
     gridWidth: grid.width,
     gridHeight: grid.height,
     coverage: [
-      (grid.width * baseCharWidthAt10 * scale) / surfaceWidth,
-      (grid.height * SMOKE_BASE_LINE_HEIGHT * scale) / surfaceHeight,
+      Math.min(
+        1,
+        (grid.width * baseCharWidthAt10 * scale) / surfaceWidth,
+      ),
+      Math.min(1, textHeight / surfaceHeight),
     ],
+    offsetY: Math.max(0, surfaceHeight - textHeight),
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
     backgroundPixelRatio: canvas.ratio,

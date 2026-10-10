@@ -31,7 +31,10 @@ const {
   SMOKE_MAX_CELLS,
   SMOKE_MAX_COLUMNS,
   SMOKE_MAX_ROWS,
+  SMOKE_CAMERA_TRANSITION_MS,
+  computeWishSmokeCameraScale,
   computeWishSmokeLayout,
+  interpolateWishSmokeCameraScale,
 } = layoutModule;
 
 function assertLayoutInvariants(layout, width, height, dpr, baseCharWidth = 6) {
@@ -42,6 +45,16 @@ function assertLayoutInvariants(layout, width, height, dpr, baseCharWidth = 6) {
   assert.ok(layout.gridWidth >= 1 && layout.gridWidth <= SMOKE_MAX_COLUMNS);
   assert.ok(layout.gridHeight >= 1 && layout.gridHeight <= SMOKE_MAX_ROWS);
   assert.ok(layout.gridWidth * layout.gridHeight <= SMOKE_MAX_CELLS);
+  assert.ok(layout.offsetY >= 0);
+  const textWidth = layout.gridWidth * layout.charWidth;
+  const textHeight = layout.gridHeight * layout.lineHeight;
+  if (width >= layout.charWidth)
+    assert.ok(textWidth <= width + 1e-9);
+  if (height >= layout.lineHeight)
+    assert.ok(textHeight <= height + 1e-9);
+  assert.ok(
+    Math.abs(layout.offsetY - Math.max(0, height - textHeight)) < 1e-9,
+  );
   assert.equal(layout.canvasWidth, Math.round(layout.canvasWidth));
   assert.equal(layout.canvasHeight, Math.round(layout.canvasHeight));
   assert.ok(
@@ -63,8 +76,8 @@ function assertLayoutInvariants(layout, width, height, dpr, baseCharWidth = 6) {
     Math.abs(layout.canvasHeight - height * layout.backgroundPixelRatio) <= 1,
   );
   assert.equal(layout.coverage.length, 2);
-  assert.ok(layout.coverage[0] >= 1);
-  assert.ok(layout.coverage[1] >= 1);
+  assert.ok(layout.coverage[0] > 0 && layout.coverage[0] <= 1);
+  assert.ok(layout.coverage[1] > 0 && layout.coverage[1] <= 1);
   assert.ok(
     Math.abs(layout.charWidth - (baseCharWidth * layout.fontSize) / 10) < 1e-9,
   );
@@ -81,7 +94,8 @@ test("keeps the 10px reference on a normal surface when the budgets fit", () => 
   assert.equal(layout.fontSize, 10);
   assert.equal(layout.charWidth, 6);
   assert.equal(layout.lineHeight, SMOKE_BASE_LINE_HEIGHT);
-  assert.deepEqual([layout.gridWidth, layout.gridHeight], [214, 71]);
+  assert.deepEqual([layout.gridWidth, layout.gridHeight], [213, 70]);
+  assert.equal(layout.offsetY, 2);
   assertLayoutInvariants(layout, 1280, 800, 1);
 });
 
@@ -155,6 +169,46 @@ test("canvas backing keeps one CSS aspect ratio on ultrawide and portrait surfac
   assert.equal(portrait.canvasWidth * portrait.canvasHeight, 839_680);
   assert.ok(Math.abs(portrait.backgroundPixelRatio - 0.4096) < 1e-12);
   assertLayoutInvariants(portrait, 1000, 5000, 3);
+});
+
+test("bottom-aligned HTML coverage never samples beyond the surface", () => {
+  for (const [width, height] of [
+    [1280, 800],
+    [2560, 1080],
+    [1024, 1200],
+    [5120, 1440],
+    [1000, 5000],
+  ]) {
+    const layout = computeWishSmokeLayout(width, height, 6, 1);
+    const textHeight = layout.gridHeight * layout.lineHeight;
+    assert.ok(textHeight <= height + 1e-9 || height < layout.lineHeight);
+    assert.ok(layout.coverage[1] <= 1);
+    assert.ok(layout.offsetY >= 0);
+    assert.ok(
+      Math.abs(layout.offsetY - Math.max(0, height - textHeight)) < 1e-9,
+    );
+  }
+});
+
+test("camera scale settles format changes without changing the fluid zoom", () => {
+  const start = computeWishSmokeCameraScale(1280, 800);
+  const target = computeWishSmokeCameraScale(2560, 1080);
+  assert.equal(interpolateWishSmokeCameraScale(start, target, 0), start);
+  assert.equal(
+    interpolateWishSmokeCameraScale(
+      start,
+      target,
+      SMOKE_CAMERA_TRANSITION_MS,
+    ),
+    target,
+  );
+  const middle = interpolateWishSmokeCameraScale(
+    start,
+    target,
+    SMOKE_CAMERA_TRANSITION_MS / 2,
+  );
+  assert.ok(middle > Math.min(start, target));
+  assert.ok(middle < Math.max(start, target));
 });
 
 test("same inputs produce the same layout across repeated resize measurements", () => {
