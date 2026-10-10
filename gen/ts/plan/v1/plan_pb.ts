@@ -1023,14 +1023,15 @@ export const WishTemplateSchema: GenMessage<WishTemplate> = /*@__PURE__*/
  */
 export type Lead = Message<"plan.v1.Lead"> & {
   /**
-   * Kind of agent: claude or codex.
+   * Kind of agent: claude, codex or antigravity.
    *
    * @generated from field: plan.v1.Provider provider = 1;
    */
   provider: Provider;
 
   /**
-   * Identifier of the session, as the agent names it: claude --resume takes it.
+   * Identifier of the session, as the agent names it: claude --resume takes it. An antigravity lead does not
+   * know its session id and leaves it empty; djinn wish resume resumes the folder's most recent conversation (agy --continue).
    *
    * @generated from field: string session_id = 2;
    */
@@ -4536,7 +4537,7 @@ export type WishServiceSetLeadRequest = Message<"plan.v1.WishServiceSetLeadReque
   sessionId: string;
 
   /**
-   * Kind of agent: claude (the default) or codex.
+   * Kind of agent: claude (the default), codex or antigravity.
    *
    * @generated from field: plan.v1.Provider provider = 3;
    */

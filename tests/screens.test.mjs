@@ -2117,6 +2117,10 @@ test("Lead is split: the button resumes the recorded lead, the arrow lists this 
     s.recordedAgent({ provider: s.Provider.CODEX, sessionId: "" }),
     undefined,
   );
+  assert.equal(
+    s.recordedAgent({ provider: s.Provider.ANTIGRAVITY, sessionId: "" }),
+    s.Provider.ANTIGRAVITY,
+  );
   const props = {
     recorded,
     agents,

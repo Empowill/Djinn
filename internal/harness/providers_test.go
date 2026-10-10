@@ -252,13 +252,13 @@ func catalog() []catalogCase {
 		{provider: "antigravity", fixture: "permission-denied-notice",
 			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "USAGE", "ERROR"},
 			err:  `agy stopped: it cannot run commands headless (git grep -n "RestartFile"). Run this task with claude or codex.`},
-		{provider: "antigravity", fixture: "resume", spec: Spec{Resume: "055a398f-db14-4c5f-abbb-1bf03f8120a7"},
+		{provider: "antigravity", fixture: "resume", spec: Spec{Resume: "9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f"},
 			want: []string{"STATUS", "TEXT", "USAGE"},
 			check: func(t *testing.T, events []Event, args, _ string) {
-				if !strings.HasSuffix(args, "--conversation\n055a398f-db14-4c5f-abbb-1bf03f8120a7") {
+				if !strings.HasSuffix(args, "--conversation\n9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f") {
 					t.Errorf("args = %q", args)
 				}
-				if ev := event(t, events, "STATUS"); ev.SessionID != "055a398f-db14-4c5f-abbb-1bf03f8120a7" {
+				if ev := event(t, events, "STATUS"); ev.SessionID != "9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f" {
 					t.Errorf("session = %q", ev.SessionID)
 				}
 			}},

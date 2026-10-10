@@ -27,8 +27,9 @@ const agents: [string, Provider][] = [
   ["antigravity", Provider.ANTIGRAVITY],
 ];
 
-// recordedAgent is the agent of the wish's recorded lead; none without a session. A lead stored without one ran Claude.
+// recordedAgent is the agent of the wish's recorded lead; none without a session, except Antigravity. A lead stored without one ran Claude.
 export function recordedAgent(lead?: Lead): Provider | undefined {
+  if (lead?.provider === Provider.ANTIGRAVITY) return Provider.ANTIGRAVITY;
   if (!lead?.sessionId) return undefined;
   return lead.provider === Provider.UNSPECIFIED
     ? Provider.CLAUDE

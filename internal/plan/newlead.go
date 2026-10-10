@@ -34,7 +34,8 @@ func StartLine(wishID string) string {
 // newLead prepares a new lead for a wish: the command line that starts provider's agent in dir (startFolder: a
 // project's folder, never the home folder) on StartLine, the same for every agent, and the lead it starts. first,
 // when set, comes before: the request a routed wish was made for. The lead holds a session only when Djinn chooses
-// it ahead: claude's. A server without data folder keeps the shell.
+// it ahead: claude's. An antigravity lead resumes without a session (the folder's most recent conversation).
+// A server without data folder keeps the shell.
 func (w *Wishes) newLead(
 	ctx context.Context, wish *planv1.Wish, provider planv1.Provider, dir, first string,
 ) (line, folder string, lead *planv1.Lead, note string, err error) {
@@ -67,10 +68,14 @@ func (w *Wishes) newLead(
 	if line, err = leadLine(runtime.GOOS, lead, own, msg); err != nil {
 		return "", "", nil, "", err
 	}
-	// The lead recorded before, which stays the wish's lead unless the new one is claude's.
+	// The lead recorded before, which stays the wish's lead unless the new one is claude's or antigravity's.
 	kept := ""
-	if old := wish.GetLead(); old.GetSessionId() != "" && !HoldsHome(old.GetDirectory()) {
-		kept = providerName(old.GetProvider()) + " session " + old.GetSessionId()
+	if old := wish.GetLead(); hasLead(old) && !HoldsHome(old.GetDirectory()) {
+		if old.GetSessionId() != "" {
+			kept = providerName(old.GetProvider()) + " session " + old.GetSessionId()
+		} else {
+			kept = providerName(old.GetProvider()) + " conversation"
+		}
 	}
 	switch provider {
 	case planv1.Provider_PROVIDER_CLAUDE:
@@ -82,13 +87,16 @@ func (w *Wishes) newLead(
 		if kept != "" {
 			note += " Until then, the wish's lead stays the " + kept + "."
 		}
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		note = "A new antigravity lead started from the wish's brief (djinn wish brief). The folder's most recent " +
+			"conversation is the wish's lead now: djinn wish resume takes it back."
 	default:
-		note = "A new antigravity lead started from the wish's brief (djinn wish brief). An antigravity lead cannot be " +
-			"resumed in a terminal: the next resume starts a new one."
+		note = fmt.Sprintf("A new %s lead started from the wish's brief (djinn wish brief). A %s lead cannot be "+
+			"resumed in a terminal: the next resume starts a new one.", providerName(provider), providerName(provider))
 		if kept != "" {
-			note = "A new antigravity lead started from the wish's brief (djinn wish brief). An antigravity lead cannot " +
-				"be resumed in a terminal: the wish's lead stays the " + kept + ", which the next resume takes back " +
-				"once this one exits."
+			note = fmt.Sprintf("A new %s lead started from the wish's brief (djinn wish brief). A %s lead cannot "+
+				"be resumed in a terminal: the wish's lead stays the %s, which the next resume takes back "+
+				"once this one exits.", providerName(provider), providerName(provider), kept)
 		}
 	}
 	return line, dir, lead, note, nil

@@ -127,11 +127,8 @@ func (h *Harness) continuable(ctx context.Context, t *planv1.Task, running bool)
 	case !t.GetScheduled():
 		return refuse("was not run by this Djinn: spawn a task for it")
 	}
-	switch t.GetProvider() {
-	case planv1.Provider_PROVIDER_WATCH:
+	if t.GetProvider() == planv1.Provider_PROVIDER_WATCH {
 		return refuse("is a watcher, which has no session: spawn it again")
-	case planv1.Provider_PROVIDER_ANTIGRAVITY:
-		return refuse("runs antigravity, which cannot resume a session: spawn a task with a prompt instead")
 	}
 	if _, ok := h.providers[t.GetProvider()]; !ok {
 		return refuse("runs %s, which is not available", short(t.GetProvider()))

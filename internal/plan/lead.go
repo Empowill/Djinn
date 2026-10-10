@@ -42,16 +42,35 @@ func leadProvider(lead *planv1.Lead) planv1.Provider {
 	return planv1.Provider_PROVIDER_CLAUDE
 }
 
+// hasLead reports whether lead records a resumable lead session or workspace.
+func hasLead(lead *planv1.Lead) bool {
+	if lead == nil || lead.GetDirectory() == "" {
+		return false
+	}
+	return lead.GetSessionId() != "" || lead.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY
+}
+
 // resumeLine is the command line that resumes the lead's session, as its agent's command line takes it. The session
 // identifier was checked against a pattern without spaces or quotes: the line goes through the user's shell as it is.
 func resumeLine(lead *planv1.Lead) (string, error) {
 	switch lead.GetProvider() {
 	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_UNSPECIFIED:
+		if lead.GetSessionId() == "" {
+			return "", errors.New("a claude lead needs a session id")
+		}
 		return "claude --resume " + lead.GetSessionId(), nil
 	case planv1.Provider_PROVIDER_CODEX:
+		if lead.GetSessionId() == "" {
+			return "", errors.New("a codex lead needs a session id")
+		}
 		return "codex resume " + lead.GetSessionId(), nil
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		if id := lead.GetSessionId(); id != "" {
+			return "agy --conversation " + id, nil
+		}
+		return "agy --continue", nil
 	}
-	return "", fmt.Errorf("a %s lead cannot be resumed in a terminal: only claude and codex",
+	return "", fmt.Errorf("a %s lead cannot be resumed in a terminal: only claude, codex and antigravity",
 		strings.ToLower(strings.TrimPrefix(lead.GetProvider().String(), "PROVIDER_")))
 }
 
@@ -120,12 +139,12 @@ func (w *Wishes) Resume(
 	var started *planv1.Lead // the lead a brief starts, recorded once its terminal runs
 	// A session recorded in the home folder is not resumed: Djinn never runs a lead there, and claude finds a
 	// session only from the folder it was made in. A new lead starts from the brief, in a project.
-	atHome := wish.GetLead().GetSessionId() != "" && HoldsHome(wish.GetLead().GetDirectory())
+	atHome := hasLead(wish.GetLead()) && HoldsHome(wish.GetLead().GetDirectory())
 	// A lead of another agent than the recorded one cannot open its session: it starts from the brief, which says
 	// how to take the wish over.
 	other := req.Msg.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED &&
 		req.Msg.GetProvider() != leadProvider(wish.GetLead())
-	if wish.GetLead().GetSessionId() != "" && !atHome && !other {
+	if hasLead(wish.GetLead()) && !atHome && !other {
 		if line, dir, err = sessionLine(wish); err != nil {
 			return nil, err
 		}
@@ -143,8 +162,12 @@ func (w *Wishes) Resume(
 			return nil, err
 		}
 		if atHome {
-			note = fmt.Sprintf("The lead's session %s was recorded in %s, the home folder, where Djinn never runs a "+
-				"lead. ", wish.GetLead().GetSessionId(), wish.GetLead().GetDirectory()) + note
+			leadDescr := "The lead's session " + wish.GetLead().GetSessionId()
+			if wish.GetLead().GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && wish.GetLead().GetSessionId() == "" {
+				leadDescr = "The lead"
+			}
+			note = fmt.Sprintf("%s was recorded in %s, the home folder, where Djinn never runs a "+
+				"lead. ", leadDescr, wish.GetLead().GetDirectory()) + note
 		}
 		res.Note, exclusive = note, started.GetSessionId()
 	}
@@ -157,10 +180,10 @@ func (w *Wishes) Resume(
 	case res.GetAttached() && started != nil:
 		res.Note = fmt.Sprintf("The lead's terminal already runs %s: exit it there, then resume again to start a lead "+
 			"from the wish's brief.", running)
-	case res.GetAttached() && line != "" && !strings.Contains(running, line) && !strings.Contains(running, exclusive):
+	case res.GetAttached() && line != "" && !strings.Contains(running, line) && (exclusive == "" || !strings.Contains(running, exclusive)):
 		res.Note = fmt.Sprintf("The lead's terminal already runs %s, not %s: exit it there, then resume again.",
 			running, line)
-	case !res.GetAttached() && started.GetSessionId() != "":
+	case !res.GetAttached() && hasLead(started):
 		// The new lead runs: its session is the wish's lead from now on, for the next resume.
 		if res.Wish, err = w.recordLead(ctx, wish.GetId(), started); err != nil {
 			return nil, err
@@ -178,6 +201,11 @@ func sessionLine(wish *planv1.Wish) (line, dir string, err error) {
 	}
 	dir = lead.GetDirectory()
 	if !isFolder(dir) {
+		if lead.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && lead.GetSessionId() == "" {
+			return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"the lead's folder %q is not on this machine: djinn wish set-lead %s --provider antigravity --directory <folder> gives it",
+				dir, wish.GetId()))
+		}
 		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"the lead's folder %q is not on this machine: djinn wish set-lead %s %s --directory <folder> gives it",
 			dir, wish.GetId(), lead.GetSessionId()))
