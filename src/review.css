@@ -1,0 +1,1146 @@
+/* The window laid out for review and decision at a glance, on Clément's tokens and lines (styles.css, wish.css): a
+   status language of colours, icons and words; a bar of what waits for you; titles, subtitles and a readable measure;
+   the light theme. Each status colour reads at 4.5:1 at least on the surfaces of its theme (tests/styles.test.cjs). */
+:root {
+  --text: #e7e7e7;
+  --st-done: #5fd38d;
+  --st-running: #6aa9ff;
+  --st-waiting: #ffa24c;
+  --st-investigating: #c3a6f5;
+  --st-planned: #a3a3a3;
+  --st-failed: #ff8178;
+  --st-interrupted: #e9c45a;
+  --st-stopped: #9a9a9a;
+  --st-paused: #b4b4c8;
+  --st-watching: #4fd1c5;
+  --st-human: #f590b8;
+  --st-proof: #b8cf6a;
+  --lamp: #e9bf55;
+  --lamp-ink: #2a1d00;
+  --measure: 72ch;
+}
+html[data-theme="light"] {
+  color-scheme: light;
+  color: #1c1c1a;
+  background: #f6f6f4;
+  --text: #1c1c1a;
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --surface-raised: #fafaf8;
+  --surface-soft: #f0f0ed;
+  --line: #e2e2dd;
+  --line-strong: #c9c9c2;
+  --muted: #66665f;
+  --muted-dim: #6f6f68;
+  --accent: #1c1c1a;
+  --st-done: #116b33;
+  --st-running: #1d4ed8;
+  --st-waiting: #9a4600;
+  --st-investigating: #6d28d9;
+  --st-planned: #57534e;
+  --st-failed: #b91c1c;
+  --st-interrupted: #7a4f00;
+  --st-stopped: #57534e;
+  --st-paused: #4b4b6b;
+  --st-watching: #0f6b63;
+  --st-human: #a8235a;
+  --st-proof: #4f6212;
+  --lamp: #f0c75e;
+}
+
+/* The status language. */
+.tone-done {
+  --tone: var(--st-done);
+}
+.tone-running {
+  --tone: var(--st-running);
+}
+.tone-waiting {
+  --tone: var(--st-waiting);
+}
+.tone-investigating {
+  --tone: var(--st-investigating);
+}
+.tone-planned {
+  --tone: var(--st-planned);
+}
+.tone-failed {
+  --tone: var(--st-failed);
+}
+.tone-interrupted {
+  --tone: var(--st-interrupted);
+}
+.tone-stopped {
+  --tone: var(--st-stopped);
+}
+.tone-paused {
+  --tone: var(--st-paused);
+}
+.tone-watching {
+  --tone: var(--st-watching);
+}
+.tone-human {
+  --tone: var(--st-human);
+}
+.tone-proof {
+  --tone: var(--st-proof);
+}
+.tone-later {
+  --tone: var(--st-planned);
+}
+.status-badge,
+.count-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 32%, transparent);
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.status-badge {
+  padding: 1px 9px 1px 7px;
+  font-weight: 600;
+}
+.count-pill {
+  padding: 0 7px 0 6px;
+  font-family: var(--mono);
+}
+.count-pill b {
+  font-weight: 600;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--st-running);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--st-running) 60%, transparent);
+  animation: live-dot 1.6s ease-out infinite;
+  flex-shrink: 0;
+}
+@keyframes live-dot {
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* The bar of what waits for you: it stays at the top of the page while you scroll. */
+.attention-bar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 33px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.attention-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  color: var(--st-waiting);
+}
+.attention-bar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 152px;
+  overflow-y: auto;
+}
+.attention-item {
+  --tone: var(--st-waiting);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--tone);
+  background: color-mix(in srgb, var(--tone) 8%, var(--bg));
+  text-align: left;
+}
+.attention-item:hover {
+  background: color-mix(in srgb, var(--tone) 16%, var(--bg));
+}
+.attention-item.level-blocking {
+  --tone: var(--st-failed);
+}
+.attention-item.level-action {
+  --tone: var(--st-interrupted);
+}
+.attention-item.level-later {
+  --tone: var(--st-planned);
+}
+.attention-item.level-ready {
+  --tone: var(--st-done);
+}
+.attention-level {
+  color: var(--tone);
+  font-weight: 600;
+  min-width: 78px;
+}
+.attention-code {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.attention-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.attention-item > svg {
+  color: var(--muted);
+}
+.flash {
+  animation: flash 1.4s ease-out;
+}
+@keyframes flash {
+  0% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-waiting) 70%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+.review .question-card,
+.review .wish-task,
+.review .wish-block,
+.review .wish-grant,
+.review .plan-line {
+  scroll-margin-top: 170px;
+}
+
+/* Titles, subtitles, a readable measure, air. The view takes the window's width, from the side panel to the right
+   edge: the cards share it in columns, the prose keeps its measure inside them. */
+.review .overview-content {
+  padding: 8px 33px 64px;
+  container: main / inline-size;
+}
+.review .review-head {
+  min-height: 0;
+  border-bottom: 0;
+  padding: 0 33px;
+  margin: 0;
+  width: 100%;
+}
+/* A list of cards: as many columns as the width holds, none narrower than --card-min; one column on a narrow window.
+   Each card keeps its own space below it. */
+.card-grid {
+  --card-min: 560px;
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, var(--card-min)), 1fr)
+  );
+  column-gap: var(--space-3);
+  align-items: start;
+}
+.task-grid,
+.azima-grid {
+  --card-min: 760px;
+}
+/* What waits for you in one column, the rest beside it on a wide view: questions are answered one after the other,
+   so that none moves under the pointer when the one above goes. The rest (.main-side) stacks on its right, top
+   first; on a narrow view, everything follows the page's order. */
+.main-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 40px;
+  align-items: start;
+}
+/* What reads as a list of lines or a setting stays at a hand's reach. */
+.main-columns .wish-journal,
+.main-columns .wish-rights {
+  max-width: 1200px;
+}
+@container main (min-width: 1400px) {
+  .main-columns:has(> .main-moves):has(> .main-side) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+  .main-columns:has(> .main-side) > .main-moves {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .main-columns:has(> .main-moves) > .main-side {
+    grid-column: 2;
+  }
+  .main-columns:has(> .main-moves):has(> .main-side) > * > :first-child {
+    margin-top: 20px;
+  }
+  .main-columns > .main-moves:only-child {
+    max-width: 1100px;
+  }
+}
+@container main (min-width: 2400px) {
+  .main-columns:has(> .main-moves):has(> .main-side) {
+    grid-template-columns: minmax(0, 1100px) minmax(0, 1fr);
+  }
+}
+.review .review-head .hero-copy {
+  padding: 30px 0 18px;
+}
+.review .hero h1 {
+  font-size: 34px;
+  font-weight: 550;
+  letter-spacing: -0.8px;
+  line-height: 1.15;
+  margin: 8px 0 12px;
+  color: var(--text);
+  max-width: 1100px;
+}
+.review .hero-copy > p {
+  font-size: 14px;
+  color: var(--muted);
+  max-width: var(--measure);
+}
+.review .hero-visual {
+  width: 170px;
+  height: 150px;
+  flex: 0 0 auto;
+}
+/* The wish's pills, then when it was made and its pushes, on one line while it holds them. */
+.review-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+}
+.review-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.review-facts .review-pills {
+  margin-bottom: 0;
+}
+.review-facts .hero-meta {
+  margin-top: 0;
+}
+.section-title {
+  margin-bottom: 14px;
+}
+.section-title h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+.section-title p,
+.section-title .wish-spent {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  max-width: var(--measure);
+}
+.review .wish-section {
+  margin-top: 44px;
+}
+.review .action-center {
+  margin-top: 20px;
+  padding: 22px 24px 18px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--st-waiting) 35%, var(--line));
+  background: color-mix(in srgb, var(--st-waiting) 4%, var(--surface));
+}
+.review .action-center .decisions-section {
+  border: 0;
+  padding: 0;
+  background: none;
+  margin: 0;
+}
+
+/* Markdown as prose: what the lead writes reads like a page. */
+.prose,
+.review .recommendation .ac-markdown {
+  max-width: var(--measure);
+}
+.prose .ac-markdown,
+.review .recommendation .ac-markdown {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.prose .ac-markdown p,
+.prose .ac-markdown li,
+.review .recommendation .ac-markdown p {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.prose .ac-markdown p + p {
+  margin-top: 0.7em;
+}
+.prose .ac-markdown h1,
+.prose .ac-markdown h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 1.3em 0 0.5em;
+  color: var(--text);
+}
+.prose .ac-markdown h3,
+.prose .ac-markdown h4 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 1.1em 0 0.4em;
+  color: var(--text);
+}
+.prose .ac-markdown ul,
+.prose .ac-markdown ol {
+  padding-left: 1.3em;
+  margin: 0.5em 0;
+}
+.prose .ac-markdown :not(pre) > code {
+  font: 12.5px var(--mono);
+  background: var(--surface-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.prose .ac-markdown blockquote {
+  margin: 0.8em 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--line-strong);
+  color: var(--muted);
+}
+.prose .ac-markdown table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.prose .ac-markdown th,
+.prose .ac-markdown td {
+  border: 1px solid var(--line);
+  padding: 5px 9px;
+  text-align: left;
+}
+
+/* A question card: its title, the recommendation boxed first, the options as buttons, what is at stake below. */
+.review .question-card {
+  --tone: var(--st-waiting);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--tone);
+  border-radius: 10px;
+  background: var(--surface);
+  margin: 0 0 16px;
+  overflow: visible;
+}
+.review .question-card.is-blocking {
+  --tone: var(--st-failed);
+}
+.review .question-card.can-wait {
+  --tone: var(--st-planned);
+}
+.review .question-card.investigating {
+  --tone: var(--st-investigating);
+}
+.review .question-card.answered {
+  --tone: var(--st-done);
+  margin-bottom: 8px;
+}
+.question-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-right: 14px;
+}
+.review .question-heading {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+  padding: 18px 20px 12px;
+}
+/* Being investigated, folded: one line out of the way of the questions that wait for an answer. */
+.review .question-card.folded {
+  margin-bottom: 8px;
+}
+.review .question-heading.question-fold {
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  white-space: nowrap;
+}
+.review .question-fold > svg:first-child {
+  flex: none;
+  color: var(--tone);
+}
+.review .question-fold .question-id,
+.review .question-fold .status-badge,
+.review .question-fold .wish-origin {
+  flex: none;
+}
+.question-fold-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-weight: 500;
+}
+.question-fold-note {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 13px;
+}
+.review .question-card.answered .question-heading {
+  padding-bottom: 14px;
+  align-items: center;
+}
+.review .question-id {
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  border-color: color-mix(in srgb, var(--tone) 40%, transparent);
+  color: var(--tone);
+  font-weight: 600;
+  min-width: 38px;
+}
+.question-title {
+  flex: 1;
+  min-width: 0;
+}
+.review .question-meta span {
+  color: inherit;
+}
+.review .question-meta .status-badge,
+.review .question-meta .revised-badge {
+  color: var(--tone, var(--st-investigating));
+}
+.review .question-meta .revised-badge {
+  color: var(--st-investigating);
+}
+.review .question-meta .wish-origin {
+  color: var(--muted);
+}
+.review .question-meta {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  margin-bottom: 8px;
+}
+.review .question-heading h3 {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  max-width: var(--measure);
+}
+.review .question-card.answered .question-heading h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.review .answer-value {
+  margin-top: 4px;
+  color: var(--st-done);
+  font-weight: 500;
+}
+.revised-badge {
+  font-family: var(--mono);
+  color: var(--st-investigating);
+  border: 1px dashed
+    color-mix(in srgb, var(--st-investigating) 50%, transparent);
+  border-radius: 999px;
+  padding: 0 8px;
+}
+.review .question-inner {
+  padding: 2px 22px 20px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.review .recommendation {
+  display: block;
+  margin: 0;
+  padding: 12px 16px 14px;
+  border: 1px solid color-mix(in srgb, var(--lamp) 45%, var(--line));
+  border-left: 4px solid var(--lamp);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--lamp) 9%, var(--surface));
+}
+.review .recommendation .eyebrow {
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.review .question-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.review .option {
+  position: relative;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 13px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.review .option p {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.review .option.selected {
+  border-color: var(--st-running);
+  background: color-mix(in srgb, var(--st-running) 10%, var(--surface));
+  box-shadow: 0 0 0 1px var(--st-running);
+}
+.review .option .option-letter {
+  font: 600 var(--font-size-body) var(--mono);
+  color: var(--text);
+}
+.review .section-heading h3 {
+  color: var(--text);
+}
+.option-recommended {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  font-size: var(--font-size-body);
+  color: var(--lamp-ink);
+  background: var(--lamp);
+  border-radius: 999px;
+  padding: 0 8px;
+  font-weight: 600;
+}
+.review .question-card textarea {
+  width: 100%;
+  max-width: var(--measure);
+  background: var(--surface-raised);
+  border-color: var(--line-strong);
+}
+.question-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.question-actions .spacer {
+  flex: 1;
+}
+.review .button.accent.lamp-rub,
+html[data-theme="light"] .review .button.accent.lamp-rub {
+  background: linear-gradient(#f3d27a, var(--lamp));
+  border-color: #c99a2e;
+  color: var(--lamp-ink);
+  box-shadow: inset 0 1px 0 #fff3c4;
+  font-weight: 650;
+}
+.review .button.accent.lamp-rub:hover {
+  background: #f6dc90;
+}
+.review .button.secondary.lamp-enlighten,
+html[data-theme="light"] .review .button.secondary.lamp-enlighten {
+  color: var(--st-investigating);
+  border-color: color-mix(in srgb, var(--st-investigating) 55%, transparent);
+  background: color-mix(in srgb, var(--st-investigating) 8%, var(--surface));
+}
+.investigating-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--st-investigating);
+  font-size: 13px;
+  max-width: var(--measure);
+}
+.question-hint {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--muted);
+}
+.review .question-context {
+  max-width: none;
+  color: var(--text);
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.question-context h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 0 0 6px;
+}
+.question-rounds > summary,
+.wish-task-events-fold > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 0;
+}
+.question-rounds[open] > summary {
+  margin-bottom: 6px;
+}
+.review .answered-info {
+  color: var(--muted);
+}
+
+/* The read mark of an open question. */
+.mark-buttons {
+  display: inline-flex;
+  gap: 6px;
+  padding-top: 16px;
+  flex-shrink: 0;
+}
+.mark-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.mark-toggle:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+.mark-toggle.on {
+  color: var(--st-running);
+  border-color: color-mix(in srgb, var(--st-running) 45%, transparent);
+  background: color-mix(in srgb, var(--st-running) 10%, transparent);
+}
+
+/* Tasks: one row each, its state first. */
+.review .wish-task {
+  border-left: 3px solid var(--tone, var(--line));
+  background: var(--surface);
+  border-color: var(--line);
+  border-left-color: var(--tone, var(--line));
+}
+.review .wish-task-heading {
+  gap: 12px;
+  padding: 10px 14px;
+}
+.review .wish-task-heading strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.review .wish-task-heading .status-badge {
+  min-width: 112px;
+}
+.review .wish-task-note {
+  padding-left: 140px;
+}
+.review .wish-task-note.error {
+  color: var(--st-failed);
+}
+.review .wish-task-closed {
+  color: var(--st-done);
+}
+.review .wish-task-work.work-done {
+  color: var(--st-done);
+}
+.review .wish-task-work.work-failed {
+  color: var(--st-failed);
+}
+.review .wish-task-closed .task-link {
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+}
+.review .wish-task-closed .task-link:hover {
+  color: var(--accent);
+}
+.wish-task-done {
+  align-items: center;
+}
+
+/* The tabs of a view: the wish or the flight plan, and the tasks, which say how many they are. */
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+.view-tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+}
+.view-tabs > button:hover {
+  color: var(--text);
+}
+.view-tabs > button.active {
+  color: var(--text);
+  border-bottom-color: var(--lamp);
+}
+/* For agents: the last tab, discreet, apart from the others. */
+.view-tabs > button.discreet {
+  margin-left: auto;
+  opacity: 0.7;
+}
+.view-tabs > button.discreet:hover,
+.view-tabs > button.discreet.active {
+  opacity: 1;
+}
+.compact-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--font-size-body) var(--mono);
+}
+.compact-table td {
+  padding: 3px 8px;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.compact-table td:first-child {
+  white-space: nowrap;
+  color: var(--muted);
+  width: 1%;
+}
+.compact-table tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--surface-soft) 50%, transparent);
+}
+.event-table td:nth-child(2) {
+  width: 1%;
+  color: var(--muted);
+}
+.event-table .wish-event-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.review .wish-journal .compact-table td:nth-child(2) {
+  white-space: nowrap;
+  width: 1%;
+}
+.fold-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+}
+.rotated-90 {
+  transform: rotate(90deg);
+}
+
+/* Blocks for agents: one folded line each, its body once opened. */
+.review .wish-block {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 8px;
+}
+.agent-block > .fold-heading {
+  width: 100%;
+  text-align: left;
+}
+.review .agent-block h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+.agent-block > .wish-block-body {
+  margin-top: 10px;
+}
+
+/* The flight plan: each wish at a glance. */
+.review .plan-wish {
+  border-top: 3px solid var(--tone, var(--line));
+  background: var(--surface);
+  gap: 10px;
+}
+.review .plan-wish strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.review .plan-wish-counts {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.plan-wish-progress {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+      90deg,
+      var(--st-done) var(--done),
+      var(--surface-soft) var(--done)
+    )
+    no-repeat;
+}
+.review .plan-line {
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.review .wish-grant {
+  border: 1px solid color-mix(in srgb, var(--st-done) 40%, var(--line));
+  background: color-mix(in srgb, var(--st-done) 6%, var(--surface));
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+.review .wish-grant h3 {
+  font-size: 15px;
+  color: var(--text);
+}
+.review .step-result-kicker {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+/* The side panel: each wish's state and counts. */
+.wish-tone {
+  display: inline-flex;
+  color: var(--tone);
+  width: 14px;
+  justify-content: center;
+}
+.wish-tone .live-dot {
+  width: 6px;
+  height: 6px;
+}
+.mission-nav .count-pill {
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: var(--font-size-body);
+}
+
+/* The light theme on the window's frame: Clément's dark values, read again on a light ground. */
+html[data-theme="light"] ::selection {
+  background: #c9d7f5;
+  color: #1c1c1a;
+}
+html[data-theme="light"] .sidebar {
+  background: #efefeb;
+}
+html[data-theme="light"] .mission-nav,
+html[data-theme="light"] .import-nav,
+html[data-theme="light"] .sidebar-section-label,
+html[data-theme="light"] .profile small,
+html[data-theme="light"] .version-tag,
+html[data-theme="light"] .breadcrumbs,
+html[data-theme="light"] .eyebrow,
+html[data-theme="light"] .text-button,
+html[data-theme="light"] .icon-button,
+html[data-theme="light"] .muted-text,
+html[data-theme="light"] .hero-meta,
+html[data-theme="light"] .app-statusbar {
+  color: var(--muted);
+}
+html[data-theme="light"] .mission-nav.selected,
+html[data-theme="light"] .mission-nav:hover,
+html[data-theme="light"] .nav-item.selected,
+html[data-theme="light"] .nav-item:hover {
+  background: #e2e2dc;
+  color: var(--text);
+}
+html[data-theme="light"] .breadcrumbs strong,
+html[data-theme="light"] .brand-mark,
+html[data-theme="light"] .text-button:hover,
+html[data-theme="light"] .icon-button:hover {
+  color: var(--text);
+}
+html[data-theme="light"] .icon-button:hover {
+  background: var(--surface-soft);
+}
+html[data-theme="light"] .new-mission {
+  background: #1c1c1a;
+  color: #f6f6f4;
+  border-color: #1c1c1a;
+  box-shadow: none;
+}
+html[data-theme="light"] .new-mission kbd {
+  color: #b5b5ad;
+}
+html[data-theme="light"] .button.accent {
+  background: #1c1c1a;
+  color: #ffffff;
+  border-color: #1c1c1a;
+  box-shadow: none;
+}
+html[data-theme="light"] .button.secondary {
+  background: #ffffff;
+  border-color: var(--line-strong);
+  color: var(--text);
+  box-shadow: none;
+}
+html[data-theme="light"] .button.secondary:hover {
+  background: var(--surface-soft);
+}
+html[data-theme="light"] input,
+html[data-theme="light"] select,
+html[data-theme="light"] textarea {
+  background: #ffffff;
+  border-color: var(--line-strong);
+}
+html[data-theme="light"] .count,
+html[data-theme="light"] .badge,
+html[data-theme="light"] .mission-nav small,
+html[data-theme="light"] .nav-counter {
+  color: var(--muted);
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+}
+html[data-theme="light"] .profile-avatar {
+  background: #ffffff;
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+html[data-theme="light"] .section-heading h3,
+html[data-theme="light"] .setting-row strong,
+html[data-theme="light"] .ac-markdown,
+html[data-theme="light"] .ac-markdown p,
+html[data-theme="light"] .ac-markdown li,
+html[data-theme="light"] .wish-task-meta,
+html[data-theme="light"] .wish-task-note {
+  color: var(--text);
+}
+html[data-theme="light"] .wish-task-meta,
+html[data-theme="light"] .wish-task-note,
+html[data-theme="light"] .setting-row p {
+  color: var(--muted);
+}
+html[data-theme="light"] .modal {
+  background: #ffffff;
+  border-color: var(--line);
+  color: var(--text);
+}
+html[data-theme="light"] .modal > h2,
+html[data-theme="light"] .provider-setting h3 {
+  color: var(--text);
+}
+html[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #c9c9c2;
+}
+html[data-theme="light"] .wish-origin,
+html[data-theme="light"] .review .question-meta .wish-origin {
+  color: var(--muted);
+  border-color: var(--line-strong);
+}
+.review .action-center .decisions-section .section-heading h3 {
+  color: var(--text);
+}
+
+/* The wish's description, under its title: a few lines, edited in place. */
+.review .hero-copy > .wish-description {
+  margin: -4px 0 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: var(--measure);
+  white-space: pre-line;
+  cursor: text;
+  border-radius: 5px;
+}
+.review .hero-copy > .wish-description:hover,
+.review .hero-copy > .wish-description:focus-visible {
+  color: var(--text);
+  outline: 1px dashed var(--line-strong);
+  outline-offset: 4px;
+}
+.wish-description-edit {
+  display: block;
+  width: 100%;
+  max-width: var(--measure);
+  margin: -4px 0 12px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+/* Lead, split: the button resumes the recorded lead, the arrow beside it lists the agents of this machine. */
+.split-button {
+  position: relative;
+  display: inline-flex;
+}
+.split-button > .button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split-button > .split-arrow {
+  padding-left: 6px;
+  padding-right: 6px;
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.lead-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 260px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px color-mix(in srgb, black 35%, transparent);
+}
+.lead-menu > p {
+  padding: 8px 10px;
+}
+.lead-agent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  text-align: left;
+  color: var(--text);
+}
+.lead-agent:not(:disabled):hover,
+.lead-agent:not(:disabled):focus-visible {
+  background: var(--n-28);
+}
+.lead-agent:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.lead-agent-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 550;
+}
+.lead-agent-detail {
+  font-size: var(--font-size-body, 12px);
+  color: var(--muted);
+}

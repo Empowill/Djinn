@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+// Package demo.v1 is a minimal service that proves a server stream reaches the interface, in the window and in
+// the browser alike.
+package demo.v1;
+
+// DemoService exists to exercise the transport end to end; it holds no logic of its own.
+service DemoService {
+  // Count streams 1, 2, … up to the requested value, one value at a fixed interval.
+  rpc Count(CountRequest) returns (stream CountResponse);
+}
+
+// CountRequest says how far to count.
+message CountRequest {
+  // The last value sent; zero or less ends the stream at once.
+  int32 up_to = 1;
+}
+
+// CountResponse carries one value of the count.
+message CountResponse {
+  // The current value, starting at 1.
+  int32 value = 1;
+}

@@ -1,6 +1,8 @@
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import { useId, useState, useEffect } from "react";
-import type { AgentStatus } from "./types";
+import { t } from "./i18n";
+
+type AgentStatus = "queued" | "running" | "blocked" | "done" | "error";
 export const agentColor = (id: string, index = 0) =>
   id === "lead"
     ? "#bbc0c8"
@@ -59,7 +61,7 @@ export function Orb({
       <ThinkingOrb
         state={animation}
         size={size < 30 ? 20 : 64}
-        theme="dark"
+        theme="auto"
         color={color}
         speed={status === "running" ? 0.85 : status === "queued" ? 0.35 : 0.45}
         paused={reduced || status === "done"}
@@ -76,7 +78,7 @@ export function Machine({ active = true }: { active?: boolean }) {
       className={`machine ${active ? "active" : ""}`}
       viewBox="0 0 560 340"
       fill="none"
-      aria-label="Illustration animée de l’équipe Djinn"
+      aria-label={t("visuals.team_illustration")}
     >
       <defs>
         <linearGradient
@@ -87,20 +89,24 @@ export function Machine({ active = true }: { active?: boolean }) {
           y2="260"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="#2a2a2a" />
-          <stop offset="1" stopColor="#151515" />
+          <stop style={{ stopColor: "var(--n-2a)" }} />
+          <stop offset="1" style={{ stopColor: "var(--n-14)" }} />
         </linearGradient>
         <radialGradient id={`glow${id}`}>
-          <stop stopColor="#e2e2e2" stopOpacity=".18" />
-          <stop offset="1" stopColor="#e2e2e2" stopOpacity="0" />
+          <stop style={{ stopColor: "var(--n-de)" }} stopOpacity=".18" />
+          <stop
+            offset="1"
+            style={{ stopColor: "var(--n-de)" }}
+            stopOpacity="0"
+          />
         </radialGradient>
         <linearGradient id={`screen${id}`} x1="0" y1="0" x2="1" y2="1">
-          <stop stopColor="#2a2a2a" />
-          <stop offset="1" stopColor="#141414" />
+          <stop style={{ stopColor: "var(--n-2a)" }} />
+          <stop offset="1" style={{ stopColor: "var(--n-14)" }} />
         </linearGradient>
       </defs>
       <ellipse cx="280" cy="215" rx="205" ry="100" fill={`url(#glow${id})`} />
-      <g stroke="#363636" strokeWidth=".6" opacity=".55">
+      <g style={{ stroke: "var(--n-38)" }} strokeWidth=".6" opacity=".55">
         {Array.from({ length: 13 }, (_, i) => (
           <g key={i}>
             <path d={`M${15 + i * 27} ${150 + i * 14}l230 -125`} />
@@ -110,46 +116,75 @@ export function Machine({ active = true }: { active?: boolean }) {
       </g>
       <path
         d="m110 234 170-98 181 103-170 98Z"
-        fill="#1a1a1a"
-        stroke="#474747"
+        style={{ fill: "var(--n-19)", stroke: "var(--n-47)" }}
       />
-      <path d="m110 234 0 9 181 104 170-99v-9" stroke="#383838" />
+      <path
+        d="m110 234 0 9 181 104 170-99v-9"
+        style={{ stroke: "var(--n-38)" }}
+      />
       <path
         d="m174 231 0-138 101-58 111 64v139l-101 59Z"
         fill={`url(#body${id})`}
-        stroke="#5f5f5f"
+        style={{ stroke: "var(--n-5e)" }}
         strokeWidth="1.1"
       />
-      <path d="m174 93 111 65 101-59M285 158v139" stroke="#575757" />
-      <path d="m188 110 80 46v89l-80-46Z" fill="#121212" stroke="#4f4f4f" />
+      <path
+        d="m174 93 111 65 101-59M285 158v139"
+        style={{ stroke: "var(--n-57)" }}
+      />
+      <path
+        d="m188 110 80 46v89l-80-46Z"
+        style={{ fill: "var(--n-11)", stroke: "var(--n-51)" }}
+      />
       <path
         d="m197 128 63 36v61l-63-36Z"
         fill={`url(#screen${id})`}
-        stroke="#464646"
+        style={{ stroke: "var(--n-47)" }}
       />
-      <g className="screen-symbol" stroke="#e9e9e9" strokeWidth="1.5">
+      <g
+        className="screen-symbol"
+        style={{ stroke: "var(--n-e7)" }}
+        strokeWidth="1.5"
+      >
         <path d="m214 165 8 10-8 1m15 3 12 7" />
         <path d="m202 188 51 29" opacity=".25" />
       </g>
-      <g className="scanline" stroke="#bdbdbd" strokeWidth=".7" opacity=".3">
+      <g
+        className="scanline"
+        style={{ stroke: "var(--n-b6)" }}
+        strokeWidth=".7"
+        opacity=".3"
+      >
         <path d="m199 145 58 33" />
         <path d="m199 149 58 33" />
         <path d="m199 153 58 33" />
       </g>
-      <path d="m305 173 61-35v73l-61 35Z" stroke="#3a3a3a" />
-      <g stroke="#474747" strokeWidth="1">
+      <path d="m305 173 61-35v73l-61 35Z" style={{ stroke: "var(--n-38)" }} />
+      <g style={{ stroke: "var(--n-47)" }} strokeWidth="1">
         {Array.from({ length: 9 }, (_, i) => (
           <path key={i} d={`m${308 + i * 6} ${170 - i * 3.5}v55`} />
         ))}
       </g>
-      <g stroke="#6d6d6d">
+      <g style={{ stroke: "var(--n-6f)" }}>
         <path d="m202 235 34 19m-34-15 34 19" />
         <path d="m301 255 65-37" />
       </g>
-      <circle cx="252" cy="252" r="2" fill="#e7e7e7" className="machine-led" />
-      <path d="m280 65 70 40-16 9-70-40Z" fill="#1c1c1c" stroke="#4a4a4a" />
-      <path d="m190 268 45-26 94 54-45 26Z" fill="#242424" stroke="#5b5b5b" />
-      <g stroke="#5e5e5e" strokeWidth=".7">
+      <circle
+        cx="252"
+        cy="252"
+        r="2"
+        style={{ fill: "var(--n-e7)" }}
+        className="machine-led"
+      />
+      <path
+        d="m280 65 70 40-16 9-70-40Z"
+        style={{ fill: "var(--n-1c)", stroke: "var(--n-4c)" }}
+      />
+      <path
+        d="m190 268 45-26 94 54-45 26Z"
+        style={{ fill: "var(--n-25)", stroke: "var(--n-5e)" }}
+      />
+      <g style={{ stroke: "var(--n-5e)" }} strokeWidth=".7">
         {Array.from({ length: 4 }, (_, i) => (
           <path key={i} d={`m${198 + i * 9} ${268 - i * 5} 84 48`} />
         ))}
@@ -157,28 +192,56 @@ export function Machine({ active = true }: { active?: boolean }) {
           <path key={i} d={`m${205 + i * 10} ${276 + i * 5.7} 30-18`} />
         ))}
       </g>
-      <g className="signal-paths" stroke="#bababa" strokeWidth=".8">
+      <g
+        className="signal-paths"
+        style={{ stroke: "var(--n-b6)" }}
+        strokeWidth=".8"
+      >
         <path d="M386 174l43 25v44l50 28" strokeDasharray="3 5" />
         <path d="M174 170l-45-26-55 32" strokeDasharray="3 5" />
         <path d="M281 35V19l50-10" strokeDasharray="3 5" />
       </g>
       <g className="satellite sat-a">
-        <path d="m440 274 28-16 29 17-28 16Z" fill="#282828" stroke="#7f7f7f" />
-        <path d="m451 273 17-10 18 11-17 10Z" stroke="#d4d4d4" />
-        <circle cx="469" cy="274" r="2" fill="#ececec" />
+        <path
+          d="m440 274 28-16 29 17-28 16Z"
+          style={{ fill: "var(--n-28)", stroke: "var(--n-83)" }}
+        />
+        <path
+          d="m451 273 17-10 18 11-17 10Z"
+          style={{ stroke: "var(--n-d1)" }}
+        />
+        <circle cx="469" cy="274" r="2" style={{ fill: "var(--n-eb)" }} />
       </g>
       <g className="satellite sat-b">
-        <path d="m39 182 29-16 28 16-29 17Z" fill="#222222" stroke="#6f6f6f" />
-        <path d="m55 182 12-7 12 7-12 7Z" stroke="#c9c9c9" />
+        <path
+          d="m39 182 29-16 28 16-29 17Z"
+          style={{ fill: "var(--n-22)", stroke: "var(--n-6f)" }}
+        />
+        <path d="m55 182 12-7 12 7-12 7Z" style={{ stroke: "var(--n-c4)" }} />
       </g>
       <g className="satellite sat-c">
-        <path d="m327 13 22-13 24 14-23 13Z" fill="#292929" stroke="#838383" />
-        <circle cx="350" cy="14" r="3" fill="#dedede" />
+        <path
+          d="m327 13 22-13 24 14-23 13Z"
+          style={{ fill: "var(--n-28)", stroke: "var(--n-83)" }}
+        />
+        <circle cx="350" cy="14" r="3" style={{ fill: "var(--n-de)" }} />
       </g>
-      <text x="403" y="308" fill="#818181" fontSize="8" fontFamily="monospace">
+      <text
+        x="403"
+        y="308"
+        style={{ fill: "var(--n-83)" }}
+        fontSize="8"
+        fontFamily="monospace"
+      >
         SYSTEM / DJINN
       </text>
-      <text x="403" y="322" fill="#c9c9c9" fontSize="8" fontFamily="monospace">
+      <text
+        x="403"
+        y="322"
+        style={{ fill: "var(--n-c4)" }}
+        fontSize="8"
+        fontFamily="monospace"
+      >
         CONNECTED_
       </text>
     </svg>

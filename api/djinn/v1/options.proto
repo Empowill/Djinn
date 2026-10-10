@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+// Options that annotate the other protos of Djinn. The command line and the store read them at runtime.
+package djinn.v1;
+
+import "google/protobuf/descriptor.proto";
+
+// Visibility says who may call a method.
+enum Visibility {
+  // Not set: treated as INTERNAL, so a method is never exposed by accident.
+  VISIBILITY_UNSPECIFIED = 0;
+  // Exposed to agents through the command line.
+  VISIBILITY_PUBLIC = 1;
+  // Reserved to the native window.
+  VISIBILITY_INTERNAL = 2;
+}
+
+// Writes says what a public method that answers once changes. A method that only reads says option
+// idempotency_level = NO_SIDE_EFFECTS instead: djinn mcp tells an agent's client it may run it without asking, and
+// Connect serves it as a GET too. Every public method that answers once says one or the other; a test checks it.
+enum Writes {
+  // Not set: the method must say option idempotency_level = NO_SIDE_EFFECTS.
+  WRITES_UNSPECIFIED = 0;
+  // It adds or changes something, in Djinn or on the machine.
+  WRITES_CHANGE = 1;
+  // It deletes something, or may overwrite a file it is given: what it removes does not come back by itself.
+  WRITES_DELETE = 2;
+}
+
+// Unique is one group of fields whose values, taken together, identify a stored message.
+message Unique {
+  // Names of the fields of the group, as written in the proto.
+  repeated string fields = 1;
+}
+
+extend google.protobuf.MethodOptions {
+  // Who may call the method. Only VISIBILITY_PUBLIC methods become commands.
+  Visibility visibility = 51001;
+  // The command line starts djinn up in the background first when no djinn answers, then calls the method: a
+  // command that only makes sense with the window open, such as taking a wish back.
+  bool autostart = 51003;
+  // What the method changes, when it does not only read.
+  Writes writes = 51004;
+}
+
+extend google.protobuf.ServiceOptions {
+  // Another name of the service's command: djinn talisman answers as djinn tilasm. Typed in full, or by a prefix no
+  // command's own name takes.
+  repeated string alias = 51005;
+}
+
+extend google.protobuf.MessageOptions {
+  // Groups of fields that must be unique among stored messages of this type.
+  repeated Unique unique = 51002;
+}
+
+extend google.protobuf.FieldOptions {
+  // The command line and djinn mcp fill the field from this environment variable when the caller leaves it empty:
+  // a worker's commands name its task by $DJINN_TASK_ID, which Djinn sets for every worker.
+  string env = 51006;
+}

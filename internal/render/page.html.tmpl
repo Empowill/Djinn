@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Djinn">
+<title>{{.Title}}</title>
+<style>{{css}}</style>
+</head>
+<body>
+{{- if .Bar}}
+<aside class="bar" aria-label="{{index .T "page.bar"}}">
+  <div class="bar-in">
+  {{- range .Bar}}
+    <a class="line {{.Class}}" href="{{.Href}}">{{template "st" (pair .Class .Level)}}<span class="what">{{.Text}}</span></a>
+  {{- end}}
+  </div>
+</aside>
+{{- end}}
+<main>
+<header class="head">
+  {{- if .Projects}}
+  <ul class="projects" aria-label="{{index .T "page.projects"}}">{{range .Projects}}<li>{{.}}</li>{{end}}</ul>
+  {{- end}}
+  <h1>{{.Title}}</h1>
+  <p class="meta">{{template "st" (pair .StateClass .State)}} <span>{{.Rendered}}</span></p>
+  {{- if .Counts}}
+  <ul class="counts" aria-label="{{index .T "page.counts"}}">
+    {{- range .Counts}}<li><a class="st {{.Class}}" href="{{.Href}}"><i aria-hidden="true">{{icon .Class}}</i>{{.Label}} <b>{{.Count}}</b></a></li>{{end}}
+  </ul>
+  {{- end}}
+  {{- if .Contents}}
+  <nav class="toc" aria-label="{{index .T "page.contents"}}">
+    {{- range .Contents}}<a class="pill{{if .Class}} {{.Class}}{{end}}" href="#{{.ID}}">{{.Label}} <b>{{.Count}}</b></a>{{end}}
+  </nav>
+  {{- end}}
+</header>
+{{- if .Questions}}
+<section id="questions">
+  {{- template "head" (pair (pair (index .T "page.questions") (index .T "page.questions_sub")) (len .Questions))}}
+  {{- range .Questions}}
+  <details class="q {{.Class}}" id="q-{{.Code}}"{{if .Open}} open{{end}}>
+    <summary>
+      <span class="qline"><span class="code">{{.Code}}</span>{{template "st" (pair .Class .Level)}}</span>
+      {{- if .Revised}}{{template "st" (pair "idle" .Revised)}}{{end}}
+      <span class="qtitle">{{.Text}}</span>
+      {{- if .RecomLine}}<span class="qreco">{{.RecomLine}}</span>{{end}}
+    </summary>
+    <div class="qbody">
+    {{- if .Recom}}
+    <div class="recom"><div class="label">{{index $.T "page.recommendation"}}</div><div class="md">{{.Recom}}</div></div>
+    {{- end}}
+    {{- if .Options}}
+    <div class="label">{{index $.T "page.options"}}</div>
+    <ol class="options">
+      {{- range .Options}}<li><span class="letter">{{.Letter}}</span><span>{{.Text}}</span></li>{{end}}
+    </ol>
+    {{- else}}
+    <p class="hint">{{index $.T "page.yes_only"}}</p>
+    {{- end}}
+    {{- if .Context}}
+    <div class="context"><div class="label">{{index $.T "page.context"}}</div><div class="md">{{.Context}}</div></div>
+    {{- end}}
+    {{- if .Rounds}}
+    <details class="fold rounds"><summary>{{index $.T "page.rounds"}} <span class="n">{{len .Rounds}}</span></summary>
+      <ol>{{range .Rounds}}<li><time>{{.At}}</time> {{.Label}}{{if .Note}}: {{.Note}}{{end}}</li>{{end}}</ol>
+    </details>
+    {{- end}}
+    </div>
+  </details>
+  {{- end}}
+</section>
+{{- end}}
+{{- if .Actions}}
+<section id="actions">
+  {{- template "head" (pair (pair (index .T "page.actions") (index .T "page.actions_sub")) (len .Actions))}}
+  <ol class="actions">{{range .Actions}}<li class="{{.Class}}">{{template "st" (pair .Class .Level)}}<span>{{.Text}}</span></li>{{end}}</ol>
+</section>
+{{- end}}
+{{- if or .Running .Finished}}
+<section id="running">
+  {{- template "head" (pair (pair (index .T "page.running") (index .T "page.running_sub")) (len .Running))}}
+  {{- range .Running}}{{template "worker" (pair . $.T)}}{{else}}
+  <p class="hint">{{index .T "page.none_running"}}</p>
+  {{- end}}
+  {{- if .Finished}}
+  <details class="fold finished">
+    <summary>{{index .T "page.finished"}} <span class="n">{{len .Finished}}</span></summary>
+    <table class="tbl stack">
+      <thead><tr><th>{{index .T "page.task"}}</th><th>{{index .T "page.status"}}</th><th>{{index .T "page.took"}}</th><th>{{index .T "page.spent"}}</th></tr></thead>
+      <tbody>
+      {{- range .Finished}}
+      <tr id="t-{{.Code}}">
+        <td data-label="{{index $.T "page.task"}}"><span class="code">{{.Code}}</span> {{.Title}}{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{if .Closed}}<p class="closed">{{.Closed}}</p>{{end}}{{if .Work}}<p class="work {{.WorkClass}}">{{.Work}}</p>{{end}}</td>
+        <td data-label="{{index $.T "page.status"}}">{{template "st" (pair .StatusClass .Status)}}</td>
+        <td data-label="{{index $.T "page.took"}}" class="num">{{.Time}}</td>
+        <td data-label="{{index $.T "page.spent"}}" class="num">{{.Spent}}</td>
+      </tr>
+      {{- end}}
+      </tbody>
+    </table>
+  </details>
+  {{- end}}
+</section>
+{{- end}}
+{{- if or .Tasks .Planned}}
+<section id="tasks">
+  {{- template "head" (pair (pair (index .T "page.tasks") (index .T "page.tasks_sub")) (len .Tasks))}}
+  {{- if .Tasks}}
+  <ul class="rows">{{range .Tasks}}{{template "task" .}}{{end}}</ul>
+  {{- end}}
+  {{- if .Planned}}
+  <details class="fold planned">
+    <summary>{{index .T "page.planned"}} <span class="n">{{len .Planned}}</span></summary>
+    <table class="tbl stack">
+      <thead><tr><th>{{index .T "page.task"}}</th><th>{{index .T "page.after_col"}}</th><th>{{index .T "page.wait_col"}}</th></tr></thead>
+      <tbody>
+      {{- range .Planned}}
+      <tr id="t-{{.Code}}">
+        <td data-label="{{index $.T "page.task"}}"><span class="code">{{.Code}}</span> {{.Title}}</td>
+        <td data-label="{{index $.T "page.after_col"}}" class="after">{{.After}}</td>
+        <td data-label="{{index $.T "page.wait_col"}}" class="reason">{{.Wait}}</td>
+      </tr>
+      {{- end}}
+      </tbody>
+    </table>
+  </details>
+  {{- end}}
+</section>
+{{- end}}
+{{- if .Decisions}}
+<section id="decisions">
+  {{- template "head" (pair (pair (index .T "page.decisions") (index .T "page.decisions_sub")) (len .Decisions))}}
+  {{- template "decisions" (pair .Decisions $.T)}}
+  {{- if .Older}}
+  <details class="fold older">
+    <summary>{{index .T "page.older"}} <span class="n">{{len .Older}}</span></summary>
+    {{- template "decisions" (pair .Older $.T)}}
+  </details>
+  {{- end}}
+</section>
+{{- end}}
+{{- if .Blocks}}
+<section id="notes">
+  {{- template "head" (pair (pair (index .T "page.notes") (index .T "page.notes_sub")) (len .Blocks))}}
+  {{- range .Notes}}
+  {{- if .Run}}
+  <article class="block series">
+    <div class="block-head"><span class="kind">{{.Kind}}</span><h3>{{.Title}}</h3></div>
+    <ul class="run-list">{{range .Run}}{{template "run-item" (pair . $.T)}}{{end}}</ul>
+    {{- if .More}}
+    <details class="fold">
+      <summary>{{index $.T "page.more"}} <span class="n">{{len .More}}</span></summary>
+      <ul class="run-list">{{range .More}}{{template "run-item" (pair . $.T)}}{{end}}</ul>
+    </details>
+    {{- end}}
+  </article>
+  {{- else}}{{with .Block}}
+  <article class="block">
+    {{- if .Long}}
+    <details class="long">
+      <summary class="block-head">{{template "block-head" .}}</summary>
+      {{- template "block-body" (pair . $.T)}}
+    </details>
+    {{- else}}
+    <div class="block-head">{{template "block-head" .}}</div>
+    {{- template "block-body" (pair . $.T)}}
+    {{- end}}
+  </article>
+  {{- end}}{{end}}
+  {{- end}}
+</section>
+{{- end}}
+{{- if .Journal}}
+<section id="journal">
+  {{- template "head" (pair (pair (index .T "page.journal") (index .T "page.journal_sub")) (len .Journal))}}
+  {{- template "journal" (pair .Journal $.T)}}
+  {{- if .Earlier}}
+  <details class="fold earlier">
+    <summary>{{index .T "page.earlier"}} <span class="n">{{len .Earlier}}</span></summary>
+    {{- template "journal" (pair .Earlier $.T)}}
+  </details>
+  {{- end}}
+  {{- if .JournalCut}}<p class="meta">{{.JournalCut}}</p>{{end}}
+</section>
+{{- end}}
+{{- if .Events}}
+<section id="events">
+  {{- template "head" (pair (pair (index .T "page.events") (index .T "page.events_sub")) (len .Events))}}
+  {{- template "events" (pair .Events $.T)}}
+  {{- if .EarlierEv}}
+  <details class="fold earlier">
+    <summary>{{index .T "page.earlier_events"}} <span class="n">{{len .EarlierEv}}</span></summary>
+    {{- template "events" (pair .EarlierEv $.T)}}
+  </details>
+  {{- end}}
+</section>
+{{- end}}
+</main>
+</body>
+</html>
+{{- define "st"}}<span class="st {{index . 0}}"><i aria-hidden="true">{{icon (index . 0)}}</i>{{index . 1}}</span>{{end}}
+{{- define "head"}}{{$h := index . 0}}
+  <div class="sec-head"><h2>{{index $h 0}} <span class="n">{{index . 1}}</span></h2><p class="sub">{{index $h 1}}</p></div>
+{{- end}}
+{{- define "worker"}}{{$t := index . 0}}{{$T := index . 1}}
+  <article class="worker" id="t-{{$t.Code}}">
+    <div class="w-head">{{template "st" (pair $t.StatusClass $t.Status)}}<span class="code">{{$t.Code}}</span><h3>{{$t.Title}}</h3></div>
+    {{- template "task-meta" $t}}
+    {{- if $t.LastWord}}
+    <div class="last"><div class="label">{{index $T "page.last_event"}}{{if $t.LastAt}} · <time>{{$t.LastAt}}</time>{{end}}</div><p>{{$t.LastWord}}</p></div>
+    {{- end}}
+  </article>
+{{- end}}
+{{- define "task"}}
+<li class="row {{.StatusClass}}" id="t-{{.Code}}">
+  <div class="task-head">{{template "st" (pair .StatusClass .Status)}}<span class="code">{{.Code}}</span><span class="title">{{.Title}}</span></div>
+  {{- template "task-meta" .}}
+  {{- if .Error}}<p class="error">{{.Error}}</p>{{end}}
+</li>
+{{- end}}
+{{- define "task-meta"}}
+  <p class="meta">
+    {{- if .Project}}<span>{{.Project}}</span>{{end}}<span>{{.Agent}}</span>
+    {{- if .Time}}<span>{{.Time}}</span>{{end}}{{if .Spent}}<span>{{.Spent}}</span>{{end}}
+    {{- if .After}}<span class="after">{{.After}}</span>{{end}}</p>
+  {{- if .Wait}}<p class="reason">{{.Wait}}</p>{{end}}
+  {{- if .Work}}<p class="work {{.WorkClass}}">{{.Work}}</p>{{end}}
+{{- end}}
+{{- define "decisions"}}{{$ds := index . 0}}{{$T := index . 1}}
+  <table class="tbl decisions stack">
+    <thead><tr><th>{{index $T "page.when"}}</th><th>{{index $T "page.decision"}}</th><th>{{index $T "page.why"}}</th></tr></thead>
+    <tbody>
+    {{- range $ds}}
+    <tr{{if .Human}} class="human"{{end}}>
+      <td data-label="{{index $T "page.when"}}" class="at"><time>{{.At}}</time></td>
+      <td data-label="{{index $T "page.decision"}}">
+        {{- if .Choice}}<span class="asked"><span class="ico">{{.Icon}}</span>{{if .Code}}<span class="code">{{.Code}}</span>{{end}}{{.Text}}</span><b class="chosen">→ {{.Choice}}</b>
+        {{- else}}<b class="chosen"><span class="ico">{{.Icon}}</span>{{.Text}}</b>{{end}}
+        <span class="who">{{if .Human}}{{template "st" (pair "human" .Who)}}{{else}}<span class="by">{{.Who}}</span>{{end}}
+        {{- if .Tasks}}<span class="led">{{index $T "page.led_to"}} {{range $i, $c := .Tasks}}{{if $i}}, {{end}}<a class="code" href="#t-{{$c}}">{{$c}}</a>{{end}}</span>{{end}}</span></td>
+      <td data-label="{{index $T "page.why"}}" class="why">
+        {{- if .LongNote}}<details class="note"><summary>{{.NoteLine}}</summary><div class="md">{{.Note}}</div></details>
+        {{- else if .Note}}<div class="md">{{.Note}}</div>{{end}}</td>
+    </tr>
+    {{- end}}
+    </tbody>
+  </table>
+{{- end}}
+{{- define "block-head"}}
+      {{- if .Kind}}<span class="kind">{{.Kind}}</span>{{end}}<h3>{{.Title}}</h3>
+      <span class="meta">{{if .Task}}{{.Task}} · {{end}}<time>{{.Updated}}</time></span>
+{{- end}}
+{{- define "run-item"}}<li><details><summary class="block-head">{{template "block-head" (index . 0)}}</summary>{{template "block-body" .}}</details></li>{{end}}
+{{- define "block-body"}}{{$b := index . 0}}{{$T := index . 1}}
+    {{- if $b.Markdown}}<div class="md prose">{{$b.HTML}}</div>{{else if $b.Text}}<pre>{{$b.Text}}</pre>{{end}}
+    {{- if $b.Diagram}}<p class="hint">{{index $T "page.diagram"}}</p>{{end}}
+{{- end}}
+{{- define "journal"}}{{$es := index . 0}}{{$T := index . 1}}
+  <table class="tbl log">
+    <thead><tr><th>{{index $T "page.when"}}</th><th>{{index $T "page.what"}}</th></tr></thead>
+    <tbody>
+    {{- range $es}}
+    <tr><td class="at"><time>{{.At}}</time></td><td class="what">{{if .Command}}<code>{{.Command}}</code> {{end}}{{if .Note}}<div class="md">{{.Note}}</div>{{else}}{{.Summary}}{{end}}</td></tr>
+    {{- end}}
+    </tbody>
+  </table>
+{{- end}}
+{{- define "events"}}{{$es := index . 0}}{{$T := index . 1}}
+  <table class="tbl log">
+    <thead><tr><th>{{index $T "page.when"}}</th><th>{{index $T "page.task"}}</th><th>{{index $T "page.what"}}</th></tr></thead>
+    <tbody>
+    {{- range $es}}
+    <tr><td class="at"><time>{{.At}}</time></td><td><span class="code">{{.Task}}</span></td><td class="what"><span class="kind {{.Class}}">{{.Kind}}</span> {{.Text}}</td></tr>
+    {{- end}}
+    </tbody>
+  </table>
+{{- end}}

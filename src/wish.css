@@ -1,0 +1,489 @@
+/* What the screens on the services add to Clément's styles (styles.css): the same tokens, the same lines. */
+.wish-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+/* The content follows the header, even when the window is taller than both: the shared rule centers it. */
+.wish-view .overview-content {
+  margin: 0 auto auto;
+  padding-top: 24px;
+}
+.wish-welcome {
+  justify-content: center;
+}
+.wish-welcome .hero {
+  padding: 0 33px;
+}
+.wish-welcome .hero-meta {
+  margin-top: var(--space-4);
+}
+
+/* The side panel: ranks, the three places, the sub-lists. */
+.wish-nav[draggable="true"] {
+  cursor: grab;
+}
+.wish-nav.dragged {
+  opacity: 0.4;
+}
+.wish-rank {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  font: var(--font-size-body) var(--mono);
+  color: var(--muted-dim);
+}
+.nav-counter.full {
+  background: var(--accent);
+  color: var(--bg);
+}
+.sidebar-section-label.sub {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--space-1);
+  padding: 12px 10px 6px;
+  font-size: var(--font-size-body);
+  letter-spacing: 0.5px;
+  color: var(--muted-dim);
+}
+/* Three rows show; the others scroll under the pointer. */
+.wish-list {
+  flex: 0 0 auto;
+  max-height: calc(3 * 36px + 14px);
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+.wish-list:hover,
+.wish-list:focus-within {
+  overflow-y: auto;
+}
+.sidebar-collapsed .wish-list {
+  max-height: none;
+}
+.wish-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.wish-first {
+  position: absolute;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.wish-row:hover .wish-first,
+.wish-first:focus-visible {
+  opacity: 1;
+}
+
+/* Sections of a wish. */
+.wish-section {
+  margin-top: 28px;
+}
+.wish-grant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* A task and its events. */
+.wish-task {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  margin-bottom: var(--space-2);
+}
+.wish-task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-2);
+}
+.wish-task-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 11px 14px;
+  text-align: left;
+}
+.wish-task-heading strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.wish-task-meta {
+  display: flex;
+  gap: var(--space-3);
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+/* The project, just before the task's title, in the grey of the facts after it. */
+.task-project {
+  flex-shrink: 0;
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+/* How long it runs: a counter that does not jiggle as it ticks. */
+.task-time {
+  font-variant-numeric: tabular-nums;
+}
+.wish-task-note {
+  margin: 0;
+  padding: 0 14px 11px 34px;
+  color: var(--muted);
+}
+.wish-task-note.error {
+  color: var(--danger);
+}
+/* Where the task's finished work stands on its way into the wish's branch: red when it is held. */
+.wish-task-work.work-failed {
+  color: var(--danger);
+}
+.wish-task-body {
+  border-top: 1px solid var(--line);
+  padding: var(--space-3) 14px;
+}
+.wish-task-events {
+  max-height: 420px;
+  overflow-y: auto;
+  font: var(--font-size-body) var(--mono);
+}
+.wish-task-last-word {
+  border-left: 2px solid var(--line-strong);
+  padding: 2px 0 2px var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.wish-task-after {
+  margin-left: var(--space-2);
+  font: var(--font-size-body) var(--mono);
+  color: var(--muted-dim);
+}
+.task-usage {
+  color: var(--muted-dim);
+}
+.wish-event time {
+  flex-shrink: 0;
+  color: var(--muted-dim);
+}
+.wish-task-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--muted-dim);
+  margin-bottom: var(--space-2);
+}
+.wish-event {
+  display: flex;
+  gap: var(--space-2);
+  padding: 3px 0;
+  color: var(--n-d1);
+}
+.wish-event svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--muted-dim);
+}
+.wish-event-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wish-event.kind-4,
+.wish-event.kind-6,
+.wish-event.kind-8 {
+  color: var(--muted);
+}
+.wish-event.kind-7 {
+  color: var(--danger);
+}
+.wish-event.kind-11 {
+  color: var(--accent);
+}
+.wish-event.kind-12 {
+  color: var(--muted);
+}
+.wish-task-send {
+  display: flex;
+  gap: var(--space-2);
+  border-top: 1px solid var(--line);
+  padding: var(--space-2) 14px;
+}
+.wish-task-send input {
+  flex: 1;
+  min-width: 0;
+  font: var(--font-size-body) var(--mono);
+}
+
+/* Blocks: the lead's free content. */
+.wish-block {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  padding: 18px 20px;
+  margin-bottom: var(--space-3);
+}
+.wish-block h3 {
+  margin: 4px 0 10px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.wish-block-raw {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: var(--font-size-body) var(--mono);
+}
+
+/* Dialogs. */
+.wish-projects {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.wish-projects legend {
+  margin-bottom: var(--space-2);
+  color: var(--muted);
+}
+.wish-project-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* What workers spent, summed for a wish. */
+.wish-spent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.wish-spent small {
+  color: var(--muted-dim);
+}
+
+/* The flight plan of the active wishes: each line shows its wish. */
+.plan-nav.selected,
+.plan-nav.selected:hover {
+  background: var(--n-28);
+  color: var(--n-e7);
+}
+
+.wish-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  color: var(--n-d1);
+  font: var(--font-size-body) var(--font-sans);
+}
+.question-meta .wish-origin {
+  color: var(--n-d1);
+}
+.wish-origin b {
+  font: 600 var(--font-size-body) var(--mono);
+  color: var(--muted);
+}
+
+.plan-wishes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: var(--space-3);
+  margin-bottom: 28px;
+}
+.plan-wish {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  text-align: left;
+}
+.plan-wish:hover {
+  border-color: var(--line-strong);
+}
+.plan-wish strong {
+  font-weight: 500;
+  color: var(--n-e7);
+}
+.plan-wish-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.plan-wish-rank {
+  font: var(--font-size-body) var(--mono);
+  color: var(--muted-dim);
+}
+.plan-wish-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.plan-wish-counts .waiting {
+  color: var(--accent);
+}
+.plan-waiting {
+  margin-top: var(--space-4);
+}
+.plan-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--n-d1);
+}
+.plan-line svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+/* The journal: commands and log blocks, the latest first. */
+.journal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--line);
+}
+.journal-list li {
+  display: flex;
+  gap: var(--space-3);
+  padding: 6px 0 6px var(--space-3);
+}
+.journal-list time {
+  flex-shrink: 0;
+  min-width: 110px;
+  color: var(--muted-dim);
+  font: var(--font-size-body) var(--mono);
+}
+.journal-list li > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--n-d1);
+}
+.journal-list code {
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.journal-list li.log > div {
+  flex-direction: column;
+}
+.icon-button.danger:hover {
+  color: var(--danger);
+}
+
+/* An azima of the plan in the Tasks tab: its heading, then, opened, the work part of it, set in. */
+.azima-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--tone, var(--line));
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  margin-bottom: var(--space-2);
+}
+.azima-heading {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 11px 14px;
+  text-align: left;
+}
+.azima-heading strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.azima-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.azima-waits {
+  color: var(--text);
+}
+.azima-needs {
+  color: var(--st-proof);
+}
+.azima-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* How much of its work is done: a thin bar, its numbers beside it. */
+.azima-bar {
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.azima-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--st-done);
+}
+.azima-parts {
+  border-top: 1px solid var(--line);
+  padding: var(--space-2) var(--space-2) 0 24px;
+}
+/* The line that folds what is finished, the done azimas or the finished parts of one: discreet, under what moves. */
+.fold-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 0;
+  margin-bottom: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.fold-line:hover {
+  color: var(--accent);
+}
+.fold-line > svg {
+  transition: transform 0.25s;
+}
+/* What the proof of an azima whose work is done needs, box by box, above its parts. */
+.azima-proof {
+  border-left: 2px solid var(--st-proof);
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.azima-proof p {
+  margin: 0;
+  font-weight: 600;
+}
+.azima-proof ul {
+  margin: var(--space-1) 0 var(--space-2);
+  padding-left: 18px;
+}

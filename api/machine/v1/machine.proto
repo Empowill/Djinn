@@ -1,0 +1,303 @@
+syntax = "proto3";
+
+// Package machine.v1 is what Djinn knows of the machine it runs on, and the gates: shared resources it grants one
+// holder at a time.
+package machine.v1;
+
+import "buf/validate/validate.proto";
+import "djinn/v1/options.proto";
+import "google/protobuf/timestamp.proto";
+import "plan/v1/plan.proto";
+
+// MachineService says what the machine has, how loaded it is, and how many workers Djinn runs on it.
+service MachineService {
+  // Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
+  // once, what each running worker uses, and whether it can run a local model.
+  rpc Show(MachineServiceShowRequest) returns (MachineServiceShowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of
+// Linux.
+message Pressure {
+  // Percent of the last 10 seconds during which at least one task waited.
+  double some_avg10 = 1;
+  // Percent of the last 10 seconds during which every task waited.
+  double full_avg10 = 2;
+}
+
+// Machine is the machine Djinn runs on, as read now.
+message Machine {
+  // Operating system: linux, darwin, windows.
+  string os = 1;
+  // Processor architecture: amd64, arm64.
+  string arch = 2;
+  // Logical cores Djinn may use.
+  int32 cores = 3;
+  // Memory, in bytes.
+  uint64 memory_total_bytes = 4;
+  // Memory available to new programs, in bytes.
+  uint64 memory_available_bytes = 5;
+  // Load average over the last minute; absent where the system gives none (Windows).
+  optional double load1 = 6;
+  // CPU pressure; absent where the system gives none (Linux without PSI, macOS, Windows).
+  Pressure cpu_pressure = 7;
+  // Memory pressure; absent where the system gives none.
+  Pressure memory_pressure = 8;
+  // The most workers Djinn runs at once on this machine.
+  int32 workers = 9;
+  // How workers was decided.
+  string workers_rule = 10;
+  // Workers running now.
+  int32 running = 11;
+  // Why the machine is under pressure; empty when it is not. Under pressure, no worker starts and no gate is
+  // granted.
+  string pressure = 12;
+  // When the machine was read.
+  google.protobuf.Timestamp read_time = 13;
+  // The disk of Djinn's data folder, where the worktrees live; absent when it could not be read.
+  Disk disk = 14;
+  // The graphics processors, read once at start-up; empty when Djinn found none, or does not read them (Windows,
+  // an Intel Mac).
+  repeated Gpu gpus = 15;
+  // Whether a local open-weight model can run here, for dispatch: a usable GPU, or enough memory to run it on the
+  // CPU, and disk space for its weights.
+  bool can_run_local_model = 16;
+  // Why it can or cannot.
+  string local_model_reason = 17;
+  // The workers running now, with what each uses of the machine, the busiest first; a worker not read yet is left
+  // out.
+  repeated WorkerUse worker_uses = 18;
+  // Why the workers' CPU and memory are not measured on this machine; empty where they are (Linux, macOS).
+  string worker_measure = 19;
+}
+
+// WorkerUse is what the worker of a running task uses of the machine.
+message WorkerUse {
+  // The task.
+  string task_id = 1;
+  // Its wish.
+  string wish_id = 2;
+  // Its code in the wish, like W2.
+  string code = 3;
+  // What the task does.
+  string title = 4;
+  // What its worker uses, at the last reading.
+  plan.v1.Resources resources = 5;
+}
+
+// Disk is the space of the file system that holds a folder.
+message Disk {
+  // The folder read.
+  string path = 1;
+  // Size of its file system, in bytes.
+  uint64 total_bytes = 2;
+  // Space available to Djinn, in bytes.
+  uint64 available_bytes = 3;
+}
+
+// Gpu is a graphics processor of the machine.
+message Gpu {
+  // Maker: nvidia, amd, intel, apple, or the PCI vendor identifier of another.
+  string vendor = 1;
+  // Name, as its driver gives it; its PCI identifiers when none does.
+  string name = 2;
+  // Driver: nvidia, nouveau, amdgpu, i915, xe; metal on Apple Silicon. Empty when none is bound.
+  string driver = 3;
+  // Version of the driver; empty when unknown.
+  string driver_version = 4;
+  // Memory of its own, in bytes; with unified memory, the machine's. 0 when unknown.
+  uint64 memory_bytes = 5;
+  // Whether it shares the machine's memory (Apple Silicon).
+  bool unified_memory = 6;
+}
+
+message MachineServiceShowRequest {}
+
+message MachineServiceShowResponse {
+  // The machine.
+  Machine machine = 1;
+}
+
+// GateService grants the gates: shared resources, such as code generation (codegen), the local stack (stack), an
+// end-to-end run (e2e) or a paid model run (paid), each held by one holder at a time, and granted only while the
+// machine is not under pressure. To run a command under a gate: djinn gate run <name> -- <command>.
+service GateService {
+  // Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
+  // that the gate is held. Interrupt it to give the gate back. Djinn takes it back when the holder's process ends or
+  // its timeout passes. Held outside a running worker, a gate takes a worker's slot.
+  rpc Hold(GateServiceHoldRequest) returns (stream GateServiceHoldResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
+  // List the gates held or waited for.
+  rpc List(GateServiceListRequest) returns (GateServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// GateState is where a holder stands with its gate.
+enum GateState {
+  // Not set.
+  GATE_STATE_UNSPECIFIED = 0;
+  // The gate is not granted yet; the reason says why.
+  GATE_STATE_WAITING = 1;
+  // The gate is held, until the call ends.
+  GATE_STATE_HELD = 2;
+  // Djinn took the gate back before the call ended: its holder's process ended, or it held the gate past its
+  // timeout; the reason says which.
+  GATE_STATE_TAKEN_BACK = 3;
+}
+
+// Gate is a gate held or waited for.
+message Gate {
+  // Name of the gate, in lower case.
+  string name = 1;
+  // Who holds it, and what for; empty when nobody does.
+  string holder = 2;
+  // Task of the holder; empty for a holder outside any task.
+  string holder_task_id = 3;
+  // Since when it is held.
+  google.protobuf.Timestamp since = 4;
+  // Who waits for it, the next one first.
+  repeated string waiting = 5;
+  // Its holder is no running worker (a person's terminal, a lead, a script): the gate takes a worker's slot while it
+  // is held, so no new worker starts on it.
+  bool takes_slot = 6;
+  // What its holder's process uses, at the last reading; unset when its process is not known or not measured.
+  plan.v1.Resources resources = 7;
+  // When Djinn takes it back if its holder has not given it back by then.
+  google.protobuf.Timestamp expire_time = 8;
+}
+
+message GateServiceHoldRequest {
+  // Name of the gate: codegen, stack, e2e, paid, or any other name; case is ignored.
+  string name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // Task the gate is held for: its events say when it waits, takes and gives the gate. By default $DJINN_TASK_ID,
+  // with djinn gate run.
+  string task_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What the holder runs with the gate, shown to those who wait. A command measured in its project waits for the
+  // memory it peaked at.
+  string what = 3 [(buf.validate.field).string.max_len = 200];
+  // Folder the command runs in, absolute: it finds the project when no task is given.
+  string directory = 4 [(buf.validate.field).string.max_len = 4096];
+  // Process holding the gate, when known: djinn gate run gives its own. Djinn reads what it uses while it holds the
+  // gate (Linux and macOS), and takes the gate back once it ends.
+  int32 pid = 5 [(buf.validate.field).int32.gte = 0];
+  // How long the gate may be held, in seconds: Djinn takes it back after that even if the holder still runs, so a
+  // forgotten hold never blocks the others. 0: one hour.
+  uint32 timeout_seconds = 6 [(buf.validate.field).uint32.lte = 86400];
+}
+
+message GateServiceHoldResponse {
+  // Where the holder stands.
+  GateState state = 1;
+  // Why it waits, or what it holds.
+  string reason = 2;
+}
+
+message GateServiceListRequest {}
+
+message GateServiceListResponse {
+  // The gates held or waited for.
+  repeated Gate gates = 1;
+}
+
+// CommandService keeps what the commands of each project cost. Djinn measures each command a worker runs through
+// djinn gate run: its CPU time, its peak memory and its duration, so that it learns what a project's usual commands
+// cost.
+service CommandService {
+  // List what the commands of the projects cost, the most run first.
+  rpc List(CommandServiceListRequest) returns (CommandServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
+  // task's, or the one whose folder holds the directory; a command outside any project is not recorded.
+  rpc Record(CommandServiceRecordRequest) returns (CommandServiceRecordResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+}
+
+// CommandCost is what a command of a project costs, over the runs Djinn measured. The peak memory is the resident
+// memory of the command's largest process, children included once they ended; 0 where the system does not give it
+// (Windows).
+message CommandCost {
+  option (djinn.v1.unique) = {
+    fields: [
+      "project_id",
+      "command"
+    ]
+  };
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // Project the command runs in.
+  string project_id = 2;
+  // The command and its arguments, as run, up to 200 characters; case is ignored.
+  string command = 3;
+  // How many runs were measured.
+  int32 runs = 4;
+  // Mean CPU time of a run, user and system, in seconds: the command and the children it waited for.
+  double cpu_seconds = 5;
+  // Mean duration of a run, in seconds.
+  double seconds = 6;
+  // Highest peak memory of a run, in bytes.
+  uint64 peak_memory_bytes = 7;
+  // CPU time of the last run, in seconds.
+  double last_cpu_seconds = 8;
+  // Duration of the last run, in seconds.
+  double last_seconds = 9;
+  // Peak memory of the last run, in bytes.
+  uint64 last_peak_memory_bytes = 10;
+  // Exit code of the last run.
+  int32 last_exit_code = 11;
+  // When the last run ended.
+  google.protobuf.Timestamp last_time = 12;
+}
+
+message CommandServiceListRequest {
+  // Only the commands of this project, by name or identifier.
+  string project = 1 [(buf.validate.field).string.max_len = 100];
+}
+
+message CommandServiceListResponse {
+  // The commands, by project, the most run first.
+  repeated CommandCost costs = 1;
+}
+
+message CommandServiceRecordRequest {
+  // Task that ran the command; its project is the command's.
+  string task_id = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Folder the command ran in, absolute: it finds the project when no task is given.
+  string directory = 2 [(buf.validate.field).string.max_len = 4096];
+  // The command and its arguments, as run.
+  string command = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 200
+  ];
+  // CPU time, user and system, in seconds.
+  double cpu_seconds = 4 [(buf.validate.field).double.gte = 0];
+  // Duration, in seconds.
+  double seconds = 5 [(buf.validate.field).double.gte = 0];
+  // Peak memory, in bytes; 0 when unknown.
+  uint64 peak_memory_bytes = 6;
+  // Exit code of the command.
+  int32 exit_code = 7;
+}
+
+message CommandServiceRecordResponse {
+  // What the command costs now; absent when it ran outside any project.
+  CommandCost cost = 1;
+}

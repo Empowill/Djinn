@@ -1,0 +1,7 @@
+# SUPPOSED: hand-written, never captured from agy. Shapes follow the official headless documentation
+# (antigravity.google/docs/cli/headless, read 2026-10-08) and the field names found in the agy 1.3.0 binary;
+# the order of steps, ACTIVE tool steps and stderr wording are guesses. Replace with a real capture. See docs/providers.md.
+# Case: the process dies in the middle of an answer, without a result (the fake exits 1).
+{"event":"init","conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","init":{"cwd":"/work/project","tools":["ask_permission","run_command","view_file","write_to_file"],"permission_mode":"accept-edits","model":"gemini-3.8-flash-medium"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"Running the tests"}}

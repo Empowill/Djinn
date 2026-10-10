@@ -1,0 +1,28 @@
+# proto-file: api/djinn/v1/agents.proto
+# proto-message: djinn.v1.Permissions
+#
+# What an agent may do in Djinn's repository, whichever agent runs: Djinn translates it for each agent at launch
+# (docs/providers.md). .claude/settings.json follows it for claude run here without Djinn; a test keeps the two
+# together (TestRepoPermissions).
+
+# Edit the files, in the agent's auto mode.
+edit: true
+mode: MODE_AUTO
+
+# Heavy runs (tests, e2e, code generation, builds) only through a gate of the running Djinn: one at a time on
+# the machine, held back under pressure (CONTRIBUTING.md, "Djinn builds Djinn"). Light ones run directly.
+commands: "djinn gate run"
+commands: "go tool task lint"
+commands: "go tool task test-pkg"
+commands: "git status"
+commands: "git diff"
+commands: "git log"
+# The watchers of the babysit skills: they read a pull request with gh, a merge request with glab, and change nothing.
+commands: "sh .agents/skills/babysit-pr/watch.sh"
+commands: "sh .agents/skills/babysit-mr/watch.sh"
+# Its inbox source, once plugged in: it lists pull requests with gh, and changes nothing.
+commands: "sh .agents/skills/babysit-pr/inbox.sh"
+
+# Never push; no network.
+denied_commands: "git push"
+network: false

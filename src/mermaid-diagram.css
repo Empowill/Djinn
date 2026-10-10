@@ -1,5 +1,5 @@
 .mermaid-support {
-  border: 1px solid var(--line, #333);
+  border: 1px solid var(--line, var(--n-33));
   border-radius: var(--radius-control, 8px);
   overflow: hidden;
   margin: 12px 0;
@@ -10,7 +10,7 @@
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  background: var(--surface, #191919);
+  background: var(--surface, var(--n-19));
   font-size: var(--font-size-body, 12px);
 }
 .mermaid-toolbar span,
@@ -20,14 +20,14 @@
 .mermaid-toolbar button {
   color: inherit;
   font: inherit;
-  border: 1px solid var(--line, #333);
+  border: 1px solid var(--line, var(--n-33));
   border-radius: 6px;
   padding: 5px 8px;
   background: transparent;
   cursor: pointer;
 }
 .mermaid-toolbar button:focus-visible {
-  outline: 2px solid var(--accent, #eee);
+  outline: 2px solid var(--accent, var(--n-eb));
   outline-offset: 2px;
 }
 .mermaid-support pre {
@@ -44,11 +44,12 @@
   max-height: calc(100vh - 40px);
   overflow: auto;
   padding: 0;
-  color: var(--foreground, #e7e7e7);
-  background: var(--surface, #191919);
-  border: 1px solid var(--line, #333);
+  color: var(--foreground, var(--n-e7));
+  background: var(--surface, var(--n-19));
+  border: 1px solid var(--line, var(--n-33));
   border-radius: 12px;
 }
+/* A backdrop inherits no token in older engines: black then. */
 .mermaid-dialog::backdrop {
-  background: #000b;
+  background: color-mix(in srgb, var(--backdrop, black) 73.3%, transparent);
 }

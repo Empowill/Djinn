@@ -1,17 +1,5 @@
-import { css as themeCss } from "../electron/visualization-theme.json";
-// Keep the browser fallback as restrictive as the native document protocol.
-export const VISUALIZATION_POLICY =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
-
-export function visualizationDocument(source: string, token: string) {
-  if (source.length > 500000 || source.includes("\0"))
-    throw new Error("Source invalide ou supérieure à 500 000 caractères.");
-  // UUID only: the token is interpolated into an inline script.
-  if (!/^[a-zA-Z0-9-]+$/.test(token))
-    throw new Error("Identifiant de visualisation invalide.");
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${VISUALIZATION_POLICY}"><meta name="referrer" content="no-referrer"><style>${themeCss}</style><script>(()=>{const token=${JSON.stringify(token)};const send=(type,data)=>parent.postMessage({type,token,...data},'*');addEventListener('error',()=>send('djinn:visualization-error',{message:'Une erreur de script empêche une interaction. Consultez la source.'}));addEventListener('unhandledrejection',()=>send('djinn:visualization-error',{message:'Une interaction n’a pas pu se terminer. Consultez la source.'}));addEventListener('DOMContentLoaded',()=>{const report=()=>send('djinn:visualization-height',{height:Math.min(4000,Math.max(120,Math.ceil(document.documentElement.scrollHeight)))});new ResizeObserver(report).observe(document.body);report();});})();</script></head><body>${source}</body></html>`;
-}
-
+// visualizationMessage reads a message from a sandboxed frame: the height it drew or its error, for one of tokens.
+// It returns null for anything else: another window or origin, a forged token, a value out of bounds.
 export function visualizationMessage(
   event: MessageEvent,
   frameWindow: Window | null,

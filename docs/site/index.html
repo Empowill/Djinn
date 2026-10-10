@@ -1,0 +1,392 @@
+<!doctype html>
+<!-- Djinn's documentation: the concepts, then the command line, whose reference takes the place of the djinn:commands
+     marker, computed from the command tree of djinn (internal/docsite) by `go tool task docs` and by djinn up at
+     /docs/. Opens offline, from a file too. -->
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="description" content="Djinn: a wisp of smoke to work your will. Its concepts, and its command line." />
+    <title>Djinn · Documentation</title>
+    <link rel="icon" href="assets/mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="site.css" />
+    <script src="theme.js"></script>
+    <script src="site.js" defer></script>
+  </head>
+  <body>
+    <!-- The smoke behind everything: three ribbons, still (site.css says why). -->
+    <div class="sky" aria-hidden="true">
+      <div class="stars"></div>
+      <svg class="veil" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <filter id="veil-blur" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="28" />
+          </filter>
+        </defs>
+        <g filter="url(#veil-blur)">
+          <path class="ribbon r1" d="M-200 820C120 620 360 900 640 700S1080 420 1380 560 1800 520 1900 380" />
+          <path class="ribbon r2" d="M-200 300C160 420 380 160 700 260S1120 520 1420 360 1760 140 1900 220" />
+          <path class="ribbon r3" d="M-100 1040C260 900 520 1060 820 900S1300 760 1700 880" />
+        </g>
+      </svg>
+    </div>
+
+    <header class="bar">
+      <a class="brand" href="#concepts">
+        <img src="assets/mark.svg" alt="" width="30" height="30" />
+        <span class="brand-name">Djinn</span>
+        <span class="brand-sub">Documentation</span>
+      </a>
+      <nav class="tabs" role="tablist" aria-label="Documentation">
+        <button role="tab" id="tab-concepts" aria-controls="concepts" aria-selected="true">Concepts</button>
+        <button role="tab" id="tab-commands" aria-controls="commands" aria-selected="false" tabindex="-1">Command line</button>
+        <span class="tab-ink" aria-hidden="true"></span>
+      </nav>
+      <button class="theme-toggle" type="button" aria-label="Switch to the light theme" title="Light or dark">
+        <svg class="sun" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2" />
+          <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" />
+        </svg>
+        <svg class="moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 14.6A8.4 8.4 0 0 1 9.4 4a8.4 8.4 0 1 0 10.6 10.6z" />
+        </svg>
+      </button>
+    </header>
+
+    <main id="concepts" class="panel" role="tabpanel" aria-labelledby="tab-concepts">
+      <section class="hero">
+        <div class="hero-text">
+          <p class="eyebrow">A local app for your coding agents</p>
+          <h1>Djinn</h1>
+          <p class="motto">A wisp of smoke to work your will.</p>
+          <p class="lede">
+            Give an intent, stay in control of your agents' work. Djinn runs <strong>Claude Code</strong> and
+            <strong>Codex</strong> on your machine: a lead per wish, workers in their own worktrees, decisions you take,
+            and results you can open, annotate and validate.
+          </p>
+          <div class="actions">
+            <a class="button primary" href="#lamp">Rub the lamp</a>
+            <a class="button" href="#commands">Read the command line</a>
+          </div>
+        </div>
+        <figure class="lamp-scene" aria-hidden="true">
+          <div class="glow"></div>
+          <div class="lamp-wrap">
+          <svg class="smoke" viewBox="0 0 400 520">
+            <defs>
+              <linearGradient id="smoke-ink" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0" class="smoke-from" />
+                <stop offset=".55" class="smoke-mid" />
+                <stop offset="1" class="smoke-to" />
+              </linearGradient>
+              <filter id="smoke-soft" x="-50%" y="-20%" width="200%" height="140%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.006 0.014" numOctaves="2" seed="7" result="noise" />
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="34" />
+                <feGaussianBlur stdDeviation="5" />
+              </filter>
+            </defs>
+            <g filter="url(#smoke-soft)" stroke="url(#smoke-ink)" fill="none" stroke-linecap="round">
+              <path class="wisp w1" d="M318 500C300 430 352 400 322 330S250 250 296 180 360 90 300 10" />
+              <path class="wisp w2" d="M318 500C336 440 286 396 310 330S380 236 330 170 236 96 282 20" />
+              <path class="wisp w3" d="M318 500C296 450 330 410 300 352S214 300 236 220 330 150 292 60" />
+              <path class="wisp w4" d="M318 500C340 446 306 392 336 336S398 270 362 196 300 120 350 40" />
+            </g>
+          </svg>
+          <img class="lamp" src="assets/mark.svg" alt="" />
+          </div>
+        </figure>
+      </section>
+
+      <section id="lamp" class="chapter reveal">
+        <p class="eyebrow">The shape of the project</p>
+        <h2>The lamp and the smoke</h2>
+        <p class="intro">
+          A djinn is smoke from a lamp. You look for the lamp; you find the djinn. Djinn is built the same way:
+          <em>a hard lamp, free smoke.</em>
+        </p>
+        <div class="duo">
+          <article class="card lamp-card">
+            <h3><span class="glyph" aria-hidden="true">◆</span> The lamp is hard</h3>
+            <p>
+              What Djinn computes and must never get wrong: wishes, tasks and their states, questions, decisions, gates,
+              the machine, the journal, the limits. Typed in the protos, enforced by code, tested.
+            </p>
+            <p class="stamp">No model decides here.</p>
+          </article>
+          <article class="card smoke-card">
+            <h3><span class="glyph" aria-hidden="true">∿</span> The smoke is free</h3>
+            <p>
+              What the lead shapes for each wish: a section opened on the fly, a diagram, a chart, research notes, a
+              hand-off. Blocks the model writes, shown as written, exported whole.
+            </p>
+            <p class="stamp">The model chooses the smoke.</p>
+          </article>
+        </div>
+        <ol class="rules">
+          <li><strong>Empty means hidden.</strong> No “To decide” without a question.</li>
+          <li><strong>The model chooses the smoke.</strong> A new section is a block, never a code change.</li>
+          <li><strong>Smoke hardens only when code needs it.</strong> Then it becomes a proto field, with tests.</li>
+        </ol>
+      </section>
+
+      <section id="limits" class="chapter reveal">
+        <p class="eyebrow">The first rule</p>
+        <h2>Wish for anything, except what no djinn can grant</h2>
+        <p class="intro">Like the genie of the lamp, Djinn has its limits. Code enforces them; no option turns them off.</p>
+        <ul class="limits">
+          <li>
+            <span class="numeral">I</span>
+            <h3>It can't kill anybody</h3>
+            <p>Nothing destructive or irreversible, a deletion, a force push, a deployment, happens without your explicit go.</p>
+          </li>
+          <li>
+            <span class="numeral">II</span>
+            <h3>It can't make anybody fall in love</h3>
+            <p>It never bends anyone else's will: no message, approval or merge sent in your name that you have not seen.</p>
+          </li>
+          <li>
+            <span class="numeral">III</span>
+            <h3>It can't bring anyone back from the dead</h3>
+            <p>What failed stays failed: no made-up result, every claim comes with its evidence.</p>
+          </li>
+          <li>
+            <span class="numeral">IV</span>
+            <h3>No wishing for more wishes</h3>
+            <p>It never grants itself more than it was given: no extra budget, no wider access, no secret it stores or reads.</p>
+          </li>
+          <li>
+            <span class="numeral">V</span>
+            <h3>Three wishes at a time</h3>
+            <p>Never more: three active wishes at most, and as many set aside as you like. It guards your attention, not the machine.</p>
+          </li>
+        </ul>
+      </section>
+
+      <section id="journey" class="chapter reveal">
+        <p class="eyebrow">From brief to result</p>
+        <h2>The life of a wish</h2>
+        <ol class="journey">
+          <li>
+            <span class="step">1</span>
+            <h3>You make a wish</h3>
+            <p>Say what you wish, in a sentence, on one project or several.</p>
+          </li>
+          <li>
+            <span class="step">2</span>
+            <h3>Its lead lays the plan</h3>
+            <p>Claude Code or Codex splits it into azimas and tasks: a graph without cycle.</p>
+          </li>
+          <li>
+            <span class="step">3</span>
+            <h3>Workers take the tasks</h3>
+            <p>Each in its own worktree and branch, its events live, its cost measured.</p>
+          </li>
+          <li>
+            <span class="step">4</span>
+            <h3>You decide</h3>
+            <p>A question comes with its options and a recommendation. Rub the lamp, or ask for light.</p>
+          </li>
+          <li>
+            <span class="step">5</span>
+            <h3>The lead reviews</h3>
+            <p>Workers never commit: Djinn commits each one's work, tested, and pushes on a cadence.</p>
+          </li>
+          <li>
+            <span class="step">6</span>
+            <h3>The wish is granted</h3>
+            <p>Its page and its export keep it whole: notes, decisions, what each task did.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section id="words" class="chapter reveal">
+        <p class="eyebrow">The words of Djinn</p>
+        <h2>What you will meet</h2>
+        <p class="intro">
+          Two words come from the theme: you make a <em>wish</em>, you <em>summon</em> a skill. A few more are borrowed
+          from the old tales, each where nothing plainer would do. Everything else is plain.
+        </p>
+        <div class="words">
+          <article class="card word" id="wishes">
+            <h3>Wishes</h3>
+            <p>
+              What you want done. A wish has its projects, one lead, its tasks and its decisions. Three are active at most;
+              the others wait, set aside. Give one priority with <code>djinn wish move</code>; say it is done with
+              <code>djinn wish grant</code>.
+            </p>
+          </article>
+          <article class="card word" id="lead">
+            <h3>The lead</h3>
+            <p>
+              Claude Code or Codex, in a terminal inside the window. It plans the wish, asks the questions, reviews each
+              diff and commits. Djinn brings it back on its session at every start, in its folder.
+            </p>
+          </article>
+          <article class="card word" id="azimas">
+            <h3>Azimas <span class="tongue">ʿazīma</span></h3>
+            <p>
+              The incantation that binds and commands a djinn. The plan of a wish is a graph of azimas: tasks no worker
+              runs, which work is part of. Only <code>depends_on</code> makes a task wait. <code>djinn plan sync</code>
+              reads them from a project's <code>plan/*.md</code>.
+            </p>
+          </article>
+          <article class="card word" id="workers">
+            <h3>Workers</h3>
+            <p>
+              An agent on one task, in its own worktree and branch. Send it an instruction, pause it, stop it. Stopping
+              Djinn interrupts workers, never loses them: the next start resumes each one in its own session.
+            </p>
+          </article>
+          <article class="card word featured" id="questions">
+            <h3>Questions, and the lamp's rub</h3>
+            <p>
+              When the lead needs you, it asks: its options, and the one it recommends.
+              <span class="chip">Rub the lamp</span> takes the option selected, the recommended one until you pick
+              another, and a small worker turns the decision into tasks; <span class="chip ghost">Enlighten me</span> sends one to dig first, then revise
+              the question. An answered question is a decision: who took it, and the tasks it led to, stay in the
+              Decisions tab.
+            </p>
+          </article>
+          <article class="card word" id="gates">
+            <h3>Gates</h3>
+            <p>
+              Workers share one machine. Tests, builds and code generation take a gate, one at a time:
+              <code>djinn gate run test -- go tool task test</code>. Djinn records what each command cost and, next time,
+              waits for the memory it peaked at.
+            </p>
+          </article>
+          <article class="card word" id="machine">
+            <h3>The machine</h3>
+            <p>
+              Djinn reads what each worker uses, CPU, memory and processes, every five seconds; on Linux from a systemd
+              scope of its own. Another worker starts only when the free memory holds its typical peak.
+              <code>djinn machine show</code> lists them, the busiest first.
+            </p>
+          </article>
+          <article class="card word" id="tilasms">
+            <h3>Tilasms <span class="tongue">ṭilasm</span> <span class="soon">Coming</span></h3>
+            <p>
+              The engraved object that holds a power, origin of “talisman”: the material that explains a wish. A folder
+              with an <code>index.html</code> and its sources, kept on your machine, in its own tab, opened by a
+              <code>djinn://</code> link from anywhere.
+            </p>
+          </article>
+          <article class="card word" id="blocks">
+            <h3>Blocks for agents</h3>
+            <p>
+              The smoke: what the lead and the workers write down for one another, Markdown and Mermaid diagrams, kept in a
+              tab of their own. What needs you is a question. One HTML page shares the wish; <code>djinn wish export</code>
+              hands it over in one file.
+            </p>
+          </article>
+          <article class="card word" id="journal">
+            <h3>Nothing is lost</h3>
+            <p>
+              Every write is a transaction with its journal entry, durable through a power cut. A worker stopped by its
+              usage limit waits for the reset, then goes on. <code>djinn backup</code> copies it all, even running.
+            </p>
+          </article>
+          <article class="card word" id="routing">
+            <h3>Every request finds its wish</h3>
+            <p>
+              Something unrelated comes up: open a new wish, file it in another, or keep it here. What comes from outside
+              lands in the inbox; a skill's wish template makes a wish that already knows how to work.
+            </p>
+          </article>
+          <article class="card word" id="skills">
+            <h3>Summoned skills</h3>
+            <p>
+              <code>djinn skill summon app/babysit-mr --into infra</code> lets one project's workers use another's skill,
+              without a copy: they follow the source.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="three" class="chapter reveal">
+        <div class="three">
+          <div class="three-lamps" aria-hidden="true">
+            <span class="lit"><img src="assets/mark.svg" alt="" /></span>
+            <span class="lit"><img src="assets/mark.svg" alt="" /></span>
+            <span class="lit"><img src="assets/mark.svg" alt="" /></span>
+            <span class="dim"><img src="assets/mark.svg" alt="" /></span>
+            <span class="dim"><img src="assets/mark.svg" alt="" /></span>
+            <span class="dim"><img src="assets/mark.svg" alt="" /></span>
+            <span class="dim"><img src="assets/mark.svg" alt="" /></span>
+          </div>
+          <div>
+            <p class="eyebrow">Your attention</p>
+            <h2>Three lamps lit, never more</h2>
+            <p>
+              A djinn grants three wishes. Three are active at most; the others wait, paused, as many as you like.
+              Activate one, and the third active wish steps aside. The flight plan shows the three together.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="speak" class="chapter reveal">
+        <p class="eyebrow">One command</p>
+        <h2>Speak to the djinn</h2>
+        <p class="intro">
+          The window, the command line, MCP and the API are one surface, generated from the protos: a method is a
+          command, a tool of <code>djinn mcp</code>, and an HTTP call.
+        </p>
+        <div class="console" role="group" aria-label="Commands">
+          <div class="console-bar"><span></span><span></span><span></span></div>
+          <pre><code><span class="c"># the window, the local server, the lead's terminal</span>
+<span class="p">$</span> djinn up
+<span class="c"># a wish, and its plan</span>
+<span class="p">$</span> djinn wish make "Ship the lamp"
+<span class="p">$</span> djinn task spawn &lt;wish-id&gt; --kind azima --title "Polish the brass"
+<span class="c"># take the lead's recommendation</span>
+<span class="p">$</span> djinn question answer Q03 yes
+<span class="c"># heavy runs, one at a time</span>
+<span class="p">$</span> djinn gate run test -- go tool task test
+<span class="p">$</span> djinn machine show
+<span class="c"># the same commands as MCP tools, on stdio</span>
+<span class="p">$</span> djinn mcp</code></pre>
+        </div>
+        <p class="next">
+          <a class="button" href="#commands">Every command, in the Command line tab</a>
+        </p>
+      </section>
+
+      <footer class="foot">
+        <img src="assets/mark.svg" alt="" width="22" height="22" />
+        <p>
+          Djinn is open source, under the Apache-2.0 license. Built on the work of many projects: see
+          <code>THIRD_PARTY_NOTICES.md</code> and <code>CONTRIBUTING.md</code>.
+        </p>
+      </footer>
+    </main>
+
+    <section id="commands" class="panel cli" role="tabpanel" aria-labelledby="tab-commands" hidden>
+      <div class="cli-inner">
+        <div class="cli-head">
+          <div>
+            <p class="eyebrow">Generated from the commands themselves</p>
+            <h2>The command line</h2>
+            <p>
+              Every command of <code>djinn</code>: those generated from the protos, one per public method, and those
+              written by hand. A unique prefix of a command or a method is enough: <code>djinn q answer</code>. Each
+              generated command that answers once is a tool of <code>djinn mcp</code> too.
+            </p>
+          </div>
+          <label class="cli-search">
+            <span>Search</span>
+            <input type="search" placeholder="wish make, --kind, talisman…" autocomplete="off" spellcheck="false" />
+          </label>
+        </div>
+        <div class="cli-reference">
+          <!-- djinn:commands -->
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

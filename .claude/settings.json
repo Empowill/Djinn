@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Bash(djinn gate run *)",
+      "PowerShell(djinn gate run *)",
+      "Bash(go tool task lint *)",
+      "PowerShell(go tool task lint *)",
+      "Bash(go tool task test-pkg *)",
+      "PowerShell(go tool task test-pkg *)",
+      "Bash(git status *)",
+      "PowerShell(git status *)",
+      "Bash(git diff *)",
+      "PowerShell(git diff *)",
+      "Bash(git log *)",
+      "PowerShell(git log *)",
+      "Bash(sh .agents/skills/babysit-pr/watch.sh *)",
+      "PowerShell(sh .agents/skills/babysit-pr/watch.sh *)",
+      "Bash(sh .agents/skills/babysit-mr/watch.sh *)",
+      "PowerShell(sh .agents/skills/babysit-mr/watch.sh *)",
+      "Bash(sh .agents/skills/babysit-pr/inbox.sh *)",
+      "PowerShell(sh .agents/skills/babysit-pr/inbox.sh *)"
+    ],
+    "defaultMode": "auto",
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Bash(git push *)",
+      "PowerShell(git push *)"
+    ]
+  }
+}

@@ -1,0 +1,156 @@
+/* The terminal pinned at the bottom of the window (lead-terminal.tsx). The app keeps the space above it. */
+.lead-frame {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+.lead-frame-app {
+  flex: 1;
+  min-height: 0;
+}
+.lead-frame-app > .app {
+  height: 100%;
+  min-height: 0;
+}
+.lead-terminal {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+.lead-terminal-grip {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 2;
+}
+.lead-terminal-bar {
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  background: var(--n-14);
+  font: var(--font-size-body) var(--mono);
+  color: var(--muted);
+}
+.lead-terminal-bar button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+}
+.lead-terminal-bar button:hover {
+  background: var(--surface-raised);
+  color: var(--accent);
+}
+.lead-terminal-title {
+  flex: 1;
+  overflow: hidden;
+}
+.lead-terminal-title > span {
+  white-space: nowrap;
+}
+.lead-terminal-command {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted-dim);
+}
+.lead-terminal-state {
+  white-space: nowrap;
+  color: var(--muted-dim);
+}
+.lead-terminal-state.error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--danger);
+}
+.lead-terminal-screen {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0 0 var(--space-2);
+}
+.lead-terminal.collapsed .lead-terminal-screen {
+  display: none;
+}
+/* No project has a folder yet: the terminal does not open in the home folder, it asks for a project. */
+.lead-terminal-empty {
+  position: absolute;
+  inset: 28px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg);
+  color: var(--muted);
+  text-align: center;
+}
+.lead-terminal-empty p {
+  margin: 0;
+  max-width: 52ch;
+}
+
+/* The terminal's tabs: the window's own, the lead's, and those you opened, each of these with its ×. */
+.lead-terminal-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  flex: 1;
+}
+.lead-terminal-tab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lead-terminal-tab > button {
+  padding: 3px 8px;
+  font-size: var(--font-size-body);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lead-terminal-tab.selected {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+.lead-terminal-tab .lead-terminal-tab-close {
+  padding: 3px 5px 3px 0;
+  opacity: 0.6;
+}
+.lead-terminal-tab .lead-terminal-tab-close:hover {
+  opacity: 1;
+}
+.lead-terminal-tab-new {
+  padding: 3px 6px;
+  color: var(--muted);
+}
+.project-nav .project-terminal {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.project-nav:hover .project-terminal,
+.project-terminal:focus-visible {
+  opacity: 1;
+}

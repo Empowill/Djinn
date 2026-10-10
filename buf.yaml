@@ -1,0 +1,13 @@
+# Protocol Buffers are the source of truth of Djinn: the API, the command line, the stored entities and the
+# configuration are all generated from api/.
+version: v2
+modules:
+  - path: api
+deps:
+  - buf.build/bufbuild/protovalidate
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

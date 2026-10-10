@@ -1,0 +1,341 @@
+syntax = "proto3";
+
+package plan.v1;
+
+import "buf/validate/validate.proto";
+import "djinn/v1/options.proto";
+import "google/protobuf/timestamp.proto";
+
+// A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out.
+// A folder with an index.html and its sources, kept in Djinn's data folder, tilasms/<id>/v<n>/, never in a project.
+// Putting it again adds a version; the latest is what its links show. The word comes from the Arabic ṭilasm, the
+// origin of "talisman".
+message Tilasm {
+  option (djinn.v1.unique) = {fields: ["wish_id", "code"]};
+
+  // Identifier, a UUIDv7. Its links name it: djinn://tilasm/<id>.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // Wish the tilasm belongs to.
+  string wish_id = 2;
+  // Short code to dictate, like L01, unique within the wish.
+  string code = 3 [(buf.validate.field).string.pattern = "^L[0-9]{2,3}$"];
+  // Title, in a line.
+  string title = 4 [(buf.validate.field).string.max_len = 1000];
+  // Who made it: a task's code (W12), the lead, the developer.
+  string author = 5 [(buf.validate.field).string.max_len = 100];
+  // Its versions, the first first; the last one is the tilasm as its links show it.
+  repeated TilasmVersion versions = 6;
+  // The azimas and tasks of the wish it explains, by identifier.
+  repeated string cites = 7;
+  // When it was made.
+  google.protobuf.Timestamp create_time = 8;
+  // When its last version was put.
+  google.protobuf.Timestamp update_time = 9;
+  // Most a version may hold, in bytes, its files summed: a put beyond it is refused, saying so.
+  int64 max_bytes = 10;
+}
+
+// TilasmVersion is one put of a tilasm: its files stay in tilasms/<id>/v<number>/.
+message TilasmVersion {
+  // Its number, from 1.
+  int32 number = 1;
+  // When it was put.
+  google.protobuf.Timestamp create_time = 2;
+  // Who put it.
+  string author = 3 [(buf.validate.field).string.max_len = 100];
+  // Its files summed, in bytes.
+  int64 size = 4;
+  // How many files it holds.
+  int32 files = 5;
+  // The version it copies, when it was restored from an earlier one; 0 otherwise.
+  int32 restored_from = 6;
+}
+
+// TilasmRef points to a tilasm by its code or by its identifier.
+message TilasmRef {
+  oneof ref {
+    option (buf.validate.oneof).required = true;
+    // Short code, like L01.
+    string code = 1 [(buf.validate.field).string.pattern = "^[Ll][0-9]{2,3}$"];
+    // Identifier, a UUID.
+    string id = 2 [(buf.validate.field).string.uuid = true];
+  }
+}
+
+// TilasmExport is a tilasm with the files of its versions, as an export carries it: alone in tilasm.json beside its
+// files, or within a wish's export.
+message TilasmExport {
+  // The tilasm.
+  Tilasm tilasm = 1;
+  // The codes of what it cites, in the order of its cites (T29, W12): another wish finds them by code.
+  repeated string cite_codes = 2;
+  // Its files, version by version; a tilasm exported alone carries its files beside tilasm.json instead.
+  repeated TilasmFile files = 3;
+}
+
+// TilasmFile is a file of a tilasm's version.
+message TilasmFile {
+  // The version it belongs to.
+  int32 version = 1;
+  // Its path in the version's folder, with forward slashes: index.html, img/model.svg.
+  string path = 2;
+  // Its content.
+  bytes content = 3;
+}
+
+// Tilasms, or talismans: the material that explains a wish, kept on this machine and linked from anywhere. A put
+// replaces a tilasm with a new version, and the earlier ones can be read and restored.
+service TilasmService {
+  option (djinn.v1.alias) = "talisman";
+
+  // Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
+  // version of that one, its links unchanged.
+  rpc Put(TilasmServicePutRequest) returns (TilasmServicePutResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.
+  rpc List(TilasmServiceListRequest) returns (TilasmServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Read a tilasm: its manifest, the text of its index.html without the tags, and the folder of its files.
+  rpc Get(TilasmServiceGetRequest) returns (TilasmServiceGetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Show a tilasm in the window, in its wish's Tilasms tab, starting Djinn when it does not run: what its link
+  // djinn://tilasm/<id> does from anywhere.
+  rpc Open(TilasmServiceOpenRequest) returns (TilasmServiceOpenResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+    option (djinn.v1.autostart) = true;
+  }
+  // The versions of a tilasm, the first first, with their folders.
+  rpc History(TilasmServiceHistoryRequest) returns (TilasmServiceHistoryResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Restore an earlier version: it comes back as a new version, and the others stay.
+  rpc Restore(TilasmServiceRestoreRequest) returns (TilasmServiceRestoreResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Export a tilasm as a .zip: the files of its latest version, and its manifest, tilasm.json.
+  rpc Export(TilasmServiceExportRequest) returns (TilasmServiceExportResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
+  }
+  // Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.
+  rpc Import(TilasmServiceImportRequest) returns (TilasmServiceImportResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
+  // export wrote is imported, as Import; any other is put, as Put.
+  rpc PutData(TilasmServicePutDataRequest) returns (TilasmServicePutDataResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+message TilasmServicePutRequest {
+  // The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory.
+  string path = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 4096
+  ];
+  // The wish it explains.
+  string wish = 2 [(buf.validate.field).string.uuid = true];
+  // Title, in a line; by default the <title> of its index.html, or the folder's name. A new version keeps the title
+  // it had unless one is given.
+  string title = 3 [(buf.validate.field).string.max_len = 1000];
+  // The tilasm to put again, by its code (L01): a new version of it. Without it, a new tilasm with the next code.
+  string code = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[Ll][0-9]{2,3}$"
+  ];
+  // An azima or a task of the wish it explains, by code (T29, W12) or identifier; repeat it for each. A new version
+  // keeps what it cited unless some are given.
+  repeated string cites = 5 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 64
+  ];
+  // Who makes it: your task's code (W12) for a worker; lead by default.
+  string author = 6 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServicePutResponse {
+  // The tilasm, its new version last.
+  Tilasm tilasm = 1;
+  // The folder of the version put.
+  string directory = 2;
+}
+
+message TilasmServiceListRequest {
+  // Only the tilasms of this wish.
+  string wish = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Words to find, case ignored, in the code, the title or the text of the latest version; "talisman" or "tilasm"
+  // alone finds them all.
+  string search = 2 [(buf.validate.field).string.max_len = 1000];
+}
+
+message TilasmServiceListResponse {
+  // The tilasms, by wish then code.
+  repeated Tilasm tilasms = 1;
+}
+
+message TilasmServiceGetRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // An earlier version to read; by default the latest.
+  int32 version = 3 [(buf.validate.field).int32.gte = 0];
+}
+
+message TilasmServiceGetResponse {
+  // The tilasm.
+  Tilasm tilasm = 1;
+  // The version read.
+  int32 version = 2;
+  // The text of its index.html, without tags, scripts nor styles.
+  string text = 3;
+  // The folder of the version's files.
+  string directory = 4;
+  // Its files, relative to that folder, with forward slashes.
+  repeated string files = 5;
+  // Its link, djinn://tilasm/<id>: it opens the tilasm in the app from a browser, a chat, a terminal or a Markdown
+  // file. Cite it so.
+  string link = 6;
+  // The local http address of its latest version, for a browser or an agent that wants the HTML, while this Djinn
+  // runs: given when djinn up serves http (--browser, and on Windows). Empty while it listens on a socket only (the
+  // window on macOS and Linux): read the files in its folder then.
+  string url = 7;
+}
+
+message TilasmServiceOpenRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceOpenResponse {
+  // The tilasm shown.
+  Tilasm tilasm = 1;
+  // Its link, djinn://tilasm/<id>.
+  string link = 2;
+  // A native window was brought to the front; false in browser mode, where the page shows it.
+  bool window = 3;
+}
+
+message TilasmServiceHistoryRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceHistoryResponse {
+  // The versions, the first first.
+  repeated TilasmVersion versions = 1;
+  // The tilasm's folder: version n is in its folder v<n>.
+  string directory = 2;
+}
+
+message TilasmServiceRestoreRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The version to restore.
+  int32 version = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).int32.gte = 1
+  ];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Who restores it; lead by default.
+  string author = 4 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServiceRestoreResponse {
+  // The tilasm, the restored version last.
+  Tilasm tilasm = 1;
+}
+
+message TilasmServiceExportRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The .zip to write; a relative path starts from the current directory. By default, the tilasm's title with .zip in
+  // the Downloads folder.
+  string file = 3 [(buf.validate.field).string.max_len = 4096];
+}
+
+message TilasmServiceExportResponse {
+  // The file written.
+  string file = 1;
+  // Its size, in bytes.
+  int64 size = 2;
+}
+
+message TilasmServiceImportRequest {
+  // The .zip to import, as djinn tilasm export writes it; a relative path starts from the current directory.
+  string file = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 4096
+  ];
+  // The wish to import it into.
+  string wish = 2 [(buf.validate.field).string.uuid = true];
+  // Who imports it; the author of the file's tilasm by default.
+  string author = 3 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServiceImportResponse {
+  // The tilasm, its new version last.
+  Tilasm tilasm = 1;
+}
+
+message TilasmServicePutDataRequest {
+  // The wish to put it into.
+  string wish = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The name of what was dropped, the folder's or the .zip's: the title when its index.html has none.
+  string name = 2 [(buf.validate.field).string.max_len = 1000];
+  // The files, by their paths in the folder (version 0); or one file, the .zip.
+  repeated TilasmFile files = 3 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 10000
+  ];
+  // Who puts it; the developer by default.
+  string author = 4 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServicePutDataResponse {
+  // The tilasm, its new version last.
+  Tilasm tilasm = 1;
+  // The .zip was a tilasm's export: it was imported.
+  bool imported = 2;
+}

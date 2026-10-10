@@ -1,0 +1,13 @@
+# SUPPOSED: hand-written, never captured from agy. Shapes follow the official headless documentation
+# (antigravity.google/docs/cli/headless, read 2026-10-08) and the field names found in the agy 1.3.0 binary;
+# the order of steps, ACTIVE tool steps and stderr wording are guesses. Replace with a real capture. See docs/providers.md.
+# Case: two tool calls, the first seen ACTIVE then DONE, the second only DONE.
+{"event":"init","conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","init":{"cwd":"/work/project","tools":["ask_permission","run_command","view_file","write_to_file"],"permission_mode":"accept-edits","model":"gemini-3.8-flash-medium"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"I will list the files.\n"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"ls"}}}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":0.07,"tool_info":{"name":"run_command","parameters":{"CommandLine":"ls"},"output":"README.md\r\ngo.mod\r\n"}}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":3,"state":"DONE","step_type":"tool","tool_name":"view_file","duration_seconds":0.01,"tool_info":{"name":"view_file","parameters":{"AbsolutePath":"/work/project/README.md"},"output":"# Project\n"}}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":4,"state":"DONE","step_type":"agent_response","text_delta":"The project has a README and a go.mod.\n"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":5,"state":"DONE","step_type":"checkpoint"}}
+{"event":"result","result":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","status":"SUCCESS","response":"The project has a README and a go.mod.\n","duration_seconds":1.427806958,"num_turns":1,"usage":{"input_tokens":61200,"output_tokens":85,"thinking_tokens":40,"cache_read_tokens":0,"total_tokens":61325}}}
