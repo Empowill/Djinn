@@ -140,10 +140,14 @@ func (h *Harness) startQuestionWorker(
 		title, prompt = investigatorPrompt(q, note, retryText(before), brief.Moving)
 	}
 	provider, model, _ := questionProvider(settings)
+	task := &planv1.Task{Role: role, Question: q.GetCode()}
+	if role == planv1.TaskRole_TASK_ROLE_CONVERTER {
+		task.Decision = q.GetCode()
+	}
 	return h.spawn(ctx, methodQuestion, &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: title, Prompt: prompt, Provider: provider,
 		Model: model, MaxBudgetUsd: settings.QuestionBudgetUSD,
-	}, &planv1.Task{Role: role, Question: q.GetCode()})
+	}, task)
 }
 
 // questionProvider returns the provider and model for a question worker given the project's settings,

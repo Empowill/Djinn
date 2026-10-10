@@ -790,6 +790,12 @@ message Task {
   string description = 49;
   // For an azima: whether it is a draft (AzimaState.AZIMA_STATE_DRAFT), not ready to spawn parts into nor counted in wish progress.
   bool draft = 50;
+  // How many times Djinn replayed the task on an environment failure (at most twice).
+  int32 env_replays = 51;
+  // Build (version) of djinn when the environment failure happened.
+  string env_build = 52 [(buf.validate.field).string.max_len = 128];
+  // Cause of the environment failure; empty when it failed for a work failure.
+  string env_cause = 53 [(buf.validate.field).string.max_len = 1024];
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
@@ -2984,6 +2990,8 @@ message TaskServiceListRequest {
   }];
   // The page token from a previous list response, to fetch the next page.
   string page_token = 4 [(buf.validate.field).string.max_len = 500];
+  // Only the failed tasks that wait for the lead.
+  bool failed = 5;
 }
 
 message TaskServiceListResponse {

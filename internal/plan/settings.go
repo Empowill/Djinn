@@ -166,6 +166,20 @@ func CanReadOnly(p planv1.Provider) bool {
 	}
 }
 
+// CanResume reports whether a provider can resume an existing session.
+func CanResume(p planv1.Provider) bool {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE,
+		planv1.Provider_PROVIDER_CODEX,
+		planv1.Provider_PROVIDER_ANTIGRAVITY,
+		planv1.Provider_PROVIDER_FAKE,
+		planv1.Provider_PROVIDER_UNSPECIFIED:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defaults of the question workers: a cheaper model is enough to turn a decision into tasks, or to read and revise a
 // question; and a cap, so that one never runs long.
 const (

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -125,6 +126,7 @@ type Harness struct {
 	held    func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
 	outside func() int                   // the gates held outside the running workers (GatesOutside); nil: none
+	version string                       // version of the running binary (WithVersion)
 	runs    map[string]*run              // by task id
 	changed chan struct{}                // closed at the next change of a task without worker (notifyLocked)
 }
@@ -152,19 +154,20 @@ type run struct {
 	subs     map[chan *planv1.TaskEvent]struct{}
 
 	// Owned by whoever writes the task: Spawn, then the pump.
-	task     *planv1.Task
-	seq      int64         // last event written
-	base     *planv1.Usage // what the task had spent before this worker
-	restart  bool          // the worker stops to start again, allowed to edit
-	unread   []string      // messages the worker took on its input and has said nothing after yet
-	warm     *warm         // the warm worker the task takes, until launch
-	branch   string        // the branch template of the project's settings, for launch; empty: the default
-	from     string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
-	checks   string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
-	fallback string        // why the worker fell back to another provider, for its start event
-	failure  string        // the last error the current worker said: it never ends done
-	limit    *Limit        // the usage limit the current worker said it hit: it wins over failure
-	refused  string        // the last call its permissions refused, as the worker said it (question.go)
+	task        *planv1.Task
+	seq         int64         // last event written
+	base        *planv1.Usage // what the task had spent before this worker
+	restart     bool          // the worker stops to start again, allowed to edit
+	unread      []string      // messages the worker took on its input and has said nothing after yet
+	warm        *warm         // the warm worker the task takes, until launch
+	branch      string        // the branch template of the project's settings, for launch; empty: the default
+	from        string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
+	checks      string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
+	fallback    string        // why the worker fell back to another provider, for its start event
+	failure     string        // the last error the current worker said: it never ends done
+	limit       *Limit        // the usage limit the current worker said it hit: it wins over failure
+	refused     string        // the last call its permissions refused, as the worker said it (question.go)
+	envReplayed bool          // a tool call/result already triggered replay of env failures
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
@@ -214,6 +217,11 @@ const defaultUninstalledDelay = 5 * time.Minute
 // WithUninstalledDelay sets how long an integrated build may stay uninstalled before Djinn asks to install it.
 func WithUninstalledDelay(d time.Duration) Option {
 	return func(h *Harness) { h.uninstalledDelay = d }
+}
+
+// WithVersion sets the version of the running binary.
+func WithVersion(v string) Option {
+	return func(h *Harness) { h.version = v }
 }
 
 // Close stops the scheduler and every worker, waits for them to end, and records their tasks as interrupted.
@@ -716,6 +724,22 @@ func (h *Harness) launch(
 	} else {
 		err = h.start(r, provider, spec, text)
 	}
+	if err != nil && r.light && questionWorker(task) && task.GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
+		if claudeProvider, ok := h.providers[planv1.Provider_PROVIDER_CLAUDE]; ok {
+			origProvider := task.GetProvider()
+			task.Provider = planv1.Provider_PROVIDER_CLAUDE
+			task.Model = plan.DefaultQuestionModel
+			spec.Model = plan.DefaultQuestionModel
+			if errors.Is(err, ErrReadOnly) {
+				r.fallback = fmt.Sprintf("%s cannot run read-only: %s", short(origProvider), short(planv1.Provider_PROVIDER_CLAUDE))
+			} else {
+				r.fallback = fmt.Sprintf("%s cannot start: %s", short(origProvider), short(planv1.Provider_PROVIDER_CLAUDE))
+			}
+			text = "started " + short(task.GetProvider()) + " (" + r.fallback + ") " + where + ": " + questionStart(task) + "; " +
+				accessText(task, nil)
+			err = h.start(r, claudeProvider, spec, text)
+		}
+	}
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrReadOnly) && task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
@@ -937,6 +961,10 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Watched != nil {
 		h.wakeLead(r, ev.Watched, ev.Text)
 	}
+	if !r.envReplayed && (ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL || ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT) {
+		r.envReplayed = true
+		_ = h.replayEnvFailures(context.Background(), r.task.GetProvider())
+	}
 }
 
 // takeAnswers takes the answers waiting for the run.
@@ -1043,6 +1071,16 @@ func (h *Harness) end(r *run, res Result) {
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		h.limited(r, t)
 	}
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
+		if cause, isEnv := classifyFailure(r, t, res); isEnv {
+			t.EnvCause = cause
+			t.EnvBuild = h.version
+		}
+	}
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+		_ = h.replayEnvFailures(context.Background(), t.GetProvider())
+		_ = h.unblockDependencyFailed(context.Background(), t.GetCode())
+	}
 	text := short(t.GetStatus())
 	switch {
 	case shelved:
@@ -1073,8 +1111,52 @@ func (h *Harness) end(r *run, res Result) {
 	h.forget(r)
 }
 
+// classifyFailure determines whether a worker's failure was caused by the provider's environment or by its work.
+func classifyFailure(r *run, t *planv1.Task, res Result) (cause string, isEnv bool) {
+	allErr := t.GetError()
+	if res.Err != nil {
+		allErr += " " + res.Err.Error()
+	}
+	if r != nil {
+		if r.failure != "" {
+			allErr += " " + r.failure
+		}
+		if r.refused != "" {
+			allErr += " " + r.refused
+		}
+	}
+	lower := strings.ToLower(allErr)
+	if res.ExitCode == 137 || strings.Contains(lower, "signal: killed") || strings.Contains(lower, "killed by the machine") {
+		return "killed by the machine", true
+	}
+	if errors.Is(res.Err, exec.ErrNotFound) || strings.Contains(lower, "executable file not found") ||
+		strings.Contains(lower, "cli missing") || strings.Contains(lower, "cli outdated") {
+		return "cli missing or outdated", true
+	}
+	if (strings.Contains(lower, "headless") && (strings.Contains(lower, "permission") ||
+		strings.Contains(lower, "cannot prompt") || strings.Contains(lower, "cannot ask") ||
+		strings.Contains(lower, "cannot run commands"))) ||
+		strings.Contains(lower, "cannot run commands headless") ||
+		strings.Contains(lower, "permission refused headless") {
+		return "permission refused headless", true
+	}
+	if errors.Is(res.Err, ErrReadOnly) || strings.Contains(lower, "cannot run without editing yet") ||
+		strings.Contains(lower, "cannot run a read-only task yet") || strings.Contains(lower, "provider could not start") ||
+		strings.Contains(lower, "could not start") {
+		return "provider could not start", true
+	}
+	if (strings.Contains(lower, "without finishing") && strings.Contains(lower, "resumed")) ||
+		(t.GetResumes() >= maxResumes && ((r != nil && r.limit != nil) || strings.Contains(lower, "session limit"))) {
+		return "session limit beyond retries", true
+	}
+	return "", false
+}
+
 // workerEnded tells the lead of t's wish what went wrong if the work worker t failed or was cut short.
 func (h *Harness) workerEnded(t *planv1.Task) {
+	if t.GetEnvCause() != "" && t.GetEnvReplays() < 2 {
+		return
+	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED ||
 		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil) ||
 		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED && !strings.HasPrefix(t.GetError(), "stopped on request")) {

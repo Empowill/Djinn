@@ -344,7 +344,8 @@ export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
       (task) =>
         task.status === TaskStatus.WAITING ||
         (task.status === TaskStatus.FAILED &&
-          !taskDealtWith(task, detail.tasks)),
+          !taskDealtWith(task, detail.tasks) &&
+          !(task.envCause && (task.envReplays ?? 0) < 2)),
     )
     .map((item) => {
       const q = questions.get(item.editQuestionId);

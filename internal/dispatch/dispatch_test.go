@@ -83,8 +83,8 @@ func TestResumingFirst(t *testing.T) {
 }
 
 // TestDependencyResumes: a dependency Djinn resumes, interrupted or resuming, holds the task until it ends; one
-// resumed as a fork, or closed as continued in one, is its fork. A dependency failed (resumed maxResumes times among them) or stopped by a person
-// fails it.
+// resumed as a fork, or closed as continued in one, is its fork. A dependency stopped by a person
+// fails it; one failed holds the task waiting until it is replayed, continued or marked done.
 func TestDependencyResumes(t *testing.T) {
 	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE}
 	task := func(code string, s planv1.TaskStatus) *planv1.Task {
@@ -98,7 +98,7 @@ func TestDependencyResumes(t *testing.T) {
 		{"interrupted", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED)}, "waits for W1 (interrupted)", ""},
 		{"resuming", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_RESUMING)}, "waits for W1 (resuming)", ""},
 		{"resumed 3 times", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED,
-			Error: "resumed 3 times without finishing"}}, "", "its dependency W1 ended failed"},
+			Error: "resumed 3 times without finishing"}}, "waits while its dependency W1 is failed", ""},
 		{"stopped", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_STOPPED)}, "", "its dependency W1 ended stopped"},
 		{"forked, running", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}},
@@ -108,7 +108,7 @@ func TestDependencyResumes(t *testing.T) {
 			{Id: "W6", WishId: "w", Code: "W6", ForkOf: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE}}, "", ""},
 		{"forked, failed", []*planv1.Task{task("W1", planv1.TaskStatus_TASK_STATUS_INTERRUPTED),
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED}},
-			"", "its dependency W1, resumed as W5, ended failed"},
+			"waits while its dependency W1, resumed as W5, is failed", ""},
 		{"closed as continued, running", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
 			Closed: &planv1.Closure{ContinuedIn: "W5"}},
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}},
@@ -116,7 +116,7 @@ func TestDependencyResumes(t *testing.T) {
 		{"closed as continued, failed", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
 			Closed: &planv1.Closure{ContinuedIn: "W5"}},
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_FAILED}},
-			"", "its dependency W1, resumed as W5, ended failed"},
+			"waits while its dependency W1, resumed as W5, is failed", ""},
 		{"closed by hand, a fork done meanwhile", []*planv1.Task{{Id: "W1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
 			Closed: &planv1.Closure{Note: "merged"}},
 			{Id: "W5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING}}, "", ""},

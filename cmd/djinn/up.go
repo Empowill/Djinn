@@ -205,7 +205,7 @@ func runUp(args []string) (restart bool, err error) {
 	// A batch committed in a project that names an install command: the window proposes to install it. The
 	// integration starts once the window's service is there.
 	var uiSvc *ui.Service
-	opts = append(opts, harness.WithBuilt(func(b harness.Built) { uiSvc.SetBuild(buildOf(b)) }))
+	opts = append(opts, harness.WithBuilt(func(b harness.Built) { uiSvc.SetBuild(buildOf(b)) }), harness.WithVersion(version))
 	workers := harness.New(db, home, harness.Providers(), opts...)
 	defer workers.Close()
 	if err := workers.Recover(ctx); err != nil {
