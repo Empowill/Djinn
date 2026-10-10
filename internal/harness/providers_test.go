@@ -134,6 +134,17 @@ func catalog() []catalogCase {
 					t.Errorf("input = %q", input)
 				}
 			}},
+		// A question worker: its compound command refused, the djinn command alone runs; the refusal is said at the end.
+		{provider: "claude", fixture: "question-refused-then-spawned", send: []string{"go on"},
+			want: []string{"STATUS", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "STATUS", "USAGE"},
+			check: func(t *testing.T, events []Event, _, _ string) {
+				if got := texts(events, "STATUS")[1]; !strings.HasPrefix(got, `permission denied: Bash {"command":"djinn task list`) {
+					t.Errorf("denial = %q", got)
+				}
+			}},
+		// A question worker that takes its refused compound command for Bash refused, and ends its turn.
+		{provider: "claude", fixture: "question-gives-up",
+			want: []string{"STATUS", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "STATUS", "USAGE"}},
 		// A message sent during the turn is folded into it: one result, queued_turn_count 0, and the worker ends.
 		{provider: "claude", fixture: "mid-turn-message", send: []string{"Also check the docs."},
 			want: []string{"STATUS", "TEXT", "TEXT", "USAGE"},

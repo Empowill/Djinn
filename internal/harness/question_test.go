@@ -281,22 +281,149 @@ func TestQuestionEndLine(t *testing.T) {
 		{Code: "W8", Decision: "Q03", CreateTime: later},
 	}
 	questions := []*planv1.Question{{Code: "Q04", TaskId: "c"}, {Code: "Q02"}}
-	if got, want := questionEndLine(conv, tasks, questions), "Djinn: W5 (Q02 → tasks) ended: spawned W6, W7 from Q02; asked Q04."; got != want {
+	if got, want := questionEndLine(conv, tasks, questions, ""), "Djinn: W5 (Q02 → tasks) ended: spawned W6, W7 from Q02; asked Q04."; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 	conv.Status, conv.Error = planv1.TaskStatus_TASK_STATUS_FAILED, "exit code 1"
-	if got, want := questionEndLine(conv, tasks[:1], nil), "Djinn: W5 (Q02 → tasks) failed (exit code 1). Nothing came of "+
+	if got, want := questionEndLine(conv, tasks[:1], nil, ""), "Djinn: W5 (Q02 → tasks) failed (exit code 1). Nothing came of "+
 		"Q02: act on it, djinn wish brief w has the context."; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
-	if got, want := questionEndLine(conv, tasks, nil), "Djinn: W5 (Q02 → tasks) failed (exit code 1): spawned W6, W7 from "+
+	if got, want := questionEndLine(conv, tasks, nil, ""), "Djinn: W5 (Q02 → tasks) failed (exit code 1): spawned W6, W7 from "+
 		"Q02. Check what is left of Q02: djinn wish brief w has the context."; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 	inv := &planv1.Task{Id: "i", Code: "W9", WishId: "w", Title: "Q02: enlighten", Question: "Q02",
 		Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR, Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: at}
-	if got, want := questionEndLine(inv, nil, questions), "Djinn: W9 (Q02: enlighten) ended. Q02 still waits for a "+
+	if got, want := questionEndLine(inv, nil, questions, ""), "Djinn: W9 (Q02: enlighten) ended. Q02 still waits for a "+
 		"revision: djinn task get i has what it found."; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	refused := &planv1.Task{Id: "r", Code: "W10", WishId: "w", Title: "Q02 → tasks", Question: "Q02",
+		Role: planv1.TaskRole_TASK_ROLE_CONVERTER, Status: planv1.TaskStatus_TASK_STATUS_FAILED, CreateTime: at,
+		Error: refusedError(`Bash {"command":"djinn task list | grep Q02;\n sed -n 1p x.go"}`)}
+	if got, want := questionEndLine(refused, nil, nil, "W11"), "Djinn: W10 (Q02 → tasks) failed: its command was refused: "+
+		"djinn task list | grep Q02; sed -n 1p x.go. Djinn starts it again: W11, told to run each djinn command alone; you "+
+		"will hear when it ends."; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	if got, want := questionEndLine(refused, nil, nil, ""), "Djinn: W10 (Q02 → tasks) failed: its command was refused: "+
+		"djinn task list | grep Q02; sed -n 1p x.go. Nothing came of Q02: act on it, djinn wish brief w has the context."; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	if got := refusedError("Write notes.md"); got != "its command was refused: Write notes.md" {
+		t.Errorf("refusedError = %q", got)
+	}
+}
+
+// claudeQuestions is djinn up with question workers, played by the test binary replaying a Claude fixture, in a
+// project whose settings give them to Claude; the lead's lines are told.
+func claudeQuestions(t *testing.T, fixture string) (e *env, lead *told, wishID string) {
+	t.Helper()
+	fakeEnv, _, _ := fake{provider: "claude", fixture: fixture, end: "eof"}.env(t)
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_CLAUDE] = envClaude{Claude: Claude{Command: os.Args[0], Grace: time.Second}, env: fakeEnv, dir: t.TempDir()}
+	e = upWith(t, t.TempDir(), providers, WithQuestionWorkers())
+	lead = &told{}
+	e.h.TellLeads(lead.tell)
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_CLAUDE\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wishID, _ = e.wish(t, dir)
+	return e, lead, wishID
+}
+
+// refusedCompound is the command the question workers of the Claude fixtures join grep and sed to.
+const refusedCompound = "djinn task list --wish-id 01a11833-a440-7479-a067-52615c91da70 | grep Q01; sed -n 1,40p internal/store/store.go"
+
+// TestConverterRefusedThenSpawns: a converter whose compound command is refused runs the djinn command alone, and the
+// task it spawns counts: it ends done, and the lead hears what it spawned. Its prompt says how to work within its
+// access.
+func TestConverterRefusedThenSpawns(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e, lead, wishID := claudeQuestions(t, "question-refused-then-spawned")
+	q := e.asker(wishID)
+	asked := q.ask(t, "")
+	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_B, "")
+	converters := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
+	if len(converters) != 1 {
+		t.Fatalf("%d converters, want 1", len(converters))
+	}
+	c := converters[0]
+	// As its plain djinn command does, once the compound one was refused; the fake waits for it.
+	if _, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Move the store to Postgres", Prompt: "done", Provider: planv1.Provider_PROVIDER_FAKE, Decision: "Q01",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	e.release(t, c.GetId())
+	if done := e.ended(t, c.GetId()); done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("converter ended %s (%s), want done", done.GetStatus(), done.GetError())
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	events := e.watch(ctx, t, c.GetId(), 0)
+	if !slices.ContainsFunc(events, func(ev *planv1.TaskEvent) bool {
+		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "permission denied: Bash") &&
+			strings.Contains(ev.GetText(), "| grep Q01")
+	}) {
+		t.Errorf("no refusal recorded: %v", eventKinds(events))
+	}
+	prompt := events[0].GetText()
+	for _, want := range []string{"## How to work within your access", "in a Bash call of its own: no pipe", "Read, Grep and Glob tools",
+		"not that Bash is"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt misses %q", want)
+		}
+	}
+	if got, want := lead.all(), []string{wishID + ": Djinn: W1 (Q01 → tasks) ended: spawned W2 from Q01."}; !slices.Equal(got, want) {
+		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
+	}
+	if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)); n != 1 {
+		t.Errorf("%d converters, want 1: nothing to start again", n)
+	}
+}
+
+// TestQuestionWorkerGivesUp: a converter that ends without doing anything after a refusal fails, the refusal named;
+// Djinn starts it again once, told what was refused, and the lead hears both; the second one giving up the same way
+// is not started again.
+func TestQuestionWorkerGivesUp(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e, lead, wishID := claudeQuestions(t, "question-gives-up")
+	q := e.asker(wishID)
+	asked := q.ask(t, "")
+	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_B, "")
+	waitFor(t, "the lead to hear of both converters", func() bool { return len(lead.all()) == 2 })
+	converters := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)
+	if len(converters) != 2 {
+		t.Fatalf("%d converters, want 2: one, then its retry", len(converters))
+	}
+	for _, c := range converters {
+		c = e.ended(t, c.GetId())
+		if c.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || c.GetError() != refusedPrefix+refusedCompound {
+			t.Errorf("%s ended %s (%s), want failed, the refusal named", c.GetCode(), c.GetStatus(), c.GetError())
+		}
+	}
+	if prompt := e.prompt(t, converters[1].GetId()); !strings.Contains(prompt, "## Before you\n\nW1 had this job before you, "+
+		"and ended without doing anything after this call was refused: "+refusedCompound+". Only that form was refused") {
+		t.Errorf("the retry is not told what was refused:\n%s", prompt)
+	}
+	refused := "failed: " + refusedPrefix + refusedCompound + "."
+	want := []string{
+		wishID + ": Djinn: W1 (Q01 → tasks) " + refused + " Djinn starts it again: W2, told to run each djinn command alone; " +
+			"you will hear when it ends.",
+		wishID + ": Djinn: W2 (Q01 → tasks) " + refused + " Nothing came of Q01: act on it, djinn wish brief " + wishID +
+			" has the context.",
+	}
+	got := lead.all()
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
 	}
 }

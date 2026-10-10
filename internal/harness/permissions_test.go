@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -68,6 +70,68 @@ func TestCommandAllowed(t *testing.T) {
 	} {
 		if got := commandAllowed(p, command); got != want {
 			t.Errorf("commandAllowed(%q) = %v, want %v", command, got, want)
+		}
+	}
+}
+
+// TestQuestionWorkerClaudeRules: what Claude gets for a question worker (TASK_ACCESS_DJINN), as its permission
+// syntax reads it (code.claude.com/docs/en/permissions, read 2026-10-10): dontAsk, which still runs file reads in
+// its working folder, the project's, with Read, Grep and Glob, none of them denied nor taken away; each djinn command
+// allowed with its arguments by Bash(<command> *), the same as Bash(<command>:*); no edit, no web.
+func TestQuestionWorkerClaudeRules(t *testing.T) {
+	t.Parallel()
+	readOnly, perms := accessSpec(planv1.TaskAccess_TASK_ACCESS_DJINN, nil)
+	args := Claude{}.args(Spec{TaskID: "t1", Dir: t.TempDir(), ReadOnly: readOnly, Permissions: perms})
+	joined := strings.Join(args, " ")
+	if readOnly || !strings.Contains(joined, "--permission-mode dontAsk") || strings.Contains(joined, "--tools") ||
+		strings.Contains(joined, "--restricted") {
+		t.Fatalf("args = %q", args)
+	}
+	var settings struct {
+		Permissions struct{ Allow, Deny []string }
+	}
+	if err := json.Unmarshal([]byte(args[slices.Index(args, "--settings")+1]), &settings); err != nil {
+		t.Fatal(err)
+	}
+	allow, deny := settings.Permissions.Allow, settings.Permissions.Deny
+	for _, c := range djinnCommands {
+		if !slices.Contains(allow, "Bash("+c+" *)") {
+			t.Errorf("%s is not allowed with its arguments: %v", c, allow)
+		}
+	}
+	for _, d := range deny {
+		if tool, _, _ := strings.Cut(d, "("); slices.Contains([]string{"Read", "Grep", "Glob", "Bash"}, tool) {
+			t.Errorf("%s denies what a question worker needs", d)
+		}
+	}
+	for _, d := range []string{"Edit", "Write", "WebFetch"} {
+		if !slices.Contains(deny, d) {
+			t.Errorf("%s is not denied: %v", d, deny)
+		}
+	}
+	// Claude splits a command on its operators, and allows it only when a rule matches every part.
+	allowed := func(command string) bool {
+		for _, part := range regexp.MustCompile(`\|\||&&|[|;&\n]`).Split(command, -1) {
+			part = strings.TrimSpace(part)
+			if !slices.ContainsFunc(allow, func(rule string) bool {
+				p, ok := strings.CutSuffix(strings.TrimPrefix(rule, "Bash("), " *)")
+				return ok && strings.HasPrefix(rule, "Bash(") && (part == p || strings.HasPrefix(part, p+" "))
+			}) {
+				return false
+			}
+		}
+		return true
+	}
+	for command, want := range map[string]bool{
+		`djinn task spawn w1 --title "Move the store" --prompt "In internal/store." --decision Q01`: true,
+		"djinn task list --wish-id w1":                                      true,
+		`djinn question revise Q01 --wish-id w1 --context "SQLite is free"`: true,
+		"djinn task list --wish-id w1 | grep Q01; sed -n 1,40p x.go":        false,
+		"djinn task list --wish-id w1 > tasks.txt && cat tasks.txt":         false,
+		"djinn gate run test -- go tool task test":                          false,
+	} {
+		if got := allowed(command); got != want {
+			t.Errorf("allowed(%q) = %v, want %v", command, got, want)
 		}
 	}
 }

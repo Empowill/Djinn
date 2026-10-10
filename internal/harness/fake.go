@@ -242,7 +242,7 @@ func fakeWrite(spec Spec, args string) Event {
 	name, text, _ := strings.Cut(args, " ")
 	call := Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, Text: "Write " + name}
 	if spec.ReadOnly || spec.Permissions != nil && !spec.Permissions.GetEdit() {
-		call.Kind, call.Text = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "permission denied: Write "+name
+		call.Kind, call.Text = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+"Write "+name
 		return call
 	}
 	path := filepath.Join(spec.Dir, filepath.FromSlash(name))

@@ -459,7 +459,7 @@ func (w *codexWorker) request(events *lineEvents, m *codexMessage) {
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
 			return
 		}
-		text := "permission denied: " + strings.TrimSuffix(strings.TrimPrefix(m.Method, "item/"), "/requestApproval")
+		text := permissionDenied + strings.TrimSuffix(strings.TrimPrefix(m.Method, "item/"), "/requestApproval")
 		if p.Command != "" {
 			text += " " + p.Command
 		}
