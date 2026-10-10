@@ -47,6 +47,45 @@ test("the interface loads from djinn", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test("tooltips expose labels and real keyboard hints", async ({ page }) => {
+  await page.goto(djinnURL());
+
+  const tooltip = page.locator('[role="tooltip"]');
+  const newWish = page.locator(".sidebar .new-mission");
+  await newWish.hover();
+  await expect(tooltip).toContainText("New wish");
+  await expect(tooltip.locator("kbd")).toHaveText(/N/);
+  await expect(newWish).toHaveAttribute("aria-describedby", /\S+/);
+  await expect(newWish).toHaveAttribute(
+    "aria-keyshortcuts",
+    /^(Meta|Control)\+N$/,
+  );
+  await newWish.focus();
+  await expect(tooltip).toBeVisible();
+
+  const toggle = page.locator(".app-toolbar-toggle");
+  await toggle.focus();
+  await expect(tooltip).toBeVisible();
+  const tooltipBox = await tooltip.boundingBox();
+  const viewport = page.viewportSize();
+  expect(tooltipBox).not.toBeNull();
+  expect(tooltipBox!.x).toBeGreaterThanOrEqual(0);
+  expect(tooltipBox!.y).toBeGreaterThanOrEqual(0);
+  expect(tooltipBox!.x + tooltipBox!.width).toBeLessThanOrEqual(
+    viewport!.width,
+  );
+  expect(tooltipBox!.y + tooltipBox!.height).toBeLessThanOrEqual(
+    viewport!.height,
+  );
+  await expect(tooltip).toContainText("Collapse the navigation");
+  await expect(tooltip.locator("kbd")).toHaveText(/(⌘|Ctrl).*\\/);
+  await page.keyboard.press("ControlOrMeta+Backslash");
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("ControlOrMeta+Backslash");
+  await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
+});
+
 // The sidebar spans the whole height of the window, the lead's terminal sits under the main view only, and opening
 // the new-wish dialog moves nothing of the sidebar.
 test("sidebar geometry stays stable while the new-wish dialog opens", async ({
