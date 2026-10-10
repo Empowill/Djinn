@@ -263,15 +263,24 @@ func TestResumeFromBrief(t *testing.T) {
 		t.Errorf("resume after exit = %v, opened %q", res, leads.opened)
 	}
 
-	// Codex and Antigravity get the same first message; Djinn cannot know their session.
-	for p, program := range map[planv1.Provider]string{
-		planv1.Provider_PROVIDER_CODEX: "codex ", planv1.Provider_PROVIDER_ANTIGRAVITY: "agy -i ",
-	} {
-		id := makeWish("Lead with " + p.String())
-		res := resume(id, p)
+	// Codex gets the same first message; Djinn cannot know its session.
+	{
+		id := makeWish("Lead with Codex")
+		res := resume(id, planv1.Provider_PROVIDER_CODEX)
 		got := leads.opened[len(leads.opened)-1]
-		if got != program+"'"+StartLine(id)+"' in "+folder || res.GetWish().GetLead() != nil || res.GetNote() == "" {
-			t.Errorf("%s: opened %q, resume %v", p, got, res)
+		if got != "codex '"+StartLine(id)+"' in "+folder || res.GetWish().GetLead() != nil || res.GetNote() == "" {
+			t.Errorf("codex: opened %q, resume %v", got, res)
+		}
+	}
+	// Antigravity starts from the brief; its folder becomes the wish's lead, resumed with agy --continue.
+	{
+		id := makeWish("Lead with Antigravity")
+		res := resume(id, planv1.Provider_PROVIDER_ANTIGRAVITY)
+		got := leads.opened[len(leads.opened)-1]
+		lead := res.GetWish().GetLead()
+		if got != "agy -i '"+StartLine(id)+"' in "+folder || lead.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY ||
+			lead.GetSessionId() != "" || lead.GetDirectory() != folder || res.GetNote() == "" {
+			t.Errorf("antigravity: opened %q, resume %v", got, res)
 		}
 	}
 	// The fake agent has no terminal.

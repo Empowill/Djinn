@@ -175,7 +175,7 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   project), and in a worktree made anew. Failed, the merge is red.
 - **The workers know them.** The lead's brief lists each project's checks and when they run; each worker that edits a
   worktree gets them at the end of its first prompt, to run the commit checks (`djinn gate run lint -- go tool task
-  lint`) before it ends; again when it resumes from its first prompt (agy, or a session never known).
+  lint`) before it ends; again when it resumes from its first prompt (a session never known).
 - `djinn project show <project>` and the project's view in the window list the setup and the checks, each with its
   last run: the commit it checked, when, how long, and why it failed.
 

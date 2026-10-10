@@ -3033,9 +3033,10 @@ func (x *WishTemplate) GetRestart() bool {
 // the session's identifier, which the agent's own command line resumes.
 type Lead struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Kind of agent: claude or codex.
+	// Kind of agent: claude, codex or antigravity.
 	Provider Provider `protobuf:"varint,1,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
-	// Identifier of the session, as the agent names it: claude --resume takes it.
+	// Identifier of the session, as the agent names it: claude --resume takes it. An antigravity lead does not
+	// know its session id and leaves it empty; djinn wish resume resumes the folder's most recent conversation (agy --continue).
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// Folder the session runs in on this machine: an agent finds its sessions by folder. An export replaces it by
 	// its project's name or ~, and an import puts this machine's folder back when it knows it.
@@ -9421,9 +9422,10 @@ type WishServiceSetLeadRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The wish.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// Identifier of the lead's session, as the agent names it.
+	// Identifier of the lead's session, as the agent names it. An antigravity lead may leave it empty to resume
+	// the folder's most recent conversation.
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	// Kind of agent: claude (the default) or codex.
+	// Kind of agent: claude (the default), codex or antigravity.
 	Provider Provider `protobuf:"varint,3,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
 	// Folder the session runs in. By default, the folder of the wish's first project. Never the home folder, nor
 	// a folder above it.
@@ -13616,7 +13618,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x19WishServiceSetLeadRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12K\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tB,\xbaH)\xc8\x01\x01r$2\"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$R\tsessionId\x12-\n" +
+	"session_id\x18\x02 \x01(\tB,\xbaH)r'2%^([A-Za-z0-9][A-Za-z0-9._-]{0,127})?$R\tsessionId\x12-\n" +
 	"\bprovider\x18\x03 \x01(\x0e2\x11.plan.v1.ProviderR\bprovider\x12&\n" +
 	"\tdirectory\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\tdirectory\"?\n" +
 	"\x1aWishServiceSetLeadResponse\x12!\n" +

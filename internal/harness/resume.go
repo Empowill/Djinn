@@ -304,12 +304,11 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		Resume: t.GetSessionId(), Prompt: line,
 	}
 	how := ", resuming its session"
-	if by == byContinue && (t.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY || spec.Resume == "") {
+	if by == byContinue && spec.Resume == "" {
 		return errors.New("its session cannot be resumed")
 	}
-	if t.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY || spec.Resume == "" {
-		// agy's resume is not verified (docs/providers.md): it starts again on its first prompt, as does a worker
-		// whose session was never known, its checks with it as at launch.
+	if spec.Resume == "" {
+		// A worker whose session was never known starts again on its first prompt, its checks with it as at launch.
 		spec.Resume, spec.Prompt, how = "", briefed(r, prompt, readOnly)+"\n\n"+line, ", from its first prompt"
 		if by == byAnswer {
 			spec.Prompt = line // It holds the first prompt already.

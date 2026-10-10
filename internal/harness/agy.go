@@ -356,7 +356,7 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 // step reads a step update, and says whether Djinn knows its kind: a known step may say nothing yet.
 func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
 	switch s.StepType {
-	case "user_input", "checkpoint":
+	case "user_input", "checkpoint", "system_message":
 		// The prompt Djinn sent, and agy's own bookkeeping: nothing to say.
 	case "agent_response":
 		b := p.text[s.StepIndex]

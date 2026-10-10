@@ -30,10 +30,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   `internal/plan/newlead.go`). Nothing in it is about one agent or the wish's state: a lead of another agent than the
   last one takes the wish over from the brief, without the old session. In the window, the arrow beside **Lead** lists
   the agents found on this machine (`UiService.GetEnvironment`: `claude`, `codex`, `agy`), those missing shown
-  disabled; picking the recorded lead's agent resumes its session, another starts a new lead of that agent in the
-  lead's terminal (`djinn wish resume <wish> --provider antigravity`). A new claude lead becomes the wish's lead; a
-  codex one once `djinn wish set-lead … --provider codex` gives its session; an antigravity one leaves the record as
-  it is. While the lead's terminal runs a program, nothing starts, and Djinn says to exit it there.
+  disabled; picking the recorded lead's agent resumes it (claude by session id, antigravity with `agy --continue` in the
+  lead's folder as the folder's most recent conversation), another starts a new lead of that agent in the
+  lead's terminal (`djinn wish resume <wish> --provider antigravity`). A new claude or antigravity lead becomes the
+  wish's lead; a codex one once `djinn wish set-lead … --provider codex` gives its session. While the lead's terminal runs a program, nothing starts, and Djinn says to exit it there.
 - **A lead runs in a project, never in the home folder.** `djinn wish resume` resumes the lead's session in the
   folder it was recorded in (`djinn wish set-lead --directory`): claude finds a session only from the folder it was
   made in. A new lead starts in the wish's first project, else the first of Djinn's projects as the window lists them.
