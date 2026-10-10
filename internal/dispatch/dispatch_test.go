@@ -442,3 +442,67 @@ func TestMemoryCommittableLimit(t *testing.T) {
 		t.Errorf("t2 why:\ngot:  %q\nwant: %q", got["t2"], wantWhy)
 	}
 }
+
+func TestWorkerMemory(t *testing.T) {
+	at := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	policy := machine.Policy{
+		WorkerPeak:   2 * machine.GiB,
+		WorkerPeaks:  5,
+		WorkerMargin: 512 * machine.MiB,
+	}
+
+	// Ended claude task with peak 3 GiB.
+	doneClaude := &planv1.Task{
+		Id: "done-claude", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, EndTime: timestamppb.New(at.Add(-time.Hour)),
+		Resources: &planv1.Resources{PeakMemoryBytes: 3 * machine.GiB},
+	}
+
+	// Running claude worker using 1 GiB: typical peak is 3 GiB (> 1 GiB), so forecast is 3 GiB + 512 MiB = 3.5 GiB.
+	runningClaude := &planv1.Task{
+		Id: "running-claude", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_CLAUDE,
+		Resources: &planv1.Resources{MemoryBytes: 1 * machine.GiB},
+	}
+
+	// Running codex worker using 2.5 GiB: no past peak so fallback peak is WorkerPeak (2 GiB).
+	// Since uses (2.5 GiB) > peak (2 GiB), forecast is 2.5 GiB + 512 MiB = 3.0 GiB.
+	runningCodex := &planv1.Task{
+		Id: "running-codex", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_CODEX,
+		Resources: &planv1.Resources{MemoryBytes: 2560 * machine.MiB}, // 2.5 GiB
+	}
+
+	// Running watcher using 100 MiB: should be ignored.
+	runningWatcher := &planv1.Task{
+		Id: "running-watcher", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_WATCH,
+		Resources: &planv1.Resources{MemoryBytes: 100 * machine.MiB},
+	}
+
+	// Pending task: should be ignored.
+	pending := &planv1.Task{
+		Id: "pending", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+	}
+
+	tasks := []*planv1.Task{doneClaude, runningClaude, runningCodex, runningWatcher, pending}
+
+	engaged, actual := WorkerMemory(tasks, policy)
+
+	wantEngaged := uint64((3*machine.GiB + 512*machine.MiB) + (2560*machine.MiB + 512*machine.MiB))
+	wantActual := uint64((1 * machine.GiB) + (2560 * machine.MiB))
+
+	if engaged != wantEngaged {
+		t.Errorf("engaged: got %d, want %d", engaged, wantEngaged)
+	}
+	if actual != wantActual {
+		t.Errorf("actual: got %d, want %d", actual, wantActual)
+	}
+
+	// Verify Situation.Engaged() matches
+	s := New(tasks, []*planv1.Wish{{Id: "w"}}, nil, &Machine{Policy: policy}).At(at)
+	if sEngaged := s.Engaged(); sEngaged != wantEngaged {
+		t.Errorf("Situation.Engaged(): got %d, want %d", sEngaged, wantEngaged)
+	}
+}

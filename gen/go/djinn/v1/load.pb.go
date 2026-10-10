@@ -260,6 +260,123 @@ func (x *LoadServiceSetResponse) GetNotch() LoadNotch {
 	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
 }
 
+type LoadServiceWatchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadServiceWatchRequest) Reset() {
+	*x = LoadServiceWatchRequest{}
+	mi := &file_djinn_v1_load_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadServiceWatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadServiceWatchRequest) ProtoMessage() {}
+
+func (x *LoadServiceWatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_load_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadServiceWatchRequest.ProtoReflect.Descriptor instead.
+func (*LoadServiceWatchRequest) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{4}
+}
+
+type LoadServiceWatchResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Operating load notch in effect.
+	Notch LoadNotch `protobuf:"varint,1,opt,name=notch,proto3,enum=djinn.v1.LoadNotch" json:"notch,omitempty"`
+	// Engaged memory: sum of peak forecasts (Policy.WorkerRoom) for running workers, in bytes.
+	EngagedMemoryBytes uint64 `protobuf:"varint,2,opt,name=engaged_memory_bytes,json=engagedMemoryBytes,proto3" json:"engaged_memory_bytes,omitempty"`
+	// Real measured resident memory of running workers, in bytes.
+	WorkerMemoryBytes uint64 `protobuf:"varint,3,opt,name=worker_memory_bytes,json=workerMemoryBytes,proto3" json:"worker_memory_bytes,omitempty"`
+	// Total RAM of the machine, in bytes.
+	MemoryTotalBytes uint64 `protobuf:"varint,4,opt,name=memory_total_bytes,json=memoryTotalBytes,proto3" json:"memory_total_bytes,omitempty"`
+	// Available RAM of the machine, in bytes.
+	MemoryAvailableBytes uint64 `protobuf:"varint,5,opt,name=memory_available_bytes,json=memoryAvailableBytes,proto3" json:"memory_available_bytes,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *LoadServiceWatchResponse) Reset() {
+	*x = LoadServiceWatchResponse{}
+	mi := &file_djinn_v1_load_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadServiceWatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadServiceWatchResponse) ProtoMessage() {}
+
+func (x *LoadServiceWatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_load_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadServiceWatchResponse.ProtoReflect.Descriptor instead.
+func (*LoadServiceWatchResponse) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *LoadServiceWatchResponse) GetNotch() LoadNotch {
+	if x != nil {
+		return x.Notch
+	}
+	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
+}
+
+func (x *LoadServiceWatchResponse) GetEngagedMemoryBytes() uint64 {
+	if x != nil {
+		return x.EngagedMemoryBytes
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetWorkerMemoryBytes() uint64 {
+	if x != nil {
+		return x.WorkerMemoryBytes
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetMemoryTotalBytes() uint64 {
+	if x != nil {
+		return x.MemoryTotalBytes
+	}
+	return 0
+}
+
+func (x *LoadServiceWatchResponse) GetMemoryAvailableBytes() uint64 {
+	if x != nil {
+		return x.MemoryAvailableBytes
+	}
+	return 0
+}
+
 var File_djinn_v1_load_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_load_proto_rawDesc = "" +
@@ -272,17 +389,25 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"C\n" +
 	"\x16LoadServiceSetResponse\x12)\n" +
-	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch*\x95\x01\n" +
+	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\"\x19\n" +
+	"\x17LoadServiceWatchRequest\"\x8b\x02\n" +
+	"\x18LoadServiceWatchResponse\x12)\n" +
+	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x120\n" +
+	"\x14engaged_memory_bytes\x18\x02 \x01(\x04R\x12engagedMemoryBytes\x12.\n" +
+	"\x13worker_memory_bytes\x18\x03 \x01(\x04R\x11workerMemoryBytes\x12,\n" +
+	"\x12memory_total_bytes\x18\x04 \x01(\x04R\x10memoryTotalBytes\x124\n" +
+	"\x16memory_available_bytes\x18\x05 \x01(\x04R\x14memoryAvailableBytes*\x95\x01\n" +
 	"\tLoadNotch\x12\x1a\n" +
 	"\x16LOAD_NOTCH_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12LOAD_NOTCH_MINIMAL\x10\x01\x12\x14\n" +
 	"\x10LOAD_NOTCH_LIGHT\x10\x02\x12\x15\n" +
 	"\x11LOAD_NOTCH_MEDIUM\x10\x03\x12\x13\n" +
 	"\x0fLOAD_NOTCH_HIGH\x10\x04\x12\x12\n" +
-	"\x0eLOAD_NOTCH_MAX\x10\x052\xb4\x01\n" +
+	"\x0eLOAD_NOTCH_MAX\x10\x052\x8c\x02\n" +
 	"\vLoadService\x12Q\n" +
 	"\x03Get\x12\x1f.djinn.v1.LoadServiceGetRequest\x1a .djinn.v1.LoadServiceGetResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12R\n" +
-	"\x03Set\x12\x1f.djinn.v1.LoadServiceSetRequest\x1a .djinn.v1.LoadServiceSetResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01B\x8d\x01\n" +
+	"\x03Set\x12\x1f.djinn.v1.LoadServiceSetRequest\x1a .djinn.v1.LoadServiceSetResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Watch\x12!.djinn.v1.LoadServiceWatchRequest\x1a\".djinn.v1.LoadServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x01B\x8d\x01\n" +
 	"\fcom.djinn.v1B\tLoadProtoP\x01Z1github.com/empowill/djinn/gen/go/djinn/v1;djinnv1\xa2\x02\x03DXX\xaa\x02\bDjinn.V1\xca\x02\bDjinn\\V1\xe2\x02\x14Djinn\\V1\\GPBMetadata\xea\x02\tDjinn::V1b\x06proto3"
 
 var (
@@ -298,27 +423,32 @@ func file_djinn_v1_load_proto_rawDescGZIP() []byte {
 }
 
 var file_djinn_v1_load_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_djinn_v1_load_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_djinn_v1_load_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_djinn_v1_load_proto_goTypes = []any{
-	(LoadNotch)(0),                 // 0: djinn.v1.LoadNotch
-	(*LoadServiceGetRequest)(nil),  // 1: djinn.v1.LoadServiceGetRequest
-	(*LoadServiceGetResponse)(nil), // 2: djinn.v1.LoadServiceGetResponse
-	(*LoadServiceSetRequest)(nil),  // 3: djinn.v1.LoadServiceSetRequest
-	(*LoadServiceSetResponse)(nil), // 4: djinn.v1.LoadServiceSetResponse
+	(LoadNotch)(0),                   // 0: djinn.v1.LoadNotch
+	(*LoadServiceGetRequest)(nil),    // 1: djinn.v1.LoadServiceGetRequest
+	(*LoadServiceGetResponse)(nil),   // 2: djinn.v1.LoadServiceGetResponse
+	(*LoadServiceSetRequest)(nil),    // 3: djinn.v1.LoadServiceSetRequest
+	(*LoadServiceSetResponse)(nil),   // 4: djinn.v1.LoadServiceSetResponse
+	(*LoadServiceWatchRequest)(nil),  // 5: djinn.v1.LoadServiceWatchRequest
+	(*LoadServiceWatchResponse)(nil), // 6: djinn.v1.LoadServiceWatchResponse
 }
 var file_djinn_v1_load_proto_depIdxs = []int32{
 	0, // 0: djinn.v1.LoadServiceGetResponse.notch:type_name -> djinn.v1.LoadNotch
 	0, // 1: djinn.v1.LoadServiceSetRequest.notch:type_name -> djinn.v1.LoadNotch
 	0, // 2: djinn.v1.LoadServiceSetResponse.notch:type_name -> djinn.v1.LoadNotch
-	1, // 3: djinn.v1.LoadService.Get:input_type -> djinn.v1.LoadServiceGetRequest
-	3, // 4: djinn.v1.LoadService.Set:input_type -> djinn.v1.LoadServiceSetRequest
-	2, // 5: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
-	4, // 6: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 3: djinn.v1.LoadServiceWatchResponse.notch:type_name -> djinn.v1.LoadNotch
+	1, // 4: djinn.v1.LoadService.Get:input_type -> djinn.v1.LoadServiceGetRequest
+	3, // 5: djinn.v1.LoadService.Set:input_type -> djinn.v1.LoadServiceSetRequest
+	5, // 6: djinn.v1.LoadService.Watch:input_type -> djinn.v1.LoadServiceWatchRequest
+	2, // 7: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
+	4, // 8: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
+	6, // 9: djinn.v1.LoadService.Watch:output_type -> djinn.v1.LoadServiceWatchResponse
+	7, // [7:10] is the sub-list for method output_type
+	4, // [4:7] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_djinn_v1_load_proto_init() }
@@ -333,7 +463,7 @@ func file_djinn_v1_load_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_load_proto_rawDesc), len(file_djinn_v1_load_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

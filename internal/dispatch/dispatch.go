@@ -377,22 +377,46 @@ func (s *Situation) full(t *planv1.Task) string {
 }
 
 // typical is the typical peak memory of a worker of the provider, and how many measured workers gave it
+// ProviderPeaks returns the measured peak memory values for each provider, ordered by task end time descending.
+func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
+	var ended []*planv1.Task
+	for _, t := range tasks {
+		if t.GetEndTime() != nil && t.GetResources().GetPeakMemoryBytes() > 0 && !Watcher(t) {
+			ended = append(ended, t)
+		}
+	}
+	slices.SortStableFunc(ended, func(a, b *planv1.Task) int {
+		return b.GetEndTime().AsTime().Compare(a.GetEndTime().AsTime())
+	})
+	peaks := map[string][]uint64{}
+	for _, t := range ended {
+		peaks[provider(t)] = append(peaks[provider(t)], t.GetResources().GetPeakMemoryBytes())
+	}
+	return peaks
+}
+
+// WorkerMemory returns the engaged memory (sum of peak forecasts for running workers)
+// and actual resident memory of running workers.
+func WorkerMemory(tasks []*planv1.Task, p machine.Policy) (engaged, actual uint64) {
+	peaks := ProviderPeaks(tasks)
+	margin := p.WorkerMargin
+	for _, t := range tasks {
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || Watcher(t) {
+			continue
+		}
+		peak, _ := p.Typical(peaks[provider(t)])
+		uses := t.GetResources().GetMemoryBytes()
+		engaged += max(peak, uses) + margin
+		actual += uses
+	}
+	return engaged, actual
+}
+
+// typical is the typical peak memory of a worker of the provider, and how many measured workers gave it
 // (machine.Policy.Typical): the finished workers of that provider, the latest first.
 func (s *Situation) typical(name string) (uint64, int) {
 	if s.peaks == nil {
-		var ended []*planv1.Task
-		for _, t := range s.tasks {
-			if t.GetEndTime() != nil && t.GetResources().GetPeakMemoryBytes() > 0 && !Watcher(t) {
-				ended = append(ended, t)
-			}
-		}
-		slices.SortStableFunc(ended, func(a, b *planv1.Task) int {
-			return b.GetEndTime().AsTime().Compare(a.GetEndTime().AsTime())
-		})
-		s.peaks = map[string][]uint64{}
-		for _, t := range ended {
-			s.peaks[provider(t)] = append(s.peaks[provider(t)], t.GetResources().GetPeakMemoryBytes())
-		}
+		s.peaks = ProviderPeaks(s.tasks)
 	}
 	return s.machine.Policy.Typical(s.peaks[name])
 }
@@ -415,6 +439,11 @@ func (s *Situation) growing() uint64 {
 		}
 	}
 	return sum
+}
+
+// Engaged is the sum of peak forecasts of the workers running or started in this pass.
+func (s *Situation) Engaged() uint64 {
+	return s.engaged()
 }
 
 // engaged is the sum of peak forecasts of the workers running or started in this pass.

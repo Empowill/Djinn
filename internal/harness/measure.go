@@ -12,6 +12,7 @@ import (
 
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -146,4 +147,27 @@ func (h *Harness) Uses() []*machinev1.WorkerUse {
 		)
 	})
 	return out
+}
+
+// WorkerMemory calculates engaged memory (sum of peak forecasts) and actual worker resident memory
+// across running workers.
+func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, actual uint64, err error) {
+	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	// Overlay live resource readings from in-flight runs.
+	h.mu.Lock()
+	for _, t := range tasks {
+		if r, ok := h.runs[t.GetId()]; ok {
+			if r.use != nil && r.use.GetResources() != nil {
+				t.Resources = r.use.GetResources()
+			} else if r.task != nil && r.task.GetResources() != nil {
+				t.Resources = r.task.GetResources()
+			}
+		}
+	}
+	h.mu.Unlock()
+	engaged, actual = dispatch.WorkerMemory(tasks, p)
+	return engaged, actual, nil
 }
