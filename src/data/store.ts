@@ -1,17 +1,27 @@
 // The page's copy of what djinn holds, read from the services and kept up to date by WishService.Watch. The watch
-// says what changed; the store reads it again, a few reads at a time, and tells the screens. Nothing here is
-// computed from the data: what the lamp computes (a wish's rank, whether it is ready) comes from the lamp.
+// says what changed, and brings the tasks, questions and blocks that did: the store puts those in place of its own,
+// keeping the others as they were, and reads the rest again, a few reads at a time, and tells the screens. Nothing
+// here is computed from the data: what the lamp computes (a wish's rank, whether it is ready) comes from the lamp.
+import {
+  type DescMessage,
+  equals,
+  type MessageShape,
+} from "@bufbuild/protobuf";
 import type { Gate, Machine } from "../../gen/ts/machine/v1/machine_pb";
 import {
   type Block,
+  BlockSchema,
   Change,
   type InboxItem,
   type InboxSource,
   type Project,
   type Question,
+  QuestionSchema,
   type Task,
   type TaskEvent,
+  TaskSchema,
   type Wish,
+  type WishChanges,
 } from "../../gen/ts/plan/v1/plan_pb";
 import type { Tilasm } from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound } from "./client";
@@ -76,6 +86,83 @@ const EMPTY_DETAIL: WishDetail = {
 
 export const emptyDetail = EMPTY_DETAIL;
 
+// What a wish shows that a watch message may bring whole.
+const CARRIED = new Set([Change.TASK, Change.QUESTION, Change.BLOCK]);
+// What a wish shows, read again for it all.
+const DETAIL = [Change.TASK, Change.QUESTION, Change.BLOCK, Change.TILASM];
+
+// merge puts the entities that changed in place of theirs in list, and takes out those deleted. The others keep their
+// place and their reference, and so does one that comes back equal: a screen that shows them draws them again only
+// when they changed. A new one goes where order puts it, as the service lists them. Nothing changed: list itself.
+function merge<Desc extends DescMessage>(
+  schema: Desc,
+  list: readonly MessageShape<Desc>[],
+  changed: readonly MessageShape<Desc>[],
+  deleted: ReadonlySet<string>,
+  order: (a: MessageShape<Desc>, b: MessageShape<Desc>) => number,
+): MessageShape<Desc>[] {
+  const id = (m: MessageShape<Desc>) => (m as unknown as { id: string }).id;
+  const incoming = new Map(changed.map((m) => [id(m), m]));
+  let touched = false;
+  const out: MessageShape<Desc>[] = [];
+  const placed: MessageShape<Desc>[] = [];
+  for (const old of list) {
+    if (deleted.has(id(old))) {
+      touched = true;
+      continue;
+    }
+    const next = incoming.get(id(old));
+    incoming.delete(id(old));
+    if (!next || equals(schema, old, next)) out.push(old);
+    else if (order(old, next) === 0) {
+      out.push(next);
+      touched = true;
+    } else {
+      // Moved: placed again below.
+      placed.push(next);
+      touched = true;
+    }
+  }
+  for (const m of [...placed, ...incoming.values()]) {
+    const at = out.findIndex((other) => order(other, m) > 0);
+    out.splice(at < 0 ? out.length : at, 0, m);
+    touched = true;
+  }
+  return touched ? out : (list as MessageShape<Desc>[]);
+}
+
+// The orders the services list them in: tasks and questions by id, a UUIDv7, so the oldest first; blocks by position.
+const byID = (a: { id: string }, b: { id: string }) =>
+  a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+const byPosition = (a: Block, b: Block) =>
+  a.position < b.position ? -1 : a.position > b.position ? 1 : byID(a, b);
+
+// apply puts what a watch message brought of a wish in place of what it shows, but for what was just read: a read
+// made after the message is newer.
+function apply(
+  detail: WishDetail,
+  changes: WishChanges,
+  read: Partial<WishDetail>,
+): WishDetail {
+  const deleted = new Set(changes.deleted);
+  const tasks = read.tasks
+    ? detail.tasks
+    : merge(TaskSchema, detail.tasks, changes.tasks, deleted, byID);
+  const questions = read.questions
+    ? detail.questions
+    : merge(QuestionSchema, detail.questions, changes.questions, deleted, byID);
+  const blocks = read.blocks
+    ? detail.blocks
+    : merge(BlockSchema, detail.blocks, changes.blocks, deleted, byPosition);
+  if (
+    tasks === detail.tasks &&
+    questions === detail.questions &&
+    blocks === detail.blocks
+  )
+    return detail;
+  return { ...detail, tasks, questions, blocks };
+}
+
 export function createStore(clients: Clients, retry = 1000): Store {
   let state: State = {
     live: false,
@@ -95,29 +182,40 @@ export function createStore(clients: Clients, retry = 1000): Store {
     listeners.forEach((listener) => listener());
   };
 
-  // What to read again at the next flush.
+  // What to read again at the next flush, and what the watch brought, to put in place after it, in order.
   const pending = {
     wishes: false,
     projects: false,
     inbox: false,
     details: new Map<string, Set<Change>>(),
+    changes: new Map<string, WishChanges[]>(),
   };
   const opened = new Map<string, number>();
   let flushing: Promise<void> | undefined;
   let again = false;
 
-  function mark(wishId: string, changes: readonly Change[]) {
+  // mark notes what to read again; with changed, the tasks, questions and blocks it brings need no read. A change
+  // this page does not know reads everything again.
+  function mark(
+    wishId: string,
+    changes: readonly Change[],
+    changed?: WishChanges,
+  ) {
+    if (changed && wishId && opened.has(wishId))
+      pending.changes.set(wishId, [
+        ...(pending.changes.get(wishId) ?? []),
+        changed,
+      ]);
     for (const change of changes) {
+      if (!Change[change] || change === Change.UNSPECIFIED) {
+        mark(wishId, [Change.WISH, Change.PROJECT, Change.INBOX, ...DETAIL]);
+        continue;
+      }
       if (change === Change.PROJECT) pending.projects = true;
       if (change === Change.WISH) pending.wishes = true;
       if (change === Change.INBOX) pending.inbox = true;
-      if (
-        change !== Change.TASK &&
-        change !== Change.QUESTION &&
-        change !== Change.BLOCK &&
-        change !== Change.TILASM
-      )
-        continue;
+      if (!DETAIL.includes(change)) continue;
+      if (changed && wishId && CARRIED.has(change)) continue;
       // Without a wish, every wish shown; a wish not shown is read when it is.
       const ids = wishId ? [wishId] : [...opened.keys()];
       for (const id of ids) {
@@ -134,8 +232,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
     const projects = pending.projects;
     const inbox = pending.inbox;
     const details = [...pending.details];
+    const changes = [...pending.changes];
     pending.wishes = pending.projects = pending.inbox = false;
     pending.details.clear();
+    pending.changes.clear();
     const patch: Partial<State> = {};
     const errors: string[] = [];
     const reads: Promise<void>[] = [];
@@ -178,16 +278,25 @@ export function createStore(clients: Clients, retry = 1000): Store {
         });
     }
     await Promise.all(reads);
-    if (Object.keys(read).length) {
-      const next = { ...state.details };
-      for (const [wishId, got] of Object.entries(read))
-        next[wishId] = {
-          ...(next[wishId] ?? EMPTY_DETAIL),
-          ...got,
-          loaded: true,
-        };
-      patch.details = next;
+    const next = { ...state.details };
+    let touched = false;
+    for (const [wishId, got] of Object.entries(read)) {
+      next[wishId] = {
+        ...(next[wishId] ?? EMPTY_DETAIL),
+        ...got,
+        loaded: true,
+      };
+      touched = true;
     }
+    // What the watch brought goes on what was read: a wish not read yet has nothing to put it on, and reads it all.
+    for (const [wishId, list] of changes) {
+      const detail = next[wishId];
+      if (!detail?.loaded) continue;
+      const got = read[wishId] ?? {};
+      next[wishId] = list.reduce((d, c) => apply(d, c, got), detail);
+      touched ||= next[wishId] !== detail;
+    }
+    if (touched) patch.details = next;
     if (wishes && projects && !errors.length) patch.loaded = true;
     patch.error = errors[0] ?? "";
     set(patch);
@@ -273,7 +382,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
               { signal: abort.signal },
             )) {
               if (!state.live) set({ live: true });
-              mark(res.wishId, res.changes);
+              mark(res.wishId, res.changes, res.changed);
               void flush();
             }
           } catch (error) {
@@ -288,7 +397,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
     },
     open(wishId) {
       opened.set(wishId, (opened.get(wishId) ?? 0) + 1);
-      mark(wishId, [Change.TASK, Change.QUESTION, Change.BLOCK, Change.TILASM]);
+      mark(wishId, DETAIL);
       void flush();
       return () => {
         const count = (opened.get(wishId) ?? 1) - 1;
