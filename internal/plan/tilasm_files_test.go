@@ -49,8 +49,9 @@ func TestTilasmFilesServeTheLatestVersionWithTheirPolicy(t *testing.T) {
 	}
 	// The policy: its scripts and its own files, no network, no access to Djinn.
 	policy := res.Header.Get("Content-Security-Policy")
-	if policy != TilasmPolicy {
-		t.Fatalf("policy = %q, want TilasmPolicy", policy)
+	origin := strings.TrimSuffix(c.url, "/")
+	if policy != tilasmPolicy(strings.TrimPrefix(origin, "http://")) {
+		t.Fatalf("policy = %q, want TilasmPolicy for %s", policy, origin)
 	}
 	directives := map[string]string{}
 	for _, d := range strings.Split(policy, ";") {
@@ -65,14 +66,15 @@ func TestTilasmFilesServeTheLatestVersionWithTheirPolicy(t *testing.T) {
 		"form-action": "'none'",
 		// An opaque origin, even opened alone: never Djinn's, never its cookie nor its storage.
 		"sandbox":         "allow-scripts",
-		"frame-ancestors": "'self'",
+		"frame-ancestors": "'self' " + origin,
 	} {
 		if directives[name] != want {
 			t.Errorf("%s = %q, want %q", name, directives[name], want)
 		}
 	}
 	for name, value := range directives {
-		if strings.Contains(value, "http") || strings.Contains(value, "*") || strings.Contains(value, "allow-same-origin") {
+		// The server's own origin is named beside 'self', for WebKit (tilasmPolicy): no other.
+		if value = strings.ReplaceAll(value, "'self' "+origin, "'self'"); strings.Contains(value, "http") || strings.Contains(value, "*") || strings.Contains(value, "allow-same-origin") {
 			t.Errorf("%s %s opens more than the tilasm's own files", name, value)
 		}
 	}
@@ -82,7 +84,7 @@ func TestTilasmFilesServeTheLatestVersionWithTheirPolicy(t *testing.T) {
 
 	res, body = fetch(t, http.MethodGet, base+"/js/app.mjs")
 	if res.StatusCode != http.StatusOK || body != "export const v = 1;" ||
-		res.Header.Get("Content-Type") != "text/javascript; charset=utf-8" || res.Header.Get("Content-Security-Policy") != TilasmPolicy {
+		res.Header.Get("Content-Type") != "text/javascript; charset=utf-8" || res.Header.Get("Content-Security-Policy") != policy {
 		t.Errorf("GET app.mjs = %d %q %q", res.StatusCode, res.Header.Get("Content-Type"), body)
 	}
 	if res, body = fetch(t, http.MethodGet, base+"/docs/"); !strings.Contains(body, "docs") {
@@ -126,6 +128,34 @@ func TestTilasmFilesServeTheLatestVersionWithTheirPolicy(t *testing.T) {
 	}
 	if res, _ := fetch(t, http.MethodGet, base+"/js/app.mjs"); res.StatusCode != http.StatusNotFound {
 		t.Errorf("a file of the earlier version only = %d, want 404", res.StatusCode)
+	}
+}
+
+// WebKit reads 'self' in a sandboxed frame as its opaque origin, which matches nothing: the policy names the server's
+// origin too, or a tilasm loads none of its files, its scripts, fonts and pictures refused.
+func TestTilasmPolicyNamesTheServersOrigin(t *testing.T) {
+	for host, want := range map[string]string{
+		// The window's Wails asset server on macOS and Linux.
+		"localhost": "'self' wails://localhost",
+		// The loopback server, as a browser or the window on Windows reaches it.
+		"127.0.0.1:41234": "'self' http://127.0.0.1:41234",
+		"localhost:8080":  "'self' http://localhost:8080",
+		// A host a policy would read as more: only 'self'.
+		"evil.example:1; script-src *": "'self'",
+		"a b:1":                        "'self'",
+		"127.0.0.1:80x":                "'self'",
+		"127.0.0.1:":                   "'self'",
+		"[::1]:5":                      "'self'",
+		"example.com":                  "'self'",
+		"":                             "'self'",
+	} {
+		policy := tilasmPolicy(host)
+		if policy != strings.ReplaceAll(TilasmPolicy, "'self'", want) {
+			t.Errorf("tilasmPolicy(%q) = %q, want 'self' as %q", host, policy, want)
+		}
+		if !strings.Contains(policy, "script-src "+want+" 'unsafe-inline'") || !strings.Contains(policy, "font-src "+want+" data:") {
+			t.Errorf("tilasmPolicy(%q): its scripts and fonts load from %q only, got %q", host, want, policy)
+		}
 	}
 }
 
