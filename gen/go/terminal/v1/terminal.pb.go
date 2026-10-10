@@ -218,7 +218,10 @@ type TerminalServiceOpenResponse struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Terminal *Terminal              `protobuf:"bytes,1,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	// The terminal was already running: its output so far can be read from offset 0.
-	Attached      bool `protobuf:"varint,2,opt,name=attached,proto3" json:"attached,omitempty"`
+	Attached bool `protobuf:"varint,2,opt,name=attached,proto3" json:"attached,omitempty"`
+	// The offset its output has reached. A window that reads it again from below answers no query of those bytes:
+	// they were answered when they came, or their program no longer waits; an answer now would be typed into it.
+	EndOffset     uint64 `protobuf:"varint,3,opt,name=end_offset,json=endOffset,proto3" json:"end_offset,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -265,6 +268,13 @@ func (x *TerminalServiceOpenResponse) GetAttached() bool {
 		return x.Attached
 	}
 	return false
+}
+
+func (x *TerminalServiceOpenResponse) GetEndOffset() uint64 {
+	if x != nil {
+		return x.EndOffset
+	}
+	return 0
 }
 
 type TerminalServiceWriteRequest struct {
@@ -755,10 +765,12 @@ const file_terminal_v1_terminal_proto_rawDesc = "" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x1c\n" +
 	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12\x1c\n" +
 	"\x04cols\x18\x04 \x01(\rB\b\xbaH\x05*\x03\x18\xe8\aR\x04cols\x12\x1c\n" +
-	"\x04rows\x18\x05 \x01(\rB\b\xbaH\x05*\x03\x18\xe8\aR\x04rows\"l\n" +
+	"\x04rows\x18\x05 \x01(\rB\b\xbaH\x05*\x03\x18\xe8\aR\x04rows\"\x8b\x01\n" +
 	"\x1bTerminalServiceOpenResponse\x121\n" +
 	"\bterminal\x18\x01 \x01(\v2\x15.terminal.v1.TerminalR\bterminal\x12\x1a\n" +
-	"\battached\x18\x02 \x01(\bR\battached\"U\n" +
+	"\battached\x18\x02 \x01(\bR\battached\x12\x1d\n" +
+	"\n" +
+	"end_offset\x18\x03 \x01(\x04R\tendOffset\"U\n" +
 	"\x1bTerminalServiceWriteRequest\x12\x17\n" +
 	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\x12\x1d\n" +
 	"\x04data\x18\x02 \x01(\fB\t\xbaH\x06z\x04\x18\x80\x80@R\x04data\"\x1e\n" +

@@ -351,12 +351,17 @@ function LeadTerminal({
 
     const abort = new AbortController();
     let id = "";
+    // The output a program wrote before this emulator attached is read again, not answered: its queries (DA1, DECRQM,
+    // OSC 11 from agy…) were answered when they came, or their program no longer waits; answers now would be typed
+    // into it, or into the shell once it ended. Keys typed in those few milliseconds go too.
+    let replaying = false;
     const inputs = [
       term.onData(
-        (data) => id && void api.write(id, data).catch(() => undefined),
+        (data) =>
+          id && !replaying && void api.write(id, data).catch(() => undefined),
       ),
       term.onBinary((data) => {
-        if (!id) return;
+        if (!id || replaying) return;
         const bytes = Uint8Array.from(data, (c) => c.charCodeAt(0) & 0xff);
         void api.write(id, bytes).catch(() => undefined);
       }),
@@ -371,7 +376,7 @@ function LeadTerminal({
         // A restart runs again the program that ended here, not one of another terminal.
         const again = ended.current?.name === name ? ended.current : undefined;
         const folder = tabsRef.current.find((x) => x.name === name)?.directory;
-        const { terminal } = await api.open({
+        const { terminal, attached, end } = await api.open({
           name,
           cols: term.cols,
           rows: term.rows,
@@ -384,6 +389,9 @@ function LeadTerminal({
         if (abort.signal.aborted) return;
         id = terminal.id;
         setStatus({ kind: "running", info: terminal });
+        // What a program this open started wrote meanwhile was never answered: none of it is replayed.
+        const replayed = attached ? end : 0n;
+        replaying = replayed > 0n;
         // From the start of what is kept; a broken stream resumes where it stopped.
         let offset = 0n;
         for (;;) {
@@ -392,8 +400,12 @@ function LeadTerminal({
               id,
               offset,
               (at, data) => {
-                term.write(data);
                 offset = at + BigInt(data.length);
+                if (!replaying || offset < replayed) return term.write(data);
+                // The end of the replay: the emulator answers again once it has parsed the bytes before it.
+                const cut = Number(replayed > at ? replayed - at : 0n);
+                term.write(data.subarray(0, cut), () => (replaying = false));
+                term.write(data.subarray(cut));
               },
               abort.signal,
             );

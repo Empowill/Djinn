@@ -27,15 +27,15 @@ export interface TerminalEnd {
 }
 
 export interface DjinnTerminal {
-  // Opens the terminal of name, or attaches to it if it runs: its output so far is read again from offset 0. A
-  // command and a directory start that program instead of the default of djinn up.
+  // Opens the terminal of name, or attaches to it if it runs: its output so far, up to end, is read again from
+  // offset 0. A command and a directory start that program instead of the default of djinn up.
   open(input: {
     name: string;
     cols: number;
     rows: number;
     command?: string[];
     directory?: string;
-  }): Promise<{ terminal: TerminalInfo; attached: boolean }>;
+  }): Promise<{ terminal: TerminalInfo; attached: boolean; end: bigint }>;
   // Sends typed bytes. Writes leave in the order they are made, one request at a time; the promise settles once
   // the terminal has them.
   write(id: string, data: string | Uint8Array): Promise<void>;
@@ -106,6 +106,7 @@ export function createTerminal(transport: Transport): DjinnTerminal {
       const t = res.terminal!;
       return {
         attached: res.attached,
+        end: res.endOffset,
         terminal: {
           id: t.id,
           name: t.name,

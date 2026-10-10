@@ -414,6 +414,14 @@ func TestService(t *testing.T) {
 	if !strings.Contains(out.String(), "hello") {
 		t.Fatalf("no hello in %q: %v", out.String(), stream.Err())
 	}
+	// Attached again, it says how far its output has come: the window answers no query below.
+	again, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Msg.GetAttached() || again.Msg.GetEndOffset() < uint64(out.Len()) {
+		t.Fatalf("open again: %v, read %d bytes", again.Msg, out.Len())
+	}
 	if _, err := c.Close(ctx, connect.NewRequest(&terminalv1.TerminalServiceCloseRequest{Id: id})); err != nil {
 		t.Fatal(err)
 	}

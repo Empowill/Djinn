@@ -50,6 +50,10 @@ export default defineConfig({
     },
   ],
   base: "./",
+  // ES2022, as tsconfig.json: every webview of Wails runs it (WebKitGTK, WKWebView, WebView2). Vite's default, ES2020,
+  // lowers `x ||= {}`, and esbuild 0.25 drops the variable when it minifies that: xterm.js's answer to DECRQM threw
+  // "n is not defined" and left the terminal blank, the first frame of agy (Antigravity) included.
+  build: { target: "es2022" },
   server: {
     host: "127.0.0.1",
     port: 4317,

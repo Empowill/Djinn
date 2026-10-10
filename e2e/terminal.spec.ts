@@ -1,6 +1,8 @@
 // The terminal pinned at the bottom of the window, against the real djinn up --browser (see global-setup.ts): a
 // POSIX shell on a pseudo-terminal of djinn, reached through the shim.
 import { expect, test, type Page } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
 function djinnURL(): string {
   const url = new URL(process.env.DJINN_URL!);
@@ -127,4 +129,58 @@ test("a key reaches the terminal in well under a key repeat", async ({
   });
   console.log(`write round trip over loopback HTTP: ${mean.toFixed(2)} ms`);
   expect(mean).toBeLessThan(15);
+});
+
+// agy (Antigravity) 1.3.2 opens with queries to the terminal (XTVERSION, DA1, DECRQM 2026 and 2027, OSC 11), then
+// draws its logo, and goes on once the answers come. A fake agy prints the first frame the real one wrote in Djinn's
+// terminal (agy-first-frame.bin), keeps the answers it reads back, then writes the line agy writes next. The minified
+// xterm.js threw on DECRQM ("n is not defined", vite.config.ts): the terminal stayed blank and answered DA1 only.
+test("agy's first frame shows, and its queries are answered", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const dir = fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "agy-"));
+  const replies = path.join(dir, "replies");
+  const agy = path.join(dir, "agy");
+  // The answers are 54 bytes: DA1 (7), DECRQM 2026 and 2027 (11 each), OSC 11 with rgb:rrrr/gggg/bbbb (25). A key
+  // ends it, and it leaves the screen as it found it.
+  fs.writeFileSync(
+    agy,
+    `#!/bin/sh
+stty raw -echo
+cat '${path.join(__dirname, "agy-first-frame.bin")}'
+head -c 54 > '${replies}'
+printf '\\033[H\\033[33;1mAccessing workspace:\\033[m\\r\\n'
+head -c 1 > /dev/null
+printf '\\033[?2004l\\033[?25h\\033[?1049l'
+stty sane
+`,
+    { mode: 0o755 },
+  );
+  await page.goto(djinnURL());
+  await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
+  await typeLine(page, agy);
+  await expect(line(page, "Accessing workspace:")).toHaveCount(1);
+  // The rest of the first frame: the logo, in half blocks, and the lines under it.
+  const rows = page.locator(".lead-terminal .xterm-rows");
+  await expect(rows).toContainText("▀");
+  await expect(
+    line(page, "Welcome back! You are currently not signed in."),
+  ).toHaveCount(1);
+  expect(fs.readFileSync(replies, "latin1")).toMatch(
+    // eslint-disable-next-line no-control-regex -- the answers are escape sequences
+    /^\x1b\[\?1;2c\x1b\[\?2026;2\$y\x1b\[\?2027;0\$y\x1b\]11;rgb:[0-9a-f]{4}\/[0-9a-f]{4}\/[0-9a-f]{4}\x1b\\$/,
+  );
+  // A window opened again reads that frame again, and answers none of its queries: they would land on the shell's
+  // command line, ahead of what is typed there.
+  await page.keyboard.press("q");
+  await typeLine(page, "echo agy-''ended");
+  await expect(line(page, "agy-ended")).toHaveCount(1);
+  await page.reload();
+  // Read again past agy's queries.
+  await expect(line(page, "agy-ended")).toHaveCount(1);
+  await typeLine(page, "echo agy-''gone");
+  await expect(line(page, "agy-gone")).toHaveCount(1);
+  expect(errors).toEqual([]);
 });
