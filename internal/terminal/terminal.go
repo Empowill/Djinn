@@ -305,6 +305,13 @@ func (t *Terminal) Exited() bool {
 	return t.exited
 }
 
+// End returns the offset the output has reached: the bytes the program has written so far.
+func (t *Terminal) End() uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.base + uint64(len(t.buf))
+}
+
 // State returns the size of the terminal, whether its program ended, and its exit code.
 func (t *Terminal) State() (cols, rows int, exited bool, code int) {
 	t.mu.Lock()

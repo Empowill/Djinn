@@ -34,7 +34,9 @@ func (s *Service) Open(
 	if attached && msg.GetCols() > 0 && msg.GetRows() > 0 {
 		_ = t.Resize(int(msg.GetCols()), int(msg.GetRows())) // Ended meanwhile: the window reads it.
 	}
-	return connect.NewResponse(&terminalv1.TerminalServiceOpenResponse{Terminal: describe(t), Attached: attached}), nil
+	return connect.NewResponse(&terminalv1.TerminalServiceOpenResponse{
+		Terminal: describe(t), Attached: attached, EndOffset: t.End(),
+	}), nil
 }
 
 func (s *Service) Write(

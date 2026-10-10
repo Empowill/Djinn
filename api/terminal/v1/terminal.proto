@@ -76,6 +76,9 @@ message TerminalServiceOpenResponse {
   Terminal terminal = 1;
   // The terminal was already running: its output so far can be read from offset 0.
   bool attached = 2;
+  // The offset its output has reached. A window that reads it again from below answers no query of those bytes:
+  // they were answered when they came, or their program no longer waits; an answer now would be typed into it.
+  uint64 end_offset = 3;
 }
 
 message TerminalServiceWriteRequest {
