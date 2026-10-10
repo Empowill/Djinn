@@ -65,6 +65,7 @@ import { WishDropdown } from "./wish-dropdown";
 import { WishSmoke } from "./wish-smoke";
 import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
 import { platformShortcut, TooltipButton } from "./tooltip";
+import { WorkspaceAction } from "./workspace-action";
 
 // MakeWish sends the complete request. Naming the wish belongs to the server and its lead. With three wishes active,
 // it is made paused, as the lamp would refuse a fourth.
@@ -452,22 +453,27 @@ export function MakeWish({
               </p>
             )}
             <div className="wish-creation-footer">
-              <TooltipButton
-                type="submit"
-                className="button accent"
-                disabled={busy || !hasText || !prompt.trim() || overLimit}
-                label={submitLabel}
-                tooltip={submitLabel}
-                shortcut={submitShortcut.label}
-                aria-keyshortcuts={submitShortcut.aria}
+              <WorkspaceAction
+                tone="primary"
+                className="workspace-action-create"
               >
-                {submitLabel}
-                {busy ? (
-                  <LoaderCircle className="wish-creation-spinner" size={14} />
-                ) : (
-                  <ArrowRight size={14} />
-                )}
-              </TooltipButton>
+                <TooltipButton
+                  type="submit"
+                  className="button accent workspace-action-control"
+                  disabled={busy || !hasText || !prompt.trim() || overLimit}
+                  label={submitLabel}
+                  tooltip={submitLabel}
+                  shortcut={submitShortcut.label}
+                  aria-keyshortcuts={submitShortcut.aria}
+                >
+                  {submitLabel}
+                  {busy ? (
+                    <LoaderCircle className="wish-creation-spinner" size={14} />
+                  ) : (
+                    <ArrowRight size={14} />
+                  )}
+                </TooltipButton>
+              </WorkspaceAction>
             </div>
           </form>
         </div>

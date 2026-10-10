@@ -253,7 +253,9 @@ test("French empty creation keeps the title, caret and smoke visible", async ({
   ).toBe(20);
   expect(requestBox!.width / regionBox!.width).toBeGreaterThan(0.38);
   expect(requestBox!.width / regionBox!.width).toBeLessThan(0.42);
-  expect(submitBox!.x).toBeLessThan(footerBox!.x + footerBox!.width / 3);
+  const submitCenter = submitBox!.x + submitBox!.width / 2;
+  const footerCenter = footerBox!.x + footerBox!.width / 2;
+  expect(Math.abs(submitCenter - footerCenter)).toBeLessThan(2);
   const smoke = region.locator(".wish-smoke-canvas");
   await expect(smoke).toHaveAttribute("data-zoom", "10");
   await expect(smoke).toHaveAttribute("data-ready", "true", {

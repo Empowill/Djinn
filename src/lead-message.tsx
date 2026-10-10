@@ -1,14 +1,23 @@
 // A durable user indication, from a wish or its flight-plan card. Saving never starts a model.
-// Enter saves, Shift+Enter breaks the line, Escape folds the box and returns focus to its button.
+// Enter saves, Shift+Enter breaks the line, Escape folds the pill and returns focus to its button.
 import { Check, MessageSquare, Send, Terminal, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Change, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients, useStore } from "./data/djinn";
 import { t } from "./i18n";
 import { useInstructionDraft } from "./instruction-draft";
+import { platformShortcut } from "./tooltip";
+import { WorkspaceAction } from "./workspace-action";
 import "./instruction.css";
 
 export function LeadMessage({
@@ -29,8 +38,10 @@ export function LeadMessage({
   const [resuming, setResuming] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
   const id = useId();
   const mounted = useRef(true);
+  const indicationShortcut = platformShortcut("I");
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -38,8 +49,69 @@ export function LeadMessage({
     };
   }, []);
   useEffect(() => {
-    if (open) box.current?.focus();
+    if (open) {
+      box.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (!restoreFocus.current) return;
+    restoreFocus.current = false;
+    const frame = window.requestAnimationFrame(() =>
+      toggle.current?.focus({ preventScroll: true }),
+    );
+    return () => window.cancelAnimationFrame(frame);
   }, [open, wish.id]);
+  useLayoutEffect(() => {
+    if (variant !== "floating" || !open) return;
+    const textarea = box.current;
+    if (!textarea) return;
+
+    const resize = () => {
+      textarea.style.height = "auto";
+      textarea.style.overflowY = "hidden";
+      const maxHeight = Number.parseFloat(
+        window.getComputedStyle(textarea).maxHeight,
+      );
+      const height = Number.isFinite(maxHeight)
+        ? Math.min(textarea.scrollHeight, maxHeight)
+        : textarea.scrollHeight;
+      textarea.style.height = `${height}px`;
+      textarea.style.overflowY =
+        textarea.scrollHeight > height ? "auto" : "hidden";
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [open, state.text, variant]);
+  useEffect(() => {
+    if (variant !== "floating") return;
+    const keys = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.altKey ||
+        event.shiftKey ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.key.toLowerCase() !== "i"
+      )
+        return;
+      if (document.querySelector(".modal-backdrop")) return;
+      if (event.target instanceof HTMLElement) {
+        if (
+          event.target.isContentEditable ||
+          event.target.matches(
+            "input, textarea, select, [contenteditable='true']",
+          ) ||
+          event.target.closest(".xterm")
+        )
+          return;
+      }
+      event.preventDefault();
+      setOpen(true);
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, [variant]);
   useEffect(() => {
     if (!state.notice) return;
     const notice = state.notice;
@@ -50,8 +122,8 @@ export function LeadMessage({
   }, [draft, state.notice]);
 
   const close = () => {
+    restoreFocus.current = true;
     setOpen(false);
-    toggle.current?.focus();
   };
   const send = async () => {
     // Synchronous lock across every mounted variant, including Enter followed immediately by a click.
@@ -100,6 +172,136 @@ export function LeadMessage({
       void send();
     }
   };
+  if (variant === "floating") {
+    return (
+      <div className="lead-message lead-message-floating">
+        <WorkspaceAction
+          tone="secondary"
+          expanded={open}
+          className="workspace-action-lead"
+        >
+          {open ? (
+            <div
+              id={`${id}-panel`}
+              className="lead-message-panel workspace-action-editor-shell"
+              role="dialog"
+              aria-label={t("lead_message.title")}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                event.stopPropagation();
+                close();
+              }}
+            >
+              <form
+                className={`workspace-action-editor ${wish.leadRunning ? "is-running" : ""}`}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void send();
+                }}
+              >
+                {!wish.leadRunning && (
+                  <button
+                    type="button"
+                    className="workspace-action-leading"
+                    disabled={resuming}
+                    onClick={() => void resume()}
+                    title={t("lead_message.resume")}
+                    aria-label={t("lead_message.resume")}
+                  >
+                    <Terminal size={13} aria-hidden="true" />
+                  </button>
+                )}
+                <label
+                  htmlFor={`${id}-input`}
+                  className="workspace-action-sr-only"
+                >
+                  {t("lead_message.placeholder")}
+                </label>
+                <textarea
+                  id={`${id}-input`}
+                  ref={box}
+                  rows={1}
+                  value={state.text}
+                  onChange={(event) =>
+                    draft.set({
+                      text: event.target.value,
+                      error: "",
+                      notice: "",
+                    })
+                  }
+                  onKeyDown={keys}
+                  placeholder={t("lead_message.placeholder")}
+                  aria-label={t("lead_message.placeholder")}
+                  aria-invalid={!!state.error}
+                  aria-describedby={
+                    state.error
+                      ? `${id}-error`
+                      : state.notice
+                        ? `${id}-notice`
+                        : undefined
+                  }
+                  readOnly={state.busy}
+                />
+                {state.error && (
+                  <p
+                    id={`${id}-error`}
+                    className="instruction-error workspace-action-feedback"
+                    role="alert"
+                  >
+                    {state.error}
+                  </p>
+                )}
+                {state.notice && (
+                  <span
+                    id={`${id}-notice`}
+                    className="lead-message-sent workspace-action-feedback"
+                    role="status"
+                  >
+                    <Check size={12} aria-hidden="true" />
+                    {t("instruction.saved")}
+                  </span>
+                )}
+                <button
+                  type="submit"
+                  className="workspace-action-send"
+                  disabled={state.busy || !state.text.trim()}
+                  title={t("lead_message.send")}
+                  aria-label={t("lead_message.send")}
+                >
+                  <Send size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="workspace-action-close"
+                  onClick={close}
+                  title={t("lead_message.close")}
+                  aria-label={t("lead_message.close")}
+                >
+                  <X size={13} aria-hidden="true" />
+                </button>
+              </form>
+            </div>
+          ) : (
+            <button
+              ref={toggle}
+              type="button"
+              className="lead-message-toggle workspace-action-control"
+              onClick={() => setOpen(true)}
+              title={`${t("lead_message.open")} · ${indicationShortcut.label}`}
+              aria-label={t("lead_message.open")}
+              aria-keyshortcuts={indicationShortcut.aria}
+              aria-expanded={false}
+              aria-controls={`${id}-panel`}
+            >
+              <MessageSquare size={15} aria-hidden="true" />
+              <span>{t("lead_message.open")}</span>
+            </button>
+          )}
+        </WorkspaceAction>
+      </div>
+    );
+  }
   return (
     <div
       className={`lead-message lead-message-${variant}${variant === "card" ? " lead-message-card" : ""}`}

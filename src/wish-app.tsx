@@ -2,7 +2,7 @@
 // the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
 // this page is how it shows: what is shown and the side panel folded.
 import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, LayoutGroup } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Change, type Wish } from "../gen/ts/plan/v1/plan_pb";
@@ -63,6 +63,9 @@ export function WishApp() {
   const live = useData((s) => s.live);
   const error = useData((s) => s.error);
   const [selected, setSelected] = useState(() => stored("djinn.wish"));
+  // Keep a just-created wish renderable for the same commit as MakeWish leaves, so the shared action surface can
+  // animate into the wish view while the next store list is still in flight.
+  const [justMade, setJustMade] = useState<Wish>();
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.sidebar.collapsed") === "1",
   );
@@ -79,6 +82,10 @@ export function WishApp() {
   const toggleSidebar = useCallback(() => setCollapsed((value) => !value), []);
 
   useEffect(() => store("djinn.wish", selected), [selected]);
+  useEffect(() => {
+    if (justMade && wishes.some((item) => item.id === justMade.id))
+      setJustMade(undefined);
+  }, [justMade, wishes]);
   useEffect(
     () => store("djinn.sidebar.collapsed", collapsed ? "1" : ""),
     [collapsed],
@@ -177,8 +184,10 @@ export function WishApp() {
   );
   // What shows: the wish chosen, else the flight plan while a wish is active, else the first wish.
   const chosen = wishes.find((w) => w.id === selected);
-  const plan = !chosen && (selected === PLAN || active.length > 0);
-  const wish = plan ? undefined : (chosen ?? wishes[0]);
+  const pendingWish = justMade?.id === selected ? justMade : undefined;
+  const plan =
+    !chosen && !pendingWish && (selected === PLAN || active.length > 0);
+  const wish = plan ? undefined : (chosen ?? pendingWish ?? wishes[0]);
   const shownId = wish?.id ?? "";
   const newWishShortcut = platformShortcut("N");
   const sidebarShortcut = platformShortcut("\\");
@@ -345,38 +354,45 @@ export function WishApp() {
         </div>
       </aside>
       <main className="main-shell">
-        {modal === "make" ? (
-          <MakeWish
-            projects={projects}
-            active={active.length}
-            onBusyChange={setMaking}
-            backActionRef={makeBackAction}
-            onBackSetupChange={setMakeBackInSetup}
-            onClose={closeMake}
-            onMade={(made) => {
-              setModal(null);
-              setSelected(made.id);
-              void data.changed(made.id, [Change.WISH]);
-              void launchMadeLead(made);
-            }}
-          />
-        ) : plan ? (
-          <FlightPlan wishes={active} onOpen={setSelected} onToast={setToast} />
-        ) : wish ? (
-          <WishView
-            key={wish.id}
-            wish={wish}
-            opening={opening?.wishId === wish.id ? opening : undefined}
-            onToast={setToast}
-          />
-        ) : (
-          <Welcome
-            loaded={loaded}
-            onMake={() => setModal("make")}
-            onImport={() => importRef.current?.click()}
-          />
-        )}
-        <StatusBar live={live} error={error} />
+        <LayoutGroup id="workspace-action-group">
+          {modal === "make" ? (
+            <MakeWish
+              projects={projects}
+              active={active.length}
+              onBusyChange={setMaking}
+              backActionRef={makeBackAction}
+              onBackSetupChange={setMakeBackInSetup}
+              onClose={closeMake}
+              onMade={(made) => {
+                setModal(null);
+                setSelected(made.id);
+                setJustMade(made);
+                void data.changed(made.id, [Change.WISH]);
+                void launchMadeLead(made);
+              }}
+            />
+          ) : plan ? (
+            <FlightPlan
+              wishes={active}
+              onOpen={setSelected}
+              onToast={setToast}
+            />
+          ) : wish ? (
+            <WishView
+              key={wish.id}
+              wish={wish}
+              opening={opening?.wishId === wish.id ? opening : undefined}
+              onToast={setToast}
+            />
+          ) : (
+            <Welcome
+              loaded={loaded}
+              onMake={() => setModal("make")}
+              onImport={() => importRef.current?.click()}
+            />
+          )}
+          <StatusBar live={live} error={error} />
+        </LayoutGroup>
       </main>
       <AnimatePresence>
         {modal === "project" && (

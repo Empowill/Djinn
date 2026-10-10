@@ -1,5 +1,5 @@
-// Writing to a wish's lead from the window: the button at the bottom right unfolds a box whose text Djinn types in
-// the lead's terminal, as the developer would. Without a lead running, the box says so and resumes it. The lead is
+// Writing to a wish's lead from the window: the centered workspace pill unfolds into a box whose text Djinn types in
+// the lead's terminal, as the developer would. Without a lead running, the pill offers an explicit resume control. The lead is
 // the fake claude of global-setup.ts, which repeats what it reads: no model is called.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -60,15 +60,30 @@ test("a word written in the window reaches the lead's terminal", async ({
       .click();
     await page.locator(".wish-nav").filter({ hasText: title }).click();
 
-    // Saving works before the fake lead resumes; Resume remains an explicit action.
-    await page.getByRole("button", { name: "Add an indication" }).click();
+    // Saving works before the fake lead resumes; Resume remains an explicit action. The shortcut opens the same pill.
+    const toggle = page.getByRole("button", { name: "Add an indication" });
+    await toggle.focus();
+    await page.keyboard.press(
+      process.platform === "darwin" ? "Meta+I" : "Control+I",
+    );
     const panel = page.getByRole("dialog", { name: "Indication for the lead" });
     await expect(
-      panel.getByText(
-        "The lead is stopped. Your indication will be saved for its next resume.",
-      ),
+      panel.getByRole("button", { name: "Resume the lead" }),
     ).toBeVisible();
     const box = panel.getByLabel("An indication for this wish");
+    const action = page.locator(".workspace-action-lead");
+    const actionBox = await action.boundingBox();
+    const shellBox = await panel.boundingBox();
+    expect(actionBox).not.toBeNull();
+    expect(shellBox).not.toBeNull();
+    expect(Math.abs(shellBox!.width - actionBox!.width)).toBeLessThan(2);
+    await expect(panel).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(box).toHaveCSS("resize", "none");
+    await expect
+      .poll(() =>
+        box.evaluate((element) => getComputedStyle(element).fontFamily),
+      )
+      .toMatch(/DM Sans|sans-serif/);
     await expect(box).toBeEnabled();
     await panel.getByRole("button", { name: "Resume the lead" }).click();
     await expect(box).toBeEnabled({ timeout: 10_000 });
@@ -78,12 +93,31 @@ test("a word written in the window reaches the lead's terminal", async ({
     ).toHaveCount(1);
 
     // Shift+Enter preserves the full text; the fake lead receives a reference to its durable record.
+    // Escape keeps an unfinished draft and restores focus to the whole-pill trigger.
+    await box.fill("Draft stays");
+    await box.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(toggle).toBeFocused();
+    await toggle.press("Enter");
+    await expect(box).toHaveValue("Draft stays");
+
     await box.fill("Hello");
+    const oneLineHeight = await box.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    );
     await box.press("Shift+Enter");
     await box.pressSequentially("lead");
     await expect(box).toHaveValue("Hello\nlead");
+    const multilineHeight = await box.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    );
+    expect(multilineHeight).toBeGreaterThan(oneLineHeight);
     await box.press("Enter");
     await expect(box).toHaveValue("");
+    const clearedHeight = await box.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    );
+    expect(clearedHeight).toBeLessThan(multilineHeight);
     await expect(panel.getByText("Saved · pending")).toBeVisible();
     await expect(
       rows.filter({ hasText: "Developer instruction I01" }).first(),
@@ -100,6 +134,7 @@ test("a word written in the window reaches the lead's terminal", async ({
     // Escape folds the box.
     await box.press("Escape");
     await expect(panel).toHaveCount(0);
+    await expect(toggle).toBeFocused();
 
     // Generic reports remain transient and still reach the lead.
     djinn("wish", "tell", wishId, "From the command line");
