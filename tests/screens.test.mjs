@@ -20,7 +20,12 @@ export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export { WishTask, promptPreview } from "@/src/wish-task.tsx";
-export { azimaTime, shortModel } from "@/src/data/format.ts";
+export {
+  azimaTime,
+  shortModel,
+  effectivePushStrategy,
+  azimaBranchName,
+} from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { attentionOf, AttentionBar } from "@/src/attention.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
@@ -45,6 +50,7 @@ export {
   LeadButton,
   LeadMenu,
   MainMerges,
+  PushStrategySelector,
   WishDescription,
   recordedAgent,
 } from "@/src/wish-head.tsx";
@@ -3640,4 +3646,218 @@ test("azimas are ordered in a stable 6-tier order and laid out in a single colum
   const doneTime = s.azimaTime(aDone1, [], nowMs);
   assert.equal(doneTime.text, "30s");
   assert.match(doneTime.title, /ran from .* to/i);
+});
+
+test("the wish shows its push strategy and azima cards show branch, sync and PR in per-azima mode", () => {
+  // 1. Effective strategy resolution
+  const wDefault = { id: "w1", pushStrategy: s.PushStrategy.UNSPECIFIED };
+  const pDefault = [{ id: "p1", pushStrategy: s.PushStrategy.UNSPECIFIED }];
+  const pAzima = [{ id: "p1", pushStrategy: s.PushStrategy.AZIMA }];
+  const wWish = { id: "w1", pushStrategy: s.PushStrategy.WISH };
+  const wAzima = { id: "w1", pushStrategy: s.PushStrategy.AZIMA };
+
+  assert.equal(
+    s.effectivePushStrategy(wDefault, pDefault),
+    s.PushStrategy.WISH,
+  );
+  assert.equal(s.effectivePushStrategy(wDefault, pAzima), s.PushStrategy.AZIMA);
+  assert.equal(s.effectivePushStrategy(wWish, pAzima), s.PushStrategy.WISH);
+  assert.equal(s.effectivePushStrategy(wAzima, pDefault), s.PushStrategy.AZIMA);
+
+  // 2. PushStrategySelector component
+  let chosenStrategy = null;
+  const selectorHtml = s.renderToStaticMarkup(
+    h(s.PushStrategySelector, {
+      wish: wDefault,
+      projects: pAzima,
+      onChange: (strat) => {
+        chosenStrategy = strat;
+      },
+    }),
+  );
+  assert.match(selectorHtml, /class="wish-push-strategy"/);
+  assert.match(selectorHtml, /aria-label="Push strategy"/);
+  assert.match(selectorHtml, /Per wish<\/button>/);
+  assert.match(
+    selectorHtml,
+    /<button[^>]*class="active"[^>]*>Per azima<\/button>/,
+  );
+
+  // Test live clicking
+  const liveSelector = live(s.PushStrategySelector, {
+    wish: wDefault,
+    projects: pAzima,
+    onChange: (strat) => {
+      chosenStrategy = strat;
+    },
+  });
+  const buttons = liveSelector.all("button");
+  const wishBtn = buttons.find((b) => b.props.children === "Per wish");
+  assert.ok(wishBtn);
+  wishBtn.props.onClick();
+  assert.equal(chosenStrategy, s.PushStrategy.WISH);
+
+  // 3. Azima branch naming helper
+  const taskT27 = {
+    id: "a27",
+    code: "T27",
+    title: "Djinn stays fast",
+    azima: {},
+  };
+  assert.equal(s.azimaBranchName(taskT27), "djinn/T27-djinn-stays-fast");
+
+  // 4. AzimaCard in default (per-wish) mode does not show branch, sync or PR
+  const defaultCardHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: {
+        ...taskT27,
+        azima: {
+          branch: "djinn/T27-djinn-stays-fast",
+          sync: { ahead: 1, behind: 0 },
+        },
+      },
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: false,
+    }),
+  );
+  assert.doesNotMatch(defaultCardHtml, /azima-branch/);
+  assert.doesNotMatch(defaultCardHtml, /azima-actions/);
+
+  // 5. AzimaCard in per-azima mode with branch, base branch, sync, push button, and PR
+  let pushedAzima = null;
+  let openedPrUrl = null;
+  const azimaPerAzima = {
+    ...taskT27,
+    azima: {
+      branch: "djinn/T27-djinn-stays-fast",
+      baseBranch: "djinn/T26-split-the-branch",
+      sync: { ahead: 2, behind: 0 },
+      pr: {
+        state: s.AzimaPrState.OPEN,
+        url: "https://github.com/Empowill/Djinn/pull/42",
+      },
+    },
+  };
+
+  const perAzimaHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: azimaPerAzima,
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+      onPush: (a) => {
+        pushedAzima = a;
+      },
+      onOpenPr: (url) => {
+        openedPrUrl = url;
+      },
+    }),
+  );
+
+  // Branch and base branch
+  assert.match(
+    perAzimaHtml,
+    /<span class="azima-branch"[^>]*>djinn\/T27-djinn-stays-fast<\/span>/,
+  );
+  assert.match(
+    perAzimaHtml,
+    /<span class="azima-base-branch"[^>]*>based on djinn\/T26-split-the-branch<\/span>/,
+  );
+
+  // Sync state and push button
+  assert.match(
+    perAzimaHtml,
+    /<span class="azima-sync-status"[^>]*>2 commits ahead of origin\/<\/span>/,
+  );
+  assert.match(
+    perAzimaHtml,
+    /<button[^>]*class="button accent small"[^>]*>Push<\/button>/,
+  );
+
+  // PR link with state "PR open"
+  assert.match(
+    perAzimaHtml,
+    /<a href="https:\/\/github\.com\/Empowill\/Djinn\/pull\/42" class="azima-pr-link"/,
+  );
+  assert.match(perAzimaHtml, /PR open/);
+
+  // Test live click on push and PR
+  const liveAzimaCard = live(s.AzimaCard, {
+    azima: azimaPerAzima,
+    parts: [],
+    tasks: new Map(),
+    render: () => null,
+    isPerAzima: true,
+    onPush: (a) => {
+      pushedAzima = a;
+    },
+    onOpenPr: (url) => {
+      openedPrUrl = url;
+    },
+  });
+  const cardButtons = liveAzimaCard.all("button");
+  const pushBtn = cardButtons.find((b) => b.props.children === "Push");
+  assert.ok(pushBtn);
+  const fakeEvent = { stopPropagation() {}, preventDefault() {} };
+  pushBtn.props.onClick(fakeEvent);
+  assert.equal(pushedAzima?.id, "a27");
+
+  const prLink = liveAzimaCard
+    .all("a")
+    .find((a) => a.props.className === "azima-pr-link");
+  assert.ok(prLink);
+  prLink.props.onClick(fakeEvent);
+  assert.equal(openedPrUrl, "https://github.com/Empowill/Djinn/pull/42");
+
+  // 6. Test pushed state (clean sync) and other PR states (PROPOSED, MERGED, and badge without URL)
+  const cleanAndProposedHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: {
+        ...taskT27,
+        azima: {
+          branch: "djinn/T27-djinn-stays-fast",
+          sync: { ahead: 0, behind: 0, target: "origin" },
+          pr: { state: s.AzimaPrState.PROPOSED },
+        },
+      },
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+    }),
+  );
+  assert.match(
+    cleanAndProposedHtml,
+    /<span class="azima-pushed-status">Pushed<\/span>/,
+  );
+  assert.match(
+    cleanAndProposedHtml,
+    /<span class="azima-pr-badge">PR proposed<\/span>/,
+  );
+  assert.doesNotMatch(cleanAndProposedHtml, /<button[^>]*>Push<\/button>/);
+
+  const mergedHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: {
+        ...taskT27,
+        azima: {
+          sync: { ahead: 0, behind: 0, branch: "main" },
+          pr: { state: s.AzimaPrState.MERGED },
+        },
+      },
+      parts: [],
+      tasks: new Map(),
+      render: () => null,
+      isPerAzima: true,
+    }),
+  );
+  assert.match(mergedHtml, /<span class="azima-pushed-status">Pushed<\/span>/);
+  assert.match(mergedHtml, /<span class="azima-pr-badge">PR merged<\/span>/);
+
+  // 7. Verify T27: AzimaCard is memoized (React.memo)
+  assert.equal(typeof s.AzimaCard, "object");
+  assert.equal(s.AzimaCard.$$typeof, Symbol.for("react.memo"));
 });

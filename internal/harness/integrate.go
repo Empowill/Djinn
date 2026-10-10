@@ -1666,11 +1666,7 @@ func (h *Harness) targetBranch(
 
 // azimaBranchName is the integration branch name of an azima: djinn/<code-slug> or djinn/<code>.
 func azimaBranchName(a *planv1.Task) string {
-	s := slug(a.GetTitle(), 40)
-	if s != "" {
-		return fmt.Sprintf("djinn/%s-%s", a.GetCode(), s)
-	}
-	return fmt.Sprintf("djinn/%s", a.GetCode())
+	return plan.AzimaBranchName(a)
 }
 
 // taskAzima finds the azima task that t is part of, walking up the part_of chain if needed.

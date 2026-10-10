@@ -3,7 +3,7 @@
 // codes), and its progress. Opened, what its proof needs, box by box, then its parts, as the Tasks tab shows any task:
 // under work that still moves, the finished parts fold behind "show the N finished" (src/task-tabs.tsx).
 // An azima never waits for the person as work: its proof is no task.
-import { BadgeCheck, ChevronDown } from "lucide-react";
+import { BadgeCheck, ChevronDown, ExternalLink } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -13,6 +13,7 @@ import {
 } from "react";
 
 import {
+  AzimaPrState,
   AzimaState,
   type ProofNeed,
   Prover,
@@ -21,7 +22,13 @@ import {
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { compareCodes, finishedTask, isAzima } from "./data/flight";
-import { azimaTime, type Tone, useNow } from "./data/format";
+import {
+  azimaBranchName,
+  azimaTime,
+  syncDescription,
+  type Tone,
+  useNow,
+} from "./data/format";
 import { ModalFrame } from "./frame";
 import { t, type TextKey } from "./i18n";
 import { StatusBadge } from "./status";
@@ -105,6 +112,9 @@ export const AzimaCard = memo(function AzimaCard({
   origin,
   render,
   focus = "",
+  isPerAzima = false,
+  onPush,
+  onOpenPr,
   onValidate,
 }: {
   azima: Task;
@@ -117,9 +127,16 @@ export const AzimaCard = memo(function AzimaCard({
   render: (task: Task) => ReactNode;
   // What a link brings into sight: the azima, or one of its parts, opens on it.
   focus?: string;
+  // Whether the wish integrates per azima.
+  isPerAzima?: boolean;
+  // Pushes the azima's integration branch.
+  onPush?: (azima: Task) => Promise<unknown> | void;
+  // Opens the pull request in the external browser.
+  onOpenPr?: (url: string) => void;
   // Validates the azima once its work is done: it is marked done, by you.
   onValidate?: (azima: Task) => void;
 }) {
+  const [pushing, setPushing] = useState(false);
   const state = azimaState(azima);
   const holds = focus === azima.id || parts.some((x) => x.id === focus);
   const [open, setOpen] = useState(
@@ -130,7 +147,7 @@ export const AzimaCard = memo(function AzimaCard({
   }, [holds]);
   const moving = parts.filter((x) => !finishedTask(x));
   const finished = parts.filter((x) => finishedTask(x));
-  const deps = azima.dependsOn
+  const deps = (azima.dependsOn ?? [])
     .map((id) => tasks.get(id))
     .filter((x): x is Task => !!x);
   const after = deps.map((x) => x.code).sort(compareCodes);
@@ -159,101 +176,199 @@ export const AzimaCard = memo(function AzimaCard({
   const time = azimaTime(azima, parts, now);
   const proof = state === AzimaState.AWAITING_PROOF;
   // On hover, what validating it takes: each box left and what it needs, else that every task is finished.
+  const proofNeeds = azima.proofNeeds ?? [];
   const needs = proof
     ? [
         t("azima.to_validate_title"),
-        ...(azima.proofNeeds.length
-          ? azima.proofNeeds.map(
+        ...(proofNeeds.length
+          ? proofNeeds.map(
               (n) => `• ${n.box} ${t("azima.needs", { needs: n.needs })}`,
             )
           : [t("azima.no_boxes")]),
         t("azima.how_to_validate"),
       ].join("\n")
     : undefined;
+
+  const branch = azima.azima?.branch || azimaBranchName(azima);
+  const baseBranch = azima.azima?.baseBranch;
+  const sync = azima.azima?.sync;
+  const isOutOfSync = Boolean(sync && (sync.ahead > 0 || sync.behind > 0));
+  const isPushed = Boolean(
+    sync &&
+    sync.ahead === 0 &&
+    sync.behind === 0 &&
+    (sync.target || sync.remote || sync.branch),
+  );
+  const syncText = syncDescription(sync);
+  const canPush = isOutOfSync && Boolean(onPush);
+
+  const pr = azima.azima?.pr;
+  const prUrl = pr?.url;
+  const prText = pr
+    ? pr.state === AzimaPrState.PROPOSED
+      ? t("azima.pr_proposed")
+      : pr.state === AzimaPrState.MERGED
+        ? t("azima.pr_merged")
+        : t("azima.pr_open")
+    : null;
+
+  const handlePush = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onPush || pushing) return;
+    setPushing(true);
+    try {
+      await onPush(azima);
+    } catch {
+      // Toast surfaced by caller
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  const hasActions = isOutOfSync || canPush || isPushed || Boolean(prText);
+
   return (
     <section
       className={`azima-card tone-${azimaTone(azima)} ${open ? "open" : ""}`}
       id={`task-${azima.id}`}
       aria-label={`${azima.code} ${azima.title}`}
     >
-      <button
-        className="azima-heading"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-      >
-        <StatusBadge
-          tone={azimaTone(azima)}
-          label={t(labels[state])}
-          title={needs}
-        />
-        <span className="agent-code">{azima.code}</span>
-        <strong title={azima.title}>{azima.title}</strong>
-        <span className="azima-meta">
-          {origin}
-          {proof && (
-            <span className="azima-needs" title={needs}>
-              {proofWords(azima.proofNeeds)}
-            </span>
-          )}
-          {state !== AzimaState.DONE && waits.length > 0 && (
-            <span
-              className="azima-waits"
-              title={t("page.after", { tasks: after.join(", ") })}
-            >
-              {t("azima.waits", { tasks: waits.join(", ") })}
-            </span>
-          )}
-          {state !== AzimaState.DONE &&
-            waits.length === 0 &&
-            after.length > 0 && (
-              <span className="azima-after">
-                {t("page.after", { tasks: after.join(", ") })}
+      <div className="azima-row">
+        <button
+          type="button"
+          className="azima-heading"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+        >
+          <StatusBadge
+            tone={azimaTone(azima)}
+            label={t(labels[state])}
+            title={needs}
+          />
+          <span className="agent-code">{azima.code}</span>
+          <strong title={azima.title}>{azima.title}</strong>
+          <span className="azima-meta">
+            {origin}
+            {isPerAzima && branch && (
+              <span className="azima-branch" title={branch}>
+                {branch}
               </span>
             )}
-          {parts.length > 0 && (
-            <span
-              className="azima-progress"
-              title={t("azima.progress", { done, count: parts.length })}
-            >
-              <span className="azima-bar" aria-hidden="true">
-                <span
-                  className="azima-bar-done"
-                  style={{ width: `${(100 * done) / parts.length}%` }}
-                />
-                <span
-                  className="azima-bar-running"
-                  style={{ width: `${(100 * running) / parts.length}%` }}
-                />
+            {isPerAzima && baseBranch && (
+              <span
+                className="azima-base-branch"
+                title={t("azima.based_on", { branch: baseBranch })}
+              >
+                {t("azima.based_on", { branch: baseBranch })}
               </span>
-              <span className="azima-progress-counts">
-                {done}/{parts.length}
+            )}
+            {proof && (
+              <span className="azima-needs" title={needs}>
+                {proofWords(proofNeeds)}
               </span>
-            </span>
-          )}
-          {parts.length > 0 && (
-            <span
-              className="azima-progress-parts"
-              title={t("azima.progress_parts", { done, running, waiting })}
-            >
-              {t("azima.progress_parts", { done, running, waiting })}
-            </span>
-          )}
-          {time.text && (
-            <span className="task-time" title={time.title}>
-              {time.text}
-            </span>
-          )}
-        </span>
-        <ChevronDown size={14} className={open ? "rotated" : ""} />
-      </button>
+            )}
+            {state !== AzimaState.DONE && waits.length > 0 && (
+              <span
+                className="azima-waits"
+                title={t("page.after", { tasks: after.join(", ") })}
+              >
+                {t("azima.waits", { tasks: waits.join(", ") })}
+              </span>
+            )}
+            {state !== AzimaState.DONE &&
+              waits.length === 0 &&
+              after.length > 0 && (
+                <span className="azima-after">
+                  {t("page.after", { tasks: after.join(", ") })}
+                </span>
+              )}
+            {parts.length > 0 && (
+              <span
+                className="azima-progress"
+                title={t("azima.progress", { done, count: parts.length })}
+              >
+                <span className="azima-bar" aria-hidden="true">
+                  <span
+                    className="azima-bar-done"
+                    style={{ width: `${(100 * done) / parts.length}%` }}
+                  />
+                  <span
+                    className="azima-bar-running"
+                    style={{ width: `${(100 * running) / parts.length}%` }}
+                  />
+                </span>
+                <span className="azima-progress-counts">
+                  {done}/{parts.length}
+                </span>
+              </span>
+            )}
+            {parts.length > 0 && (
+              <span
+                className="azima-progress-parts"
+                title={t("azima.progress_parts", { done, running, waiting })}
+              >
+                {t("azima.progress_parts", { done, running, waiting })}
+              </span>
+            )}
+            {time.text && (
+              <span className="task-time" title={time.title}>
+                {time.text}
+              </span>
+            )}
+          </span>
+          <ChevronDown size={14} className={open ? "rotated" : ""} />
+        </button>
+        {isPerAzima && hasActions && (
+          <div className="azima-actions">
+            {isOutOfSync && syncText && (
+              <span className="azima-sync-status" title={syncText}>
+                {syncText}
+              </span>
+            )}
+            {canPush && (
+              <button
+                type="button"
+                className="button accent small"
+                disabled={pushing}
+                onClick={handlePush}
+              >
+                {pushing ? t("project.pushing") : t("project.push")}
+              </button>
+            )}
+            {isPushed && !isOutOfSync && (
+              <span className="azima-pushed-status">{t("azima.pushed")}</span>
+            )}
+            {prUrl ? (
+              <a
+                href={prUrl}
+                className="azima-pr-link"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onOpenPr) {
+                    e.preventDefault();
+                    onOpenPr(prUrl);
+                  }
+                }}
+              >
+                <ExternalLink size={12} />
+                <span>{prText}</span>
+              </a>
+            ) : prText ? (
+              <span className="azima-pr-badge">{prText}</span>
+            ) : null}
+          </div>
+        )}
+      </div>
       {open && (
         <div className="azima-parts">
           {proof && (
             <div className="azima-proof">
               <p>{t("azima.to_validate_title")}</p>
-              {azima.proofNeeds.length ? (
+              {proofNeeds.length ? (
                 <ul>
-                  {azima.proofNeeds.map((need, i) => (
+                  {proofNeeds.map((need, i) => (
                     <li key={i}>
                       {need.box}{" "}
                       <span className="muted-text">
