@@ -85,24 +85,27 @@ func TestReleaseNotes(t *testing.T) {
 	if !strings.Contains(workflow, `docs/releases/$GITHUB_REF_NAME.md`) || !strings.Contains(workflow, `--notes-file`) {
 		t.Errorf(".github/workflows/release.yml does not use --notes-file with docs/releases/$GITHUB_REF_NAME.md")
 	}
-	for _, feature := range []string{
-		"The window",
-		"Wishes and azimas",
-		"Questions that wait for you",
-		"Workers on Claude, Codex, or Antigravity",
-		"The orchestrator that integrates and pushes by itself",
-		"Tilasms",
-		"The command line",
-		"Backups",
-		"Updates from inside the app",
+	for _, azima := range []string{
+		"Djinn is a native window, the same interface as in the browser",
+		"What waits for you comes first, every question reads clearly",
+		"Every request finds its wish",
+		"Djinn decides, starts, resumes, integrates and pushes the workers' work by itself",
+		"Workers start fast, with the right context and the right model",
+		"Djinn can hand a task to Google's Antigravity CLI",
+		"One wish spans several projects, and a project's skills serve in another",
+		"Everything starts from the protos",
+		"Djinn runs on Windows as well as on macOS and Linux",
+		"Your wishes follow you",
+		"Djinn installs in a few minutes, and updates from inside the app",
+		"Every release ships ready-made binaries for each target",
 	} {
-		if !strings.Contains(notes, feature) {
-			t.Errorf("v0.1.0.md missing feature: %s", feature)
+		if !strings.Contains(notes, azima) {
+			t.Errorf("v0.1.0.md missing azima goal: %s", azima)
 		}
 	}
 	for _, section := range []string{
 		"## Install",
-		"## Status and Verification",
+		"## Under the hood",
 		"## License",
 	} {
 		if !strings.Contains(notes, section) {
