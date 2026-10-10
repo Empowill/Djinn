@@ -57,6 +57,9 @@ const (
 // pushIfDue pushes the integration branch of the wish wishID in project, or asks to, when a push is due: checked once a
 // task's work is committed there.
 func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.Project) {
+	if settings, err := plan.LoadSettings(h.home, project); err == nil && settings.Push == planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND {
+		return
+	}
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, wishID)
 	if err != nil {
 		log.Printf("djinn: push: %v", err)
@@ -79,7 +82,9 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 	every := time.Duration(wish.GetPushAfterMinutes()) * time.Minute
 	why := pushDue(committed, tasks, since, h.now(), cmp.Or(every, DefaultPushAfter), int(cmp.Or(wish.GetPushAfterTasks(), DefaultPushTasks)))
 	if why != "" {
-		h.push(ctx, wish, project, committed, why, false)
+		if _, err := h.push(ctx, wish, project, committed, why, false); err != nil {
+			log.Printf("djinn: push %s: %v", project.GetId(), err)
+		}
 	}
 }
 
@@ -101,7 +106,9 @@ func (h *Harness) pushApproved(ctx context.Context) {
 				log.Printf("djinn: push: %v", err)
 				continue
 			}
-			h.push(ctx, wish, project, committedSince(tasks, p.GetProjectId(), lastPush(wish, p)), "you said to push it", true)
+			if _, err := h.push(ctx, wish, project, committedSince(tasks, p.GetProjectId(), lastPush(wish, p)), "you said to push it", true); err != nil {
+				log.Printf("djinn: push %s: %v", p.GetProjectId(), err)
+			}
 		}
 	}
 }
@@ -210,7 +217,7 @@ func duration(d time.Duration) string {
 // push pushes the integration branch of wish in project to its remote, why saying why it is due, or asks the person
 // first in ask mode unless approved. committed are the tasks committed since the last push, whose work it brings:
 // each one's events say it. A branch with nothing the remote lacks, or a repository without a remote, pushes nothing.
-func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, why string, approved bool) {
+func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, why string, approved bool) (*planv1.IntegrationPush, error) {
 	pushing := ctx // git push stops with djinn up: an approval waits for the next start.
 	ctx = context.WithoutCancel(ctx)
 	h.pushMu.Lock()
@@ -220,21 +227,24 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 	remote, target := pushTarget(ctx, repo, branch)
 	if branch == "" || remote == "" {
 		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
-		return
+		if branch == "" {
+			return nil, errors.New("no integration branch for this wish")
+		}
+		return nil, fmt.Errorf("repository %s has no remote", repo)
 	}
 	titles, count, ahead, err := unpushed(ctx, repo, branch, remote)
 	if err != nil {
 		log.Printf("djinn: push %s: %v", branch, err)
-		return
+		return nil, err
 	}
 	if ahead == 0 {
 		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
-		return
+		return nil, errors.New("nothing to push: the remote is up to date")
 	}
 	sha, err := git(ctx, repo, "rev-parse", "refs/heads/"+branch)
 	if err != nil {
 		log.Printf("djinn: push %s: %v", branch, err)
-		return
+		return nil, err
 	}
 	state := pushState(wish, project.GetId())
 	unchecked := approved && state.GetUnchecked()
@@ -248,10 +258,10 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 		}
 		switch {
 		case stopped || pushing.Err() != nil:
-			return
+			return nil, pushing.Err()
 		case held != "":
 			h.holdPush(ctx, wish, project, committed, branch, sha, held, out)
-			return
+			return nil, fmt.Errorf("the push is held: its checks are red (%s)", held)
 		case state.GetHeld() != "" || state.GetHeldRuns() > 0:
 			err := h.store.Tx(ctx, func(tx *store.Tx) error {
 				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) { p.Held, p.HeldRuns = "", 0 })
@@ -270,11 +280,11 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 			h.pushSteps(ctx, committed, fmt.Sprintf("integration: a push of %s to %s is due (%s); Djinn asks you %s",
 				branch, remote, why, q.GetCode()))
 		}
-		return
+		return nil, nil
 	}
 	old, out, err := gitPush(pushing, repo, remote, branch, target)
 	if pushing.Err() != nil {
-		return
+		return nil, pushing.Err()
 	}
 	if err != nil {
 		reason := refusal(out, err)
@@ -285,7 +295,7 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 			h.pushSteps(ctx, committed, fmt.Sprintf("integration: %s refused the push of %s: %s; Djinn asks you %s",
 				remote, branch, headline(reason), q.GetCode()))
 		}
-		return
+		return nil, fmt.Errorf("%s refused the push: %s", remote, headline(reason))
 	}
 	record := &planv1.IntegrationPush{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Branch: branch, Remote: remote, OldSha: old, NewSha: sha,
@@ -302,6 +312,7 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 	})
 	if err != nil {
 		log.Printf("djinn: push %s: %v", branch, err)
+		return nil, err
 	}
 	if unchecked {
 		why += "; without the push checks, as you said"
@@ -312,6 +323,70 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 	if settings, err := plan.LoadSettings(h.home, project); err == nil && settings.Install != "" && h.built != nil {
 		h.built(h.build(ctx, wish, project, settings.Install, record, committed))
 	}
+	return record, nil
+}
+
+// Push pushes the integration branch of wishID in projectID: runs push checks under gates, never with --force.
+func (h *Harness) Push(ctx context.Context, wishID, projectID string) (*planv1.IntegrationPush, error) {
+	wish, err := store.Get[*planv1.Wish](ctx, h.store, wishID)
+	if err != nil {
+		return nil, err
+	}
+	project, err := store.Get[*planv1.Project](ctx, h.store, projectID)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
+	if err != nil {
+		return nil, err
+	}
+	state := pushState(wish, project.GetId())
+	since := lastPush(wish, state)
+	committed := committedSince(tasks, project.GetId(), since)
+	return h.push(ctx, wish, project, committed, "you said to push it", true)
+}
+
+// Sync computes how far the integration branch of wish in project is ahead of and behind its remote.
+func (h *Harness) Sync(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (*planv1.ProjectSync, error) {
+	if wish == nil || project == nil {
+		return nil, nil
+	}
+	branch := plan.IntegrationBranchOf(wish, project.GetId())
+	repo := project.GetDirectory()
+	if branch == "" || repo == "" {
+		return nil, nil
+	}
+	remote, target := pushTarget(ctx, repo, branch)
+	if remote == "" || target == "" {
+		return nil, nil
+	}
+	if _, err := git(ctx, repo, "rev-parse", "--verify", "refs/heads/"+branch); err != nil {
+		return nil, nil //nolint:nilerr // the integration branch does not exist yet
+	}
+	var ahead, behind int64
+	remoteRef := "refs/remotes/" + remote + "/" + target
+	if _, err := git(ctx, repo, "rev-parse", "--verify", remoteRef); err == nil {
+		if out, err := git(ctx, repo, "rev-list", "--count", "refs/heads/"+branch, "--not", remoteRef); err == nil {
+			ahead, _ = strconv.ParseInt(strings.TrimSpace(out), 10, 32)
+		}
+		if out, err := git(ctx, repo, "rev-list", "--count", remoteRef, "--not", "refs/heads/"+branch); err == nil {
+			behind, _ = strconv.ParseInt(strings.TrimSpace(out), 10, 32)
+		}
+	} else {
+		if out, err := git(ctx, repo, "rev-list", "--count", "refs/heads/"+branch, "--not", "--remotes="+remote); err == nil {
+			ahead, _ = strconv.ParseInt(strings.TrimSpace(out), 10, 32)
+		} else if out, err := git(ctx, repo, "rev-list", "--count", "refs/heads/"+branch); err == nil {
+			ahead, _ = strconv.ParseInt(strings.TrimSpace(out), 10, 32)
+		}
+	}
+	return &planv1.ProjectSync{
+		WishId: wish.GetId(),
+		Branch: branch,
+		Remote: remote,
+		Target: target,
+		Ahead:  int32(ahead),
+		Behind: int32(behind),
+	}, nil
 }
 
 // clearApproved forgets an approval that found nothing to push.

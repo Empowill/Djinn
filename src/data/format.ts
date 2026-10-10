@@ -8,6 +8,7 @@ import {
   type Mark,
   MarkKind,
   type Project,
+  type ProjectSync,
   Provider,
   type Question,
   RoundKind,
@@ -381,4 +382,34 @@ export function shortModel(model: string): string {
   }
 
   return m;
+}
+
+// syncDescription says how the integration branch stands against its remote target.
+export function syncDescription(sync?: ProjectSync): string {
+  if (!sync) return "";
+  const remote = sync.remote || "origin";
+  const target = sync.target || sync.branch || "";
+  if (sync.ahead > 0 && sync.behind > 0) {
+    return t("project.sync_ahead_behind", {
+      ahead: sync.ahead,
+      behind: sync.behind,
+      remote,
+      target,
+    });
+  }
+  if (sync.ahead > 0) {
+    return t("project.sync_ahead", {
+      count: sync.ahead,
+      remote,
+      target,
+    });
+  }
+  if (sync.behind > 0) {
+    return t("project.sync_behind", {
+      count: sync.behind,
+      remote,
+      target,
+    });
+  }
+  return "";
 }

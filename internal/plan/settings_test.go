@@ -189,6 +189,8 @@ func TestResolveSettings(t *testing.T) {
 		// Main's are TestMainSettings'.
 		got.MainBranch, got.MergeMain, got.MergeMainEvery, got.InstallReleases = "", 0, 0, false
 		got.MainBranchFrom, got.MergeMainFrom, got.MergeMainEveryFrom, got.InstallReleasesFrom = 0, 0, 0, 0
+		// Push is TestPushSettings'.
+		got.Push, got.PushFrom = 0, 0
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
@@ -334,7 +336,7 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, push=standard DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -353,7 +355,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY"; got != want {
+		"install=go tool task install REPOSITORY, push=standard DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
@@ -363,7 +365,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY"; got != want {
+		"install=go tool task install REPOSITORY, push=standard DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
 	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {
@@ -422,5 +424,57 @@ func TestDjinnsOwnSettings(t *testing.T) {
 	}
 	if got, want := ChecksText(s.GetChecks()), "lint: go tool task lint (commit); test: go tool task test (push)"; s.GetSetup() != "npm ci" || got != want {
 		t.Errorf("setup %q, checks %q; want npm ci, %q", s.GetSetup(), got, want)
+	}
+}
+
+// TestPushSettings: by default Djinn pushes at the standard cadence; either file changes it, the developer's
+// winning, and SaveDeveloperPush writes the developer's choice.
+func TestPushSettings(t *testing.T) {
+	const (
+		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
+		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
+		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+	)
+	standard, onDemand := planv1.ProjectPush_PROJECT_PUSH_STANDARD, planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND
+	for _, c := range []struct {
+		name      string
+		repo, dev *planv1.ProjectSettings
+		wantPush  planv1.ProjectPush
+		wantFrom  planv1.SettingSource
+		wantWord  string
+	}{
+		{"neither file", nil, nil, standard, def, "standard"},
+		{"the team's on demand", &planv1.ProjectSettings{Push: &onDemand}, nil, onDemand, repo, "on_demand"},
+		{"the developer overrides to standard", &planv1.ProjectSettings{Push: &onDemand}, &planv1.ProjectSettings{Push: &standard}, standard, dev, "standard"},
+	} {
+		s := ResolveSettings(c.repo, c.dev)
+		if s.Push != c.wantPush || s.PushFrom != c.wantFrom {
+			t.Errorf("%s: push=%v from=%v; want %v from=%v", c.name, s.Push, s.PushFrom, c.wantPush, c.wantFrom)
+		}
+		if got := ProjectPushWord(s.Push); got != c.wantWord {
+			t.Errorf("%s: word=%s; want %s", c.name, got, c.wantWord)
+		}
+	}
+
+	home := t.TempDir()
+	projectID := "01946059-e68b-7cb8-8c1d-6b586e3f4ea2"
+	project := &planv1.Project{Id: projectID}
+
+	if err := SaveDeveloperPush(home, projectID, onDemand); err != nil {
+		t.Fatalf("SaveDeveloperPush: %v", err)
+	}
+	s, err := LoadSettings(home, project)
+	if err != nil {
+		t.Fatalf("LoadSettings: %v", err)
+	}
+	if s.Push != onDemand || s.PushFrom != dev {
+		t.Errorf("saved developer push: %v from %v; want on_demand from developer", s.Push, s.PushFrom)
+	}
+
+	if err := SaveDeveloperPush("", projectID, onDemand); err == nil {
+		t.Error("SaveDeveloperPush without home: want error")
+	}
+	if err := SaveDeveloperPush(home, "", onDemand); err == nil {
+		t.Error("SaveDeveloperPush without project ID: want error")
 	}
 }
