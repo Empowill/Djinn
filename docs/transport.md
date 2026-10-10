@@ -72,6 +72,8 @@ Binary halves the round trip of a workspace of 32 KiB or more; a 1 KiB call is w
 messages of 256 bytes takes 22 to 28 µs a message on `wails://` (the page reads them in about 10 reads), against
 130 µs on loopback HTTP (about two reads a message), in either format.
 
+For wish-level benchmarks measuring store reads, full Protobuf serialization, and incremental watch delivery on real-size wishes, see [`docs/performance.md`](performance.md).
+
 ## Set aside
 
 - **h2c for the command line**: slower for what it does today (above). It comes back with the first bidirectional
