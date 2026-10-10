@@ -169,9 +169,11 @@ func startPoint(ctx context.Context, dir, integration string) (sha, from string,
 }
 
 // removeWorktree removes the worktree path of the repository holding dir; its branch stays. Without force, git
-// refuses a worktree with changes not committed. A worktree already deleted by hand is forgotten.
+// refuses a worktree with changes not committed. A worktree already deleted by hand is forgotten. The agy project
+// of its workers goes with it.
 func removeWorktree(ctx context.Context, dir, path string, force bool) error {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		forgetAgyProject(path)
 		_, err := git(ctx, dir, "worktree", "prune")
 		return err
 	}
@@ -180,5 +182,8 @@ func removeWorktree(ctx context.Context, dir, path string, force bool) error {
 		args = append(args, "--force")
 	}
 	_, err := git(ctx, dir, append(args, path)...)
+	if err == nil {
+		forgetAgyProject(path)
+	}
 	return err
 }
