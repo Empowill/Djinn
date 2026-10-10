@@ -69,8 +69,42 @@ func TestAgyProject(t *testing.T) {
 	for _, tt := range projects {
 		f := agyProject(tt.spec)
 		g := f.PermissionGrants.PermissionGrants
-		if f.ID != agyProjectID(tt.spec.Dir) || !slices.Equal(g.Allow, tt.allow) || !slices.Equal(g.Deny, tt.deny) {
-			t.Errorf("agyProject(%v) = %+v\nwant allow %q, deny %q", tt.spec.Permissions, f, tt.allow, tt.deny)
+		if f.ID != agyProjectID(tt.spec.Dir) {
+			t.Errorf("agyProject(%v) ID = %q, want %q", tt.spec.Permissions, f.ID, agyProjectID(tt.spec.Dir))
+		}
+		for _, a := range tt.allow {
+			if !slices.Contains(g.Allow, a) {
+				t.Errorf("agyProject(%v) missing allow %q; got %+v", tt.spec.Permissions, a, g.Allow)
+			}
+		}
+		for _, d := range tt.deny {
+			if !slices.Contains(g.Deny, d) {
+				t.Errorf("agyProject(%v) missing deny %q; got %+v", tt.spec.Permissions, d, g.Deny)
+			}
+		}
+	}
+	home, _ := os.UserHomeDir()
+	goRoot, modCache, buildCache, npmCache := agyCaches()
+	fAuto := agyProject(Spec{Dir: wt, Permissions: auto})
+	gAuto := fAuto.PermissionGrants.PermissionGrants
+	for _, want := range []string{
+		"read_file(" + wt + ")",
+		"read_file(" + common + ")",
+		"read_file(" + repo + ")",
+		"read_file(" + goRoot + ")",
+		"read_file(" + modCache + ")",
+		"read_file(" + buildCache + ")",
+		"read_file(" + npmCache + ")",
+		"read_file(" + home + ")",
+	} {
+		if !slices.Contains(gAuto.Allow, want) {
+			t.Errorf("missing read grant %q", want)
+		}
+	}
+	for _, s := range []string{".ssh", ".gnupg", filepath.Join(".config", "gh"), filepath.Join(".config", "gcloud"), ".aws", ".netrc", ".git-credentials"} {
+		want := "read_file(" + filepath.Join(home, s) + ")"
+		if !slices.Contains(gAuto.Deny, want) {
+			t.Errorf("missing secret denial %q", want)
 		}
 	}
 	if agyProjectID(wt) == agyProjectID(rel) || agyProjectID(wt) != agyProjectID(wt+string(filepath.Separator)) {
@@ -93,5 +127,74 @@ func TestAgyProject(t *testing.T) {
 	forgetAgyProject(wt)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("project file after the worktree is gone: %v", err)
+	}
+}
+
+// TestAgyProjectDjinnDirDenials tests that agyProject grants read access to the active task's worktree
+// inside DJINN_HOME while recursively denying sibling worktrees, sibling projects, and data files.
+// When the worktree is outside DJINN_HOME, the entire DJINN_HOME is denied.
+func TestAgyProjectDjinnDirDenials(t *testing.T) {
+	djinnHome := t.TempDir()
+	t.Setenv("DJINN_HOME", djinnHome)
+
+	// Create structure inside djinnHome:
+	// djinn.db
+	// tilasms/
+	// projects/
+	//   p1/
+	//     worktrees/
+	//       w1/ (active task's worktree)
+	//       w2/ (sibling worktree)
+	//   p2/ (sibling project)
+	if err := os.WriteFile(filepath.Join(djinnHome, "djinn.db"), []byte("db"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(djinnHome, "tilasms"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w1 := filepath.Join(djinnHome, "projects", "p1", "worktrees", "w1")
+	w2 := filepath.Join(djinnHome, "projects", "p1", "worktrees", "w2")
+	p2 := filepath.Join(djinnHome, "projects", "p2")
+	for _, d := range []string{w1, w2, p2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	spec := Spec{Dir: w1, Permissions: &djinnv1.Permissions{Edit: true}}
+	f := agyProject(spec)
+	g := f.PermissionGrants.PermissionGrants
+
+	// Worktree w1 must be allowed for reading and writing.
+	if !slices.Contains(g.Allow, "read_file("+w1+")") {
+		t.Errorf("missing read_file grant for worktree %s", w1)
+	}
+	if !slices.Contains(g.Allow, "write_file("+w1+")") {
+		t.Errorf("missing write_file grant for worktree %s", w1)
+	}
+
+	// Siblings must be denied:
+	for _, denied := range []string{
+		"read_file(" + filepath.Join(djinnHome, "djinn.db") + ")",
+		"read_file(" + filepath.Join(djinnHome, "tilasms") + ")",
+		"read_file(" + p2 + ")",
+		"read_file(" + w2 + ")",
+	} {
+		if !slices.Contains(g.Deny, denied) {
+			t.Errorf("missing denial %q in %+v", denied, g.Deny)
+		}
+	}
+
+	// Worktree w1 itself must NOT be denied.
+	if slices.Contains(g.Deny, "read_file("+w1+")") {
+		t.Errorf("worktree %s was denied!", w1)
+	}
+
+	// When worktree is outside DJINN_HOME, the entire DJINN_HOME is denied.
+	outside := t.TempDir()
+	fOutside := agyProject(Spec{Dir: outside, Permissions: &djinnv1.Permissions{Edit: true}})
+	gOutside := fOutside.PermissionGrants.PermissionGrants
+	if !slices.Contains(gOutside.Deny, "read_file("+djinnHome+")") {
+		t.Errorf("outside worktree missing denial for %s; got %+v", djinnHome, gOutside.Deny)
 	}
 }
