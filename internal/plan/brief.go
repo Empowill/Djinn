@@ -98,6 +98,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"\"Q03: enlighten\": it reads, then revises the question. You are told when each one starts and ends, and what it " +
 	"spawned, asked or revised: check it, do not do it again. When the line says \"Act on it\" or \"Investigate\", " +
 	"question workers are off and the move is yours.\n" +
+	"- **Check every task that ends.** Read its final note (`djinn task watch <task>`, or the line Djinn types): " +
+	"when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial " +
+	"result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about " +
+	"it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too " +
+	"(your rule).\n" +
 	"- **Blocks are for agents**: a hand-off, a reference, a decision taken outside a question (kind decision, which " +
 	"the decision log shows). The developer does not read blocks: what the developer must see is a question.\n" +
 	"- **To explain a concept, make a tilasm** (the developer may say talisman): a folder with an `index.html` and its " +

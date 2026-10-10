@@ -121,6 +121,8 @@ func TestBrief(t *testing.T) {
 		"goes in its `--context`", "ask again, a new question, only on a real doubt", "**Blocks are for agents**",
 		"Every move only the developer can make (push a tag, merge or open a pull request, create a release",
 		"--move",
+		"**Check every task that ends.**",
+		"Read its final note (`djinn task watch <task>`, or the line Djinn types)",
 		// An azima carries one clear goal, and new work finds its azima first.
 		"**An azima carries one clear goal**", "rephrase its goal (its plan file's Goal and its title",
 		"open a new azima only for a will no existing one carries",

@@ -218,7 +218,7 @@ func converterPrompt(q *planv1.Question, retry, brief string) (title, prompt str
 		"(`djinn task list --wish-id %[2]s`): group what goes together, never mix what does not, and spawn no duplicate "+
 		"of a task that exists. Open a new azima (`--kind azima`, one sentence a user reads as a feature) only for a "+
 		"will no existing one carries. A task that extends an azima beyond its goal: say so in your last line, the "+
-		"lead rephrases its goal.\n"+
+		"lead rephrases its goal. Check every task that ends. Read its final note (`djinn task watch <task>`, or the line Djinn types): when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too.\n"+
 		"3. If the answer leaves something open, do not guess: ask it, `djinn question ask \"…\" %[2]s --options \"…\" "+
 		"--options \"…\" --recommendation \"…\" --context \"…\"`, its context naming %[1]s. Every move only the developer can make (push a tag, merge or open a pull request, create a release, try something on a machine Djinn does not have, grant a right, install and restart) is asked as a question (`djinn question ask`, with what exactly to run or click, and why now), the moment it becomes due; never left in a note or a terminal line.\n"+
 		"4. If the decision calls for no work, spawn nothing and say why in one sentence.\n"+
@@ -448,6 +448,8 @@ func questionEndLine(t *planv1.Task, tasks []*planv1.Task, questions []*planv1.Q
 		line += fmt.Sprintf(" Nothing came of %s: act on it, djinn wish brief %s has the context.", code, wish)
 	case t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
 		line += fmt.Sprintf(" Check what is left of %s: djinn wish brief %s has the context.", code, wish)
+	case len(spawned) > 0:
+		line += " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too."
 	}
 	return line
 }
