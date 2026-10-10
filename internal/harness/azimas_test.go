@@ -237,7 +237,7 @@ func TestSyncPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	newer := []string{"T25", "T26"}
+	newer := []string{"T25", "T26", "T27"}
 	// A made azima takes its file's after line, once.
 	t26 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T26" })
 	if _, err := plan.WriteAfter(filepath.Join(dir, files[t26].Path), []string{"T13"}); err != nil {

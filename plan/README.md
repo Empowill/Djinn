@@ -33,6 +33,7 @@ other tracker and no cloud service. A new task is a new file here, with a fresh 
 | T18 | 2 | Antigravity as a worker provider | [a72eb1f8-antigravity-provider.md](a72eb1f8-antigravity-provider.md) |
 | T25 | 2 | Understand and decide at a glance | [4a699d0f-review-at-a-glance.md](4a699d0f-review-at-a-glance.md) |
 | T26 | 2 | Every request finds its wish | [e1210c5e-request-routing.md](e1210c5e-request-routing.md) |
+| T27 | 2 | Djinn stays fast, whatever the size of a wish: the window, djinn up and its start | [9ac1c08b-djinn-stays-fast.md](9ac1c08b-djinn-stays-fast.md) |
 | T19 | 3 | Releases: binaries for every target | [71f9c331-releases.md](71f9c331-releases.md) |
 | T20 | 3 | Your wishes follow you | [9b71f059-backup.md](9b71f059-backup.md) |
 

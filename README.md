@@ -72,6 +72,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - [ ] [T18 · Antigravity as a worker provider](plan/a72eb1f8-antigravity-provider.md) (in progress)
 - [ ] [T25 · Understand and decide at a glance: what waits for you first, clear questions, tilasms](plan/4a699d0f-review-at-a-glance.md) (in progress)
 - [ ] [T26 · Every request finds its wish: routing, wish templates, an inbox](plan/e1210c5e-request-routing.md) (in progress)
+- [ ] [T27 · Djinn stays fast, whatever the size of a wish: the window, djinn up and its start](plan/9ac1c08b-djinn-stays-fast.md) (in progress)
 
 **Phase 3 · Comfort**
 
