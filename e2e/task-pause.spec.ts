@@ -63,6 +63,7 @@ test("a worker paused from its card holds, then goes on once resumed", async ({
       card.getByRole("button", { name: "Pause the worker" }),
     ).toHaveCount(0);
     await card.getByRole("button", { name: /Work a long while/ }).click();
+    await card.locator(".wish-task-events-fold summary").click();
     await expect(
       card.locator(".wish-event").getByText(/^paused: /),
     ).toBeVisible();

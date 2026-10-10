@@ -71,6 +71,12 @@ function server(data) {
           nextPageToken: data.tasksNextToken ?? "",
         };
       },
+      get: (req) => {
+        count("taskGet");
+        if (data.getTask) return data.getTask(req);
+        const task = data.tasks?.find((t) => t.id === req.taskId);
+        return { task };
+      },
       watch: async function* (req) {
         count("events");
         for (const event of data.events.filter((e) => e.seq > req.afterSeq))
@@ -111,7 +117,16 @@ function sample() {
   return {
     wishes: [{ id: wishId, title: "Ship the lamp", rank: 1, state: 1 }],
     projects: [{ id: "p1", name: "lamp" }],
-    tasks: [{ id: taskId, wishId, code: "T01", title: "Polish", status: 2 }],
+    tasks: [
+      {
+        id: taskId,
+        wishId,
+        code: "T01",
+        title: "Polish",
+        status: 2,
+        prompt: "Polish the brass with care",
+      },
+    ],
     questions: [{ id: "q1", wishId, code: "Q01", text: "Oil?" }],
     blocks: [{ id: "b1", wishId, title: "Lexicon", content: "A wick." }],
     inbox: [{ id: "i1", source: "babysit-mr", text: "Babysit !12" }],
@@ -226,6 +241,36 @@ test("a task's events come in order, and a second follow reads only what is new"
   state = await until(store, (s) => s.events[taskId]?.length === 3);
   assert.equal(state.events[taskId][2].text, "ended");
   assert.equal(reads.events, 2);
+});
+
+test("reading a task's prompt gets the task alone without following its events", async () => {
+  const data = sample();
+  const { clients, reads } = server(data);
+  const store = createStore(clients, 10);
+  const prompt = await store.readPrompt(taskId);
+  assert.equal(prompt, "Polish the brass with care");
+  assert.equal(reads.taskGet, 1);
+  assert.equal(reads.events, undefined);
+  // A second read takes the prompt from the store's cache.
+  const cached = await store.readPrompt(taskId);
+  assert.equal(cached, "Polish the brass with care");
+  assert.equal(reads.taskGet, 1);
+});
+
+test("opening a wish does not follow its tasks' events until follow is requested", async () => {
+  const data = sample();
+  const { clients, reads } = server(data);
+  const store = createStore(clients, 10);
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.tasks.length === 1);
+  assert.equal(reads.events, undefined);
+
+  // Following the task starts reading its events.
+  const release = store.follow(taskId);
+  await until(store, (s) => s.events[taskId]?.length === 2);
+  assert.equal(reads.events, 1);
+  assert.equal(store.getState().prompts[taskId], "Polish the brass");
+  release();
 });
 
 test("a write the page made is read at once", async () => {

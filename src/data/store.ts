@@ -22,6 +22,7 @@ import {
   QuestionSchema,
   type Task,
   type TaskEvent,
+  TaskEventKind,
   TaskSchema,
   type Wish,
   WishSchema,
@@ -68,6 +69,8 @@ export interface State {
   sources: InboxSource[];
   // The events of the tasks followed, oldest first.
   events: Readonly<Record<string, TaskEvent[]>>;
+  // The first prompt of each task read alone or followed, by task id.
+  prompts: Readonly<Record<string, string>>;
   machine?: Machine;
   gates: Gate[];
 }
@@ -86,6 +89,8 @@ export interface Store {
   loadMore(wishId: string, kind: Change): Promise<void>;
   // Follows a task's events until the returned function is called, or the task ends.
   follow(taskId: string): () => void;
+  // Reads a task's prompt alone, without loading its other events.
+  readPrompt(taskId: string): Promise<string>;
   // Reads again what changed, as a write the page made says it: the watch says it too, a moment later.
   changed(wishId: string, changes: Change[]): Promise<void>;
   // Reads the machine and its gates.
@@ -298,6 +303,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
     inbox: [],
     sources: [],
     events: {},
+    prompts: {},
     gates: [],
   };
   const listeners = new Set<() => void>();
@@ -316,6 +322,7 @@ export function createStore(clients: Clients, retry = 1000): Store {
   };
   const opened = new Map<string, number>();
   const loadingMore = new Set<string>();
+  const pendingPrompts = new Map<string, Promise<string>>();
   let flushing: Promise<void> | undefined;
   let again = false;
 
@@ -564,11 +571,19 @@ export function createStore(clients: Clients, retry = 1000): Store {
     const push = () => {
       timer = undefined;
       if (!buffer.length) return;
+      const promptEvent = buffer.find((e) => e.kind === TaskEventKind.PROMPT);
+      const patchPrompts =
+        promptEvent && !state.prompts[taskId]
+          ? { prompts: { ...state.prompts, [taskId]: promptEvent.text } }
+          : undefined;
       const kept = [...(state.events[taskId] ?? []), ...buffer].slice(
         -MAX_EVENTS,
       );
       buffer = [];
-      set({ events: { ...state.events, [taskId]: kept } });
+      set({
+        events: { ...state.events, [taskId]: kept },
+        ...(patchPrompts ?? {}),
+      });
     };
     for (;;) {
       const known = state.events[taskId] ?? [];
@@ -763,6 +778,25 @@ export function createStore(clients: Clients, retry = 1000): Store {
         entry.abort.abort();
         following.delete(taskId);
       };
+    },
+    async readPrompt(taskId) {
+      if (state.prompts[taskId]) return state.prompts[taskId];
+      const pending = pendingPrompts.get(taskId);
+      if (pending) return pending;
+      const read = (async () => {
+        try {
+          const res = await clients.tasks.get({ taskId });
+          const prompt = res.task?.prompt ?? "";
+          if (prompt) {
+            set({ prompts: { ...state.prompts, [taskId]: prompt } });
+          }
+          return prompt;
+        } finally {
+          pendingPrompts.delete(taskId);
+        }
+      })();
+      pendingPrompts.set(taskId, read);
+      return read;
     },
     changed(wishId, changes) {
       mark(wishId, changes);
