@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -50,6 +52,7 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 	task := &planv1.Task{
 		Id: store.NewID(), WishId: wish.GetId(), ProjectId: project.GetId(), Title: req.GetTitle(),
 		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Kind: planv1.TaskKind_TASK_KIND_AZIMA, CreateTime: timestamppb.Now(),
+		Draft: req.GetDraft(), Description: req.GetDescription(),
 	}
 	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
@@ -403,6 +406,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 				}
 				t := r.azima
 				t.Kind, t.Title, t.Phase, t.PlanFile = planv1.TaskKind_TASK_KIND_AZIMA, cmp.Or(f.Title, t.GetTitle(), f.Code), f.Phase, f.Path
+				t.Draft, t.Description = f.Draft(), f.Description
 				if t.GetProjectId() == "" {
 					t.ProjectId = src.project.GetId()
 				}
@@ -555,4 +559,313 @@ func azimaID(ctx context.Context, r store.Reader, fileID string) (string, error)
 		return "", err
 	}
 	return store.NewID(), nil
+}
+
+// DescribeTask sets the description of an azima, and writes it back to its plan file if it has one.
+func (h *Harness) DescribeTask(ctx context.Context, procedure string, req *planv1.TaskServiceDescribeRequest) (*planv1.Task, error) {
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	var task *planv1.Task
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		var err error
+		task, err = findAzima(ctx, tx, req.GetAzima())
+		if err != nil {
+			return err
+		}
+		if task.GetPlanFile() != "" && task.GetProjectId() != "" {
+			project, err := store.Get[*planv1.Project](ctx, tx, task.GetProjectId())
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+			if project != nil && project.GetDirectory() != "" {
+				planPath := filepath.Join(project.GetDirectory(), filepath.FromSlash(task.GetPlanFile()))
+				if _, err := plan.WriteDescription(planPath, req.GetText()); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return connect.NewError(connect.CodeInternal, fmt.Errorf("write description: %w", err))
+				}
+			}
+		}
+		task.Description = req.GetText()
+		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.notify()
+	return task, nil
+}
+
+// Open turns a draft azima OPEN: its plan file front matter says status: open, and the lead is told to plan its tasks.
+func (h *Harness) Open(ctx context.Context, procedure string, req *planv1.TaskServiceOpenRequest) (*planv1.Task, error) {
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	var task *planv1.Task
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		var err error
+		task, err = findAzima(ctx, tx, req.GetAzima())
+		if err != nil {
+			return err
+		}
+		if !task.GetDraft() {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("azima %s is not a draft", task.GetCode()))
+		}
+		if task.GetPlanFile() != "" && task.GetProjectId() != "" {
+			project, err := store.Get[*planv1.Project](ctx, tx, task.GetProjectId())
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+			if project != nil && project.GetDirectory() != "" {
+				planPath := filepath.Join(project.GetDirectory(), filepath.FromSlash(task.GetPlanFile()))
+				if _, err := plan.WriteStatus(planPath, "open"); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return connect.NewError(connect.CodeInternal, fmt.Errorf("write status: %w", err))
+				}
+			}
+		}
+		task.Draft = false
+		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.notify()
+	h.wake()
+	h.mu.Lock()
+	tell := h.tell
+	h.mu.Unlock()
+	if tell != nil {
+		_ = tell(ctx, task.GetWishId(), fmt.Sprintf("Djinn: azima %s opened: plan its tasks", task.GetCode()))
+	}
+	return task, nil
+}
+
+// Move moves an azima and its unstarted parts to another wish, with its plan file reference.
+func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskServiceMoveRequest) (*planv1.Task, error) {
+	h.sched.Lock()
+	defer h.sched.Unlock()
+	var movedAzima *planv1.Task
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		targetWish, err := resolveWish(ctx, tx, req.GetWish())
+		if err != nil {
+			return err
+		}
+		azima, err := findAzima(ctx, tx, req.GetAzima(), targetWish.GetId())
+		if err != nil {
+			return err
+		}
+		if targetWish.GetId() == azima.GetWishId() {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("azima is already in this wish"))
+		}
+		sourceWish, err := store.Get[*planv1.Wish](ctx, tx, azima.GetWishId())
+		if err != nil {
+			return err
+		}
+
+		sourceTasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": sourceWish.GetId()})
+		if err != nil {
+			return err
+		}
+
+		moving := []*planv1.Task{azima}
+		movingIDs := map[string]bool{azima.GetId(): true}
+		queue := []string{azima.GetId()}
+		for len(queue) > 0 {
+			curr := queue[0]
+			queue = queue[1:]
+			for _, t := range sourceTasks {
+				if t.GetPartOf() == curr && !movingIDs[t.GetId()] {
+					movingIDs[t.GetId()] = true
+					moving = append(moving, t)
+					queue = append(queue, t.GetId())
+				}
+			}
+		}
+
+		for _, t := range moving {
+			if h.hasRun(t.GetId()) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
+				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s runs: move it once it ended", t.GetCode()))
+			}
+			if !plan.IsAzima(t) {
+				if where := started(t, false); where != "" {
+					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s has started (%s): move an azima before its parts start", t.GetCode(), where))
+				}
+			}
+		}
+
+		targetTasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": targetWish.GetId()})
+		if err != nil {
+			return err
+		}
+
+		targetCodes := map[string]bool{}
+		for _, t := range targetTasks {
+			targetCodes[strings.ToUpper(t.GetCode())] = true
+		}
+		for _, c := range targetWish.GetRetiredCodes() {
+			targetCodes[strings.ToUpper(c)] = true
+		}
+
+		for _, t := range moving {
+			var keptDeps []string
+			for _, depID := range t.GetDependsOn() {
+				if movingIDs[depID] {
+					keptDeps = append(keptDeps, depID)
+				}
+			}
+			t.DependsOn = keptDeps
+		}
+
+		allTarget := append(slices.Clone(targetTasks), moving...)
+		for _, t := range moving {
+			if cycle := closesCycle(t, t.GetDependsOn(), t.GetPartOf(), allTarget); cycle != "" {
+				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the tasks of a wish form no cycle: %s", cycle))
+			}
+		}
+
+		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+			return err
+		}
+
+		for _, t := range sourceTasks {
+			if movingIDs[t.GetId()] {
+				continue
+			}
+			origLen := len(t.GetDependsOn())
+			t.DependsOn = slices.DeleteFunc(t.DependsOn, func(id string) bool { return movingIDs[id] })
+			if len(t.GetDependsOn()) != origLen {
+				if err := tx.Put(t); err != nil {
+					return err
+				}
+			}
+		}
+
+		for _, t := range moving {
+			if pID := t.GetProjectId(); pID != "" && !slices.Contains(targetWish.GetProjectIds(), pID) {
+				targetWish.ProjectIds = append(targetWish.ProjectIds, pID)
+			}
+		}
+
+		for _, t := range moving {
+			if !slices.Contains(sourceWish.GetRetiredCodes(), t.GetCode()) {
+				sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, t.GetCode())
+			}
+			t.WishId = targetWish.GetId()
+			codeKey := strings.ToUpper(t.GetCode())
+			if targetCodes[codeKey] {
+				letter := "W"
+				if plan.IsAzima(t) {
+					letter = "T"
+				}
+				newCode, err := nextNumber(ctx, tx, targetWish.GetId(), letter)
+				if err != nil {
+					return err
+				}
+				t.Code = newCode
+			}
+			targetCodes[strings.ToUpper(t.GetCode())] = true
+			if err := tx.Put(t); err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Put(sourceWish); err != nil {
+			return err
+		}
+		if err := tx.Put(targetWish); err != nil {
+			return err
+		}
+
+		movedAzima = azima
+		return nil
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	h.notify()
+	h.wake()
+	return movedAzima, nil
+}
+
+// findAzima finds an azima by identifier or code across tasks in the store.
+func findAzima(ctx context.Context, r store.Reader, name string, notInWish ...string) (*planv1.Task, error) {
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("azima is required"))
+	}
+	if t, err := store.Get[*planv1.Task](ctx, r, name); err == nil {
+		if !plan.IsAzima(t) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is work, not an azima", t.GetCode()))
+		}
+		return t, nil
+	}
+	tasks, err := store.List[*planv1.Task](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	var matches []*planv1.Task
+	for _, t := range tasks {
+		if plan.IsAzima(t) && strings.EqualFold(t.GetCode(), name) {
+			matches = append(matches, t)
+		}
+	}
+	if len(notInWish) > 0 && notInWish[0] != "" && len(matches) > 1 {
+		var filtered []*planv1.Task
+		for _, m := range matches {
+			if m.GetWishId() != notInWish[0] {
+				filtered = append(filtered, m)
+			}
+		}
+		if len(filtered) > 0 {
+			matches = filtered
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("azima %s not found", name))
+	case 1:
+		return matches[0], nil
+	default:
+		actives, err := plan.ActiveWishes(ctx, r)
+		if err == nil {
+			for _, w := range actives {
+				for _, m := range matches {
+					if m.GetWishId() == w.GetId() {
+						return m, nil
+					}
+				}
+			}
+		}
+		return matches[0], nil
+	}
+}
+
+// resolveWish finds a wish by identifier, rank (e.g. W1, 1), or title.
+func resolveWish(ctx context.Context, r store.Reader, name string) (*planv1.Wish, error) {
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("wish is required"))
+	}
+	if w, err := store.Get[*planv1.Wish](ctx, r, name); err == nil {
+		return w, nil
+	}
+	all, err := store.List[*planv1.Wish](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	norm := strings.TrimPrefix(strings.ToUpper(name), "W")
+	if n, err := strconv.Atoi(norm); err == nil && n > 0 {
+		for _, w := range all {
+			if int(w.GetRank()) == n {
+				return w, nil
+			}
+		}
+	}
+	for _, w := range all {
+		if strings.EqualFold(w.GetId(), name) || strings.EqualFold(w.GetTitle(), name) {
+			return w, nil
+		}
+	}
+	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("wish %s not found", name))
 }

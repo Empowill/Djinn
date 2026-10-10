@@ -102,12 +102,16 @@ export function Fold({
   id,
   count,
   open = false,
+  labelHidden,
+  labelShown,
   children,
 }: {
   // Its key for the window's session: the same key, the same state.
   id: string;
   count: number;
   open?: boolean;
+  labelHidden?: string;
+  labelShown?: string;
   children: ReactNode;
 }) {
   const [shown, setShown] = useState(() => open || unfolded.has(id));
@@ -131,7 +135,9 @@ export function Fold({
         onClick={() => show(!shown)}
       >
         <ChevronDown size={14} className={shown ? "rotated" : ""} />
-        {shown ? t("tasks.hide_finished") : t("tasks.show_finished", { count })}
+        {shown
+          ? (labelShown ?? t("tasks.hide_finished"))
+          : (labelHidden ?? t("tasks.show_finished", { count }))}
       </button>
       {shown && children}
     </>
@@ -139,15 +145,18 @@ export function Fold({
 }
 
 // TaskSections lays out the Tasks tab: the tasks that move or wait, then the azimas with the work part of them, the
-// done ones folded. Without azimas, their section is hidden.
-export function TaskSections<T, A = never>({
+// done ones folded, and drafts at the end in their own fold. Without azimas or drafts, their sections are hidden.
+export function TaskSections<T, A = never, D = never>({
   moving,
   render,
   azimas = [],
   doneAzimas = [],
   renderAzima,
+  drafts = [],
+  renderDraft,
   fold = "",
   showDone = false,
+  showDrafts = false,
   aside,
 }: {
   moving: readonly T[];
@@ -156,10 +165,15 @@ export function TaskSections<T, A = never>({
   azimas?: readonly A[];
   doneAzimas?: readonly A[];
   renderAzima?: (azima: A) => ReactNode;
-  // The key of the done azimas' Fold: the wish's id, or the flight plan's.
+  // The draft azimas, behind their Fold at the end of the Tasks tab.
+  drafts?: readonly D[];
+  renderDraft?: (draft: D) => ReactNode;
+  // The key of the folds: the wish's id, or the flight plan's.
   fold?: string;
   // The done azimas show: a link brings one of them, or one of their parts, into sight.
   showDone?: boolean;
+  // The draft azimas show: a link brings one into sight.
+  showDrafts?: boolean;
   // Beside the first title: what the tasks spent.
   aside?: ReactNode;
 }) {
@@ -202,6 +216,24 @@ export function TaskSections<T, A = never>({
           <Fold id={`azimas:${fold}`} count={doneAzimas.length} open={showDone}>
             <div className="card-grid azima-grid">
               {doneAzimas.map(renderAzima)}
+            </div>
+          </Fold>
+        </section>
+      )}
+      {drafts.length > 0 && renderDraft && (
+        <section
+          className="wish-section tasks-drafts"
+          aria-label={t("tasks.show_drafts", { count: drafts.length })}
+        >
+          <Fold
+            id={`drafts:${fold}`}
+            count={drafts.length}
+            open={showDrafts}
+            labelHidden={t("tasks.show_drafts", { count: drafts.length })}
+            labelShown={t("tasks.hide_drafts")}
+          >
+            <div className="card-grid azima-grid">
+              {drafts.map(renderDraft)}
             </div>
           </Fold>
         </section>

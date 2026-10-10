@@ -78,17 +78,22 @@ func Ranked(all []*planv1.Wish) []*planv1.Wish {
 }
 
 // Ready tells whether Djinn proposes to grant a wish that has these tasks and questions: it has tasks, every one
-// finished (done, stopped by the user, or cut short for good), and no question is open. A task waiting for an
-// answer, failed, resuming, planned or running keeps it from being ready. Djinn only proposes: the user grants.
+// finished (done, stopped by the user, or cut short for good), and no question is open. A draft azima is not
+// counted in the wish's progress: it waits to be opened. Djinn only proposes: the user grants.
 func Ready(tasks []*planv1.Task, questions []*planv1.Question) bool {
-	if len(tasks) == 0 {
-		return false
-	}
+	hasNonDraft := false
 	for _, t := range tasks {
+		if t.GetDraft() {
+			continue
+		}
+		hasNonDraft = true
 		// Cut short for good counts as finished: see Finished.
 		if !Finished(t) {
 			return false
 		}
+	}
+	if !hasNonDraft {
+		return false
 	}
 	for _, q := range questions {
 		if q.GetAnswer() == nil {

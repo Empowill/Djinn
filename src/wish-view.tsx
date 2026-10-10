@@ -64,6 +64,7 @@ import {
   taskMapOf,
   waitingTasks,
   azimasDone,
+  draftAzimas,
   workCount,
 } from "./data/flight";
 import {
@@ -92,7 +93,12 @@ import { OlderLine, useRecent } from "./older";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
 import { CountPill, StatusBadge } from "./status";
-import { AzimaCard, azimaFinished } from "./azima";
+import {
+  AzimaCard,
+  azimaFinished,
+  DraftAzimaCard,
+  MoveAzimaDialog,
+} from "./azima";
 import { kindsForView, TaskSections, type View, ViewTabs } from "./task-tabs";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
@@ -130,6 +136,7 @@ export function WishView({
     () => new Map(allProjects.map((p) => [p.id, p])),
     [allProjects],
   );
+  const allWishes = useData((s) => s.wishes);
   const pausable = usePausable();
   const initialKinds = useMemo(
     () => kindsForView(opening ? "tilasms" : "main"),
@@ -170,6 +177,7 @@ export function WishView({
   const granted = wish.state === WishState.GRANTED;
   const [view, setView] = useState<View>(opening ? "tilasms" : "main");
   const [deleting, setDeleting] = useState(false);
+  const [movingAzima, setMovingAzima] = useState<Task | null>(null);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
   const show = useCallback(
@@ -205,6 +213,11 @@ export function WishView({
         (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
       ),
     [doneAzimas, focus],
+  );
+  const drafts = useMemo(() => draftAzimas(detail.tasks), [detail.tasks]);
+  const showDrafts = useMemo(
+    () => drafts.some((x) => x.id === focus),
+    [drafts, focus],
   );
   const spentDetail = useMemo(() => spent(detail.tasks), [detail.tasks]);
   const byId = taskMapOf(detail.tasks);
@@ -373,6 +386,37 @@ export function WishView({
       />
     ),
     [byId, renderTask, focus, handleValidateAzima],
+  );
+
+  const handleOpenDraft = useCallback(
+    (draft: Task) => {
+      quiet(
+        act(
+          () => clients.tasks.open({ azima: draft.id }),
+          [Change.TASK],
+          t("azima.opened_toast", { code: draft.code }),
+        ),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
+  const handleMoveDraft = useCallback((draft: Task) => {
+    setMovingAzima(draft);
+  }, []);
+
+  const renderDraft = useCallback(
+    (draft: Task) => (
+      <DraftAzimaCard
+        key={draft.id}
+        azima={draft}
+        tasks={byId}
+        focus={focus}
+        onOpen={() => handleOpenDraft(draft)}
+        onMove={() => handleMoveDraft(draft)}
+      />
+    ),
+    [byId, focus, handleOpenDraft, handleMoveDraft],
   );
 
   const handleQuestionAnswer = useCallback(
@@ -560,6 +604,29 @@ export function WishView({
           }}
         />
       )}
+      {movingAzima && (
+        <MoveAzimaDialog
+          azima={movingAzima}
+          wishes={allWishes}
+          currentWishId={wish.id}
+          onClose={() => setMovingAzima(null)}
+          onMove={(targetWishId) => {
+            const target = movingAzima;
+            setMovingAzima(null);
+            quiet(
+              act(
+                () =>
+                  clients.tasks.move({
+                    azima: target.id,
+                    wish: targetWishId,
+                  }),
+                [Change.TASK, Change.WISH],
+                t("azima.moved_toast", { code: target.code }),
+              ),
+            );
+          }}
+        />
+      )}
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />
         <div className="hero mission-header review-head">
@@ -719,9 +786,12 @@ export function WishView({
                 moving={moving}
                 azimas={activeAzimas}
                 doneAzimas={doneAzimas}
+                drafts={drafts}
                 fold={wish.id}
                 showDone={showDone}
+                showDrafts={showDrafts}
                 renderAzima={renderAzima}
+                renderDraft={renderDraft}
                 aside={<SpentLine spent={spentDetail} />}
                 render={renderTask}
               />

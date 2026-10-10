@@ -78,6 +78,8 @@ func FillAzimas(tasks []*planv1.Task) {
 			return !Finished(p)
 		})
 		switch {
+		case t.GetDraft():
+			s = planv1.AzimaState_AZIMA_STATE_DRAFT
 		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !unfinished:
 			s = planv1.AzimaState_AZIMA_STATE_DONE
 		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE:
@@ -211,6 +213,8 @@ type AzimaFile struct {
 	Phase  string
 	Status string
 	Title  string
+	// Description is what the file holds after its title heading: its goal and body.
+	Description string
 	// After is what the file says the azima depends on, by code.
 	After []string
 	// DoneWhen is what its Done-when sections say: their boxes, and what the unchecked ones need.
@@ -220,9 +224,12 @@ type AzimaFile struct {
 // Done tells whether the file says its azima is done.
 func (f AzimaFile) Done() bool { return strings.EqualFold(f.Status, "done") }
 
+// Draft tells whether the file says its azima is a draft.
+func (f AzimaFile) Draft() bool { return strings.EqualFold(f.Status, "draft") }
+
 // Closes tells whether the file closes its azima: its status says done, or every box of its Done-when section is
-// checked.
-func (f AzimaFile) Closes() bool { return f.Done() || f.DoneWhen.AllChecked() }
+// checked. A draft azima never closes.
+func (f AzimaFile) Closes() bool { return !f.Draft() && (f.Done() || f.DoneWhen.AllChecked()) }
 
 // ReadAzimaFiles reads the plan files of a project's folder: plan/*.md with a front matter that gives a code, and their
 // Done-when section. A file without one (the README) is not an azima's.
@@ -248,7 +255,7 @@ func ReadAzimaFiles(project string) ([]AzimaFile, error) {
 	return out, nil
 }
 
-// parseAzimaFile reads a plan file's front matter and title; false when it has no front matter with a code.
+// parseAzimaFile reads a plan file's front matter, title and description; false when it has no front matter with a code.
 func parseAzimaFile(data []byte) (AzimaFile, bool) {
 	var f AzimaFile
 	lines, body, ok := splitFrontMatter(data)
@@ -279,11 +286,23 @@ func parseAzimaFile(data []byte) (AzimaFile, bool) {
 	}
 	f.DoneWhen = ReadDoneWhen(body)
 	sc := bufio.NewScanner(bytes.NewReader(body))
+	var afterTitle []string
+	foundTitle := false
 	for sc.Scan() {
-		if title, ok := strings.CutPrefix(sc.Text(), "# "); ok {
-			f.Title = azimaTitle(strings.TrimSpace(title), f.Code)
-			break
+		line := sc.Text()
+		if !foundTitle {
+			if title, ok := strings.CutPrefix(line, "# "); ok {
+				f.Title = azimaTitle(strings.TrimSpace(title), f.Code)
+				foundTitle = true
+			}
+			continue
 		}
+		afterTitle = append(afterTitle, line)
+	}
+	if foundTitle {
+		f.Description = strings.TrimSpace(strings.Join(afterTitle, "\n"))
+	} else {
+		f.Description = strings.TrimSpace(string(body))
 	}
 	return f, true
 }
@@ -369,4 +388,101 @@ func WriteAfter(file string, codes []string) (bool, error) {
 		return false, err
 	}
 	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+}
+
+// WriteStatus writes an azima's status ("open", "draft", etc.) into its plan file's front matter.
+// It tells whether the file changed.
+func WriteStatus(file string, status string) (bool, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return false, err
+	}
+	lines, body, ok := splitFrontMatter(data)
+	if !ok {
+		return false, nil
+	}
+	nl := "\n"
+	if bytes.HasPrefix(data, []byte("---\r\n")) {
+		nl = "\r\n"
+	}
+	var out []string
+	found := false
+	for _, line := range lines {
+		key, _, hasKey := strings.Cut(line, ":")
+		if hasKey && strings.TrimSpace(key) == "status" {
+			out = append(out, "status: "+status)
+			found = true
+		} else {
+			out = append(out, line)
+		}
+	}
+	if !found {
+		out = append(out, "status: "+status)
+	}
+	if slices.Equal(out, lines) {
+		return false, nil
+	}
+	var b bytes.Buffer
+	b.WriteString("---" + nl)
+	for _, line := range out {
+		b.WriteString(line + nl)
+	}
+	b.WriteString("---" + nl)
+	b.Write(body)
+	info, err := os.Stat(file)
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+}
+
+// WriteDescription writes the description of an azima into its plan file, after its title heading.
+// It tells whether the file changed.
+func WriteDescription(file string, text string) (bool, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return false, err
+	}
+	lines, body, ok := splitFrontMatter(data)
+	if !ok {
+		return false, nil
+	}
+	nl := "\n"
+	if bytes.HasPrefix(data, []byte("---\r\n")) {
+		nl = "\r\n"
+	}
+	sc := bufio.NewScanner(bytes.NewReader(body))
+	var titleLine string
+	var foundTitle bool
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.HasPrefix(line, "# ") {
+			titleLine = line
+			foundTitle = true
+			break
+		}
+	}
+	var b bytes.Buffer
+	b.WriteString("---" + nl)
+	for _, line := range lines {
+		b.WriteString(line + nl)
+	}
+	b.WriteString("---" + nl)
+	b.WriteString(nl)
+	if foundTitle {
+		b.WriteString(titleLine + nl + nl)
+	}
+	trimmed := strings.TrimSpace(text)
+	if trimmed != "" {
+		b.WriteString(trimmed + nl)
+	}
+	newContent := b.Bytes()
+	if bytes.Equal(newContent, data) {
+		return false, nil
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(file, newContent, info.Mode().Perm())
 }
