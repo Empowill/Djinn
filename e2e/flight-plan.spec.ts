@@ -32,14 +32,25 @@ const wishes = (): Wish[] =>
 const at = "2026-10-08T09:10:00Z";
 const lampOf = (wishId: string, title: string) => {
   const w1 = randomUUID();
+  const azimaId = randomUUID();
   return {
     version: 1,
     create_time: at,
     wish: { id: wishId, title, create_time: at },
     tasks: [
       {
+        id: azimaId,
+        wish_id: wishId,
+        code: "T1",
+        title: "The lamp",
+        kind: "TASK_KIND_AZIMA",
+        status: "TASK_STATUS_PENDING",
+        create_time: at,
+      },
+      {
         id: w1,
         wish_id: wishId,
+        part_of: azimaId,
         code: "W1",
         title: "Trim the wick",
         status: "TASK_STATUS_DONE",
@@ -57,6 +68,7 @@ const lampOf = (wishId: string, title: string) => {
       {
         id: randomUUID(),
         wish_id: wishId,
+        part_of: azimaId,
         code: "W2",
         title: "Read the map",
         status: "TASK_STATUS_DONE",
@@ -198,6 +210,8 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
   await page.getByRole("tab", { name: /^Tasks/ }).click();
+  const azimaCard = page.locator(".azima-card");
+  await azimaCard.locator(".azima-heading").click();
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
   await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
   await page.getByRole("tab", { name: /^For agents/ }).click();
@@ -207,6 +221,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await page.getByRole("button", { name: /^Journal/ }).click();
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
   await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await azimaCard.locator(".azima-heading").click();
   await page
     .locator(".wish-task")
     .filter({ hasText: "Trim the wick" })
