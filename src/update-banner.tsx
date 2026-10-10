@@ -3,12 +3,13 @@
 // Nothing restarts without that click. After a restart, it lists the terminals that did not start again. Shown only
 // when djinn serves the page (a DjinnProvider). A release links its notes, which the system's browser opens. Once a
 // batch of finished work is committed into a wish's integration branch, in a project that names an install command,
-// it proposes to install that build and restart on it, with what changed and what to check. Its actions sit beside
-// each title, its text below at full width.
+// it proposes to install that build and restart on it, with what changed and what to check; while it installs, it says
+// what the install waits for, then that it builds, then that Djinn restarts. Its actions sit beside each title, its
+// text below at full width.
 import { type ReactNode, useEffect, useState } from "react";
 
 import { useDjinn } from "./data/djinn";
-import type { UpdateState } from "./data/update";
+import { InstallStep, type Installing, type UpdateState } from "./data/update";
 import { Brand } from "./frame";
 import { t } from "./i18n";
 import "./update-banner.css";
@@ -94,6 +95,8 @@ export function UpdateBannerView({
   onNotes: (url: string) => void;
 }) {
   const notResumed = dismissed ? [] : state.notResumed;
+  // Where the install that runs now stands, as Djinn says it: from another window too, or after a reload.
+  const installing = state.installing;
   const build = state.build?.sha === dismissedBuild ? undefined : state.build;
   if (
     !state.ready &&
@@ -175,13 +178,17 @@ export function UpdateBannerView({
             </>
           }
           actions={
-            phase.kind === "installing" || phase.kind === "restarting" ? (
+            installing?.sha === build.sha ||
+            phase.kind === "installing" ||
+            phase.kind === "restarting" ? (
               <span>
-                {t(
-                  phase.kind === "installing"
-                    ? "update.build_installing"
-                    : "update.restarting",
-                )}
+                {installing?.sha === build.sha
+                  ? installStep(installing)
+                  : t(
+                      phase.kind === "installing"
+                        ? "update.build_installing"
+                        : "update.restarting",
+                    )}
               </span>
             ) : (
               <>
@@ -254,6 +261,22 @@ export function UpdateBannerView({
       )}
     </div>
   );
+}
+
+// installStep says where an install stands: what it waits for, then that it prepares and builds, then that Djinn
+// restarts.
+function installStep(installing: Installing): string {
+  switch (installing.step) {
+    case InstallStep.WAITING:
+      return t("update.build_waiting", { why: installing.waiting });
+    case InstallStep.PREPARING:
+      return t("update.build_preparing");
+    case InstallStep.BUILDING:
+      return t("update.build_building");
+    case InstallStep.RESTARTING:
+      return t("update.restarting");
+  }
+  return t("update.build_installing");
 }
 
 // A part of the banner: its title with its actions beside it, which wrap below it on a narrow window and never squeeze

@@ -41,9 +41,10 @@ type Service struct {
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
 	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
 	Restart func() (version string, terminals int, err error)
-	// Install installs a build that SetBuild proposed: its project's install command, run on its commit. It tells
-	// whether a newer Djinn waits at the path of the running one since, to restart on. Nil: no build installs.
-	Install func(ctx context.Context, build *uiv1.Build) (newer bool, err error)
+	// Install installs a build that SetBuild proposed: its project's install command, run on its commit, telling
+	// progress each step and what it waits for. It tells whether a newer Djinn waits at the path of the running one
+	// since, to restart on. Nil: no build installs.
+	Install func(ctx context.Context, build *uiv1.Build, progress func(step uiv1.InstallStep, waiting string)) (newer bool, err error)
 	// ChooseFolder opens the system's folder dialog over the window, titled title and open in directory, and returns
 	// the folder chosen, or empty when the user cancelled. Nil: the page has no folder dialog (the browser).
 	ChooseFolder func(title, directory string) (string, error)
@@ -61,11 +62,12 @@ type Service struct {
 	watchers map[chan *uiv1.UiServiceWatchShowResponse]struct{}
 
 	updates    sync.Mutex
-	ready      string        // version of the newer Djinn waiting; empty for none
-	notesURL   string        // where its release notes are; empty for none
-	notResumed []string      // terminals the last restart could not run again
-	build      *uiv1.Build   // the last build committed and not installed; nil for none
-	updated    chan struct{} // closed and replaced at each change
+	ready      string           // version of the newer Djinn waiting; empty for none
+	notesURL   string           // where its release notes are; empty for none
+	notResumed []string         // terminals the last restart could not run again
+	build      *uiv1.Build      // the last build committed and not installed; nil for none
+	installing *uiv1.Installing // the install that runs now; nil for none
+	updated    chan struct{}    // closed and replaced at each change
 }
 
 // replay is how long a request to show something waits for a window that opens after it: djinn wish resume may
@@ -345,6 +347,17 @@ func (s *Service) SetBuild(build *uiv1.Build) {
 	s.notifyUpdate()
 }
 
+// setInstalling says where the install that runs now stands; nil when none runs.
+func (s *Service) setInstalling(in *uiv1.Installing) {
+	s.updates.Lock()
+	defer s.updates.Unlock()
+	if proto.Equal(s.installing, in) {
+		return
+	}
+	s.installing = in
+	s.notifyUpdate()
+}
+
 // Ready is the version of the newer Djinn waiting; empty for none.
 func (s *Service) Ready() string {
 	s.updates.Lock()
@@ -387,7 +400,7 @@ func (s *Service) WatchUpdate(
 		changed := s.updated
 		msg := &uiv1.UiServiceWatchUpdateResponse{
 			Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
-			Build: proto.CloneOf(s.build),
+			Build: proto.CloneOf(s.build), Installing: proto.CloneOf(s.installing),
 		}
 		s.updates.Unlock()
 		if err := stream.Send(msg); err != nil {
@@ -415,8 +428,11 @@ func (s *Service) Update(
 		case s.Install == nil:
 			return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn installs no build"))
 		}
-		newer, err := s.Install(ctx, build)
+		newer, err := s.Install(ctx, build, func(step uiv1.InstallStep, waiting string) {
+			s.setInstalling(&uiv1.Installing{Sha: sha, Step: step, Waiting: waiting})
+		})
 		if err != nil {
+			s.setInstalling(nil)
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("install %s: %w", build.GetBranch(), err))
 		}
 		installed = sha
@@ -428,14 +444,17 @@ func (s *Service) Update(
 		s.updates.Unlock()
 		if !newer || s.Restart == nil {
 			// The build installed no newer Djinn at this one's path: the project is not Djinn, nothing restarts.
+			s.setInstalling(nil)
 			return connect.NewResponse(&uiv1.UiServiceUpdateResponse{Installed: installed}), nil
 		}
+		s.setInstalling(&uiv1.Installing{Sha: sha, Step: uiv1.InstallStep_INSTALL_STEP_RESTARTING})
 	}
 	if s.Restart == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn cannot update itself"))
 	}
 	version, terminals, err := s.Restart()
 	if err != nil {
+		s.setInstalling(nil)
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewResponse(&uiv1.UiServiceUpdateResponse{Version: version, Terminals: int32(terminals), Installed: installed}), nil

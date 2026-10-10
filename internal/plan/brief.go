@@ -154,7 +154,7 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 // BuildBrief writes the brief of a wish from what r holds. home is Djinn's data folder: like the projects' folders
 // and the home folder, it never shows. No secret: Djinn stores none, and a URL loses its credentials.
 func BuildBrief(ctx context.Context, r store.Reader, home, wishID string) (Brief, error) {
-	exp, projects, err := collect(ctx, r, wishID)
+	exp, projects, err := collect(ctx, r, wishID, noEvents)
 	if err != nil {
 		return Brief{}, err
 	}

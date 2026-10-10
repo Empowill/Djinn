@@ -51,8 +51,19 @@ const maxJournal = 200
 // shownJournal is the most journal entries shown before the others are folded.
 const shownJournal = 10
 
-// maxEvents is the most worker events a page shows, the latest ones; shownEvents are in sight, the others folded.
-const maxEvents, shownEvents = 200, 10
+// MaxEvents is the most worker events a page shows, the latest ones; shownEvents are in sight, the others folded.
+const MaxEvents, shownEvents = 200, 10
+
+// Shown tells whether a page shows a worker's event: what it said, a change of status, an error, when it has a text.
+// Tool calls stay out. Of the others, a page needs only each task's last one and the MaxEvents latest.
+func Shown(e *planv1.TaskEvent) bool {
+	switch e.GetKind() {
+	case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+		planv1.TaskEventKind_TASK_EVENT_KIND_ERROR:
+		return strings.TrimSpace(e.GetText()) != ""
+	}
+	return false
+}
 
 // barQuestions is the most questions the bar at the top shows a line each, beside the blocking ones: more share
 // one line.
@@ -460,18 +471,16 @@ func build(in Input) (*view, error) {
 	type last struct{ text, at string }
 	lastWord := map[string]last{}
 	for _, e := range exp.GetEvents() {
+		if !Shown(e) {
+			continue
+		}
 		text := strings.TrimSpace(e.GetText())
-		kind, class := "", ""
+		kind, class := tr("page.event_text"), "idle"
 		switch e.GetKind() {
-		case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT:
-			kind, class = tr("page.event_text"), "idle"
 		case planv1.TaskEventKind_TASK_EVENT_KIND_STATUS:
 			kind, class = tr("page.event_status"), "run"
 		case planv1.TaskEventKind_TASK_EVENT_KIND_ERROR:
 			kind, class = tr("page.event_error"), "fail"
-		}
-		if kind == "" || text == "" {
-			continue
 		}
 		when := ""
 		if e.GetCreateTime() != nil {
@@ -483,7 +492,7 @@ func build(in Input) (*view, error) {
 	// The latest first; events of one time keep the order they came in.
 	slices.Reverse(events)
 	slices.SortStableFunc(events, func(a, b event) int { return b.at.Compare(a.at) })
-	events = events[:min(len(events), maxEvents)]
+	events = events[:min(len(events), MaxEvents)]
 	v.Events, v.EarlierEv = events[:min(len(events), shownEvents)], events[min(len(events), shownEvents):]
 
 	byStatus := map[planv1.TaskStatus]int{}

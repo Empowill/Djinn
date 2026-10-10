@@ -99,6 +99,10 @@ func (s *Store) migrate(ctx context.Context, entities []proto.Message) error {
 		)`); err != nil {
 			return fmt.Errorf("create the journal: %w", err)
 		}
+		// The pages and exports read the commands of the API only, a few among the workers' events (CommandsOf).
+		if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS command_method ON command (method)`); err != nil {
+			return fmt.Errorf("index the journal: %w", err)
+		}
 		names := map[string]bool{"command": true}
 		for _, e := range entities {
 			t, err := newTable(e.ProtoReflect().Descriptor())
@@ -154,8 +158,15 @@ func List[T proto.Message](ctx context.Context, r Reader, where Where) ([]T, err
 	var zero T
 	mt := zero.ProtoReflect().Type()
 	var out []T
-	err := list(ctx, r, mt, where, func(m proto.Message) { out = append(out, m.(T)) })
+	err := list(ctx, r, mt, where, "id", func(m proto.Message) bool { out = append(out, m.(T)); return true })
 	return out, err
+}
+
+// Latest calls f on the entities of type T that match where, the last written first, until f returns false: an entity
+// put again keeps its place. It reads no further than f asks, where List reads everything.
+func Latest[T proto.Message](ctx context.Context, r Reader, where Where, f func(T) bool) error {
+	var zero T
+	return list(ctx, r, zero.ProtoReflect().Type(), where, "rowid DESC", func(m proto.Message) bool { return f(m.(T)) })
 }
 
 func get(ctx context.Context, r Reader, id string, m proto.Message) error {
@@ -182,7 +193,8 @@ func get(ctx context.Context, r Reader, id string, m proto.Message) error {
 	return proto.Unmarshal(payload, m)
 }
 
-func list(ctx context.Context, r Reader, mt protoreflect.MessageType, where Where, add func(proto.Message)) error {
+// list calls add on the entities of type mt that match where, in order (an ORDER BY clause), until add returns false.
+func list(ctx context.Context, r Reader, mt protoreflect.MessageType, where Where, order string, add func(proto.Message) bool) error {
 	t, err := r.table(mt.Descriptor())
 	if err != nil {
 		return err
@@ -205,7 +217,7 @@ func list(ctx context.Context, r Reader, mt protoreflect.MessageType, where Wher
 	if len(conds) > 0 {
 		q += " WHERE " + strings.Join(conds, " AND ")
 	}
-	rows, err := r.query(ctx, q+" ORDER BY id", args...)
+	rows, err := r.query(ctx, q+" ORDER BY "+order, args...)
 	if err != nil {
 		return err
 	}
@@ -219,7 +231,9 @@ func list(ctx context.Context, r Reader, mt protoreflect.MessageType, where Wher
 		if err := proto.Unmarshal(payload, m); err != nil {
 			return err
 		}
-		add(m)
+		if !add(m) {
+			return nil
+		}
 	}
 	return rows.Err()
 }
@@ -333,7 +347,23 @@ type Command struct {
 // Commands returns the entries of the journal, oldest first, for which keep returns true. keep sees each entry
 // once, in order; it may be nil to keep them all.
 func Commands(ctx context.Context, r Reader, keep func(Command) bool) ([]Command, error) {
-	rows, err := r.query(ctx, `SELECT seq, id, actor, at, method, request FROM command ORDER BY seq`)
+	return commands(ctx, r, `SELECT seq, id, actor, at, method, request FROM command ORDER BY seq`, keep)
+}
+
+// CommandsOf is Commands among the entries whose method starts with prefix, ASCII ("/" for the methods of the API),
+// read through the index of the methods: the many entries of other methods, as the workers' events, are not read.
+func CommandsOf(ctx context.Context, r Reader, prefix string, keep func(Command) bool) ([]Command, error) {
+	if prefix == "" {
+		return Commands(ctx, r, keep)
+	}
+	// The methods from prefix to the first one past those it starts: "/" to "0".
+	end := prefix[:len(prefix)-1] + string(prefix[len(prefix)-1]+1)
+	return commands(ctx, r, `SELECT seq, id, actor, at, method, request FROM command WHERE method >= ? AND method < ?
+		ORDER BY seq`, keep, prefix, end)
+}
+
+func commands(ctx context.Context, r Reader, q string, keep func(Command) bool, args ...any) ([]Command, error) {
+	rows, err := r.query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

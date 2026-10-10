@@ -76,7 +76,7 @@ func TestSchema(t *testing.T) {
 	}
 	indexes := strs(t, s, `SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL ORDER BY name`)
 	want := []string{
-		"project_unique_directory", "project_unique_name", "question_task_id", "question_unique_wish_id_code", "question_wish_id",
+		"command_method", "project_unique_directory", "project_unique_name", "question_task_id", "question_unique_wish_id_code", "question_wish_id",
 	}
 	if !slices.Equal(indexes, want) {
 		t.Errorf("indexes = %v, want %v", indexes, want)
@@ -216,6 +216,58 @@ func TestJournalAndTransaction(t *testing.T) {
 	}
 }
 
+func TestLatest(t *testing.T) {
+	ctx := t.Context()
+	s := open(t)
+	var ids []string
+	for _, name := range []string{"a", "b", "c", "d"} {
+		p := &planv1.Project{Id: NewID(), Name: name, Directory: "/src/" + name}
+		ids = append(ids, p.GetId())
+		if err := put(ctx, s, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// b put again keeps its place: the last written first is d.
+	if err := put(ctx, s, &planv1.Project{Id: ids[1], Name: "b2", Directory: "/src/b"}); err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	err := Latest(ctx, s, nil, func(p *planv1.Project) bool { seen = append(seen, p.GetName()); return len(seen) < 3 })
+	if err != nil || !slices.Equal(seen, []string{"d", "c", "b2"}) {
+		t.Errorf("Latest = %v, %v; want d, c, b2 and no further", seen, err)
+	}
+	seen = nil
+	err = Latest(ctx, s, Where{"name": "A"}, func(p *planv1.Project) bool { seen = append(seen, p.GetName()); return true })
+	if err != nil || !slices.Equal(seen, []string{"a"}) {
+		t.Errorf("Latest by name = %v, %v", seen, err)
+	}
+}
+
+func TestCommandsOf(t *testing.T) {
+	ctx := t.Context()
+	s := open(t)
+	for _, method := range []string{"/plan.v1.ProjectService/Add", "harness/event", "/plan.v1.ProjectService/Delete", "harness/end"} {
+		if err := s.Tx(ctx, func(tx *Tx) error { return tx.Journal("test", method, &planv1.ProjectServiceListRequest{}) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	methods := func(cs []Command) []string {
+		var out []string
+		for _, c := range cs {
+			out = append(out, c.Method)
+		}
+		return out
+	}
+	api, err := CommandsOf(ctx, s, "/", nil)
+	if got := methods(api); err != nil || !slices.Equal(got, []string{"/plan.v1.ProjectService/Add", "/plan.v1.ProjectService/Delete"}) {
+		t.Errorf("CommandsOf(/) = %v, %v", got, err)
+	}
+	harness, err := CommandsOf(ctx, s, "harness/", func(c Command) bool { return c.Seq > 2 })
+	if err != nil || len(harness) != 1 || harness[0].Method != "harness/end" {
+		t.Errorf("CommandsOf(harness/) kept = %v, %v", methods(harness), err)
+	}
+}
+
 // thing builds version v of a test entity: v1 has id and name; v2 adds a note, kept in the payload only, and
 // an owner_id, which becomes an indexed column.
 func thing(t *testing.T, v int) protoreflect.MessageDescriptor {
@@ -284,8 +336,8 @@ func TestFieldAddedWithoutMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	var names []string
-	collect := func(m proto.Message) { names = append(names, field(m.(*dynamicpb.Message), "name")) }
-	if err := list(ctx, s, dynamicpb.NewMessageType(v2), Where{"owner_id": owner}, collect); err != nil || !slices.Equal(names, []string{"desk"}) {
+	collect := func(m proto.Message) bool { names = append(names, field(m.(*dynamicpb.Message), "name")); return true }
+	if err := list(ctx, s, dynamicpb.NewMessageType(v2), Where{"owner_id": owner}, "id", collect); err != nil || !slices.Equal(names, []string{"desk"}) {
 		t.Errorf("List by the new indexed field = %v, %v", names, err)
 	}
 	s.Close()

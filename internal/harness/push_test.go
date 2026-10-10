@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -255,7 +256,8 @@ func TestARefusedPushIsNotForced(t *testing.T) {
 
 // TestABuildIsProposed: once Djinn pushes in a project whose settings name an install command, djinn up is told what
 // to propose: the commits' titles, and what to check, from what each worker said last. Installing it runs the command
-// in the integration worktree at that commit, under the install gate, never in the person's checkout.
+// in the project's install worktree at that commit, under the install gate, never in the person's checkout nor in an
+// integration worktree, and says each step and what it waits for.
 func TestABuildIsProposed(t *testing.T) {
 	testx.Portable(t)
 	var built []Built
@@ -288,13 +290,25 @@ func TestABuildIsProposed(t *testing.T) {
 	}
 
 	in.git(t, in.repo, "checkout", "--quiet", "--detach", "HEAD~1") // The person's checkout is elsewhere: no matter.
-	out, err := in.h.Install(t.Context(), in.wishID, in.projectID, tip)
-	wt := filepath.Join(integrationDir(in.home, in.projectID, in.wishID), "app")
+	var steps []string
+	progress := func(step InstallStep, waiting string) { steps = append(steps, fmt.Sprint(step, " ", waiting)) }
+	// The integration is busy: the install does not wait for it.
+	in.h.integrateMu.Lock()
+	out, err := in.h.Install(t.Context(), in.wishID, in.projectID, tip, progress)
+	in.h.integrateMu.Unlock()
+	wt := filepath.Join(installDir(in.home, in.projectID), "app")
 	if err != nil || out != "installed a\n" || in.runs[len(in.runs)-1] != "install in "+wt || in.gates[len(in.gates)-1] != "install -" {
 		t.Errorf("install: %q, %v; runs %v, gates %v", out, err, in.runs, in.gates)
 	}
+	wantSteps := []string{
+		fmt.Sprint(InstallPreparing, " "), fmt.Sprint(InstallBuilding, " "),
+		fmt.Sprint(InstallWaiting, " gate install: held by W9 (Another install): install, for 3s"), fmt.Sprint(InstallBuilding, " "),
+	}
+	if !slices.Equal(steps, wantSteps) {
+		t.Errorf("install steps %q, want %q", steps, wantSteps)
+	}
 	// Only a build of the wish's integration branch installs.
-	if _, err := in.h.Install(t.Context(), in.wishID, in.projectID, strings.Repeat("0", 40)); err == nil {
+	if _, err := in.h.Install(t.Context(), in.wishID, in.projectID, strings.Repeat("0", 40), nil); err == nil {
 		t.Error("a commit that is not one installed")
 	}
 }

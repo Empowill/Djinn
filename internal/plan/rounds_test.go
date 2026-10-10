@@ -143,7 +143,7 @@ func TestWorkerAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exp, _, err := collect(ctx, c.store, wish)
+	exp, _, err := collect(ctx, c.store, wish, allEvents)
 	if err != nil {
 		t.Fatal(err)
 	}

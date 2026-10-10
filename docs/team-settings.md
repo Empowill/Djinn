@@ -165,10 +165,10 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   does not run again. Red, the push is **held**: the tasks' events and the wish's head say why. Djinn checks again at
   the next push due; still red then, or at once when no work of the wish is left to commit in the project, it asks you:
   check again (once you have fixed it), push without the push checks this once, or leave it until the next push due.
-- **The setup** makes the integration worktree ready before the first command there (a check, `generate`, `install`):
-  once, then again when the setup command or a lock file changes (`package-lock.json`, `go.sum`, `yarn.lock`,
-  `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`, `uv.lock` and the like, anywhere in the project), and in a worktree
-  made anew. Failed, the merge is red.
+- **The setup** makes the integration worktree, and the install worktree, ready before the first command there (a
+  check, `generate`, `install`): once, then again when the setup command or a lock file changes (`package-lock.json`,
+  `go.sum`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`, `uv.lock` and the like, anywhere in the
+  project), and in a worktree made anew. Failed, the merge is red.
 - **The workers know them.** The lead's brief lists each project's checks and when they run; each worker that edits a
   worktree gets them at the end of its first prompt, to run the commit checks (`djinn gate run lint -- go tool task
   lint`) before it ends; again when it resumes from its first prompt (agy, or a session never known).
@@ -256,8 +256,11 @@ count and the mode, for that wish.
 Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
 version, to install it and restart on it, with what changed (the titles of the commits pushed) and what to check
 (each task, with the last paragraph its worker wrote). Nothing installs before your click. The command runs under the
-gate `install`, in the integration worktree at that commit, never in your checkout; when it installed a newer Djinn at
-the path of the running one, Djinn restarts on it, as the update button does; otherwise it says the build is installed.
+gate `install`, at that commit, in the project's install worktree (set up as the integration's is), never in your
+checkout nor in an integration worktree: an install never waits for an integration to end. While it runs, the banner
+says what it waits for (another install, a gate and who holds it, the machine under pressure), then that it builds, then
+that Djinn restarts; when it installed a newer Djinn at the path of the running one, Djinn restarts on it, as the update
+button does; otherwise it says the build is installed.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
 branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.

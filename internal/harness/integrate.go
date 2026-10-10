@@ -45,8 +45,9 @@ const (
 )
 
 // TakeGate takes the gate name, for the task taskID, to run the command what in the folder dir, and returns how to
-// give it back. djinn up takes the gates of internal/gate, as djinn gate run does.
-type TakeGate func(ctx context.Context, name, taskID, what, dir string) (give func(), err error)
+// give it back. It calls waiting, when not nil, each time the reason it waits changes. djinn up takes the gates of
+// internal/gate, as djinn gate run does.
+type TakeGate func(ctx context.Context, name, taskID, what, dir string, waiting func(why string)) (give func(), err error)
 
 // RunCommand runs args in dir, and returns the end of its output and its exit code; an error when it could not run.
 type RunCommand func(ctx context.Context, dir string, args []string) (out string, code int, err error)
@@ -203,7 +204,7 @@ type tested struct {
 // whether it is committed. A task whose worktree holds changes not committed is not merged: a review worker judges
 // them. The worktrees of the work committed are removed when clean.
 func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, batch []*planv1.Task) bool {
-	h.integrateMu.Lock() // An install uses the integration worktree too.
+	h.integrateMu.Lock() // The push checks use the integration worktree too.
 	defer h.integrateMu.Unlock()
 	branch, why := h.integrationBranch(ctx, wish, project)
 	settings, err := plan.LoadSettings(h.home, project)
@@ -312,18 +313,14 @@ func (h *Harness) build(ctx context.Context, wish *planv1.Wish, project *planv1.
 // lastWords is the last paragraph the worker of the task wrote, on one line, where it says what it did and what to
 // check; "" when it wrote nothing.
 func (h *Harness) lastWords(ctx context.Context, taskID string) string {
-	events, err := store.List[*planv1.TaskEvent](ctx, h.store, store.Where{"task_id": taskID})
-	if err != nil {
-		return ""
-	}
 	var last *planv1.TaskEvent
-	for _, e := range events {
-		if e.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && strings.TrimSpace(e.GetText()) != "" &&
-			(last == nil || e.GetSeq() > last.GetSeq()) {
+	err := store.Latest(ctx, h.store, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
+		if e.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && strings.TrimSpace(e.GetText()) != "" {
 			last = e
 		}
-	}
-	if last == nil {
+		return last == nil
+	})
+	if err != nil || last == nil {
 		return ""
 	}
 	paragraphs := strings.Split(strings.TrimSpace(last.GetText()), "\n\n")
@@ -334,10 +331,27 @@ func (h *Harness) lastWords(ctx context.Context, taskID string) string {
 	return words
 }
 
+// InstallStep is where an install stands, as Install tells it.
+type InstallStep int
+
+const (
+	// InstallWaiting: it waits for its turn, for what Install says with it.
+	InstallWaiting InstallStep = iota + 1
+	// InstallPreparing: it checks the build out in its worktree, and sets it up.
+	InstallPreparing
+	// InstallBuilding: it runs the install command.
+	InstallBuilding
+)
+
 // Install runs the install command of the project's settings on sha, a build of the wish's integration branch there:
-// in the wish's integration worktree, checked out at it, never the person's checkout, under the install gate, while
-// no batch is integrated. It returns the end of the command's output, and an error when it did not end well.
-func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string) (string, error) {
+// in the project's install worktree, checked out at it, never the person's checkout nor an integration worktree, under
+// the install gate. It never waits for an integration: the build is a commit already made, and its worktree is its
+// own. One install runs at a time. progress, when not nil, is told each step as it comes, and what the install waits
+// for when it waits ("" otherwise). It returns the end of the command's output, and an error when it did not end well.
+func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, progress func(step InstallStep, waiting string)) (string, error) {
+	if progress == nil {
+		progress = func(InstallStep, string) {}
+	}
 	wish, err1 := store.Get[*planv1.Wish](ctx, h.store, wishID)
 	project, err2 := store.Get[*planv1.Project](ctx, h.store, projectID)
 	if err := errors.Join(err1, err2); err != nil {
@@ -354,16 +368,36 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string) (s
 	if _, err := git(ctx, project.GetDirectory(), "merge-base", "--is-ancestor", sha, "refs/heads/"+branch); branch == "" || err != nil {
 		return "", fmt.Errorf("%s is not a commit of the wish's integration branch %s", short8(sha), branch)
 	}
-	h.integrateMu.Lock()
-	defer h.integrateMu.Unlock()
-	wt := integrationDir(h.home, projectID, wishID)
+	if !h.installMu.TryLock() {
+		h.mu.Lock()
+		other := h.installing
+		h.mu.Unlock()
+		progress(InstallWaiting, "the install of "+short8(other)+" to end")
+		h.installMu.Lock()
+	}
+	defer h.installMu.Unlock()
+	h.mu.Lock()
+	h.installing = sha
+	h.mu.Unlock()
+	step := InstallPreparing
+	progress(step, "")
+	ctx = context.WithValue(ctx, gateWaitKey{}, func(why string) {
+		if why == "" {
+			progress(step, "")
+		} else {
+			progress(InstallWaiting, why)
+		}
+	})
+	wt := installDir(h.home, projectID)
 	dir, _, err := integrationWorktree(ctx, project.GetDirectory(), wt, sha)
 	if err != nil {
-		return "", fmt.Errorf("prepare the integration worktree: %w", err)
+		return "", fmt.Errorf("prepare the install worktree: %w", err)
 	}
 	if why, out, _ := h.setUp(ctx, project, settings, wishID, "", wt, dir); why != "" {
 		return out, fmt.Errorf("%s: %s", setupName, why)
 	}
+	step = InstallBuilding
+	progress(step, "")
 	out, code, err := h.command(ctx, installGate, "", settings.Install, dir)
 	switch {
 	case err != nil:
@@ -372,6 +406,12 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string) (s
 		return out, fmt.Errorf("%s exited %d%s", settings.Install, code, tail(out))
 	}
 	return out, nil
+}
+
+// installDir is the worktree the builds of a project are installed from, whatever their wish: in Djinn's data folder,
+// next to its integration worktrees, apart from them so that an install never waits for an integration.
+func installDir(home, projectID string) string {
+	return filepath.Join(home, "projects", projectID, "install")
 }
 
 // integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish made before
@@ -797,11 +837,19 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 		return "", -1, errors.New("no command")
 	}
 	if h.gates != nil {
-		give, err := h.gates(ctx, name, taskID, line, dir)
+		waits, _ := ctx.Value(gateWaitKey{}).(func(why string))
+		var waiting func(string)
+		if waits != nil {
+			waiting = func(why string) { waits("gate " + name + ": " + why) }
+		}
+		give, err := h.gates(ctx, name, taskID, line, dir, waiting)
 		if err != nil {
 			return "", -1, fmt.Errorf("gate %s: %w", name, err)
 		}
 		defer give()
+		if waits != nil {
+			waits("") // Taken: it runs.
+		}
 	}
 	run := h.commands
 	if run == nil {
@@ -809,6 +857,10 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 	}
 	return run(ctx, dir, args)
 }
+
+// gateWaitKey is the context key of a function told why a command waits for its gate ("gate install: held by …"), and
+// "" once it is taken: Install says it to the window.
+type gateWaitKey struct{}
 
 // runCommand runs args in dir, and returns the end of what it wrote and its exit code.
 func runCommand(ctx context.Context, dir string, args []string) (string, int, error) {

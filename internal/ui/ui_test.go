@@ -363,12 +363,19 @@ func TestOpenLink(t *testing.T) {
 
 // TestUpdateInstallsABuild: a build committed is proposed to the window; installing it runs its install command, then
 // restarts on the newer Djinn it installed, or restarts nothing when it installed none. Only the build proposed
-// installs.
+// installs. While it installs, the window is told where it stands: what it waits for, that it builds, that Djinn
+// restarts.
 func TestUpdateInstallsABuild(t *testing.T) {
 	s, _ := newService(t)
 	var installed []string
 	newer, restarts := false, 0
-	s.Install = func(_ context.Context, b *uiv1.Build) (bool, error) {
+	proceed := make(chan struct{}) // the first install waits until the window has seen it wait
+	s.Install = func(_ context.Context, b *uiv1.Build, progress func(uiv1.InstallStep, string)) (bool, error) {
+		if proceed != nil {
+			progress(uiv1.InstallStep_INSTALL_STEP_WAITING, "gate install: held by W1")
+			<-proceed
+		}
+		progress(uiv1.InstallStep_INSTALL_STEP_BUILDING, "")
 		installed = append(installed, b.GetSha())
 		return newer, nil
 	}
@@ -401,17 +408,42 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	if _, err := update("other"); code(err) != connect.CodeFailedPrecondition || len(installed) != 0 {
 		t.Errorf("a build not proposed: %v, installed %v", err, installed)
 	}
-	res, err := update("abc")
-	if err != nil || res.GetInstalled() != "abc" || res.GetVersion() != "" || restarts != 0 {
-		t.Errorf("a build that installed no newer Djinn: %v, %v, %d restarts", res, err, restarts)
+	type result struct {
+		res *uiv1.UiServiceUpdateResponse
+		err error
 	}
-	if !watch.Receive() || watch.Msg().GetBuild() != nil {
-		t.Errorf("still proposed once installed: %v, %v", watch.Msg(), watch.Err())
+	done := make(chan result, 1)
+	go func() { res, err := update("abc"); done <- result{res, err} }()
+	if !watch.Receive() || watch.Msg().GetInstalling().GetStep() != uiv1.InstallStep_INSTALL_STEP_WAITING ||
+		watch.Msg().GetInstalling().GetWaiting() != "gate install: held by W1" || watch.Msg().GetInstalling().GetSha() != "abc" {
+		t.Errorf("the window is not told what the install waits for: %v, %v", watch.Msg(), watch.Err())
+	}
+	close(proceed)
+	proceed = nil
+	r := <-done
+	if r.err != nil || r.res.GetInstalled() != "abc" || r.res.GetVersion() != "" || restarts != 0 {
+		t.Errorf("a build that installed no newer Djinn: %v, %v, %d restarts", r.res, r.err, restarts)
+	}
+	// The window sees it build, maybe, then the install over: nothing proposed, nothing installing.
+	for watch.Receive() && (watch.Msg().GetBuild() != nil || watch.Msg().GetInstalling() != nil) {
+		if step := watch.Msg().GetInstalling().GetStep(); step != uiv1.InstallStep_INSTALL_STEP_BUILDING {
+			t.Errorf("installing: %v", watch.Msg())
+		}
+	}
+	if watch.Err() != nil {
+		t.Errorf("still proposed or installing once installed: %v", watch.Err())
 	}
 	newer = true
 	s.SetBuild(&uiv1.Build{Sha: "def"})
 	if res, err := update("def"); err != nil || res.GetInstalled() != "def" || res.GetVersion() != "v2" || restarts != 1 {
 		t.Errorf("a build that installed a newer Djinn: %v, %v, %d restarts", res, err, restarts)
+	}
+	restarting := false
+	for !restarting && watch.Receive() {
+		restarting = watch.Msg().GetInstalling().GetStep() == uiv1.InstallStep_INSTALL_STEP_RESTARTING
+	}
+	if !restarting {
+		t.Errorf("the window is not told Djinn restarts: %v", watch.Err())
 	}
 }
 
