@@ -2130,8 +2130,8 @@ export const RoundSchema: GenMessage<Round> = /*@__PURE__*/
   messageDesc(file_plan_v1_plan, 28);
 
 /**
- * A mark the developer puts on a question, a decision or a block: read, or approved as it is. The lead reads the marks
- * in the wish's brief and with djinn mark list.
+ * A mark the developer puts on a question: read, or approved as it is. The lead reads the marks in the wish's brief
+ * and with djinn mark list. A block takes none: blocks are for agents.
  *
  * @generated from message plan.v1.Mark
  */
@@ -4820,7 +4820,7 @@ export type Block = Message<"plan.v1.Block"> & {
   updateTime?: Timestamp | undefined;
 
   /**
-   * What the developer marked on it from the window: read, approved.
+   * Marks a block took before blocks were for agents only: none is put any more, and none is listed.
    *
    * @generated from field: repeated plan.v1.Mark marks = 11;
    */
@@ -5022,7 +5022,7 @@ export const BlockServiceDeleteResponseSchema: GenMessage<BlockServiceDeleteResp
   messageDesc(file_plan_v1_plan, 123);
 
 /**
- * MarkTarget points to what a mark is on: a question by its code, or a question or a block by its identifier.
+ * MarkTarget points to the question a mark is on, by its code or its identifier. A block's identifier is refused.
  *
  * @generated from message plan.v1.MarkTarget
  */
@@ -5040,7 +5040,7 @@ export type MarkTarget = Message<"plan.v1.MarkTarget"> & {
     case: "code";
   } | {
     /**
-     * The identifier of a question or of a block.
+     * The identifier of a question.
      *
      * @generated from field: string id = 2;
      */
@@ -5057,41 +5057,41 @@ export const MarkTargetSchema: GenMessage<MarkTarget> = /*@__PURE__*/
   messageDesc(file_plan_v1_plan, 124);
 
 /**
- * Marked is a mark with what it is on.
+ * Marked is a mark with the question it is on.
  *
  * @generated from message plan.v1.Marked
  */
 export type Marked = Message<"plan.v1.Marked"> & {
   /**
-   * Wish of the question or block.
+   * Wish of the question.
    *
    * @generated from field: string wish_id = 1;
    */
   wishId: string;
 
   /**
-   * The question marked, if it is one.
+   * The question marked.
    *
    * @generated from field: string question_id = 2;
    */
   questionId: string;
 
   /**
-   * The block marked, if it is one.
+   * Unused: a block takes no mark any more.
    *
    * @generated from field: string block_id = 3;
    */
   blockId: string;
 
   /**
-   * The question's code, or the block's kind.
+   * The question's code.
    *
    * @generated from field: string label = 4;
    */
   label: string;
 
   /**
-   * The question's text, or the block's title, in a line.
+   * The question's text, in a line.
    *
    * @generated from field: string title = 5;
    */
@@ -5117,7 +5117,7 @@ export const MarkedSchema: GenMessage<Marked> = /*@__PURE__*/
  */
 export type MarkServicePutRequest = Message<"plan.v1.MarkServicePutRequest"> & {
   /**
-   * What to mark: a question's code, like Q03, or the identifier of a question or of a block.
+   * What to mark: a question's code, like Q03, or its identifier.
    *
    * @generated from field: plan.v1.MarkTarget target = 1;
    */
@@ -7760,8 +7760,8 @@ export const BlockService: GenService<{
  */
 export const MarkService: GenService<{
   /**
-   * Mark a question, a decision or a block: read, or approved as it is. Approving an open question answers it with
-   * the option its recommendation names, as djinn question answer does.
+   * Mark a question: read, or approved as it is. Approving an open question answers it with the option its
+   * recommendation names, as djinn question answer does. A block takes no mark: blocks are for agents.
    *
    * @generated from rpc plan.v1.MarkService.Put
    */
@@ -7771,7 +7771,7 @@ export const MarkService: GenService<{
     output: typeof MarkServicePutResponseSchema;
   },
   /**
-   * List the marks of a wish, the latest last.
+   * List the marks on a wish's questions, the latest last.
    *
    * @generated from rpc plan.v1.MarkService.List
    */

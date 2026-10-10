@@ -146,9 +146,7 @@ export function WishQuestion({
         ) : (
           <div className="question-heading">{heading}</div>
         )}
-        {onMark && !answered && (
-          <MarkButtons item={q} approve={false} onMark={onMark} />
-        )}
+        {onMark && !answered && <MarkButtons item={q} onMark={onMark} />}
       </div>
       {body && (
         <div className="question-inner">

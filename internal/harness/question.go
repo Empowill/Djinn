@@ -160,7 +160,11 @@ func converterPrompt(q *planv1.Question, brief string) (title, prompt string) {
 		"--decision %[1]s`. A clear title; a prompt a worker can follow alone: what to do, in which files, how to "+
 		"check it (the tests to run, through `djinn gate run`). `--part-of T07` puts it in the azima of the plan it "+
 		"serves; `--after W3` only when it needs W3's result, so that tasks that do not need each other run side by "+
-		"side; `--later` plans a task without starting it now.\n"+
+		"side; `--later` plans a task without starting it now. First look for the azima each task belongs to "+
+		"(`djinn task list --wish-id %[2]s`): group what goes together, never mix what does not, and spawn no duplicate "+
+		"of a task that exists. Open a new azima (`--kind azima`, one sentence a user reads as a feature) only for a "+
+		"will no existing one carries. A task that extends an azima beyond its goal: say so in your last line, the "+
+		"lead rephrases its goal.\n"+
 		"3. If the answer leaves something open, do not guess: ask it, `djinn question ask \"…\" %[2]s --options \"…\" "+
 		"--options \"…\" --recommendation \"…\" --context \"…\"`, its context naming %[1]s.\n"+
 		"4. If the decision calls for no work, spawn nothing and say why in one sentence.\n"+

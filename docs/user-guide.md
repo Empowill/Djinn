@@ -130,9 +130,9 @@ tab and a **Decisions** tab, with the tasks and decisions of every active wish. 
 
 ## A wish's view
 
-The **Wish** tab: what waits for you (**Your move**), the questions being investigated, the lead's **Notes** (its
-blocks), the journal (**Show the commands**), and the **Rights** of its workers in each project. Beside it, the
-**Tasks**, **Decisions** and **Tilasms** tabs.
+The **Wish** tab: what waits for you (**Your move**), the questions being investigated, the journal (**Show the
+commands**), and the **Rights** of its workers in each project. Beside it, the **Tasks**, **Decisions** and
+**Tilasms** tabs, and last, discreet, **For agents**.
 
 **Rights** says what the wish's workers may do in a project, for every task to come: **The project decides** (its
 own configuration), **Edit the files**, or **Edit, in auto mode**. A worker in a folder outside Git with no rule
@@ -164,7 +164,7 @@ on (not on Windows yet). A worker that holds or waits for a gate is not paused.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="screenshots/readme/tasks-light.png">
-  <img alt="A wish: its tasks, what they cost, and the lead's notes" src="screenshots/readme/tasks-dark.png">
+  <img alt="A wish: its tasks and what they cost" src="screenshots/readme/tasks-dark.png">
 </picture>
 
 _The two screenshots show a demonstration wish, with fictional data._
@@ -226,13 +226,21 @@ newest question (Ctrl+Alt+Space by default, Ctrl+Cmd+J on macOS; empty turns it 
 "Where does this request go?": file it in an existing wish, keep it where it is, or open a new one whose lead starts
 on it. Djinn ranks the wishes by their titles, projects and latest blocks, without a model.
 
-## Notes: blocks and Mermaid
+## Everything for you is a question
 
-What the lead writes down for the wish is a block: a decision, an analysis, a report, a hand-off. A block is Markdown,
-shown as written. A `mermaid` code block is drawn as a diagram, which **Expand** enlarges.
+Whatever the lead needs from you comes as a question, even without options when it really does not know what to
+think: its analysis is in the card's context. A question you answered is resolved: the lead does not bring it back,
+and asks a new one only on a real doubt.
 
-On each block, **Mark read** tells the lead you have read it, and **Approve as it is** tells it to go on as it is,
-without a word. The lead reads these marks in its brief and with `djinn mark list`.
+On an open question, **Mark read** tells the lead you have seen it, without a word; the lead reads it in its brief and
+with `djinn mark list`.
+
+### The For agents tab
+
+What the lead and the workers write down for one another is a block: a hand-off, a reference, a report. Blocks are
+not for you: they wait in the last tab of the wish, **For agents**, with their count, each folded under its title. A
+click opens one: Markdown, shown as written, where a `mermaid` code block is drawn as a diagram, which **Expand**
+enlarges. A block of kind `decision` shows in the **Decisions** tab instead, the log blocks in the journal.
 
 ## Grant a wish
 

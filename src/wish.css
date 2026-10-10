@@ -358,15 +358,6 @@
   flex-shrink: 0;
   color: var(--muted);
 }
-/* A long block, folded under its title. */
-.wish-block.folded .wish-block-body {
-  max-height: 180px;
-  overflow: hidden;
-  mask-image: linear-gradient(to bottom, #000 60%, transparent);
-}
-.wish-block > .text-button {
-  margin-top: var(--space-2);
-}
 
 /* The journal: commands and log blocks, the latest first. */
 .journal-list {

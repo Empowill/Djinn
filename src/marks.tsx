@@ -1,7 +1,8 @@
-// Read marks and approvals, the clicks that say "I saw it" and "go as it is" without a word: they go to the lamp
-// (MarkService.Put), where the lead reads them in the brief and with djinn mark list. And the writes the screens share:
-// an answer, a mark, a request to investigate, each read again once djinn has it.
-import { Check, Eye, ThumbsUp } from "lucide-react";
+// The read mark, the click that says "I saw it" on an open question without a word: it goes to the lamp
+// (MarkService.Put), where the lead reads it in the brief and with djinn mark list. A block takes no mark: it is for
+// agents (src/agent-blocks.tsx). And the writes the screens share: an answer, a mark, a request to investigate, each
+// read again once djinn has it.
+import { Check, Eye } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -17,15 +18,12 @@ import { t } from "./i18n";
 
 export type OnMark = (kind: MarkKind, remove: boolean) => Promise<void>;
 
-// MarkButtons are an item's read mark and, for a block, its approval: each a toggle. A decision has none: it was taken
-// (the decision log).
+// MarkButtons are an open question's read mark, a toggle. A decision has none: it was taken (the decision log).
 export function MarkButtons({
   item,
-  approve,
   onMark,
 }: {
   item: { marks?: Mark[] };
-  approve: boolean;
   onMark: OnMark;
 }) {
   const [sending, setSending] = useState(false);
@@ -36,7 +34,6 @@ export function MarkButtons({
       .finally(() => setSending(false));
   };
   const read = !!markOf(item, MarkKind.READ);
-  const approved = !!markOf(item, MarkKind.APPROVED);
   return (
     <span className="mark-buttons">
       <button
@@ -49,18 +46,6 @@ export function MarkButtons({
         {read ? <Check size={13} /> : <Eye size={13} />}
         {read ? t("mark.read_done") : t("mark.read")}
       </button>
-      {approve && (
-        <button
-          className={`mark-toggle approve ${approved ? "on" : ""}`}
-          aria-pressed={approved}
-          disabled={sending}
-          title={approved ? t("mark.approve_undo") : t("mark.approve_detail")}
-          onClick={() => toggle(MarkKind.APPROVED)}
-        >
-          <ThumbsUp size={13} />
-          {approved ? t("mark.approved") : t("mark.approve")}
-        </button>
-      )}
     </span>
   );
 }
@@ -117,7 +102,7 @@ export function useWrites(onToast: (text: string) => void) {
         questions,
         t("question.enlighten_toast"),
       ),
-    // mark marks a question or a block, by its id.
+    // mark marks a question, by its id.
     mark: (wishId: string, id: string, kind: MarkKind, remove: boolean) =>
       act(
         wishId,
@@ -128,7 +113,7 @@ export function useWrites(onToast: (text: string) => void) {
             remove,
             wishId,
           }),
-        [...questions, Change.BLOCK],
+        questions,
       ),
   };
 }

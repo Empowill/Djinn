@@ -4699,8 +4699,8 @@ func (x *Round) GetTaskId() string {
 	return ""
 }
 
-// A mark the developer puts on a question, a decision or a block: read, or approved as it is. The lead reads the marks
-// in the wish's brief and with djinn mark list.
+// A mark the developer puts on a question: read, or approved as it is. The lead reads the marks in the wish's brief
+// and with djinn mark list. A block takes none: blocks are for agents.
 type Mark struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Which mark.
@@ -9887,7 +9887,7 @@ type Block struct {
 	CreateTime *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
 	// When it last changed.
 	UpdateTime *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
-	// What the developer marked on it from the window: read, approved.
+	// Marks a block took before blocks were for agents only: none is put any more, and none is listed.
 	Marks []*Mark `protobuf:"bytes,11,rep,name=marks,proto3" json:"marks,omitempty"`
 	// One emoji for its subject, set by its writer (djinn block put --icon 🧱): the decision log shows it first. Empty:
 	// a default by kind.
@@ -10362,7 +10362,7 @@ func (*BlockServiceDeleteResponse) Descriptor() ([]byte, []int) {
 	return file_plan_v1_plan_proto_rawDescGZIP(), []int{123}
 }
 
-// MarkTarget points to what a mark is on: a question by its code, or a question or a block by its identifier.
+// MarkTarget points to the question a mark is on, by its code or its identifier. A block's identifier is refused.
 type MarkTarget struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Ref:
@@ -10439,7 +10439,7 @@ type MarkTarget_Code struct {
 }
 
 type MarkTarget_Id struct {
-	// The identifier of a question or of a block.
+	// The identifier of a question.
 	Id string `protobuf:"bytes,2,opt,name=id,proto3,oneof"`
 }
 
@@ -10447,18 +10447,18 @@ func (*MarkTarget_Code) isMarkTarget_Ref() {}
 
 func (*MarkTarget_Id) isMarkTarget_Ref() {}
 
-// Marked is a mark with what it is on.
+// Marked is a mark with the question it is on.
 type Marked struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Wish of the question or block.
+	// Wish of the question.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// The question marked, if it is one.
+	// The question marked.
 	QuestionId string `protobuf:"bytes,2,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
-	// The block marked, if it is one.
+	// Unused: a block takes no mark any more.
 	BlockId string `protobuf:"bytes,3,opt,name=block_id,json=blockId,proto3" json:"block_id,omitempty"`
-	// The question's code, or the block's kind.
+	// The question's code.
 	Label string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
-	// The question's text, or the block's title, in a line.
+	// The question's text, in a line.
 	Title string `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
 	// The mark.
 	Mark          *Mark `protobuf:"bytes,6,opt,name=mark,proto3" json:"mark,omitempty"`
@@ -10540,7 +10540,7 @@ func (x *Marked) GetMark() *Mark {
 
 type MarkServicePutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// What to mark: a question's code, like Q03, or the identifier of a question or of a block.
+	// What to mark: a question's code, like Q03, or its identifier.
 	Target *MarkTarget `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
 	// The mark: read, or approved.
 	Kind MarkKind `protobuf:"varint,2,opt,name=kind,proto3,enum=plan.v1.MarkKind" json:"kind,omitempty"`

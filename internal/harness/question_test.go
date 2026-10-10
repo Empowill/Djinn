@@ -132,6 +132,7 @@ func TestConverter(t *testing.T) {
 	for _, want := range []string{
 		"Q01: Which store?", "- B: Postgres", "## The answer\n\nB: Postgres", "Postgres, we need several writers",
 		"--decision Q01", "djinn task spawn " + wishID, "djinn question ask", "## Where the wish stands", "Run Djinn on itself",
+		"First look for the azima each task belongs to", "only for a will no existing one carries",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompt)
