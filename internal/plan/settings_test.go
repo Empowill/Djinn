@@ -184,8 +184,8 @@ func TestResolveSettings(t *testing.T) {
 	} {
 		got := ResolveSettings(c.repo, c.dev)
 		// The question workers' settings are TestQuestionSettings'.
-		got.QuestionWorkers, got.QuestionModel, got.QuestionBudgetUSD = false, "", 0
-		got.QuestionWorkersFrom, got.QuestionModelFrom, got.QuestionBudgetFrom = 0, 0, 0
+		got.QuestionWorkers, got.QuestionProvider, got.QuestionModel, got.QuestionBudgetUSD = false, 0, "", 0
+		got.QuestionWorkersFrom, got.QuestionProviderFrom, got.QuestionModelFrom, got.QuestionBudgetFrom = 0, 0, 0, 0
 		// Main's are TestMainSettings'.
 		got.MainBranch, got.MergeMain, got.MergeMainEvery, got.InstallReleases = "", 0, 0, false
 		got.MainBranchFrom, got.MergeMainFrom, got.MergeMainEveryFrom, got.InstallReleasesFrom = 0, 0, 0, 0
@@ -199,28 +199,34 @@ func TestResolveSettings(t *testing.T) {
 // default for another, with a budget; either file changes them, and a file that sets the provider resets the model.
 func TestQuestionSettings(t *testing.T) {
 	codex := planv1.Provider_PROVIDER_CODEX
+	antigravity := planv1.Provider_PROVIDER_ANTIGRAVITY
+	fake := planv1.Provider_PROVIDER_FAKE
 	type q struct {
-		on     bool
-		model  string
-		budget float64
+		on       bool
+		provider planv1.Provider
+		model    string
+		budget   float64
 	}
 	for _, c := range []struct {
 		name      string
 		repo, dev *planv1.ProjectSettings
 		want      q
 	}{
-		{"neither file", nil, nil, q{true, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
-		{"another provider", &planv1.ProjectSettings{Provider: &codex}, nil, q{true, "", DefaultQuestionBudgetUSD}},
+		{"neither file", nil, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
+		{"another provider", &planv1.ProjectSettings{Provider: &codex}, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
+		{"antigravity falls back to sonnet", &planv1.ProjectSettings{Provider: &antigravity}, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
 		{"the team's", &planv1.ProjectSettings{
-			QuestionWorkers: proto.Bool(false), QuestionModel: proto.String("haiku"), QuestionBudgetUsd: proto.Float64(0.5),
-		}, nil, q{false, "haiku", 0.5}},
-		{"the developer's win", &planv1.ProjectSettings{QuestionWorkers: proto.Bool(false), QuestionModel: proto.String("haiku")},
-			&planv1.ProjectSettings{QuestionWorkers: proto.Bool(true), QuestionModel: proto.String("")}, q{true, "", DefaultQuestionBudgetUSD}},
+			QuestionWorkers: proto.Bool(false), QuestionProvider: &fake, QuestionModel: proto.String("haiku"), QuestionBudgetUsd: proto.Float64(0.5),
+		}, nil, q{false, fake, "haiku", 0.5}},
+		{"the developer's win", &planv1.ProjectSettings{QuestionWorkers: proto.Bool(false), QuestionProvider: &fake, QuestionModel: proto.String("haiku")},
+			&planv1.ProjectSettings{QuestionWorkers: proto.Bool(true), QuestionProvider: &codex, QuestionModel: proto.String("")}, q{true, codex, "", DefaultQuestionBudgetUSD}},
 		{"a provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
-			&planv1.ProjectSettings{Provider: &codex}, q{true, "", DefaultQuestionBudgetUSD}},
+			&planv1.ProjectSettings{Provider: &codex}, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
+		{"a question_provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
+			&planv1.ProjectSettings{QuestionProvider: &codex}, q{true, codex, "", DefaultQuestionBudgetUSD}},
 	} {
 		s := ResolveSettings(c.repo, c.dev)
-		if got := (q{s.QuestionWorkers, s.QuestionModel, s.QuestionBudgetUSD}); got != c.want {
+		if got := (q{s.QuestionWorkers, s.QuestionProvider, s.QuestionModel, s.QuestionBudgetUSD}); got != c.want {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
 	}
@@ -337,7 +343,7 @@ func TestProjectShow(t *testing.T) {
 			question = append(question, s.GetName()+"="+s.GetValue())
 		}
 	}
-	if got, want := strings.Join(question, ", "), "question_workers=true, question_model=sonnet, question_budget_usd=2"; got != want {
+	if got, want := strings.Join(question, ", "), "question_workers=true, question_provider=, question_model=sonnet, question_budget_usd=2"; got != want {
 		t.Errorf("no file, the question workers: %s; want %s", got, want)
 	}
 

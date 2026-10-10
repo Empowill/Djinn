@@ -128,8 +128,9 @@ type Settings struct {
 	CorrectionAttempts int
 
 	// QuestionWorkers says whether Djinn starts a question worker after an answer or a request to investigate, with
-	// QuestionModel and QuestionBudgetUSD.
+	// QuestionProvider, QuestionModel and QuestionBudgetUSD.
 	QuestionWorkers   bool
+	QuestionProvider  planv1.Provider
 	QuestionModel     string
 	QuestionBudgetUSD float64
 
@@ -143,8 +144,18 @@ type Settings struct {
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom                                                   planv1.SettingSource
-	QuestionWorkersFrom, QuestionModelFrom, QuestionBudgetFrom                              planv1.SettingSource
+	QuestionWorkersFrom, QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom                  planv1.SettingSource
+}
+
+// CanReadOnly tells whether a provider can run a question worker (read-only).
+func CanReadOnly(p planv1.Provider) bool {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_FAKE:
+		return true
+	default:
+		return false
+	}
 }
 
 // Defaults of the question workers: a cheaper model is enough to turn a decision into tasks, or to read and revise a
@@ -163,7 +174,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch, CorrectionAttempts: DefaultCorrectionAttempts,
 		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
 		SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def,
-		QuestionWorkers: true, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
+		QuestionWorkers: true, QuestionProviderFrom: def, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
 		QuestionWorkersFrom: def, QuestionModelFrom: def, QuestionBudgetFrom: def,
 		MergeMain: DefaultMergeMain, MergeMainEvery: DefaultMergeMainEvery, InstallReleases: true,
 		MainBranchFrom: def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def,
@@ -211,6 +222,10 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if f.settings.QuestionWorkers != nil {
 			s.QuestionWorkers, s.QuestionWorkersFrom = f.settings.GetQuestionWorkers(), f.from
 		}
+		if f.settings.QuestionProvider != nil {
+			s.QuestionProvider, s.QuestionProviderFrom = f.settings.GetQuestionProvider(), f.from
+			s.QuestionModel, s.QuestionModelFrom, questionModel = "", def, false
+		}
 		if f.settings.QuestionModel != nil {
 			s.QuestionModel, s.QuestionModelFrom, questionModel = f.settings.GetQuestionModel(), f.from, true
 		}
@@ -230,7 +245,15 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 			s.InstallReleases, s.InstallReleasesFrom = f.settings.GetInstallReleases(), f.from
 		}
 	}
-	if !questionModel && s.Provider == planv1.Provider_PROVIDER_CLAUDE {
+	effective := s.QuestionProvider
+	if effective == planv1.Provider_PROVIDER_UNSPECIFIED {
+		if CanReadOnly(s.Provider) {
+			effective = s.Provider
+		} else {
+			effective = planv1.Provider_PROVIDER_CLAUDE
+		}
+	}
+	if !questionModel && effective == planv1.Provider_PROVIDER_CLAUDE {
 		s.QuestionModel = DefaultQuestionModel
 	}
 	return s
@@ -295,6 +318,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
 		{Name: "question_workers", Value: strconv.FormatBool(s.QuestionWorkers), Source: s.QuestionWorkersFrom},
+		{Name: "question_provider", Value: questionProviderName(s.QuestionProvider), Source: s.QuestionProviderFrom},
 		{Name: "question_model", Value: s.QuestionModel, Source: s.QuestionModelFrom},
 		{Name: "question_budget_usd", Value: usd(s.QuestionBudgetUSD), Source: s.QuestionBudgetFrom},
 		{Name: "main_branch", Value: s.MainBranch, Source: s.MainBranchFrom},
@@ -302,6 +326,14 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "merge_main_minutes", Value: strconv.Itoa(int(s.MergeMainEvery / time.Minute)), Source: s.MergeMainEveryFrom},
 		{Name: "install_releases", Value: strconv.FormatBool(s.InstallReleases), Source: s.InstallReleasesFrom},
 	}
+}
+
+// questionProviderName is the name of the question provider, as the settings write it: "" when not set.
+func questionProviderName(p planv1.Provider) string {
+	if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+		return ""
+	}
+	return strings.ToLower(strings.TrimPrefix(p.String(), "PROVIDER_"))
 }
 
 // fileChecks are the checks a file sets: its checks, and its former test command as the check test at commit, unless

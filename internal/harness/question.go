@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -93,10 +94,29 @@ func (h *Harness) startQuestionWorker(
 	if role == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
 		title, prompt = investigatorPrompt(q, note, retryText(before), brief.Moving)
 	}
+	provider, model, _ := questionProvider(settings)
 	return h.spawn(ctx, methodQuestion, &planv1.TaskServiceSpawnRequest{
-		WishId: wish.GetId(), ProjectId: project.GetId(), Title: title, Prompt: prompt, Provider: settings.Provider,
-		Model: settings.QuestionModel, MaxBudgetUsd: settings.QuestionBudgetUSD,
+		WishId: wish.GetId(), ProjectId: project.GetId(), Title: title, Prompt: prompt, Provider: provider,
+		Model: model, MaxBudgetUsd: settings.QuestionBudgetUSD,
 	}, &planv1.Task{Role: role, Question: q.GetCode()})
+}
+
+// questionProvider returns the provider and model for a question worker given the project's settings,
+// and why it fell back to Claude if it did.
+func questionProvider(s plan.Settings) (provider planv1.Provider, model, fallback string) {
+	provider = s.QuestionProvider
+	model = s.QuestionModel
+	if provider != planv1.Provider_PROVIDER_UNSPECIFIED {
+		if provider == planv1.Provider_PROVIDER_CLAUDE && model == "" {
+			model = plan.DefaultQuestionModel
+		}
+		return provider, model, ""
+	}
+	if plan.CanReadOnly(s.Provider) {
+		return s.Provider, s.QuestionModel, ""
+	}
+	return planv1.Provider_PROVIDER_CLAUDE, cmp.Or(s.QuestionModel, plan.DefaultQuestionModel),
+		fmt.Sprintf("%s cannot run read-only: %s", short(s.Provider), short(planv1.Provider_PROVIDER_CLAUDE))
 }
 
 // tellAgain gives the question worker t, which still works on q, the developer's new answer or note: one worker per

@@ -368,6 +368,12 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 			return nil
 		}
 		r.branch, r.from, r.checks = settings.Branch, plan.IntegrationBranchOf(wish, project.GetId()), settings.ChecksBrief()
+		if questionWorker(t) {
+			p, _, fb := questionProvider(settings)
+			if t.GetProvider() == p {
+				r.fallback = fb
+			}
+		}
 	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err
