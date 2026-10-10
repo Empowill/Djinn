@@ -43,7 +43,10 @@ func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c 
 // its provider, as p weighs it (machine.Policy.WorkerRoom). djinn up gives the machine's; without it, the memory
 // holds no worker back. It needs WithCapacity.
 func WithMemory(available func() uint64, p machine.Policy) Option {
-	return func(h *Harness) { h.available, h.policy = available, p }
+	return func(h *Harness) {
+		h.available = available
+		h.policy.Store(&p)
+	}
 }
 
 // WithTotal gives the machine's total RAM in bytes (0 when unknown) for peak forecast committable limits.
@@ -54,9 +57,17 @@ func WithTotal(total func() uint64) Option {
 // SetPolicy updates the scheduling policy and wakes the scheduler for the next pass.
 func (h *Harness) SetPolicy(p machine.Policy) {
 	h.sched.Lock()
-	h.policy = p
+	h.policy.Store(&p)
 	h.sched.Unlock()
 	h.wake()
+}
+
+// Policy returns the current scheduling policy.
+func (h *Harness) Policy() machine.Policy {
+	if p := h.policy.Load(); p != nil {
+		return *p
+	}
+	return machine.Policy{}
 }
 
 // WithScopes runs each worker in a systemd scope of its own, which stopping, pausing and measuring it take whole, its
@@ -69,6 +80,40 @@ func (h *Harness) scope(name string) func() machine.Scope {
 		return nil
 	}
 	return func() machine.Scope { return h.scopes.New(name) }
+}
+
+// scopeFor gives each process of task t a scope of its own with its memory ceiling (Policy.WorkerMemory and/or
+// Policy.WorkerMemoryGuard); nil without scopes.
+func (h *Harness) scopeFor(t *planv1.Task) func() machine.Scope {
+	if h.scopes == nil {
+		return nil
+	}
+	if t == nil {
+		return h.scope("")
+	}
+	p := h.Policy()
+
+	if !h.scopes.MemoryController && h.scopes.Memory == 0 {
+		return func() machine.Scope { return h.scopes.New(t.GetCode()) }
+	}
+
+	var peak uint64
+	var measured int
+	if p.WorkerMemoryGuard > 0 && h.store != nil {
+		ctx := h.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if tasks, err := store.List[*planv1.Task](ctx, h.store, nil); err == nil {
+			peaks := dispatch.ProviderPeaks(tasks)
+			peak, measured = p.Typical(peaks[dispatch.Provider(t)])
+		}
+	}
+	ceiling := p.WorkerMemoryCeiling(peak, measured)
+	if ceiling == 0 && p.WorkerMemoryGuard <= 0 && h.scopes.Memory > 0 {
+		ceiling = h.scopes.Memory
+	}
+	return func() machine.Scope { return h.scopes.NewWithMemory(t.GetCode(), ceiling) }
 }
 
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
@@ -222,7 +267,7 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 			m.Gates = outside()
 		}
 		if h.available != nil {
-			m.Available, m.Policy = h.available(), h.policy
+			m.Available, m.Policy = h.available(), h.Policy()
 		}
 		if h.total != nil {
 			m.Total = h.total()

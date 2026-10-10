@@ -90,7 +90,7 @@ type Harness struct {
 	capacity   Capacity      // nil: no limit
 	available  func() uint64 // the memory available; nil: the memory holds no worker back
 	total      func() uint64 // the machine's total memory; nil: total RAM is unknown
-	policy     machine.Policy
+	policy     atomic.Pointer[machine.Policy]
 	tick       time.Duration // a pass at least this often
 	sched      sync.Mutex    // one scheduling decision at a time: a spawn, a pass, a planned task stopped
 	kick       chan struct{} // wakes the scheduler
@@ -196,6 +196,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}), warm: map[string]*warm{},
 		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
 	}
+	h.policy.Store(&machine.Policy{})
 	for _, o := range opts {
 		o(h)
 	}
@@ -718,7 +719,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
-	spec.Scope = h.scope(t.GetCode())
+	spec.Scope = h.scopeFor(t)
 	w, err := provider.Start(h.ctx, spec)
 	if err != nil {
 		return err

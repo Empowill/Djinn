@@ -57,12 +57,14 @@ func runUp(args []string) (restart bool, err error) {
 		browser, warmWorkers, questionWorkers     bool
 		profiles                                  bool
 		port, maxWorkers, workerCPU, workerMemory int
+		workerMemoryGuard                         float64
 		term, termDir                             string
 	)
 	flags := cli.Up.FlagSet(map[string]any{
 		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
 		"warm-workers": &warmWorkers, "worker-cpu": &workerCPU, "worker-memory": &workerMemory,
-		"question-workers": &questionWorkers, "pprof": &profiles,
+		"worker-memory-guard": &workerMemoryGuard,
+		"question-workers":    &questionWorkers, "pprof": &profiles,
 	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
@@ -108,6 +110,14 @@ func runUp(args []string) (restart bool, err error) {
 	if workerMemory < 0 {
 		return false, fmt.Errorf("--worker-memory %d: expected MiB, or 0 for no cap", workerMemory)
 	}
+	if workerMemoryGuard == 0 && os.Getenv("DJINN_WORKER_MEMORY_GUARD") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_MEMORY_GUARD"), &workerMemoryGuard); err != nil {
+			return false, fmt.Errorf("DJINN_WORKER_MEMORY_GUARD: %w", err)
+		}
+	}
+	if workerMemoryGuard < 0 {
+		return false, fmt.Errorf("--worker-memory-guard %g: expected a positive factor (e.g. 2 to 3), or 0 to turn off", workerMemoryGuard)
+	}
 	home, err := ui.Home()
 	if err != nil {
 		return false, err
@@ -131,6 +141,7 @@ func runUp(args []string) (restart bool, err error) {
 	policy := machine.NotchPolicy(savedNotch)
 	policy.Workers = maxWorkers
 	policy.WorkerMemory = uint64(workerMemory) << 20
+	policy.WorkerMemoryGuard = workerMemoryGuard
 	read := readMachine
 	if read == nil {
 		read = machine.Reader(home)
@@ -150,7 +161,7 @@ func runUp(args []string) (restart bool, err error) {
 	if questionWorkers {
 		opts = append(opts, harness.WithQuestionWorkers())
 	}
-	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory); scopes != nil {
+	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory, policy.WorkerMemoryGuard); scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))
 	}
 	// The integration of finished work runs its gen, setup and checks under the gates, as djinn gate run does.
@@ -506,17 +517,20 @@ func registerLinks(w io.Writer) {
 }
 
 // workerScopes are the systemd scopes the workers run in, one each, their CPU capped at cpu percent of a core and
-// their memory at memory bytes (0: uncapped); nil where there are none: djinn up says why, once, and workers run in
-// their process group.
-func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64) *machine.Scopes {
+// their memory at memory bytes (0: uncapped) or dynamically guarded (guard > 0); nil where there are none: djinn up
+// says why, once, and workers run in their process group.
+func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64, guard float64) *machine.Scopes {
 	scopes, notes, err := machine.ProbeScopes(ctx, cpu, memory)
 	if err != nil {
 		uncapped := ""
-		if cpu > 0 || memory > 0 {
+		if cpu > 0 || memory > 0 || guard > 0 {
 			uncapped = ", uncapped"
 		}
 		fmt.Fprintf(w, "djinn: %v; workers run in their process group%s\n", err, uncapped)
 		return nil
+	}
+	if guard > 0 && !scopes.MemoryController && memory == 0 {
+		notes = append(notes, fmt.Errorf("%w: systemd does not give the memory controller to your user (%s)", machine.ErrNoMemoryLimit, machine.Delegate).Error())
 	}
 	for _, note := range notes {
 		fmt.Fprintf(w, "djinn: %s\n", note)
@@ -527,6 +541,9 @@ func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64) *mac
 	}
 	if scopes.Memory > 0 {
 		caps = append(caps, fmt.Sprintf("its memory at %d MiB", scopes.Memory>>20))
+	}
+	if guard > 0 && (scopes.MemoryController || memory > 0) {
+		caps = append(caps, fmt.Sprintf("its memory guarded at %gx provider peak", guard))
 	}
 	if len(caps) > 0 {
 		fmt.Fprintf(w, "djinn: each worker runs in a systemd scope of its own, %s\n", strings.Join(caps, ", "))

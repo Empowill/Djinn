@@ -377,6 +377,9 @@ func TestNotchPolicy(t *testing.T) {
 		if p.MemoryFree != tt.free {
 			t.Errorf("%s MemoryFree: got %f, want %f", tt.name, p.MemoryFree, tt.free)
 		}
+		if p.WorkerMemory != 0 || p.WorkerMemoryGuard != 0 {
+			t.Errorf("%s: WorkerMemory %d and WorkerMemoryGuard %f should remain 0", tt.name, p.WorkerMemory, p.WorkerMemoryGuard)
+		}
 	}
 	// DefaultPolicy matches medium.
 	def := DefaultPolicy()
@@ -499,4 +502,87 @@ func TestWorkerRoomNotches(t *testing.T) {
 	if whyZeroEngaged != wantZeroEngaged {
 		t.Errorf("zero engaged WorkerRoom: got %q, want %q", whyZeroEngaged, wantZeroEngaged)
 	}
+}
+
+// TestWorkerMemoryGuard tests the dynamic memory guardrail calculation and its interaction with WorkerMemory.
+func TestWorkerMemoryGuard(t *testing.T) {
+	p := DefaultPolicy() // WorkerMargin = 512 MiB
+
+	t.Run("WorkerMemoryMax", func(t *testing.T) {
+		for _, tt := range []struct {
+			name     string
+			factor   float64
+			peak     uint64
+			measured int
+			want     uint64
+		}{
+			{"guardrail disabled", 0, 2 * GiB, 5, 0},
+			{"negative factor", -1.5, 2 * GiB, 5, 0},
+			{"no measurements with factor 2", 2.0, GiB, 0, 0},
+			{"no measurements with factor 3", 3.0, GiB, 0, 0},
+			{"factor 2.0 above forecast", 2.0, GiB, 3, 2 * GiB},
+			{"factor 2.5 above forecast", 2.5, GiB, 3, 2560 * MiB},
+			{"factor 3.0 above forecast", 3.0, GiB, 3, 3 * GiB},
+			// Small peak: 200 MiB peak, margin 512 MiB -> forecast 712 MiB.
+			// 2.0 * 200 MiB = 400 MiB < 712 MiB -> at least forecast (712 MiB).
+			{"small peak clamped to forecast", 2.0, 200 * MiB, 2, 712 * MiB},
+			// Peak 500 MiB, margin 512 MiB -> forecast 1012 MiB.
+			// 2.0 * 500 MiB = 1000 MiB < 1012 MiB -> at least forecast (1012 MiB).
+			// 2.5 * 500 MiB = 1250 MiB > 1012 MiB -> 1250 MiB.
+			{"factor 2 clamped to forecast", 2.0, 500 * MiB, 1, 1012 * MiB},
+			{"factor 2.5 above forecast", 2.5, 500 * MiB, 1, 1250 * MiB},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				if got := p.WorkerMemoryMax(tt.factor, tt.peak, tt.measured); got != tt.want {
+					t.Errorf("WorkerMemoryMax(%g, %d, %d) = %d, want %d", tt.factor, tt.peak, tt.measured, got, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("WorkerMemoryCeiling", func(t *testing.T) {
+		// 1. Default policy: both 0 -> 0.
+		pol := DefaultPolicy()
+		if got := pol.WorkerMemoryCeiling(GiB, 5); got != 0 {
+			t.Errorf("default policy ceiling: got %d, want 0", got)
+		}
+
+		// 2. Guardrail only: WorkerMemoryGuard = 2.0.
+		pol.WorkerMemoryGuard = 2.0
+		// Without measurements: 0.
+		if got := pol.WorkerMemoryCeiling(GiB, 0); got != 0 {
+			t.Errorf("guardrail without measurements: got %d, want 0", got)
+		}
+		// With measurements: 2.0 * 1 GiB = 2 GiB.
+		if got := pol.WorkerMemoryCeiling(GiB, 1); got != 2*GiB {
+			t.Errorf("guardrail measured: got %d, want %d", got, 2*GiB)
+		}
+
+		// 3. Hard ceiling only: WorkerMemory = 4 GiB, WorkerMemoryGuard = 0.
+		polHard := DefaultPolicy()
+		polHard.WorkerMemory = 4 * GiB
+		if got := polHard.WorkerMemoryCeiling(GiB, 0); got != 4*GiB {
+			t.Errorf("hard ceiling without measurements: got %d, want %d", got, 4*GiB)
+		}
+		if got := polHard.WorkerMemoryCeiling(GiB, 3); got != 4*GiB {
+			t.Errorf("hard ceiling with measurements: got %d, want %d", got, 4*GiB)
+		}
+
+		// 4. Both configured: WorkerMemory = 3 GiB, WorkerMemoryGuard = 2.0.
+		polBoth := DefaultPolicy()
+		polBoth.WorkerMemory = 3 * GiB
+		polBoth.WorkerMemoryGuard = 2.0
+		// Without measurements: guard is 0, hard ceiling applies.
+		if got := polBoth.WorkerMemoryCeiling(GiB, 0); got != 3*GiB {
+			t.Errorf("both without measurements: got %d, want %d", got, 3*GiB)
+		}
+		// With peak 1 GiB: guard is 2 GiB < 3 GiB hard ceiling -> 2 GiB.
+		if got := polBoth.WorkerMemoryCeiling(GiB, 1); got != 2*GiB {
+			t.Errorf("both with guard < hard: got %d, want %d", got, 2*GiB)
+		}
+		// With peak 2 GiB: guard is 4 GiB > 3 GiB hard ceiling -> 3 GiB.
+		if got := polBoth.WorkerMemoryCeiling(2*GiB, 1); got != 3*GiB {
+			t.Errorf("both with guard > hard: got %d, want %d", got, 3*GiB)
+		}
+	})
 }

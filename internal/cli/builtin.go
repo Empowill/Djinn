@@ -60,6 +60,13 @@ address in the data folder, for the other commands.`,
 				"controller; 0 caps nothing; default $DJINN_WORKER_MEMORY.",
 		},
 		{
+			Name: "--worker-memory-guard", Type: "float", Env: "DJINN_WORKER_MEMORY_GUARD",
+			Help: "Cap each worker's memory dynamically at this multiple of its provider's observed peak (median of latest " +
+				"10 finished workers) and at least the forecast; typical values are 2 to 3; 0 turns the guardrail off; " +
+				"Linux with systemd only, and only where systemd gives your user the memory controller; without measurements, " +
+				"no ceiling applies; default $DJINN_WORKER_MEMORY_GUARD.",
+		},
+		{
 			Name: "--question-workers", Type: "bool", Default: "true", Env: "DJINN_QUESTION_WORKERS",
 			Help: `Start a small worker on each answer (it turns the decision into tasks) and each "Enlighten me" (it ` +
 				"investigates, then revises the question); a project's settings turn them off too (question_workers: " +
@@ -206,6 +213,12 @@ func (c Command) FlagSet(vars map[string]any) *goflag.FlagSet {
 				panic(err)
 			}
 			fs.IntVar(v, name, def, p.Help)
+		case *float64:
+			def, err := strconv.ParseFloat(cmp.Or(p.Default, "0"), 64)
+			if err != nil {
+				panic(err)
+			}
+			fs.Float64Var(v, name, def, p.Help)
 		case *string:
 			fs.StringVar(v, name, p.Default, p.Help)
 		default:

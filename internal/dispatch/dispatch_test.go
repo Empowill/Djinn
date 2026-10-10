@@ -442,3 +442,52 @@ func TestMemoryCommittableLimit(t *testing.T) {
 		t.Errorf("t2 why:\ngot:  %q\nwant: %q", got["t2"], wantWhy)
 	}
 }
+
+// TestProviderPeaks: finished workers' peak memories are grouped by provider, latest first, ignoring
+// running tasks, watchers, and tasks with no peak memory.
+func TestProviderPeaks(t *testing.T) {
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	tasks := []*planv1.Task{
+		{
+			Id: "c1", Provider: planv1.Provider_PROVIDER_CLAUDE, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now.Add(-2 * time.Hour)), Resources: &planv1.Resources{PeakMemoryBytes: 500 * machine.MiB},
+		},
+		{
+			Id: "c2", Provider: planv1.Provider_PROVIDER_CLAUDE, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now.Add(-1 * time.Hour)), Resources: &planv1.Resources{PeakMemoryBytes: 800 * machine.MiB},
+		},
+		{
+			// Watcher: ignored.
+			Id: "c-watch", Provider: planv1.Provider_PROVIDER_WATCH, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now), Resources: &planv1.Resources{PeakMemoryBytes: 100 * machine.MiB},
+		},
+		{
+			// Running: ignored.
+			Id: "c-run", Provider: planv1.Provider_PROVIDER_CLAUDE, Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+			Resources: &planv1.Resources{PeakMemoryBytes: 900 * machine.MiB},
+		},
+		{
+			// No peak memory: ignored.
+			Id: "c-no-peak", Provider: planv1.Provider_PROVIDER_CLAUDE, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now),
+		},
+		{
+			Id: "k1", Provider: planv1.Provider_PROVIDER_CODEX, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			EndTime: timestamppb.New(now.Add(-30 * time.Minute)), Resources: &planv1.Resources{PeakMemoryBytes: 1200 * machine.MiB},
+		},
+	}
+
+	peaks := ProviderPeaks(tasks)
+	// Claude should have [800 MiB, 500 MiB] (latest first).
+	wantClaude := []uint64{800 * machine.MiB, 500 * machine.MiB}
+	if !slices.Equal(peaks["claude"], wantClaude) {
+		t.Errorf("claude peaks: got %v, want %v", peaks["claude"], wantClaude)
+	}
+	wantCodex := []uint64{1200 * machine.MiB}
+	if !slices.Equal(peaks["codex"], wantCodex) {
+		t.Errorf("codex peaks: got %v, want %v", peaks["codex"], wantCodex)
+	}
+	if len(peaks) != 2 {
+		t.Errorf("expected 2 providers, got %d", len(peaks))
+	}
+}

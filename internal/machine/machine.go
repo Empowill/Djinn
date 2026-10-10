@@ -6,6 +6,7 @@ package machine
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"runtime"
 	"slices"
 	"strings"
@@ -60,8 +61,13 @@ type Policy struct {
 	MaxWorkers      int
 	// WorkerMemory, when above 0, is the most memory a worker may hold, in bytes, where it runs in a systemd scope
 	// of its own (Scopes, djinn up --worker-memory): past it, the kernel reclaims, then kills a process of the worker.
-	// 0, the default: no ceiling.
+	// 0, the default: no ceiling. An expert setting, never tied to operating load notches.
 	WorkerMemory uint64
+	// WorkerMemoryGuard, when above 0, is an optional guardrail factor (typically 2 to 3) applied to the provider's
+	// observed typical peak (median of latest WorkerPeaks finished workers) to set a dynamic MemoryMax ceiling for
+	// each worker, at least its forecast (peak + WorkerMargin). 0, the default: disabled.
+	// Without measurements (measured == 0), no ceiling is set. Never tied to operating load notches.
+	WorkerMemoryGuard float64
 	// The machine is under pressure when, over the last 10 seconds, tasks waited for the CPU at least CPUPressure
 	// percent of the time, or for memory at least MemoryPressure percent (PSI "some").
 	CPUPressure    float64
@@ -371,6 +377,34 @@ func (p Policy) Typical(peaks []uint64) (uint64, int) {
 		return measured[n/2], n
 	}
 	return measured[n/2-1]/2 + measured[n/2]/2, n
+}
+
+// WorkerMemoryMax calculates the dynamic memory ceiling (MemoryMax in bytes) for a worker of a provider
+// with observed peak and measured count, using the guardrail factor.
+// When factor <= 0 or measured == 0, the guardrail sets no ceiling (returns 0).
+// When measured > 0, it returns at least the current forecast (peak + WorkerMargin), and factor * peak if larger.
+func (p Policy) WorkerMemoryMax(factor float64, peak uint64, measured int) uint64 {
+	if factor <= 0 || measured == 0 {
+		return 0
+	}
+	forecast := peak + p.WorkerMargin
+	scaled := uint64(math.Round(float64(peak) * factor))
+	return max(scaled, forecast)
+}
+
+// WorkerMemoryCeiling returns the memory ceiling in bytes for a worker of a provider,
+// evaluating the guardrail (if WorkerMemoryGuard > 0) against the hard ceiling WorkerMemory.
+// Returns 0 when no ceiling applies.
+func (p Policy) WorkerMemoryCeiling(peak uint64, measured int) uint64 {
+	guard := p.WorkerMemoryMax(p.WorkerMemoryGuard, peak, measured)
+	switch {
+	case p.WorkerMemory > 0 && guard > 0:
+		return min(p.WorkerMemory, guard)
+	case p.WorkerMemory > 0:
+		return p.WorkerMemory
+	default:
+		return guard
+	}
 }
 
 // WorkerRoom says why the machine cannot hold another worker of provider yet, or "" when it can: total memory
