@@ -72,6 +72,7 @@ import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { ChangeProvider } from "./wish-dialogs";
 import { WishTask } from "./wish-task";
+import { PageHeader, PageHeaderAction } from "./page-header";
 
 export function WishView({
   wish,
@@ -161,68 +162,70 @@ export function WishView({
           }}
         />
       )}
-      <header className="topbar">
-        <div className="breadcrumbs">
-          {projects.map((project) => (
-            <span
-              className="header-project"
-              key={project.id}
-              title={project.directory || t("project.no_folder")}
+      <PageHeader
+        actions={
+          <>
+            <PageHeaderAction
+              className="wish-provider"
+              label={`${t("wish.provider_detail")} (${providerName(wish.provider)})`}
+              onClick={() => setChanging(true)}
             >
-              {project.name}
-              <ChevronRight size={12} aria-hidden="true" />
-            </span>
-          ))}
-          <strong>{wish.title}</strong>
-        </div>
-        <div className="topbar-actions">
-          <button
-            className="button secondary small wish-provider"
-            title={t("wish.provider_detail")}
-            onClick={() => setChanging(true)}
+              <Bot size={16} aria-hidden="true" />
+              <span>{providerName(wish.provider)}</span>
+            </PageHeaderAction>
+            <PageHeaderAction
+              label={t("wish.resume")}
+              title={t("wish.resume_detail")}
+              onClick={() => quiet(openLead())}
+            >
+              <Terminal size={16} aria-hidden="true" />
+            </PageHeaderAction>
+            <PageHeaderAction
+              label={t("wish.page")}
+              title={t("wish.page_detail")}
+              onClick={() =>
+                quiet(
+                  (async () => {
+                    const res = await clients.wishes.render({
+                      wishId: wish.id,
+                    });
+                    onToast(t("wish.page_written", { file: res.file }));
+                  })().catch((error) => onToast(message(error))),
+                )
+              }
+            >
+              <FileText size={16} aria-hidden="true" />
+            </PageHeaderAction>
+            <PageHeaderAction
+              label={t("app.share")}
+              onClick={() =>
+                quiet(
+                  (async () => {
+                    const res = await clients.wishes.export({
+                      wishId: wish.id,
+                    });
+                    onToast(t("wish.exported", { file: res.file }));
+                  })().catch((error) => onToast(message(error))),
+                )
+              }
+            >
+              <Download size={16} aria-hidden="true" />
+            </PageHeaderAction>
+          </>
+        }
+      >
+        {projects.map((project) => (
+          <span
+            className="header-project"
+            key={project.id}
+            title={project.directory || t("project.no_folder")}
           >
-            <Bot size={14} aria-hidden="true" />
-            {providerName(wish.provider)}
-          </button>
-          <button
-            className="button secondary small"
-            title={t("wish.resume_detail")}
-            onClick={() => quiet(openLead())}
-          >
-            <Terminal size={14} />
-            <span>{t("wish.resume")}</span>
-          </button>
-          <button
-            className="button secondary small"
-            title={t("wish.page_detail")}
-            onClick={() =>
-              quiet(
-                (async () => {
-                  const res = await clients.wishes.render({ wishId: wish.id });
-                  onToast(t("wish.page_written", { file: res.file }));
-                })().catch((error) => onToast(message(error))),
-              )
-            }
-          >
-            <FileText size={14} />
-            <span>{t("wish.page")}</span>
-          </button>
-          <button
-            className="button secondary small"
-            onClick={() =>
-              quiet(
-                (async () => {
-                  const res = await clients.wishes.export({ wishId: wish.id });
-                  onToast(t("wish.exported", { file: res.file }));
-                })().catch((error) => onToast(message(error))),
-              )
-            }
-          >
-            <Download size={14} />
-            <span>{t("app.share")}</span>
-          </button>
-        </div>
-      </header>
+            {project.name}
+            <ChevronRight size={12} aria-hidden="true" />
+          </span>
+        ))}
+        <strong>{wish.title}</strong>
+      </PageHeader>
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />
         <div className="hero mission-header review-head">

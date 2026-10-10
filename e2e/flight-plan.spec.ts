@@ -134,6 +134,63 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await page.goto(process.env.DJINN_URL!);
   // With wishes active, the window opens on their flight plan.
   await expect(page.locator(".hero h1")).toHaveText("Flight plan");
+
+  const pageHeader = page.locator(".page-header");
+  const appToolbar = page.locator(".app-toolbar");
+  const assertHeaderChrome = async (left: number, size = 32) => {
+    const headerBox = await pageHeader.boundingBox();
+    const breadcrumbsBox = await pageHeader
+      .locator(".breadcrumbs")
+      .boundingBox();
+    const backBox = await appToolbar.locator(".app-toolbar-back").boundingBox();
+    const toggleBox = await appToolbar
+      .locator(".app-toolbar-toggle")
+      .boundingBox();
+    expect(headerBox).not.toBeNull();
+    expect(breadcrumbsBox).not.toBeNull();
+    expect(backBox).not.toBeNull();
+    expect(toggleBox).not.toBeNull();
+    expect(breadcrumbsBox!.x).toBeCloseTo(left, 0);
+    await expect(pageHeader).toHaveCSS("height", `${size === 20 ? 32 : 64}px`);
+    expect(backBox).toMatchObject({ width: size, height: size });
+    expect(toggleBox).toMatchObject({ width: size, height: size });
+    const headerCenter = headerBox!.y + headerBox!.height / 2;
+    expect(
+      Math.abs(headerCenter - (backBox!.y + backBox!.height / 2)),
+    ).toBeLessThan(1);
+    expect(
+      Math.abs(headerCenter - (toggleBox!.y + toggleBox!.height / 2)),
+    ).toBeLessThan(1);
+    const actions = pageHeader.locator(".topbar-actions");
+    if (await actions.count()) {
+      const actionsBox = await actions.boundingBox();
+      const iconActionBox = await actions
+        .locator(".page-header-action:not(.wish-provider)")
+        .first()
+        .boundingBox();
+      expect(actionsBox).not.toBeNull();
+      expect(iconActionBox).toMatchObject({ width: size, height: size });
+      expect(
+        Math.abs(headerCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
+      ).toBeLessThan(1);
+      const rightInset = await pageHeader.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).paddingRight),
+      );
+      expect(actionsBox!.x + actionsBox!.width).toBeCloseTo(
+        headerBox!.x + headerBox!.width - rightInset,
+        0,
+      );
+    }
+  };
+
+  await assertHeaderChrome(248);
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  await assertHeaderChrome(100);
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
+  await assertHeaderChrome(248);
+
   await expect(
     page.locator(".plan-nav").filter({ hasText: "Flight plan" }),
   ).toHaveClass(/selected/);
@@ -190,6 +247,23 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // The wish's own view stays: its tasks with their tokens, its note about W1, its journal.
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
+  await expect(pageHeader.locator(".page-header-action")).toHaveCount(4);
+  await assertHeaderChrome(248);
+  await page.setViewportSize({ width: 760, height: 1000 });
+  await assertHeaderChrome(100);
+  await page.evaluate(() =>
+    document.documentElement.classList.add("native-mac"),
+  );
+  await assertHeaderChrome(166, 20);
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  await assertHeaderChrome(166, 20);
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
+  await page.evaluate(() =>
+    document.documentElement.classList.remove("native-mac"),
+  );
+  await page.setViewportSize({ width: 1440, height: 1900 });
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
   await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
   await expect(page.locator(".wish-block")).toContainText("About W1");

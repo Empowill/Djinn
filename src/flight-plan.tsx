@@ -21,6 +21,7 @@ import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { WishTask } from "./wish-task";
+import { PageHeader } from "./page-header";
 import {
   GrantCard,
   InvestigatingSection,
@@ -64,11 +65,9 @@ export function FlightPlan({
 
   return (
     <div className="wish-view flight-plan review">
-      <header className="topbar">
-        <div className="breadcrumbs">
-          <strong>{t("plan.title")}</strong>
-        </div>
-      </header>
+      <PageHeader>
+        <strong>{t("plan.title")}</strong>
+      </PageHeader>
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />
         <div className="hero mission-header review-head">

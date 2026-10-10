@@ -270,9 +270,15 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
     const breadcrumbs = page.locator(".main-shell .topbar .breadcrumbs");
     const breadcrumbsBox = await breadcrumbs.boundingBox();
     expect(breadcrumbsBox).not.toBeNull();
-    expect(breadcrumbsBox!.x).toBeGreaterThanOrEqual(
-      toggleBox!.x + toggleBox!.width,
-    );
+    const pageHeader = page.locator(".page-header");
+    if (await pageHeader.count()) {
+      await expect(pageHeader).toHaveCSS("height", "32px");
+      expect(breadcrumbsBox!.x).toBeCloseTo(166, 0);
+    } else {
+      expect(breadcrumbsBox!.x).toBeGreaterThanOrEqual(
+        toggleBox!.x + toggleBox!.width,
+      );
+    }
   }
 
   await page.locator(".sidebar .new-mission").click();
