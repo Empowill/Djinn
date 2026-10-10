@@ -39,6 +39,7 @@
   "azima.opened_toast": "Azima {code} ouverte.",
   "azima.progress.one": "{done} sur {count} partie terminée",
   "azima.progress.other": "{done} sur {count} parties terminées",
+  "azima.progress_parts": "{done} terminées, {running} en cours, {waiting} en attente",
   "azima.state_awaiting_proof": "À valider",
   "azima.state_done": "Terminée",
   "azima.state_draft": "Brouillon",

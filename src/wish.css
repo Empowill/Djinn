@@ -445,16 +445,28 @@
 }
 /* How much of its work is done: a thin bar, its numbers beside it. */
 .azima-bar {
+  display: flex;
   width: 48px;
   height: 4px;
   border-radius: 2px;
   background: var(--line);
   overflow: hidden;
 }
-.azima-bar > span {
+.azima-bar-done {
   display: block;
   height: 100%;
   background: var(--st-done);
+}
+.azima-bar-running {
+  display: block;
+  height: 100%;
+  background: var(--st-running);
+}
+.azima-progress-counts {
+  display: inline-block;
+}
+.azima-progress-parts {
+  color: var(--muted);
 }
 .azima-parts {
   border-top: 1px solid var(--line);

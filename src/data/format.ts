@@ -3,6 +3,7 @@ import { type Timestamp, timestampDate } from "@bufbuild/protobuf/wkt";
 
 import {
   Allowance,
+  AzimaState,
   Choice,
   type KeptWorktree,
   type Mark,
@@ -75,6 +76,48 @@ export function taskTime(
   const title = end
     ? t("task.ran", { from: when(task.startTime), to: when(task.endTime) })
     : t("task.running_since", { when: when(task.startTime) });
+  return { text, title };
+}
+
+// azimaTime is how long an azima runs or ran: from its first part's start (or its own start) until now,
+// or how long it ran once ended; "" before it starts.
+// Its title says when it started, and when it ended.
+export function azimaTime(
+  azima: Task,
+  parts: readonly Task[],
+  now: number,
+): { text: string; title: string } {
+  const allTasks = [azima, ...parts];
+  const starts = allTasks
+    .map((t) => ({ task: t, date: date(t.startTime) }))
+    .filter((x): x is { task: Task; date: Date } => !!x.date);
+  if (starts.length === 0) return { text: "", title: "" };
+  starts.sort((a, b) => a.date.getTime() - b.date.getTime());
+  const firstStart = starts[0];
+
+  const finished =
+    azima.azima?.state === AzimaState.DONE || taskFinished(azima.status);
+  if (finished) {
+    const ends = allTasks
+      .map((t) => ({ task: t, date: date(t.endTime) }))
+      .filter((x): x is { task: Task; date: Date } => !!x.date);
+    if (ends.length === 0) return { text: "", title: "" };
+    ends.sort((a, b) => b.date.getTime() - a.date.getTime());
+    const lastEnd = ends[0];
+    const text = span(
+      Math.max(0, lastEnd.date.getTime() - firstStart.date.getTime()),
+    );
+    const title = t("task.ran", {
+      from: when(firstStart.task.startTime),
+      to: when(lastEnd.task.endTime),
+    });
+    return { text, title };
+  }
+
+  const text = span(Math.max(0, now - firstStart.date.getTime()));
+  const title = t("task.running_since", {
+    when: when(firstStart.task.startTime),
+  });
   return { text, title };
 }
 

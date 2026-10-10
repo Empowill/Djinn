@@ -188,15 +188,24 @@ export function compareCodes(a: string, b: string): number {
   return pa < pb ? -1 : pa > pb ? 1 : na - nb || (a < b ? -1 : a > b ? 1 : 0);
 }
 
-// azimaRank orders the azimas as the brief does: the ready ones first, those under way before the open ones, then
-// the blocked ones, then those awaiting their proof, the done ones last. Where an azima stands is the lamp's
-// (Task.azima).
-function azimaRank(task: Task): number {
+// azimaRank orders the azimas in a stable order between renders and between days:
+// 0: azimas that move (a worker running on one of its parts, or in progress)
+// 1: azimas waiting for the developer (awaiting proof / to validate)
+// 2: ready azimas not started (open and ready to begin)
+// 3: blocked azimas (waiting for unfinished dependencies)
+// 4: drafts (not ready to spawn parts into)
+// 5: done azimas (finished, folded at the end)
+// Within each group, azimas are ordered strictly by the plan's code order (compareCodes),
+// never by time or by a count that changes every minute.
+export function azimaRank(task: Task): number {
+  if (isDraftAzima(task) || task.azima?.state === AzimaState.DRAFT) return 4;
   const state = task.azima?.state ?? AzimaState.OPEN;
-  if (state === AzimaState.DONE) return 4;
-  if (state === AzimaState.AWAITING_PROOF) return 3;
-  if (task.azima && !task.azima.ready) return 2;
-  return state === AzimaState.IN_PROGRESS ? 0 : 1;
+  if (state === AzimaState.DONE) return 5;
+  if ((task.azima?.partsRunning ?? 0) > 0 || state === AzimaState.IN_PROGRESS)
+    return 0;
+  if (state === AzimaState.AWAITING_PROOF) return 1;
+  if (task.azima && !task.azima.ready) return 3;
+  return 2;
 }
 
 // azimaGroups are the azimas among tasks with their parts, in the order of azimaRank, then by code.
@@ -397,6 +406,11 @@ export function flightPlan(
   plan.questions.sort(byUrgency);
   plan.decisions.sort((a, b) => later(a.item.at, b.item.at));
   plan.moving.sort((a, b) => byMotion(a.item, b.item));
+  plan.azimas.sort(
+    (a, b) =>
+      azimaRank(a.item.azima) - azimaRank(b.item.azima) ||
+      compareCodes(a.item.azima.code, b.item.azima.code),
+  );
   plan.finished.sort((a, b) => newestEnded(a.item, b.item));
   plan.drafts.sort((a, b) => compareCodes(a.item.code, b.item.code));
   return plan;

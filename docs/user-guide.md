@@ -176,8 +176,15 @@ _The two screenshots show a demonstration wish, with fictional data._
 ### Azimas
 
 The lead's plan is a graph of azimas, coded `T01`, `T02`…: parts of the plan that no worker runs, which work is part
-of. The Tasks tab groups the work under its azima, under **Azimas**, with its progress and what it waits for; the top
-of the wish counts the azimas done before the tasks.
+of. The Tasks tab displays the azimas in a single column from top to bottom, each row taking the full width to show
+its code, goal, state, progress (parts done, running, and waiting), time, and dependencies, with the work part of it
+folded underneath. The tasks inside an azima may flow in columns on a wide screen, but the azimas themselves stay in
+a single list. The top of the wish counts the azimas done before the tasks.
+
+The order of azimas is stable between renders and between days, so an azima stays at the same place: first the azimas
+that move (a worker running), then those waiting for the developer (awaiting proof / to validate), then the ready ones
+not started, then blocked ones, then drafts, and last the done ones folded at the end. Within each group, azimas follow
+the plan's code order, never an order by time or by counts that change every minute.
 
 An azima is **Open**, **In progress**, **To validate** or **Done**. Once every task part of it is finished, it is
 **To validate**: nothing is left for Djinn. Its card says what validating it takes, box by box of its plan file (a
