@@ -69,7 +69,19 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
     await card.getByRole("button", { name: "Rub the lamp" }).click();
     await expect(card).toHaveCount(0);
 
-    // The lead spawns a task from that decision.
+    // The lead spawns an azima and a task from that decision under it.
+    const azima = JSON.parse(
+      djinn(
+        "task",
+        "spawn",
+        wishId,
+        "--kind",
+        "azima",
+        "--title",
+        "The wick",
+        "--json",
+      ),
+    ).task as { code: string };
     djinn(
       "task",
       "spawn",
@@ -82,6 +94,8 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
       "text filled",
       "--decision",
       "Q01",
+      "--part-of",
+      azima.code,
     );
 
     const tab = page.getByRole("tab", { name: /^Decisions/ });
