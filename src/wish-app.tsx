@@ -5,7 +5,7 @@ import { Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Change, TaskStatus } from "../gen/ts/plan/v1/plan_pb";
+import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import {
   useClients,
@@ -16,7 +16,7 @@ import {
   useWishDetails,
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
-import { isActive, waitsForYou } from "./data/format";
+import { isActive, runningOf, waitsForYou } from "./data/format";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
@@ -114,9 +114,7 @@ export function WishApp() {
       w.id,
       {
         questions: details[w.id]?.questions.filter(waitsForYou).length ?? 0,
-        running:
-          details[w.id]?.tasks.filter((x) => x.status === TaskStatus.RUNNING)
-            .length ?? 0,
+        ...runningOf(details[w.id]?.tasks ?? []),
       },
     ]),
   );

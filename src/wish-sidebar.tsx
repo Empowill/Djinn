@@ -26,7 +26,9 @@ import { CountPill, ToneIcon } from "./status";
 // What the side panel counts in a wish.
 export interface WishCounts {
   questions: number;
+  // Workers at work, and watchers waiting for their command apart (runningOf).
   running: number;
+  watching: number;
 }
 
 export function WishSidebar({
@@ -71,8 +73,8 @@ export function WishSidebar({
   const [dragged, setDragged] = useState("");
 
   const item = (wish: Wish, rank?: number) => {
-    const count = counts[wish.id] ?? { questions: 0, running: 0 };
-    const tone = wishTone(wish, count.questions, count.running);
+    const count = counts[wish.id] ?? { questions: 0, running: 0, watching: 0 };
+    const tone = wishTone(wish, count.questions, count.running, count.watching);
     const keys = (event: KeyboardEvent) => {
       if (!rank || !event.altKey) return;
       if (event.key === "ArrowUp" && rank > 1) onMove(wish.id, rank - 1);
@@ -127,6 +129,13 @@ export function WishSidebar({
                 tone="running"
                 count={count.running}
                 label={t("plan.running", { count: count.running })}
+              />
+            )}
+            {count.watching > 0 && (
+              <CountPill
+                tone="watching"
+                count={count.watching}
+                label={t("plan.watching", { count: count.watching })}
               />
             )}
             {rank ? (

@@ -181,6 +181,21 @@ export function watcherRuns(
   return task.provider === Provider.WATCH && task.status === TaskStatus.RUNNING;
 }
 
+// Running counts a wish's tasks whose process runs, apart: workers at work, and watchers that wait for their command to
+// print. A watcher is not work in progress: "1 running" for a PR watched alone said a worker ran.
+export interface Running {
+  running: number;
+  watching: number;
+}
+
+export function runningOf(
+  tasks: (Pick<Task, "status"> & Partial<Pick<Task, "provider">>)[],
+): Running {
+  const live = tasks.filter((task) => task.status === TaskStatus.RUNNING);
+  const watching = live.filter(watcherRuns).length;
+  return { running: live.length - watching, watching };
+}
+
 export function taskFinished(status: TaskStatus): boolean {
   return (
     status === TaskStatus.DONE ||
@@ -301,10 +316,16 @@ export function recommendedChoice(question: Question): Choice | undefined {
 }
 
 // wishTone is a wish's state in the status language: what it needs first.
-export function wishTone(wish: Wish, questions: number, running: number): Tone {
+export function wishTone(
+  wish: Wish,
+  questions: number,
+  running: number,
+  watching = 0,
+): Tone {
   if (wish.state === WishState.GRANTED) return "done";
   if (wish.state === WishState.PAUSED) return "paused";
   if (questions > 0 || wish.ready) return "waiting";
   if (running > 0) return "running";
+  if (watching > 0) return "watching";
   return "planned";
 }

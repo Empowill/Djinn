@@ -95,7 +95,7 @@ test("the side panel ranks the active wishes, counts the three places, and folds
     h(s.WishSidebar, {
       wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
       projects: [],
-      counts: { w1: { questions: 2, running: 1 } },
+      counts: { w1: { questions: 2, running: 1, watching: 1 } },
       onSelectPlan() {},
       selectedWishId: "",
       selectedProjectId: "",
@@ -109,6 +109,26 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.match(counted, /wish-tone tone-waiting/);
   assert.match(counted, /aria-label="2 questions wait for your answer."/);
   assert.match(counted, /aria-label="1 running"[^>]*><span class="live-dot"/);
+  // A watcher is counted apart: it waits for its command to print, it does not work.
+  assert.match(counted, /count-pill tone-watching" title="1 watching"/);
+  // A wish whose only process is a watcher is watching, not running.
+  const watched = s.renderToStaticMarkup(
+    h(s.WishSidebar, {
+      wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
+      projects: [],
+      counts: { w1: { questions: 0, running: 0, watching: 1 } },
+      onSelectPlan() {},
+      selectedWishId: "",
+      selectedProjectId: "",
+      collapsed: false,
+      onSelectWish() {},
+      onSelectProject() {},
+      onMove() {},
+      onNewProject() {},
+    }),
+  );
+  assert.match(watched, /wish-tone tone-watching/);
+  assert.doesNotMatch(watched, /running/);
   assert.match(html, />lamp</);
 });
 

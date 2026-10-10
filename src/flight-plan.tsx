@@ -17,7 +17,14 @@ import { AttentionBar, attentionOf } from "./attention";
 import { decisionOf } from "./data/decisions";
 import { useData, usePausable, useWishDetails } from "./data/djinn";
 import { flightPlan, spent } from "./data/flight";
-import { investigating, noLead, waitsForYou, wishTone } from "./data/format";
+import {
+  investigating,
+  noLead,
+  runningOf,
+  waitsForYou,
+  watcherRuns,
+  wishTone,
+} from "./data/format";
 import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { Inbox } from "./inbox";
@@ -150,7 +157,9 @@ export function FlightPlan({
             </p>
           </div>
           <div className="hero-visual">
-            <Machine active={plan.running.length > 0} />
+            <Machine
+              active={plan.running.some(({ item }) => !watcherRuns(item))}
+            />
           </div>
         </div>
 
@@ -220,10 +229,9 @@ export function FlightPlan({
                       detail?.questions.filter(waitsForYou).length ?? 0;
                     const digging =
                       detail?.questions.filter(investigating).length ?? 0;
-                    const running =
-                      detail?.tasks.filter(
-                        (x) => x.status === TaskStatus.RUNNING,
-                      ).length ?? 0;
+                    const { running, watching } = runningOf(
+                      detail?.tasks ?? [],
+                    );
                     const done =
                       detail?.tasks.filter((x) => x.status === TaskStatus.DONE)
                         .length ?? 0;
@@ -235,7 +243,7 @@ export function FlightPlan({
                     return (
                       <button
                         key={wish.id}
-                        className={`plan-wish tone-${wishTone(wish, open, running)}`}
+                        className={`plan-wish tone-${wishTone(wish, open, running, watching)}`}
                         onClick={() => onOpen(wish.id)}
                         title={t("plan.open_wish")}
                       >
@@ -245,7 +253,7 @@ export function FlightPlan({
                         </span>
                         <span className="plan-wish-counts">
                           <StatusBadge
-                            tone={wishTone(wish, open, running)}
+                            tone={wishTone(wish, open, running, watching)}
                             label={
                               open
                                 ? t("plan.questions", { count: open })
@@ -253,7 +261,9 @@ export function FlightPlan({
                                   ? t("wish.ready")
                                   : running
                                     ? t("plan.running", { count: running })
-                                    : t("pill.calm")
+                                    : watching
+                                      ? t("plan.watching", { count: watching })
+                                      : t("pill.calm")
                             }
                           />
                           {digging > 0 && (
@@ -270,6 +280,13 @@ export function FlightPlan({
                               tone="running"
                               count={running}
                               label={t("plan.running", { count: running })}
+                            />
+                          )}
+                          {(open > 0 || running > 0) && watching > 0 && (
+                            <CountPill
+                              tone="watching"
+                              count={watching}
+                              label={t("plan.watching", { count: watching })}
                             />
                           )}
                           {failed > 0 && (

@@ -61,6 +61,7 @@ import {
   taskTone,
   when,
   wishStateText,
+  runningOf,
   wishTone,
 } from "./data/format";
 import { type Entry, isLog, journal } from "./data/journal";
@@ -112,9 +113,7 @@ export function WishView({
   const codes = new Map(detail.tasks.map((task) => [task.id, task.code]));
   const notes = detail.blocks.filter((b) => !isLog(b) && !isDecisionBlock(b));
   const decisions = decisionsOf(detail.questions, detail.blocks, detail.tasks);
-  const running = detail.tasks.filter(
-    (task) => task.status === TaskStatus.RUNNING,
-  ).length;
+  const { running, watching } = runningOf(detail.tasks);
   const done = detail.tasks.filter(
     (task) => task.status === TaskStatus.DONE && !isAzima(task),
   ).length;
@@ -216,7 +215,7 @@ export function WishView({
     );
   };
   const attention = attentionOf(open, waiting, wish.ready ? [wish] : []);
-  const tone = wishTone(wish, open.length, running);
+  const tone = wishTone(wish, open.length, running, watching);
 
   return (
     <div className="wish-view review">
@@ -319,7 +318,7 @@ export function WishView({
         <DeleteWish
           wish={wish}
           tasks={detail.tasks.length}
-          running={running}
+          running={running + watching}
           onClose={() => setDeleting(false)}
           onDelete={() => {
             setDeleting(false);
@@ -386,6 +385,15 @@ export function WishView({
                   label={t("plan.running", { count: running })}
                 >
                   {t("pill.running")}
+                </CountPill>
+              )}
+              {watching > 0 && (
+                <CountPill
+                  tone="watching"
+                  count={watching}
+                  label={t("plan.watching", { count: watching })}
+                >
+                  {t("pill.watching")}
                 </CountPill>
               )}
               {azimaProgress.count > 0 && azimaProgress.proof === 0 && (
