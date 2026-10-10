@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
 
@@ -11,6 +11,8 @@ export const DocsPath = "/docs/";
 // Docs shows the documentation site over the window, in the window's theme. It is a page of djinn's own server, in a
 // frame: the window keeps its wish, its terminal and its streams behind it.
 export function Docs({ onClose }: { onClose: () => void }) {
+  // The frame's address is set once: a new one would reload the site, its place and its search lost.
+  const [src] = useState(() => `${DocsPath}?theme=${shownTheme()}&embedded=1`);
   useEffect(() => {
     const handle = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -46,10 +48,7 @@ export function Docs({ onClose }: { onClose: () => void }) {
         >
           <X size={18} />
         </button>
-        <iframe
-          title={t("docs.title")}
-          src={`${DocsPath}?theme=${shownTheme()}&embedded=1`}
-        />
+        <iframe title={t("docs.title")} src={src} />
       </motion.div>
     </motion.div>
   );

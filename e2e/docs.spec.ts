@@ -100,7 +100,10 @@ for (const scheme of ["dark", "light"] as const) {
   });
 }
 
-test("the settings open the documentation over the window, in its theme", async ({
+// The documentation was so slow to scroll in the window that it seemed to reload: a blur as wide as the window under
+// smoke that drifted, drawn again on every frame (W144). The frame scrolls at the pace of the screen, is never
+// reloaded by a scroll or a click, and nothing blurs what moves behind it.
+test("the settings open the documentation over the window, in its theme, and it scrolls without stalling", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
@@ -115,6 +118,72 @@ test("the settings open the documentation over the window, in its theme", async 
   ).toBeVisible();
   await expect(frame.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(frame.locator("html")).toHaveClass(/embedded/);
+
+  // A mark set on the loaded page: a reload would lose it.
+  const site = frame.locator("html");
+  await site.evaluate(() => {
+    (window as unknown as { loaded: number }).loaded = 1;
+  });
+  // Nothing blurs what is behind it: neither the window under the frame nor anything in the site.
+  expect(
+    await page
+      .locator(".docs-backdrop")
+      .evaluate((e) => getComputedStyle(e).backdropFilter),
+  ).toBe("none");
+  expect(
+    await site.evaluate(() =>
+      Array.from(document.styleSheets)
+        .flatMap((sheet) => Array.from(sheet.cssRules))
+        .filter((rule) => (rule as CSSStyleRule).style?.backdropFilter)
+        .map((rule) => (rule as CSSStyleRule).selectorText),
+    ),
+  ).toEqual([]);
+  // The sky, blurred over the whole page, stays still.
+  expect(
+    await site.evaluate(
+      () =>
+        document
+          .getAnimations()
+          .filter((a) =>
+            document
+              .querySelector(".sky")!
+              .contains((a.effect as KeyframeEffect).target as Element),
+          ).length,
+    ),
+  ).toBe(0);
+  // A dozen frames of scrolling: their median stays far under the quarter of a second each took.
+  const median = await site.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const gaps: number[] = [];
+        let last = performance.now();
+        const step = (now: number) => {
+          gaps.push(now - last);
+          last = now;
+          window.scrollBy(0, 120);
+          if (gaps.length < 12) requestAnimationFrame(step);
+          else resolve(gaps.sort((a, b) => a - b)[6]);
+        };
+        requestAnimationFrame(step);
+      }),
+  );
+  expect(median).toBeLessThan(100);
+
+  // A tab and a command move in the page: the page stays the one loaded.
+  await frame.getByRole("tab", { name: "Command line" }).click();
+  await frame
+    .locator(".cli-toc")
+    .getByRole("link", { name: "answer", exact: true })
+    .click();
+  await expect(frame.locator("#cmd-question-answer")).toBeInViewport();
+  await frame.getByRole("tab", { name: "Concepts" }).click();
+  await expect(frame.locator("#concepts")).toBeVisible();
+  expect(
+    await site.evaluate(
+      () => (window as unknown as { loaded?: number }).loaded,
+    ),
+  ).toBe(1);
+
   await docs.getByRole("button", { name: "Close the window" }).click();
   await expect(docs).toBeHidden();
 });

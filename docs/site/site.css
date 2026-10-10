@@ -201,7 +201,8 @@ h3 {
   background: linear-gradient(90deg, transparent, var(--brass));
 }
 
-/* The sky: stars in the dark, and smoke ribbons in both themes. */
+/* The sky: stars in the dark, and smoke ribbons in both themes. It stays still: its ribbons go through a blur as wide as
+   the window, which a browser draws again on every frame anything over it moves, and scrolling stalled. */
 .sky {
   position: fixed;
   inset: 0;
@@ -228,7 +229,7 @@ h3 {
     radial-gradient(1px 1px at 61% 79%, rgba(214, 222, 255, 0.5), transparent 60%),
     radial-gradient(1.1px 1.1px at 18% 41%, rgba(255, 244, 214, 0.55), transparent 60%);
   background-size: 640px 520px;
-  animation: twinkle 7s ease-in-out infinite alternate;
+  opacity: 0.8;
 }
 
 [data-theme="light"] .stars {
@@ -251,48 +252,18 @@ h3 {
 
 .r1 {
   stroke: var(--smoke-a);
-  animation: drift-a 48s ease-in-out infinite alternate;
 }
 
 .r2 {
   stroke: var(--smoke-b);
-  animation: drift-b 62s ease-in-out infinite alternate;
 }
 
 .r3 {
   stroke: var(--smoke-c);
   stroke-width: 220;
-  animation: drift-a 74s ease-in-out infinite alternate-reverse;
 }
 
-@keyframes twinkle {
-  from {
-    opacity: 0.55;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes drift-a {
-  from {
-    transform: translate3d(-4%, 2%, 0) scale(1.02);
-  }
-  to {
-    transform: translate3d(5%, -3%, 0) scale(1.1);
-  }
-}
-
-@keyframes drift-b {
-  from {
-    transform: translate3d(4%, -2%, 0) rotate(-2deg);
-  }
-  to {
-    transform: translate3d(-5%, 3%, 0) rotate(3deg);
-  }
-}
-
-/* The bar. */
+/* The bar: opaque rather than blurring what scrolls under it, which cost every frame of a scroll. */
 .bar {
   position: sticky;
   top: 0;
@@ -302,9 +273,7 @@ h3 {
   align-items: center;
   gap: 28px;
   padding: 0 clamp(16px, 4vw, 48px);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  backdrop-filter: blur(16px) saturate(1.3);
-  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
 
@@ -697,7 +666,6 @@ h3 {
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 60%, transparent));
   box-shadow: var(--shadow);
-  backdrop-filter: blur(6px);
   transition:
     transform 0.45s var(--ease),
     border-color 0.45s var(--ease),
