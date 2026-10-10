@@ -132,6 +132,10 @@ To use Djinn, see the [README](README.md). To work on it:
     smoke of that logic, end to end: `TestCommitEachTaskAlone` (the integration) and `TestDependsOn` (the
     scheduler). `DJINN_TEST_SYSTEM_ONLY=1 go tool task test` runs on any system what Windows runs.
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
+- A wish of real size, to measure on before optimizing: `internal/testx/bigwish` makes it, the same bytes every time,
+  at the size of the developer's wish (`real`) or ten times over (`x10`). A Go test or benchmark imports it into a
+  store with `WishService.ImportData`; `go run ./tools/bigwish -size real -o <file>` writes it for `djinn wish
+  import`, and a spec imports it into the e2e's djinn with `importBigWish` (`e2e/bigwish.ts`).
 - `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
   can be.
   - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
