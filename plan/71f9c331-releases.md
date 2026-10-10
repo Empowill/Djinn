@@ -123,10 +123,13 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
 - **The CI is GitHub Actions.** `.github/workflows/ci.yml`, on every pull request and every push to `main`: `go tool
   task lint` and `go tool task test` (Go, interface, end-to-end in headless Chromium) on Linux; `test-go` on macOS and
   Windows. Windows reports without blocking until it is green once (T11).
-- **A tag builds, a person publishes.** `.github/workflows/release.yml`, on a `v*` tag: it checks that the tag carries
-  `dist/` and that Djinn builds without CGO (the `go install` fallback), builds every target, and opens a **draft**
-  release with the archives, `SHA256SUMS`, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md` and the install scripts. A
-  maintainer reads it and publishes it; only then is it the latest. A tag with a `-` (`v0.0.1-test`) is a pre-release.
+- **How to release: create the release on GitHub's page, from main.** `.github/workflows/release.yml`
+  runs on `release: published`, builds the interface itself in CI (`npm ci`, `task ui`) when the tag has no `dist/`,
+  builds every target, and attaches the archives, `SHA256SUMS`, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md` and
+  the install scripts to the existing release (`gh release upload --clobber`). The release's text stays what the
+  developer wrote; when it is empty, `docs/releases/<tag>.md` fills it (`gh release edit --notes-file`). A tag pushed
+  with `dist/` inside (`go tool task release`) still works, opening a draft release. Rerunning replaces the assets.
+  A tag with a `-` (`v0.0.1-test`) is a pre-release.
 - **Every step runs by hand, the CI adds nothing.** `go tool task release-build VERSION=… [GOOS= GOARCH= CGO=]`
   builds one archive into `bin/release/` (Windows from Linux too), `release-build-macos` the universal one (`lipo`,
   macOS only), `release-sums` the sums. `tools/releasepack` packs and sums, portable. They use the `dist/` already

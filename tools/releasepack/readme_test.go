@@ -113,3 +113,20 @@ func TestReleaseNotes(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseWorkflow(t *testing.T) {
+	workflow := read(t, ".github/workflows/release.yml")
+	for _, want := range []string{
+		"types: [published]",
+		"tags: [\"v*\"]",
+		"workflow_dispatch:",
+		"hashFiles('dist/index.html') == ''",
+		"npm ci && go tool task ui",
+		"gh release upload \"$GITHUB_REF_NAME\" --clobber",
+		"gh release edit \"$GITHUB_REF_NAME\" --notes-file",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Errorf(".github/workflows/release.yml does not contain %q", want)
+		}
+	}
+}
