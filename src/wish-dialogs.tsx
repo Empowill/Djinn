@@ -1,7 +1,6 @@
 // The window's dialogs on the services: make a wish, add a project, look at a project and its skills, and the
 // settings that stay on this page (the language).
 import {
-  ArrowLeft,
   ArrowRight,
   Bot,
   Check,
@@ -68,12 +67,16 @@ export function MakeWish({
   onMade,
   onClose,
   onBusyChange,
+  backActionRef,
+  onBackSetupChange,
 }: {
   projects: Project[];
   active: number;
   onMade: (wish: Wish) => void;
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
+  backActionRef?: { current: (() => void) | null };
+  onBackSetupChange?: (setup: boolean) => void;
 }) {
   const clients = useClients();
   const full = active >= MAX_ACTIVE;
@@ -108,11 +111,23 @@ export function MakeWish({
   }, []);
   useLayoutEffect(() => {
     const focusTarget = setup
-      ? page.current?.querySelector<HTMLElement>("[data-setup-back]")
+      ? document.querySelector<HTMLElement>(".app-toolbar-back")
       : (page.current?.querySelector<HTMLElement>(".wish-composer-input") ??
         document.getElementById(promptId));
     focusTarget?.focus({ preventScroll: true });
   }, [setup, promptId]);
+  useEffect(() => {
+    const action = () => {
+      if (setup) setSetup(false);
+      else onClose();
+    };
+    if (backActionRef) backActionRef.current = action;
+    onBackSetupChange?.(setup);
+    return () => {
+      if (backActionRef?.current === action) backActionRef.current = null;
+      onBackSetupChange?.(false);
+    };
+  }, [backActionRef, onBackSetupChange, onClose, setup]);
   useEffect(() => {
     if (busy) page.current?.focus({ preventScroll: true });
     else if (submissionFocus.current?.isConnected) {
@@ -194,19 +209,6 @@ export function MakeWish({
         }
       }}
     >
-      <header className="wish-creation-header">
-        <button
-          type="button"
-          className="wish-creation-back"
-          aria-label={setup ? t("agents.back") : t("make.back")}
-          title={setup ? t("agents.back") : t("make.back")}
-          disabled={busy}
-          onClick={() => (setup ? setSetup(false) : onClose())}
-          data-setup-back={setup || undefined}
-        >
-          <ArrowLeft size={16} />
-        </button>
-      </header>
       <div className="wish-creation-scroll">
         <div className="wish-creation-content">
           <div className="wish-creation-intro">

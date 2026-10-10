@@ -87,7 +87,7 @@ test("sidebar geometry stays stable while creation hides the terminal", async ({
   });
   await expectSameGeometry(existing)(duringCreation);
 
-  await creation.getByRole("button", { name: "Back to wishes" }).click();
+  await page.locator(".app-toolbar-back").click();
   await expect(creation).toHaveCount(0);
   await expectSameGeometry(existing)(await snapshot());
 });
@@ -228,11 +228,32 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   await expect(page.locator(".sidebar")).toHaveCSS("padding-top", "28px");
   const sidebarBox = await page.locator(".sidebar").boundingBox();
   expect(sidebarBox).toMatchObject({ width: 67 });
-  const toggleBox = await page.locator(".sidebar-toggle").boundingBox();
-  expect(toggleBox?.width).toBeGreaterThanOrEqual(30);
-  expect(toggleBox?.x).toBeGreaterThanOrEqual(sidebarBox?.x ?? Infinity);
-  expect(toggleBox?.x! + toggleBox?.width!).toBeLessThanOrEqual(
-    (sidebarBox?.x ?? 0) + (sidebarBox?.width ?? 0),
+  const toolbarBack = page.locator(".app-toolbar-back");
+  const toggle = page.locator(".app-toolbar-toggle");
+  const toolbar = page.locator(".app-toolbar");
+  const toggleBox = await toggle.boundingBox();
+  expect(toggleBox).toMatchObject({ width: 20, height: 20 });
+  expect(toggleBox?.x).toBeGreaterThanOrEqual(102);
+  expect(toggleBox?.y).toBe(6);
+  const backBefore = await toolbarBack.boundingBox();
+  expect(backBefore).not.toBeNull();
+  await expect(toolbarBack).toBeDisabled();
+  expect(await toolbar.boundingBox()).toMatchObject({
+    x: 82,
+    y: 6,
+    height: 20,
+  });
+  expect(backBefore).toMatchObject({ width: 20, height: 20, x: 82, y: 6 });
+  expect(backBefore!.x).toBeGreaterThanOrEqual(82);
+  const iconBefore = await toggle
+    .locator("svg")
+    .evaluate((svg) => svg.outerHTML);
+  expect(await page.locator(".app-toolbar > button").count()).toBe(2);
+  await expect(page.locator(".app-toolbar > button").nth(0)).toHaveClass(
+    /app-toolbar-back/,
+  );
+  await expect(page.locator(".app-toolbar > button").nth(1)).toHaveClass(
+    /app-toolbar-toggle/,
   );
   await expect(page.locator(".sidebar-brand")).toHaveCSS(
     "--wails-draggable",
@@ -242,14 +263,35 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
     "--wails-draggable",
     "no-drag",
   );
+  const planNav = page.locator(".sidebar .plan-nav");
+  if (await planNav.count()) await planNav.click();
+  const topbar = page.locator(".main-shell .topbar");
+  if (await topbar.count()) {
+    const breadcrumbs = page.locator(".main-shell .topbar .breadcrumbs");
+    const breadcrumbsBox = await breadcrumbs.boundingBox();
+    expect(breadcrumbsBox).not.toBeNull();
+    expect(breadcrumbsBox!.x).toBeGreaterThanOrEqual(
+      toggleBox!.x + toggleBox!.width,
+    );
+  }
 
   await page.locator(".sidebar .new-mission").click();
   const back = page.locator(".wish-creation-back");
   await expect(back).toBeVisible();
-  expect((await back.boundingBox())?.y).toBeGreaterThanOrEqual(16);
-  await page.locator(".sidebar-toggle").click();
+  await expect(back).toBeEnabled();
+  const backInCreation = await back.boundingBox();
+  expect(backInCreation).not.toBeNull();
+  expect(Math.abs(backInCreation!.x - backBefore!.x)).toBeLessThan(0.5);
+  expect(Math.abs(backInCreation!.y - backBefore!.y)).toBeLessThan(0.5);
+  await toggle.click();
   await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
-  expect((await back.boundingBox())?.x).toBeGreaterThanOrEqual(130);
+  const backCollapsed = await back.boundingBox();
+  expect(backCollapsed).not.toBeNull();
+  expect(Math.abs(backCollapsed!.x - backBefore!.x)).toBeLessThan(0.5);
+  expect(Math.abs(backCollapsed!.y - backBefore!.y)).toBeLessThan(0.5);
+  expect(await toggle.locator("svg").evaluate((svg) => svg.outerHTML)).toBe(
+    iconBefore,
+  );
 });
 
 // The browser has no folder dialog: the path is typed, and the button of the native window is not there.

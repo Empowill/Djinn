@@ -562,19 +562,6 @@
   background: var(--bg);
   color: var(--text);
 }
-.wish-creation-header {
-  position: absolute;
-  top: 16px;
-  left: 34px;
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 0 0 6px;
-  border: 0;
-  background: transparent;
-  pointer-events: none;
-}
 .wish-creation-back {
   display: inline-flex;
   align-items: center;
@@ -1163,10 +1150,6 @@
     left: 24px;
     width: auto;
   }
-  .wish-creation-header {
-    left: 18px;
-    padding: 0 0 0 6px;
-  }
   .wish-creation-footer {
     min-height: 60px;
     padding-right: 24px;
@@ -1190,26 +1173,4 @@
   .wish-creation-footer .button.accent {
     animation: none;
   }
-}
-
-/* Keep the first 16px of the creation surface available to the native titlebar
-   drag strip; the back control starts at y=16px and remains fully interactive. */
-html.native-mac .wish-creation::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 9;
-  height: 16px;
-  pointer-events: auto;
-  background: transparent;
-  --wails-draggable: drag;
-}
-
-.sidebar-collapsed .wish-creation-header {
-  left: 60px;
-}
-html.native-mac .sidebar-collapsed .wish-creation-header {
-  left: 130px;
 }

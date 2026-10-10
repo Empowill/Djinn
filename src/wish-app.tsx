@@ -1,13 +1,7 @@
 // The window, on the services: the side panel (the flight plan, the wishes by rank, the projects), the flight plan of
 // the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
 // this page is how it shows: what is shown and the side panel folded.
-import {
-  PanelLeft,
-  PanelLeftClose,
-  Plus,
-  Settings2,
-  Upload,
-} from "lucide-react";
+import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -74,8 +68,11 @@ export function WishApp() {
   const [making, setMaking] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
+  const makeBackAction = useRef<(() => void) | null>(null);
+  const [makeBackInSetup, setMakeBackInSetup] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
+  const closeMake = useCallback(() => setModal(null), []);
 
   useEffect(() => store("djinn.wish", selected), [selected]);
   useEffect(
@@ -196,6 +193,44 @@ export function WishApp() {
 
   return (
     <div className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""}`}>
+      <div
+        className="app-toolbar"
+        onKeyDown={(event) => {
+          if (
+            event.key !== "Escape" ||
+            event.defaultPrevented ||
+            modal !== "make" ||
+            making
+          )
+            return;
+          event.preventDefault();
+          makeBackAction.current?.();
+        }}
+      >
+        <button
+          type="button"
+          className="wish-creation-back app-toolbar-back"
+          aria-label={makeBackInSetup ? t("agents.back") : t("make.back")}
+          title={makeBackInSetup ? t("agents.back") : t("make.back")}
+          disabled={modal !== "make" || making}
+          onClick={() => makeBackAction.current?.()}
+          data-setup-back={makeBackInSetup || undefined}
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="sidebar-toggle app-toolbar-toggle"
+          onClick={() => setCollapsed(!collapsed)}
+          disabled={making}
+          title={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+          aria-label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+          aria-expanded={!collapsed}
+          aria-controls="djinn-sidebar"
+        >
+          <PanelLeft size={16} aria-hidden="true" />
+        </button>
+      </div>
       <aside
         id="djinn-sidebar"
         className="sidebar"
@@ -206,20 +241,6 @@ export function WishApp() {
             <Brand />
             <span className="version-tag">EARLY ACCESS</span>
           </div>
-          <button
-            className="sidebar-toggle"
-            onClick={() => setCollapsed(!collapsed)}
-            title={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-            aria-label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-            aria-expanded={!collapsed}
-            aria-controls="djinn-sidebar"
-          >
-            {collapsed ? (
-              <PanelLeft size={16} aria-hidden="true" />
-            ) : (
-              <PanelLeftClose size={16} aria-hidden="true" />
-            )}
-          </button>
         </div>
         <div
           className="sidebar-content"
@@ -286,7 +307,9 @@ export function WishApp() {
             projects={projects}
             active={active.length}
             onBusyChange={setMaking}
-            onClose={() => setModal(null)}
+            backActionRef={makeBackAction}
+            onBackSetupChange={setMakeBackInSetup}
+            onClose={closeMake}
             onMade={(made) => {
               setModal(null);
               setSelected(made.id);

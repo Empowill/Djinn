@@ -137,7 +137,7 @@ test("cold creation stays interactive before smoke preparation", async ({
   await expect(region.locator(".wish-creation-intro h1")).toBeVisible();
   await expect(region.locator(".wish-creation-controls")).toBeVisible();
 
-  await region.getByRole("button", { name: "Back to wishes" }).click();
+  await page.locator(".app-toolbar-back").click();
   await expect(region).toHaveCount(0);
   await page.locator(".sidebar .new-mission").click();
   const reopened = page.getByRole("region", {
@@ -467,7 +467,9 @@ test("agent setup keeps the plain draft, project and allowance choices and resto
     page.getByRole("heading", { name: "Set up the agents" }),
   ).toBeVisible();
   await expect(editor).toBeHidden();
-  await page.getByRole("button", { name: "Back to the wish" }).click();
+  const toolbarBack = page.locator(".app-toolbar-back");
+  await expect(toolbarBack).toBeFocused();
+  await toolbarBack.press("Escape");
   await expect(editor).toBeFocused();
   await expect(editor).toHaveValue(
     "Keep this draft through setup\nwith its second line.",
