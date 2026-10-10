@@ -136,6 +136,10 @@ To use Djinn, see the [README](README.md). To work on it:
   at the size of the developer's wish (`real`) or ten times over (`x10`). A Go test or benchmark imports it into a
   store with `WishService.ImportData`; `go run ./tools/bigwish -size real -o <file>` writes it for `djinn wish
   import`, and a spec imports it into the e2e's djinn with `importBigWish` (`e2e/bigwish.ts`).
+  - **Window render performance:** `go tool task e2e -- e2e/wish-render.spec.ts` measures the real-size wish (time
+    to open the wish, switch tabs, show a change arriving) against millisecond budgets. A story that touches the window
+    (interface under the UI folder, the stream it reads, the server calls it makes) runs this spec before it ends;
+    other stories do not. Kept out of the default `go tool task e2e` run.
 - `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
   can be.
   - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
