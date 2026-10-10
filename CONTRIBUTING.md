@@ -151,6 +151,9 @@ To use Djinn, see the [README](README.md). To work on it:
 - `go tool task install`: the Djinn you use, apart from the one you build, with its icon and menu entry on Linux
   (`~/.local/share`). The running one keeps going and offers
   to restart on it ("Update" in the window, or `djinn update` from your terminal; `--yes` elsewhere), reopening the lead terminals.
+  It watches the releases too: with your checkout on main, a newer release installs by itself, the restart waiting
+  for your click; on a branch, none installs over your build, and Djinn merges main into the wishes' branches instead
+  ([releases of Djinn](docs/team-settings.md#releases-of-djinn-for-those-who-build-it)).
 - `djinn up --terminal "claude --resume <session>" --terminal-dir <project>`: run that command in
   the window's terminal instead of your shell.
 - `djinn wish import plan.djinn` (or "Import a wish" in the window); `djinn project add <folder>`
@@ -187,7 +190,10 @@ To use Djinn, see the [README](README.md). To work on it:
   worktree, commits what belongs to the task and drops the rest, then its work integrates; past the same attempts,
   Djinn asks you. A task waits for
   its dependencies' work to be committed, and its worktree starts from that branch; once a batch is committed, the
-  window proposes to install it (the `install` setting) and restart on it.
+  window proposes to install it (the `install` setting) and restart on it. Djinn keeps the wish's branch up with the
+  project's main branch the same way: it fetches main at most hourly, and merges it once main holds a release the
+  branch lacks, tested, never rebasing, a conflict going to a correction worker (`main_branch`, `merge_main`,
+  `merge_main_minutes`; [keeping up with main](docs/team-settings.md#keeping-up-with-main)).
 - `djinn task spawn … --after W1,W2` gives a task what comes before it (`--depends-on`, its former name, still works);
   `--blocks W5` puts the new task before a planned one, W5 waiting for it from the same step, refused once W5 has
   started. `djinn task depend <task-id> --after W1,W2 --also W6=W5` sets what tasks wait for, in place of what they

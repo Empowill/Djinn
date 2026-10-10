@@ -105,7 +105,7 @@ func (h *Harness) spawnCorrection(
 	}
 	return h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: correctionTitle(group, f, in.GetBranch()),
-		Prompt:   correctionPrompt(group, f, in.GetBranch(), settings, attempt),
+		Prompt:   correctionPrompt("the work of "+codes(group), f.GetMergeBranch(), f, in.GetBranch(), settings, attempt),
 		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: from.GetPartOf(),
 	}, &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}})
 }
@@ -141,21 +141,21 @@ func correctionTitle(group []*planv1.Task, f *planv1.IntegrationFailure, branch 
 	return fmt.Sprintf("Settle the conflict of %s with %s", failedTask(group, f).GetCode(), branch)
 }
 
-// correctionPrompt is the first prompt of the attempt-th correction worker of group's failure f, into branch: what
-// failed, the files, the command.
-func correctionPrompt(group []*planv1.Task, f *planv1.IntegrationFailure, branch string, settings plan.Settings, attempt int32) string {
+// correctionPrompt is the first prompt of the attempt-th correction worker of the failure f of work ("the work of W2",
+// "origin/main"), into branch, merging the branch merging when it conflicted: what failed, the files, the command.
+func correctionPrompt(work, merging string, f *planv1.IntegrationFailure, branch string, settings plan.Settings, attempt int32) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Djinn could not integrate the work of %s into %s: %s.\n\n", codes(group), branch, headline(f.GetReason()))
+	fmt.Fprintf(&b, "Djinn could not integrate %s into %s: %s.\n\n", work, branch, headline(f.GetReason()))
 	if f.GetState() == planv1.IntegrationState_INTEGRATION_STATE_RED {
-		fmt.Fprintf(&b, "You correct it. Your worktree is on that merge: their work merged onto %s, where a check failed. "+
-			"The command, run in the project's folder: `%s`. Its output ends with:\n\n", branch, f.GetCommand())
+		fmt.Fprintf(&b, "You correct it. Your worktree is on that merge: %s merged onto %s, where a check failed. "+
+			"The command, run in the project's folder: `%s`. Its output ends with:\n\n", work, branch, f.GetCommand())
 		for line := range strings.Lines(strings.TrimPrefix(f.GetOutput(), ":\n")) {
 			b.WriteString("    " + line)
 		}
-		b.WriteString("\n\nMake the tests pass without undoing what the tasks did.")
+		b.WriteString("\n\nMake the tests pass without undoing what either side did.")
 	} else {
 		fmt.Fprintf(&b, "You correct it. Your worktree is on that merge: the merge of %s is under way, its conflicts left "+
-			"in place, in:\n\n", f.GetMergeBranch())
+			"in place, in:\n\n", merging)
 		for _, file := range f.GetFiles() {
 			b.WriteString("- " + file + "\n")
 		}
@@ -168,7 +168,7 @@ func correctionPrompt(group []*planv1.Task, f *planv1.IntegrationFailure, branch
 	fmt.Fprintf(&b, " Commit your work before you end, with a message in the repository's style (`git log` shows it), which "+
 		"concludes the merge, and leave nothing not committed: Djinn commits nothing blindly, and a review worker would judge "+
 		"what you leave. Djinn then integrates your branch like any task's, its commit checks (%s) run through their gates. "+
-		"Its success brings the work of %s in with yours.", settings.CommitGates(), codes(group))
+		"Its success brings %s in with yours.", settings.CommitGates(), work)
 	if attempt > 1 {
 		fmt.Fprintf(&b, "\n\nThis is attempt %d: the correction before yours failed.", attempt)
 	}

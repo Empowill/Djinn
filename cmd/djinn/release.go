@@ -3,7 +3,8 @@ package main
 // Where a newer Djinn comes from, besides a binary installed at the path of the running one (update.go). A Djinn
 // installed from a release asks the releases of its repository; one installed with go install asks the Go module
 // proxy. Either only reads a version until the person clicks "Update": then it downloads, verifies, and puts the new
-// binary beside the running one, ready to swap.
+// binary beside the running one, ready to swap. A Djinn built from a checkout (go tool task install) asks the releases
+// too, of the variant it would have been; where its checkout stands decides what a release found means (update.go).
 
 import (
 	"context"
@@ -17,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -63,17 +65,61 @@ type source interface {
 }
 
 // releaseSource is where a Djinn of version looks for a newer one: the releases for a release binary, the module
-// proxy for a version go install built, nothing for a build from a checkout.
+// proxy for a version go install built, the releases again for a build from a checkout, any release being newer to
+// it; nothing for a development build.
 func releaseSource(version string) (source, error) {
+	_, _, local := localBuild(version)
 	switch {
 	case !checkReleases:
 		return nil, nil
 	case releaseAsset != "":
-		return newGitHubSource(version)
+		return newGitHubSource(releaseAsset, version)
 	case semver.IsValid(version):
 		return proxySource{version: version}, nil
+	case local:
+		return newGitHubSource(localAsset(), "v0.0.0")
 	}
 	return nil, nil
+}
+
+// localBuild is the commit a Djinn built from a checkout comes from, as go tool task install stamps its version
+// (local-<git describe --always --dirty>: local-1a2b3c4, local-v0.1.0-3-g1a2b3c4-dirty), and whether its tree had
+// changes not committed; ok is false for any other version.
+func localBuild(version string) (commit string, dirty, ok bool) {
+	rest, ok := strings.CutPrefix(version, "local-")
+	if !ok {
+		return "", false, false
+	}
+	rest, dirty = strings.CutSuffix(rest, "-dirty")
+	if i := strings.LastIndex(rest, "-g"); i >= 0 && isHex(rest[i+2:]) {
+		rest = rest[i+2:]
+	}
+	return rest, dirty, len(rest) >= 4 && isHex(rest)
+}
+
+// isHex tells whether s is made of lowercase hexadecimal digits only.
+func isHex(s string) bool {
+	return s != "" && strings.Trim(s, "0123456789abcdef") == ""
+}
+
+// localAsset names the release archive of the variant this binary would be, built from a checkout: what
+// task release-build names it for the same system, architecture and window (Taskfile.yml).
+func localAsset() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "djinn_darwin_universal"
+	case "windows":
+		return "djinn_windows_" + runtime.GOARCH
+	}
+	name := "djinn_" + runtime.GOOS + "_" + runtime.GOARCH
+	tags, cgo := buildSettings()
+	switch {
+	case cgo != "1":
+		return name + "_browser"
+	case runtime.GOOS == "linux" && !slices.Contains(strings.Split(tags, ","), "gtk3"):
+		return name + "_gtk4"
+	}
+	return name
 }
 
 // exeName is the name of djinn inside a release archive and in GOBIN.
@@ -92,10 +138,11 @@ type githubSource struct {
 	up *wails.Updater
 }
 
-func newGitHubSource(version string) (*githubSource, error) {
-	archive := releaseAsset + ".tar.gz"
+// newGitHubSource follows the releases of the variant asset, for a Djinn of version.
+func newGitHubSource(asset, version string) (*githubSource, error) {
+	archive := asset + ".tar.gz"
 	if runtime.GOOS == "windows" {
-		archive = releaseAsset + ".zip"
+		archive = asset + ".zip"
 	}
 	provider, err := github.New(github.Config{
 		Repository: releaseRepo,

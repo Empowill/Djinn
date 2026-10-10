@@ -160,6 +160,41 @@ message ProjectSettings {
   // into its wish's integration branch, before it pushes that branch, or both. Djinn integrates the project's finished
   // work only once one is set. A file that sets some sets them all; names ignore case and are unique.
   repeated ProjectCheck checks = 14 [(buf.validate.field).repeated.max_items = 20];
+  // The project's main branch, which Djinn merges into each wish's integration branch to keep it up with it: "main".
+  // Not set: the default branch of the remote (its HEAD), else main, else master.
+  optional string main_branch = 15 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._/-]*$"
+  ];
+  // When Djinn merges main into a wish's integration branch: once main holds a release the branch lacks, or once it
+  // holds any commit the branch lacks, or never. Not set: at each release.
+  optional MergeMain merge_main = 16 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // How often, in minutes, Djinn fetches main to look at it, at most: a release the running Djinn finds makes it look
+  // at once. Not set: 60.
+  optional int32 merge_main_minutes = 17 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 10080
+  }];
+  // For the project a Djinn built from a checkout (go tool task install) comes from: a newer release of Djinn, found
+  // while that checkout is on the main branch and holds no work the release lacks, installs by itself, the restart
+  // left to the person's click. On a branch, a release never installs over the branch's build: main's merge brings it.
+  // Not set: on.
+  optional bool install_releases = 18;
+}
+
+// MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
+enum MergeMain {
+  // Not set: at each release.
+  MERGE_MAIN_UNSPECIFIED = 0;
+  // Once main holds a release, a tag v1.2.3, that the integration branch lacks.
+  MERGE_MAIN_RELEASE = 1;
+  // Once main holds any commit the integration branch lacks.
+  MERGE_MAIN_COMMIT = 2;
+  // Never: the person keeps the branch up with main.
+  MERGE_MAIN_OFF = 3;
 }
 
 // ProjectCheck is a command Djinn runs on a project's work: checks { name: "lint" command: "go tool task lint" when:
@@ -275,6 +310,9 @@ message Wish {
   // Where the push of each Git project's integration branch stands: its last push, and the question Djinn asks about
   // the next one.
   repeated WishPush pushes = 17;
+  // Where each Git project's integration branch stands against the project's main branch, which Djinn merges into it
+  // by itself: its last merge of main, and why the next one waits.
+  repeated WishMain mains = 18;
 }
 
 // PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
@@ -328,6 +366,51 @@ message IntegrationPush {
   repeated string task_ids = 9;
   // When it was pushed.
   google.protobuf.Timestamp push_time = 10;
+}
+
+// WishMain is where a wish's integration branch stands against its project's main branch, in one of its projects.
+// Djinn merges main into it by itself, as it merges a task's work, never rebasing: a merge needs no model and keeps the
+// history pushed.
+message WishMain {
+  // The project.
+  string project_id = 1;
+  // The last merge of main; unset before the first.
+  MainMerge last = 2;
+  // When Djinn last fetched main to look at it: the cadence counts from then.
+  google.protobuf.Timestamp check_time = 3;
+  // The correction worker that settles main's merge, while it works: Djinn merges main again once it has ended.
+  string corrected_by = 4;
+  // How many correction workers settled main's merge in vain, for main at failed_sha.
+  int32 attempts = 5;
+  // main's commit whose merge Djinn gave up on once the correction attempts were spent: it merges main again once
+  // main moves.
+  string failed_sha = 6;
+  // Why main is not merged now, in a sentence; empty once it is, or when nothing waits.
+  string held = 7;
+}
+
+// MainMerge is a merge of a project's main branch into a wish's integration branch, as the journal records it and the
+// wish's head shows the last one.
+message MainMerge {
+  // The wish, and the project whose branch moved.
+  string wish_id = 1;
+  string project_id = 2;
+  // The integration branch, and the main branch as Djinn merged it: origin/main, or main without a remote.
+  string branch = 3;
+  string main = 4;
+  // main's commit merged, and the commits the integration branch moved from and to.
+  string main_sha = 5;
+  string old_sha = 6;
+  string new_sha = 7;
+  // How many commits main brought, merges aside, and the titles of the latest of them, the latest first.
+  int32 count = 8;
+  repeated string commits = 9;
+  // The newest release main brought, its tag: v0.2.0; empty for none.
+  string release = 10;
+  // When the branch moved.
+  google.protobuf.Timestamp merge_time = 11;
+  // The correction worker whose work settled the merge, if one did.
+  string corrected_by = 12;
 }
 
 // IntegrationBranch is the branch a wish integrates its finished work into, in one of its projects.
@@ -663,6 +746,9 @@ message IntegrationFailure {
   repeated string task_ids = 7;
   // What failed, in a sentence.
   string reason = 8;
+  // For a merge of the project's main branch into the integration branch, main's commit merged: no task's work is in
+  // it, and the correction's success records main as merged.
+  string main_sha = 9;
 }
 
 // TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a

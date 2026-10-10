@@ -1,10 +1,21 @@
 // The wish's head, around its title: its description, a few lines the person edits in place (a click, saved when the
 // field is left), the Lead button, split: Lead resumes the recorded lead, the arrow beside it lists the agents found on
 // this machine, to start a lead of another one from the brief; and where Djinn last pushed its integration branches.
-import { Check, ChevronDown, CloudUpload, Terminal } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  CloudUpload,
+  GitMerge,
+  Terminal,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { type Lead, Provider, type WishPush } from "../gen/ts/plan/v1/plan_pb";
+import {
+  type Lead,
+  Provider,
+  type WishMain,
+  type WishPush,
+} from "../gen/ts/plan/v1/plan_pb";
 import type { Provider as Agent } from "../gen/ts/ui/v1/ui_pb";
 import { when } from "./data/format";
 import { t } from "./i18n";
@@ -245,6 +256,57 @@ export function LastPushes({
             {push.held && (
               <span className="wish-push-refused" title={push.held}>
                 {t("wish.push_held")}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+// MainMerges says, for each project of the wish, the last time Djinn merged the project's main branch into the wish's
+// integration branch, how many commits and which release it brought, their titles on hover; and why the next merge
+// waits, on hover, while it does. Names the project when the wish has several.
+export function MainMerges({
+  mains,
+  projects,
+}: {
+  mains: WishMain[];
+  projects: { id: string; name: string }[];
+}) {
+  return (
+    <>
+      {mains.map((main) => {
+        const last = main.last;
+        if (!last && !main.held) return null;
+        const project =
+          projects.length > 1
+            ? projects.find((p) => p.id === main.projectId)?.name
+            : undefined;
+        return (
+          <span key={main.projectId} className="wish-push">
+            <GitMerge size={13} />
+            {project && <b>{project}</b>}
+            {last && (
+              <span title={last.commits.join("\n")}>
+                {t(
+                  last.release
+                    ? "wish.main_merged_release"
+                    : "wish.main_merged",
+                  {
+                    count: last.count,
+                    main: last.main,
+                    branch: last.branch,
+                    release: last.release,
+                    when: when(last.mergeTime),
+                  },
+                )}
+              </span>
+            )}
+            {main.held && (
+              <span className="wish-push-refused" title={main.held}>
+                {t("wish.main_held")}
               </span>
             )}
           </span>
