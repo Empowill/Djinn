@@ -170,19 +170,34 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await page.getByRole("tab", { name: /^Wish/ }).click();
   await theme(page, "");
 
-  // Enlighten me: what to dig into goes to the lead; the question waits for the lead, not for you.
-  await card.getByRole("button", { name: "Enlighten me" }).click();
+  // Enlighten me: one click sends what the answer's note says to the lead, no second field; the question waits for
+  // the lead, not for you, folded to one line out of the way, and opens on a click.
   await card
-    .getByLabel("What the lead should dig into")
+    .getByLabel("Note with the answer")
     .fill("How long does each burn?");
-  await card
-    .getByRole("button", { name: "Ask the lead to investigate" })
-    .click();
+  await card.getByRole("button", { name: "Enlighten me" }).click();
   const digging = page
     .locator(".investigating-section .question-card")
     .filter({ hasText: "Which oil for the wick?" });
-  await expect(digging).toContainText("Being investigated");
+  await expect(digging).toHaveClass(/folded/);
+  await expect(digging.locator(".question-fold")).toContainText(
+    "Being investigated",
+  );
+  await expect(digging.locator(".question-fold-note")).toHaveText(
+    "You asked: How long does each burn?",
+  );
+  await expect(digging.locator("textarea, .option")).toHaveCount(0);
   await expect(bar.locator(".attention-item")).toHaveCount(1);
+  await digging.screenshot({
+    path: path.join(shots, "review-question-folded.png"),
+  });
+  await digging.locator(".question-fold").click();
+  await expect(digging).not.toHaveClass(/folded/);
+  await expect(digging.locator(".investigating-note")).toHaveText(
+    "You asked to find out more: How long does each burn?",
+  );
+  await expect(digging.locator("textarea")).toHaveCount(1);
+  await expect(digging.getByLabel("Note with the answer")).toHaveValue("");
   const brief = djinn("wish", "brief", wishId);
   expect(brief).toContain("## To investigate");
   expect(brief).toContain("How long does each burn?");
@@ -202,7 +217,9 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   const revised = page
     .locator(".decisions-section .question-card")
     .filter({ hasText: "Which oil for the wick?" });
+  // Revised, it waits for an answer again, open by itself.
   await expect(revised.locator(".revised-badge")).toHaveText("Revised");
+  await expect(revised).not.toHaveClass(/folded/);
   await expect(revised.locator(".question-rounds summary")).toHaveText(
     "History: 2 rounds",
   );

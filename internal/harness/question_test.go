@@ -163,7 +163,7 @@ func TestConverter(t *testing.T) {
 	}
 }
 
-// TestInvestigator: "Enlighten me" starts one investigator with the developer's note; a revision it makes is
+// TestInvestigator: "Enlighten me" starts one investigator with the developer's note, verbatim; a revision it makes is
 // attributed to it, and the lead hears it.
 func TestInvestigator(t *testing.T) {
 	testx.Portable(t)
@@ -174,7 +174,9 @@ func TestInvestigator(t *testing.T) {
 	wishID, _ := e.wish(t, fakeProject(t, ""))
 	q := e.asker(wishID)
 	asked := q.ask(t, "wait") // It works until the test lets it go.
-	q.enlighten(t, asked.GetCode(), "what does each cost to run?")
+	// What the developer typed in the card's note, as they typed it.
+	note := "what does each cost to run?\nAnd the \"smoke\" of the wick — été ?"
+	q.enlighten(t, asked.GetCode(), note)
 	investigators := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
 	if len(investigators) != 1 || len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)) != 0 {
 		t.Fatalf("%d investigators, want 1 and no converter", len(investigators))
@@ -193,7 +195,7 @@ func TestInvestigator(t *testing.T) {
 	e.release(t, inv.GetId())
 	e.ended(t, inv.GetId())
 	prompt := e.prompt(t, inv.GetId())
-	for _, want := range []string{"what does each cost to run?", "djinn question revise Q01 --wish-id " + wishID, "Recommended: A: one file"} {
+	for _, want := range []string{"What the developer wants to know:\n\n" + note + "\n\n", "djinn question revise Q01 --wish-id " + wishID, "Recommended: A: one file"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q:\n%s", want, prompt)
 		}

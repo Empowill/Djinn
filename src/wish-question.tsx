@@ -1,11 +1,12 @@
 // A question of a wish, on Clément's question card, laid out to decide at a glance: its title, the recommendation
-// boxed first, the options as buttons, then what is at stake. Two gestures: "Enlighten me", on the left, asks the
-// lead to find out more first (QuestionService.Enlighten); "Rub the lamp", in the lamp's yellow, answers with the
-// option selected, the recommended one until you pick another, and the note with it. Open, it says how much it holds
-// up: red when a task waits for it, orange under its before words ("before the merge"), grey when it can wait.
-// Answered, it is a decision: no mark asks to read or approve it again, and the decision log shows it. Djinn types
-// each answer in the lead's terminal; a wish without a lead session has no lead to tell, and the card says so. Its
-// rounds, each request and each revision, fold below.
+// boxed first, the options as buttons, then what is at stake. Two gestures, one note field for both: "Enlighten me",
+// on the left, asks the lead to find out more first (QuestionService.Enlighten), the note saying what to look into;
+// "Rub the lamp", in the lamp's yellow, answers with the option selected, the recommended one until you pick another,
+// and the note with it. Open, it says how much it holds up: red when a task waits for it, orange under its before
+// words ("before the merge"), grey when it can wait. Being investigated, it folds to one line out of the way, and
+// opens on a click; revised, it waits for you again, open. Answered, it is a decision: no mark asks to read or
+// approve it again, and the decision log shows it. Djinn types each answer in the lead's terminal; a wish without a
+// lead session has no lead to tell, and the card says so. Its rounds, each request and each revision, fold below.
 import {
   Check,
   ChevronDown,
@@ -54,22 +55,25 @@ export function WishQuestion({
   onAnswer: (choice: Choice, note: string) => Promise<void>;
   // Marks an open question read.
   onMark?: OnMark;
-  // Asks the lead to investigate before deciding.
+  // Asks the lead to investigate before deciding, the note saying what to look into.
   onEnlighten?: (note: string) => Promise<void>;
 }) {
   const answered = !!q.answer;
   // A message built by hand (a test) may leave the lists out.
   const rounds = q.rounds ?? [];
   const digging = investigating(q);
+  // What you asked to look into, while it is being investigated.
+  const asked = digging ? rounds.at(-1)?.note : undefined;
   const recommended = answered ? undefined : recommendedChoice(q);
   const [expanded, setExpanded] = useState(open);
+  // Being investigated, it is one line until you open it.
+  const [peek, setPeek] = useState(false);
+  const folded = digging && !peek;
   // The recommended option is selected until you pick one: a revision that recommends another moves it. With no
   // option named, nothing is selected: rubbing the lamp waits for your pick.
   const [picked, setPicked] = useState<Choice>();
   const choice = picked ?? (q.options.length ? recommended : Choice.YES);
   const [note, setNote] = useState("");
-  const [asking, setAsking] = useState(false);
-  const [dig, setDig] = useState("");
   const [sending, setSending] = useState(false);
   const busy = async (run: () => Promise<void>) => {
     setSending(true);
@@ -123,30 +127,51 @@ export function WishQuestion({
       </div>
     </>
   );
-  const body = answered ? expanded : true;
+  const body = answered ? expanded : !folded;
   return (
     <motion.article
       id={`question-${q.id}`}
-      className={`question-card ${answered ? "answered" : digging ? "investigating" : "open"} ${level}`}
+      className={`question-card ${answered ? "answered" : digging ? "investigating" : "open"} ${level}${folded ? " folded" : ""}`}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: 30 }}
       transition={{ duration: 0.25 }}
     >
       <div className="question-top">
-        {answered ? (
+        {folded ? (
+          <button
+            className="question-heading question-fold"
+            onClick={() => setPeek(true)}
+            aria-expanded={false}
+          >
+            <Lightbulb size={15} aria-hidden="true" />
+            <span className="question-id">{q.code}</span>
+            <span className="question-fold-text">{q.text}</span>
+            {origin}
+            {status}
+            {asked && (
+              <span className="question-fold-note">
+                {t("question.investigating_asked", { note: asked })}
+              </span>
+            )}
+            <ChevronDown size={16} />
+          </button>
+        ) : answered || digging ? (
           <button
             className="question-heading"
-            onClick={() => setExpanded(!expanded)}
-            aria-expanded={expanded}
+            onClick={() => (answered ? setExpanded(!expanded) : setPeek(false))}
+            aria-expanded={answered ? expanded : true}
           >
             {heading}
-            <ChevronDown size={16} className={expanded ? "rotated" : ""} />
+            <ChevronDown
+              size={16}
+              className={answered && !expanded ? "" : "rotated"}
+            />
           </button>
         ) : (
           <div className="question-heading">{heading}</div>
         )}
-        {onMark && !answered && (
+        {onMark && !answered && !folded && (
           <MarkButtons item={q} approve={false} onMark={onMark} />
         )}
       </div>
@@ -156,10 +181,8 @@ export function WishQuestion({
             <p className="investigating-note">
               <Lightbulb size={15} aria-hidden="true" />
               <span>
-                {rounds.at(-1)?.note
-                  ? t("question.investigating_note", {
-                      note: rounds.at(-1)!.note,
-                    })
+                {asked
+                  ? t("question.investigating_note", { note: asked })
                   : t("question.investigating_detail")}
               </span>
             </p>
@@ -233,8 +256,13 @@ export function WishQuestion({
                   <button
                     className="button secondary lamp-enlighten"
                     title={t("question.enlighten_detail")}
-                    aria-expanded={asking}
-                    onClick={() => setAsking(!asking)}
+                    disabled={sending}
+                    onClick={() =>
+                      void busy(async () => {
+                        await onEnlighten(note.trim());
+                        setNote("");
+                      })
+                    }
                   >
                     <Lightbulb size={14} />
                     {t("question.enlighten")}
@@ -258,32 +286,6 @@ export function WishQuestion({
                   {t("question.rub")}
                 </button>
               </div>
-              {asking && onEnlighten && (
-                <div className="enlighten-form">
-                  <textarea
-                    value={dig}
-                    onChange={(e) => setDig(e.target.value)}
-                    placeholder={t("question.enlighten_placeholder")}
-                    rows={2}
-                    maxLength={2000}
-                    aria-label={t("question.enlighten_label")}
-                    autoFocus
-                  />
-                  <button
-                    className="button accent small"
-                    disabled={sending}
-                    onClick={() =>
-                      void busy(async () => {
-                        await onEnlighten(dig.trim());
-                        setAsking(false);
-                        setDig("");
-                      })
-                    }
-                  >
-                    {t("question.enlighten_send")}
-                  </button>
-                </div>
-              )}
               <p className="question-hint">
                 <CornerDownRight size={14} aria-hidden="true" />
                 {t(noLead ? "question.no_lead" : "question.goes_to_lead")}

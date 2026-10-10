@@ -471,6 +471,41 @@ html[data-theme="light"] {
   align-items: flex-start;
   padding: 18px 20px 12px;
 }
+/* Being investigated, folded: one line out of the way of the questions that wait for an answer. */
+.review .question-card.folded {
+  margin-bottom: 8px;
+}
+.review .question-heading.question-fold {
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  white-space: nowrap;
+}
+.review .question-fold > svg:first-child {
+  flex: none;
+  color: var(--tone);
+}
+.review .question-fold .question-id,
+.review .question-fold .status-badge,
+.review .question-fold .wish-origin {
+  flex: none;
+}
+.question-fold-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-weight: 500;
+}
+.question-fold-note {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 13px;
+}
 .review .question-card.answered .question-heading {
   padding-bottom: 14px;
   align-items: center;
@@ -624,16 +659,6 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   color: var(--st-investigating);
   border-color: color-mix(in srgb, var(--st-investigating) 55%, transparent);
   background: color-mix(in srgb, var(--st-investigating) 8%, var(--surface));
-}
-.enlighten-form {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--st-investigating) 40%, var(--line));
-  background: color-mix(in srgb, var(--st-investigating) 6%, var(--surface));
 }
 .investigating-note {
   display: flex;
