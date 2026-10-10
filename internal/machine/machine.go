@@ -275,6 +275,18 @@ func (p Policy) NotchName() string {
 	return NotchName(p.Notch)
 }
 
+// LowPriority reports whether the load notch runs workers with low CPU priority.
+// Minimal and light notches run with low CPU priority to yield CPU to developer applications;
+// other notches run with normal priority.
+func LowPriority(notch djinnv1.LoadNotch) bool {
+	return notch == djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL || notch == djinnv1.LoadNotch_LOAD_NOTCH_LIGHT
+}
+
+// LowPriority reports whether the policy runs workers with low CPU priority.
+func (p Policy) LowPriority() bool {
+	return LowPriority(p.Notch)
+}
+
 // ParseNotch parses a string into a LoadNotch.
 func ParseNotch(s string) (djinnv1.LoadNotch, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {

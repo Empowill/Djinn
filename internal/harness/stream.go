@@ -61,7 +61,7 @@ func startStreamIdle(ctx context.Context, spec Spec, command string, args []stri
 func startStreamWith(
 	ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent, prompt bool,
 ) (Worker, error) {
-	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace)
+	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace, spec.LowPriority)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}

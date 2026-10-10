@@ -57,6 +57,9 @@ type Spec struct {
 	Scope func() machine.Scope
 	// Restart starts a watcher's command again after each exit, until it is stopped. Agents ignore it.
 	Restart bool
+	// LowPriority runs the worker process with low CPU priority (nice 10 on Unix,
+	// BELOW_NORMAL_PRIORITY_CLASS on Windows) when running at minimal or light operating load.
+	LowPriority bool
 }
 
 // Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.

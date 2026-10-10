@@ -49,6 +49,11 @@ func WithMemory(available func() uint64, p machine.Policy) Option {
 	}
 }
 
+// WithPolicy sets the policy Djinn runs with (operating load notch, limits).
+func WithPolicy(p machine.Policy) Option {
+	return func(h *Harness) { h.policy.Store(&p) }
+}
+
 // WithTotal gives the machine's total RAM in bytes (0 when unknown) for peak forecast committable limits.
 func WithTotal(total func() uint64) Option {
 	return func(h *Harness) { h.total = total }

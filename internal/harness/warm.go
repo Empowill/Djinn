@@ -118,6 +118,8 @@ func (h *Harness) refreshWarm(ctx context.Context) {
 			h.dropWarm(w, "the rights of its project changed")
 		case !w.settled(ww.model, ww.budget):
 			h.dropWarm(w, "the settings of its project changed")
+		case w.spec.LowPriority != h.lowPriority():
+			h.dropWarm(w, "the operating load priority changed")
 		case w.stale(ctx, ww.from):
 			h.dropWarm(w, "its project moved on")
 		default:
@@ -192,6 +194,7 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 	w.spec = Spec{
 		TaskID: id, Dir: dir, ReadOnly: ww.readOnly, Permissions: ww.perms, Model: ww.model, MaxBudgetUSD: ww.budget,
 		Env: append([]string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID}, guard...), Scope: h.scope("warm"),
+		LowPriority: h.lowPriority(),
 	}
 	worker, err := h.warmer().Warm(h.ctx, w.spec)
 	if err != nil {
@@ -225,6 +228,8 @@ func (h *Harness) claimWarm(ctx context.Context, wish *planv1.Wish, project *pla
 		h.dropWarm(w, "its process ended")
 	case err != nil || !w.fits(readOnly, perms):
 		h.dropWarm(w, "the task's rights differ")
+	case w.spec.LowPriority != h.lowPriority():
+		h.dropWarm(w, "the operating load priority changed")
 	case w.stale(ctx, plan.IntegrationBranchOf(wish, project.GetId())):
 		h.dropWarm(w, "its project moved on")
 	default:
