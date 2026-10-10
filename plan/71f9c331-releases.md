@@ -60,9 +60,9 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
     scripts/install.ps1 bin/release/`, `go tool task release-sums`, then `sha256sum -c SHA256SUMS`: 8 files OK.
     `djinn_linux_amd64.tar.gz` 14.1 MB (binary 40.5 MB), one top folder `djinn_linux_amd64/` with `djinn` 0755 and the
     three notices; the browser builds are static, the arm64 one an aarch64 ELF.
-  - [ ] Not reproduced here: the arm64 gtk3 build (needs an arm64 runner or machine), both GTK 4 builds (need
-    `libwebkitgtk-6.0-dev`, absent on Ubuntu 22.04), the macOS and Windows jobs, and `gh release create --draft`
-    (needs a pushed tag).
+  - [ ] Not reproduced here: the arm64 gtk3 build, both GTK 4 builds (`libwebkitgtk-6.0-dev` is absent on Ubuntu
+    22.04), the macOS and Windows jobs, and `gh release create --draft`. (needs: an arm64 machine or runner, an Ubuntu
+    24.04, and a pushed `v*` tag)
 - [ ] A fresh account with no administrator rights installs a binary and opens the window on
   Linux (with the runtime libraries), macOS and Windows. (needs: a published release, a person on each system)
   - [x] Linux amd64, from the local release above (2026-10-10, W187): the README's line with the release served from
