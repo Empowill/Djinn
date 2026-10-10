@@ -54,7 +54,10 @@ func TestAzimaRoundTrip(t *testing.T) {
 	if tasks[0].GetAzima() != nil {
 		t.Error("WithAzimas changed the store's message")
 	}
-	want := &planv1.Azima{State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1}
+	want := &planv1.Azima{
+		State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1,
+		Branch: "djinn/T07-the-orchestrator",
+	}
 	if !proto.Equal(filled[0].GetAzima(), want) || filled[1].GetAzima() != nil {
 		t.Errorf("azima: %v, part: %v", filled[0].GetAzima(), filled[1].GetAzima())
 	}
@@ -91,14 +94,14 @@ func TestFillAzimas(t *testing.T) {
 	}
 	FillAzimas(tasks)
 	for code, want := range map[string]*planv1.Azima{
-		"T1": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true},
-		"T2": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 2, PartsDone: 1},
+		"T1": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true, Branch: "djinn/T1"},
+		"T2": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 2, PartsDone: 1, Branch: "djinn/T2", BaseBranch: "djinn/T1"},
 		// Its part T4 is under way, through W3.
-		"T3": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Parts: 1},
-		"T4": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1},
+		"T3": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Parts: 1, Branch: "djinn/T3", BaseBranch: "djinn/T2"},
+		"T4": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, Branch: "djinn/T4"},
 		// A failed part is not progress.
-		"T5": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Parts: 1},
-		"T6": {State: planv1.AzimaState_AZIMA_STATE_DRAFT, Ready: true},
+		"T5": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Parts: 1, Branch: "djinn/T5", BaseBranch: "djinn/T2"},
+		"T6": {State: planv1.AzimaState_AZIMA_STATE_DRAFT, Ready: true, Branch: "djinn/T6"},
 	} {
 		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
 		if got := tasks[i].GetAzima(); !proto.Equal(got, want) {

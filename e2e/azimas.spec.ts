@@ -149,6 +149,8 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
       azima?: { state: string; ready?: boolean };
     }[];
     expect(listed.find((t) => t.code === "T2")?.azima).toEqual({
+      branch: "djinn/T2-the-orchestrator",
+      base_branch: "djinn/T1-lay-the-ground",
       state: "AZIMA_STATE_IN_PROGRESS",
       ready: true,
       parts: 2,

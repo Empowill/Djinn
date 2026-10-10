@@ -41,6 +41,7 @@ import {
   type Wish,
   type WishExport,
   WishState,
+  PushStrategy,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
@@ -81,6 +82,7 @@ import {
   wishStateText,
   runningOf,
   wishTone,
+  effectivePushStrategy,
 } from "./data/format";
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
@@ -110,6 +112,7 @@ import {
   LastPushes,
   LeadButton,
   MainMerges,
+  PushStrategySelector,
   WishDescription,
   recordedAgent,
 } from "./wish-head";
@@ -355,6 +358,46 @@ export function WishView({
     ],
   );
 
+  const effectiveStrategy = useMemo(
+    () => effectivePushStrategy(wish, projects),
+    [wish, projects],
+  );
+  const isPerAzima = effectiveStrategy === PushStrategy.AZIMA;
+
+  const handlePushStrategy = useCallback(
+    (strategy: PushStrategy) => {
+      quiet(
+        act(
+          () => clients.wishes.pushStrategy({ wishId: wish.id, strategy }),
+          [Change.WISH, Change.TASK],
+        ),
+      );
+    },
+    [quiet, act, clients.wishes, wish.id],
+  );
+
+  const handlePushAzima = useCallback(
+    (azima: Task) =>
+      act(
+        () =>
+          clients.projects.push({
+            project: azima.projectId || projects[0]?.id || "",
+            wish: wish.id,
+          }),
+        [Change.WISH, Change.TASK],
+      ),
+    [act, clients.projects, projects, wish.id],
+  );
+
+  const handleOpenPr = useCallback(
+    (url: string) => {
+      void clients.ui
+        .openExternal({ url })
+        .catch(() => window.open(url, "_blank", "noopener"));
+    },
+    [clients.ui],
+  );
+
   const handleValidateAzima = useCallback(
     (azima: Task) => {
       quiet(
@@ -384,9 +427,20 @@ export function WishView({
         render={renderTask}
         focus={focus}
         onValidate={handleValidateAzima}
+        isPerAzima={isPerAzima}
+        onPush={handlePushAzima}
+        onOpenPr={handleOpenPr}
       />
     ),
-    [byId, renderTask, focus, handleValidateAzima],
+    [
+      byId,
+      renderTask,
+      focus,
+      handleValidateAzima,
+      isPerAzima,
+      handlePushAzima,
+      handleOpenPr,
+    ],
   );
 
   const handleOpenDraft = useCallback(
@@ -735,6 +789,11 @@ export function WishView({
                   <Clock3 size={13} />
                   {when(wish.createTime)}
                 </span>
+                <PushStrategySelector
+                  wish={wish}
+                  projects={projects}
+                  onChange={handlePushStrategy}
+                />
                 <LastPushes pushes={wish.pushes} projects={projects} />
                 <MainMerges mains={wish.mains} projects={projects} />
               </div>

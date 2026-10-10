@@ -952,6 +952,14 @@ message Azima {
   int32 parts = 3;
   int32 parts_done = 4;
   int32 parts_running = 5;
+  // Integration branch of the azima: djinn/<code-slug>.
+  string branch = 6;
+  // Branch the azima is based on when stacked, empty when based on main.
+  string base_branch = 7;
+  // Out of sync with its remote on the azima's branch.
+  ProjectSync sync = 8;
+  // Pull request for the azima's branch, once it exists.
+  AzimaPr pr = 9;
 }
 
 // AzimaState is where an azima stands.
@@ -971,6 +979,22 @@ enum AzimaState {
   AZIMA_STATE_AWAITING_PROOF = 4;
   // A draft azima: not formalized yet, has a description but no parts spawned into it yet, and not counted in wish progress.
   AZIMA_STATE_DRAFT = 5;
+}
+
+// AzimaPrState is where a pull request for an azima stands.
+enum AzimaPrState {
+  AZIMA_PR_STATE_UNSPECIFIED = 0;
+  AZIMA_PR_STATE_PROPOSED = 1;
+  AZIMA_PR_STATE_OPEN = 2;
+  AZIMA_PR_STATE_MERGED = 3;
+}
+
+// AzimaPr describes the pull request of an azima branch.
+message AzimaPr {
+  // The URL of the pull request.
+  string url = 1;
+  // Where the pull request stands: proposed, open, merged.
+  AzimaPrState state = 2;
 }
 
 // Resources is what a task's worker uses of the machine: its process group and every process it started, even one

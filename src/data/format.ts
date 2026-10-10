@@ -11,6 +11,7 @@ import {
   type Project,
   type ProjectSync,
   Provider,
+  PushStrategy,
   type Question,
   RoundKind,
   type Task,
@@ -455,4 +456,62 @@ export function syncDescription(sync?: ProjectSync): string {
     });
   }
   return "";
+}
+
+// slug keeps lower-case letters and digits, joined by single dashes, at most n characters cut on a dash.
+export function slug(s: string, n = 40): string {
+  const folded = s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  let res = "";
+  let dash = false;
+  for (let i = 0; i < folded.length; i++) {
+    const ch = folded[i];
+    if ((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9")) {
+      if (dash && res.length > 0) {
+        res += "-";
+      }
+      res += ch;
+      dash = false;
+    } else {
+      dash = true;
+    }
+  }
+  if (res.length > n) {
+    res = res.slice(0, n);
+    const lastDash = res.lastIndexOf("-");
+    if (lastDash > 0) {
+      res = res.slice(0, lastDash);
+    }
+  }
+  return res.replace(/^-+|-+$/g, "");
+}
+
+// azimaBranchName gives the integration branch of an azima: djinn/<code-slug> or djinn/<code>.
+export function azimaBranchName(
+  azima?: { code?: string; title?: string } | null,
+): string {
+  if (!azima || !azima.code) return "";
+  const s = slug(azima.title || "", 40);
+  if (s) {
+    return `djinn/${azima.code}-${s}`;
+  }
+  return `djinn/${azima.code}`;
+}
+
+// effectivePushStrategy resolves the push strategy for a wish, falling back to its projects or WISH.
+export function effectivePushStrategy(
+  wish?: Wish,
+  projects?: readonly { pushStrategy?: PushStrategy }[],
+): PushStrategy {
+  if (wish?.pushStrategy) {
+    return wish.pushStrategy;
+  }
+  for (const p of projects ?? []) {
+    if (p.pushStrategy) {
+      return p.pushStrategy;
+    }
+  }
+  return PushStrategy.WISH;
 }
