@@ -469,7 +469,24 @@ resumes a conversation in the project it began in; rewritten at each start, remo
 `write_file` of the worker's folder and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
 the repository and the repository's common `.git`, read from the `.git` and `commondir` files, without running
 git), `command(<p>)` for each listed command in LISTED, `command(*)` in AUTO, and deny `command(<p>)` for each denied one,
-with `git push` always denied in AUTO, since pushing is the orchestrator's. Djinn writes nothing else of agy's,
+with `git push` always denied in AUTO, since pushing is the orchestrator's.
+
+**Reads and denials (W254, W269, 2026-10-10).** By default headless agy cannot prompt for `read_file` outside the
+workspace, so reading Go's sources (`/usr/local/go/src/…`), caches, or external files failed. Djinn grants
+`read_file(<dir>)` for what a worker needs to read: the repository (its main checkout and `.git`), Go's root
+(`go env GOROOT`), Go module and build caches (`go env GOMODCACHE GOCACHE`), npm's cache (`npm config get cache`),
+`/usr` and `/etc` read-only (on non-Windows), and the user's home folder (`~`). In agy, a deny grant wins over any
+allow grant (prefix matching). Djinn adds deny `read_file(<dir>)` for secrets (`~/.ssh`, `~/.gnupg`, `~/.config/gh`,
+`~/.config/gcloud`, `~/.aws`, `~/.netrc`, `~/.git-credentials`) and Djinn's own data folder (`~/.config/djinn` or
+`$DJINN_HOME`), recursively denying sibling projects, sibling worktrees, and database files while keeping only the
+task's own worktree accessible.
+
+**Model retry prompts (W258, W281, 2026-10-10).** agy sometimes ends its turn on its own internal retry prompts to
+its model (improperly formatted function call, exceeding the output token limit, or transient model retry errors)
+instead of an agent answer or fatal error. When agy's result is one of these retry prompts, Djinn continues the
+conversation itself in the same session with a short prompt ("continue where you stopped, keep answers and edits short"),
+up to 3 times per task, recording each continuation as a `STATUS` event of the task; if it repeats 3 times in a row,
+the task fails with the error. Djinn writes nothing else of agy's,
 reads nothing of it, and leaves the user's settings alone. The run recorded in `testdata/antigravity/commit.jsonl`
 wrote a file, then ran `git status`, `git add`, `git commit`, `git diff` and `git log` in the worktree, all
 sandboxed, nothing denied, no network granted.
@@ -552,3 +569,6 @@ use a personal or licensed account.
 | Second message          | `antigravity/two-turns.jsonl`                     | by hand, **supposed** | two turns in one process                                           |
 | Commit in a worktree    | `antigravity/commit.jsonl`                        | **real**, W208        | LISTED: a file written, Git run in the sandbox, nothing denied     |
 | AUTO, a command denied  | `antigravity/auto.jsonl`                          | **real**, W226        | compound commands run; `git push` is a `permission denied: …` status, the turn goes on, the task done |
+| Malformed call retry    | `antigravity/malformed-call.jsonl`                | by hand, from W258    | retry prompt continued; done on second turn                         |
+| Token limit retry       | `antigravity/token-limit.jsonl`                   | by hand, from W281    | partial output `[cut]`, token limit prompt continued; done on second turn |
+| Three retries failed    | `antigravity/retry-failed.jsonl`                  | by hand               | three retry prompts continued in a row; fourth fails the task       |

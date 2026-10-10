@@ -28,6 +28,8 @@ type turnEnd struct {
 	// queued is how many messages the agent still holds for later turns, when it says so; nil when it does not.
 	// A message sent during a turn may be folded into that turn, and then gets no result of its own.
 	queued *int
+	// retry is a message Djinn immediately sends on the agent's input to continue the conversation, when not empty.
+	retry string
 }
 
 // Quiet is how long a worker that has messages without a result, after a result that did not say how many it
@@ -221,6 +223,14 @@ lines:
 			w.pending = *end.queued
 		} else {
 			w.pending--
+		}
+		if end.retry != "" && !w.closed {
+			if b, err := w.a.encode(end.retry); err == nil {
+				if _, err := w.p.stdin.Write(append(b, '\n')); err == nil {
+					w.pending++
+					lastError = ""
+				}
+			}
 		}
 		if w.pending <= 0 && !w.closed {
 			w.closed = true
