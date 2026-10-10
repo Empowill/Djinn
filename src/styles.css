@@ -1802,9 +1802,11 @@ html[data-motion="reduced"] *::after {
   justify-content: center;
 }
 
-/* The documentation site (docs.tsx), over the window. */
+/* The documentation site (docs.tsx), over the window. Its backdrop dims without blurring: a blur as wide as the window,
+   drawn again on each frame the site scrolls in its frame, stalled the scroll. */
 .docs-backdrop {
   padding: 22px;
+  backdrop-filter: none;
 }
 .docs-panel {
   position: relative;
