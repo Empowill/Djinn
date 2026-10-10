@@ -13,6 +13,13 @@ export const ASCII_CHARS = " .,:;i!I+tf#%@MW";
 export const ASCII_TONES = [0.14, 0.25, 0.39, 0.54, 0.7, 0.88] as const;
 export const ASCII_LAYER_COUNT = ASCII_TONES.length + 2;
 
+// Keep the low-end fade below intact so smoke still arrives softly. The
+// brighter response belongs to the body of the plume, where it creates more
+// separation in the mid tones and reaches the white highlight layer sooner.
+const ASCII_BRIGHTNESS_BASE = 0.22;
+const ASCII_BRIGHTNESS_EXPONENT = 0.5;
+const ASCII_BRIGHTNESS_RANGE = 0.78;
+
 /** The values used by the supplied smoke reference for the initial surface. */
 export const ASCII_REFERENCE = Object.freeze({
   zoom: 10,
@@ -21,6 +28,20 @@ export const ASCII_REFERENCE = Object.freeze({
 });
 
 type NumericBuffer = ArrayLike<number>;
+
+function computeAsciiFade(level: number): number {
+  let fade = Math.max(0, Math.min(1, (level - 0.003) / 0.027));
+  fade = fade * fade * (3 - 2 * fade);
+  return fade;
+}
+
+export function computeAsciiBrightness(level: number): number {
+  return (
+    (ASCII_BRIGHTNESS_BASE +
+      Math.pow(level, ASCII_BRIGHTNESS_EXPONENT) * ASCII_BRIGHTNESS_RANGE) *
+    computeAsciiFade(level)
+  );
+}
 
 export interface AsciiGridPatch {
   /** Layer in the six tone layers plus the two interaction layers. */
@@ -98,11 +119,9 @@ for (let byte = 0; byte < 256; byte++) {
   const level = byte / 255;
   LEVEL_POWER_052[byte] = Math.pow(level, 0.52);
 
-  let fade = Math.max(0, Math.min(1, (level - 0.003) / 0.027));
-  fade = fade * fade * (3 - 2 * fade);
-  LEVEL_FADE[byte] = fade;
+  LEVEL_FADE[byte] = computeAsciiFade(level);
 
-  const brightness = (0.24 + Math.pow(level, 0.55) * 0.72) * fade;
+  const brightness = computeAsciiBrightness(level);
   LEVEL_BRIGHTNESS[byte] = brightness;
   LEVEL_VISIBLE[byte] = brightness > 0.035 ? 1 : 0;
 

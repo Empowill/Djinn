@@ -2,8 +2,11 @@ import { useEffect, useRef } from "react";
 
 import { t } from "./i18n";
 import {
+  ASCII_CHARS,
   ASCII_LAYER_COUNT,
   ASCII_REFERENCE,
+  ASCII_TONES,
+  computeAsciiBrightness,
   type AsciiGridFrame,
 } from "./wish-ascii-grid";
 import {
@@ -197,15 +200,13 @@ function mountSmokePerformanceProbe(
 
 const FONT_FAMILY =
   'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
-const ASCII_CHARS = " .,:;i!I+tf#%@MW";
-const ASCII_TONES = [0.14, 0.25, 0.39, 0.54, 0.7, 0.88];
 const ASCII_PALETTE = [
   "#7d8790",
   "#919ca3",
   "#a7b1b3",
   "#c1c8c5",
-  "#d7dad4",
-  "#eeece4",
+  "#e3e6df",
+  "#fffdf2",
   "#fff0d4",
   "#cad0d5",
 ];
@@ -854,9 +855,7 @@ function mountSmoke(
             Math.floor((Math.pow(level, 0.52) + noise) * ASCII_CHARS.length),
           ),
         );
-        let fade = Math.max(0, Math.min(1, (level - 0.003) / 0.027));
-        fade = fade * fade * (3 - 2 * fade);
-        const brightness = (0.24 + Math.pow(level, 0.55) * 0.72) * fade;
+        const brightness = computeAsciiBrightness(level);
         let lower = 0;
         while (lower < tones.length - 1 && tones[lower + 1] < brightness)
           lower++;

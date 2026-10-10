@@ -58,9 +58,9 @@ func openWindow(ctx context.Context, url string, assets http.Handler, raise <-ch
 		URL:    url,
 		Mac: application.MacWindow{
 			// Extend the webview beneath a transparent titlebar while keeping the native
-			// traffic lights. Keep only a 6px native drag strip: the persistent web
-			// toolbar starts at y=6 so its controls remain clickable in the MCP build,
-			// which intentionally does not load Wails' JavaScript runtime.
+			// traffic lights. Keep only a 6px native drag strip: the frontend extends
+			// the official wails:drag protocol through a transparent zone below it,
+			// while the persistent toolbar starts at y=6 and remains clickable.
 			TitleBar:                application.MacTitleBarHidden,
 			InvisibleTitleBarHeight: 6,
 		},

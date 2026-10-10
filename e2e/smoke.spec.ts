@@ -294,6 +294,87 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   );
 });
 
+test("native mac drag protocol ignores controls and handles the empty titlebar", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const userAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      get: () => `${userAgent} wails.io`,
+    });
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      get: () => "MacIntel",
+    });
+    const messages: string[] = [];
+    Object.defineProperty(window, "__djinnNativeDragMessages", {
+      configurable: true,
+      value: messages,
+    });
+    Object.defineProperty(window, "webkit", {
+      configurable: true,
+      value: {
+        messageHandlers: {
+          external: {
+            postMessage: (message: string) => messages.push(message),
+          },
+        },
+      },
+    });
+  });
+  await disableWishSmokeWebGL(page);
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await page.goto(djinnURL());
+  await expect(page.locator("html")).toHaveClass(/native-mac/);
+
+  const messages = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { __djinnNativeDragMessages: string[] })
+          .__djinnNativeDragMessages,
+    );
+  const clearMessages = () =>
+    page.evaluate(() => {
+      (
+        window as unknown as { __djinnNativeDragMessages: string[] }
+      ).__djinnNativeDragMessages.length = 0;
+    });
+
+  await page.mouse.move(500, 20);
+  await page.mouse.down();
+  await page.mouse.move(510, 20);
+  await page.mouse.up();
+  expect(await messages()).toEqual(["wails:drag"]);
+
+  await clearMessages();
+  await page.mouse.dblclick(500, 20);
+  expect(await messages()).toEqual(["wails:drag:doubleclick"]);
+
+  await clearMessages();
+  await page.mouse.move(510, 48);
+  await page.mouse.down();
+  await page.mouse.move(520, 48);
+  await page.mouse.up();
+  expect(await messages()).toEqual([]);
+
+  await clearMessages();
+  await page.locator(".sidebar .new-mission").click();
+  const input = page.locator(".wish-composer-input");
+  await expect(input).toBeVisible();
+  const inputBox = await input.boundingBox();
+  expect(inputBox).not.toBeNull();
+  await page.mouse.move(inputBox!.x + 8, inputBox!.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(inputBox!.x + 18, inputBox!.y + 8);
+  await page.mouse.up();
+  expect(await messages()).toEqual([]);
+
+  await clearMessages();
+  await page.mouse.click(134, 16);
+  expect(await messages()).toEqual([]);
+});
+
 // The browser has no folder dialog: the path is typed, and the button of the native window is not there.
 test("adding a project in the browser types the folder", async ({ page }) => {
   const errors = collectErrors(page);
