@@ -111,7 +111,7 @@ func (w *Wishes) tell(ctx context.Context, q *planv1.Question, line string) {
 
 // AnswerLine is the line that tells a lead the answer to q: the choice, the option and the note, on one line; then
 // what Djinn did with it, when did says it settled it; else the question worker that turns it into tasks, when worker
-// names one, or else that the lead acts on it.
+// names one, or else that the lead turns it into tasks itself.
 func AnswerLine(q *planv1.Question, worker, did string) string {
 	choice := choiceText(q)
 	if letter, option, ok := strings.Cut(choice, ": "); ok {
@@ -130,7 +130,7 @@ func AnswerLine(q *planv1.Question, worker, did string) string {
 		fmt.Fprintf(&b, " %s turns it into tasks; you will hear when it ends.", worker)
 		return b.String()
 	}
-	fmt.Fprintf(&b, " Act on it: djinn wish brief %s has the context.", q.GetWishId())
+	fmt.Fprintf(&b, " Turn it into tasks: you hold the plan's graph (djinn wish brief %s).", q.GetWishId())
 	return b.String()
 }
 
