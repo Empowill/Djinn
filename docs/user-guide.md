@@ -140,8 +140,9 @@ reads until you say it may edit: it shows as **Waits for your answer**.
 
 ### The Tasks tab
 
-What moves or waits for someone first (running, failed, then waiting and paused, the planned ones last), then every
-finished task, the latest first, with what they spent. Each task, coded `W1`, `W2`…, shows how long it runs (or ran),
+What moves or waits for someone first (running, failed, then waiting and paused, the planned ones last), then the
+azimas with the work part of them, the done ones folded, with what they spent. Finished tasks show under their azima.
+Each task, coded `W1`, `W2`…, shows how long it runs (or ran),
 its project, its title, its status and what it spent; a running one, the CPU and memory its worker uses (not measured
 on Windows yet). Opened: when it started and ended, the files it writes, its budget, its worker's last word, where its
 work stands, and its events as they come.
@@ -322,7 +323,7 @@ gates are held. `djinn command list` shows what each command cost (CPU time, pea
 Nothing is lost. Stopping Djinn interrupts the workers; the next `djinn up` resumes each one by itself, in the same
 task, worktree and session, in the order of the wishes' ranks and within the machine's slots. It does not resume a
 task imported from another machine, a task of a granted wish, or a task whose worktree is gone; after three resumes, a
-task fails. Such a task is history: it shows among the finished tasks, never in what waits for you.
+task fails. Such a task is history: it shows among the finished parts of its azima, never in what waits for you.
 `djinn task continue <task-id> --prompt "…"` gives it a new turn of its own session, or **Mark done** closes it.
 
 A worker stopped by its provider's usage limit shows "Waiting for the limit", then resumes once the limit resets.

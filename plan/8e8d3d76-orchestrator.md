@@ -169,7 +169,7 @@ Decide who does what, run each worker safely, and protect the machine.
   proposed for granting (`plan.Ready`): its fork does.
 - **A task cut short never asks the person to start it again.** Djinn resumes every task it can by itself, so one
   left cut short (resumed as a fork, imported from another machine, its worktree gone) is history: among the finished
-  tasks in the window, the page and the brief, never in what waits for the person, and it keeps no wish from being
+  parts of its azima in the window, the page and the brief, never in what waits for the person, and it keeps no wish from being
   proposed for granting. What waits for the person is a question, an approval or a command to run, never a worker to
   restart. (`TestReady`, `TestBar`, `TestBriefFinished`, `tests/data-flight.test.mjs`, `e2e/review.spec.ts`)
 - **The journal** gets the user's commands as received (`spawn`, `stop`, `clean`), and the harness's own changes

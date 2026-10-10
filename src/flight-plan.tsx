@@ -169,7 +169,6 @@ export function FlightPlan({
             main={t("plan.title")}
             tasks={
               plan.moving.length +
-              plan.finished.length +
               plan.azimas.reduce((n, { item }) => n + item.parts.length, 0)
             }
             decisions={plan.decisions.length}
@@ -187,7 +186,6 @@ export function FlightPlan({
           {view === "tasks" && (
             <TaskSections
               moving={plan.moving}
-              finished={plan.finished}
               azimas={plan.azimas.filter((x) => !azimaFinished(x.item.azima))}
               doneAzimas={plan.azimas.filter((x) =>
                 azimaFinished(x.item.azima),

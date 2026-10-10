@@ -40,7 +40,6 @@ import {
   type OpenQuestion,
   azimaGroups,
   forkedAs,
-  finishedTasks,
   investigatingQuestions,
   isAzima,
   movingTasks,
@@ -145,7 +144,6 @@ export function WishView({
     setOpened(opening);
   }, [opening]);
   const moving = movingTasks(detail.tasks);
-  const finished = finishedTasks(detail.tasks);
   // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
   const azimas = azimaGroups(detail.tasks);
   const doneAzimas = azimas.filter((x) => azimaFinished(x.azima));
@@ -506,7 +504,6 @@ export function WishView({
             ) : (
               <TaskSections
                 moving={moving}
-                finished={finished}
                 azimas={azimas.filter((x) => !azimaFinished(x.azima))}
                 doneAzimas={doneAzimas}
                 fold={wish.id}

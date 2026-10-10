@@ -1,9 +1,8 @@
 // The tasks have a tab of their own, in a wish's view and in the flight plan, next to the rest. In it, a list: at the
 // top what moves or waits for someone, by status (running, cut short and failed first, then waiting and paused, the
 // planned ones last); then the azimas of the plan, each with the work part of it (src/azima.tsx), the done ones folded
-// (Fold); at the bottom every finished task, the latest ended first. The decisions have the next tab
-// (src/decision-log.tsx), then a wish's tilasms (src/tilasms.tsx), and last, discreet, its blocks for agents
-// (src/agent-blocks.tsx).
+// (Fold). The decisions have the next tab (src/decision-log.tsx), then a wish's tilasms (src/tilasms.tsx), and last,
+// discreet, its blocks for agents (src/agent-blocks.tsx).
 import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
@@ -109,10 +108,9 @@ export function Fold({
 }
 
 // TaskSections lays out the Tasks tab: the tasks that move or wait, then the azimas with the work part of them, the
-// done ones folded, then the finished tasks, each in the order given. Without azimas, their section is hidden.
+// done ones folded. Without azimas, their section is hidden.
 export function TaskSections<T, A = never>({
   moving,
-  finished,
   render,
   azimas = [],
   doneAzimas = [],
@@ -122,7 +120,6 @@ export function TaskSections<T, A = never>({
   aside,
 }: {
   moving: readonly T[];
-  finished: readonly T[];
   render: (item: T) => ReactNode;
   // The azimas not done yet, then the done ones, behind their Fold.
   azimas?: readonly A[];
@@ -178,23 +175,6 @@ export function TaskSections<T, A = never>({
           </Fold>
         </section>
       )}
-      <section
-        className="wish-section tasks-finished"
-        aria-label={t("tasks.done")}
-      >
-        <div className="section-title">
-          <h2>
-            {t("tasks.done")}
-            <span className="count">{finished.length}</span>
-          </h2>
-        </div>
-        {finished.length === 0 && (
-          <p className="muted-text">{t("tasks.none_done")}</p>
-        )}
-        {finished.length > 0 && (
-          <div className="card-grid task-grid">{finished.map(render)}</div>
-        )}
-      </section>
     </div>
   );
 }
