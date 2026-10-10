@@ -146,6 +146,21 @@ func CutNeeds(text string) (rest, needs string, ok bool) {
 	return text, "", false
 }
 
+// ReadTaskItemNeeds parses an unchecked markdown task item ("- [ ] text (needs: ...)") and splits its box text
+// from its needs. Returns false when the line is not an unchecked task item, is struck through, or has no needs.
+func ReadTaskItemNeeds(line string) (box, needs string, ok bool) {
+	line = strings.ReplaceAll(line, "\t", "    ")
+	m := boxLine.FindStringSubmatch(line)
+	if m == nil || m[2] != " " {
+		return "", "", false
+	}
+	text := strings.TrimSpace(m[3])
+	if struck(text) {
+		return "", "", false
+	}
+	return CutNeeds(text)
+}
+
 // The words that name who or what gives a proof. Each is matched on whole words, case aside.
 var (
 	macWords     = regexp.MustCompile(`(?i)\b(mac|macos|finder|wkwebview)\b`)
