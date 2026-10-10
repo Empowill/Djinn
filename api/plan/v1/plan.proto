@@ -1133,6 +1133,9 @@ message Question {
   // merge"): the question waits for the developer, orange, under those words. Empty: it can wait. A question a waiting
   // task needs is blocking whatever this says: Djinn computes that from the tasks.
   string before = 17 [(buf.validate.field).string.max_len = 100];
+  // A move only the developer can make through the interface or outside Djinn: push a tag, open a PR, create a
+  // release, test on a machine Djinn lacks, install an update. Shown as "Your move" in the attention bar.
+  bool move = 18;
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -1365,6 +1368,9 @@ message QuestionServiceAskRequest {
   // What the answer is needed before, in a few words, like "before the merge": the question waits for the developer
   // under those words. Empty: it can wait.
   string before = 8 [(buf.validate.field).string.max_len = 100];
+  // A move only the developer can make: push a tag, open or merge a PR, start a release, check on a Mac or Windows,
+  // grant a right, install and restart.
+  bool move = 9;
 }
 
 message QuestionServiceAskResponse {

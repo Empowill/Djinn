@@ -13,6 +13,8 @@ type Urgency int
 const (
 	// Blocking: a waiting task needs the answer. Djinn computes it from the tasks.
 	Blocking Urgency = iota
+	// Move: a move only the developer can make (push a tag, merge a PR, install, etc.).
+	Move
 	// Before: the asker said what the answer is needed before (Question.before).
 	Before
 	// Later: nothing waits for it; it can wait.
@@ -35,6 +37,8 @@ func UrgencyOf(q *planv1.Question, blocked map[string][]string) Urgency {
 	switch {
 	case len(blocked[q.GetId()]) > 0:
 		return Blocking
+	case q.GetMove():
+		return Move
 	case q.GetBefore() != "":
 		return Before
 	default:

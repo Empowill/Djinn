@@ -331,6 +331,8 @@ func build(in Input) (*view, error) {
 		case Blocking:
 			cq.Blocking = tr("page.blocking", "tasks", strings.Join(blocking[q.GetId()], ", "))
 			cq.Class, cq.Level, cq.Open = "bad", cq.Blocking, true
+		case Move:
+			cq.Class, cq.Level = "move", tr("page.level_move")
 		case Before:
 			cq.Class, cq.Level = "wait", q.GetBefore()
 		default:
@@ -392,7 +394,7 @@ func build(in Input) (*view, error) {
 
 	// The bar: each blocking question a line; the other questions too while they are few, else one line for those
 	// needed before something and one for those that can wait.
-	waiting, blocked, later := tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
+	moveLevel, waiting, blocked, later := tr("page.level_move"), tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
 	var others []question
 	for _, q := range v.Questions {
 		switch {
@@ -416,7 +418,7 @@ func build(in Input) (*view, error) {
 		for _, level := range []struct {
 			urgency            Urgency
 			class, level, text string
-		}{{Before, "wait", waiting, "page.bar_questions"}, {Later, "later", later, "page.bar_later"}} {
+		}{{Move, "move", moveLevel, "page.bar_moves"}, {Before, "wait", waiting, "page.bar_questions"}, {Later, "later", later, "page.bar_later"}} {
 			var group []question
 			var codes []string
 			for _, q := range others {

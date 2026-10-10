@@ -22,7 +22,7 @@ export { WishView } from "@/src/wish-view.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
 export { shortModel } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
-export { attentionOf } from "@/src/attention.tsx";
+export { attentionOf, AttentionBar } from "@/src/attention.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
 export {
   azimaGroups,
@@ -2384,19 +2384,21 @@ test("the wish's description shows under its title, the title until one is writt
   );
 });
 
-test("the attention bar says how much each question holds up: blocking, before X, can wait", () => {
+test("the attention bar says how much each question holds up: blocking, your move, before X, can wait", () => {
   const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
-  const q = (id, before = "") => ({
+  const q = (id, before = "", move = false) => ({
     id,
     code: id.toUpperCase(),
     text: id,
     before,
+    move,
   });
   const items = s.attentionOf(
     [
       { wish: w, item: q("q1", "before the merge"), blocking: ["W1"] },
       { wish: w, item: q("q2", "before the demo"), blocking: [] },
       { wish: w, item: q("q3"), blocking: [] },
+      { wish: w, item: q("q4", "", true), blocking: [] },
     ],
     [
       {
@@ -2411,11 +2413,18 @@ test("the attention bar says how much each question holds up: blocking, before X
     items.map((i) => [i.key, i.level, i.label]),
     [
       ["q1", "blocking", undefined],
+      ["q4", "move", undefined],
       ["q2", "question", "before the demo"],
       ["t9", "action", undefined],
       ["q3", "later", undefined],
       ["ready-w1", "ready", undefined],
     ],
+  );
+  const markup = s.renderToStaticMarkup(h(s.AttentionBar, { items }));
+  assert.match(markup, /<button class="attention-item level-move"/);
+  assert.match(
+    markup,
+    /<span class="attention-level"><svg[^>]*class="lucide lucide-circle-user-round[^>]*>.*<\/svg>Your move<\/span>/,
   );
 });
 
