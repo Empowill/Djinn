@@ -151,6 +151,7 @@ type run struct {
 	checks  string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
 	failure string        // the last error the current worker said: it never ends done
 	limit   *Limit        // the usage limit the current worker said it hit: it wins over failure
+	refused string        // the last call its permissions refused, as the worker said it (question.go)
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
@@ -819,6 +820,9 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Limit != nil {
 		r.limit = ev.Limit
 	}
+	if what, ok := strings.CutPrefix(ev.Text, permissionDenied); ok && ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS {
+		r.refused = what
+	}
 	if w := ev.Watched; w != nil && w.First != "" {
 		r.task.LastLine, changed = clipRunes(w.First, watchLineMax), true
 	}
@@ -924,6 +928,8 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, r.failure
 	case t.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_WAITING, "waiting for the answer to its edit question"
+	case r.light && r.refused != "" && questionWorker(t) && !h.questionDid(t):
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, refusedError(r.refused)
 	default:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_DONE, ""
 	}

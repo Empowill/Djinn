@@ -67,7 +67,11 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **An answer reaches the lead.** When the developer answers a question, Djinn types one line in the terminal of
   the wish's lead, then Enter: `Djinn: Q43 answered B — "<option>". Note: "<note>". W12 turns it into tasks; you
   will hear when it ends.` When the converter ends, a second line says what it did: `Djinn: W12 (Q43 → tasks) ended:
-  spawned W13, W14 from Q43; asked Q44.`, or what is left to the lead when it did nothing or failed. Without question
+  spawned W13, W14 from Q43; asked Q44.`, or what is left to the lead when it did nothing or failed. A question
+  worker that ends without spawning, asking or revising anything after its access refused a call has failed, the
+  refusal named, and Djinn starts it again once, told what was refused: `Djinn: W12 (Q43 → tasks) failed: its command
+  was refused: djinn task list … | grep …. Djinn starts it again: W13, …`. The lead acts only if the retry gives up
+  too. Without question
   workers the first line ends `Act on it: djinn wish brief <wish> has the context.` The agent reads each line as a
   message, queued while it works. The line waits until the
   developer has not typed in that terminal for three seconds, and lines go out in order. A lead that does not run is

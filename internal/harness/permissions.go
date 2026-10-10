@@ -64,6 +64,10 @@ var djinnCommands = []string{
 	"git log", "git show", "git diff", "git status",
 }
 
+// permissionDenied starts the status event of a call the worker's permissions refused, whatever its agent: the call
+// follows, as the agent names it.
+const permissionDenied = "permission denied: "
+
 // djinnOnly is what a question worker gets (TASK_ACCESS_DJINN): reading, and djinnCommands; no edit, no network.
 func djinnOnly() *djinnv1.Permissions {
 	return &djinnv1.Permissions{Commands: djinnCommands, Mode: djinnv1.Mode_MODE_LISTED}

@@ -354,7 +354,7 @@ func (p *agyParser) stderr(raw string) []Event {
 		if m := agyDeniedPermission.FindStringSubmatch(raw); m != nil {
 			p.denied = m[1]
 		}
-		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "permission denied: " + raw, Raw: raw}}
+		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: permissionDenied + raw, Raw: raw}}
 	}
 	return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: raw, Raw: raw}}
 }

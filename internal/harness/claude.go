@@ -325,7 +325,7 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 		}
 		for _, d := range m.PermissionDenials {
 			// Refused because the worker's permission mode does not allow it: the agent went on without it.
-			add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, strings.TrimSpace("permission denied: "+d.ToolName+" "+compact(d.ToolInput)))
+			add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, strings.TrimSpace(permissionDenied+d.ToolName+" "+compact(d.ToolInput)))
 		}
 		usage := &planv1.Usage{CostUsd: m.TotalCostUSD}
 		for _, u := range m.ModelUsage {
