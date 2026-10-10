@@ -184,7 +184,14 @@ be referenced by simple links that open it natively in the app from anywhere."
 - [x] `djinn talisman` answers as `djinn tilasm`, and the search finds "talisman". (09/10, `TestRun`: "talisman
   answers as tilasm", "an alias by a prefix no command takes", from `option (djinn.v1.alias)`; `TestTilasmSearch`:
   "talisman" or "tilasm", in English or French, finds them all, the search the tab will call.)
-- [ ] The first tilasm, the objects in the database drawn from the protos, is put and opens from its link.
+- [x] The first tilasm, the objects in the database drawn from the protos, is put and opens from its link. (10/10,
+  W156: L02, Djinn's data drawn from the protos, in French, `djinn://tilasm/01a123b8-b048-753d-9bee-aaaafa421767`, citing
+  T29 and T08. Its ten tables, their fields with the protos' own comments, the messages they hold, the journal, what
+  lives outside the database and the enums come from `api/**/*.proto` at `8a2eb67` (`buf build` with source info,
+  `plan.Entities()`, `djinn.v1.unique`); seven Mermaid diagrams, Mermaid 11.16.1 copied from `src/vendor`, no network.
+  `djinn up` serves it at `/tilasm/<id>/` with `TilasmPolicy`; Chromium renders the seven diagrams under that policy,
+  light and dark, no error. It replaces the wish's nine data blocks of 09/10 (eight data notes and a data diagram),
+  corrected: `tilasm` and `plugged_source`, 13 new fields on `Task`, 6 on `Wish`, `state.json` gone.)
 - [x] The brief lists the wish's tilasms, and the rules tell the lead to make one to explain a concept, and to cite
   it. (09/10, `TestBriefListsTilasms`; the citations both ways, `TestTilasmCitationsBothWays` and `TestSpawnTilasm` for
   `djinn task get|list`; a worker given a tilasm, `djinn task spawn --tilasm`, `TestTilasmContext` and

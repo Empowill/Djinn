@@ -137,6 +137,10 @@ hand-offs: one person works, the other reads. Later, several people work on the 
 
 ### Open questions
 - Can Djinn publish without a Claude session (an API for artifacts)? Not known today.
+- With workers running, `djinn wish sync` rewrites its file every second, and a publish of it fails: "the source file
+  changed between approval and publish" (08/10/2026). The lead then published a snapshot, `djinn wish render <wish>
+  --file <snapshot>`, while the brief's rule still says to republish the sync file as it is. Make the rule the
+  snapshot, or have sync hold the file still while a publish reads it?
 - How a comment on the page becomes an answer in the wish, safely.
 
 ## From T15 · Work spread over trusted machines
