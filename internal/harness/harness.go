@@ -81,8 +81,10 @@ type Harness struct {
 	measureEvery time.Duration // how often a worker is read (WithMeasure); 0: never
 	measureRead  MeasureFunc   // nil: workers are not measured
 
-	tell    TellFunc    // wakes the lead of a watcher's wish (TellLeads); guarded by mu
-	watched WatchedFunc // reads a watcher's new paragraph (OnWatched); guarded by mu
+	tell      TellFunc      // wakes the lead of a watcher's wish (TellLeads); guarded by mu
+	watched   WatchedFunc   // reads a watcher's new paragraph (OnWatched); guarded by mu
+	tellDelay time.Duration // delay before worker lines are flushed to the lead (WithTellDelay)
+	batcher   *tellBatcher  // batches worker lines to the lead (tell.go)
 
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
@@ -196,6 +198,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	for _, o := range opts {
 		o(h)
 	}
+	h.batcher = newTellBatcher(h)
 	return h
 }
 
@@ -214,6 +217,9 @@ func (h *Harness) Close() {
 		<-h.integrateDone
 	}
 	h.closeWarm()
+	if h.batcher != nil {
+		h.batcher.Close()
+	}
 	h.wg.Wait()
 }
 
@@ -1004,12 +1010,27 @@ func (h *Harness) end(r *run, res Result) {
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, to be merged into the integration branch"})
 		h.kickIntegrate()
 	}
+	if !r.light && !watching(t) {
+		h.workerEnded(t)
+	}
+	if t.GetCorrection() != nil || t.GetReview() != nil {
+		h.kickIntegrate()
+	}
 	if r.light {
 		h.questionEnded(t) // The lead learns what it did, before the task's watchers let go, as a watcher's lead does.
 	}
 	// The links to the summoned skills go with the worker; a worker started again makes them anew.
 	_ = os.RemoveAll(skillsDir(h.home, r.id))
 	h.forget(r)
+}
+
+// workerEnded tells the lead of t's wish what went wrong if the work worker t failed or was cut short.
+func (h *Harness) workerEnded(t *planv1.Task) {
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED ||
+		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil) ||
+		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED && !strings.HasPrefix(t.GetError(), "stopped on request")) {
+		h.tellWorkerFailed(t)
+	}
 }
 
 // forget removes the run once its task is written for good, and ends its watchers' live feed.

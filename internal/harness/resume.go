@@ -79,7 +79,21 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) er
 		project[p.GetId()] = p
 	}
 	for _, t := range tasks {
-		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED || !resumable(t, tasks, wish[t.GetWishId()], project[t.GetProjectId()]) {
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+			continue
+		}
+		w := wish[t.GetWishId()]
+		p := project[t.GetProjectId()]
+		if !t.GetScheduled() || w == nil || w.GetState() == planv1.WishState_WISH_STATE_GRANTED || render.ForkedAs(t, tasks) != "" {
+			continue
+		}
+		if p != nil && p.GetGit() && !light(t) {
+			if t.GetWorktree() == "" || isGone(t.GetWorktree()) {
+				h.tellWorkerFailed(t)
+				continue
+			}
+		}
+		if !resumable(t, tasks, w, p) {
 			continue
 		}
 		t = proto.CloneOf(t)
@@ -87,13 +101,21 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) er
 		if t.GetResumes() >= maxResumes && !watching(t) { // A watcher watches across restarts, however many.
 			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, exhausted(t.GetError())
 			ev.Text = "failed: " + t.GetError()
+			h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
+			h.tellWorkerFailed(t)
 		} else {
 			t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", whyRestarted, nil
 			ev.Text = "resuming: " + whyRestarted + "; Djinn starts it again by itself"
+			h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
 		}
-		h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
 	}
 	return nil
+}
+
+// isGone tells whether the folder no longer exists.
+func isGone(dir string) bool {
+	_, err := os.Stat(dir)
+	return err != nil
 }
 
 // resumable tells whether Djinn may resume an interrupted task by itself: planned on this machine (not imported), not
@@ -104,10 +126,7 @@ func resumable(t *planv1.Task, tasks []*planv1.Task, wish *planv1.Wish, project 
 		return false
 	}
 	if project.GetGit() && !light(t) { // A watcher or a question worker runs in the project's folder.
-		if t.GetWorktree() == "" {
-			return false
-		}
-		if _, err := os.Stat(t.GetWorktree()); err != nil {
+		if t.GetWorktree() == "" || isGone(t.GetWorktree()) {
 			return false
 		}
 	}

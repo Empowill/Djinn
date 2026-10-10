@@ -23,6 +23,16 @@ import { type TextKey, language, t } from "../i18n";
 // A djinn grants three wishes at a time, never more. The lamp refuses a fourth; the page only says so beforehand.
 export const MAX_ACTIVE = 3;
 
+// firstLine is a text's first line of words, trimmed to 140 characters.
+export function firstLine(text: string): string {
+  const line =
+    text
+      .split("\n")
+      .map((l) => l.replace(/^[#>*+\-\s]+/, "").trim())
+      .find(Boolean) ?? "";
+  return line.length > 140 ? `${line.slice(0, 139)}…` : line;
+}
+
 export function date(ts?: Timestamp): Date | undefined {
   return ts ? timestampDate(ts) : undefined;
 }

@@ -23,6 +23,7 @@
   "attention.level_ready": "Ready",
   "attention.summary.one": "{count} thing waits for you",
   "attention.summary.other": "{count} things wait for you",
+  "attention.worker_failed": "failed",
   "attention.worker_waits": "waits for your answer before it may edit",
   "azima.how_to_validate": "Check what is listed, tick the boxes of its plan file with their proof (or waive them), then validate it: it is done.",
   "azima.needs": "Needs {needs}",

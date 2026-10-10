@@ -413,9 +413,6 @@ func splitCommand(line string) ([]string, error) {
 // watching tells whether the task is a watcher.
 func watching(t *planv1.Task) bool { return dispatch.Watcher(t) }
 
-// TellFunc types a line in the terminal of the lead of a wish: plan.Wishes.Tell.
-type TellFunc func(ctx context.Context, wishID, line string) error
-
 // WatchedFunc reads a new paragraph a watcher printed, and says whether it holds the done line of its wish's
 // template: plan.Wishes.Watched, which then offers to grant the wish.
 type WatchedFunc func(ctx context.Context, task *planv1.Task, text string) (done bool, err error)
@@ -435,14 +432,6 @@ func (h *Harness) SpawnWatcher(ctx context.Context, wishID, projectID, title, wa
 		Restart: restart,
 	})
 	return task.GetCode(), err
-}
-
-// TellLeads lets the watchers wake the leads of their wishes with tell. djinn up gives it once its terminals run;
-// without it, a watcher only records what its command prints.
-func (h *Harness) TellLeads(tell TellFunc) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.tell = tell
 }
 
 // wakeLead tells the lead of the run's wish what its watcher's command printed, then gives the paragraph text to

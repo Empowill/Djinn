@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 import { TaskStatus, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import type { OpenQuestion, Waiting } from "./data/flight";
+import { firstLine } from "./data/format";
 import { t } from "./i18n";
 
 // How much a line holds up: a question workers wait on, a question needed before something, a worker that asks to
@@ -55,12 +56,15 @@ export function attentionOf(
   for (const { wish, item, question } of waiting) {
     // A worker that waits for an open question is already on that question's line.
     if (item.status === TaskStatus.WAITING && question) continue;
+    const failed = item.status === TaskStatus.FAILED;
     out.push({
       key: item.id,
       level: "action",
       target: `waiting-${item.id}`,
       code: item.code,
-      text: t("attention.worker_waits"),
+      text: failed
+        ? firstLine(item.error) || t("attention.worker_failed")
+        : t("attention.worker_waits"),
       origin: origin?.(wish),
     });
   }
@@ -86,7 +90,9 @@ const levelKeys = {
 
 // jump scrolls to an element, puts the focus on it and makes it glow a moment.
 export function jump(id: string) {
-  const element = document.getElementById(id);
+  const element =
+    document.getElementById(id) ??
+    document.getElementById(id.replace(/^waiting-/, "task-"));
   if (!element) return;
   const reduced = document.documentElement.dataset.motion === "reduced";
   element.scrollIntoView({
