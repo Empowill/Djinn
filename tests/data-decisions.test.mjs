@@ -201,3 +201,69 @@ test("a task links back to the decision it comes from", () => {
     /<a class="decision-link" href="#decision-q1" title="Show the decision Q01 in the Decisions tab"><span aria-hidden="true">🔒<\/span>From Q01<\/a>/,
   );
 });
+
+// A wish of many answered questions: Q001 the oldest.
+const many = (n) =>
+  Array.from({ length: n }, (_, i) => ({
+    id: `m${i + 1}`,
+    code: `Q${String(i + 1).padStart(3, "0")}`,
+    text: `Decision number ${i + 1}?`,
+    options: [],
+    answer: { choice: d.Choice.YES, note: "", createTime: at(i + 1) },
+    marks: [],
+  }));
+const rows = (html) => html.match(/<article class="decision-row/g)?.length ?? 0;
+
+test("the Decisions tab shows the latest 30, the older ones folded out of the page behind a line", () => {
+  const log = (n, focus) =>
+    d.renderToStaticMarkup(
+      h(d.DecisionLog, {
+        items: d.decisionsOf(many(n), [], []).map((item) => ({ item })),
+        focus,
+        onTask() {},
+      }),
+    );
+  // 45: the 30 latest, the 15 others behind the line, not rendered; the count says 45.
+  const some = log(45);
+  assert.equal(rows(some), 30);
+  assert.match(some, /<span class="count">45<\/span>/);
+  assert.match(some, /id="decision-m45"/);
+  assert.match(some, /id="decision-m16"/);
+  assert.doesNotMatch(some, /id="decision-m15"/);
+  assert.match(
+    some,
+    /<\/div><button class="text-button older-line">.*Show the 15 older decisions<\/button><\/section>$/,
+  );
+  // 100: the line unfolds a batch of 30 of the 70.
+  assert.match(log(100), /Show 30 of the 70 older decisions/);
+  // A decision a task leads back to is unfolded, by whole batches: the 50th latest shows 60.
+  const focused = log(100, "m51");
+  assert.equal(rows(focused), 60);
+  assert.match(focused, /decision-row[^"]*focused" id="decision-m51"/);
+  assert.match(focused, /Show 30 of the 40 older decisions/);
+  // 30 or fewer: no line.
+  assert.equal(rows(log(30)), 30);
+  assert.doesNotMatch(log(30), /older-line/);
+});
+
+test("a long note folds under its first line, its body rendered once opened", () => {
+  const note = `Brass, for three reasons.\n\n${"- one more reason\n".repeat(8)}`;
+  const items = d
+    .decisionsOf(
+      [
+        {
+          ...many(1)[0],
+          answer: { choice: d.Choice.YES, note, createTime: at(1) },
+        },
+      ],
+      [],
+      [],
+    )
+    .map((item) => ({ item }));
+  const html = d.renderToStaticMarkup(h(d.DecisionLog, { items, onTask() {} }));
+  assert.match(
+    html,
+    /<details class="decision-note"><summary>Brass, for three reasons\.<\/summary><\/details>/,
+  );
+  assert.doesNotMatch(html, /one more reason/);
+});

@@ -2,14 +2,17 @@
 // read only. No button: an answered question was answered, a decision block was written; nothing asks to be read or
 // approved again. Each row opens with its subject's emoji; who took it follows, in the status language: the developer
 // in the human tone, with an icon and a word, an agent in plain words. A row links to the tasks it led to, and a task
-// links back to its decision (Task.decision). An answer in a wish without a lead session says no lead was told.
+// links back to its decision (Task.decision). An answer in a wish without a lead session says no lead was told. The
+// latest decisions show, the older ones fold behind a line (older.tsx); a long note folds under its first line, and
+// its body is rendered once opened.
 import { Bot, CornerDownRight } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { type Decision, BY_LEAD } from "./data/decisions";
 import { answerText, when } from "./data/format";
 import { t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
+import { OlderLine, useRecent } from "./older";
 import { StatusBadge } from "./status";
 
 import "./decision-log.css";
@@ -35,6 +38,11 @@ export function DecisionLog<T extends { item: Decision }>({
   // Opens a task in the Tasks tab.
   onTask: (taskId: string) => void;
 }) {
+  // A decision a task leads back to shows, folded or not.
+  const { shown, more } = useRecent(
+    items.length,
+    focus ? items.findIndex((item) => item.item.id === focus) : -1,
+  );
   useEffect(() => {
     if (focus)
       document
@@ -58,7 +66,7 @@ export function DecisionLog<T extends { item: Decision }>({
       {items.length === 0 && <p className="muted-text">{t("decision.none")}</p>}
       {items.length > 0 && (
         <div className="card-grid">
-          {items.map((item) => (
+          {items.slice(0, shown).map((item) => (
             <DecisionRow
               key={item.item.id}
               decision={item.item}
@@ -70,6 +78,15 @@ export function DecisionLog<T extends { item: Decision }>({
           ))}
         </div>
       )}
+      <OlderLine
+        hidden={items.length - shown}
+        label={(count, hidden) =>
+          count < hidden
+            ? t("decision.older_some", { count, hidden })
+            : t("decision.older", { count })
+        }
+        onShow={more}
+      />
     </section>
   );
 }
@@ -133,12 +150,7 @@ function DecisionRow({
         )}
         {note &&
           (long ? (
-            <details className="decision-note">
-              <summary>{firstLine(note)}</summary>
-              <div className="prose">
-                <MarkdownBody text={note} />
-              </div>
-            </details>
+            <FoldedNote note={note} />
           ) : (
             <div className="decision-note prose">
               <MarkdownBody text={note} />
@@ -166,6 +178,24 @@ function DecisionRow({
         )}
       </div>
     </article>
+  );
+}
+
+// FoldedNote is a long note under its first line: its Markdown is rendered once opened, not for every decision.
+function FoldedNote({ note }: { note: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      className="decision-note"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>{firstLine(note)}</summary>
+      {open && (
+        <div className="prose">
+          <MarkdownBody text={note} />
+        </div>
+      )}
+    </details>
   );
 }
 

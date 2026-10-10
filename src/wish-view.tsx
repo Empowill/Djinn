@@ -15,7 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   Allowance,
@@ -71,6 +71,7 @@ import { AttentionBar, attentionOf } from "./attention";
 import { ModalFrame } from "./frame";
 import { useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
+import { OlderLine, useRecent } from "./older";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
 import { CountPill, StatusBadge } from "./status";
@@ -113,8 +114,16 @@ export function WishView({
   const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
   const codes = new Map(detail.tasks.map((task) => [task.id, task.code]));
-  const forAgents = agentBlocks(detail.blocks);
-  const decisions = decisionsOf(detail.questions, detail.blocks, detail.tasks);
+  // Read again only when the wish's questions, blocks or tasks change, not at every render of the screen.
+  const forAgents = useMemo(() => agentBlocks(detail.blocks), [detail.blocks]);
+  const decisions = useMemo(
+    () => decisionsOf(detail.questions, detail.blocks, detail.tasks),
+    [detail.questions, detail.blocks, detail.tasks],
+  );
+  const decisionItems = useMemo(
+    () => decisions.map((item) => ({ item })),
+    [decisions],
+  );
   const { running, watching } = runningOf(detail.tasks);
   const done = detail.tasks.filter(
     (task) => task.status === TaskStatus.DONE && !isAzima(task),
@@ -483,7 +492,7 @@ export function WishView({
           )}
           {view === "decisions" && (
             <DecisionLog
-              items={decisions.map((item) => ({ item }))}
+              items={decisionItems}
               noLead={() => noLead(wish)}
               focus={focus}
               onTask={(id) => show("tasks", id)}
@@ -754,7 +763,8 @@ export function WaitingTasks({
   );
 }
 
-// Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for.
+// Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for. The
+// latest entries show, the older ones fold behind a line (older.tsx).
 // WishService.Snapshot reads the whole wish, events included: it is read on a click, then again as the wish changes.
 function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
   const clients = useClients();
@@ -781,7 +791,11 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
       current = false;
     };
   }, [clients, wish, commands, shown, detail]);
-  const entries = journal(commands ? exp : undefined, blocks);
+  const entries = useMemo(
+    () => journal(commands ? exp : undefined, blocks),
+    [commands, exp, blocks],
+  );
+  const { shown: recent, more } = useRecent(entries.length);
   return (
     <section
       className="wish-section wish-journal"
@@ -816,11 +830,22 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
       {shown && entries.length > 0 && (
         <table className="compact-table journal-list">
           <tbody>
-            {entries.map((entry) => (
+            {entries.slice(0, recent).map((entry) => (
               <JournalEntry key={entry.id} entry={entry} />
             ))}
           </tbody>
         </table>
+      )}
+      {shown && (
+        <OlderLine
+          hidden={entries.length - recent}
+          label={(count, hidden) =>
+            count < hidden
+              ? t("wish.journal_older_some", { count, hidden })
+              : t("wish.journal_older", { count })
+          }
+          onShow={more}
+        />
       )}
     </section>
   );
