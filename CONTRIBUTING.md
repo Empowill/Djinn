@@ -306,6 +306,7 @@ To use Djinn, see the [README](README.md). To work on it:
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
 - **Every change is reviewed** by a maintainer.
+- **How to release**: create the release on GitHub's page, from main.
 
 ## Dependencies, and thanks
 
