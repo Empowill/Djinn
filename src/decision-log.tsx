@@ -56,16 +56,20 @@ export function DecisionLog<T extends { item: Decision }>({
         <p>{t("decision.detail")}</p>
       </div>
       {items.length === 0 && <p className="muted-text">{t("decision.none")}</p>}
-      {items.map((item) => (
-        <DecisionRow
-          key={item.item.id}
-          decision={item.item}
-          origin={origin?.(item)}
-          noLead={!!noLead?.(item)}
-          focused={item.item.id === focus}
-          onTask={onTask}
-        />
-      ))}
+      {items.length > 0 && (
+        <div className="card-grid">
+          {items.map((item) => (
+            <DecisionRow
+              key={item.item.id}
+              decision={item.item}
+              origin={origin?.(item)}
+              noLead={!!noLead?.(item)}
+              focused={item.item.id === focus}
+              onTask={onTask}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

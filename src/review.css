@@ -226,18 +226,75 @@ html[data-theme="light"] {
   scroll-margin-top: 170px;
 }
 
-/* Titles, subtitles, a readable measure, air. */
+/* Titles, subtitles, a readable measure, air. The view takes the window's width, from the side panel to the right
+   edge: the cards share it in columns, the prose keeps its measure inside them. */
 .review .overview-content {
-  max-width: 1000px;
   padding: 8px 33px 64px;
+  container: main / inline-size;
 }
 .review .review-head {
   min-height: 0;
   border-bottom: 0;
   padding: 0 33px;
-  max-width: 1000px;
-  margin: 0 auto;
+  margin: 0;
   width: 100%;
+}
+/* A list of cards: as many columns as the width holds, none narrower than --card-min; one column on a narrow window.
+   Each card keeps its own space below it. */
+.card-grid {
+  --card-min: 560px;
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, var(--card-min)), 1fr)
+  );
+  column-gap: var(--space-3);
+  align-items: start;
+}
+.notes-grid {
+  --card-min: 520px;
+}
+.task-grid,
+.azima-grid {
+  --card-min: 760px;
+}
+/* What waits for you in one column, the rest beside it on a wide view: questions are answered one after the other,
+   so that none moves under the pointer when the one above goes. The rest (.main-side) stacks on its right, top
+   first; on a narrow view, everything follows the page's order. */
+.main-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 40px;
+  align-items: start;
+}
+/* What reads as a list of lines or a setting stays at a hand's reach. */
+.main-columns .wish-journal,
+.main-columns .wish-rights {
+  max-width: 1200px;
+}
+@container main (min-width: 1400px) {
+  .main-columns:has(> .main-moves):has(> .main-side) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+  .main-columns:has(> .main-side) > .main-moves {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .main-columns:has(> .main-moves) > .main-side {
+    grid-column: 2;
+  }
+  .main-columns:has(> .main-moves):has(> .main-side) > * > :first-child {
+    margin-top: 20px;
+  }
+  .main-columns > .main-moves:only-child {
+    max-width: 1100px;
+  }
+}
+@container main (min-width: 2400px) {
+  .main-columns:has(> .main-moves):has(> .main-side) {
+    grid-template-columns: minmax(0, 1100px) minmax(0, 1fr);
+  }
 }
 .review .review-head .hero-copy {
   padding: 30px 0 18px;
@@ -249,7 +306,7 @@ html[data-theme="light"] {
   line-height: 1.15;
   margin: 8px 0 12px;
   color: var(--text);
-  max-width: 760px;
+  max-width: 1100px;
 }
 .review .hero-copy > p {
   font-size: 14px;
@@ -261,11 +318,24 @@ html[data-theme="light"] {
   height: 150px;
   flex: 0 0 auto;
 }
+/* The wish's pills, then when it was made and its pushes, on one line while it holds them. */
+.review-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+}
 .review-pills {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+}
+.review-facts .review-pills {
+  margin-bottom: 0;
+}
+.review-facts .hero-meta {
+  margin-top: 0;
 }
 .section-title {
   margin-bottom: 14px;

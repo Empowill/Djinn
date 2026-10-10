@@ -218,220 +218,246 @@ export function FlightPlan({
           {view === "main" && <Inbox onOpen={onOpen} onToast={onToast} />}
           {view === "main" && (
             <>
-              {wishes.length > 0 && (
-                <section
-                  className="plan-wishes"
-                  aria-label={t("sidebar.wishes")}
-                >
-                  {wishes.map((wish) => {
-                    const detail = details[wish.id];
-                    const open =
-                      detail?.questions.filter(waitsForYou).length ?? 0;
-                    const digging =
-                      detail?.questions.filter(investigating).length ?? 0;
-                    const { running, watching } = runningOf(
-                      detail?.tasks ?? [],
-                    );
-                    const done =
-                      detail?.tasks.filter((x) => x.status === TaskStatus.DONE)
-                        .length ?? 0;
-                    const total = detail?.tasks.length ?? 0;
-                    const failed =
-                      detail?.tasks.filter(
-                        (x) => x.status === TaskStatus.FAILED,
-                      ).length ?? 0;
-                    return (
-                      <button
-                        key={wish.id}
-                        className={`plan-wish tone-${wishTone(wish, open, running, watching)}`}
-                        onClick={() => onOpen(wish.id)}
-                        title={t("plan.open_wish")}
-                      >
-                        <span className="plan-wish-title">
-                          <span className="plan-wish-rank">{wish.rank}</span>
-                          <strong>{wish.title}</strong>
-                        </span>
-                        <span className="plan-wish-counts">
-                          <StatusBadge
-                            tone={wishTone(wish, open, running, watching)}
-                            label={
-                              open
-                                ? t("plan.questions", { count: open })
-                                : wish.ready
-                                  ? t("wish.ready")
-                                  : running
-                                    ? t("plan.running", { count: running })
-                                    : watching
-                                      ? t("plan.watching", { count: watching })
-                                      : t("pill.calm")
-                            }
-                          />
-                          {digging > 0 && (
-                            <CountPill
-                              tone="investigating"
-                              count={digging}
-                              label={t("pill.investigating_detail", {
-                                count: digging,
-                              })}
-                            />
-                          )}
-                          {open > 0 && running > 0 && (
-                            <CountPill
-                              tone="running"
-                              count={running}
-                              label={t("plan.running", { count: running })}
-                            />
-                          )}
-                          {(open > 0 || running > 0) && watching > 0 && (
-                            <CountPill
-                              tone="watching"
-                              count={watching}
-                              label={t("plan.watching", { count: watching })}
-                            />
-                          )}
-                          {failed > 0 && (
-                            <CountPill
-                              tone="failed"
-                              count={failed}
-                              label={t("pill.failed_detail", { count: failed })}
-                            />
-                          )}
-                          {total > 0 && (
-                            <CountPill
-                              tone="done"
-                              count={done}
-                              label={t("pill.done_detail", {
-                                done,
-                                count: total,
-                              })}
-                            >
-                              / {total}
-                            </CountPill>
-                          )}
-                        </span>
-                        {total > 0 && (
-                          <span
-                            className="plan-wish-progress"
-                            style={
-                              {
-                                "--done": `${(100 * done) / total}%`,
-                              } as CSSProperties
-                            }
-                            aria-hidden="true"
-                          />
-                        )}
-                        <SpentLine spent={spent(detail?.tasks ?? [])} />
-                      </button>
-                    );
-                  })}
-                </section>
-              )}
-
-              {waits > 0 && (
-                <section
-                  className="action-center"
-                  id="action-center"
-                  aria-label={t("panels.your_move")}
-                >
-                  <div className="section-title">
-                    <h2>{t("panels.your_move")}</h2>
-                    <p>
-                      {plan.questions.length > 0
-                        ? t("wish.questions_wait", {
-                            count: plan.questions.length,
-                          })
-                        : t("panels.your_move_detail")}
-                    </p>
+              <div className="main-columns">
+                {wishes.length > 0 && (
+                  <div className="main-side">
+                    <section
+                      className="plan-wishes"
+                      aria-label={t("sidebar.wishes")}
+                    >
+                      {wishes.map((wish) => {
+                        const detail = details[wish.id];
+                        const open =
+                          detail?.questions.filter(waitsForYou).length ?? 0;
+                        const digging =
+                          detail?.questions.filter(investigating).length ?? 0;
+                        const { running, watching } = runningOf(
+                          detail?.tasks ?? [],
+                        );
+                        const done =
+                          detail?.tasks.filter(
+                            (x) => x.status === TaskStatus.DONE,
+                          ).length ?? 0;
+                        const total = detail?.tasks.length ?? 0;
+                        const failed =
+                          detail?.tasks.filter(
+                            (x) => x.status === TaskStatus.FAILED,
+                          ).length ?? 0;
+                        return (
+                          <button
+                            key={wish.id}
+                            className={`plan-wish tone-${wishTone(wish, open, running, watching)}`}
+                            onClick={() => onOpen(wish.id)}
+                            title={t("plan.open_wish")}
+                          >
+                            <span className="plan-wish-title">
+                              <span className="plan-wish-rank">
+                                {wish.rank}
+                              </span>
+                              <strong>{wish.title}</strong>
+                            </span>
+                            <span className="plan-wish-counts">
+                              <StatusBadge
+                                tone={wishTone(wish, open, running, watching)}
+                                label={
+                                  open
+                                    ? t("plan.questions", { count: open })
+                                    : wish.ready
+                                      ? t("wish.ready")
+                                      : running
+                                        ? t("plan.running", { count: running })
+                                        : watching
+                                          ? t("plan.watching", {
+                                              count: watching,
+                                            })
+                                          : t("pill.calm")
+                                }
+                              />
+                              {digging > 0 && (
+                                <CountPill
+                                  tone="investigating"
+                                  count={digging}
+                                  label={t("pill.investigating_detail", {
+                                    count: digging,
+                                  })}
+                                />
+                              )}
+                              {open > 0 && running > 0 && (
+                                <CountPill
+                                  tone="running"
+                                  count={running}
+                                  label={t("plan.running", { count: running })}
+                                />
+                              )}
+                              {(open > 0 || running > 0) && watching > 0 && (
+                                <CountPill
+                                  tone="watching"
+                                  count={watching}
+                                  label={t("plan.watching", {
+                                    count: watching,
+                                  })}
+                                />
+                              )}
+                              {failed > 0 && (
+                                <CountPill
+                                  tone="failed"
+                                  count={failed}
+                                  label={t("pill.failed_detail", {
+                                    count: failed,
+                                  })}
+                                />
+                              )}
+                              {total > 0 && (
+                                <CountPill
+                                  tone="done"
+                                  count={done}
+                                  label={t("pill.done_detail", {
+                                    done,
+                                    count: total,
+                                  })}
+                                >
+                                  / {total}
+                                </CountPill>
+                              )}
+                            </span>
+                            {total > 0 && (
+                              <span
+                                className="plan-wish-progress"
+                                style={
+                                  {
+                                    "--done": `${(100 * done) / total}%`,
+                                  } as CSSProperties
+                                }
+                                aria-hidden="true"
+                              />
+                            )}
+                            <SpentLine spent={spent(detail?.tasks ?? [])} />
+                          </button>
+                        );
+                      })}
+                    </section>
                   </div>
-                  {plan.questions.length > 0 && (
-                    <section className="decisions-section">
-                      <div className="section-heading">
-                        <h3>
-                          {t("panels.decisions")}
-                          <span className="count">{plan.questions.length}</span>
-                        </h3>
+                )}
+
+                {waits > 0 && (
+                  <div className="main-moves">
+                    <section
+                      className="action-center"
+                      id="action-center"
+                      aria-label={t("panels.your_move")}
+                    >
+                      <div className="section-title">
+                        <h2>{t("panels.your_move")}</h2>
+                        <p>
+                          {plan.questions.length > 0
+                            ? t("wish.questions_wait", {
+                                count: plan.questions.length,
+                              })
+                            : t("panels.your_move_detail")}
+                        </p>
                       </div>
-                      {plan.questions.map(({ wish, item, blocking }) => (
-                        <WishQuestion
-                          key={item.id}
-                          question={item}
+                      {plan.questions.length > 0 && (
+                        <section className="decisions-section">
+                          <div className="section-heading">
+                            <h3>
+                              {t("panels.decisions")}
+                              <span className="count">
+                                {plan.questions.length}
+                              </span>
+                            </h3>
+                          </div>
+                          {plan.questions.map(({ wish, item, blocking }) => (
+                            <WishQuestion
+                              key={item.id}
+                              question={item}
+                              origin={<WishOrigin wish={wish} />}
+                              blocking={blocking}
+                              noLead={noLead(wish)}
+                              onAnswer={(choice, note) =>
+                                answer(wish.id, item.id, choice, note)
+                              }
+                              onMark={(kind, remove) =>
+                                mark(wish.id, item.id, kind, remove)
+                              }
+                              onEnlighten={(note) =>
+                                enlighten(wish.id, item.id, note)
+                              }
+                            />
+                          ))}
+                        </section>
+                      )}
+                      {plan.waiting.length > 0 && (
+                        <WaitingTasks waiting={plan.waiting} origin />
+                      )}
+                      {plan.proofs.length > 0 && (
+                        <section className="plan-waiting">
+                          <div className="section-heading">
+                            <h3>
+                              {t("plan.proofs")}
+                              <span className="count">
+                                {plan.proofs.length}
+                              </span>
+                            </h3>
+                          </div>
+                          {plan.proofs.map(({ wish, item }, i) => (
+                            <p
+                              className="plan-line"
+                              key={`${item.azima.id}-${i}`}
+                            >
+                              <StatusBadge
+                                tone="proof"
+                                label={proofWords([item.need])}
+                                title={t("azima.needs", {
+                                  needs: item.need.needs,
+                                })}
+                              />
+                              <WishOrigin wish={wish} />
+                              <span>
+                                {t("plan.proof_line", {
+                                  azima: item.azima.code,
+                                  box: item.need.box,
+                                })}
+                              </span>
+                            </p>
+                          ))}
+                        </section>
+                      )}
+                      {plan.ready.map((wish) => (
+                        <GrantCard
+                          key={wish.id}
+                          wish={wish}
                           origin={<WishOrigin wish={wish} />}
-                          blocking={blocking}
-                          noLead={noLead(wish)}
-                          onAnswer={(choice, note) =>
-                            answer(wish.id, item.id, choice, note)
-                          }
-                          onMark={(kind, remove) =>
-                            mark(wish.id, item.id, kind, remove)
-                          }
-                          onEnlighten={(note) =>
-                            enlighten(wish.id, item.id, note)
+                          onGrant={() =>
+                            quiet(
+                              act(
+                                wish.id,
+                                () => clients.wishes.grant({ wishId: wish.id }),
+                                [Change.WISH],
+                                t("wish.granted_toast"),
+                              ),
+                            )
                           }
                         />
                       ))}
                     </section>
-                  )}
-                  {plan.waiting.length > 0 && (
-                    <WaitingTasks waiting={plan.waiting} origin />
-                  )}
-                  {plan.proofs.length > 0 && (
-                    <section className="plan-waiting">
-                      <div className="section-heading">
-                        <h3>
-                          {t("plan.proofs")}
-                          <span className="count">{plan.proofs.length}</span>
-                        </h3>
-                      </div>
-                      {plan.proofs.map(({ wish, item }, i) => (
-                        <p className="plan-line" key={`${item.azima.id}-${i}`}>
-                          <StatusBadge
-                            tone="proof"
-                            label={proofWords([item.need])}
-                            title={t("azima.needs", { needs: item.need.needs })}
-                          />
-                          <WishOrigin wish={wish} />
-                          <span>
-                            {t("plan.proof_line", {
-                              azima: item.azima.code,
-                              box: item.need.box,
-                            })}
-                          </span>
-                        </p>
-                      ))}
-                    </section>
-                  )}
-                  {plan.ready.map((wish) => (
-                    <GrantCard
-                      key={wish.id}
-                      wish={wish}
-                      origin={<WishOrigin wish={wish} />}
-                      onGrant={() =>
-                        quiet(
-                          act(
-                            wish.id,
-                            () => clients.wishes.grant({ wishId: wish.id }),
-                            [Change.WISH],
-                            t("wish.granted_toast"),
-                          ),
-                        )
+                  </div>
+                )}
+
+                {plan.investigating.length > 0 && (
+                  <div className="main-side">
+                    <InvestigatingSection
+                      questions={plan.investigating}
+                      origin
+                      onAnswer={(id, choice, note) =>
+                        answer(wishOf.get(id)!.id, id, choice, note)
+                      }
+                      onMark={(id, kind, remove) =>
+                        mark(wishOf.get(id)!.id, id, kind, remove)
                       }
                     />
-                  ))}
-                </section>
-              )}
-
-              {plan.investigating.length > 0 && (
-                <InvestigatingSection
-                  questions={plan.investigating}
-                  origin
-                  onAnswer={(id, choice, note) =>
-                    answer(wishOf.get(id)!.id, id, choice, note)
-                  }
-                  onMark={(id, kind, remove) =>
-                    mark(wishOf.get(id)!.id, id, kind, remove)
-                  }
-                />
-              )}
+                  </div>
+                )}
+              </div>
 
               {plan.loaded &&
                 wishes.length > 0 &&

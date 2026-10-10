@@ -264,17 +264,13 @@ async function shoot(page: Page, name: string) {
     await expect(page.locator(".question-card").first()).toContainText(
       "which version wins?",
     );
-    if (name === "tasks")
-      // The tasks at the top, below the bar of what waits, which stays over the page.
-      await page.locator('section[aria-label="Tasks"]').evaluate((e) => {
-        e.scrollIntoView();
-        let box = e.parentElement;
-        while (box && !/auto|scroll/.test(getComputedStyle(box).overflowY))
-          box = box.parentElement;
-        const bar = document.querySelector(".attention-bar");
-        const under = bar ? bar.getBoundingClientRect().bottom + 24 : 0;
-        box?.scrollBy(0, e.getBoundingClientRect().top - under);
-      });
+    if (name === "tasks") {
+      // The Tasks tab: what moves or waits, then what is finished, and what it all cost.
+      await page.locator("#view-tab-tasks").click();
+      await expect(
+        page.locator(".tasks-moving .wish-task").first(),
+      ).toBeVisible();
+    }
     await page.screenshot({
       path: path.join(shots, `${name}-${theme}.png`),
       style: [

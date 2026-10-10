@@ -19,6 +19,7 @@
   position: relative;
   display: flex;
   flex: 1 1 280px;
+  max-width: 720px;
   align-items: center;
   color: var(--muted);
 }
@@ -74,6 +75,35 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+/* The rows share the width in columns; on a wide view, the tilasm open stands beside them, taller. */
+.tilasm-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
+  column-gap: 12px;
+  align-items: start;
+}
+@container main (min-width: 1400px) {
+  .tilasms.has-open {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    column-gap: 16px;
+    align-items: start;
+  }
+  .tilasms.has-open > .tilasm-bar {
+    grid-column: 1 / -1;
+  }
+  .tilasms.has-open > .tilasm-view {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .tilasms.has-open > :not(.tilasm-bar, .tilasm-view) {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .tilasms.has-open .tilasm-frame {
+    height: min(80vh, 1100px);
+  }
 }
 .tilasm-row {
   margin-bottom: 8px;
