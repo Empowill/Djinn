@@ -43,6 +43,10 @@ install: "go tool task install"
 | `test`           | The former name of a check run before each commit: `test: "make test"` is the check `test` at `commit`. | none |
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
 | `install`        | The command that installs the integration branch once pushed, in the project's folder: the window proposes it. | none: nothing proposed |
+| `main_branch`    | The project's main branch, which Djinn merges into each wish's integration branch: see [keeping up with main](#keeping-up-with-main). | the remote's default branch, else `main`, else `master` |
+| `merge_main`     | When Djinn merges it: `MERGE_MAIN_RELEASE` (once main holds a release the branch lacks), `MERGE_MAIN_COMMIT` (once it holds any commit the branch lacks), `MERGE_MAIN_OFF`. | at each release |
+| `merge_main_minutes` | How often, in minutes, Djinn fetches main to look at it, at most. A release the running Djinn finds makes it look at once. | `60` |
+| `install_releases` | For the project a Djinn built from a checkout comes from: a newer release installs by itself while that checkout is on main. `false`: it is only offered. | on |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
@@ -261,6 +265,56 @@ the path of the running one, Djinn restarts on it, as the update button does; ot
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
 branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it.
+
+## Keeping up with main
+
+A wish's integration branch is a branch of its own (`feat/x`); others merge into the project's main branch meanwhile.
+Djinn keeps the branch up with main by itself, no model, in each project whose settings name a check:
+
+1. **When it looks.** At most every `merge_main_minutes` (an hour by default), and at once when the running Djinn finds
+   a new release, Djinn fetches main from its remote, with the tags, through git with your own credentials, never
+   prompting for them; a repository without a remote looks at its local main. Main is `main_branch`, else the remote's
+   default branch (`origin/HEAD`, as a clone records it), else `main`, else `master`. A wish whose integration branch is
+   main itself has nothing to merge.
+2. **When it merges.** By default (`MERGE_MAIN_RELEASE`), once main holds a release the branch lacks: a tag `v1.2.3`
+   whose commit, or the commit it sits on, is in main (`task release` puts the built interface in a commit of its own
+   on top of main, off any branch: that commit never comes in). `MERGE_MAIN_COMMIT` merges as soon as main holds any
+   commit the branch lacks; `MERGE_MAIN_OFF` never merges.
+3. **How.** As a task's branch is merged ([integration](#integration)): in the wish's integration worktree, never your
+   checkout, `git merge --no-ff` of main's commit; a conflict only in `generated` files is settled by `generate`; the
+   `setup` runs if needed, then each commit check through the gate of its name; green, the branch moves to the merge,
+   git checking it is still where the merge started, and your clean checkout of it follows by a fast-forward (with
+   changes not committed, it is left alone, and so is the branch, until they are committed or put aside).
+4. **A conflict in code, or a red check**, leave the branch as it was and start a **correction worker**, as for a
+   task: a work task of the project's provider, its worktree on the merge of main under way (its conflicts left in
+   place), or on the merge where the check failed. Its branch integrates like any task's, and its success brings main
+   in. Past `correction_attempts`, Djinn stops trying that merge: it merges main again once main moves.
+5. **What it says.** Each merge is in the journal (`harness/main`, with main's commit, the commits it brought and the
+   newest release among them); the wish's head shows the last one, "origin/main merged into feat/x: 4 commits, v0.2.0",
+   its commits on hover, and why the next one waits while it does. A merge that brings a release into a project that
+   names an `install` command proposes its build, as a push does. The merge goes to the remote with the next push.
+
+**A merge, never a rebase.** A merge needs no model: git does it, and a model only settles a conflict, when there is
+one. It keeps the branch's history as pushed: a rebase would rewrite every commit of the branch, which Djinn would then
+have to push by force, which it never does; the people who fetched the branch, and its pull request's reviews, would
+lose their place. The merge commit says which main came in, and when.
+
+### Releases of Djinn, for those who build it
+
+`go tool task install` builds the Djinn you use from your checkout of Djinn (version `local-<commit>`). That Djinn
+watches its own file, as before, and the releases too, of the variant it would have been. When it finds a newer
+release, it looks at the checkout its build comes from, in the project whose repository holds the build's commit:
+
+- **On main** (your checkout is on the main branch, protected: nothing of yours is in the build that main lacks), a
+  release that holds the build **installs by itself** when `install_releases` is on, the default: downloaded, verified
+  and put at the path of the running Djinn, which then offers to restart on it. Nothing restarts without your click. A
+  build with changes not committed (`local-<commit>-dirty`), or `install_releases: false`, only offers it.
+- **A build that holds the release** already is offered nothing.
+- **On a branch** with work the release lacks, the release is **never installed over the branch's build**: Djinn
+  looks at main at once instead, and merges it into the wishes' integration branches as above; once the release is in,
+  the window proposes the branch's build, with main's commits in **What changed**.
+- **A release the checkout says nothing about** (no project holds the build, or its repository does not know the
+  release) is offered, as to a Djinn installed from a release.
 
 ## Left out, on purpose
 

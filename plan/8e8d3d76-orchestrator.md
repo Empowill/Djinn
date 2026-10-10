@@ -108,6 +108,14 @@ Decide who does what, run each worker safely, and protect the machine.
   pause button; paused, a resume button; none in a task no worker runs, and none on Windows, where the pause is refused.
   (`a running worker pauses from its card…` in `tests/screens.test.mjs`; `e2e/task-pause.spec.ts`: a fake worker
   paused from the window shows paused, then resumed)
+- [x] A wish's branch keeps up with main by itself (Q55): the orchestrator fetches main at most hourly, and at once when
+  the running Djinn finds a release, and merges it into the integration branch once main holds a release the branch
+  lacks (or any commit, `merge_main`), the way a task's branch is merged, never a rebase; a code conflict or a red check
+  start a correction worker. A Djinn built from a checkout watches the releases: on main, one that holds the build
+  installs by itself (`install_releases`); on a branch, none installs over the build, main is merged instead.
+  (`TestMergeMainAtARelease`, `TestLookAtMainAtOnce`, `TestMergeMainEachCommit`, `TestMainConflictStartsACorrection`,
+  `TestMainAttemptsSpent`, `TestReleaseFit` in `internal/harness`; `TestMainSettings` in `internal/plan`;
+  `TestALocalBuildFollowsItsCheckout`, `TestLocalBuild`, `TestReleaseSource` in `cmd/djinn`)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -337,6 +345,15 @@ Decide who does what, run each worker safely, and protect the machine.
   takes the variable when the command line or `djinn mcp` leaves it empty: `djinn block put`, `djinn question ask` and
   `revise`. The decision log says "By W12", the page "Revised by W12". The e2e specs drop the variable: their djinn is
   not the worker's.
+- **Main merged, never rebased** (Q55, A): a wish's integration branch takes main's commits by a merge in the
+  integration worktree (`harness.mainPass`, `main.go`), deterministic, under the same rules as a task's merge
+  (`moveBranch`, `commitChecks`, `settleGenerated` are shared). A merge costs no model and keeps the history pushed: a
+  rebase would rewrite the branch and need a forced push, which Djinn never does. A model only settles a conflict: a
+  correction worker whose `IntegrationFailure.main_sha` says it merges main; its success records the merge
+  (`settleMain`). Past `correction_attempts`, that main's commit is left (`WishMain.failed_sha`) until main moves.
+  Releases are tags `v*` whose commit, or its parent (the release commit holding `dist/`, off main), is in main; the
+  release commit itself never comes in. A build from a checkout (`local-<commit>`) follows the GitHub releases of the
+  variant it would have been; `harness.Release` says what one means from where the checkout stands.
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`; built (`branch`, `TestBranchFromSettings`).*

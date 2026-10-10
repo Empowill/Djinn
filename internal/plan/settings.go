@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -104,6 +105,13 @@ const DefaultBranch = "{code}-{slug}-{uuid8}"
 // before it asks the person, in a project whose files set none.
 const DefaultCorrectionAttempts = 2
 
+// Defaults of keeping a wish's integration branch up with the project's main branch: merged at each release, main
+// fetched at most hourly, and a release of Djinn installed by itself on main.
+const (
+	DefaultMergeMain      = planv1.MergeMain_MERGE_MAIN_RELEASE
+	DefaultMergeMainEvery = time.Hour
+)
+
 // Settings are a project's settings as its workers get them, each with where it comes from.
 type Settings struct {
 	Provider     planv1.Provider
@@ -125,9 +133,18 @@ type Settings struct {
 	QuestionModel     string
 	QuestionBudgetUSD float64
 
+	// How Djinn keeps each wish's integration branch up with the project's main branch: the branch ("" for the
+	// remote's default), when it merges it, how often it fetches it at most; and whether a release of Djinn installs by
+	// itself while the person's checkout is on main.
+	MainBranch      string
+	MergeMain       planv1.MergeMain
+	MergeMainEvery  time.Duration
+	InstallReleases bool
+
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom                                                   planv1.SettingSource
 	QuestionWorkersFrom, QuestionModelFrom, QuestionBudgetFrom                              planv1.SettingSource
+	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom                  planv1.SettingSource
 }
 
 // Defaults of the question workers: a cheaper model is enough to turn a decision into tasks, or to read and revise a
@@ -148,6 +165,8 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def,
 		QuestionWorkers: true, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
 		QuestionWorkersFrom: def, QuestionModelFrom: def, QuestionBudgetFrom: def,
+		MergeMain: DefaultMergeMain, MergeMainEvery: DefaultMergeMainEvery, InstallReleases: true,
+		MainBranchFrom: def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -197,6 +216,18 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.QuestionBudgetUsd != nil {
 			s.QuestionBudgetUSD, s.QuestionBudgetFrom = f.settings.GetQuestionBudgetUsd(), f.from
+		}
+		if f.settings.MainBranch != nil {
+			s.MainBranch, s.MainBranchFrom = f.settings.GetMainBranch(), f.from
+		}
+		if f.settings.MergeMain != nil {
+			s.MergeMain, s.MergeMainFrom = f.settings.GetMergeMain(), f.from
+		}
+		if f.settings.MergeMainMinutes != nil {
+			s.MergeMainEvery, s.MergeMainEveryFrom = time.Duration(f.settings.GetMergeMainMinutes())*time.Minute, f.from
+		}
+		if f.settings.InstallReleases != nil {
+			s.InstallReleases, s.InstallReleasesFrom = f.settings.GetInstallReleases(), f.from
 		}
 	}
 	if !questionModel && s.Provider == planv1.Provider_PROVIDER_CLAUDE {
@@ -266,6 +297,10 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "question_workers", Value: strconv.FormatBool(s.QuestionWorkers), Source: s.QuestionWorkersFrom},
 		{Name: "question_model", Value: s.QuestionModel, Source: s.QuestionModelFrom},
 		{Name: "question_budget_usd", Value: usd(s.QuestionBudgetUSD), Source: s.QuestionBudgetFrom},
+		{Name: "main_branch", Value: s.MainBranch, Source: s.MainBranchFrom},
+		{Name: "merge_main", Value: MergeMainWord(s.MergeMain), Source: s.MergeMainFrom},
+		{Name: "merge_main_minutes", Value: strconv.Itoa(int(s.MergeMainEvery / time.Minute)), Source: s.MergeMainEveryFrom},
+		{Name: "install_releases", Value: strconv.FormatBool(s.InstallReleases), Source: s.InstallReleasesFrom},
 	}
 }
 
@@ -294,6 +329,11 @@ func (s Settings) ChecksAt(when planv1.CheckWhen) []*planv1.ProjectCheck {
 		}
 	}
 	return out
+}
+
+// MergeMainWord is when Djinn merges main, as the settings say it: release, commit, off.
+func MergeMainWord(m planv1.MergeMain) string {
+	return strings.ToLower(strings.TrimPrefix(m.String(), "MERGE_MAIN_"))
 }
 
 // WhenWord is when a check runs, as the settings and the brief say it: commit, push.

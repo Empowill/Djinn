@@ -4,8 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -184,6 +186,9 @@ func TestResolveSettings(t *testing.T) {
 		// The question workers' settings are TestQuestionSettings'.
 		got.QuestionWorkers, got.QuestionModel, got.QuestionBudgetUSD = false, "", 0
 		got.QuestionWorkersFrom, got.QuestionModelFrom, got.QuestionBudgetFrom = 0, 0, 0
+		// Main's are TestMainSettings'.
+		got.MainBranch, got.MergeMain, got.MergeMainEvery, got.InstallReleases = "", 0, 0, false
+		got.MainBranchFrom, got.MergeMainFrom, got.MergeMainEveryFrom, got.InstallReleasesFrom = 0, 0, 0, 0
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
@@ -221,6 +226,69 @@ func TestQuestionSettings(t *testing.T) {
 	}
 }
 
+// mainRows are the rows of the settings that keep a wish's integration branch up with main: TestMainSettings'.
+var mainRows = []string{"main_branch", "merge_main", "merge_main_minutes", "install_releases"}
+
+// TestMainSettings: by default Djinn merges the remote's default branch at each release, fetched at most hourly, and
+// a release of Djinn installs by itself on main; either file changes them, the developer's winning, and the rows say
+// where each comes from.
+func TestMainSettings(t *testing.T) {
+	const (
+		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
+		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
+		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+	)
+	commit, off := planv1.MergeMain_MERGE_MAIN_COMMIT, planv1.MergeMain_MERGE_MAIN_OFF
+	type m struct {
+		branch  string
+		when    planv1.MergeMain
+		every   time.Duration
+		install bool
+		from    [4]planv1.SettingSource
+	}
+	for _, c := range []struct {
+		name      string
+		repo, dev *planv1.ProjectSettings
+		want      m
+		rows      string
+	}{
+		{"neither file", nil, nil, m{"", planv1.MergeMain_MERGE_MAIN_RELEASE, time.Hour, true, [4]planv1.SettingSource{def, def, def, def}},
+			"main_branch=, merge_main=release, merge_main_minutes=60, install_releases=true"},
+		{"the team's", &planv1.ProjectSettings{
+			MainBranch: proto.String("trunk"), MergeMain: &commit, MergeMainMinutes: proto.Int32(15), InstallReleases: proto.Bool(false),
+		}, nil, m{"trunk", commit, 15 * time.Minute, false, [4]planv1.SettingSource{repo, repo, repo, repo}},
+			"main_branch=trunk, merge_main=commit, merge_main_minutes=15, install_releases=false"},
+		{"the developer's win", &planv1.ProjectSettings{MainBranch: proto.String("trunk"), MergeMain: &commit},
+			&planv1.ProjectSettings{MergeMain: &off, InstallReleases: proto.Bool(false)},
+			m{"trunk", off, time.Hour, false, [4]planv1.SettingSource{repo, dev, def, dev}},
+			"main_branch=trunk, merge_main=off, merge_main_minutes=60, install_releases=false"},
+	} {
+		s := ResolveSettings(c.repo, c.dev)
+		got := m{s.MainBranch, s.MergeMain, s.MergeMainEvery, s.InstallReleases,
+			[4]planv1.SettingSource{s.MainBranchFrom, s.MergeMainFrom, s.MergeMainEveryFrom, s.InstallReleasesFrom}}
+		if got != c.want {
+			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
+		}
+		var rows []string
+		for _, r := range s.Rows() {
+			if slices.Contains(mainRows, r.GetName()) {
+				rows = append(rows, r.GetName()+"="+r.GetValue())
+			}
+		}
+		if got := strings.Join(rows, ", "); got != c.rows {
+			t.Errorf("%s: rows %s; want %s", c.name, got, c.rows)
+		}
+	}
+	// A main branch Git would refuse, a cadence under a minute, or no merge_main are refused when the file is read.
+	for _, text := range []string{"main_branch: \"ma in\"\n", "merge_main_minutes: 0\n", "merge_main: MERGE_MAIN_UNSPECIFIED\n"} {
+		path := filepath.Join(t.TempDir(), "settings.txtpb")
+		writeSettings(t, path, text)
+		if _, err := ReadSettings(path); err == nil {
+			t.Errorf("%q: read without error", text)
+		}
+	}
+}
+
 func TestProjectShow(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
@@ -245,8 +313,8 @@ func TestProjectShow(t *testing.T) {
 	rows := func(res *planv1.ProjectServiceShowResponse) string {
 		var b []string
 		for _, s := range res.GetSettings() {
-			if strings.HasPrefix(s.GetName(), "question_") {
-				continue // The question workers' are checked apart.
+			if strings.HasPrefix(s.GetName(), "question_") || slices.Contains(mainRows, s.GetName()) {
+				continue // The question workers' and main's are checked apart.
 			}
 			b = append(b, s.GetName()+"="+s.GetValue()+" "+strings.TrimPrefix(s.GetSource().String(), "SETTING_SOURCE_"))
 		}

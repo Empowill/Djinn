@@ -296,6 +296,12 @@ red. `djinn project show` and the project's view in the window list the checks a
 proposes the batch it committed, with **What changed** and **What to check**; **Install and restart** installs it,
 nothing before your click. Details: [integration](team-settings.md#integration).
 
+Djinn also keeps the wish's branch up with the project's main branch: it fetches main at most hourly, and once main
+holds a release the branch lacks, it merges main in the same way, tested, never rebasing; a conflict starts a
+correction worker. The wish's head shows the last merge, "origin/main merged into feat/x: 4 commits, v0.2.0". The
+settings `main_branch`, `merge_main` (at each release, at each commit, or never) and `merge_main_minutes` change it.
+Details: [keeping up with main](team-settings.md#keeping-up-with-main).
+
 ## Gates
 
 Workers share one machine. Heavy commands (tests, builds, code generation) run through a gate of the running Djinn:
@@ -322,6 +328,12 @@ At every start, the lead of the first active wish comes back on its session, in 
 back after an update or a crash too, on the same sessions; not after you quit. When a newer Djinn is installed, a
 banner offers **Update**, with its **Release notes** when it has some: nothing restarts without that click. After the
 restart, it lists the terminals that did not start again.
+
+A Djinn you built from your checkout of Djinn (`go tool task install`) watches the releases too. With your checkout
+on main, a newer release that holds your build installs by itself (the project setting `install_releases`, on by
+default), and the banner then offers to restart on it; on a branch with work of its own, a release is never installed
+over it: Djinn merges main into the wishes' branches instead, and proposes their build once the release is in
+([releases of Djinn](team-settings.md#releases-of-djinn-for-those-who-build-it)).
 
 `djinn backup` copies the data folder, even while Djinn runs: [backups](backup.md).
 
