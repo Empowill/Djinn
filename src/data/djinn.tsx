@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
+import type { Change } from "../../gen/ts/plan/v1/plan_pb";
 import { type Clients, createClients } from "./client";
 import { type DjinnFocus, createFocus } from "./focus";
 import {
@@ -74,9 +75,15 @@ export function useData<T>(select: (state: State) => T): T {
 }
 
 // useWishDetail reads a wish's tasks, questions and blocks while the screen shows it.
-export function useWishDetail(wishId: string): WishDetail {
+export function useWishDetail(
+  wishId: string,
+  kinds?: readonly Change[],
+): WishDetail {
   const { store } = useRequiredDjinn();
-  useEffect(() => (wishId ? store.open(wishId) : undefined), [store, wishId]);
+  useEffect(
+    () => (wishId ? store.open(wishId, kinds) : undefined),
+    [store, wishId, kinds],
+  );
   return useData((state) => state.details[wishId] ?? emptyDetail);
 }
 

@@ -5830,7 +5830,11 @@ type QuestionServiceListRequest struct {
 	// Only the questions asked at or after this time.
 	Since *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=since,proto3" json:"since,omitempty"`
 	// Only the questions of this wish.
-	WishId        string `protobuf:"bytes,3,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	WishId string `protobuf:"bytes,3,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// The most questions to return. Not set: 50. Max: 200.
+	PageSize int32 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// The page token from a previous list response, to fetch the next page.
+	PageToken     string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5886,10 +5890,28 @@ func (x *QuestionServiceListRequest) GetWishId() string {
 	return ""
 }
 
+func (x *QuestionServiceListRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *QuestionServiceListRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type QuestionServiceListResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The questions.
-	Questions     []*Question `protobuf:"bytes,1,rep,name=questions,proto3" json:"questions,omitempty"`
+	Questions []*Question `protobuf:"bytes,1,rep,name=questions,proto3" json:"questions,omitempty"`
+	// Token to retrieve the next page, or empty if there are no more pages.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	// Total number of questions matching the request.
+	Total         int32 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5929,6 +5951,20 @@ func (x *QuestionServiceListResponse) GetQuestions() []*Question {
 		return x.Questions
 	}
 	return nil
+}
+
+func (x *QuestionServiceListResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+func (x *QuestionServiceListResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
 }
 
 type ProjectServiceAddRequest struct {
@@ -10646,7 +10682,11 @@ type BlockServiceListRequest struct {
 	// Only the blocks of this kind, case ignored.
 	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Only the blocks about this task.
-	TaskId        string `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	TaskId string `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// The most blocks to return. Not set: 50. Max: 200.
+	PageSize int32 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// The page token from a previous list response, to fetch the next page.
+	PageToken     string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -10702,10 +10742,28 @@ func (x *BlockServiceListRequest) GetTaskId() string {
 	return ""
 }
 
+func (x *BlockServiceListRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *BlockServiceListRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type BlockServiceListResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The blocks, by position.
-	Blocks        []*Block `protobuf:"bytes,1,rep,name=blocks,proto3" json:"blocks,omitempty"`
+	Blocks []*Block `protobuf:"bytes,1,rep,name=blocks,proto3" json:"blocks,omitempty"`
+	// Token to retrieve the next page, or empty if there are no more pages.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	// Total number of blocks matching the request.
+	Total         int32 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -10745,6 +10803,20 @@ func (x *BlockServiceListResponse) GetBlocks() []*Block {
 		return x.Blocks
 	}
 	return nil
+}
+
+func (x *BlockServiceListResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+func (x *BlockServiceListResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
 }
 
 type BlockServiceDeleteRequest struct {
@@ -11480,7 +11552,11 @@ type TaskServiceListRequest struct {
 	// Only the tasks of this wish.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	// Only the tasks in this project.
-	ProjectId     string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The most tasks to return. Not set: 50. Max: 200.
+	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// The page token from a previous list response, to fetch the next page.
+	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11529,10 +11605,28 @@ func (x *TaskServiceListRequest) GetProjectId() string {
 	return ""
 }
 
+func (x *TaskServiceListRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *TaskServiceListRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type TaskServiceListResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The tasks.
-	Tasks         []*Task `protobuf:"bytes,1,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	Tasks []*Task `protobuf:"bytes,1,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	// Token to retrieve the next page, or empty if there are no more pages.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	// Total number of tasks matching the request.
+	Total         int32 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11572,6 +11666,20 @@ func (x *TaskServiceListResponse) GetTasks() []*Task {
 		return x.Tasks
 	}
 	return nil
+}
+
+func (x *TaskServiceListResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+func (x *TaskServiceListResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
 }
 
 type TaskServiceGetRequest struct {
@@ -13395,13 +13503,19 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12$\n" +
 	"\awish_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"N\n" +
 	"\x1dQuestionServiceAnswerResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x88\x01\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xda\x01\n" +
 	"\x1aQuestionServiceListRequest\x12\x12\n" +
 	"\x04open\x18\x01 \x01(\bR\x04open\x120\n" +
 	"\x05since\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12$\n" +
-	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"N\n" +
+	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12'\n" +
+	"\tpage_size\x18\x04 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xc8\x01(\x00R\bpageSize\x12'\n" +
+	"\n" +
+	"page_token\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\tpageToken\"\x8c\x01\n" +
 	"\x1bQuestionServiceListResponse\x12/\n" +
-	"\tquestions\x18\x01 \x03(\v2\x11.plan.v1.QuestionR\tquestions\"b\n" +
+	"\tquestions\x18\x01 \x03(\v2\x11.plan.v1.QuestionR\tquestions\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x14\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\"b\n" +
 	"\x18ProjectServiceAddRequest\x12)\n" +
 	"\tdirectory\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\x80 R\tdirectory\x12\x1b\n" +
 	"\x04name\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18dR\x04name\"G\n" +
@@ -13716,13 +13830,19 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bposition\x18\b \x01(\x03R\bposition\x12\x1b\n" +
 	"\x04icon\x18\t \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\"?\n" +
 	"\x17BlockServicePutResponse\x12$\n" +
-	"\x05block\x18\x01 \x01(\v2\x0e.plan.v1.BlockR\x05block\"\x82\x01\n" +
+	"\x05block\x18\x01 \x01(\v2\x0e.plan.v1.BlockR\x05block\"\xd4\x01\n" +
 	"\x17BlockServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x1b\n" +
 	"\x04kind\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18dR\x04kind\x12$\n" +
-	"\atask_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\"B\n" +
+	"\atask_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12'\n" +
+	"\tpage_size\x18\x04 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xc8\x01(\x00R\bpageSize\x12'\n" +
+	"\n" +
+	"page_token\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\tpageToken\"\x80\x01\n" +
 	"\x18BlockServiceListResponse\x12&\n" +
-	"\x06blocks\x18\x01 \x03(\v2\x0e.plan.v1.BlockR\x06blocks\"8\n" +
+	"\x06blocks\x18\x01 \x03(\v2\x0e.plan.v1.BlockR\x06blocks\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x14\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\"8\n" +
 	"\x19BlockServiceDeleteRequest\x12\x1b\n" +
 	"\x02id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x02id\"\x1c\n" +
 	"\x1aBlockServiceDeleteResponse\"b\n" +
@@ -13775,13 +13895,19 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06blocks\x18\x12 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x06blocks\x12)\n" +
 	"\x06tilasm\x18\x13 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x14\"\ar\x05\x10\x01\x18\xe8\aR\x06tilasm\"=\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"j\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xbc\x01\n" +
 	"\x16TaskServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12*\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\tprojectId\">\n" +
+	"project_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\tprojectId\x12'\n" +
+	"\tpage_size\x18\x03 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xc8\x01(\x00R\bpageSize\x12'\n" +
+	"\n" +
+	"page_token\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\tpageToken\"|\n" +
 	"\x17TaskServiceListResponse\x12#\n" +
-	"\x05tasks\x18\x01 \x03(\v2\r.plan.v1.TaskR\x05tasks\"=\n" +
+	"\x05tasks\x18\x01 \x03(\v2\r.plan.v1.TaskR\x05tasks\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x14\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\"=\n" +
 	"\x15TaskServiceGetRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\";\n" +
 	"\x16TaskServiceGetResponse\x12!\n" +

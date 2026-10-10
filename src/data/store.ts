@@ -35,6 +35,16 @@ export interface WishDetail {
   tilasms: Tilasm[];
   // Read at least once.
   loaded: boolean;
+  // Totals from the server for paginated lists.
+  tasksTotal?: number;
+  questionsTotal?: number;
+  blocksTotal?: number;
+  // Next page tokens from the server.
+  tasksNextToken?: string;
+  questionsNextToken?: string;
+  blocksNextToken?: string;
+  // The kinds of entities loaded so far for this wish.
+  loadedKinds: Set<Change>;
 }
 
 export interface State {
@@ -64,8 +74,12 @@ export interface Store {
   subscribe(listener: () => void): () => void;
   // Follows djinn until the returned function is called: reads everything, then what changes.
   start(): () => void;
-  // Reads a wish's tasks, questions, blocks and tilasms, and again when they change, until the returned function is called.
-  open(wishId: string): () => void;
+  // Reads a wish's tasks, questions, blocks and tilasms, or the given kinds, and again when they change, until the returned function is called.
+  open(wishId: string, kinds?: readonly Change[]): () => void;
+  // Loads kinds for a wish that are not yet loaded.
+  loadKinds(wishId: string, kinds: readonly Change[]): Promise<void>;
+  // Loads the next page for a kind.
+  loadMore(wishId: string, kind: Change): Promise<void>;
   // Follows a task's events until the returned function is called, or the task ends.
   follow(taskId: string): () => void;
   // Reads again what changed, as a write the page made says it: the watch says it too, a moment later.
@@ -82,6 +96,7 @@ const EMPTY_DETAIL: WishDetail = {
   blocks: [],
   tilasms: [],
   loaded: false,
+  loadedKinds: new Set<Change>(),
 };
 
 export const emptyDetail = EMPTY_DETAIL;
@@ -137,30 +152,100 @@ const byID = (a: { id: string }, b: { id: string }) =>
 const byPosition = (a: Block, b: Block) =>
   a.position < b.position ? -1 : a.position > b.position ? 1 : byID(a, b);
 
+// adjustTotal updates total when incremental changes add or remove items.
+function adjustTotal<T extends { id: string }>(
+  total: number | undefined,
+  oldList: readonly T[],
+  newList: readonly T[],
+  incoming: readonly T[],
+  deleted: ReadonlySet<string>,
+): number | undefined {
+  if (total === undefined) return undefined;
+  const oldIds = new Set(oldList.map((x) => x.id));
+  let delta = 0;
+  for (const m of incoming) {
+    if (!oldIds.has(m.id)) delta++;
+  }
+  for (const old of oldList) {
+    if (deleted.has(old.id)) delta--;
+  }
+  return Math.max(0, total + delta);
+}
+
 // apply puts what a watch message brought of a wish in place of what it shows, but for what was just read: a read
-// made after the message is newer.
+// made after the message is newer. Only kinds that are already loaded are updated; hidden tabs are untouched.
 function apply(
   detail: WishDetail,
   changes: WishChanges,
   read: Partial<WishDetail>,
 ): WishDetail {
   const deleted = new Set(changes.deleted);
-  const tasks = read.tasks
+  const tasks = !detail.loadedKinds.has(Change.TASK)
     ? detail.tasks
-    : merge(TaskSchema, detail.tasks, changes.tasks, deleted, byID);
-  const questions = read.questions
+    : read.tasks
+      ? detail.tasks
+      : merge(TaskSchema, detail.tasks, changes.tasks, deleted, byID);
+  const questions = !detail.loadedKinds.has(Change.QUESTION)
     ? detail.questions
-    : merge(QuestionSchema, detail.questions, changes.questions, deleted, byID);
-  const blocks = read.blocks
+    : read.questions
+      ? detail.questions
+      : merge(
+          QuestionSchema,
+          detail.questions,
+          changes.questions,
+          deleted,
+          byID,
+        );
+  const blocks = !detail.loadedKinds.has(Change.BLOCK)
     ? detail.blocks
-    : merge(BlockSchema, detail.blocks, changes.blocks, deleted, byPosition);
+    : read.blocks
+      ? detail.blocks
+      : merge(BlockSchema, detail.blocks, changes.blocks, deleted, byPosition);
+  const tasksTotal = read.tasks
+    ? detail.tasksTotal
+    : adjustTotal(
+        detail.tasksTotal,
+        detail.tasks,
+        tasks,
+        changes.tasks,
+        deleted,
+      );
+  const questionsTotal = read.questions
+    ? detail.questionsTotal
+    : adjustTotal(
+        detail.questionsTotal,
+        detail.questions,
+        questions,
+        changes.questions,
+        deleted,
+      );
+  const blocksTotal = read.blocks
+    ? detail.blocksTotal
+    : adjustTotal(
+        detail.blocksTotal,
+        detail.blocks,
+        blocks,
+        changes.blocks,
+        deleted,
+      );
   if (
     tasks === detail.tasks &&
     questions === detail.questions &&
-    blocks === detail.blocks
+    blocks === detail.blocks &&
+    tasksTotal === detail.tasksTotal &&
+    questionsTotal === detail.questionsTotal &&
+    blocksTotal === detail.blocksTotal
   )
     return detail;
-  return { ...detail, tasks, questions, blocks };
+  return {
+    ...detail,
+    tasks,
+    questions,
+    blocks,
+    tasksTotal,
+    questionsTotal,
+    blocksTotal,
+  };
 }
 
 export function createStore(clients: Clients, retry = 1000): Store {
@@ -191,11 +276,12 @@ export function createStore(clients: Clients, retry = 1000): Store {
     changes: new Map<string, WishChanges[]>(),
   };
   const opened = new Map<string, number>();
+  const loadingMore = new Set<string>();
   let flushing: Promise<void> | undefined;
   let again = false;
 
   // mark notes what to read again; with changed, the tasks, questions and blocks it brings need no read. A change
-  // this page does not know reads everything again.
+  // this page does not know reads everything again. Only loaded kinds of opened wishes are re-read.
   function mark(
     wishId: string,
     changes: readonly Change[],
@@ -208,7 +294,21 @@ export function createStore(clients: Clients, retry = 1000): Store {
       ]);
     for (const change of changes) {
       if (!Change[change] || change === Change.UNSPECIFIED) {
-        mark(wishId, [Change.WISH, Change.PROJECT, Change.INBOX, ...DETAIL]);
+        const base = [Change.WISH, Change.PROJECT, Change.INBOX];
+        if (wishId) {
+          const loaded = state.details[wishId]?.loadedKinds;
+          mark(wishId, [
+            ...base,
+            ...(loaded && loaded.size > 0 ? [...loaded] : DETAIL),
+          ]);
+        } else {
+          pending.projects = pending.wishes = pending.inbox = true;
+          for (const id of opened.keys()) {
+            const loaded = state.details[id]?.loadedKinds;
+            const kinds = loaded && loaded.size > 0 ? [...loaded] : DETAIL;
+            mark(id, kinds);
+          }
+        }
         continue;
       }
       if (change === Change.PROJECT) pending.projects = true;
@@ -220,6 +320,12 @@ export function createStore(clients: Clients, retry = 1000): Store {
       const ids = wishId ? [wishId] : [...opened.keys()];
       for (const id of ids) {
         if (!opened.has(id)) continue;
+        const detail = state.details[id];
+        // Do not load hidden tabs! Only re-read if already loaded.
+        const loaded = detail
+          ? detail.loadedKinds.has(change)
+          : pending.details.get(id)?.has(change);
+        if (!loaded) continue;
         const kinds = pending.details.get(id) ?? new Set<Change>();
         kinds.add(change);
         pending.details.set(id, kinds);
@@ -262,15 +368,24 @@ export function createStore(clients: Clients, retry = 1000): Store {
       const into: Partial<WishDetail> = (read[wishId] = {});
       if (kinds.has(Change.TASK))
         attempt(async () => {
-          into.tasks = (await clients.tasks.list({ wishId })).tasks;
+          const res = await clients.tasks.list({ wishId });
+          into.tasks = res.tasks;
+          into.tasksTotal = res.total;
+          into.tasksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.QUESTION))
         attempt(async () => {
-          into.questions = (await clients.questions.list({ wishId })).questions;
+          const res = await clients.questions.list({ wishId });
+          into.questions = res.questions;
+          into.questionsTotal = res.total;
+          into.questionsNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.BLOCK))
         attempt(async () => {
-          into.blocks = (await clients.blocks.list({ wishId })).blocks;
+          const res = await clients.blocks.list({ wishId });
+          into.blocks = res.blocks;
+          into.blocksTotal = res.total;
+          into.blocksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.TILASM))
         attempt(async () => {
@@ -281,10 +396,17 @@ export function createStore(clients: Clients, retry = 1000): Store {
     const next = { ...state.details };
     let touched = false;
     for (const [wishId, got] of Object.entries(read)) {
+      const prev = next[wishId] ?? EMPTY_DETAIL;
+      const loadedKinds = new Set(prev.loadedKinds);
+      const requested = details.find(([id]) => id === wishId)?.[1];
+      if (requested) {
+        for (const k of requested) loadedKinds.add(k);
+      }
       next[wishId] = {
-        ...(next[wishId] ?? EMPTY_DETAIL),
+        ...prev,
         ...got,
         loaded: true,
+        loadedKinds,
       };
       touched = true;
     }
@@ -395,15 +517,125 @@ export function createStore(clients: Clients, retry = 1000): Store {
       })();
       return () => abort.abort();
     },
-    open(wishId) {
+    open(wishId, kinds) {
       opened.set(wishId, (opened.get(wishId) ?? 0) + 1);
-      mark(wishId, DETAIL);
-      void flush();
+      const toLoad = kinds && kinds.length > 0 ? kinds : DETAIL;
+      const detail = state.details[wishId];
+      const pendingKinds = pending.details.get(wishId) ?? new Set<Change>();
+      let added = false;
+      for (const k of toLoad) {
+        if (!detail?.loadedKinds.has(k)) {
+          pendingKinds.add(k);
+          added = true;
+        }
+      }
+      if (added) {
+        pending.details.set(wishId, pendingKinds);
+        void flush();
+      }
       return () => {
         const count = (opened.get(wishId) ?? 1) - 1;
         if (count > 0) opened.set(wishId, count);
         else opened.delete(wishId);
       };
+    },
+    async loadKinds(wishId, kinds) {
+      const detail = state.details[wishId];
+      const needed = kinds.filter((k) => !detail?.loadedKinds.has(k));
+      if (!needed.length) return;
+      const pendingKinds = pending.details.get(wishId) ?? new Set<Change>();
+      for (const k of needed) pendingKinds.add(k);
+      pending.details.set(wishId, pendingKinds);
+      await flush();
+    },
+    async loadMore(wishId, kind) {
+      const key = `${wishId}:${kind}`;
+      if (loadingMore.has(key)) return;
+      const detail = state.details[wishId];
+      if (!detail) return;
+      loadingMore.add(key);
+      try {
+        if (kind === Change.QUESTION && detail.questionsNextToken) {
+          const res = await clients.questions.list({
+            wishId,
+            pageToken: detail.questionsNextToken,
+          });
+          const cur = state.details[wishId];
+          if (!cur) return;
+          const questions = merge(
+            QuestionSchema,
+            cur.questions,
+            res.questions,
+            new Set(),
+            byID,
+          );
+          set({
+            details: {
+              ...state.details,
+              [wishId]: {
+                ...cur,
+                questions,
+                questionsTotal: res.total,
+                questionsNextToken: res.nextPageToken,
+              },
+            },
+          });
+        } else if (kind === Change.TASK && detail.tasksNextToken) {
+          const res = await clients.tasks.list({
+            wishId,
+            pageToken: detail.tasksNextToken,
+          });
+          const cur = state.details[wishId];
+          if (!cur) return;
+          const tasks = merge(
+            TaskSchema,
+            cur.tasks,
+            res.tasks,
+            new Set(),
+            byID,
+          );
+          set({
+            details: {
+              ...state.details,
+              [wishId]: {
+                ...cur,
+                tasks,
+                tasksTotal: res.total,
+                tasksNextToken: res.nextPageToken,
+              },
+            },
+          });
+        } else if (kind === Change.BLOCK && detail.blocksNextToken) {
+          const res = await clients.blocks.list({
+            wishId,
+            pageToken: detail.blocksNextToken,
+          });
+          const cur = state.details[wishId];
+          if (!cur) return;
+          const blocks = merge(
+            BlockSchema,
+            cur.blocks,
+            res.blocks,
+            new Set(),
+            byPosition,
+          );
+          set({
+            details: {
+              ...state.details,
+              [wishId]: {
+                ...cur,
+                blocks,
+                blocksTotal: res.total,
+                blocksNextToken: res.nextPageToken,
+              },
+            },
+          });
+        }
+      } catch (error) {
+        set({ error: message(error) });
+      } finally {
+        loadingMore.delete(key);
+      }
     },
     follow(taskId) {
       const current = following.get(taskId);

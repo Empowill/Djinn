@@ -49,13 +49,21 @@ func (s *Tasks) List(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	if tasks, err = s.h.withAzimas(ctx, tasks); err != nil {
+	page, nextToken, total, err := plan.Paginate(tasks, req.Msg.GetPageSize(), req.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	if page, err = s.h.withAzimas(ctx, page); err != nil {
 		return nil, plan.Status(err)
 	}
-	if err := plan.FillTilasms(ctx, s.h.store, tasks); err != nil {
+	if err := plan.FillTilasms(ctx, s.h.store, page); err != nil {
 		return nil, plan.Status(err)
 	}
-	return connect.NewResponse(&planv1.TaskServiceListResponse{Tasks: tasks}), nil
+	return connect.NewResponse(&planv1.TaskServiceListResponse{
+		Tasks:         page,
+		NextPageToken: nextToken,
+		Total:         total,
+	}), nil
 }
 
 func (s *Tasks) Get(

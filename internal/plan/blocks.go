@@ -128,14 +128,22 @@ func (b *Blocks) List(
 	if err != nil {
 		return nil, Status(err)
 	}
-	res := &planv1.BlockServiceListResponse{}
+	var matching []*planv1.Block
 	for _, block := range all {
 		if kind := req.Msg.GetKind(); kind == "" || strings.EqualFold(kind, block.GetKind()) {
-			res.Blocks = append(res.Blocks, block)
+			matching = append(matching, block)
 		}
 	}
-	sortBlocks(res.Blocks)
-	return connect.NewResponse(res), nil
+	sortBlocks(matching)
+	page, nextToken, total, err := Paginate(matching, req.Msg.GetPageSize(), req.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.BlockServiceListResponse{
+		Blocks:        page,
+		NextPageToken: nextToken,
+		Total:         total,
+	}), nil
 }
 
 // sortBlocks puts blocks in their order: by position, then oldest first.

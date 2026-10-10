@@ -6,9 +6,40 @@
 import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
+import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { t } from "./i18n";
 
 export type View = "main" | "tasks" | "decisions" | "tilasms" | "agents";
+
+const KINDS_MAIN: readonly Change[] = [
+  Change.TASK,
+  Change.QUESTION,
+  Change.BLOCK,
+];
+const KINDS_TASKS: readonly Change[] = [Change.TASK];
+const KINDS_DECISIONS: readonly Change[] = [
+  Change.QUESTION,
+  Change.BLOCK,
+  Change.TASK,
+];
+const KINDS_TILASMS: readonly Change[] = [Change.TILASM, Change.TASK];
+const KINDS_AGENTS: readonly Change[] = [Change.BLOCK, Change.TASK];
+
+// kindsForView gives the kinds of changes a view needs to display: a tab loaded on demand reads only its kinds.
+export function kindsForView(view: View): readonly Change[] {
+  switch (view) {
+    case "main":
+      return KINDS_MAIN;
+    case "tasks":
+      return KINDS_TASKS;
+    case "decisions":
+      return KINDS_DECISIONS;
+    case "tilasms":
+      return KINDS_TILASMS;
+    case "agents":
+      return KINDS_AGENTS;
+  }
+}
 
 export function ViewTabs({
   view,

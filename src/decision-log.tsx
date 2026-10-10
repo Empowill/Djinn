@@ -23,12 +23,16 @@ const LONG_NOTE_LINES = 6;
 
 export function DecisionLog<T extends { item: Decision }>({
   items,
+  total,
   origin,
   noLead,
   focus = "",
   onTask,
+  onMore,
 }: {
   items: readonly T[];
+  // How many decisions there are in all, from the server; without it, items.length.
+  total?: number;
   // Where a decision comes from, in the flight plan of several wishes: its wish.
   origin?: (item: T) => ReactNode;
   // The decision's wish has no lead session: its answer told no lead.
@@ -37,10 +41,13 @@ export function DecisionLog<T extends { item: Decision }>({
   focus?: string;
   // Opens a task in the Tasks tab.
   onTask: (taskId: string) => void;
+  // Loads more decisions from the server when unfolded.
+  onMore?: () => void;
 }) {
+  const totalCount = total !== undefined ? total : items.length;
   // A decision a task leads back to shows, folded or not.
   const { shown, more } = useRecent(
-    items.length,
+    totalCount,
     focus ? items.findIndex((item) => item.item.id === focus) : -1,
   );
   useEffect(() => {
@@ -59,7 +66,7 @@ export function DecisionLog<T extends { item: Decision }>({
       <div className="section-title">
         <h2>
           {t("tabs.decisions")}
-          <span className="count">{items.length}</span>
+          <span className="count">{totalCount}</span>
         </h2>
         <p>{t("decision.detail")}</p>
       </div>
@@ -79,13 +86,16 @@ export function DecisionLog<T extends { item: Decision }>({
         </div>
       )}
       <OlderLine
-        hidden={items.length - shown}
+        hidden={totalCount - shown}
         label={(count, hidden) =>
           count < hidden
             ? t("decision.older_some", { count, hidden })
             : t("decision.older", { count })
         }
-        onShow={more}
+        onShow={() => {
+          more();
+          onMore?.();
+        }}
       />
     </section>
   );

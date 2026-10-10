@@ -693,7 +693,7 @@ func (q *Questions) List(
 		return nil, Status(err)
 	}
 	since := req.Msg.GetSince()
-	res := &planv1.QuestionServiceListResponse{}
+	var matching []*planv1.Question
 	for _, question := range all {
 		if req.Msg.GetOpen() && question.GetAnswer() != nil {
 			continue
@@ -701,7 +701,15 @@ func (q *Questions) List(
 		if since != nil && question.GetCreateTime().AsTime().Before(since.AsTime()) {
 			continue
 		}
-		res.Questions = append(res.Questions, question)
+		matching = append(matching, question)
 	}
-	return connect.NewResponse(res), nil
+	page, nextToken, total, err := Paginate(matching, req.Msg.GetPageSize(), req.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.QuestionServiceListResponse{
+		Questions:     page,
+		NextPageToken: nextToken,
+		Total:         total,
+	}), nil
 }
