@@ -74,7 +74,7 @@ import { MarkdownBody } from "./markdown-body";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
 import { CountPill, StatusBadge } from "./status";
-import { AzimaCard } from "./azima";
+import { AzimaCard, azimaFinished } from "./azima";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
@@ -137,7 +137,12 @@ export function WishView({
   }, [opening]);
   const moving = movingTasks(detail.tasks);
   const finished = finishedTasks(detail.tasks);
+  // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
   const azimas = azimaGroups(detail.tasks);
+  const doneAzimas = azimas.filter((x) => azimaFinished(x.azima));
+  const showDone = doneAzimas.some(
+    (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
+  );
   const byId = new Map(detail.tasks.map((task) => [task.id, task]));
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -493,7 +498,10 @@ export function WishView({
               <TaskSections
                 moving={moving}
                 finished={finished}
-                azimas={azimas}
+                azimas={azimas.filter((x) => !azimaFinished(x.azima))}
+                doneAzimas={doneAzimas}
+                fold={wish.id}
+                showDone={showDone}
                 renderAzima={({ azima, parts }) => (
                   <AzimaCard
                     key={azima.id}
@@ -501,6 +509,7 @@ export function WishView({
                     parts={parts}
                     tasks={byId}
                     render={renderTask}
+                    focus={focus}
                     onValidate={() =>
                       quiet(
                         act(
