@@ -1,0 +1,7 @@
+# Case: agy returns a retry prompt for an improperly formatted function call; Djinn continues the turn, then done.
+{"event":"init","conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","init":{"cwd":"/work/project","tools":["ask_permission","run_command","view_file","write_to_file"],"permission_mode":"accept-edits","model":"gemini-3.8-flash-medium"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"result","result":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","status":"ERROR","error":"Your previous response contained an improperly formatted function call. Please retry with a properly formatted function call. Retries remaining: 3","duration_seconds":1.2,"num_turns":1,"usage":{"input_tokens":30384,"output_tokens":10,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":30394}}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":1,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","step_index":2,"state":"DONE","step_type":"agent_response","text_delta":"Fixed call and done.\n"}}
+{"event":"result","result":{"conversation_id":"9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f","status":"SUCCESS","response":"Fixed call and done.\n","duration_seconds":1.5,"num_turns":2,"usage":{"input_tokens":60800,"output_tokens":25,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":60825}}}
