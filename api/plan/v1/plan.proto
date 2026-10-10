@@ -1336,11 +1336,22 @@ message QuestionServiceListRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // The most questions to return. Not set: 50. Max: 200.
+  int32 page_size = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+  // The page token from a previous list response, to fetch the next page.
+  string page_token = 5 [(buf.validate.field).string.max_len = 500];
 }
 
 message QuestionServiceListResponse {
   // The questions.
   repeated Question questions = 1;
+  // Token to retrieve the next page, or empty if there are no more pages.
+  string next_page_token = 2;
+  // Total number of questions matching the request.
+  int32 total = 3;
 }
 
 // Projects Djinn works in.
@@ -2464,11 +2475,22 @@ message BlockServiceListRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // The most blocks to return. Not set: 50. Max: 200.
+  int32 page_size = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+  // The page token from a previous list response, to fetch the next page.
+  string page_token = 5 [(buf.validate.field).string.max_len = 500];
 }
 
 message BlockServiceListResponse {
   // The blocks, by position.
   repeated Block blocks = 1;
+  // Token to retrieve the next page, or empty if there are no more pages.
+  string next_page_token = 2;
+  // Total number of blocks matching the request.
+  int32 total = 3;
 }
 
 message BlockServiceDeleteRequest {
@@ -2760,11 +2782,22 @@ message TaskServiceListRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // The most tasks to return. Not set: 50. Max: 200.
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+  // The page token from a previous list response, to fetch the next page.
+  string page_token = 4 [(buf.validate.field).string.max_len = 500];
 }
 
 message TaskServiceListResponse {
   // The tasks.
   repeated Task tasks = 1;
+  // Token to retrieve the next page, or empty if there are no more pages.
+  string next_page_token = 2;
+  // Total number of tasks matching the request.
+  int32 total = 3;
 }
 
 message TaskServiceGetRequest {

@@ -305,6 +305,25 @@ func (f questions) Ask(_ context.Context, req *connect.Request[planv1.QuestionSe
 	return connect.NewResponse(&planv1.QuestionServiceAskResponse{Question: question()}), nil
 }
 
+func (f questions) List(_ context.Context, req *connect.Request[planv1.QuestionServiceListRequest]) (*connect.Response[planv1.QuestionServiceListResponse], error) {
+	f.record(req.Msg)
+	if req.Msg.GetPageToken() == "" {
+		return connect.NewResponse(&planv1.QuestionServiceListResponse{
+			Questions: []*planv1.Question{
+				{Id: "11111111-1111-1111-1111-111111111111", Code: "Q01", Text: "First?"},
+			},
+			NextPageToken: "page-2",
+			Total:         2,
+		}), nil
+	}
+	return connect.NewResponse(&planv1.QuestionServiceListResponse{
+		Questions: []*planv1.Question{
+			{Id: "22222222-2222-2222-2222-222222222222", Code: "Q02", Text: "Second?"},
+		},
+		Total: 2,
+	}), nil
+}
+
 func (f projects) List(_ context.Context, req *connect.Request[planv1.ProjectServiceListRequest]) (*connect.Response[planv1.ProjectServiceListResponse], error) {
 	f.record(req.Msg)
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: []*planv1.Project{
@@ -372,6 +391,8 @@ func TestRun(t *testing.T) {
 		{name: "help names the alias", args: []string{"help"}, wantOut: "  tilasm, talisman "},
 		{name: "help comes from the proto comments", args: []string{"q", "answer", "--help"}, wantOut: "Usage: djinn question answer <question> <choice> [flags]\n\nAnswer a question, which turns it into a decision."},
 		{name: "help command", args: []string{"help", "pr"}, wantOut: "Methods:\n  add    Add a folder as a project."},
+		{name: "paginated list loops across pages", args: []string{"q", "list"}, wantOut: "code: Q01\n  text: First?\n- id: 22222222-2222-2222-2222-222222222222\n  code: Q02\n  text: Second?\n", wantCalled: true},
+		{name: "paginated list with explicit page-token", args: []string{"q", "list", "--page-token", "page-2"}, wantOut: "code: Q02\n  text: Second?\n", wantCalled: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

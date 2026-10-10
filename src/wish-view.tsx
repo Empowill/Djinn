@@ -34,8 +34,14 @@ import {
   WishState,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { decisionOf, decisionsOf } from "./data/decisions";
-import { useClients, useData, usePausable, useWishDetail } from "./data/djinn";
+import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
+import {
+  useClients,
+  useData,
+  useDjinn,
+  usePausable,
+  useWishDetail,
+} from "./data/djinn";
 import {
   type OpenQuestion,
   azimaGroups,
@@ -76,7 +82,7 @@ import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
 import { CountPill, StatusBadge } from "./status";
 import { AzimaCard, azimaFinished } from "./azima";
-import { TaskSections, type View, ViewTabs } from "./task-tabs";
+import { kindsForView, TaskSections, type View, ViewTabs } from "./task-tabs";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -106,9 +112,15 @@ export function WishView({
   opening?: Opening;
   onToast: (text: string) => void;
 }) {
+  const djinn = useDjinn();
+  const store = djinn?.store;
   const allProjects = useData((s) => s.projects);
   const pausable = usePausable();
-  const detail = useWishDetail(wish.id);
+  const initialKinds = useMemo(
+    () => kindsForView(opening ? "tilasms" : "main"),
+    [opening],
+  );
+  const detail = useWishDetail(wish.id, initialKinds);
   const projects = projectsOf(wish, allProjects);
   const open = openQuestions(wish, detail);
   const digging = investigatingQuestions(wish, detail);
@@ -124,6 +136,12 @@ export function WishView({
     () => decisions.map((item) => ({ item })),
     [decisions],
   );
+  const decisionsTotal = useMemo(() => {
+    if (detail.questionsTotal === undefined) return undefined;
+    const answeredCount = Math.max(0, detail.questionsTotal - open.length);
+    const decisionBlocksCount = detail.blocks.filter(isDecisionBlock).length;
+    return Math.max(decisionItems.length, answeredCount + decisionBlocksCount);
+  }, [detail.questionsTotal, open.length, detail.blocks, decisionItems.length]);
   const { running, watching } = runningOf(detail.tasks);
   const done = detail.tasks.filter(
     (task) => task.status === TaskStatus.DONE && !isAzima(task),
@@ -136,14 +154,19 @@ export function WishView({
   const [deleting, setDeleting] = useState(false);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
-  const show = (to: View, id = "") => (setView(to), setFocus(id));
+  const show = (to: View, id = "") => {
+    setView(to);
+    setFocus(id);
+    if (store) void store.loadKinds(wish.id, kindsForView(to));
+  };
   // The tilasm a link opened: the Tilasms tab shows it, again at each new request.
   const [opened, setOpened] = useState(opening);
   useEffect(() => {
     if (!opening) return;
     setView("tilasms");
     setOpened(opening);
-  }, [opening]);
+    if (store) void store.loadKinds(wish.id, kindsForView("tilasms"));
+  }, [opening, store, wish.id]);
   const moving = movingTasks(detail.tasks);
   // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
   const azimas = azimaGroups(detail.tasks);
@@ -155,6 +178,26 @@ export function WishView({
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !store) return;
+    const onScroll = () => {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 300) {
+        if (view === "tasks") {
+          void store.loadMore(wish.id, Change.TASK);
+        } else if (view === "decisions") {
+          void store.loadMore(wish.id, Change.QUESTION);
+          void store.loadMore(wish.id, Change.BLOCK);
+        } else if (view === "agents") {
+          void store.loadMore(wish.id, Change.BLOCK);
+        } else if (view === "main") {
+          void store.loadMore(wish.id, Change.BLOCK);
+        }
+      }
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [store, wish.id, view]);
   const {
     clients,
     act: write,
@@ -471,7 +514,7 @@ export function WishView({
             view={view}
             main={t("tabs.wish")}
             tasks={workCount(detail.tasks)}
-            decisions={decisions.length}
+            decisions={decisionsTotal ?? decisions.length}
             tilasms={detail.tilasms.length}
             agents={forAgents.length}
             onView={(to) => show(to)}
@@ -492,9 +535,16 @@ export function WishView({
           {view === "decisions" && (
             <DecisionLog
               items={decisionItems}
+              total={decisionsTotal}
               noLead={() => noLead(wish)}
               focus={focus}
               onTask={(id) => show("tasks", id)}
+              onMore={() => {
+                if (store) {
+                  void store.loadMore(wish.id, Change.QUESTION);
+                  void store.loadMore(wish.id, Change.BLOCK);
+                }
+              }}
             />
           )}
           {view === "tasks" &&
@@ -622,7 +672,14 @@ export function WishView({
               )}
 
               <div className="main-side">
-                <Journal wish={wish} blocks={detail.blocks} />
+                <Journal
+                  wish={wish}
+                  blocks={detail.blocks}
+                  total={detail.blocksTotal}
+                  onMore={() => {
+                    if (store) void store.loadMore(wish.id, Change.BLOCK);
+                  }}
+                />
 
                 {projects.length > 0 && (
                   <Rights
@@ -766,7 +823,17 @@ export function WaitingTasks({
 // Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for. The
 // latest entries show, the older ones fold behind a line (older.tsx).
 // WishService.Snapshot reads the whole wish, events included: it is read on a click, then again as the wish changes.
-function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
+function Journal({
+  wish,
+  blocks,
+  total,
+  onMore,
+}: {
+  wish: Wish;
+  blocks: Block[];
+  total?: number;
+  onMore?: () => void;
+}) {
   const clients = useClients();
   const [shown, setShown] = useState(false);
   const [commands, setCommands] = useState(false);
@@ -795,7 +862,8 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
     () => journal(commands ? exp : undefined, blocks),
     [commands, exp, blocks],
   );
-  const { shown: recent, more } = useRecent(entries.length);
+  const totalCount = commands ? entries.length : (total ?? entries.length);
+  const { shown: recent, more } = useRecent(totalCount);
   return (
     <section
       className="wish-section wish-journal"
@@ -810,9 +878,7 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
           <ChevronRight size={14} className={shown ? "rotated-90" : ""} />
           <h3>
             {t("page.journal")}
-            {entries.length > 0 && (
-              <span className="count">{entries.length}</span>
-            )}
+            {totalCount > 0 && <span className="count">{totalCount}</span>}
           </h3>
         </button>
         {shown && (
@@ -838,13 +904,16 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
       )}
       {shown && (
         <OlderLine
-          hidden={entries.length - recent}
+          hidden={totalCount - recent}
           label={(count, hidden) =>
             count < hidden
               ? t("wish.journal_older_some", { count, hidden })
               : t("wish.journal_older", { count })
           }
-          onShow={more}
+          onShow={() => {
+            more();
+            onMore?.();
+          }}
         />
       )}
     </section>

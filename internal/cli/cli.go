@@ -216,6 +216,7 @@ func running(ctx context.Context, cfg Config) (string, error) {
 }
 
 // call sends one unary request over Connect, in binary protobuf.
+// When md is paginated and the caller did not specify a page token, it loops to fetch all pages.
 func call(ctx context.Context, cfg Config, md protoreflect.MethodDescriptor, req *dynamicpb.Message) (*dynamicpb.Message, error) {
 	if md.IsStreamingClient() || md.IsStreamingServer() {
 		return nil, usageError{errors.New("streaming methods are not available on the command line")}
@@ -228,6 +229,36 @@ func call(ctx context.Context, cfg Config, md protoreflect.MethodDescriptor, req
 	if err != nil {
 		return nil, err
 	}
+
+	pageTokField := md.Input().Fields().ByName("page_token")
+	nextTokField := md.Output().Fields().ByName("next_page_token")
+	if pageTokField != nil && nextTokField != nil && !req.Has(pageTokField) {
+		reqCopy := proto.Clone(req).(*dynamicpb.Message)
+		for {
+			nextToken := res.Msg.Get(nextTokField).String()
+			if nextToken == "" {
+				break
+			}
+			reqCopy.Set(pageTokField, protoreflect.ValueOfString(nextToken))
+			nextRes, err := client.CallUnary(ctx, connect.NewRequest(reqCopy))
+			if err != nil {
+				return nil, err
+			}
+			for i := range md.Output().Fields().Len() {
+				fd := md.Output().Fields().Get(i)
+				if fd.IsList() {
+					dst := res.Msg.Mutable(fd).List()
+					src := nextRes.Msg.Get(fd).List()
+					for j := range src.Len() {
+						dst.Append(src.Get(j))
+					}
+				}
+			}
+			res.Msg.Set(nextTokField, nextRes.Msg.Get(nextTokField))
+		}
+		res.Msg.Clear(nextTokField)
+	}
+
 	return res.Msg, nil
 }
 
@@ -459,8 +490,7 @@ func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 // writeText prints a response for a human: one "name: value" line per field set, nested messages indented, and
 // the content of the response directly when it holds a single field.
 func writeText(w io.Writer, m protoreflect.Message) {
-	if fields := m.Descriptor().Fields(); fields.Len() == 1 && fields.Get(0).Kind() == protoreflect.MessageKind {
-		fd := fields.Get(0)
+	if fd := singleContentField(m.Descriptor().Fields()); fd != nil && fd.Kind() == protoreflect.MessageKind {
 		switch {
 		case fd.IsList():
 			writeList(w, fd, m.Get(fd).List(), "")
@@ -470,6 +500,27 @@ func writeText(w io.Writer, m protoreflect.Message) {
 		}
 	}
 	writeFields(w, m, "")
+}
+
+// singleContentField returns the single content field of fields, ignoring pagination metadata
+// (next_page_token and total) if present.
+func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.FieldDescriptor {
+	if fields.Len() == 1 {
+		return fields.Get(0)
+	}
+	var nonPagination []protoreflect.FieldDescriptor
+	for i := range fields.Len() {
+		fd := fields.Get(i)
+		name := string(fd.Name())
+		if name == "next_page_token" || name == "total" {
+			continue
+		}
+		nonPagination = append(nonPagination, fd)
+	}
+	if len(nonPagination) == 1 {
+		return nonPagination[0]
+	}
+	return nil
 }
 
 func writeFields(w io.Writer, m protoreflect.Message, indent string) {
