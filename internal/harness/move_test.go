@@ -2,6 +2,8 @@ package harness
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -764,8 +766,10 @@ func TestMoveTemplatesNoUnfilledFormatVerbs(t *testing.T) {
 	// releaseMoveQuestion
 	assertQuestion("releaseMoveQuestion", releaseMoveQuestion("wish1", "1234567890abcdef"))
 
-	// prMoveName & prMoveQuestion
+	// prMoveName, prMoveQuestion & prGrowsMoveName
 	assertNoVerb("prMoveName", prMoveName("main"))
+	assertNoVerb("prGrowsMoveName", prGrowsMoveName("2"))
+	assertNoVerb("prGrowsMoveName.empty", prGrowsMoveName(""))
 	assertQuestion("prMoveQuestion", prMoveQuestion("wish1", "main", "Title", "Body text"))
 	assertQuestion("prMoveQuestion.percentInBody", prMoveQuestion("wish1", "main", "Title 100%", "Coverage at 99%"))
 
@@ -850,5 +854,157 @@ func TestMergeMoveOpenPRDeduplicatedAndAheadGreen(t *testing.T) {
 		if prCount != 1 {
 			t.Fatalf("expected still exactly 1 PR question across projects/wishes, got %d", prCount)
 		}
+	}
+}
+
+// TestOpenPRFromBranchParsing tests parsing of gh pr list output in openPRFromBranch.
+func TestOpenPRFromBranchParsing(t *testing.T) {
+	testx.Portable(t)
+	bin := t.TempDir()
+
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx := t.Context()
+
+	setFakeGh := func(content string, exitCode int) {
+		outPath := filepath.Join(bin, "gh.out")
+		if err := os.WriteFile(outPath, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		sh := fmt.Sprintf("#!/bin/sh\ncat %q\nexit %d\n", outPath, exitCode)
+		if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(sh), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 1. Standard TSV format
+	setFakeGh("2\tRelease v0.1.1\tfeat/wails-go\tOPEN\t2026-10-10T12:54:15Z\n", 0)
+	prNum, ok := openPRFromBranch(ctx, "", "feat/wails-go")
+	if !ok || prNum != "2" {
+		t.Fatalf("expected ('2', true), got (%q, %v)", prNum, ok)
+	}
+
+	// 2. Hash prefix (#2)
+	setFakeGh("#2\tRelease v0.1.1\tfeat/wails-go\tOPEN\t2026-10-10T12:54:15Z\n", 0)
+	prNum, ok = openPRFromBranch(ctx, "", "feat/wails-go")
+	if !ok || prNum != "2" {
+		t.Fatalf("expected ('2', true), got (%q, %v)", prNum, ok)
+	}
+
+	// 3. JSON format
+	setFakeGh("[{\"number\": 42, \"state\": \"OPEN\"}]\n", 0)
+	prNum, ok = openPRFromBranch(ctx, "", "feat/wails-go")
+	if !ok || prNum != "42" {
+		t.Fatalf("expected ('42', true), got (%q, %v)", prNum, ok)
+	}
+
+	// 4. Empty output (no open PRs)
+	setFakeGh("", 0)
+	prNum, ok = openPRFromBranch(ctx, "", "feat/wails-go")
+	if ok || prNum != "" {
+		t.Fatalf("expected ('', false), got (%q, %v)", prNum, ok)
+	}
+
+	// 5. gh error (exit 1)
+	setFakeGh("error: connection refused\n", 1)
+	prNum, ok = openPRFromBranch(ctx, "", "feat/wails-go")
+	if ok || prNum != "" {
+		t.Fatalf("expected ('', false) on gh error, got (%q, %v)", prNum, ok)
+	}
+}
+
+// TestMergeMoveOpenPRExistsGrowsWithThisWork: when an open PR from that branch exists on GitHub/forge,
+// Djinn says "PR #2 grows with this work" once in the merge line, and asks no PR question.
+func TestMergeMoveOpenPRExistsGrowsWithThisWork(t *testing.T) {
+	testx.Portable(t)
+	bin := t.TempDir()
+	callsFile := filepath.Join(bin, "calls.txt")
+	ghOut := filepath.Join(bin, "gh.out")
+	if err := os.WriteFile(ghOut, []byte("2\tRelease v0.1.1\tmaster\tOPEN\t2026-10-10\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeScript := fmt.Sprintf(`#!/bin/sh
+echo "$@" >> %q
+if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
+    cat %q
+    exit 0
+fi
+exit 1
+`, callsFile, ghOut)
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(fakeScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeBat := fmt.Sprintf(`@echo off
+echo %%* >> %q
+if "%%1"=="pr" if "%%2"=="list" (
+    type %q
+    exit /b 0
+)
+exit /b 1
+`, callsFile, ghOut)
+	_ = os.WriteFile(filepath.Join(bin, "gh.bat"), []byte(fakeBat), 0o755)
+
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	in := integrating(t)
+	_ = in.remote(t)
+
+	initialSha := in.tip(t)
+	in.git(t, in.repo, "branch", "main", initialSha)
+	in.git(t, in.repo, "push", "origin", "main")
+
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generate: \"gen\"\ntest: \"test\"\nmain_branch: \"main\"\n")
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	// Create an azima with task W1
+	azima := in.azima(t, in.wishID, "Big Feature")
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a1\n"}, func(task *planv1.Task) {
+		task.PartOf = azima.GetId()
+	})
+
+	// Pass integrates W1. Azima settles, branch pushed green,
+	// but PR #2 is open: says "PR #2 grows with this work", asks no PR question.
+	in.pass(t, 0)
+
+	// Verify fake gh was called
+	calls, err := os.ReadFile(callsFile)
+	if err != nil {
+		t.Fatalf("expected fake gh to be called, err: %v", err)
+	}
+	if !strings.Contains(string(calls), "pr list --head") {
+		t.Fatalf("expected fake gh to receive 'pr list --head', got: %s", string(calls))
+	}
+
+	// Verify no PR question was asked
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range questions {
+		if strings.Contains(strings.ToLower(q.GetText()), "pull request") {
+			t.Fatalf("expected NO pull request question because PR #2 is open, but got question: %q", q.GetText())
+		}
+	}
+
+	// Verify the lead line includes "PR #2 grows with this work" and NOT "open a pull request to main"
+	foundGrows := false
+	for _, line := range told {
+		if strings.Contains(line, "PR #2 grows with this work") {
+			foundGrows = true
+		}
+		if strings.Contains(line, "open a pull request") {
+			t.Fatalf("lead line should not announce 'open a pull request', got: %s", line)
+		}
+	}
+	if !foundGrows {
+		t.Fatalf("expected lead line with 'PR #2 grows with this work', told: %v", told)
 	}
 }

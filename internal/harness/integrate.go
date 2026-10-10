@@ -1339,20 +1339,35 @@ func (h *Harness) handleMergeMoves(
 	// 4. Worth a pull request to main
 	main, ref, ok := h.isPRWorthy(ctx, wish, project, branch, sha)
 	if ok {
-		allQuestions, _ := store.List[*planv1.Question](ctx, h.store, nil)
-		wishes, _ := store.List[*planv1.Wish](ctx, h.store, nil)
-		wishesByID := make(map[string]*planv1.Wish, len(wishes))
-		for _, w := range wishes {
-			wishesByID[w.GetId()] = w
-		}
-		if !h.hasPRQuestion(ctx, project.GetId(), allQuestions, wishesByID) {
-			moveName := prMoveName(main)
-			if !slices.Contains(moves, moveName) {
-				moves = append(moves, moveName)
-				title, body := h.draftPR(ctx, wish, project, ref, branch)
-				q := prMoveQuestion(wish.GetId(), main, title, body)
-				if err := h.askMove(ctx, q); err == nil {
-					existing = append(existing, q)
+		if prNum, hasPR := openPRFromBranch(ctx, repo, branch); hasPR {
+			if prNum != "" {
+				moves = append(moves, prGrowsMoveName(prNum))
+			}
+			for _, q := range existing {
+				if q.GetMove() && q.GetAnswer() == nil && strings.Contains(strings.ToLower(q.GetText()), "pull request") {
+					note := "PR open"
+					if prNum != "" {
+						note = fmt.Sprintf("PR #%s open", prNum)
+					}
+					_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_A, note)
+				}
+			}
+		} else {
+			allQuestions, _ := store.List[*planv1.Question](ctx, h.store, nil)
+			wishes, _ := store.List[*planv1.Wish](ctx, h.store, nil)
+			wishesByID := make(map[string]*planv1.Wish, len(wishes))
+			for _, w := range wishes {
+				wishesByID[w.GetId()] = w
+			}
+			if !h.hasPRQuestion(ctx, project.GetId(), allQuestions, wishesByID) {
+				moveName := prMoveName(main)
+				if !slices.Contains(moves, moveName) {
+					moves = append(moves, moveName)
+					title, body := h.draftPR(ctx, wish, project, ref, branch)
+					q := prMoveQuestion(wish.GetId(), main, title, body)
+					if err := h.askMove(ctx, q); err == nil {
+						existing = append(existing, q)
+					}
 				}
 			}
 		}
@@ -1512,11 +1527,23 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 			// (b) PR to main: wish settled, pushed to remote, push checks green, ahead of remote default branch
 			main, ref, ok := h.isPRWorthy(ctx, wish, project, branch, "")
 			if ok {
-				if !h.hasPRQuestion(ctx, projectID, allQuestions, wishesByID) {
-					title, body := h.draftPR(ctx, wish, project, ref, branch)
-					q := prMoveQuestion(wish.GetId(), main, title, body)
-					if err := h.askMove(ctx, q); err == nil {
-						allQuestions = append(allQuestions, q)
+				if prNum, hasPR := openPRFromBranch(ctx, repo, branch); !hasPR {
+					if !h.hasPRQuestion(ctx, projectID, allQuestions, wishesByID) {
+						title, body := h.draftPR(ctx, wish, project, ref, branch)
+						q := prMoveQuestion(wish.GetId(), main, title, body)
+						if err := h.askMove(ctx, q); err == nil {
+							allQuestions = append(allQuestions, q)
+						}
+					}
+				} else {
+					for _, q := range allQuestions {
+						if q.GetMove() && q.GetAnswer() == nil && strings.Contains(strings.ToLower(q.GetText()), "pull request") && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
+							note := "PR open"
+							if prNum != "" {
+								note = fmt.Sprintf("PR #%s open", prNum)
+							}
+							_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_A, note)
+						}
 					}
 				}
 			} else {

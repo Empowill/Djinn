@@ -2,7 +2,9 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -90,6 +92,84 @@ func prMoveQuestion(wishID, main, title, body string) *planv1.Question {
 		Options: []string{"Open pull request", "Not yet"},
 		Move:    true,
 	}
+}
+
+// prGrowsMoveName returns the move note when an open PR already exists for the branch.
+func prGrowsMoveName(prNum string) string {
+	if prNum != "" {
+		return fmt.Sprintf("PR #%s grows with this work", prNum)
+	}
+	return "PR grows with this work"
+}
+
+// openPRFromBranch checks whether an open PR from branch exists for repo via gh.
+// Returns the PR number (if parsed) and whether an open PR exists.
+func openPRFromBranch(ctx context.Context, repo, branch string) (prNum string, ok bool) {
+	cleanBranch := branch
+	cleanBranch = strings.TrimPrefix(cleanBranch, "refs/heads/")
+	cleanBranch = strings.TrimPrefix(cleanBranch, "origin/")
+	if cleanBranch == "" {
+		return "", false
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "list", "--head", cleanBranch, "--state", "open")
+	if repo != "" {
+		cmd.Dir = repo
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return "", false
+	}
+
+	// If output starts with '[', try parsing JSON
+	if strings.HasPrefix(trimmed, "[") {
+		var prs []struct {
+			Number int `json:"number"`
+		}
+		if err := json.Unmarshal([]byte(trimmed), &prs); err == nil {
+			if len(prs) == 0 {
+				return "", false
+			}
+			return strconv.Itoa(prs[0].Number), true
+		}
+	}
+
+	for _, line := range strings.Split(trimmed, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Showing ") || strings.HasPrefix(line, "ID\t") || strings.HasPrefix(line, "ID ") {
+			continue
+		}
+		normalized := strings.ReplaceAll(line, `\t`, "\t")
+		fields := strings.Fields(normalized)
+		if len(fields) > 0 {
+			candidate := strings.TrimPrefix(fields[0], "#")
+			if _, err := strconv.Atoi(candidate); err == nil {
+				return candidate, true
+			}
+		}
+		if idx := strings.Index(line, "/pull/"); idx != -1 {
+			rest := line[idx+len("/pull/"):]
+			num := ""
+			for _, r := range rest {
+				if r >= '0' && r <= '9' {
+					num += string(r)
+				} else {
+					break
+				}
+			}
+			if num != "" {
+				return num, true
+			}
+		}
+	}
+	return "", false
 }
 
 // installMoveQuestion builds the question for an uninstalled build.
@@ -182,14 +262,19 @@ func (h *Harness) isPRWorthy(ctx context.Context, wish *planv1.Wish, project *pl
 		return "", "", false
 	}
 	p := pushState(wish, project.GetId())
-	if p == nil || p.GetLast() == nil || p.GetQuestionId() != "" || p.GetHeld() != "" || p.GetRefused() != "" {
+	if p != nil && (p.GetQuestionId() != "" || p.GetHeld() != "" || p.GetRefused() != "") {
 		return "", "", false
 	}
-	targetSha := p.GetLast().GetNewSha()
-	if targetSha == "" || (!strings.HasPrefix(targetSha, headSha) && !strings.HasPrefix(headSha, targetSha)) {
-		return "", "", false
+	if sha == "" {
+		if p == nil || p.GetLast() == nil {
+			return "", "", false
+		}
+		targetSha := p.GetLast().GetNewSha()
+		if targetSha == "" || (!strings.HasPrefix(targetSha, headSha) && !strings.HasPrefix(headSha, targetSha)) {
+			return "", "", false
+		}
 	}
-	countStr, err := git(ctx, repo, "rev-list", "--count", ref+".."+targetSha)
+	countStr, err := git(ctx, repo, "rev-list", "--count", ref+".."+headSha)
 	count, _ := strconv.Atoi(strings.TrimSpace(countStr))
 	if err != nil || count <= 0 {
 		return "", "", false
