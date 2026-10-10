@@ -1,13 +1,15 @@
-// A discreet banner at the top of the window when a newer Djinn waits at the path of the running one (installed with
-// `go tool task install`), with the button that restarts on it. Nothing restarts without that click. After a restart,
-// it lists the terminals that did not start again. Shown only when djinn serves the page (a DjinnProvider). A release
-// links its notes, which the system's browser opens. Once a batch of finished work is committed into a wish's
-// integration branch, in a project that names an install command, it proposes to install that build and restart on
-// it, with what changed and what to check.
-import { useEffect, useState } from "react";
+// A banner at the top of the window, raised in brass over the rest and headed by the djinn's mark, when a newer Djinn
+// waits at the path of the running one (installed with `go tool task install`), with the button that restarts on it.
+// Nothing restarts without that click. After a restart, it lists the terminals that did not start again. Shown only
+// when djinn serves the page (a DjinnProvider). A release links its notes, which the system's browser opens. Once a
+// batch of finished work is committed into a wish's integration branch, in a project that names an install command,
+// it proposes to install that build and restart on it, with what changed and what to check. Its actions sit beside
+// each title, its text below at full width.
+import { type ReactNode, useEffect, useState } from "react";
 
 import { useDjinn } from "./data/djinn";
 import type { UpdateState } from "./data/update";
+import { Brand } from "./frame";
 import { t } from "./i18n";
 import "./update-banner.css";
 
@@ -102,46 +104,66 @@ export function UpdateBannerView({
     return null;
   // Only a web link opens: anything else from a release stays out of the banner.
   const notes = /^https?:\/\//i.test(state.notesUrl) ? state.notesUrl : "";
+  // The djinn's mark heads the banner: the first of its parts carries it.
+  const first = state.ready
+    ? "ready"
+    : build
+      ? "build"
+      : phase.kind === "installed"
+        ? "installed"
+        : "not-resumed";
   return (
     <div className="update-banner" role="status">
       {state.ready && (
-        <div className="update-banner-row">
-          <span
-            title={t("update.versions", {
-              current: state.current,
-              ready: state.ready,
-            })}
-          >
-            {phase.kind === "failed"
-              ? t("update.failed", { message: phase.message })
-              : phase.kind === "restarting"
-                ? t("update.restarting")
-                : t("update.ready")}
-          </span>
-          {notes && (
-            <a
-              href={notes}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => {
-                e.preventDefault();
-                onNotes(notes);
-              }}
+        <Part
+          mark={first === "ready"}
+          title={
+            <span
+              title={t("update.versions", {
+                current: state.current,
+                ready: state.ready,
+              })}
             >
-              {t("update.notes")}
-            </a>
-          )}
-          {phase.kind !== "restarting" && (
-            <button type="button" onClick={onInstall}>
-              {t("update.install")}
-            </button>
-          )}
-        </div>
+              {phase.kind === "failed"
+                ? t("update.failed", { message: phase.message })
+                : phase.kind === "restarting"
+                  ? t("update.restarting")
+                  : t("update.ready")}
+            </span>
+          }
+          actions={
+            <>
+              {phase.kind !== "restarting" && (
+                <button
+                  type="button"
+                  className="update-banner-primary"
+                  onClick={onInstall}
+                >
+                  {t("update.install")}
+                </button>
+              )}
+              {notes && (
+                <a
+                  href={notes}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onNotes(notes);
+                  }}
+                >
+                  {t("update.notes")}
+                </a>
+              )}
+            </>
+          }
+        />
       )}
       {build && (
-        <div className="update-banner-row update-build">
-          <div>
-            <span>
+        <Part
+          mark={first === "build"}
+          title={
+            <>
               {phase.kind === "failed"
                 ? t("update.failed", { message: phase.message })
                 : t("update.build", {
@@ -150,70 +172,113 @@ export function UpdateBannerView({
                     project: build.project,
                   })}{" "}
               <code>{build.sha.slice(0, 8)}</code>
-            </span>
-            {build.changes.length > 0 && (
+            </>
+          }
+          actions={
+            phase.kind === "installing" || phase.kind === "restarting" ? (
+              <span>
+                {t(
+                  phase.kind === "installing"
+                    ? "update.build_installing"
+                    : "update.restarting",
+                )}
+              </span>
+            ) : (
               <>
-                <strong>{t("update.build_changes")}</strong>
-                <ul>
-                  {build.changes.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
+                <button
+                  type="button"
+                  className="update-banner-primary"
+                  onClick={() => onInstallBuild(build.sha)}
+                >
+                  {t("update.build_install")}
+                </button>
+                <button
+                  type="button"
+                  className="update-banner-dismiss"
+                  onClick={() => onDismissBuild(build.sha)}
+                >
+                  {t("update.dismiss")}
+                </button>
               </>
-            )}
-            {build.checks.length > 0 && (
-              <>
-                <strong>{t("update.build_checks")}</strong>
-                <ul>
-                  {build.checks.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-          {phase.kind === "installing" || phase.kind === "restarting" ? (
-            <span>
-              {t(
-                phase.kind === "installing"
-                  ? "update.build_installing"
-                  : "update.restarting",
-              )}
-            </span>
-          ) : (
+            )
+          }
+        >
+          {build.changes.length > 0 && (
             <>
-              <button type="button" onClick={() => onInstallBuild(build.sha)}>
-                {t("update.build_install")}
-              </button>
-              <button type="button" onClick={() => onDismissBuild(build.sha)}>
-                {t("update.dismiss")}
-              </button>
+              <strong>{t("update.build_changes")}</strong>
+              <ul>
+                {build.changes.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
             </>
           )}
-        </div>
+          {build.checks.length > 0 && (
+            <>
+              <strong>{t("update.build_checks")}</strong>
+              <ul>
+                {build.checks.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Part>
       )}
       {phase.kind === "installed" && !build && (
-        <div className="update-banner-row">
-          <span>
-            {t("update.build_installed", { sha: phase.sha.slice(0, 8) })}
-          </span>
-        </div>
+        <Part
+          mark={first === "installed"}
+          title={t("update.build_installed", { sha: phase.sha.slice(0, 8) })}
+        />
       )}
       {notResumed.length > 0 && (
-        <div className="update-banner-row">
-          <div>
-            <span>{t("update.not_resumed")}</span>
-            <ul>
-              {notResumed.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </div>
-          <button type="button" onClick={onDismiss}>
-            {t("update.dismiss")}
-          </button>
-        </div>
+        <Part
+          mark={first === "not-resumed"}
+          title={t("update.not_resumed")}
+          actions={
+            <button
+              type="button"
+              className="update-banner-dismiss"
+              onClick={onDismiss}
+            >
+              {t("update.dismiss")}
+            </button>
+          }
+        >
+          <ul className="update-banner-terminals">
+            {notResumed.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </Part>
       )}
     </div>
+  );
+}
+
+// A part of the banner: its title with its actions beside it, which wrap below it on a narrow window and never squeeze
+// it; under them, its text at the banner's full width.
+function Part({
+  mark,
+  title,
+  actions,
+  children,
+}: {
+  mark: boolean;
+  title: ReactNode;
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <section className="update-banner-part">
+      <div className="update-banner-head">
+        <div className="update-banner-title">
+          {mark && <Brand small />}
+          <span>{title}</span>
+        </div>
+        {actions && <div className="update-banner-actions">{actions}</div>}
+      </div>
+      {children && <div className="update-banner-body">{children}</div>}
+    </section>
   );
 }

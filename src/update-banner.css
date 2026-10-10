@@ -1,68 +1,125 @@
+/* Djinn's update, read over the rest: a raised surface warmed by the lamp, a brass edge and glow, the djinn's mark at
+   its head. The primary action is brass as the lamp (review.css's lamp-rub), Dismiss is smoke violet, the release
+   notes a quiet link. Both themes take the tokens of review.css; their contrast is checked in tests/styles.test.cjs.
+   Centred by its two sides, it shrinks to its text up to the whole width the window gives it. */
 .update-banner {
   position: fixed;
   top: var(--space-2);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
   z-index: 110;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  width: fit-content;
   max-width: min(680px, calc(100vw - 32px));
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  background: var(--surface-raised);
-  box-shadow: 0 6px 24px color-mix(in srgb, var(--shadow) 50.2%, transparent);
-  color: var(--accent);
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--lamp) 60%, var(--line-strong));
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--lamp) 7%, var(--surface-raised));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--lamp) 12%, transparent),
+    0 0 32px color-mix(in srgb, var(--lamp) 16%, transparent),
+    0 8px 28px color-mix(in srgb, var(--shadow) 50.2%, transparent);
+  color: var(--text);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
 }
-.update-banner-row {
+.update-banner-part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.update-banner-part + .update-banner-part {
+  padding-top: var(--space-3);
+  border-top: 1px solid color-mix(in srgb, var(--lamp) 30%, var(--line));
+}
+/* The title and its actions: when the title does not fit beside them, the actions wrap below it, never squeezing it. */
+.update-banner-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.update-banner .brand {
+  flex: none;
+}
+.update-banner .brand-mark {
+  width: 22px;
+  height: 22px;
+}
+.update-banner-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.update-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.update-banner-actions > span {
+  color: var(--n-9c);
 }
 .update-banner a {
-  flex: none;
-  margin-left: auto;
-  color: var(--muted);
+  color: var(--n-9c);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .update-banner a:hover {
-  color: var(--accent);
-}
-.update-banner ul {
-  margin: var(--space-1) 0 0;
-  padding-left: var(--space-4);
-  color: var(--muted);
-  font-family: var(--mono);
-  word-break: break-all;
+  color: var(--text);
 }
 .update-banner button {
   flex: none;
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-control);
-  background: var(--surface-soft);
-  color: var(--accent);
+  font-weight: 600;
   cursor: pointer;
 }
-.update-banner button:hover {
-  background: var(--surface);
+.update-banner .update-banner-primary {
+  border-color: #c99a2e;
+  background: linear-gradient(#f3d27a, var(--lamp));
+  box-shadow: inset 0 1px 0 #fff3c4;
+  color: var(--lamp-ink);
 }
-/* A build committed: what changed and what to check, read in a glance, the buttons at the top. */
-.update-build {
-  align-items: flex-start;
+.update-banner .update-banner-primary:hover {
+  background: #f6dc90;
 }
-.update-build strong {
+.update-banner .update-banner-dismiss {
+  border-color: color-mix(in srgb, var(--st-investigating) 55%, transparent);
+  background: color-mix(in srgb, var(--st-investigating) 10%, transparent);
+  color: var(--st-investigating);
+}
+.update-banner .update-banner-dismiss:hover {
+  background: color-mix(in srgb, var(--st-investigating) 18%, transparent);
+}
+/* What changed and what to check, at the banner's full width under the title. */
+.update-banner-body strong {
   display: block;
   margin-top: var(--space-2);
-  color: var(--text);
 }
-.update-build ul {
+.update-banner-body strong:first-child {
+  margin-top: 0;
+}
+.update-banner ul {
   max-height: 9em;
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
   overflow-y: auto;
-  font-family: inherit;
-  word-break: normal;
+  color: var(--n-9c);
   overflow-wrap: anywhere;
+}
+/* The terminals that did not start again: their commands, in the mono type. */
+.update-banner .update-banner-terminals {
+  max-height: none;
+  margin-top: 0;
+  font-family: var(--mono);
+  word-break: break-all;
 }
