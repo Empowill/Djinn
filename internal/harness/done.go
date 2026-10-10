@@ -36,6 +36,15 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("task %s is %s: stop it first (djinn task stop)", task.GetCode(), short(s)))
 	}
+	if plan.IsAzima(task) {
+		tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": task.GetWishId()})
+		if err != nil {
+			return nil, plan.Status(err)
+		}
+		if plan.HasUnfinishedParts(task.GetId(), tasks) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("azima %s has parts still to finish", task.GetCode()))
+		}
+	}
 	by := req.GetBy()
 	if by == planv1.Closer_CLOSER_PLAN_FILE {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("only djinn plan sync closes a task for its plan file"))

@@ -262,7 +262,10 @@ func (h *Harness) Recover(ctx context.Context) error {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
-	return h.queueInterrupted(ctx, tasks)
+	if err := h.queueInterrupted(ctx, tasks); err != nil {
+		return err
+	}
+	return h.recoverAzimas(ctx, tasks)
 }
 
 // Spawn creates a task and starts its worker: in a Git project, in a new worktree on its own branch. procedure
@@ -444,6 +447,11 @@ func (h *Harness) spawn(
 		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
 			return err
 		}
+		if task.PartOf != "" {
+			if err := reopenAzima(ctx, tx, task.PartOf, task.Code+" spawned"); err != nil {
+				return err
+			}
+		}
 		if parent != nil {
 			if err := closeParent(ctx, tx, parent, task.GetCode()); err != nil {
 				return err
@@ -501,6 +509,11 @@ func (h *Harness) plan(
 		var err error
 		if task.Code, err = nextCode(ctx, tx, task.GetWishId()); err != nil {
 			return err
+		}
+		if task.PartOf != "" {
+			if err := reopenAzima(ctx, tx, task.PartOf, task.Code+" spawned"); err != nil {
+				return err
+			}
 		}
 		if parent != nil {
 			if err := closeParent(ctx, tx, parent, task.GetCode()); err != nil {
@@ -1044,6 +1057,19 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 		if task != nil {
 			if err := tx.Put(task); err != nil {
 				return err
+			}
+		}
+		if method == methodStart || (method == methodHold && ev.Text == "resumed") {
+			var partOf, code string
+			if pt, ok := task.(*planv1.Task); ok && pt != nil {
+				partOf, code = pt.GetPartOf(), pt.GetCode()
+			} else if r.task != nil {
+				partOf, code = r.task.GetPartOf(), r.task.GetCode()
+			}
+			if partOf != "" {
+				if err := reopenAzima(context.Background(), tx, partOf, code+" started"); err != nil {
+					return err
+				}
 			}
 		}
 		return tx.Put(te)

@@ -197,6 +197,11 @@ func (h *Harness) Group(ctx context.Context, procedure string, req *planv1.TaskS
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
+		if azima != "" && task.GetPartOf() != azima {
+			if err := reopenAzima(ctx, tx, azima, task.GetCode()+" grouped"); err != nil {
+				return err
+			}
+		}
 		task.PartOf = azima
 		return tx.Put(task)
 	})

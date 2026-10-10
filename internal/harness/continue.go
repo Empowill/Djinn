@@ -78,6 +78,11 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
+		if t.GetPartOf() != "" {
+			if err := reopenAzima(ctx, tx, t.GetPartOf(), t.GetCode()+" started"); err != nil {
+				return err
+			}
+		}
 		if err := tx.Put(t); err != nil {
 			return err
 		}

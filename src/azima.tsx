@@ -13,7 +13,7 @@ import {
   type Task,
   TaskStatus,
 } from "../gen/ts/plan/v1/plan_pb";
-import { compareCodes, finishedTask } from "./data/flight";
+import { compareCodes, finishedTask, isAzima } from "./data/flight";
 import type { Tone } from "./data/format";
 import { t, type TextKey } from "./i18n";
 import { StatusBadge } from "./status";
@@ -23,7 +23,6 @@ import { Fold } from "./task-tabs";
 // its parts, its work done and its proof awaited in olive, planned grey otherwise. Never orange: an azima waits for no
 // one's answer.
 function azimaState(azima: Task): AzimaState {
-  if (azima.status === TaskStatus.DONE) return AzimaState.DONE;
   return azima.azima?.state ?? AzimaState.OPEN;
 }
 
@@ -123,10 +122,18 @@ export function AzimaCard({
     .filter((x): x is Task => !!x);
   const after = deps.map((x) => x.code).sort(compareCodes);
   const waits = deps
-    .filter((x) => x.status !== TaskStatus.DONE)
+    .filter((x) =>
+      isAzima(x)
+        ? x.azima?.state !== AzimaState.DONE
+        : x.status !== TaskStatus.DONE,
+    )
     .map((x) => x.code)
     .sort(compareCodes);
-  const done = parts.filter((x) => x.status === TaskStatus.DONE).length;
+  const done = parts.filter((x) =>
+    isAzima(x)
+      ? x.azima?.state === AzimaState.DONE
+      : x.status === TaskStatus.DONE,
+  ).length;
   const proof = state === AzimaState.AWAITING_PROOF;
   // On hover, what validating it takes: each box left and what it needs, else that every task is finished.
   const needs = proof

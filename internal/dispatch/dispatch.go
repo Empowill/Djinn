@@ -56,6 +56,7 @@ type Situation struct {
 // New is the situation of tasks and wishes, all of them as the store lists them (oldest first), the projects in Git being git (a project not in it is
 // not), and machine what the machine allows (nil: nothing limits).
 func New(tasks []*planv1.Task, wishes []*planv1.Wish, git map[string]bool, machine *Machine) *Situation {
+	plan.FillAzimas(tasks)
 	s := &Situation{
 		tasks: tasks, byID: make(map[string]*planv1.Task, len(tasks)), wishes: make(map[string]*planv1.Wish, len(wishes)),
 		rank: map[string]int{}, git: git, machine: machine, started: map[string]bool{}, reading: map[string]bool{},
@@ -209,6 +210,9 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 		}
 		switch d.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_DONE:
+			if plan.IsAzima(d) && (d.GetAzima() == nil || d.GetAzima().GetState() != planv1.AzimaState_AZIMA_STATE_DONE) {
+				break
+			}
 			// Work Djinn integrates counts once committed into the wish's integration branch, which the task starts
 			// from (T07); until then it waits, through a conflict or red tests a worker corrects too.
 			if waits, state := uncommitted(d); waits && why == "" {
