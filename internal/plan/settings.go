@@ -3,6 +3,7 @@ package plan
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -18,6 +19,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // SettingsFile is where a project's repository keeps the settings its team shares: a plan.v1.ProjectSettings in
@@ -145,12 +147,13 @@ type Settings struct {
 	MergeMainEvery  time.Duration
 	InstallReleases bool
 	Push            planv1.ProjectPush
+	PushStrategy    planv1.PushStrategy
 
-	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom planv1.SettingSource
-	ChecksFrom, AttemptsFrom, InstallFrom                                                   planv1.SettingSource
-	AnswerWorkersFrom, EnlightenWorkersFrom                                                 planv1.SettingSource
-	QuestionWorkersFrom, QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom        planv1.SettingSource
-	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom        planv1.SettingSource
+	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
+	ChecksFrom, AttemptsFrom, InstallFrom                                                              planv1.SettingSource
+	AnswerWorkersFrom, EnlightenWorkersFrom                                                            planv1.SettingSource
+	QuestionWorkersFrom, QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                   planv1.SettingSource
+	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -186,7 +189,8 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		QuestionModelFrom: def, QuestionBudgetFrom: def,
 		MergeMain: DefaultMergeMain, MergeMainEvery: DefaultMergeMainEvery, InstallReleases: true,
 		Push:           planv1.ProjectPush_PROJECT_PUSH_STANDARD,
-		MainBranchFrom: def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def,
+		PushStrategy:   planv1.PushStrategy_PUSH_STRATEGY_WISH,
+		MainBranchFrom: def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -265,6 +269,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.Push != nil {
 			s.Push, s.PushFrom = f.settings.GetPush(), f.from
+		}
+		if f.settings.PushStrategy != nil {
+			s.PushStrategy, s.PushStrategyFrom = f.settings.GetPushStrategy(), f.from
 		}
 	}
 	effective := s.QuestionProvider
@@ -349,6 +356,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "merge_main_minutes", Value: strconv.Itoa(int(s.MergeMainEvery / time.Minute)), Source: s.MergeMainEveryFrom},
 		{Name: "install_releases", Value: strconv.FormatBool(s.InstallReleases), Source: s.InstallReleasesFrom},
 		{Name: "push", Value: ProjectPushWord(s.Push), Source: s.PushFrom},
+		{Name: "push_strategy", Value: PushStrategyWord(s.PushStrategy), Source: s.PushStrategyFrom},
 	}
 }
 
@@ -427,6 +435,67 @@ func SaveDeveloperPush(home, projectID string, push planv1.ProjectPush) error {
 		return err
 	}
 	return os.WriteFile(path, b, 0o600)
+}
+
+// PushStrategyWord is how a wish integrates its work, as the settings say it: wish, azima.
+func PushStrategyWord(p planv1.PushStrategy) string {
+	switch p {
+	case planv1.PushStrategy_PUSH_STRATEGY_AZIMA:
+		return "azima"
+	default:
+		return "wish"
+	}
+}
+
+// SaveDeveloperPushStrategy writes the developer's push strategy setting into their settings file in home.
+func SaveDeveloperPushStrategy(home, projectID string, strategy planv1.PushStrategy) error {
+	if home == "" || projectID == "" {
+		return errors.New("cannot save developer settings: home or project ID is missing")
+	}
+	path := DeveloperSettingsFile(home, projectID)
+	s, err := ReadSettings(path)
+	if err != nil {
+		return err
+	}
+	if s == nil {
+		s = &planv1.ProjectSettings{}
+	}
+	s.PushStrategy = strategy.Enum()
+	if err := protovalidate.Validate(s); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	b, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
+}
+
+// ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.
+func ResolveWishPushStrategy(wish *planv1.Wish, settings Settings) (planv1.PushStrategy, planv1.SettingSource) {
+	if wish != nil && wish.GetPushStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		return wish.GetPushStrategy(), planv1.SettingSource_SETTING_SOURCE_WISH
+	}
+	return settings.PushStrategy, settings.PushStrategyFrom
+}
+
+// EffectiveWishPushStrategy resolves the effective push strategy for wish in store r with home folder home.
+func EffectiveWishPushStrategy(ctx context.Context, r store.Reader, home string, wish *planv1.Wish) (planv1.PushStrategy, planv1.SettingSource, error) {
+	if wish != nil && wish.GetPushStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		return wish.GetPushStrategy(), planv1.SettingSource_SETTING_SOURCE_WISH, nil
+	}
+	if wish == nil || len(wish.GetProjectIds()) == 0 {
+		return planv1.PushStrategy_PUSH_STRATEGY_WISH, planv1.SettingSource_SETTING_SOURCE_DEFAULT, nil
+	}
+	project, err := store.Get[*planv1.Project](ctx, r, wish.GetProjectIds()[0])
+	if err != nil {
+		return planv1.PushStrategy_PUSH_STRATEGY_WISH, planv1.SettingSource_SETTING_SOURCE_DEFAULT, err
+	}
+	settings, _ := LoadSettings(home, project)
+	return settings.PushStrategy, settings.PushStrategyFrom, nil
 }
 
 // WhenWord is when a check runs, as the settings and the brief say it: commit, push.
