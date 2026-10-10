@@ -686,7 +686,7 @@ class SmokeRuntime {
       void main(){vec2 pixel=uv*resolution;float raw=smoke(uv);float value=asciiOn>.5?raw*.025:raw;
         float grain=(hash(pixel+floor(time*20.))-.5)*.007;float vignette=1.-.24*length((uv-.5)*vec2(1.,.7));
         vec3 tint=mix(smokeTintLow,smokeTintHigh,smoothstep(.08,.75,raw));
-        color=vec4(smokeBackground+tint*value*vignette+vec3(grain),1.);}`);
+        color=vec4(mix(smokeBackground,tint,value*vignette)+vec3(grain),1.);}`);
     this.sampleAscii = makeProgram(`${smokeField}uniform vec2 coverage;
       void main(){float d=smoke(uv*coverage+vec2(1.-coverage.x,0.));color=vec4(d,d,d,1.);}`);
     this.trimDensity = makeProgram(`uniform float cutoff;uniform float edge;
