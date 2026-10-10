@@ -257,7 +257,7 @@ func TestARefusedPushIsNotForced(t *testing.T) {
 }
 
 // TestABuildIsProposed: once Djinn pushes in a project whose settings name an install command, djinn up is told what
-// to propose: the commits' titles, and what to check, from what each worker said last. Installing it runs the command
+// to propose: the commits' titles, and the tasks' summaries from what each worker said last. Installing it runs the command
 // in the project's install worktree at that commit, under the install gate, never in the person's checkout nor in an
 // integration worktree, and says each step and what it waits for.
 func TestABuildIsProposed(t *testing.T) {
@@ -284,8 +284,9 @@ func TestABuildIsProposed(t *testing.T) {
 	tip := in.tip(t)
 	want := Built{
 		WishID: in.wishID, WishTitle: "Run Djinn on itself", ProjectID: in.projectID, Project: "app", Branch: in.branch, Sha: tip,
-		Tasks: []string{"W1"}, Changes: []string{"Work of W1"}, Checks: []string{"W1 Work of W1: To check: the window shows a."},
-		Install: "install",
+		Tasks: []string{"W1"}, Changes: []string{"Work of W1"},
+		Summaries: []TaskSummary{{Code: "W1", Title: "Work of W1", Summary: "To check: the window shows a."}},
+		Install:   "install",
 	}
 	if len(built) != 1 || !reflect.DeepEqual(built[0], want) {
 		t.Fatalf("built %+v; want %+v", built, want)

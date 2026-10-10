@@ -58,16 +58,23 @@ func WithGates(take TakeGate) Option { return func(h *Harness) { h.gates = take 
 // WithCommands runs the integration's commands with run, instead of the processes they name. Tests give a fake.
 func WithCommands(run RunCommand) Option { return func(h *Harness) { h.commands = run } }
 
+// TaskSummary is what a task of the build brought, and its worker's final words.
+type TaskSummary struct {
+	Code    string
+	Title   string
+	Summary string
+}
+
 // Built is a wish's integration branch as Djinn pushed it, in a project whose settings name an install command: djinn
 // up proposes to install it, and to restart on it (WithBuilt).
 type Built struct {
 	WishID, WishTitle, ProjectID, Project, Branch, Sha string
 	// The tasks whose work the push brought, by code.
 	Tasks []string
-	// What changed: the titles of the commits the push brought, the latest first.
+	// The titles of the commits the push brought, the latest first.
 	Changes []string
-	// What to check, one line per task: its code and title, then the last paragraph its worker wrote.
-	Checks []string
+	// What changed, one per task: its code and title, and its worker's summary.
+	Summaries []TaskSummary
 	// The install command.
 	Install string
 }
@@ -294,7 +301,7 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 // How long the lists of a build proposed are: the commits' titles, and a worker's last paragraph.
 const (
 	buildChanges = 30
-	buildCheck   = 400
+	buildSummary = 400
 )
 
 // build is the integration branch as push pushed it, with the work of tasks, to propose for installing.
@@ -305,17 +312,17 @@ func (h *Harness) build(ctx context.Context, wish *planv1.Wish, project *planv1.
 	}
 	for _, t := range tasks {
 		b.Tasks = append(b.Tasks, t.GetCode())
-		check := t.GetCode() + " " + t.GetTitle()
-		if last := h.lastWords(ctx, t.GetId()); last != "" {
-			check += ": " + last
-		}
-		b.Checks = append(b.Checks, check)
+		b.Summaries = append(b.Summaries, TaskSummary{
+			Code:    t.GetCode(),
+			Title:   t.GetTitle(),
+			Summary: h.lastWords(ctx, t.GetId()),
+		})
 	}
 	return b
 }
 
-// lastWords is the last paragraph the worker of the task wrote, on one line, where it says what it did and what to
-// check; "" when it wrote nothing.
+// lastWords is the last paragraph the worker of the task wrote, on one line, where it says what it did;
+// "" when it wrote nothing.
 func (h *Harness) lastWords(ctx context.Context, taskID string) string {
 	var last *planv1.TaskEvent
 	err := store.Latest(ctx, h.store, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
@@ -329,8 +336,8 @@ func (h *Harness) lastWords(ctx context.Context, taskID string) string {
 	}
 	paragraphs := strings.Split(strings.TrimSpace(last.GetText()), "\n\n")
 	words := strings.Join(strings.Fields(paragraphs[len(paragraphs)-1]), " ")
-	if r := []rune(words); len(r) > buildCheck {
-		words = string(r[:buildCheck-1]) + "…"
+	if r := []rune(words); len(r) > buildSummary {
+		words = string(r[:buildSummary-1]) + "…"
 	}
 	return words
 }

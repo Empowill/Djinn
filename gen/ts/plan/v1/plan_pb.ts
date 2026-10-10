@@ -310,7 +310,7 @@ export type ProjectSettings = Message<"plan.v1.ProjectSettings"> & {
   /**
    * The command that installs the project's new build, run in the project's folder of the integration worktree at
    * the commit: "go tool task install". Once Djinn has pushed the integration branch, the window proposes it, with
-   * what changed and what to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are
+   * what changed, and restarts Djinn on the build when it installed a newer Djinn. Its words are
    * split on spaces, without a shell. Not set: nothing is proposed.
    *
    * @generated from field: optional string install = 9;

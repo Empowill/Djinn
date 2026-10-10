@@ -3,7 +3,7 @@
 // Nothing restarts without that click. After a restart, it lists the terminals that did not start again. Shown only
 // when djinn serves the page (a DjinnProvider). A release links its notes, which the system's browser opens. Once a
 // batch of finished work is committed into a wish's integration branch, in a project that names an install command,
-// it proposes to install that build and restart on it, with what changed and what to check; while it installs, it says
+// it proposes to install that build and restart on it, with what changed; while it installs, it says
 // what the install waits for, then that it builds, then that Djinn restarts. Its actions sit beside each title, its
 // text below at full width.
 import { type ReactNode, useEffect, useState } from "react";
@@ -98,6 +98,9 @@ export function UpdateBannerView({
   // Where the install that runs now stands, as Djinn says it: from another window too, or after a reload.
   const installing = state.installing;
   const build = state.build?.sha === dismissedBuild ? undefined : state.build;
+  const summaries = build?.summaries?.length
+    ? build.summaries
+    : (build?.tasks ?? []).map((code) => ({ code, title: code, summary: "" }));
   if (
     !state.ready &&
     !notResumed.length &&
@@ -210,24 +213,53 @@ export function UpdateBannerView({
             )
           }
         >
-          {build.changes.length > 0 && (
+          {(summaries.length > 0 || build.changes.length > 0) && (
             <>
               <strong>{t("update.build_changes")}</strong>
-              <ul>
-                {build.changes.map((line, i) => (
-                  <li key={i}>{line}</li>
-                ))}
-              </ul>
-            </>
-          )}
-          {build.checks.length > 0 && (
-            <>
-              <strong>{t("update.build_checks")}</strong>
-              <ul>
-                {build.checks.map((line, i) => (
-                  <li key={i}>{line}</li>
-                ))}
-              </ul>
+              {summaries.length > 0 && (
+                <ul className="update-banner-tasks">
+                  {summaries.map((s, i) => (
+                    <li key={s.code || i}>
+                      {s.summary ? (
+                        <details className="update-banner-task">
+                          <summary>
+                            {s.code ? (
+                              <>
+                                <code>{s.code}</code> {s.title}
+                              </>
+                            ) : (
+                              s.title
+                            )}
+                          </summary>
+                          <div className="update-banner-summary">
+                            {s.summary}
+                          </div>
+                        </details>
+                      ) : (
+                        <div className="update-banner-task-line">
+                          {s.code ? (
+                            <>
+                              <code>{s.code}</code> {s.title}
+                            </>
+                          ) : (
+                            s.title
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {build.changes.length > 0 && (
+                <details className="update-banner-commits">
+                  <summary>{t("update.build_commits")}</summary>
+                  <ul>
+                    {build.changes.map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </>
           )}
         </Part>
