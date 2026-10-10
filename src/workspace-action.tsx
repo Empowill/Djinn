@@ -29,8 +29,10 @@ export function WorkspaceAction({
   const transition = reducedMotion
     ? { duration: 0 }
     : {
-        duration: 0.34,
-        ease: [0.22, 1, 0.36, 1] as const,
+        type: "spring" as const,
+        stiffness: 320,
+        damping: 28,
+        mass: 0.8,
       };
   return (
     <motion.div
@@ -44,15 +46,23 @@ export function WorkspaceAction({
     >
       <div className="workspace-action-surface" aria-hidden="true">
         <motion.div
-          layoutId={`${layoutId}-fill`}
           className="workspace-action-surface-fill"
-          initial={false}
+          // The outer pill owns the shared geometry. Keep the color fill local so both tones
+          // enter from the bottom instead of letting a shared layout projection reverse this
+          // direction when returning from an indication to wish creation.
+          initial={
+            reducedMotion ? false : { y: tone === "primary" ? "101%" : "0%" }
+          }
           animate={{ y: tone === "primary" ? "0%" : "-101%" }}
           transition={transition}
           aria-hidden="true"
         />
       </div>
-      <motion.div layout="position" className="workspace-action-content">
+      <motion.div
+        layout="position"
+        transition={transition}
+        className="workspace-action-content"
+      >
         {children}
       </motion.div>
     </motion.div>

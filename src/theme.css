@@ -45,6 +45,7 @@
   --n-f6: #f6f6f6;
   --n-ff: #ffffff;
   --workspace-action-blend-ink: #ffffff;
+  --workspace-action-shadow: #e7e7e710;
   /* Shadows and the dim behind a dialog: black, at the strength each rule mixes. */
   --shadow: #000000;
   --backdrop: #000000;
@@ -120,6 +121,7 @@ html[data-theme="light"] {
   --n-f6: #121211;
   --n-ff: #0a0a09;
   --workspace-action-blend-ink: #ffffff;
+  --workspace-action-shadow: #1c1c1a24;
   --shadow: #3c3c3240;
   --backdrop: #1c1c1a66;
   --sand: #7d6420;

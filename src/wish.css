@@ -946,6 +946,7 @@
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
+  --wish-action-bottom: clamp(28px, 8vh, 64px);
 }
 .wish-creation-back {
   display: inline-flex;
@@ -1014,13 +1015,9 @@
 }
 .wish-creation-intro h1,
 .wish-creation-controls,
-.wish-composer,
-.wish-creation-footer .button.accent {
+.wish-composer {
   animation: wish-creation-enter 550ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
   will-change: transform, opacity;
-}
-.wish-creation-footer .button.accent:disabled {
-  --wish-entry-opacity: 0.4;
 }
 .wish-composer.is-disabled {
   --wish-entry-opacity: 0.55;
@@ -1030,9 +1027,6 @@
 }
 .wish-composer {
   animation-delay: 160ms;
-}
-.wish-creation-footer .button.accent {
-  animation-delay: 240ms;
 }
 .wish-creation-intro p {
   max-width: 620px;
@@ -1216,7 +1210,7 @@ html[data-theme="light"] .wish-composer-caret {
 }
 .wish-creation-form > .wish-creation-error {
   position: absolute;
-  bottom: 132px;
+  bottom: calc(var(--wish-action-bottom) + 132px);
   left: 40px;
   z-index: 8;
   width: min(40%, 640px);
@@ -1428,7 +1422,7 @@ html[data-theme="light"] .wish-composer-caret {
 .wish-creation-footer {
   position: absolute;
   right: 0;
-  bottom: 0;
+  bottom: var(--wish-action-bottom);
   left: 0;
   z-index: 8;
   display: flex;
@@ -1500,7 +1494,7 @@ html[data-theme="light"] .wish-composer-caret {
   }
   .wish-creation-form > .wish-creation-error {
     right: 24px;
-    bottom: 122px;
+    bottom: calc(var(--wish-action-bottom) + 122px);
     left: 24px;
     width: auto;
   }
@@ -1523,8 +1517,7 @@ html[data-theme="light"] .wish-composer-caret {
   .wish-creation-spinner,
   .wish-creation-intro h1,
   .wish-creation-controls,
-  .wish-composer,
-  .wish-creation-footer .button.accent {
+  .wish-composer {
     animation: none;
   }
 }
