@@ -144,6 +144,76 @@ test("the theme's tokens keep their contrast in the dark and the light theme", (
 });
 
 // No grey is written by hand outside the tokens: a new rule takes a token, and so follows the theme.
+// The update banner reads as Djinn's (src/update-banner.css): on its ground, 7% of the lamp over the raised surface,
+// the brass button's ink, the violet of Dismiss on its 10% tint and its quiet text (--n-9c) keep 4.5:1 in both themes.
+test("the update banner's buttons keep their contrast in the dark and the light theme", () => {
+  const read = (file, selector) => {
+    const css = fs.readFileSync(path.join(root, file), "utf8");
+    const start = css.indexOf(selector + " {");
+    return Object.fromEntries(
+      [
+        ...css
+          .slice(start, css.indexOf("}", start))
+          .matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/g),
+      ].map((m) => [m[1], m[2]]),
+    );
+  };
+  const banner = fs.readFileSync(path.join(root, "update-banner.css"), "utf8");
+  assert.match(
+    banner,
+    /background: color-mix\(in srgb, var\(--lamp\) 7%, var\(--surface-raised\)\)/,
+  );
+  assert.match(
+    banner,
+    /background: color-mix\(in srgb, var\(--st-investigating\) 10%, transparent\)/,
+  );
+  assert.match(banner, /background: linear-gradient\(#f3d27a, var\(--lamp\)\)/);
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const lum = (c) => {
+    const [r, g, b] = c.map((v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+  const mix = (a, b, share) => a.map((v, i) => v * share + b[i] * (1 - share));
+  const dark = {
+    ...read("theme.css", ":root"),
+    ...read("styles.css", ":root"),
+    ...read("review.css", ":root"),
+  };
+  const themes = {
+    dark,
+    light: {
+      ...dark,
+      ...read("theme.css", 'html[data-theme="light"]'),
+      ...read("review.css", 'html[data-theme="light"]'),
+    },
+  };
+  for (const [name, theme] of Object.entries(themes)) {
+    const ground = mix(rgb(theme.lamp), rgb(theme["surface-raised"]), 0.07);
+    const violet = rgb(theme["st-investigating"]);
+    const pairs = {
+      "the brass button's ink": [rgb(theme["lamp-ink"]), rgb(theme.lamp)],
+      "the brass button's ink at its top": [
+        rgb(theme["lamp-ink"]),
+        rgb("#f3d27a"),
+      ],
+      Dismiss: [violet, mix(violet, ground, 0.1)],
+      "the quiet text": [rgb(theme["n-9c"]), ground],
+      "the title": [rgb(theme.text), ground],
+    };
+    for (const [what, [fore, back]] of Object.entries(pairs)) {
+      const r = ratio(fore, back);
+      assert.ok(r >= 4.5, `${name}: ${what} reads at ${r.toFixed(2)}:1`);
+    }
+  }
+});
+
 test("the stylesheets take their greys from the tokens", () => {
   const defined = new Set(
     [

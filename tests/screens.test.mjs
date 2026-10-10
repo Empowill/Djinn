@@ -1238,7 +1238,15 @@ test("the update banner links the release notes of a newer release, and only a w
     release,
     /<a href="https:\/\/github.com\/Empowill\/Djinn\/releases\/tag\/v2.0.0" target="_blank" rel="noopener noreferrer">Release notes<\/a>/,
   );
-  assert.match(release, /<button type="button">Update<\/button>/);
+  // The djinn's mark heads it; the brass Update sits beside the title, the notes a quiet link after it.
+  assert.match(
+    release,
+    /^<div class="update-banner" role="status"><section class="update-banner-part"><div class="update-banner-head"><div class="update-banner-title"><span class="brand small"><span class="brand-mark"><img/,
+  );
+  assert.match(
+    release,
+    /A new version of Djinn is ready<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Update<\/button><a /,
+  );
   // While it restarts, the notes stay; the button goes.
   const restarting = banner(
     { ready: "v2.0.0", notesUrl: "https://example.com/v2.0.0" },
@@ -1252,6 +1260,12 @@ test("the update banner links the release notes of a newer release, and only a w
   assert.doesNotMatch(
     banner({ ready: "v2.0.0", notesUrl: "javascript:alert(1)" }),
     /<a /,
+  );
+  // After a restart, the terminals that did not start again: the mark heads them, Dismiss in violet beside the title.
+  const lost = banner({ ready: "", notesUrl: "", notResumed: ["npm run dev"] });
+  assert.match(
+    lost,
+    /<span class="brand small">.*<div class="update-banner-actions"><button type="button" class="update-banner-dismiss">Dismiss<\/button><\/div><\/div><div class="update-banner-body"><ul class="update-banner-terminals"><li>npm run dev<\/li>/,
   );
   // Nothing waits: no banner, whatever the notes.
   assert.equal(banner({ ready: "", notesUrl: "https://example.com" }), "");
@@ -1679,7 +1693,13 @@ test("the update banner proposes to install a build committed, with what changed
     html,
     /What to check<\/strong><ul><li>W5 Work of W5: To check: the banner shows the build.<\/li><\/ul>/,
   );
-  assert.match(html, /<button type="button">Install and restart<\/button>/);
+  // The mark and the actions head the banner, beside the title: Install and restart in brass, Dismiss in violet; what
+  // changed and what to check come below, at its full width.
+  assert.match(html, /<span class="brand small"><span class="brand-mark"><img/);
+  assert.match(
+    html,
+    /<\/code><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button><button type="button" class="update-banner-dismiss">Dismiss<\/button><\/div><\/div><div class="update-banner-body"><strong>What changed/,
+  );
   // While it installs, the buttons go.
   const installing = banner({ kind: "installing" });
   assert.match(installing, /Installing…/);
