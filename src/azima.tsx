@@ -4,7 +4,7 @@
 // under work that still moves, the finished parts fold behind "show the N finished" (src/task-tabs.tsx).
 // An azima never waits for the person as work: its proof is no task.
 import { BadgeCheck, ChevronDown } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
 import {
   AzimaState,
@@ -12,9 +12,11 @@ import {
   Prover,
   type Task,
   TaskStatus,
+  type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { compareCodes, finishedTask } from "./data/flight";
 import type { Tone } from "./data/format";
+import { ModalFrame } from "./frame";
 import { t, type TextKey } from "./i18n";
 import { StatusBadge } from "./status";
 import { Fold } from "./task-tabs";
@@ -24,6 +26,8 @@ import { Fold } from "./task-tabs";
 // one's answer.
 function azimaState(azima: Task): AzimaState {
   if (azima.status === TaskStatus.DONE) return AzimaState.DONE;
+  if (azima.draft || azima.azima?.state === AzimaState.DRAFT)
+    return AzimaState.DRAFT;
   return azima.azima?.state ?? AzimaState.OPEN;
 }
 
@@ -40,6 +44,8 @@ function azimaTone(azima: Task): Tone {
       return azima.azima?.partsRunning ? "running" : "planned";
     case AzimaState.AWAITING_PROOF:
       return "proof";
+    case AzimaState.DRAFT:
+      return "later";
   }
   return "planned";
 }
@@ -50,6 +56,7 @@ const labels: Record<AzimaState, TextKey> = {
   [AzimaState.IN_PROGRESS]: "azima.state_in_progress",
   [AzimaState.DONE]: "azima.state_done",
   [AzimaState.AWAITING_PROOF]: "azima.state_awaiting_proof",
+  [AzimaState.DRAFT]: "azima.state_draft",
 };
 
 const provers: Record<Prover, TextKey | null> = {
@@ -243,5 +250,164 @@ export function AzimaCard({
         </div>
       )}
     </section>
+  );
+}
+
+export function DraftAzimaCard({
+  azima,
+  tasks,
+  origin,
+  focus = "",
+  onOpen,
+  onMove,
+}: {
+  azima: Task;
+  tasks?: ReadonlyMap<string, Task>;
+  origin?: ReactNode;
+  focus?: string;
+  onOpen?: () => void;
+  onMove?: () => void;
+}) {
+  const holds = focus === azima.id;
+  const [open, setOpen] = useState(holds);
+  useEffect(() => {
+    if (holds) setOpen(true);
+  }, [holds]);
+  const deps = (azima.dependsOn ?? [])
+    .map((id) => tasks?.get(id))
+    .filter((x): x is Task => !!x);
+  const after = deps.map((x) => x.code).sort(compareCodes);
+  const waits = deps
+    .filter((x) => x.status !== TaskStatus.DONE)
+    .map((x) => x.code)
+    .sort(compareCodes);
+
+  return (
+    <section
+      className={`azima-card tone-later ${open ? "open" : ""}`}
+      id={`task-${azima.id}`}
+      aria-label={`${azima.code} ${azima.title}`}
+    >
+      <button
+        type="button"
+        className="azima-heading"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+      >
+        <StatusBadge tone="later" label={t("azima.state_draft")} />
+        <span className="agent-code">{azima.code}</span>
+        <strong title={azima.title}>{azima.title}</strong>
+        <span className="azima-meta">
+          {origin}
+          {waits.length > 0 && (
+            <span
+              className="azima-waits"
+              title={t("page.after", { tasks: after.join(", ") })}
+            >
+              {t("azima.waits", { tasks: waits.join(", ") })}
+            </span>
+          )}
+          {waits.length === 0 && after.length > 0 && (
+            <span className="azima-after">
+              {t("page.after", { tasks: after.join(", ") })}
+            </span>
+          )}
+        </span>
+        <ChevronDown size={14} className={open ? "rotated" : ""} />
+      </button>
+      {open && (
+        <div className="azima-parts draft-azima-body">
+          <div className="draft-azima-content">
+            {azima.description ? (
+              <div className="draft-azima-description">
+                <p className="draft-description-text">{azima.description}</p>
+              </div>
+            ) : (
+              <p className="muted-text">{t("azima.no_description")}</p>
+            )}
+          </div>
+          <div className="draft-azima-actions">
+            {onOpen && (
+              <button
+                type="button"
+                className="button accent small"
+                onClick={onOpen}
+              >
+                {t("azima.open_button")}
+              </button>
+            )}
+            {onMove && (
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={onMove}
+              >
+                {t("azima.move_button")}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function MoveAzimaDialog({
+  azima,
+  wishes,
+  currentWishId,
+  onClose,
+  onMove,
+}: {
+  azima: Task;
+  wishes: readonly Wish[];
+  currentWishId: string;
+  onClose: () => void;
+  onMove: (destWishId: string) => void;
+}) {
+  const otherWishes = wishes.filter((w) => w.id !== currentWishId);
+  const [destWishId, setDestWishId] = useState(otherWishes[0]?.id ?? "");
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!destWishId) return;
+    onMove(destWishId);
+  };
+
+  return (
+    <ModalFrame
+      eyebrow={azima.code}
+      title={t("azima.move_dialog_title", { code: azima.code })}
+      onClose={onClose}
+    >
+      <form onSubmit={submit} className="form-grid">
+        <label>
+          <span>{t("azima.move_select_wish")}</span>
+          <select
+            value={destWishId}
+            onChange={(e) => setDestWishId(e.target.value)}
+            disabled={otherWishes.length === 0}
+          >
+            {otherWishes.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="modal-actions">
+          <button type="button" className="button secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="submit"
+            className="button accent"
+            disabled={!destWishId}
+          >
+            {t("azima.move_confirm")}
+          </button>
+        </div>
+      </form>
+    </ModalFrame>
   );
 }

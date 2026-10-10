@@ -723,6 +723,10 @@ message Task {
   string prompt = 47;
   // Provider the task ran with before it was changed (TaskService.SetAgent); empty if never changed.
   Provider prior_provider = 48;
+  // For an azima: its description, read from its plan file's body or set when spawned or edited with djinn task describe.
+  string description = 49;
+  // For an azima: whether it is a draft (AzimaState.AZIMA_STATE_DRAFT), not ready to spawn parts into nor counted in wish progress.
+  bool draft = 50;
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
@@ -902,6 +906,8 @@ enum AzimaState {
   // Done-when box of its plan file waits for a proof no worker can give (Task.proof_needs). It waits for a person, a
   // machine, a release or a real model, never for work.
   AZIMA_STATE_AWAITING_PROOF = 4;
+  // A draft azima: not formalized yet, has a description but no parts spawned into it yet, and not counted in wish progress.
+  AZIMA_STATE_DRAFT = 5;
 }
 
 // Resources is what a task's worker uses of the machine: its process group and every process it started, even one
@@ -2657,6 +2663,21 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Edit the description of an azima.
+  rpc Describe(TaskServiceDescribeRequest) returns (TaskServiceDescribeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Open a draft azima: turns it open, ready for parts to be spawned, and notifies the wish's lead.
+  rpc Open(TaskServiceOpenRequest) returns (TaskServiceOpenResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
+  rpc Move(TaskServiceMoveRequest) returns (TaskServiceMoveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message TaskServiceSpawnRequest {
@@ -2742,6 +2763,10 @@ message TaskServiceSpawnRequest {
     (buf.validate.field).repeated.items.string.min_len = 1,
     (buf.validate.field).repeated.items.string.max_len = 1000
   ];
+  // For an azima: mark it as a draft (AzimaState.AZIMA_STATE_DRAFT), not ready to spawn parts into.
+  bool draft = 20;
+  // For an azima: its description, explaining its purpose or design before it is opened.
+  string description = 21 [(buf.validate.field).string.max_len = 20000];
 }
 
 message TaskServiceSpawnResponse {
@@ -2993,6 +3018,52 @@ message TaskServiceSetAgentRequest {
 
 message TaskServiceSetAgentResponse {
   // The task, with its new provider and model.
+  Task task = 1;
+}
+
+message TaskServiceDescribeRequest {
+  // The azima to describe: its code (T07) or identifier.
+  string azima = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 64
+  ];
+  // The description of the azima, explaining its purpose or design.
+  string text = 2 [(buf.validate.field).string.max_len = 20000];
+}
+
+message TaskServiceDescribeResponse {
+  // The azima updated.
+  Task task = 1;
+}
+
+message TaskServiceOpenRequest {
+  // The draft azima to open: its code (T07) or identifier.
+  string azima = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 64
+  ];
+}
+
+message TaskServiceOpenResponse {
+  // The azima opened.
+  Task task = 1;
+}
+
+message TaskServiceMoveRequest {
+  // The azima to move: its code (T07) or identifier.
+  string azima = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 64
+  ];
+  // The wish to move the azima to: its code (W12) or identifier.
+  string wish = 2 [(buf.validate.field).string.max_len = 64];
+}
+
+message TaskServiceMoveResponse {
+  // The azima moved, in its new wish.
   Task task = 1;
 }
 

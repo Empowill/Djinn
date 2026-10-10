@@ -128,7 +128,10 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`djinn question list --wish-id <wish> --open`.\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
 	"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`); " +
-	"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima; " +
+	"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima (`--draft`, `--description \"…\"`); " +
+	"`djinn task describe <azima> --text \"…\"` revises its description; " +
+	"`djinn task open <azima>` turns a draft open; " +
+	"`djinn task move <azima> --wish <wish>` moves an azima and its unstarted parts to another wish; " +
 	"`djinn task depend <task> --after W1,T02 --also W6=W5` sets what tasks wait for, in place of what they had, " +
 	"all or none; " +
 	"`djinn task group <task> --part-of T07` sets its azima; " +
@@ -525,10 +528,12 @@ func commandWords(procedure string) string {
 // with what they wait for, then those whose work is done and that wait for their proof, with who gives it, then the
 // done ones on one line; each with the tilasms that explain it. Nothing without an azima.
 func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string, tilasms []*planv1.Tilasm) {
-	var ready, blocked, proof, done []*planv1.Task
+	var ready, blocked, proof, done, drafts []*planv1.Task
 	for _, t := range WithAzimas(tasks) {
 		switch e := t.GetAzima(); {
 		case !IsAzima(t):
+		case e.GetState() == planv1.AzimaState_AZIMA_STATE_DRAFT:
+			drafts = append(drafts, t)
 		case e.GetState() == planv1.AzimaState_AZIMA_STATE_DONE:
 			done = append(done, t)
 		case e.GetState() == planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF:
@@ -539,7 +544,7 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 			blocked = append(blocked, t)
 		}
 	}
-	if len(ready)+len(blocked)+len(proof)+len(done) == 0 {
+	if len(ready)+len(blocked)+len(proof)+len(done)+len(drafts) == 0 {
 		return
 	}
 	byCode := func(a, b *planv1.Task) int { return CompareCodes(a.GetCode(), b.GetCode()) }
@@ -552,6 +557,7 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 	slices.SortFunc(blocked, byCode)
 	slices.SortFunc(proof, byCode)
 	slices.SortFunc(done, byCode)
+	slices.SortFunc(drafts, byCode)
 	b.WriteString("\n## Azimas\n\n")
 	b.WriteString("The plan as a graph, the ready azimas first. Spawn their work `--part-of <azima>`.\n\n")
 	status := map[*planv1.Task]string{}
@@ -619,6 +625,17 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 			}
 		}
 		fmt.Fprintf(b, "- Done: %s.\n", strings.Join(names, ", "))
+	}
+	if len(drafts) > 0 {
+		names := make([]string, len(drafts))
+		for i, t := range drafts {
+			item := fmt.Sprintf("%s %s — open with djinn task open %s", t.GetCode(), clipLine(t.GetTitle()), t.GetCode())
+			if ls := citing(tilasms, t.GetId()); len(ls) > 0 {
+				item += " (explained by " + strings.Join(ls, ", ") + ")"
+			}
+			names[i] = item
+		}
+		fmt.Fprintf(b, "- Drafts: %s.\n", strings.Join(names, "; "))
 	}
 }
 

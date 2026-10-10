@@ -57,6 +57,7 @@ export interface FlightPlan {
   // part of an azima is in its azima's group, between them.
   moving: Item<Task>[];
   azimas: Item<AzimaGroup>[];
+  drafts: Item<Task>[];
   // The proofs a person can give, of the azimas whose work is done: they wait for the person, never as work.
   proofs: Item<Proof>[];
   finished: Item<Task>[];
@@ -105,6 +106,13 @@ export function isAzima(task: Task): boolean {
   return task.kind === TaskKind.AZIMA;
 }
 
+// isDraftAzima tells a draft azima: not ready to spawn parts into, not counted in progress.
+export function isDraftAzima(task: Task): boolean {
+  return (
+    isAzima(task) && (task.draft || task.azima?.state === AzimaState.DRAFT)
+  );
+}
+
 // loose are the tasks the Tasks tab lists on their own: work part of no azima among tasks.
 function loose(tasks: readonly Task[]): Task[] {
   const azimas = new Set(tasks.filter(isAzima).map((x) => x.id));
@@ -118,7 +126,7 @@ export function azimasDone(tasks: readonly Task[]): {
   proof: number;
   count: number;
 } {
-  const azimas = tasks.filter(isAzima);
+  const azimas = tasks.filter((x) => isAzima(x) && !isDraftAzima(x));
   const done = azimas.filter(
     (x) => x.azima?.state === AzimaState.DONE || x.status === TaskStatus.DONE,
   ).length;
@@ -200,7 +208,7 @@ function azimaRank(task: Task): number {
 // azimaGroups are the azimas among tasks with their parts, in the order of azimaRank, then by code.
 export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
   return tasks
-    .filter(isAzima)
+    .filter((x) => isAzima(x) && !isDraftAzima(x))
     .sort((a, b) => azimaRank(a) - azimaRank(b) || compareCodes(a.code, b.code))
     .map((azima) => {
       const parts = tasks.filter((x) => x.partOf === azima.id);
@@ -212,6 +220,13 @@ export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
         ],
       };
     });
+}
+
+// draftAzimas are the draft azimas among tasks, ordered by code.
+export function draftAzimas(tasks: readonly Task[]): Task[] {
+  return tasks
+    .filter(isDraftAzima)
+    .sort((a, b) => compareCodes(a.code, b.code));
 }
 
 // The order of the tasks that move or wait: what runs or broke first (running, cut short, failed, resuming), then
@@ -318,6 +333,7 @@ export function flightPlan(
     running: [],
     moving: [],
     azimas: [],
+    drafts: [],
     proofs: [],
     finished: [],
     decisions: [],
@@ -344,6 +360,8 @@ export function flightPlan(
       plan.finished.push({ wish, item });
     for (const item of azimaGroups(detail.tasks))
       plan.azimas.push({ wish, item });
+    for (const item of draftAzimas(detail.tasks))
+      plan.drafts.push({ wish, item });
     for (const item of awaitedProofs(detail.tasks))
       plan.proofs.push({ wish, item });
     for (const item of decisionsOf(
@@ -358,6 +376,7 @@ export function flightPlan(
   plan.decisions.sort((a, b) => later(a.item.at, b.item.at));
   plan.moving.sort((a, b) => byMotion(a.item, b.item));
   plan.finished.sort((a, b) => newestEnded(a.item, b.item));
+  plan.drafts.sort((a, b) => compareCodes(a.item.code, b.item.code));
   return plan;
 }
 

@@ -31,7 +31,13 @@ import { Inbox } from "./inbox";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
-import { AzimaCard, azimaFinished, proofWords } from "./azima";
+import {
+  AzimaCard,
+  azimaFinished,
+  DraftAzimaCard,
+  MoveAzimaDialog,
+  proofWords,
+} from "./azima";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -73,6 +79,10 @@ export function FlightPlan({
     (wish) => <WishOrigin wish={wish} />,
   );
   const [view, setView] = useState<View>("main");
+  const [movingAzima, setMovingAzima] = useState<{
+    wishId: string;
+    task: Task;
+  } | null>(null);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
   const show = (to: View, id = "") => (setView(to), setFocus(id));
@@ -190,6 +200,7 @@ export function FlightPlan({
               doneAzimas={plan.azimas.filter((x) =>
                 azimaFinished(x.item.azima),
               )}
+              drafts={plan.drafts}
               fold="plan"
               showDone={plan.azimas.some(
                 ({ item }) =>
@@ -197,6 +208,7 @@ export function FlightPlan({
                   (item.azima.id === focus ||
                     item.parts.some((p) => p.id === focus)),
               )}
+              showDrafts={plan.drafts.some(({ item }) => item.id === focus)}
               renderAzima={({ wish, item }) => (
                 <AzimaCard
                   key={item.azima.id}
@@ -219,6 +231,26 @@ export function FlightPlan({
                       t("azima.validated", { code: item.azima.code }),
                     )
                   }
+                />
+              )}
+              renderDraft={({ wish, item }) => (
+                <DraftAzimaCard
+                  key={item.id}
+                  azima={item}
+                  tasks={tasksOf(wish)}
+                  origin={<WishOrigin wish={wish} />}
+                  focus={focus}
+                  onOpen={() =>
+                    quiet(
+                      act(
+                        wish.id,
+                        () => clients.tasks.open({ azima: item.id }),
+                        [Change.TASK],
+                        t("azima.opened_toast", { code: item.code }),
+                      ),
+                    )
+                  }
+                  onMove={() => setMovingAzima({ wishId: wish.id, task: item })}
                 />
               )}
               render={({ wish, item }) => renderTask(wish, item)}
@@ -476,6 +508,30 @@ export function FlightPlan({
           )}
         </div>
       </div>
+      {movingAzima && (
+        <MoveAzimaDialog
+          azima={movingAzima.task}
+          wishes={wishes}
+          currentWishId={movingAzima.wishId}
+          onClose={() => setMovingAzima(null)}
+          onMove={(targetWishId) => {
+            const moving = movingAzima;
+            setMovingAzima(null);
+            quiet(
+              act(
+                moving.wishId,
+                () =>
+                  clients.tasks.move({
+                    azima: moving.task.id,
+                    wish: targetWishId,
+                  }),
+                [Change.TASK, Change.WISH],
+                t("azima.moved_toast", { code: moving.task.code }),
+              ),
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

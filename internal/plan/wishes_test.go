@@ -341,6 +341,13 @@ func TestReady(t *testing.T) {
 			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
 			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W2", Status: planv1.TaskStatus_TASK_STATUS_DONE},
 		}, nil, true},
+		{"a draft azima does not count towards ready", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Draft: true},
+		}, nil, false},
+		{"a draft azima does not block ready when work is done", []*planv1.Task{
+			done,
+			{Id: "1", WishId: "w", Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Draft: true},
+		}, nil, true},
 	} {
 		if got := Ready(tt.tasks, tt.questions); got != tt.want {
 			t.Errorf("%s: Ready = %v", tt.name, got)

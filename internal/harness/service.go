@@ -204,3 +204,33 @@ func (s *Tasks) SetAgent(
 	}
 	return connect.NewResponse(&planv1.TaskServiceSetAgentResponse{Task: task}), nil
 }
+
+func (s *Tasks) Describe(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDescribeRequest],
+) (*connect.Response[planv1.TaskServiceDescribeResponse], error) {
+	task, err := s.h.DescribeTask(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceDescribeResponse{Task: task}), nil
+}
+
+func (s *Tasks) Open(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceOpenRequest],
+) (*connect.Response[planv1.TaskServiceOpenResponse], error) {
+	task, err := s.h.Open(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceOpenResponse{Task: task}), nil
+}
+
+func (s *Tasks) Move(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceMoveRequest],
+) (*connect.Response[planv1.TaskServiceMoveResponse], error) {
+	task, err := s.h.Move(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceMoveResponse{Task: task}), nil
+}
