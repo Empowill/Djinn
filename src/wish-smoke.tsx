@@ -280,6 +280,9 @@ const ASCII_PALETTE = Array.from(
   { length: 8 },
   (_, index) => `var(--smoke-ascii-${index})`,
 );
+// ASCII_TONES are density thresholds; the rendered overlay needs stronger
+// opacity so the low smoke layers remain visible on both theme backgrounds.
+const ASCII_OPACITIES = [0.65, 0.72, 0.79, 0.85, 0.91, 0.96, 0.98, 0.98];
 const CAMERA_BOTTOM_CUTOFF_ZOOM10 = 0.158724;
 
 function usesNativeMacSmokeLayout(): boolean {
@@ -291,7 +294,7 @@ function createAsciiLayers(asciiOutput: HTMLElement) {
   const layers = ASCII_PALETTE.map((color, index) => {
     const layer = document.createElement("pre");
     layer.setAttribute("aria-hidden", "true");
-    const opacity = index < ASCII_TONES.length ? ASCII_TONES[index] : 0.95;
+    const opacity = ASCII_OPACITIES[index] ?? 0.98;
     layer.style.opacity = String(opacity);
     layer.style.color = color;
     asciiOutput.append(layer);
@@ -732,7 +735,7 @@ function mountSmoke(
       float grain=(hash(pixel+floor(time*20.))-.5)*.007;
       float vignette=1.-.24*length((uv-.5)*vec2(1.,.7));
       vec3 tint=mix(smokeTintLow,smokeTintHigh,smoothstep(.08,.75,raw));
-      color=vec4(smokeBackground+tint*value*vignette+vec3(grain),1.);
+      color=vec4(mix(smokeBackground,tint,value*vignette)+vec3(grain),1.);
     }`);
   const sampleAscii = makeProgram(`${smokeField}uniform vec2 coverage;
     void main(){float d=smoke(uv*coverage+vec2(1.-coverage.x,0.));color=vec4(d,d,d,1.);}`);
