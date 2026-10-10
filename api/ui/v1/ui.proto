@@ -220,6 +220,16 @@ enum InstallStep {
   INSTALL_STEP_RESTARTING = 4;
 }
 
+// TaskSummary is what a task of the build brought, and its worker's final words.
+message TaskSummary {
+  // The task's code: W5.
+  string code = 1;
+  // The task's title.
+  string title = 2;
+  // The worker's summary: the last words of its run.
+  string summary = 3;
+}
+
 // Build is a wish's integration branch as Djinn pushed it (T07), to install.
 message Build {
   // The wish, and its title.
@@ -233,10 +243,10 @@ message Build {
   string sha = 6;
   // The tasks whose work the push brought, by code: W5.
   repeated string tasks = 7;
-  // What changed: the titles of the commits the push brought, the latest first.
+  // The titles of the commits the push brought, the latest first.
   repeated string changes = 8;
-  // What to check, one line per task: its code and title, then what its worker said last.
-  repeated string checks = 9;
+  // What changed, one per task: its code and title, and its worker's summary.
+  repeated TaskSummary summaries = 9;
   // The command that installs it: go tool task install.
   string install = 10;
 }

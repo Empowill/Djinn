@@ -369,7 +369,7 @@ func (h *Harness) mainMerged(
 		h.built(Built{
 			WishID: wish.GetId(), WishTitle: wish.GetTitle(), ProjectID: project.GetId(), Project: project.GetName(), Branch: branch,
 			Sha: sha, Changes: record.GetCommits(), Install: settings.Install,
-			Checks: []string{fmt.Sprintf("%s merged into %s: %s", shown, branch, commitsText(int(record.GetCount()), nil)+", "+release)},
+			Summaries: []TaskSummary{{Title: fmt.Sprintf("%s merged into %s: %s", shown, branch, commitsText(int(record.GetCount()), nil)+", "+release)}},
 		})
 	}
 }

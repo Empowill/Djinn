@@ -412,7 +412,7 @@ lead spends its tokens on mechanical work.
 - **A task waits for its dependencies to be integrated**, not only done, and its worktree starts from the integration
   branch, so it builds on their work.
 - **The person decides what is theirs**: to install and restart on the new build (Djinn proposes it, with what
-  changed and what to check), and the choices no worker can make.
+  changed), and the choices no worker can make.
 
 ### Done when
 

@@ -134,7 +134,7 @@ message ProjectSettings {
   }];
   // The command that installs the project's new build, run in the project's folder of the integration worktree at
   // the commit: "go tool task install". Once Djinn has pushed the integration branch, the window proposes it, with
-  // what changed and what to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are
+  // what changed, and restarts Djinn on the build when it installed a newer Djinn. Its words are
   // split on spaces, without a shell. Not set: nothing is proposed.
   optional string install = 9 [(buf.validate.field).string.max_len = 500];
   // Djinn starts a small worker on each question of a wish's lead: after an answer, one that turns the decision into

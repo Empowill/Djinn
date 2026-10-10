@@ -475,7 +475,7 @@
   "update.build": "{tasks} pushed with {branch} of {project}",
   "update.build_building": "Building…",
   "update.build_changes": "What changed",
-  "update.build_checks": "What to check",
+  "update.build_commits": "commits",
   "update.build_install": "Install and restart",
   "update.build_installed": "Installed {sha}",
   "update.build_installing": "Installing…",

@@ -519,8 +519,16 @@ func workerScopes(ctx context.Context, w io.Writer, cpu int, memory uint64) *mac
 
 // buildOf is a build committed, as the window proposes it.
 func buildOf(b harness.Built) *uiv1.Build {
+	summaries := make([]*uiv1.TaskSummary, len(b.Summaries))
+	for i, s := range b.Summaries {
+		summaries[i] = &uiv1.TaskSummary{
+			Code:    s.Code,
+			Title:   s.Title,
+			Summary: s.Summary,
+		}
+	}
 	return &uiv1.Build{
 		WishId: b.WishID, WishTitle: b.WishTitle, ProjectId: b.ProjectID, Project: b.Project, Branch: b.Branch, Sha: b.Sha,
-		Tasks: b.Tasks, Changes: b.Changes, Checks: b.Checks, Install: b.Install,
+		Tasks: b.Tasks, Changes: b.Changes, Summaries: summaries, Install: b.Install,
 	}
 }

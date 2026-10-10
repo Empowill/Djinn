@@ -29,6 +29,13 @@ export interface Installing {
   waiting: string;
 }
 
+// A task's summary in a build proposal.
+export interface TaskSummary {
+  code: string;
+  title: string;
+  summary: string;
+}
+
 // A batch of finished work committed into a wish's integration branch, to install (T07).
 export interface BuildProposal {
   wishTitle: string;
@@ -39,8 +46,8 @@ export interface BuildProposal {
   tasks: string[];
   // The titles of the commits it brought, the latest first.
   changes: string[];
-  // What to check, one line per task.
-  checks: string[];
+  // What changed, one per task: its code, title and worker's summary.
+  summaries: TaskSummary[];
 }
 
 export interface DjinnUpdate {
@@ -75,7 +82,11 @@ export function createUpdate(transport: Transport, retry = 1000): DjinnUpdate {
               sha: res.build.sha,
               tasks: [...res.build.tasks],
               changes: [...res.build.changes],
-              checks: [...res.build.checks],
+              summaries: res.build.summaries.map((s) => ({
+                code: s.code,
+                title: s.title,
+                summary: s.summary,
+              })),
             },
             installing: res.installing && {
               sha: res.installing.sha,

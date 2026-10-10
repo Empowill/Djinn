@@ -1969,7 +1969,7 @@ test("the Tasks tab says where each task's work stands on its way into the wish'
   assert.match(waits, /waits for W2 to be committed/);
 });
 
-test("the update banner proposes to install a build committed, with what changed and what to check", () => {
+test("the update banner proposes to install a build committed, with what changed", () => {
   const build = {
     wishTitle: "Run Djinn on itself",
     project: "djinn",
@@ -1977,7 +1977,18 @@ test("the update banner proposes to install a build committed, with what changed
     sha: "1a2b3c4d5e6f",
     tasks: ["W5", "W6"],
     changes: ["Work of W6", "Work of W5"],
-    checks: ["W5 Work of W5: To check: the banner shows the build."],
+    summaries: [
+      {
+        code: "W5",
+        title: "Work of W5",
+        summary: "To check: the banner shows the build.",
+      },
+      {
+        code: "W6",
+        title: "Work of W6",
+        summary: "Done: W6 finished.",
+      },
+    ],
   };
   const banner = (phase = { kind: "idle" }, dismissedBuild = "", installing) =>
     s.renderToStaticMarkup(
@@ -2003,16 +2014,17 @@ test("the update banner proposes to install a build committed, with what changed
     html,
     /W5, W6 pushed with feat\/wails-go of djinn <code>1a2b3c4d<\/code>/,
   );
+  assert.doesNotMatch(html, /What to check/);
   assert.match(
     html,
-    /What changed<\/strong><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul>/,
+    /<ul class="update-banner-tasks"><li><details class="update-banner-task"><summary><code>W5<\/code> Work of W5<\/summary><div class="update-banner-summary">To check: the banner shows the build\.<\/div><\/details><\/li><li><details class="update-banner-task"><summary><code>W6<\/code> Work of W6<\/summary><div class="update-banner-summary">Done: W6 finished\.<\/div><\/details><\/li><\/ul>/,
   );
   assert.match(
     html,
-    /What to check<\/strong><ul><li>W5 Work of W5: To check: the banner shows the build.<\/li><\/ul>/,
+    /<details class="update-banner-commits"><summary>commits<\/summary><ul><li>Work of W6<\/li><li>Work of W5<\/li><\/ul><\/details>/,
   );
   // The mark and the actions head the banner, beside the title: Install and restart in brass, Dismiss in violet; what
-  // changed and what to check come below, at its full width.
+  // changed comes below, at its full width.
   assert.match(html, /<span class="brand small"><span class="brand-mark"><img/);
   assert.match(
     html,

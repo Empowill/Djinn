@@ -297,7 +297,7 @@ to be committed, committed, conflict, red, corrected by another task. A conflict
 correction worker; past two attempts, Djinn asks you. Before it pushes the branch, at an azima's end or after an hour
 and three tasks committed, it runs the checks named for `push`: red, the push is held, and Djinn asks you if they stay
 red. `djinn project show` and the project's view in the window list the checks and how each last ran. When the settings also name an install command, the window
-proposes the batch it committed, with **What changed** and **What to check**; **Install and restart** installs it,
+proposes the batch it committed, with **What changed**; **Install and restart** installs it,
 nothing before your click. Details: [integration](team-settings.md#integration).
 
 Djinn also keeps the wish's branch up with the project's main branch: it fetches main at most hourly, and once main

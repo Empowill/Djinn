@@ -1866,7 +1866,7 @@ type ProjectSettings struct {
 	CorrectionAttempts *int32 `protobuf:"varint,8,opt,name=correction_attempts,json=correctionAttempts,proto3,oneof" json:"correction_attempts,omitempty"`
 	// The command that installs the project's new build, run in the project's folder of the integration worktree at
 	// the commit: "go tool task install". Once Djinn has pushed the integration branch, the window proposes it, with
-	// what changed and what to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are
+	// what changed, and restarts Djinn on the build when it installed a newer Djinn. Its words are
 	// split on spaces, without a shell. Not set: nothing is proposed.
 	Install *string `protobuf:"bytes,9,opt,name=install,proto3,oneof" json:"install,omitempty"`
 	// Djinn starts a small worker on each question of a wish's lead: after an answer, one that turns the decision into

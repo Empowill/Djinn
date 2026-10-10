@@ -262,8 +262,8 @@ push due. Each push is in the journal; the wish's head shows the last one, its c
 count and the mode, for that wish.
 
 Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
-version, to install it and restart on it, with what changed (the titles of the commits pushed) and what to check
-(each task, with the last paragraph its worker wrote). Nothing installs before your click. The command runs under the
+version, to install it and restart on it, with what changed (each task with the last paragraph its worker wrote folded
+under it, and the titles of the commits pushed folded at the end). Nothing installs before your click. The command runs under the
 gate `install`, at that commit, in the project's install worktree (set up as the integration's is), never in your
 checkout nor in an integration worktree: an install never waits for an integration to end. While it runs, the banner
 says what it waits for (another install, a gate and who holds it, the machine under pressure), then that it builds, then
