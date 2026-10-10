@@ -38,6 +38,12 @@ func Entities() []proto.Message {
 // identity of their own.
 const actor = "local"
 
+// Pusher pushes an integration branch and computes how far it is out of sync with its remote.
+type Pusher interface {
+	Push(ctx context.Context, wishID, projectID string) (*planv1.IntegrationPush, error)
+	Sync(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (*planv1.ProjectSync, error)
+}
+
 // Option sets what the plan services reach beyond the store.
 type Option func(*options)
 
@@ -52,6 +58,12 @@ type options struct {
 	show     func(wishID, tilasmID string) bool
 	url      func(id string) string
 	enlight  []func(context.Context, *planv1.Question, string)
+	pusher   Pusher
+}
+
+// WithPusher gives ProjectService the pusher for pushing and computing sync status.
+func WithPusher(p Pusher) Option {
+	return func(o *options) { o.pusher = p }
 }
 
 // WithShowTilasm gives TilasmService.Open the window: show shows a tilasm in its wish's Tilasms tab, and tells whether
@@ -97,7 +109,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	}
 	out := map[string]http.Handler{}
 	opt := connect.WithInterceptors(Validate)
-	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home}, opt)
+	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home, Pusher: o.pusher}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
 		Workers: o.workers, Home: o.home}
@@ -171,7 +183,76 @@ type Projects struct {
 	planv1connect.UnimplementedProjectServiceHandler
 	Store *store.Store
 	// Home is Djinn's data folder, which holds the developer's own settings of each project; empty: none are read.
-	Home string
+	Home   string
+	Pusher Pusher
+}
+
+func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
+	if project == nil {
+		return
+	}
+	repo, dev, _ := loadSettings(p.Home, project)
+	settings := ResolveSettings(repo, dev)
+	project.Push = settings.Push
+
+	if p.Pusher != nil {
+		wish, _ := p.wishForProject(ctx, project.GetId(), "")
+		if wish != nil {
+			if sync, err := p.Pusher.Sync(ctx, wish, project); err == nil && sync != nil {
+				project.Sync = sync
+			}
+		}
+	}
+}
+
+func (p *Projects) wishForProject(ctx context.Context, projectID, wishNameOrID string) (*planv1.Wish, error) {
+	if wishNameOrID != "" {
+		if w, err := store.Get[*planv1.Wish](ctx, p.Store, wishNameOrID); err == nil {
+			return w, nil
+		}
+		all, err := store.List[*planv1.Wish](ctx, p.Store, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, w := range all {
+			if strings.EqualFold(w.GetId(), wishNameOrID) || strings.EqualFold(w.GetTitle(), wishNameOrID) {
+				return w, nil
+			}
+		}
+		return nil, fmt.Errorf("no wish %q", wishNameOrID)
+	}
+
+	wishes, err := store.List[*planv1.Wish](ctx, p.Store, nil)
+	if err != nil {
+		return nil, err
+	}
+	var bestActive, bestPaused, bestOther *planv1.Wish
+	for _, w := range wishes {
+		if !slices.Contains(w.GetProjectIds(), projectID) {
+			continue
+		}
+		switch w.GetState() {
+		case planv1.WishState_WISH_STATE_ACTIVE:
+			if bestActive == nil || w.GetRank() < bestActive.GetRank() {
+				bestActive = w
+			}
+		case planv1.WishState_WISH_STATE_PAUSED:
+			if bestPaused == nil || (w.GetCreateTime() != nil && bestPaused.GetCreateTime() != nil && w.GetCreateTime().AsTime().After(bestPaused.GetCreateTime().AsTime())) {
+				bestPaused = w
+			}
+		default:
+			if bestOther == nil || (w.GetCreateTime() != nil && bestOther.GetCreateTime() != nil && w.GetCreateTime().AsTime().After(bestOther.GetCreateTime().AsTime())) {
+				bestOther = w
+			}
+		}
+	}
+	if bestActive != nil {
+		return bestActive, nil
+	}
+	if bestPaused != nil {
+		return bestPaused, nil
+	}
+	return bestOther, nil
 }
 
 func (p *Projects) Add(
@@ -223,6 +304,7 @@ func (p *Projects) Add(
 	if err != nil {
 		return nil, err
 	}
+	p.fillProject(ctx, project)
 	return connect.NewResponse(&planv1.ProjectServiceAddResponse{Project: project}), nil
 }
 
@@ -232,6 +314,9 @@ func (p *Projects) List(
 	projects, err := store.List[*planv1.Project](ctx, p.Store, nil)
 	if err != nil {
 		return nil, Status(err)
+	}
+	for _, project := range projects {
+		p.fillProject(ctx, project)
 	}
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: projects}), nil
 }
@@ -243,6 +328,7 @@ func (p *Projects) Show(
 	if err != nil {
 		return nil, Status(err)
 	}
+	p.fillProject(ctx, project)
 	repo, dev, problems := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
 	out := &planv1.ProjectServiceShowResponse{
@@ -253,6 +339,51 @@ func (p *Projects) Show(
 		out.Problems = append(out.Problems, err.Error())
 	}
 	return connect.NewResponse(out), nil
+}
+
+func (p *Projects) Push(
+	ctx context.Context, req *connect.Request[planv1.ProjectServicePushRequest],
+) (*connect.Response[planv1.ProjectServicePushResponse], error) {
+	if p.Pusher == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("push is unavailable"))
+	}
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	wish, err := p.wishForProject(ctx, project.GetId(), req.Msg.GetWish())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if wish == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("no wish for project %s", project.GetName()))
+	}
+	push, err := p.Pusher.Push(ctx, wish.GetId(), project.GetId())
+	if err != nil {
+		var cerr *connect.Error
+		if errors.As(err, &cerr) {
+			return nil, cerr
+		}
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&planv1.ProjectServicePushResponse{Push: push}), nil
+}
+
+func (p *Projects) SetPush(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceSetPushRequest],
+) (*connect.Response[planv1.ProjectServiceSetPushResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		return SaveDeveloperPush(p.Home, project.GetId(), req.Msg.GetPush())
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	p.fillProject(ctx, project)
+	return connect.NewResponse(&planv1.ProjectServiceSetPushResponse{Project: project}), nil
 }
 
 // unattached returns the project without a folder that has this remote, or else this name, case ignored; nil

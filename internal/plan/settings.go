@@ -141,11 +141,12 @@ type Settings struct {
 	MergeMain       planv1.MergeMain
 	MergeMainEvery  time.Duration
 	InstallReleases bool
+	Push            planv1.ProjectPush
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom                                                   planv1.SettingSource
 	QuestionWorkersFrom, QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom        planv1.SettingSource
-	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom                  planv1.SettingSource
+	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom        planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -177,7 +178,8 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		QuestionWorkers: true, QuestionProviderFrom: def, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
 		QuestionWorkersFrom: def, QuestionModelFrom: def, QuestionBudgetFrom: def,
 		MergeMain: DefaultMergeMain, MergeMainEvery: DefaultMergeMainEvery, InstallReleases: true,
-		MainBranchFrom: def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def,
+		Push:           planv1.ProjectPush_PROJECT_PUSH_STANDARD,
+		MainBranchFrom: def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -243,6 +245,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if f.settings.InstallReleases != nil {
 			s.InstallReleases, s.InstallReleasesFrom = f.settings.GetInstallReleases(), f.from
+		}
+		if f.settings.Push != nil {
+			s.Push, s.PushFrom = f.settings.GetPush(), f.from
 		}
 	}
 	effective := s.QuestionProvider
@@ -325,6 +330,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "merge_main", Value: MergeMainWord(s.MergeMain), Source: s.MergeMainFrom},
 		{Name: "merge_main_minutes", Value: strconv.Itoa(int(s.MergeMainEvery / time.Minute)), Source: s.MergeMainEveryFrom},
 		{Name: "install_releases", Value: strconv.FormatBool(s.InstallReleases), Source: s.InstallReleasesFrom},
+		{Name: "push", Value: ProjectPushWord(s.Push), Source: s.PushFrom},
 	}
 }
 
@@ -366,6 +372,43 @@ func (s Settings) ChecksAt(when planv1.CheckWhen) []*planv1.ProjectCheck {
 // MergeMainWord is when Djinn merges main, as the settings say it: release, commit, off.
 func MergeMainWord(m planv1.MergeMain) string {
 	return strings.ToLower(strings.TrimPrefix(m.String(), "MERGE_MAIN_"))
+}
+
+// ProjectPushWord is when Djinn pushes, as the settings say it: standard, on_demand.
+func ProjectPushWord(p planv1.ProjectPush) string {
+	switch p {
+	case planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND:
+		return "on_demand"
+	default:
+		return "standard"
+	}
+}
+
+// SaveDeveloperPush writes the developer's push setting into their settings file in home.
+func SaveDeveloperPush(home, projectID string, push planv1.ProjectPush) error {
+	if home == "" || projectID == "" {
+		return errors.New("cannot save developer settings: home or project ID is missing")
+	}
+	path := DeveloperSettingsFile(home, projectID)
+	s, err := ReadSettings(path)
+	if err != nil {
+		return err
+	}
+	if s == nil {
+		s = &planv1.ProjectSettings{}
+	}
+	s.Push = push.Enum()
+	if err := protovalidate.Validate(s); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	b, err := prototext.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
 }
 
 // WhenWord is when a check runs, as the settings and the brief say it: commit, push.
