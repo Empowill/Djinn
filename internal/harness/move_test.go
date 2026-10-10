@@ -181,7 +181,7 @@ func TestMergeMoveNeedsBox(t *testing.T) {
 		return nil
 	})
 
-	in.finished(t, "W1", map[string]string{"README.md": "# Docs\n- [ ] verify UI (needs: a Mac)\n"})
+	in.finished(t, "W1", map[string]string{"app/plan/verify.md": "# Docs\n- [ ] verify UI (needs: a Mac)\n"})
 	in.pass(t, 0)
 
 	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
@@ -624,5 +624,231 @@ func TestComputedMoveNewerBuildSupersedesOldQuestion(t *testing.T) {
 	}
 	if openCount != 1 {
 		t.Errorf("expected exactly 1 open question, got %d", openCount)
+	}
+}
+
+// TestMergeMoveDiffWithGoCodeDoesNotRaise: a diff with Go code containing "- [ ]"
+// raises nothing; the lead line has no move suffix and no "%s".
+func TestMergeMoveDiffWithGoCodeDoesNotRaise(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	in.finished(t, "W1", map[string]string{
+		"app/src/boxes.go": "package src\n\nimport \"fmt\"\n\nfunc formatBoxes(box, needs string) string {\n\treturn fmt.Sprintf(\"- [ ] %s (needs: %s)\", box, needs)\n}\n",
+	})
+	in.pass(t, 0)
+
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 0 {
+		t.Fatalf("expected 0 questions raised for Go code diff, got %d: %v", len(questions), questions)
+	}
+
+	if len(told) == 0 {
+		t.Fatalf("lead was not told of merge")
+	}
+	lastTold := told[len(told)-1]
+	afterDjinn := strings.TrimPrefix(lastTold, "Djinn: ")
+	if strings.Contains(afterDjinn, ":") {
+		t.Errorf("lead line %q has unexpected moves suffix", lastTold)
+	}
+	if strings.Contains(lastTold, "%s") {
+		t.Errorf("lead line %q contains unfilled '%%s'", lastTold)
+	}
+}
+
+// TestMergeMovePlanFileGainingNeedsBoxRaisesOneMove: a plan file gaining a needs box
+// raises one move with its box text; the line has no "%s".
+func TestMergeMovePlanFileGainingNeedsBoxRaisesOneMove(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	in.finished(t, "W1", map[string]string{
+		"app/plan/feature.md": "# Feature\n\n- [ ] Window opens in Cocoa (needs: a Mac)\n",
+	})
+	in.pass(t, 0)
+
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 1 {
+		t.Fatalf("expected exactly 1 question raised, got %d: %v", len(questions), questions)
+	}
+	q := questions[0]
+	if !q.GetMove() {
+		t.Errorf("question Move = false, want true")
+	}
+	wantText := "Check Window opens in Cocoa on a Mac?"
+	if q.GetText() != wantText {
+		t.Errorf("question text %q, want %q", q.GetText(), wantText)
+	}
+	if !strings.Contains(q.GetContext(), "Window opens in Cocoa") || !strings.Contains(q.GetContext(), "a Mac") {
+		t.Errorf("question context %q missing box or needs text", q.GetContext())
+	}
+	for _, text := range []string{q.GetText(), q.GetContext()} {
+		if strings.Contains(text, "%s") {
+			t.Errorf("question text/context %q contains unfilled '%%s'", text)
+		}
+	}
+
+	if len(told) == 0 {
+		t.Fatalf("lead was not told of merge")
+	}
+	lastTold := told[len(told)-1]
+	wantSuffix := ": check Window opens in Cocoa on a Mac"
+	if !strings.HasSuffix(lastTold, wantSuffix) {
+		t.Errorf("lead line %q does not end with %q", lastTold, wantSuffix)
+	}
+	if strings.Contains(lastTold, "%s") {
+		t.Errorf("lead line %q contains unfilled '%%s'", lastTold)
+	}
+}
+
+// TestMoveTemplatesNoUnfilledFormatVerbs: checks that every template helper fills all its format verbs.
+func TestMoveTemplatesNoUnfilledFormatVerbs(t *testing.T) {
+	testx.Portable(t)
+
+	assertNoVerb := func(name, s string) {
+		t.Helper()
+		for _, verb := range []string{"%s", "%d", "%v", "%+v", "%#v", "%!", "%(EXTRA"} {
+			if strings.Contains(s, verb) {
+				t.Errorf("%s: contains unfilled format verb %q: %q", name, verb, s)
+			}
+		}
+	}
+
+	assertQuestion := func(name string, q *planv1.Question) {
+		t.Helper()
+		if q == nil {
+			t.Fatalf("%s: question is nil", name)
+		}
+		assertNoVerb(name+".Text", q.GetText())
+		assertNoVerb(name+".Context", q.GetContext())
+		for _, opt := range q.GetOptions() {
+			assertNoVerb(name+".Option", opt)
+		}
+	}
+
+	// leadMergeLine
+	assertNoVerb("leadMergeLine.empty", leadMergeLine("W1", "main", "1234567890abcdef", nil))
+	assertNoVerb("leadMergeLine.withMoves", leadMergeLine("W1, W2", "feat/test", "1234567890abcdef", []string{"start a release", "push tag v1.0.0"}))
+	assertNoVerb("leadMergeLine.percentInMoves", leadMergeLine("W1", "main", "1234567890abcdef", []string{"100% verified"}))
+
+	// needsMoveName & needsMoveQuestion
+	assertNoVerb("needsMoveName.normal", needsMoveName("Window opens", "a Mac"))
+	assertNoVerb("needsMoveName.emptyBox", needsMoveName("", "a Mac"))
+	assertNoVerb("needsMoveName.percent", needsMoveName("100% Cocoa", "a Mac"))
+	assertQuestion("needsMoveQuestion.normal", needsMoveQuestion("wish1", "Window opens", "a Mac"))
+	assertQuestion("needsMoveQuestion.emptyBox", needsMoveQuestion("wish1", "", "a Mac"))
+	assertQuestion("needsMoveQuestion.percent", needsMoveQuestion("wish1", "100% Cocoa", "a Mac"))
+
+	// tagMoveName & tagMoveQuestion
+	assertNoVerb("tagMoveName", tagMoveName("v1.2.3"))
+	assertQuestion("tagMoveQuestion", tagMoveQuestion("wish1", "v1.2.3", "origin"))
+
+	// releaseMoveQuestion
+	assertQuestion("releaseMoveQuestion", releaseMoveQuestion("wish1", "1234567890abcdef"))
+
+	// prMoveName & prMoveQuestion
+	assertNoVerb("prMoveName", prMoveName("main"))
+	assertQuestion("prMoveQuestion", prMoveQuestion("wish1", "main", "Title", "Body text"))
+	assertQuestion("prMoveQuestion.percentInBody", prMoveQuestion("wish1", "main", "Title 100%", "Coverage at 99%"))
+
+	// installMoveQuestion
+	assertQuestion("installMoveQuestion", installMoveQuestion("wish1", "1234567890abcdef", "feat/branch", 10*time.Minute))
+
+	// azimaProofMoveQuestion
+	assertQuestion("azimaProofMoveQuestion", azimaProofMoveQuestion("wish1", "t1", "T01", "a Mac", []string{"- [ ] Cocoa (needs: a Mac)"}))
+}
+
+// TestMergeMoveOpenPRDeduplicatedAndAheadGreen: "open a pull request to main" appears
+// once per subject (deduplicated across tasks/passes), and only when the branch is really ahead and green.
+func TestMergeMoveOpenPRDeduplicatedAndAheadGreen(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	_ = in.remote(t)
+
+	initialSha := in.tip(t)
+	in.git(t, in.repo, "branch", "main", initialSha)
+	in.git(t, in.repo, "push", "origin", "main")
+
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generate: \"gen\"\ntest: \"test\"\nmain_branch: \"main\"\n")
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	// Create an azima with task W1
+	azima := in.azima(t, in.wishID, "Big Feature")
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a1\n"}, func(task *planv1.Task) {
+		task.PartOf = azima.GetId()
+	})
+
+	// First pass integrates W1. Azima ends, branch pushed to origin (ahead and green),
+	// exactly 1 PR question is asked.
+	in.pass(t, 0)
+
+	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prCount := 0
+	for _, q := range questions {
+		if strings.Contains(strings.ToLower(q.GetText()), "pull request") {
+			prCount++
+		}
+	}
+	if prCount != 1 {
+		t.Fatalf("expected exactly 1 PR question after settling and pushing green, got %d", prCount)
+	}
+
+	// Another integration pass does not duplicate the question
+	in.pass(t, 0)
+
+	questions, _ = store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+	prCount = 0
+	for _, q := range questions {
+		if strings.Contains(strings.ToLower(q.GetText()), "pull request") {
+			prCount++
+		}
+	}
+	if prCount != 1 {
+		t.Fatalf("expected still exactly 1 PR question (deduplicated), got %d", prCount)
+	}
+
+	// An ongoing second wish targeting the same project also does not duplicate the question
+	w2, err := in.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Second wish", ProjectIds: []string{in.projectID},
+	}))
+	if err == nil && w2 != nil {
+		in.pass(t, 0)
+		questions, _ = store.List[*planv1.Question](t.Context(), in.db, nil)
+		prCount = 0
+		for _, q := range questions {
+			if strings.Contains(strings.ToLower(q.GetText()), "pull request") {
+				prCount++
+			}
+		}
+		if prCount != 1 {
+			t.Fatalf("expected still exactly 1 PR question across projects/wishes, got %d", prCount)
+		}
 	}
 }

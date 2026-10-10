@@ -169,3 +169,104 @@ func TestProvers(t *testing.T) {
 		t.Error("given by a person")
 	}
 }
+
+func TestReadTaskItemNeeds(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		line      string
+		wantBox   string
+		wantNeeds string
+		wantOK    bool
+	}{
+		{
+			name:      "standard unchecked task item with needs",
+			line:      "- [ ] verify UI (needs: a Mac)",
+			wantBox:   "verify UI",
+			wantNeeds: "a Mac",
+			wantOK:    true,
+		},
+		{
+			name:      "asterisk unchecked task item",
+			line:      "* [ ] verify UI (needs: a Mac)",
+			wantBox:   "verify UI",
+			wantNeeds: "a Mac",
+			wantOK:    true,
+		},
+		{
+			name:      "indented task item",
+			line:      "    - [ ] nested proof (needs: a Windows machine)",
+			wantBox:   "nested proof",
+			wantNeeds: "a Windows machine",
+			wantOK:    true,
+		},
+		{
+			name:      "tab indented task item",
+			line:      "\t- [ ] tab indented (needs: Clément's review)",
+			wantBox:   "tab indented",
+			wantNeeds: "Clément's review",
+			wantOK:    true,
+		},
+		{
+			name:      "empty box with needs",
+			line:      "- [ ] (needs: a Mac)",
+			wantBox:   "",
+			wantNeeds: "a Mac",
+			wantOK:    true,
+		},
+		{
+			name:   "checked box with lowercase x",
+			line:   "- [x] verify UI (needs: a Mac)",
+			wantOK: false,
+		},
+		{
+			name:   "checked box with uppercase X",
+			line:   "- [X] verify UI (needs: a Mac)",
+			wantOK: false,
+		},
+		{
+			name:   "struck through box",
+			line:   "- [ ] ~~verify UI~~ (needs: a Mac)",
+			wantOK: false,
+		},
+		{
+			name:   "unchecked task item without needs",
+			line:   "- [ ] regular task without needs",
+			wantOK: false,
+		},
+		{
+			name:   "markdown list item without checkbox",
+			line:   "- verify UI (needs: a Mac)",
+			wantOK: false,
+		},
+		{
+			name:   "go code line with checkbox format string",
+			line:   `boxes = append(boxes, fmt.Sprintf("- [ ] %s ", n.GetBox(), n.GetNeeds()))`,
+			wantOK: false,
+		},
+		{
+			name:   "go code line with needs",
+			line:   `+ fmt.Sprintf("- [ ] %s (needs: %s)", n.GetBox(), n.GetNeeds())`,
+			wantOK: false,
+		},
+		{
+			name:   "comment with checkbox and needs",
+			line:   `// - [ ] verify UI (needs: a Mac)`,
+			wantOK: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			box, needs, ok := ReadTaskItemNeeds(tc.line)
+			if ok != tc.wantOK {
+				t.Fatalf("ReadTaskItemNeeds(%q) ok = %v, want %v", tc.line, ok, tc.wantOK)
+			}
+			if ok {
+				if box != tc.wantBox {
+					t.Errorf("box = %q, want %q", box, tc.wantBox)
+				}
+				if needs != tc.wantNeeds {
+					t.Errorf("needs = %q, want %q", needs, tc.wantNeeds)
+				}
+			}
+		})
+	}
+}
