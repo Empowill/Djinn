@@ -120,9 +120,15 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     const look = looks[theme];
 
-    // The lead's blocks: Markdown, a code block, a Mermaid diagram on the card's ground.
+    // The lead's blocks, in the agents' tab, opened: Markdown, a code block, a Mermaid diagram on the card's ground.
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await expect(page.locator(".hero h1")).toHaveText(title);
+    await page.getByRole("tab", { name: /^For agents/ }).click();
+    const heading = page
+      .locator(".agent-block .fold-heading")
+      .filter({ hasText: "How the wick burns" });
+    if ((await heading.getAttribute("aria-expanded")) === "false")
+      await heading.click();
     const block = page.locator(".ac-markdown").filter({ hasText: "wick" });
     await expect(block.locator(".ac-code")).toBeVisible();
     // Mermaid draws in its frame: an SVG with the three nodes of the source, on the theme's ground, in the theme's

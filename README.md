@@ -87,8 +87,9 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 - **You decide.** A question comes with its options and the lead's recommendation: **Rub the lamp** takes it, and a
   small worker turns your decision into tasks; **Enlighten me** sends one to dig first, then revise the question. The
   lead hears what each did. A system notification answers it from anywhere.
-- **The lead's notes stay in the wish.** Markdown and Mermaid diagrams: mark what you read, approve what may go on
-  as it is. One HTML page shares the wish; `djinn wish export` hands it over whole, in one file.
+- **What needs you is a question; the rest stays in the wish.** What the lead and the workers write down for one
+  another, Markdown and Mermaid diagrams, waits in a tab of its own. One HTML page shares the wish; `djinn wish
+  export` hands it over whole, in one file.
 - **Nothing is lost.** Stopping Djinn interrupts the workers, never loses them: the next start resumes each one in
   its own worktree and session. A worker stopped by its usage limit waits for the reset, then goes on.
 - **Every request finds its wish.** Something unrelated comes up: the lead offers to open a new wish, to file it in

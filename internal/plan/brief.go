@@ -56,12 +56,14 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- **Start from the brief.** Djinn computes where the wish stands from its plan: `djinn wish brief <wish>`, above. " +
 	"Run it when you start and whenever you lose track, then continue the wish from what it says. Another agent may " +
 	"have led the wish before you: its plan carries over, its session does not.\n" +
-	"- **Ask, do not guess, and never in your terminal.** Every question for the developer, yours included, goes " +
-	"through `djinn question ask`, with its options and your recommendation. A question, a proposal or a \"shall " +
-	"I?\" written in your terminal reaches neither the window, nor the decision log, nor the question workers: there, " +
-	"only name its code (Q12). An analysis or a recommendation goes in a block (`--kind report`); a decision the " +
-	"developer takes in the terminal gets a block of kind decision. An answered question is a decision; so is a " +
-	"block of kind decision. A task that follows from one names it: `--decision Q03`, or the block's id.\n" +
+	"- **Ask, do not guess, and never in your terminal.** Everything for the developer is a question, " +
+	"`djinn question ask`, with its options and your recommendation, or with none when you really do not know what " +
+	"to think; the analysis behind it goes in its `--context`. A question, a proposal or a \"shall I?\" written in " +
+	"your terminal reaches neither the window, nor the decision log, nor the question workers: there, only name its " +
+	"code (Q12). A decision the developer takes in the terminal gets a block of kind decision. An answered question " +
+	"is a decision, resolved: do not bring it back to the developer; ask again, a new question, only on a real " +
+	"doubt. A block of kind decision is a decision too. A task that follows from one names it: `--decision Q03`, or " +
+	"the block's id.\n" +
 	"- **Delegate.** You lead; workers do the work. Code, investigations, fixes and checks go to tasks, even small " +
 	"ones, several side by side; keep for yourself what only the lead does: talk with the developer, plan, check " +
 	"what comes back.\n" +
@@ -80,6 +82,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"whose plan file's unchecked boxes all say `(needs: …)` waits for its proof, from a person, a machine, a release " +
 	"or a real model: spawn no work for it. `djinn task depend` and " +
 	"`djinn task group` re-sequence the plan as it learns; Djinn refuses a cycle.\n" +
+	"- **An azima carries one clear goal**: one sentence a user reads as a feature, a will of its own. When a task " +
+	"extends it, rephrase its goal (its plan file's Goal and its title, then `djinn plan sync`) rather than let it " +
+	"drift. Before you add tasks or azimas, an answer turned into tasks included, look for the azima they belong to: " +
+	"group what goes together, merge duplicates, and open a new azima only for a will no existing one carries; " +
+	"never mix things that do not belong together.\n" +
 	"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
 	"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
 	"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
@@ -88,7 +95,8 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"\"Q03: enlighten\": it reads, then revises the question. You are told when each one starts and ends, and what it " +
 	"spawned, asked or revised: check it, do not do it again. When the line says \"Act on it\" or \"Investigate\", " +
 	"question workers are off and the move is yours.\n" +
-	"- **What Djinn does not compute is a block**: a decision taken outside a question, an analysis, a hand-off.\n" +
+	"- **Blocks are for agents**: a hand-off, a reference, a decision taken outside a question (kind decision, which " +
+	"the decision log shows). The developer does not read blocks: what the developer must see is a question.\n" +
 	"- **To explain a concept, make a tilasm** (the developer may say talisman): a folder with an `index.html` and its " +
 	"sources (a diagram, a data model walked through, a comparison), kept by Djinn outside the projects. " +
 	"`djinn tilasm put <folder> --wish <wish> --cites T07` makes it, `L01`, and names the azimas and tasks it " +
@@ -136,9 +144,8 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"`djinn tilasm restore <code> <version>`.\n" +
 	"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
 	"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you.\n" +
-	"- `djinn mark list <wish>`: what the developer read or approved in the window, without a word. An approved " +
-	"block or decision is a go: act on it. Start a recommendation with its option's letter (`B: …`): the developer " +
-	"approves it in one click.\n" +
+	"- `djinn mark list <wish>`: the open questions the developer marked read in the window, without a word. Start a " +
+	"recommendation with its option's letter (`B: …`): the developer approves it in one click.\n" +
 	"- `djinn wish sync <wish>`: the wish's page, which Djinn keeps up to date in the file it prints. After the wish " +
 	"changes, republish that file as it is, in one call, to the same address: do not read it, rewrite it, or write " +
 	"HTML by hand. The first publish needs the developer's go. `djinn wish render <wish>` writes the page once.\n" +
@@ -407,17 +414,12 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 		}
 	}
 
-	if marks := marksOf(exp.GetQuestions(), exp.GetBlocks()); len(marks) > 0 {
+	if marks := marksOf(exp.GetQuestions()); len(marks) > 0 {
 		slices.Reverse(marks)
 		b.WriteString("\n## Marked by the developer\n\n")
 		for _, m := range marks[:min(len(marks), briefMarks)] {
 			label := m.GetLabel()
-			if m.GetBlockId() != "" {
-				label = "block " + cmp.Or(m.GetTitle(), "(untitled)")
-				if kind := m.GetLabel(); kind != "" {
-					label += " (" + oneLine(kind) + ")"
-				}
-			} else if m.GetTitle() != "" {
+			if m.GetTitle() != "" {
 				label += " " + m.GetTitle()
 			}
 			fmt.Fprintf(&b, "- **%s** %s, %s\n", markWord(m.GetMark().GetKind()), label, when(m.GetMark().GetCreateTime().AsTime()))

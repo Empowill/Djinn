@@ -19,8 +19,9 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// Marks implements MarkService. A mark lives on what it marks: a question's or a block's own list, one mark of each
-// kind, so that it travels with them in an export.
+// Marks implements MarkService. A mark lives on the question it marks, in its own list, one mark of each kind, so that
+// it travels with it in an export. A block takes none: blocks are for agents, and what the developer must see is a
+// question. Marks a block took before stay on it, and are listed no more.
 type Marks struct {
 	planv1connect.UnimplementedMarkServiceHandler
 	Store *store.Store
@@ -61,9 +62,8 @@ func (m *Marks) Put(
 			marked = questionMarked(question, mark)
 			return tx.Put(question)
 		}
-		block.Marks = setMark(block.GetMarks(), mark, msg.GetRemove())
-		marked = blockMarked(block, mark)
-		return tx.Put(block)
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"block %s takes no mark: blocks are for agents; what the developer must see is a question", block.GetId()))
 	})
 	if err != nil {
 		return nil, err
@@ -113,12 +113,6 @@ func questionMarked(q *planv1.Question, mark *planv1.Mark) *planv1.Marked {
 	}
 }
 
-func blockMarked(b *planv1.Block, mark *planv1.Mark) *planv1.Marked {
-	return &planv1.Marked{
-		WishId: b.GetWishId(), BlockId: b.GetId(), Label: b.GetKind(), Title: clipLine(b.GetTitle()), Mark: mark,
-	}
-}
-
 func (m *Marks) List(
 	ctx context.Context, req *connect.Request[planv1.MarkServiceListRequest],
 ) (*connect.Response[planv1.MarkServiceListResponse], error) {
@@ -127,29 +121,20 @@ func (m *Marks) List(
 	if err != nil {
 		return nil, Status(err)
 	}
-	blocks, err := store.List[*planv1.Block](ctx, m.Store, where)
-	if err != nil {
-		return nil, Status(err)
-	}
-	return connect.NewResponse(&planv1.MarkServiceListResponse{Marks: marksOf(questions, blocks)}), nil
+	return connect.NewResponse(&planv1.MarkServiceListResponse{Marks: marksOf(questions)}), nil
 }
 
-// marksOf are the marks on questions and blocks, the oldest first.
-func marksOf(questions []*planv1.Question, blocks []*planv1.Block) []*planv1.Marked {
+// marksOf are the marks on questions, the oldest first.
+func marksOf(questions []*planv1.Question) []*planv1.Marked {
 	var out []*planv1.Marked
 	for _, q := range questions {
 		for _, mark := range q.GetMarks() {
 			out = append(out, questionMarked(q, mark))
 		}
 	}
-	for _, b := range blocks {
-		for _, mark := range b.GetMarks() {
-			out = append(out, blockMarked(b, mark))
-		}
-	}
 	slices.SortStableFunc(out, func(x, y *planv1.Marked) int {
 		return cmp.Or(x.GetMark().GetCreateTime().AsTime().Compare(y.GetMark().GetCreateTime().AsTime()),
-			strings.Compare(x.GetQuestionId()+x.GetBlockId(), y.GetQuestionId()+y.GetBlockId()))
+			strings.Compare(x.GetQuestionId(), y.GetQuestionId()))
 	})
 	return out
 }

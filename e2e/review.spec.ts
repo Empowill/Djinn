@@ -1,6 +1,6 @@
 // Review and decide at a glance, against the real djinn up --browser (see global-setup.ts): the bar of what waits,
 // "Enlighten me" read by the lead in the brief, a revision from the command line, "Rub the lamp" read back from the
-// command line, a block marked read and seen in the brief. Screenshots of the flight plan and of the wish, dark and
+// command line, a block for agents only in its discreet tab, folded, with no mark. Screenshots of the flight plan and of the wish, dark and
 // light, go to test-results/e2e/.
 import { type Page, expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -73,7 +73,7 @@ async function theme(page: Page, value: "" | "light") {
   );
 }
 
-test("a question is enlightened, revised by the lead, then rubbed in one click; a block is marked read", async ({
+test("a question is enlightened, revised by the lead, then rubbed in one click; a block waits in the agents' tab", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -227,18 +227,25 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   expect(q01.answer.choice).toBe("CHOICE_B");
   expect(q01.revision).toBe(1);
 
-  // A block marked read, seen in the brief.
+  // A block is for agents: not on the wish's tab, but in the last one, folded, with no mark; opened, its Markdown.
+  await expect(page.locator(".wish-block")).toHaveCount(0);
+  const agents = page.getByRole("tab", { name: /^For agents/ });
+  await expect(agents).toHaveText("For agents1");
+  await agents.click();
   const block = page
     .locator(".wish-block")
     .filter({ hasText: "Ship on Friday" });
-  await block.getByRole("button", { name: "Mark read" }).click();
-  await expect(block.getByRole("button", { name: "Read" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  await expect(block.locator(".fold-heading")).toHaveAttribute(
+    "aria-expanded",
+    "false",
   );
-  expect(djinn("wish", "brief", wishId)).toContain(
-    "- **read** block Ship on Friday (section), ",
-  );
+  await expect(block.locator("table")).toHaveCount(0);
+  await block.locator(".fold-heading").click();
+  await expect(block.locator("strong")).toHaveText("on Friday");
+  await expect(block.locator("table td").first()).toHaveText("Fri");
+  await expect(
+    block.getByRole("button", { name: /Mark read|Approve/ }),
+  ).toHaveCount(0);
 
   djinn("wish", "pause", wishId);
   fs.rmSync(dir, { recursive: true, force: true });

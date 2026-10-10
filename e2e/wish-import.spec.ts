@@ -108,8 +108,9 @@ test("a wish file imports from the interface", async ({ page }) => {
 
   await expect(page.getByText("Ship the lamp").first()).toBeVisible();
   await expect(page.getByText("Which oil for the wick?").first()).toBeVisible();
-  await expect(page.getByText("Lexicon of the lamp").first()).toBeVisible();
-  // A block shows as the lead wrote it, in Markdown.
+  // A block, in the agents' tab: opened, it shows as the lead wrote it, in Markdown.
+  await page.getByRole("tab", { name: /^For agents/ }).click();
+  await page.getByRole("button", { name: /Lexicon of the lamp/ }).click();
   await expect(page.getByText("A wick carries the oil.").first()).toBeVisible();
   await expect(page.locator(".wish-block strong")).toHaveText("wick");
   // Its task, from the file, in the Tasks tab.
