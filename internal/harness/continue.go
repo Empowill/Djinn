@@ -187,17 +187,18 @@ func firstLine(s string) string {
 	return ""
 }
 
-// lastPrompt is the task's last prompt: what djinn task continue asked last.
+// lastPrompt is the task's last prompt: what djinn task continue asked last. Its events are read from the last back,
+// as far as that prompt (lastSeq).
 func lastPrompt(ctx context.Context, s *store.Store, taskID string) (string, error) {
-	events, err := store.List[*planv1.TaskEvent](ctx, s, store.Where{"task_id": taskID})
-	if err != nil {
-		return "", err
-	}
 	var last *planv1.TaskEvent
-	for _, ev := range events {
-		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT && ev.GetSeq() > last.GetSeq() {
+	err := store.Latest(ctx, s, store.Where{"task_id": taskID}, func(ev *planv1.TaskEvent) bool {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
 			last = ev
 		}
+		return last == nil
+	})
+	if err != nil {
+		return "", err
 	}
 	if last == nil {
 		return "", errors.New("its prompt is lost")

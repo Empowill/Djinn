@@ -169,7 +169,7 @@ func (h *Harness) mergeMain(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch, shown, mainSha, old, release string,
 	attempts int32,
 ) {
-	h.integrateMu.Lock() // The tasks' merges and an install use the integration worktree too.
+	h.integrateMu.Lock() // The tasks' merges and the push checks use the integration worktree too.
 	defer h.integrateMu.Unlock()
 	key := wish.GetId() + "/" + project.GetId()
 	done, ok := h.mainTested[key]

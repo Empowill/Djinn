@@ -4,8 +4,8 @@
 
 // The interface reserved to the native window. Agents never call it.
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
 import { file_djinn_v1_options } from "../../djinn/v1/options_pb";
 import type { Message } from "@bufbuild/protobuf";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0IqIBCh9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCBIhCghzaG9ydGN1dBgFIAEoCzIPLnVpLnYxLlNob3J0Y3V0IlQKCFNob3J0Y3V0Eg0KBWNob3JkGAEgASgJEhUKDWRlZmF1bHRfY2hvcmQYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB3Byb2JsZW0YBCABKAkiLgoIU2V0dGluZ3MSFQoIc2hvcnRjdXQYASABKAlIAIgBAUILCglfc2hvcnRjdXQiSAoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJoChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkiHQobVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0IoMBChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkSEQoJbm90ZXNfdXJsGAQgASgJEhsKBWJ1aWxkGAUgASgLMgwudWkudjEuQnVpbGQirwEKBUJ1aWxkEg8KB3dpc2hfaWQYASABKAkSEgoKd2lzaF90aXRsZRgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEg8KB3Byb2plY3QYBCABKAkSDgoGYnJhbmNoGAUgASgJEgsKA3NoYRgGIAEoCRINCgV0YXNrcxgHIAMoCRIPCgdjaGFuZ2VzGAggAygJEg4KBmNoZWNrcxgJIAMoCRIPCgdpbnN0YWxsGAogASgJIjAKFlVpU2VydmljZVVwZGF0ZVJlcXVlc3QSFgoFYnVpbGQYASABKAlCB7pIBHICGEAiUAoXVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIRCgl0ZXJtaW5hbHMYAiABKAUSEQoJaW5zdGFsbGVkGAMgASgJMsIGCglVaVNlcnZpY2USZQoOR2V0RW52aXJvbm1lbnQSJS51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlcXVlc3QaJi51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlIgTI8xgCEmgKD0Nob29zZURpcmVjdG9yeRImLnVpLnYxLlVpU2VydmljZUNob29zZURpcmVjdG9yeVJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZSIEyPMYAhJfCgxPcGVuRXh0ZXJuYWwSIy51aS52MS5VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0GiQudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2UiBMjzGAISXAoLU2V0U2hvcnRjdXQSIi51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJTCghPcGVuTGluaxIfLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVxdWVzdBogLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVzcG9uc2UiBMjzGAISWAoJV2F0Y2hTaG93EiAudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1Jlc3BvbnNlIgTI8xgCMAESXgoLV2F0Y2hVcGRhdGUSIi51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlIgTI8xgCMAESTQoGVXBkYXRlEh0udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdBoeLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlc3BvbnNlIgTI8xgCQnYKCWNvbS51aS52MUIHVWlQcm90b1ABWitnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby91aS92MTt1aXYxogIDVVhYqgIFVWkuVjHKAgVVaVxWMeICEVVpXFYxXEdQQk1ldGFkYXRh6gIGVWk6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiIAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0IqIBCh9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCBIhCghzaG9ydGN1dBgFIAEoCzIPLnVpLnYxLlNob3J0Y3V0IlQKCFNob3J0Y3V0Eg0KBWNob3JkGAEgASgJEhUKDWRlZmF1bHRfY2hvcmQYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB3Byb2JsZW0YBCABKAkiLgoIU2V0dGluZ3MSFQoIc2hvcnRjdXQYASABKAlIAIgBAUILCglfc2hvcnRjdXQiSAoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJoChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkiHQobVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0IqoBChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkSEQoJbm90ZXNfdXJsGAQgASgJEhsKBWJ1aWxkGAUgASgLMgwudWkudjEuQnVpbGQSJQoKaW5zdGFsbGluZxgGIAEoCzIRLnVpLnYxLkluc3RhbGxpbmciTAoKSW5zdGFsbGluZxILCgNzaGEYASABKAkSIAoEc3RlcBgCIAEoDjISLnVpLnYxLkluc3RhbGxTdGVwEg8KB3dhaXRpbmcYAyABKAkirwEKBUJ1aWxkEg8KB3dpc2hfaWQYASABKAkSEgoKd2lzaF90aXRsZRgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEg8KB3Byb2plY3QYBCABKAkSDgoGYnJhbmNoGAUgASgJEgsKA3NoYRgGIAEoCRINCgV0YXNrcxgHIAMoCRIPCgdjaGFuZ2VzGAggAygJEg4KBmNoZWNrcxgJIAMoCRIPCgdpbnN0YWxsGAogASgJIjAKFlVpU2VydmljZVVwZGF0ZVJlcXVlc3QSFgoFYnVpbGQYASABKAlCB7pIBHICGEAiUAoXVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIRCgl0ZXJtaW5hbHMYAiABKAUSEQoJaW5zdGFsbGVkGAMgASgJKpkBCgtJbnN0YWxsU3RlcBIcChhJTlNUQUxMX1NURVBfVU5TUEVDSUZJRUQQABIYChRJTlNUQUxMX1NURVBfV0FJVElORxABEhoKFklOU1RBTExfU1RFUF9QUkVQQVJJTkcQAhIZChVJTlNUQUxMX1NURVBfQlVJTERJTkcQAxIbChdJTlNUQUxMX1NURVBfUkVTVEFSVElORxAEMsIGCglVaVNlcnZpY2USZQoOR2V0RW52aXJvbm1lbnQSJS51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlcXVlc3QaJi51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlIgTI8xgCEmgKD0Nob29zZURpcmVjdG9yeRImLnVpLnYxLlVpU2VydmljZUNob29zZURpcmVjdG9yeVJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZSIEyPMYAhJfCgxPcGVuRXh0ZXJuYWwSIy51aS52MS5VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0GiQudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2UiBMjzGAISXAoLU2V0U2hvcnRjdXQSIi51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJTCghPcGVuTGluaxIfLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVxdWVzdBogLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVzcG9uc2UiBMjzGAISWAoJV2F0Y2hTaG93EiAudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1Jlc3BvbnNlIgTI8xgCMAESXgoLV2F0Y2hVcGRhdGUSIi51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlIgTI8xgCMAESTQoGVXBkYXRlEh0udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdBoeLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlc3BvbnNlIgTI8xgCQnYKCWNvbS51aS52MUIHVWlQcm90b1ABWitnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby91aS92MTt1aXYxogIDVVhYqgIFVWkuVjHKAgVVaVxWMeICEVVpXFYxXEdQQk1ldGFkYXRh6gIGVWk6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -509,6 +509,14 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
    * @generated from field: ui.v1.Build build = 5;
    */
   build?: Build | undefined;
+
+  /**
+   * The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
+   * of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
+   *
+   * @generated from field: ui.v1.Installing installing = 6;
+   */
+  installing?: Installing | undefined;
 };
 
 /**
@@ -517,6 +525,40 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
  */
 export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdateResponse> = /*@__PURE__*/
   messageDesc(file_ui_v1_ui, 18);
+
+/**
+ * Installing is an install of a build that runs now, and where it stands.
+ *
+ * @generated from message ui.v1.Installing
+ */
+export type Installing = Message<"ui.v1.Installing"> & {
+  /**
+   * The commit being installed.
+   *
+   * @generated from field: string sha = 1;
+   */
+  sha: string;
+
+  /**
+   * @generated from field: ui.v1.InstallStep step = 2;
+   */
+  step: InstallStep;
+
+  /**
+   * What it waits for, while its step is waiting: another install, a gate and who holds it, the machine under
+   * pressure. Empty otherwise.
+   *
+   * @generated from field: string waiting = 3;
+   */
+  waiting: string;
+};
+
+/**
+ * Describes the message ui.v1.Installing.
+ * Use `create(InstallingSchema)` to create a new message.
+ */
+export const InstallingSchema: GenMessage<Installing> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 19);
 
 /**
  * Build is a wish's integration branch as Djinn pushed it (T07), to install.
@@ -594,7 +636,7 @@ export type Build = Message<"ui.v1.Build"> & {
  * Use `create(BuildSchema)` to create a new message.
  */
 export const BuildSchema: GenMessage<Build> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 19);
+  messageDesc(file_ui_v1_ui, 20);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateRequest
@@ -614,7 +656,7 @@ export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
  * Use `create(UiServiceUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceUpdateRequestSchema: GenMessage<UiServiceUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 20);
+  messageDesc(file_ui_v1_ui, 21);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateResponse
@@ -647,7 +689,53 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
  * Use `create(UiServiceUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 21);
+  messageDesc(file_ui_v1_ui, 22);
+
+/**
+ * InstallStep is where an install stands.
+ *
+ * @generated from enum ui.v1.InstallStep
+ */
+export enum InstallStep {
+  /**
+   * @generated from enum value: INSTALL_STEP_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * It waits for its turn: Installing.waiting says for what.
+   *
+   * @generated from enum value: INSTALL_STEP_WAITING = 1;
+   */
+  WAITING = 1,
+
+  /**
+   * It checks the build out in a worktree of its own, and sets that worktree up when the project's lock files changed.
+   *
+   * @generated from enum value: INSTALL_STEP_PREPARING = 2;
+   */
+  PREPARING = 2,
+
+  /**
+   * It runs the project's install command.
+   *
+   * @generated from enum value: INSTALL_STEP_BUILDING = 3;
+   */
+  BUILDING = 3,
+
+  /**
+   * Installed: Djinn restarts on it.
+   *
+   * @generated from enum value: INSTALL_STEP_RESTARTING = 4;
+   */
+  RESTARTING = 4,
+}
+
+/**
+ * Describes the enum ui.v1.InstallStep.
+ */
+export const InstallStepSchema: GenEnum<InstallStep> = /*@__PURE__*/
+  enumDesc(file_ui_v1_ui, 0);
 
 /**
  * What the window needs to show and follow the plan.

@@ -2,6 +2,7 @@ package plan
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -43,7 +44,7 @@ var questionCode = regexp.MustCompile(`^Q[0-9]{2,3}$`)
 func (w *Wishes) Export(
 	ctx context.Context, req *connect.Request[planv1.WishServiceExportRequest],
 ) (*connect.Response[planv1.WishServiceExportResponse], error) {
-	exp, _, err := collect(ctx, w.Store, req.Msg.GetWishId())
+	exp, _, err := collect(ctx, w.Store, req.Msg.GetWishId(), allEvents)
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -125,7 +126,7 @@ func (w *Wishes) ImportData(
 func (w *Wishes) Snapshot(
 	ctx context.Context, req *connect.Request[planv1.WishServiceSnapshotRequest],
 ) (*connect.Response[planv1.WishServiceSnapshotResponse], error) {
-	exp, projects, err := collect(ctx, w.Store, req.Msg.GetWishId())
+	exp, projects, err := collect(ctx, w.Store, req.Msg.GetWishId(), allEvents)
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -134,8 +135,32 @@ func (w *Wishes) Snapshot(
 	return connect.NewResponse(&planv1.WishServiceSnapshotResponse{Export: exp, Projects: projects}), nil
 }
 
-// collect gathers what the wish holds, as stored: its project references carry the identifiers of this machine.
-func collect(ctx context.Context, r store.Reader, wishID string) (*planv1.WishExport, []*planv1.Project, error) {
+// eventsOf reads the events of a wish's tasks that a reader of collect needs, in the order of an export: by task,
+// then by position.
+type eventsOf func(ctx context.Context, r store.Reader, tasks []*planv1.Task) ([]*planv1.TaskEvent, error)
+
+// allEvents is every event of the tasks: an export carries them all.
+func allEvents(ctx context.Context, r store.Reader, tasks []*planv1.Task) ([]*planv1.TaskEvent, error) {
+	var out []*planv1.TaskEvent
+	for _, t := range tasks {
+		events, err := store.List[*planv1.TaskEvent](ctx, r, store.Where{"task_id": t.GetId()})
+		if err != nil {
+			return nil, err
+		}
+		slices.SortFunc(events, func(a, b *planv1.TaskEvent) int { return int(a.GetSeq() - b.GetSeq()) })
+		out = append(out, events...)
+	}
+	return out, nil
+}
+
+// noEvents is none: the brief shows none, and a wish's events are most of the store.
+func noEvents(context.Context, store.Reader, []*planv1.Task) ([]*planv1.TaskEvent, error) {
+	return nil, nil
+}
+
+// collect gathers what the wish holds, as stored, with the events that events reads: its project references carry
+// the identifiers of this machine.
+func collect(ctx context.Context, r store.Reader, wishID string, events eventsOf) (*planv1.WishExport, []*planv1.Project, error) {
 	wish, err := store.Get[*planv1.Wish](ctx, r, wishID)
 	if err != nil {
 		return nil, nil, err
@@ -145,13 +170,8 @@ func collect(ctx context.Context, r store.Reader, wishID string) (*planv1.WishEx
 	if exp.Tasks, err = store.List[*planv1.Task](ctx, r, where); err != nil {
 		return nil, nil, err
 	}
-	for _, t := range exp.GetTasks() {
-		events, err := store.List[*planv1.TaskEvent](ctx, r, store.Where{"task_id": t.GetId()})
-		if err != nil {
-			return nil, nil, err
-		}
-		slices.SortFunc(events, func(a, b *planv1.TaskEvent) int { return int(a.GetSeq() - b.GetSeq()) })
-		exp.Events = append(exp.Events, events...)
+	if exp.Events, err = events(ctx, r, exp.GetTasks()); err != nil {
+		return nil, nil, err
 	}
 	if exp.Questions, err = store.List[*planv1.Question](ctx, r, where); err != nil {
 		return nil, nil, err
@@ -212,7 +232,9 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	}
 	var out []*planv1.Command
 	var failed error
-	_, err := store.Commands(ctx, r, func(c store.Command) bool {
+	// Only the methods of the API make a wish's history: "/plan.v1.WishService/Make"… The harness's entries, a
+	// worker's events most of all, are not even read.
+	_, err := store.CommandsOf(ctx, r, "/", func(c store.Command) bool {
 		req, err := request(c)
 		if err != nil || req == nil {
 			// An entry of the harness or of an older Djinn: not a request of the API, left out.
@@ -575,10 +597,13 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 	return res, nil
 }
 
-// entities are the events, questions, blocks and tilasms of an export, which an import writes as they are.
+// entities are the events, questions, blocks and tilasms of an export, which an import writes as they are. A task's
+// events go in the order of their positions, as Djinn writes them: its last written is its last.
 func entities(exp *planv1.WishExport) []proto.Message {
 	var out []proto.Message
-	for _, e := range exp.GetEvents() {
+	events := slices.Clone(exp.GetEvents())
+	slices.SortStableFunc(events, func(a, b *planv1.TaskEvent) int { return cmp.Compare(a.GetSeq(), b.GetSeq()) })
+	for _, e := range events {
 		out = append(out, e)
 	}
 	for _, q := range exp.GetQuestions() {

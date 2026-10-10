@@ -54,13 +54,14 @@ var readMachine func() (machine.Snapshot, error)
 func runUp(args []string) (restart bool, err error) {
 	var (
 		browser, warmWorkers, questionWorkers     bool
+		profiles                                  bool
 		port, maxWorkers, workerCPU, workerMemory int
 		term, termDir                             string
 	)
 	flags := cli.Up.FlagSet(map[string]any{
 		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
 		"warm-workers": &warmWorkers, "worker-cpu": &workerCPU, "worker-memory": &workerMemory,
-		"question-workers": &questionWorkers,
+		"question-workers": &questionWorkers, "pprof": &profiles,
 	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
@@ -71,6 +72,13 @@ func runUp(args []string) (restart bool, err error) {
 			return false, fmt.Errorf("DJINN_QUESTION_WORKERS: %w", err)
 		}
 		questionWorkers = on
+	}
+	if v := os.Getenv("DJINN_PPROF"); v != "" && !flagSet(flags, "pprof") {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_PPROF: %w", err)
+		}
+		profiles = on
 	}
 	if flags.NArg() > 0 {
 		return false, fmt.Errorf("unexpected argument %q", flags.Arg(0))
@@ -141,8 +149,8 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	// The integration of finished work runs its gen, setup and checks under the gates, as djinn gate run does.
 	var gates *gate.Gates
-	opts = append(opts, harness.WithGates(func(ctx context.Context, name, taskID, what, dir string) (func(), error) {
-		held, err := gates.Take(ctx, gate.Request{Name: name, TaskID: taskID, What: what, Dir: dir}, nil)
+	opts = append(opts, harness.WithGates(func(ctx context.Context, name, taskID, what, dir string, waiting func(string)) (func(), error) {
+		held, err := gates.Take(ctx, gate.Request{Name: name, TaskID: taskID, What: what, Dir: dir}, waiting)
 		if err != nil {
 			return nil, err
 		}
@@ -214,8 +222,14 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		go updates.run(ctx)
 	}
-	uiSvc.Install = func(ctx context.Context, b *uiv1.Build) (bool, error) {
-		if _, err := workers.Install(ctx, b.GetWishId(), b.GetProjectId(), b.GetSha()); err != nil {
+	uiSvc.Install = func(ctx context.Context, b *uiv1.Build, progress func(uiv1.InstallStep, string)) (bool, error) {
+		steps := map[harness.InstallStep]uiv1.InstallStep{
+			harness.InstallWaiting:   uiv1.InstallStep_INSTALL_STEP_WAITING,
+			harness.InstallPreparing: uiv1.InstallStep_INSTALL_STEP_PREPARING,
+			harness.InstallBuilding:  uiv1.InstallStep_INSTALL_STEP_BUILDING,
+		}
+		report := func(step harness.InstallStep, waiting string) { progress(steps[step], waiting) }
+		if _, err := workers.Install(ctx, b.GetWishId(), b.GetProjectId(), b.GetSha(), report); err != nil {
 			return false, err
 		}
 		return updates != nil && updates.check(ctx) != "", nil
@@ -271,6 +285,9 @@ func runUp(args []string) (restart bool, err error) {
 	svc[costsPrefix] = costsHandler
 	backupPrefix, backupHandler := backup.Handler(db, home, version)
 	svc[backupPrefix] = backupHandler
+	if profiles {
+		svc[server.ProfilePath] = server.Profiles()
+	}
 	h := server.Handler(djinn.UI(), djinn.Docs(), svc)
 
 	var ln net.Listener

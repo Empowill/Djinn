@@ -65,6 +65,12 @@ address in the data folder, for the other commands.`,
 				"investigates, then revises the question); a project's settings turn them off too (question_workers: " +
 				"false); default $DJINN_QUESTION_WORKERS (on or off), else on.",
 		},
+		{
+			Name: "--pprof", Type: "bool", Env: "DJINN_PPROF",
+			Help: "Serve Go's profiles of djinn up at /debug/pprof/, on its own address only (the Unix socket, or the " +
+				"loopback server and its token), to measure what it spends its CPU and memory on; default " +
+				"$DJINN_PPROF (on or off), else off.",
+		},
 	},
 }
 
