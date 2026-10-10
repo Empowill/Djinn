@@ -2,9 +2,11 @@ package harness
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,9 +14,11 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -467,5 +471,110 @@ func TestNote(t *testing.T) {
 	texts := eventTexts(events)
 	if !slices.Contains(texts, "gate codegen: taken") || texts[len(texts)-1] != "gate codegen: given back" {
 		t.Errorf("events: %q", texts)
+	}
+}
+
+// TestScopeForWorkerMemoryGuard: scopeFor applies the memory guardrail ceiling dynamically based on provider peaks,
+// falling back to no ceiling when there are no measurements, and respecting MemoryController.
+func TestScopeForWorkerMemoryGuard(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	// 1. Without scopes, returns nil
+	h := &Harness{}
+	if h.scopeFor(&planv1.Task{Code: "W1"}) != nil {
+		t.Error("want nil without scopes")
+	}
+
+	// 2. Scopes without memory controller and no base memory returns uncapped scope
+	sNoMem := &machine.Scopes{MemoryController: false}
+	hNoMem := &Harness{scopes: sNoMem}
+	hNoMem.SetPolicy(machine.Policy{WorkerMemoryGuard: 2.0})
+	scFunc := hNoMem.scopeFor(&planv1.Task{Code: "W1"})
+	if scFunc == nil {
+		t.Fatal("want non-nil scope func")
+	}
+	sc := scFunc()
+	if slices.Contains(sc.Prefix, "-p") {
+		t.Errorf("expected uncapped scope when MemoryController is false, got prefix %v", sc.Prefix)
+	}
+
+	// 3. With store and MemoryController: true
+	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	s := &machine.Scopes{MemoryController: true}
+	hStore := &Harness{scopes: s, store: db, ctx: t.Context()}
+	hStore.SetPolicy(machine.Policy{WorkerMemoryGuard: 2.5, WorkerMargin: 256 << 20})
+
+	taskReq := &planv1.Task{
+		Id:       store.NewID(),
+		Code:     "W10",
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+	}
+
+	// 3a. No measured tasks yet: ceiling is 0 ("sans mesure, pas de plafond")
+	sc0 := hStore.scopeFor(taskReq)()
+	for i, arg := range sc0.Prefix {
+		if strings.HasPrefix(arg, "MemoryMax=") {
+			t.Errorf("expected no MemoryMax without measurements, got %q", sc0.Prefix[i])
+		}
+	}
+
+	// 3b. Add finished tasks with peaks for CLAUDE
+	err = db.Tx(t.Context(), func(tx *store.Tx) error {
+		for i := 0; i < 5; i++ {
+			tDone := &planv1.Task{
+				Id:        store.NewID(),
+				Code:      fmt.Sprintf("W%d", i+1),
+				Provider:  planv1.Provider_PROVIDER_CLAUDE,
+				Status:    planv1.TaskStatus_TASK_STATUS_DONE,
+				EndTime:   timestamppb.Now(),
+				Resources: &planv1.Resources{PeakMemoryBytes: 100 << 20}, // 100 MiB
+			}
+			if err := tx.Journal("test", "put", tDone); err != nil {
+				return err
+			}
+			if err := tx.Put(tDone); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Median peak is 100 MiB.
+	// Factor 2.5 * 100 MiB = 250 MiB (262,144,000 bytes).
+	// Forecast is peak + WorkerMargin = 100 MiB + 256 MiB = 356 MiB (373,293,056 bytes).
+	// Guard ceiling = max(250 MiB, 356 MiB) = 356 MiB.
+	sc1 := hStore.scopeFor(taskReq)()
+	wantCeiling := strconv.FormatUint(356<<20, 10)
+	var foundMemMax string
+	for _, arg := range sc1.Prefix {
+		if val, ok := strings.CutPrefix(arg, "MemoryMax="); ok {
+			foundMemMax = val
+		}
+	}
+	if foundMemMax != wantCeiling {
+		t.Errorf("MemoryMax = %q, want %q", foundMemMax, wantCeiling)
+	}
+
+	// 3c. Also test with Policy.WorkerMemory hard ceiling (e.g. 300 MiB < 356 MiB)
+	hStore.SetPolicy(machine.Policy{WorkerMemory: 300 << 20, WorkerMemoryGuard: 2.5, WorkerMargin: 256 << 20})
+	sc2 := hStore.scopeFor(taskReq)()
+	wantHard := strconv.FormatUint(300<<20, 10)
+	foundMemMax = ""
+	for _, arg := range sc2.Prefix {
+		if val, ok := strings.CutPrefix(arg, "MemoryMax="); ok {
+			foundMemMax = val
+		}
+	}
+	if foundMemMax != wantHard {
+		t.Errorf("MemoryMax with hard ceiling = %q, want %q", foundMemMax, wantHard)
 	}
 }
