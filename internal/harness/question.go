@@ -28,9 +28,36 @@ import (
 // methodQuestion is what the journal records when Djinn starts a question worker; the request is the spawn.
 const methodQuestion = "harness/question"
 
-// WithQuestionWorkers lets the harness start question workers: djinn up gives it unless told not to. Without it, the
-// lead is told to act on each answer itself.
-func WithQuestionWorkers() Option { return func(h *Harness) { h.questions = true } }
+// WithAnswerWorkers lets the harness start answer workers: false by default.
+func WithAnswerWorkers(on ...bool) Option {
+	val := true
+	if len(on) > 0 {
+		val = on[0]
+	}
+	return func(h *Harness) { h.answerWorkers = &val }
+}
+
+// WithEnlightenWorkers lets the harness start enlighten workers: true by default.
+func WithEnlightenWorkers(on ...bool) Option {
+	val := true
+	if len(on) > 0 {
+		val = on[0]
+	}
+	return func(h *Harness) { h.enlightenWorkers = &val }
+}
+
+// WithQuestionWorkers sets both answer workers and enlighten workers: deprecated, use WithAnswerWorkers and
+// WithEnlightenWorkers instead.
+func WithQuestionWorkers(on ...bool) Option {
+	val := true
+	if len(on) > 0 {
+		val = on[0]
+	}
+	return func(h *Harness) {
+		h.answerWorkers = &val
+		h.enlightenWorkers = &val
+	}
+}
 
 // questionWorker tells whether Djinn started the task on a question.
 func questionWorker(t *planv1.Task) bool { return dispatch.QuestionWorker(t) }
@@ -60,7 +87,10 @@ func (h *Harness) askWorker(ctx context.Context, q *planv1.Question, role planv1
 func (h *Harness) startQuestionWorker(
 	ctx context.Context, q *planv1.Question, role planv1.TaskRole, note string, before *planv1.Task,
 ) (*planv1.Task, error) {
-	if !h.questions {
+	if role == planv1.TaskRole_TASK_ROLE_CONVERTER && h.answerWorkers != nil && !*h.answerWorkers {
+		return nil, nil
+	}
+	if role == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && h.enlightenWorkers != nil && !*h.enlightenWorkers {
 		return nil, nil
 	}
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
@@ -83,8 +113,23 @@ func (h *Harness) startQuestionWorker(
 	if err != nil {
 		return nil, err
 	}
-	if !settings.QuestionWorkers {
-		return nil, nil
+	switch role {
+	case planv1.TaskRole_TASK_ROLE_CONVERTER:
+		allow := settings.AnswerWorkers
+		if settings.AnswerWorkersFrom == planv1.SettingSource_SETTING_SOURCE_DEFAULT && h.answerWorkers != nil {
+			allow = *h.answerWorkers
+		}
+		if !allow {
+			return nil, nil
+		}
+	case planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
+		allow := settings.EnlightenWorkers
+		if settings.EnlightenWorkersFrom == planv1.SettingSource_SETTING_SOURCE_DEFAULT && h.enlightenWorkers != nil {
+			allow = *h.enlightenWorkers
+		}
+		if !allow {
+			return nil, nil
+		}
 	}
 	brief, err := plan.BuildBrief(ctx, h.store, h.home, wish.GetId())
 	if err != nil {

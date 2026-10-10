@@ -509,8 +509,8 @@ func TestWorkerScopesFallback(t *testing.T) {
 	}
 }
 
-// TestOnOff: $DJINN_QUESTION_WORKERS reads on or off, in any case, and what strconv.ParseBool reads; anything else is
-// an error that says what it expects.
+// TestOnOff: $DJINN_ANSWER_WORKERS, $DJINN_ENLIGHTEN_WORKERS, $DJINN_QUESTION_WORKERS read on or off, in any case,
+// and what strconv.ParseBool reads; anything else is an error that says what it expects.
 func TestOnOff(t *testing.T) {
 	for v, want := range map[string]bool{"on": true, "OFF": false, " off ": false, "true": true, "0": false} { //nolint:gocritic // " off " checks that the value is trimmed
 		if got, err := onOff(v); err != nil || got != want {

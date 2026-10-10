@@ -135,6 +135,9 @@ linters:
       - linters: [staticcheck]
         # A condition written as the sentence it checks reads better than its De Morgan twin.
         text: "QF1001:"
+      - linters: [staticcheck]
+        # QuestionWorkers is deprecated in protobuf and kept for backward compatibility.
+        text: "SA1019: .*QuestionWorkers.* is deprecated"
       - linters: [unused]
         # Used by window.go only, which builds with the native toolkit (not headless).
         path: ^cmd/djinn/window_(plain|mcp)\.go$

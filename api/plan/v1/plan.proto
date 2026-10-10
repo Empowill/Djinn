@@ -158,10 +158,8 @@ message ProjectSettings {
   // what changed, and restarts Djinn on the build when it installed a newer Djinn. Its words are
   // split on spaces, without a shell. Not set: nothing is proposed.
   optional string install = 9 [(buf.validate.field).string.max_len = 500];
-  // Djinn starts a small worker on each question of a wish's lead: after an answer, one that turns the decision into
-  // tasks; after "Enlighten me", one that investigates and revises the question. Not set: on. false: the lead is told
-  // to act on the answer itself, as before.
-  optional bool question_workers = 10;
+  // Deprecated: set answer_workers and enlighten_workers instead; sets both when given.
+  optional bool question_workers = 10 [deprecated = true];
   // Model of those question workers, a model of the workers' provider. Not set: sonnet for claude, the provider's own
   // default for another; empty: the provider's own default.
   optional string question_model = 11 [
@@ -216,6 +214,11 @@ message ProjectSettings {
     defined_only: true
     not_in: [0]
   }];
+  // Djinn starts a small worker to turn a developer's answer into tasks. Not set: off (the lead turns answers into
+  // tasks itself).
+  optional bool answer_workers = 21;
+  // Djinn starts a small worker to investigate and revise a question after "Enlighten me". Not set: on.
+  optional bool enlighten_workers = 22;
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.

@@ -70,6 +70,17 @@ func (b *tellBatcher) queue(wishID, line string) {
 
 func (b *tellBatcher) flushWish(wishID string) {
 	b.mu.Lock()
+	b.h.mu.Lock()
+	tell := b.h.tell
+	b.h.mu.Unlock()
+	if tell == nil {
+		if t, ok := b.timers[wishID]; ok {
+			t.Stop()
+			delete(b.timers, wishID)
+		}
+		b.mu.Unlock()
+		return
+	}
 	if t, ok := b.timers[wishID]; ok {
 		t.Stop()
 		delete(b.timers, wishID)

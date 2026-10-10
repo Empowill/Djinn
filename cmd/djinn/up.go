@@ -54,7 +54,9 @@ var readMachine func() (machine.Snapshot, error)
 // everything here is closed.
 func runUp(args []string) (restart bool, err error) {
 	var (
-		browser, warmWorkers, questionWorkers     bool
+		browser, warmWorkers                      bool
+		answerWorkers, enlightenWorkers           bool
+		questionWorkers                           bool
 		profiles                                  bool
 		port, maxWorkers, workerCPU, workerMemory int
 		term, termDir                             string
@@ -62,17 +64,41 @@ func runUp(args []string) (restart bool, err error) {
 	flags := cli.Up.FlagSet(map[string]any{
 		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
 		"warm-workers": &warmWorkers, "worker-cpu": &workerCPU, "worker-memory": &workerMemory,
+		"answer-workers": &answerWorkers, "enlighten-workers": &enlightenWorkers,
 		"question-workers": &questionWorkers, "pprof": &profiles,
 	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
 	}
-	if v := os.Getenv("DJINN_QUESTION_WORKERS"); v != "" && !flagSet(flags, "question-workers") {
+	var answerSet, enlightenSet bool
+	if flagSet(flags, "question-workers") {
+		answerSet, answerWorkers = true, questionWorkers
+		enlightenSet, enlightenWorkers = true, questionWorkers
+	} else if v := os.Getenv("DJINN_QUESTION_WORKERS"); v != "" {
 		on, err := onOff(v)
 		if err != nil {
 			return false, fmt.Errorf("DJINN_QUESTION_WORKERS: %w", err)
 		}
-		questionWorkers = on
+		answerSet, answerWorkers = true, on
+		enlightenSet, enlightenWorkers = true, on
+	}
+	if flagSet(flags, "answer-workers") {
+		answerSet = true
+	} else if v := os.Getenv("DJINN_ANSWER_WORKERS"); v != "" {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_ANSWER_WORKERS: %w", err)
+		}
+		answerSet, answerWorkers = true, on
+	}
+	if flagSet(flags, "enlighten-workers") {
+		enlightenSet = true
+	} else if v := os.Getenv("DJINN_ENLIGHTEN_WORKERS"); v != "" {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_ENLIGHTEN_WORKERS: %w", err)
+		}
+		enlightenSet, enlightenWorkers = true, on
 	}
 	if v := os.Getenv("DJINN_PPROF"); v != "" && !flagSet(flags, "pprof") {
 		on, err := onOff(v)
@@ -147,8 +173,11 @@ func runUp(args []string) (restart bool, err error) {
 	if warmWorkers {
 		opts = append(opts, harness.WithWarm())
 	}
-	if questionWorkers {
-		opts = append(opts, harness.WithQuestionWorkers())
+	if answerSet {
+		opts = append(opts, harness.WithAnswerWorkers(answerWorkers))
+	}
+	if enlightenSet {
+		opts = append(opts, harness.WithEnlightenWorkers(enlightenWorkers))
 	}
 	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory); scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))

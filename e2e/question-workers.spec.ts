@@ -80,7 +80,7 @@ test("rubbing the lamp starts a converter, which spawns a task from the decision
   fs.mkdirSync(path.join(project, ".agents"));
   fs.writeFileSync(
     path.join(project, ".agents", "settings.txtpb"),
-    "provider: PROVIDER_FAKE\n",
+    "provider: PROVIDER_FAKE\nanswer_workers: true\n",
   );
   const djinn = (...args: string[]) =>
     execFileSync(binary, args, { env: env(home), encoding: "utf8" });

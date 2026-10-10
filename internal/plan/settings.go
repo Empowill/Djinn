@@ -127,8 +127,11 @@ type Settings struct {
 	// How many correction workers Djinn starts for a batch that conflicts in code or tests red, before it asks.
 	CorrectionAttempts int
 
-	// QuestionWorkers says whether Djinn starts a question worker after an answer or a request to investigate, with
-	// QuestionProvider, QuestionModel and QuestionBudgetUSD.
+	// AnswerWorkers says whether Djinn starts a question worker after an answer to turn it into tasks.
+	// EnlightenWorkers says whether Djinn starts an investigator after a request to investigate ("Enlighten me").
+	// QuestionWorkers is deprecated: when set in settings, it sets both.
+	AnswerWorkers     bool
+	EnlightenWorkers  bool
 	QuestionWorkers   bool
 	QuestionProvider  planv1.Provider
 	QuestionModel     string
@@ -145,6 +148,7 @@ type Settings struct {
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom                                                   planv1.SettingSource
+	AnswerWorkersFrom, EnlightenWorkersFrom                                                 planv1.SettingSource
 	QuestionWorkersFrom, QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom        planv1.SettingSource
 }
@@ -175,8 +179,11 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		Provider: planv1.Provider_PROVIDER_CLAUDE, Branch: DefaultBranch, CorrectionAttempts: DefaultCorrectionAttempts,
 		ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
 		SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def,
-		QuestionWorkers: true, QuestionProviderFrom: def, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
-		QuestionWorkersFrom: def, QuestionModelFrom: def, QuestionBudgetFrom: def,
+		AnswerWorkers: false, AnswerWorkersFrom: def,
+		EnlightenWorkers: true, EnlightenWorkersFrom: def,
+		QuestionWorkers: false, QuestionWorkersFrom: def,
+		QuestionProviderFrom: def, QuestionBudgetUSD: DefaultQuestionBudgetUSD,
+		QuestionModelFrom: def, QuestionBudgetFrom: def,
 		MergeMain: DefaultMergeMain, MergeMainEvery: DefaultMergeMainEvery, InstallReleases: true,
 		Push:           planv1.ProjectPush_PROJECT_PUSH_STANDARD,
 		MainBranchFrom: def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def,
@@ -222,8 +229,18 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 			s.Install, s.InstallFrom = f.settings.GetInstall(), f.from
 		}
 		if f.settings.QuestionWorkers != nil {
-			s.QuestionWorkers, s.QuestionWorkersFrom = f.settings.GetQuestionWorkers(), f.from
+			v := f.settings.GetQuestionWorkers()
+			s.AnswerWorkers, s.AnswerWorkersFrom = v, f.from
+			s.EnlightenWorkers, s.EnlightenWorkersFrom = v, f.from
+			s.QuestionWorkers, s.QuestionWorkersFrom = v, f.from
 		}
+		if f.settings.AnswerWorkers != nil {
+			s.AnswerWorkers, s.AnswerWorkersFrom = f.settings.GetAnswerWorkers(), f.from
+		}
+		if f.settings.EnlightenWorkers != nil {
+			s.EnlightenWorkers, s.EnlightenWorkersFrom = f.settings.GetEnlightenWorkers(), f.from
+		}
+		s.QuestionWorkers = s.AnswerWorkers && s.EnlightenWorkers
 		if f.settings.QuestionProvider != nil {
 			s.QuestionProvider, s.QuestionProviderFrom = f.settings.GetQuestionProvider(), f.from
 			s.QuestionModel, s.QuestionModelFrom, questionModel = "", def, false
@@ -322,7 +339,8 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "checks", Value: ChecksText(s.Checks), Source: s.ChecksFrom},
 		{Name: "correction_attempts", Value: strconv.Itoa(s.CorrectionAttempts), Source: s.AttemptsFrom},
 		{Name: "install", Value: s.Install, Source: s.InstallFrom},
-		{Name: "question_workers", Value: strconv.FormatBool(s.QuestionWorkers), Source: s.QuestionWorkersFrom},
+		{Name: "answer_workers", Value: strconv.FormatBool(s.AnswerWorkers), Source: s.AnswerWorkersFrom},
+		{Name: "enlighten_workers", Value: strconv.FormatBool(s.EnlightenWorkers), Source: s.EnlightenWorkersFrom},
 		{Name: "question_provider", Value: questionProviderName(s.QuestionProvider), Source: s.QuestionProviderFrom},
 		{Name: "question_model", Value: s.QuestionModel, Source: s.QuestionModelFrom},
 		{Name: "question_budget_usd", Value: usd(s.QuestionBudgetUSD), Source: s.QuestionBudgetFrom},
