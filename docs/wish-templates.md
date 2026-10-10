@@ -59,16 +59,22 @@ has no reviewer. Djinn's own repository lists `sh .agents/skills/babysit-pr/watc
 
 [`.agents/skills/babysit-pr/`](../.agents/skills/babysit-pr/SKILL.md) babysits a GitHub pull request. Its
 `watch.sh` needs `gh`, logged in. Every minute it reads the checks (`gh pr checks`), the mergeable state, the review
-decision and the comments (`gh pr view --json`), and prints a paragraph only when something changed:
+decision and the comments (`gh pr view --json`), and prints a paragraph only for what needs the lead, once each: a
+check that newly fails (again after a new push), all checks passing after a push or a failure, a new comment or
+review, a review decision that turns to `CHANGES_REQUESTED`, the pull request no longer mergeable. Pending checks and
+partial passes say nothing:
 
 ```
-PR #12 · checks: 1 fail, 4 pass (failed: lint) · mergeable: MERGEABLE · review: REVIEW_REQUIRED · comments: 3
+PR #12 · checks failed: lint
+PR #12 · all checks pass (5)
+PR #12 · changes requested · new comment by a-reviewer
 latest comment, by a-reviewer: Could this name say what it holds?
 ```
 
-It prints `MERGED: PR #12 is merged.` and exits on the merge, `CLOSED: …` on a close without one. It is a POSIX
-shell script: on Windows, run it with the `sh` of Git for Windows. Copy the folder into your project to use it
-there, with the line in your `.agents/permissions.txtpb`.
+It prints `MERGED: PR #12 is merged.` and exits on the merge, `CLOSED: …` on a close without one. What it said is
+kept under `$DJINN_HOME/watchers/<task>/`, never in the repository: a watcher Djinn starts again does not say it
+again. It is a POSIX shell script, for Linux and macOS; on Windows only the `sh` of Git for Windows could run it, and
+no test does. Copy the folder into your project to use it there, with the line in your `.agents/permissions.txtpb`.
 
 ## Djinn's own: babysit-mr, for GitLab
 
@@ -187,7 +193,9 @@ with its link, read with `gh pr list`. Unplugged until you plug it in: `djinn in
 Tests: `TestReadTemplate`, `TestFillQuotes`, `TestDoneLine`, `TestRouteTemplate`, `TestTemplateWish`,
 `TestTemplateWithoutWatchers`, `TestSkillListTemplate` (`internal/plan/templates_test.go`), `TestWatcherDoneLine`,
 `TestWatcherFinishes` (`internal/harness/watch_test.go`), `TestBabysitMRReadsOnly`
-(`internal/harness/babysit_mr_test.go`: babysit-mr's template and watcher, a fake `glab` on the `PATH`), and `e2e/wish-template.spec.ts` (a fake watcher). The
+(`internal/harness/babysit_mr_test.go`: babysit-mr's template and watcher, a fake `glab` on the `PATH`),
+`TestBabysitPRSpeaksOnlyForTheLead` (`internal/harness/babysit_pr_test.go`: what babysit-pr's watcher says, and does not
+say again after a restart, a fake `gh` on the `PATH`), and `e2e/wish-template.spec.ts` (a fake watcher). The
 inbox: `TestReadSource`, `TestSources`, `TestOwnSource`, `TestInbox`, `TestItemKey` (`internal/plan/inbox_test.go`),
 `TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceUnplugged` (`internal/harness/watch_source_test.go`),
 `TestInboxPlug` (`cmd/djinn/inbox_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from the inbox).
