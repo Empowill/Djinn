@@ -189,7 +189,9 @@ func TestPushAskMode(t *testing.T) {
 		t.Fatalf("%d questions, %v", len(questions), err)
 	}
 
-	in.answer(t, q, planv1.Choice_CHOICE_A)
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn pushes at the integration's next pass" {
+		t.Errorf("what Djinn did: %q", did)
+	}
 	in.pass(t, 0)
 	if got := in.remoteTip(t, bare); got != in.tip(t) {
 		t.Fatalf("pushed it: origin at %s, the branch at %s", got, in.tip(t))

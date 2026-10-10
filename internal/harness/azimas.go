@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -26,7 +27,7 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// spawnAzima makes an azima of the wish: a task of kind AZIMA, coded T1, T2… after the highest one, which no worker
+// spawnAzima makes an azima of the wish: a task of kind AZIMA, coded T1, T2… after the highest one ever, which no worker
 // runs. What only a worker uses is refused.
 func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
 	if req.GetPrompt() != "" || req.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || req.GetModel() != "" ||
@@ -65,11 +66,10 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
 			return err
 		}
-		tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wish.GetId()})
-		if err != nil {
+		var err error
+		if task.Code, err = nextNumber(ctx, tx, wish.GetId(), "T"); err != nil {
 			return err
 		}
-		task.Code = nextAzimaCode(tasks)
 		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
 			return err
 		}
@@ -87,18 +87,6 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 
 // azimaCode is the code of an azima: T1, T07.
 var azimaCode = regexp.MustCompile(`^[Tt][0-9]+$`)
-
-// nextAzimaCode is the code of a new azima among tasks, the wish's: T1, T2…, after the highest one.
-func nextAzimaCode(tasks []*planv1.Task) string {
-	last := 0
-	for _, t := range tasks {
-		var n int
-		if _, err := fmt.Sscanf(t.GetCode(), "T%d", &n); err == nil && n > last {
-			last = n
-		}
-	}
-	return fmt.Sprintf("T%d", last+1)
-}
 
 // storedAsWork tells whether a task of no kind is an azima stored before tasks had kinds: imported from a plan, never
 // planned on this machine, never started, with no agent and no session.
@@ -123,6 +111,47 @@ func (h *Harness) migrateAzimas(ctx context.Context, tasks []*planv1.Task) error
 		})
 		if err != nil {
 			return fmt.Errorf("mark %s an azima: %w", t.GetCode(), err)
+		}
+	}
+	return nil
+}
+
+// ungroupOrphans makes part of no azima each of tasks, every task of the store, that is part of an azima its wish no
+// longer has (deleted before Delete refused it): journaled, said in the log and, for work, in its events, so that the
+// window shows it where it shows work of no azima. Changed in place, for Recover to go on with.
+func (h *Harness) ungroupOrphans(ctx context.Context, tasks []*planv1.Task) error {
+	azimas := map[string]string{} // Each azima's wish.
+	for _, t := range tasks {
+		if plan.IsAzima(t) {
+			azimas[t.GetId()] = t.GetWishId()
+		}
+	}
+	for _, t := range tasks {
+		id := t.GetPartOf()
+		if id == "" || azimas[id] == t.GetWishId() {
+			continue
+		}
+		t.PartOf = ""
+		text := "part of no azima: its azima " + short8(id) + " is no longer one of the wish's"
+		log.Printf("djinn: task %s: %s", t.GetCode(), text)
+		err := h.store.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal(actorHarness, methodUngroup, t); err != nil {
+				return err
+			}
+			if err := tx.Put(t); err != nil {
+				return err
+			}
+			if plan.IsAzima(t) {
+				return nil // An azima has no events.
+			}
+			seq, err := lastSeq(ctx, tx, t.GetId())
+			if err != nil {
+				return err
+			}
+			return tx.Put(newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+		})
+		if err != nil {
+			return fmt.Errorf("take %s out of its azima: %w", t.GetCode(), err)
 		}
 	}
 	return nil
@@ -190,8 +219,8 @@ type planSource struct {
 // SyncPlan reads the plan files of the wish's projects into its azimas, then writes what each azima depends on back
 // into its file (PlanService.Sync). A file closes its azima when its status says done or every Done-when box is
 // checked, the latter reported; its unchecked boxes that wait for a proof no worker can give go on the azima. An azima is found by its file's id, else its code; one the files name and the
-// store lacks is made, taking its file's after line once. What an azima depends on is the store's: the files only
-// follow it.
+// store lacks is made, taking its file's after line once, unless its code was a deleted task's: a code is never given
+// twice. What an azima depends on is the store's: the files only follow it.
 func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.PlanServiceSyncRequest) (*planv1.PlanServiceSyncResponse, error) {
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, req.GetWishId())
 	if err != nil {
@@ -242,6 +271,10 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 		if tasks, err = store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wish.GetId()}); err != nil {
 			return err
 		}
+		stored, err := store.Get[*planv1.Wish](ctx, tx, wish.GetId())
+		if err != nil {
+			return err
+		}
 		now := timestamppb.Now()
 		codes := map[string]string{}
 		var changed []*planv1.Task
@@ -265,6 +298,15 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 							"%s gives the code %s, which is work of the wish, not an azima", f.Path, r.azima.GetCode()))
 					}
 				} else {
+					if slices.ContainsFunc(stored.GetRetiredCodes(), func(c string) bool { return strings.EqualFold(c, f.Code) }) {
+						next, err := nextNumber(ctx, tx, wish.GetId(), "T")
+						if err != nil {
+							return err
+						}
+						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+							"%s gives the code %s, which an azima of the wish had before it was deleted: a code is never "+
+								"given twice; give the file a new one (%s is free)", f.Path, f.Code, next))
+					}
 					id, err := azimaID(ctx, tx, f.ID)
 					if err != nil {
 						return err

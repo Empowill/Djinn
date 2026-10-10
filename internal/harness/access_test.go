@@ -101,8 +101,11 @@ func TestAskToEdit(t *testing.T) {
 		t.Errorf("written without an answer: %v", entries)
 	}
 
-	// No.
+	// No: the lead hears what Djinn did, not to act on it.
 	e.answer(t, q, planv1.Choice_CHOICE_B)
+	if did := e.lastDid(); did != "Djinn keeps W1 reading only" {
+		t.Errorf("what Djinn did: %q", did)
+	}
 	got = e.get(t, task.GetId())
 	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_REFUSED {
 		t.Errorf("after no: %v", got)
@@ -112,8 +115,9 @@ func TestAskToEdit(t *testing.T) {
 	}
 	// Answering again changes nothing: only the first answer counts.
 	e.answer(t, q, planv1.Choice_CHOICE_A)
-	if again := e.get(t, task.GetId()); again.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_REFUSED {
-		t.Errorf("a second answer counted: %v", again)
+	if again := e.get(t, task.GetId()); again.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_REFUSED ||
+		e.lastDid() != "W1 took an answer before: this one changes nothing" {
+		t.Errorf("a second answer counted: %v; Djinn says %q", again, e.lastDid())
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Errorf("written after a second answer: %v", entries)
@@ -125,6 +129,9 @@ func TestAskToEdit(t *testing.T) {
 	task = e.spawn(t, wishID, script)
 	before := e.watch(t.Context(), t, task.GetId(), 0)
 	e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
+	if did := e.lastDid(); did != "Djinn allows W1 to edit the project's files" {
+		t.Errorf("what Djinn did: %q", did)
+	}
 	after := e.watch(t.Context(), t, task.GetId(), int64(len(before)))
 	checkSeqs(t, append(before, after...), 1)
 	if !hasText(after, "edit granted (Q01)") || !hasText(after, "started fake again") || !hasText(after, "Write notes.md") {

@@ -192,7 +192,9 @@ func TestPushChecksHoldThePush(t *testing.T) {
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
-	in.answer(t, q, planv1.Choice_CHOICE_A)
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn runs the push checks again at the integration's next pass, and pushes if they pass" {
+		t.Errorf("what Djinn did: %q", did)
+	}
 	in.pass(t, time.Second)
 	if got, tip := in.remoteTip(t, bare), in.tip(t); got != tip {
 		t.Fatalf("checked again green, not pushed: origin at %s, the branch at %s", got, tip)
@@ -225,7 +227,9 @@ func TestPushWithoutTheChecks(t *testing.T) {
 	if state := in.pushState(t); state.GetHeldRuns() != 1 || state.GetQuestionId() == "" {
 		t.Fatalf("no work left: the push %v; want a question at once", state)
 	}
-	in.answer(t, in.pushQuestion(t), planv1.Choice_CHOICE_B)
+	if did := in.answer(t, in.pushQuestion(t), planv1.Choice_CHOICE_B); did != "Djinn pushes at the integration's next pass, without the push checks" {
+		t.Errorf("what Djinn did: %q", did)
+	}
 	in.pass(t, time.Second)
 	tip := in.tip(t)
 	if got := in.remoteTip(t, bare); got != tip {

@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -26,7 +25,9 @@ type Marks struct {
 	planv1connect.UnimplementedMarkServiceHandler
 	Store *store.Store
 	// Answered are called with a question once an approval has answered it.
-	Answered []func(context.Context, *planv1.Question)
+	Answered []AnswerHook
+	// Told, when set, is called next, with what they did.
+	Told Told
 	// Settle, when set, acts on the answer an approval gives, as Questions.Settle.
 	Settle Settle
 }
@@ -72,9 +73,7 @@ func (m *Marks) Put(
 		then(ctx)
 	}
 	if answered != nil {
-		for _, f := range m.Answered {
-			f(ctx, proto.CloneOf(answered))
-		}
+		afterAnswer(ctx, m.Answered, m.Told, answered)
 	}
 	return connect.NewResponse(&planv1.MarkServicePutResponse{Marked: marked}), nil
 }

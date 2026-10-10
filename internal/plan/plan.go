@@ -48,7 +48,7 @@ type options struct {
 	home     string
 	watchers SpawnWatcher
 	workers  WishWorkers
-	answered []func(context.Context, *planv1.Question)
+	answered []AnswerHook
 	show     func(wishID, tilasmID string) bool
 	url      func(id string) string
 	enlight  []func(context.Context, *planv1.Question, string)
@@ -78,8 +78,8 @@ func WithHome(home string) Option { return func(o *options) { o.home = home } }
 func WithLeads(l Leads) Option { return func(o *options) { o.leads = l } }
 
 // WithAnswered calls f with a question once its answer is stored: the harness starts again the worker a yes
-// allows to edit. With WithLeads, the wish's lead is told next (Wishes.Answered).
-func WithAnswered(f func(context.Context, *planv1.Question)) Option {
+// allows to edit. With WithLeads, the wish's lead is told next (Wishes.Answered), with what f did.
+func WithAnswered(f AnswerHook) Option {
 	return func(o *options) { o.answered = append(o.answered, f) }
 }
 
@@ -101,20 +101,21 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
 		Workers: o.workers, Home: o.home}
+	var told Told
 	if o.leads != nil {
-		o.answered = append(o.answered, wishes.Answered) // The lead learns each answer, after the harness.
+		told = wishes.Answered // The lead learns each answer, after the harness, and what it did.
 	}
 	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
 	out[p] = h
 	if o.leads != nil {
 		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
-	questions := &Questions{Store: s, Answered: o.answered, Enlightened: o.enlight, Settle: wishes.settle}
+	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle}
 	p, h = planv1connect.NewQuestionServiceHandler(questions, opt)
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
 	out[p] = h
-	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Settle: wishes.settle}, opt)
+	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Told: told, Settle: wishes.settle}, opt)
 	out[p] = h
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
 	out[p] = h
@@ -476,12 +477,34 @@ type Questions struct {
 	planv1connect.UnimplementedQuestionServiceHandler
 	Store *store.Store
 	// Answered are called with a question once its answer is stored.
-	Answered []func(context.Context, *planv1.Question)
+	Answered []AnswerHook
+	// Told, when set, is called next, with what they did.
+	Told Told
 	// Enlightened are called with a question once a request to investigate it is stored, with its note.
 	Enlightened []func(ctx context.Context, q *planv1.Question, note string)
 	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
 	// stored, if anything: a question that routes a request files it, or makes its wish.
 	Settle Settle
+}
+
+// AnswerHook is called with a question once its answer is stored. It says what it did with the answer, for the
+// wish's lead: "Djinn started W12: …"; "" when the answer is the lead's to act on.
+type AnswerHook func(ctx context.Context, q *planv1.Question) string
+
+// Told tells the wish's lead that q was answered, did saying what the hooks did with the answer.
+type Told func(ctx context.Context, q *planv1.Question, did string)
+
+// afterAnswer calls hooks with q, its answer stored, then told, when set, with what they did.
+func afterAnswer(ctx context.Context, hooks []AnswerHook, told Told, q *planv1.Question) {
+	var did []string
+	for _, f := range hooks {
+		if d := f(ctx, proto.CloneOf(q)); d != "" {
+			did = append(did, d)
+		}
+	}
+	if told != nil {
+		told(ctx, proto.CloneOf(q), strings.Join(did, "; "))
+	}
 }
 
 // Settle acts on the answer of q in tx, the transaction that stores it, and may change q before it is stored. It
@@ -578,9 +601,7 @@ func (q *Questions) Answer(
 	if then != nil {
 		then(ctx)
 	}
-	for _, f := range q.Answered {
-		f(ctx, proto.CloneOf(question))
-	}
+	afterAnswer(ctx, q.Answered, q.Told, question)
 	return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 }
 

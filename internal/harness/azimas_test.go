@@ -395,3 +395,160 @@ func TestSyncPlan(t *testing.T) {
 		t.Errorf("T02: %v", got)
 	}
 }
+
+// TestAnAzimaWithPartsStays: an azima with tasks part of it is not deleted, which are named; once they are regrouped
+// it goes, and no task can be grouped into it any more. Its code is never given again, nor a deleted task's.
+func TestAnAzimaWithPartsStays(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	ctx := t.Context()
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity)) // No slot: the work only waits.
+	wishID, _ := e.wish(t, gitRepo(t))
+	t1 := e.azima(t, wishID, "Templates")
+	w1 := e.mustSpawn(t, wishID, "Work", "text work", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
+	w2 := e.mustSpawn(t, wishID, "More", "text more", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
+	del := func(task *planv1.Task) error {
+		_, err := e.tasks.Delete(ctx, connect.NewRequest(&planv1.TaskServiceDeleteRequest{TaskId: task.GetId()}))
+		return err
+	}
+
+	if err := del(t1); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "W1, W2") ||
+		!strings.Contains(err.Error(), "djinn task group") {
+		t.Fatalf("delete T1 with its parts: %v", err)
+	}
+	if e.get(t, t1.GetId()).GetCode() != "T1" {
+		t.Fatal("T1 is gone")
+	}
+	for _, w := range []*planv1.Task{w1, w2} {
+		if _, err := e.group(t, w, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := del(t1); err != nil {
+		t.Fatalf("delete T1 regrouped: %v", err)
+	}
+	if _, err := e.group(t, w1, "T1"); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("W1 into T1, gone: %v", err)
+	}
+
+	// T1 and W2 deleted: the next azima is T2, the next work W3.
+	if err := del(w2); err != nil {
+		t.Fatal(err)
+	}
+	if t2 := e.azima(t, wishID, "Releases"); t2.GetCode() != "T2" {
+		t.Errorf("the next azima is %s, want T2", t2.GetCode())
+	}
+	if w3 := e.mustSpawn(t, wishID, "Last", "text last", &planv1.TaskServiceSpawnRequest{Later: true}); w3.GetCode() != "W3" {
+		t.Errorf("the next work is %s, want W3", w3.GetCode())
+	}
+	wish, err := store.Get[*planv1.Wish](ctx, e.db, wishID)
+	if err != nil || !slices.Equal(wish.GetRetiredCodes(), []string{"T1", "W2"}) {
+		t.Errorf("retired %q, %v", wish.GetRetiredCodes(), err)
+	}
+}
+
+// writeAzimaFile writes a plan file of the azima code in dir's plan folder.
+func writeAzimaFile(t *testing.T, dir, name, code string) {
+	t.Helper()
+	writeFile(t, dir, filepath.Join(plan.PlanDir, name), "---\ncode: "+code+"\nstatus: in-progress\n---\n\n# "+code+" · "+name+"\n")
+}
+
+// TestSyncKeepsTheAzimas: a plan file removed leaves its azima, and the tasks part of it, as they were; a file that
+// gives the code of an azima deleted makes no azima: a code is never given twice.
+func TestSyncKeepsTheAzimas(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	ctx := t.Context()
+	dir := t.TempDir()
+	writeAzimaFile(t, dir, "one.md", "T1")
+	writeAzimaFile(t, dir, "two.md", "T2")
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
+	wishID, _ := e.wish(t, dir)
+	sync := func() error {
+		_, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID}))
+		return err
+	}
+	if err := sync(); err != nil {
+		t.Fatal(err)
+	}
+	w1 := e.mustSpawn(t, wishID, "Work", "text work", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T2"})
+
+	// two.md absorbed into one.md: T2 stays, W1 with it.
+	if err := os.Remove(filepath.Join(dir, plan.PlanDir, "two.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sync(); err != nil {
+		t.Fatal(err)
+	}
+	t2 := e.get(t, w1.GetId()).GetPartOf()
+	if got, err := store.Get[*planv1.Task](ctx, e.db, t2); err != nil || got.GetCode() != "T2" {
+		t.Fatalf("W1 part of %q: %v, %v", t2, got, err)
+	}
+
+	// T2 deleted once W1 is regrouped: a new file with its code makes nothing.
+	if _, err := e.group(t, w1, "T1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.tasks.Delete(ctx, connect.NewRequest(&planv1.TaskServiceDeleteRequest{TaskId: t2})); err != nil {
+		t.Fatal(err)
+	}
+	writeAzimaFile(t, dir, "again.md", "T2")
+	if err := sync(); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "never given twice") ||
+		!strings.Contains(err.Error(), "T3 is free") {
+		t.Errorf("a file with a retired code: %v", err)
+	}
+	for _, task := range e.list(t, wishID) {
+		if task.GetCode() == "T2" {
+			t.Errorf("T2 given again: %v", task)
+		}
+	}
+}
+
+// TestRecoverUngroupsOrphans: djinn up finds tasks part of an azima that is gone (deleted before Delete refused it):
+// part of none from then on, journaled, the work saying so in its events; a task part of an azima that is still
+// there keeps it.
+func TestRecoverUngroupsOrphans(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID, gone := store.NewID(), store.NewID()
+	azima := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING}
+	kept := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W1", PartOf: azima.GetId(), Status: planv1.TaskStatus_TASK_STATUS_DONE}
+	orphan := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W2", PartOf: gone, Status: planv1.TaskStatus_TASK_STATUS_DONE}
+	sub := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T2", Kind: planv1.TaskKind_TASK_KIND_AZIMA, PartOf: gone,
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING}
+	err = db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("local", "test", azima); err != nil {
+			return err
+		}
+		for _, task := range []*planv1.Task{azima, kept, orphan, sub} {
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := up(t, home)
+	for task, want := range map[*planv1.Task]string{kept: azima.GetId(), orphan: "", sub: ""} {
+		if got := e.get(t, task.GetId()).GetPartOf(); got != want {
+			t.Errorf("%s part of %q, want %q", task.GetCode(), got, want)
+		}
+	}
+	if texts := storedTexts(t, e.db, orphan.GetId()); !slices.Equal(texts, []string{
+		"part of no azima: its azima " + gone[:8] + " is no longer one of the wish's"}) {
+		t.Errorf("W2's events %q", texts)
+	}
+	ungrouped, err := store.Commands(t.Context(), e.db, func(c store.Command) bool { return c.Method == methodUngroup })
+	if err != nil || len(ungrouped) != 2 {
+		t.Errorf("%d journaled, %v; want W2 and T2", len(ungrouped), err)
+	}
+}
