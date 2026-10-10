@@ -277,12 +277,26 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler) error {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		done <- srv.Shutdown(shutdown)
+		done <- shutdownServer(shutdown, srv)
 	}()
 	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return <-done
+}
+
+func shutdownServer(ctx context.Context, srv *http.Server) error {
+	if err := srv.Shutdown(ctx); err != nil {
+		if !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		// A streaming handler may keep its connection open after the request context is canceled. The graceful
+		// deadline has elapsed, so force-close those connections to let an orderly requested restart continue.
+		if closeErr := srv.Close(); closeErr != nil {
+			return errors.Join(err, closeErr)
+		}
+	}
+	return nil
 }
 
 // newServer returns the HTTP server of Serve, apart for the benchmarks.
