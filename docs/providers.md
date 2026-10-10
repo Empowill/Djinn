@@ -112,10 +112,10 @@ name, shared by the team, your own file winning: [team settings](team-settings.m
 | Field             | Claude (`--settings` inline, `--permission-mode`)                    | Codex (`thread/start`, `turn/start`, approvals)                                                   | Antigravity (command line, Djinn's agy project)     |
 | ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `edit`            | allow, or deny, `Edit`, `Write`, `NotebookEdit`                      | `sandbox: workspace-write` and turn `sandboxPolicy: workspaceWrite`, else `read-only`; file-change approvals accepted only with `edit`, inside the workspace | `--mode accept-edits`, and `write_file` grants of the worker's folder and Git's folders; without `edit`, refused |
-| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | `command(<p>)` grants; AUTO in a Git worktree adds Git's reading and commit commands |
-| `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | deny `command(<p>)` grants                          |
+| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | LISTED: `command(<p>)` grants; AUTO: `command(*)`, every command, in the sandbox still |
+| `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | deny `command(<p>)` grants; AUTO adds `git push`   |
 | `network`         | allow, or deny, `WebFetch` and `WebSearch`                           | `networkAccess` of the sandbox policy; a command approval asking for the network is declined without it | off: `--sandbox`, which only restricts more      |
-| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: runs as `accept-edits`, with the commit commands above |
+| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: runs as `accept-edits`, with `command(*)` above |
 
 What is verified and what is supposed:
 
@@ -151,9 +151,12 @@ What is verified and what is supposed:
   **Verified on real runs (agy 1.3.3, 2026-10-10, without `--dangerously-skip-permissions`):** agy takes no
   permission at launch, but `--project <id>` runs it in one of its projects, a JSON file in
   `~/.gemini/config/projects/`, whose `permissionGrants` it applies headless on top of the user's settings, untouched
-  (see [Antigravity](#antigravity)). So Djinn writes one project of its own per worktree. **Lost:** an auto mode
-  (AUTO grants the commit commands, nothing more); a command neither listed nor granted by the user's settings is
-  denied, and the denial ends the turn.
+  (see [Antigravity](#antigravity)). So Djinn writes one project of its own per worktree. In AUTO it grants
+  `command(*)`: any command runs, in the sandbox, but the denied ones (real runs, agy 1.3.3, 2026-10-10). **Lost:**
+  a review of what runs (agy has no auto mode: `command(*)` approves every command, where Claude's classifier reviews
+  them); a deny grant is a prefix, so `sh -c "git push"` or `git -C . push` gets past it (as past Claude's rules);
+  in LISTED, a command neither listed nor granted by the user's settings is denied, and the denial ends the turn;
+  in both, a command that asks to leave the sandbox (`unsandboxed`) is denied, and the denial ends the turn.
 
 ### Instructions: every agent reads `AGENTS.md`
 
@@ -419,7 +422,9 @@ text deltas of a step and says them once the step is done (a response cut by the
 with `[cut]`), counts thinking tokens as written ones, reads `AGY_ERROR` as an error and the denial notice
 as `permission denied: …`. Tokens only, no cost. A turn with `denied_actions`, or a run whose error output gave the
 denial notice, fails: "agy stopped: it cannot run commands headless (<the command>). Run this task with claude or
-codex."
+codex." A tool step that ends in `ERROR` does not end the turn: refused by a deny grant (its `tool_info.error` says
+"… Matches user-configured deny rule."), it is a `permission denied: <the command>` status, as Claude's; else its
+error is the tool's result.
 
 **Real case, 2026-10-08, agy 1.3.0 headless.** Three workers (W35, W36, W38) ran in a project with
 `.agents/permissions.txtpb` (so `--mode accept-edits`). Each read a few files, then stopped at a shell command:
@@ -461,16 +466,36 @@ permissions: id `djinn-<16 hex digits of the folder's SHA-256>`, the same for ev
 resumes a conversation in the project it began in; rewritten at each start, removed with the worktree. Its grants:
 `write_file` of the worker's folder and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
 the repository and the repository's common `.git`, read from the `.git` and `commondir` files, without running
-git), `command(<p>)` for each listed command, deny `command(<p>)` for each denied one, and in AUTO in a Git worktree
-`git status`, `git diff`, `git log`, `git show`, `git add` and `git commit`, since Djinn asks the worker to commit
-and agy has no auto mode. Djinn writes nothing else of agy's, reads nothing of it, and leaves the user's settings
-alone. The run recorded in `testdata/antigravity/commit.jsonl` wrote a file, then ran `git status`, `git add`, `git
-commit`, `git diff` and `git log` in the worktree, all sandboxed, nothing denied, no network granted.
+git), `command(<p>)` for each listed command in LISTED, `command(*)` in AUTO, and deny `command(<p>)` for each denied one,
+with `git push` always denied in AUTO, since pushing is the orchestrator's. Djinn writes nothing else of agy's,
+reads nothing of it, and leaves the user's settings alone. The run recorded in `testdata/antigravity/commit.jsonl`
+wrote a file, then ran `git status`, `git add`, `git commit`, `git diff` and `git log` in the worktree, all
+sandboxed, nothing denied, no network granted.
 
-**So today an agy worker with permissions runs Git and the listed commands in its worktree;** a command neither
-listed nor allowed by the user's own agy settings is still denied, and ends its turn: in LISTED, list what its
-tasks run, `git add` and `git commit` among them. Whether Djinn should pass `--dangerously-skip-permissions` is an
-open question (Q43).
+**AUTO: every command but the denied ones (real runs, agy 1.3.3, 2026-10-10, W226).** Before, AUTO granted only Git's
+reading and commit commands, and replayed workers stopped on `git grep`, `which …; echo …` and `npm ci`. Same
+scratch setup as above, the project granting `write_file` on the worktree and the repository's `.git`, `command(*)`,
+and denying `command(git push)`, the user's settings untouched (`wc`, `echo`, `printenv`, `npm` are not in them):
+
+- Without `command(*)`, `wc -l a.txt` is denied headless and ends the turn; with it, it runs. `command(*)` is
+  accepted (agy's log: `stored 3 allow, 1 deny grants`); agy's own guidance for skills calls it overly generic, but
+  it is a valid grant.
+- Pipes, `;`, `&&` and env prefixes run: `echo hello | wc -c`, `echo one; echo two`, `true && echo ok`, `FOO=bar
+  printenv FOO`, `env FOO=baz printenv FOO`.
+- The deny grant wins: `git push origin w1`, `echo x && git push origin w1` and `GIT_TRACE=0 git push origin w1` end
+  in `ERROR`, "Permission denied for command(…). Matches user-configured deny rule.", and the turn goes on to the
+  next command (recorded in `testdata/antigravity/auto.jsonl`). It is a prefix: `sh -c "git push origin w1"` and
+  `git -C . push origin w1` ran, and failed only for want of a remote.
+- The network stays off under `--sandbox`: `curl https://example.com` and `git ls-remote https://github.com/…` gave
+  "Could not resolve host". `command(*)` does not let a command out of the sandbox: asked to run `touch` outside the
+  worktree with `BypassSandbox: true`, agy asked for `unsandboxed`, which headless denied (ending the turn), and no
+  file was made. `npm ci` ran in the sandbox from npm's cache (its package was there); a package missing from the
+  cache would need the network, so a project whose workers install must allow it.
+
+**So today an agy worker in AUTO runs any command in its sandbox but the denied ones, `git push` always;** in
+LISTED, a command neither listed nor allowed by the user's own agy settings is still denied, and ends its turn:
+list what its tasks run, `git add` and `git commit` among them. Whether Djinn should pass
+`--dangerously-skip-permissions` is an open question (Q43).
 
 **Verified:** the command line, from `agy --help` (1.3.0); the stream's shapes, from the official headless
 documentation (`antigravity.google/docs/cli/headless`, read 2026-10-08); the field names `event`, `step_update`,
@@ -523,3 +548,5 @@ use a personal or licensed account.
 | Unknown lines           | `antigravity/unknown-line.jsonl`                  | by hand, **supposed** | each kept as `OTHER`, raw                                          |
 | Process dies mid-answer | `antigravity/process-dies.jsonl`                  | by hand, **supposed** | the cut text, error "agy ended before the end of its turn"         |
 | Second message          | `antigravity/two-turns.jsonl`                     | by hand, **supposed** | two turns in one process                                           |
+| Commit in a worktree    | `antigravity/commit.jsonl`                        | **real**, W208        | LISTED: a file written, Git run in the sandbox, nothing denied     |
+| AUTO, a command denied  | `antigravity/auto.jsonl`                          | **real**, W226        | compound commands run; `git push` is a `permission denied: …` status, the turn goes on, the task done |

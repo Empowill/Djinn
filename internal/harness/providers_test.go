@@ -306,6 +306,31 @@ func catalog() []catalogCase {
 					t.Errorf("grants = %+v", g)
 				}
 			}},
+		// AUTO: agy runs any command, compound ones included, in its sandbox; a deny grant refuses git push, and the
+		// turn goes on (real run, agy 1.3.3).
+		{provider: "antigravity", fixture: "auto",
+			spec: Spec{Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL",
+				"TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "STATUS", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, args, _ string) {
+				if got := texts(events, "TOOL_RESULT"); !slices.Equal(got, []string{"6", "one\r\ntwo", "ok", "bar", "baz", "after-push"}) {
+					t.Errorf("results = %q", got)
+				}
+				if got := texts(events, "STATUS"); len(got) != 2 || got[1] != "permission denied: git push origin w1" {
+					t.Errorf("statuses = %q", got)
+				}
+				list := strings.Split(args, "\n")
+				i := slices.Index(list, "--project")
+				dir, _ := agyProjectsDir()
+				b, err := os.ReadFile(filepath.Join(dir, list[i+1]+".json"))
+				var f agyProjectFile
+				if err != nil || json.Unmarshal(b, &f) != nil {
+					t.Fatalf("project %s: %v", b, err)
+				}
+				if g := f.PermissionGrants.PermissionGrants; !slices.Contains(g.Allow, "command(*)") || !slices.Equal(g.Deny, []string{"command(git push)"}) {
+					t.Errorf("grants = %+v", g)
+				}
+			}},
 		{provider: "antigravity", fixture: "two-turns", send: []string{"And then?"},
 			want: []string{"STATUS", "TEXT", "USAGE", "TEXT", "USAGE"},
 			check: func(t *testing.T, _ []Event, _, input string) {

@@ -46,7 +46,7 @@ type Antigravity struct {
 // With permissions, edit becomes --mode accept-edits, and network off --sandbox, which only restricts more. The rest
 // goes in an agy project of Djinn's own, given with --project (agyProject): agy takes no list of commands nor of
 // writable folders at launch. agy 1.3.3 has no auto mode on its command line (--mode takes accept-edits or plan):
-// AUTO runs as accept-edits.
+// AUTO runs as accept-edits, its project allowing every command but the denied ones.
 func (a Antigravity) args(spec Spec) ([]string, error) {
 	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 	if spec.ReadOnly {
@@ -136,9 +136,12 @@ type agyGrants struct {
 	Deny  []string `json:"deny,omitempty"`
 }
 
-// agyCommitCommands are what an agy worker in AUTO may run besides what the project lists, in a Git worktree: Djinn
-// asks it to commit its work, and agy has no auto mode to decide. The project's denied_commands still win.
-var agyCommitCommands = []string{"git status", "git diff", "git log", "git show", "git add", "git commit"}
+// agyEveryCommand is the grant of every command: in AUTO, agy runs any command but the denied ones, as Claude does,
+// agy having no auto mode of its own.
+const agyEveryCommand = "command(*)"
+
+// agyAlwaysDenied are denied to an agy worker in AUTO whatever the project denies: pushing is the orchestrator's.
+var agyAlwaysDenied = []string{"git push"}
 
 // agyProject is the agy project of a worker with permissions: what its permissions give, as agy's grants (real
 // runs, agy 1.3.3, 2026-10-10, docs/providers.md).
@@ -147,8 +150,9 @@ var agyCommitCommands = []string{"git status", "git diff", "git log", "git show"
 // the workspace's trust or --add-dir; it hides the rest of the home folder, the repository of a linked worktree
 // among them, so that git fails and agy asks to run it unsandboxed, which a headless run cannot. A write_file grant
 // mounts its folder writable in the sandbox: edit grants the worker's folder and Git's folders for it (agyGitDirs).
-// A command(<p>) grant lets a command starting with p run without approval; a deny grant wins over any allow one,
-// the user's settings' included, and its command fails without ending the turn.
+// A command(<p>) grant lets a command starting with p run without approval, command(*) any command, in the sandbox
+// still; a deny grant wins over any allow one, the user's settings' and command(*) included, in every part of a
+// compound command (`a && git push`) and after an env prefix, and its command fails without ending the turn.
 func agyProject(spec Spec) agyProjectFile {
 	p := spec.Permissions
 	f := agyProjectFile{ID: agyProjectID(spec.Dir), Name: "Djinn " + filepath.Base(spec.Dir)}
@@ -159,18 +163,20 @@ func agyProject(spec Spec) agyProjectFile {
 			g.Allow = append(g.Allow, "write_file("+d+")")
 		}
 	}
-	commands := slices.Clone(p.GetCommands())
-	if effectiveMode(p) == djinnv1.Mode_MODE_AUTO && len(gitDirs) > 0 {
-		for _, c := range agyCommitCommands {
-			if !slices.Contains(commands, c) {
-				commands = append(commands, c)
+	denied := slices.Clone(p.GetDeniedCommands())
+	if effectiveMode(p) == djinnv1.Mode_MODE_AUTO {
+		g.Allow = append(g.Allow, agyEveryCommand)
+		for _, c := range agyAlwaysDenied {
+			if !slices.Contains(denied, c) {
+				denied = append(denied, c)
 			}
 		}
+	} else {
+		for _, c := range p.GetCommands() {
+			g.Allow = append(g.Allow, "command("+c+")")
+		}
 	}
-	for _, c := range commands {
-		g.Allow = append(g.Allow, "command("+c+")")
-	}
-	for _, c := range p.GetDeniedCommands() {
+	for _, c := range denied {
 		g.Deny = append(g.Deny, "command("+c+")")
 	}
 	f.PermissionGrants.PermissionGrants = g
@@ -266,7 +272,7 @@ type agyLine struct {
 type agyStep struct {
 	ConversationID string `json:"conversation_id"`
 	StepIndex      int    `json:"step_index"`
-	State          string `json:"state"` // ACTIVE, DONE
+	State          string `json:"state"` // ACTIVE, DONE, ERROR
 	StepType       string `json:"step_type"`
 	ToolName       string `json:"tool_name"`
 	TextDelta      string `json:"text_delta"`
@@ -274,6 +280,10 @@ type agyStep struct {
 		Name       string          `json:"name"`
 		Parameters json.RawMessage `json:"parameters"`
 		Output     *string         `json:"output"`
+		// Error is why a tool step ended in ERROR: a command refused by a deny grant, for one (real runs, agy 1.3.3).
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
 	} `json:"tool_info"`
 }
 
@@ -365,12 +375,15 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
 			p.forget(s.StepIndex)
 		}
 	case "tool":
-		name, params, output := s.ToolName, json.RawMessage(nil), (*string)(nil)
+		name, params, output, failure := s.ToolName, json.RawMessage(nil), (*string)(nil), ""
 		if ti := s.ToolInfo; ti != nil {
 			if ti.Name != "" {
 				name = ti.Name
 			}
 			params, output = ti.Parameters, ti.Output
+			if ti.Error != nil {
+				failure = ti.Error.Message
+			}
 		}
 		if !p.toolsIn[s.StepIndex] {
 			if p.toolsIn == nil {
@@ -387,6 +400,18 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
 				p.lastAnswered = p.lastAnswered || s.StepIndex == p.lastStep
 			}
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
+			delete(p.toolsIn, s.StepIndex)
+		}
+		if s.State == "ERROR" {
+			// The step failed and the turn goes on: a deny grant refused the command, or the tool failed.
+			if s.StepIndex == p.lastStep {
+				p.lastAnswered = true
+			}
+			if strings.Contains(failure, agyDenyRule) {
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+agyCall(name, params))
+			} else {
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, strings.TrimSpace(failure))
+			}
 			delete(p.toolsIn, s.StepIndex)
 		}
 	default:
@@ -483,6 +508,11 @@ const agyErrorPrefix = "AGY_ERROR:"
 // `… a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied. …`
 // (real runs, agy 1.3.0).
 const agyDenied = "headless mode cannot prompt for"
+
+// agyDenyRule is in the error of a tool step a deny grant refused: `permission check failed for command "git push
+// origin w1": Permission denied for command(git push origin w1). Matches user-configured deny rule.` (real runs, agy
+// 1.3.3), a project's deny grant included.
+const agyDenyRule = "deny rule"
 
 // agyDeniedPermission finds the permission in the denial notice.
 var agyDeniedPermission = regexp.MustCompile(`required the "([^"]+)" permission`)
