@@ -2,9 +2,12 @@ package harness
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -12,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 )
 
@@ -20,7 +24,8 @@ import (
 // process stays open between turns, and ends once every message has its result.
 //
 // Djinn passes its environment on and sets nothing about signing in: agy signs in by itself (decision Q20). Djinn
-// never reads agy's configuration, its tokens, nor the Application Default Credentials file.
+// never reads agy's configuration, its tokens, nor the Application Default Credentials file. It writes one thing of
+// agy's: a project of its own per worktree, for a worker with permissions (agyProject).
 type Antigravity struct {
 	// Command is the agy program; "agy", found on the PATH, by default.
 	Command string
@@ -38,11 +43,10 @@ type Antigravity struct {
 // not documented. agy runs outside a project once a real capture proves that nothing is written or run. For the
 // same reason, permissions without edit are refused.
 //
-// With permissions, edit becomes --mode accept-edits, and network off --sandbox, which only restricts more. agy
-// takes no list of commands at launch, and its headless runs do not apply its allow rules: a command that needs
-// an approval is denied, listed or not, and the denial ends agy's turn (real runs, agy 1.3.0, 2026-10-08): the
-// task fails. agy 1.3.0 has no auto mode on its command line (--mode takes accept-edits or plan): AUTO runs as
-// accept-edits.
+// With permissions, edit becomes --mode accept-edits, and network off --sandbox, which only restricts more. The rest
+// goes in an agy project of Djinn's own, given with --project (agyProject): agy takes no list of commands nor of
+// writable folders at launch. agy 1.3.3 has no auto mode on its command line (--mode takes accept-edits or plan):
+// AUTO runs as accept-edits.
 func (a Antigravity) args(spec Spec) ([]string, error) {
 	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 	if spec.ReadOnly {
@@ -57,6 +61,7 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 		if !p.GetNetwork() {
 			args = append(args, "--sandbox")
 		}
+		args = append(args, "--project", agyProjectID(spec.Dir))
 	}
 	if spec.SkillsDir != "" {
 		// A workspace folder's .agents/skills is a customization root (the documentation in the agy 1.3.0 binary).
@@ -87,12 +92,164 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if err != nil {
 		return nil, err
 	}
+	if spec.Permissions != nil {
+		if err := writeAgyProject(spec); err != nil {
+			return nil, err
+		}
+	}
 	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: &agyParser{}, encode: agyMessageLine})
 }
 
 // agyMessageLine is a user message as agy reads it in stream-json.
 func agyMessageLine(text string) ([]byte, error) {
 	return json.Marshal(map[string]any{"event": "user", "message": map[string]any{"content": text}})
+}
+
+// agyProjectsDir is the folder of agy's projects, ~/.gemini/config/projects; a test points it elsewhere.
+var agyProjectsDir = func() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".gemini", "config", "projects"), nil
+}
+
+// agyProjectID is the id of the agy project of a worker in dir: the same for every worker of the folder, as agy
+// resumes a conversation in the project it began in.
+func agyProjectID(dir string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(dir)))
+	return "djinn-" + hex.EncodeToString(sum[:8])
+}
+
+// agyProjectFile is an agy project, as agy reads it in its projects folder (the descriptor of its project_pb, agy
+// 1.3.3). Its other fields, settings among them, are left out: the command line does not apply a project's settings.
+type agyProjectFile struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	PermissionGrants struct {
+		PermissionGrants agyGrants `json:"permissionGrants"`
+	} `json:"permissionGrants"`
+}
+
+type agyGrants struct {
+	Allow []string `json:"allow"`
+	Deny  []string `json:"deny,omitempty"`
+}
+
+// agyCommitCommands are what an agy worker in AUTO may run besides what the project lists, in a Git worktree: Djinn
+// asks it to commit its work, and agy has no auto mode to decide. The project's denied_commands still win.
+var agyCommitCommands = []string{"git status", "git diff", "git log", "git show", "git add", "git commit"}
+
+// agyProject is the agy project of a worker with permissions: what its permissions give, as agy's grants (real
+// runs, agy 1.3.3, 2026-10-10, docs/providers.md).
+//
+// agy's sandbox (--sandbox) shows the workspace read-only to commands, and every .git folder read-only, whatever
+// the workspace's trust or --add-dir; it hides the rest of the home folder, the repository of a linked worktree
+// among them, so that git fails and agy asks to run it unsandboxed, which a headless run cannot. A write_file grant
+// mounts its folder writable in the sandbox: edit grants the worker's folder and Git's folders for it (agyGitDirs).
+// A command(<p>) grant lets a command starting with p run without approval; a deny grant wins over any allow one,
+// the user's settings' included, and its command fails without ending the turn.
+func agyProject(spec Spec) agyProjectFile {
+	p := spec.Permissions
+	f := agyProjectFile{ID: agyProjectID(spec.Dir), Name: "Djinn " + filepath.Base(spec.Dir)}
+	g := agyGrants{Allow: []string{}}
+	gitDirs := agyGitDirs(spec.Dir)
+	if p.GetEdit() {
+		for _, d := range append([]string{spec.Dir}, gitDirs...) {
+			g.Allow = append(g.Allow, "write_file("+d+")")
+		}
+	}
+	commands := slices.Clone(p.GetCommands())
+	if effectiveMode(p) == djinnv1.Mode_MODE_AUTO && len(gitDirs) > 0 {
+		for _, c := range agyCommitCommands {
+			if !slices.Contains(commands, c) {
+				commands = append(commands, c)
+			}
+		}
+	}
+	for _, c := range commands {
+		g.Allow = append(g.Allow, "command("+c+")")
+	}
+	for _, c := range p.GetDeniedCommands() {
+		g.Deny = append(g.Deny, "command("+c+")")
+	}
+	f.PermissionGrants.PermissionGrants = g
+	return f
+}
+
+// agyGitDirs are Git's folders for the work tree holding dir: its .git folder; in a linked worktree, the folder
+// its .git file names and the repository's common folder (the commondir file there), when not inside it. None
+// outside Git.
+func agyGitDirs(dir string) []string {
+	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
+		dotGit := filepath.Join(d, ".git")
+		info, err := os.Stat(dotGit)
+		switch {
+		case err == nil && info.IsDir():
+			return []string{dotGit}
+		case err == nil:
+			b, err := os.ReadFile(dotGit)
+			gitDir, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
+			if err != nil || !ok {
+				return nil
+			}
+			gitDir = absFrom(d, strings.TrimSpace(gitDir))
+			b, err = os.ReadFile(filepath.Join(gitDir, "commondir"))
+			if err != nil {
+				return []string{gitDir}
+			}
+			common := absFrom(gitDir, strings.TrimSpace(string(b)))
+			if rel, err := filepath.Rel(common, gitDir); err == nil && filepath.IsLocal(rel) {
+				return []string{common}
+			}
+			return []string{common, gitDir}
+		}
+		if filepath.Dir(d) == d {
+			return nil
+		}
+	}
+}
+
+// absFrom is path, absolute, relative to dir when it is not.
+func absFrom(dir, path string) string {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	return filepath.Clean(path)
+}
+
+// writeAgyProject writes the agy project of spec's worker in agy's projects folder, over the one an earlier worker
+// of its folder wrote. Djinn writes nothing else of agy's, and reads nothing of it.
+func writeAgyProject(spec Spec) error {
+	dir, err := agyProjectsDir()
+	if err != nil {
+		return fmt.Errorf("agy's projects folder: %w", err)
+	}
+	f := agyProject(spec)
+	b, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("agy's projects folder: %w", err)
+	}
+	path := filepath.Join(dir, f.ID+".json")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write agy's project: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write agy's project: %w", err)
+	}
+	return nil
+}
+
+// forgetAgyProject removes the agy project of the workers in dir, when there is one: its folder is gone.
+func forgetAgyProject(dir string) {
+	if projects, err := agyProjectsDir(); err == nil {
+		_ = os.Remove(filepath.Join(projects, agyProjectID(dir)+".json"))
+	}
 }
 
 // agyLine is a line of agy's stream-json output; only the fields Djinn reads.

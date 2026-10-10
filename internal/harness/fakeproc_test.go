@@ -48,7 +48,16 @@ func TestMain(m *testing.M) {
 	if provider := os.Getenv("DJINN_FAKE_PROVIDER"); provider != "" {
 		os.Exit(fakeProvider(provider))
 	}
-	os.Exit(m.Run())
+	// The agy projects the tests' workers get go to a folder of the tests, never to the user's.
+	projects, err := os.MkdirTemp("", "djinn-agy-projects-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	agyProjectsDir = func() (string, error) { return projects, nil }
+	code := m.Run()
+	_ = os.RemoveAll(projects)
+	os.Exit(code)
 }
 
 // fakePrefix plays a prefix, as systemd-run --scope does: the command after its own arguments runs with its

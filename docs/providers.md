@@ -109,13 +109,13 @@ name, shared by the team, your own file winning: [team settings](team-settings.m
 
 ### How each agent receives it
 
-| Field             | Claude (`--settings` inline, `--permission-mode`)                    | Codex (`thread/start`, `turn/start`, approvals)                                                   | Antigravity (command line)                          |
+| Field             | Claude (`--settings` inline, `--permission-mode`)                    | Codex (`thread/start`, `turn/start`, approvals)                                                   | Antigravity (command line, Djinn's agy project)     |
 | ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `edit`            | allow, or deny, `Edit`, `Write`, `NotebookEdit`                      | `sandbox: workspace-write` and turn `sandboxPolicy: workspaceWrite`, else `read-only`; file-change approvals accepted only with `edit`, inside the workspace | `--mode accept-edits`; without `edit`, refused      |
-| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | **lost**: none at launch                           |
-| `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | **lost**                                            |
+| `edit`            | allow, or deny, `Edit`, `Write`, `NotebookEdit`                      | `sandbox: workspace-write` and turn `sandboxPolicy: workspaceWrite`, else `read-only`; file-change approvals accepted only with `edit`, inside the workspace | `--mode accept-edits`, and `write_file` grants of the worker's folder and Git's folders; without `edit`, refused |
+| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | `command(<p>)` grants; AUTO in a Git worktree adds Git's reading and commit commands |
+| `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | deny `command(<p>)` grants                          |
 | `network`         | allow, or deny, `WebFetch` and `WebSearch`                           | `networkAccess` of the sandbox policy; a command approval asking for the network is declined without it | off: `--sandbox`, which only restricts more      |
-| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: **lost**, runs as `accept-edits`              |
+| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: runs as `accept-edits`, with the commit commands above |
 
 What is verified and what is supposed:
 
@@ -147,10 +147,13 @@ What is verified and what is supposed:
   https://github.com/...` worked); and a command run with `BypassSandbox: true` ran on the host without any prompt (a
   file created in the home folder). So `--dangerously-skip-permissions` approves both the network asks and the way
   out of the sandbox: with it, `--sandbox` is no limit. **Supposed:** that `toolPermission: proceed-in-sandbox` in
-  agy's settings runs sandboxed commands headless and soft-denies the way out (documented, not tried); whether
-  allow rules apply headless (its documentation says yes, its binary's notice says "Settings allow-rules do not
-  apply"). **Lost:** commands at launch (no flag; on real runs a denied command ends the turn, and the task fails, see
-  [Antigravity](#antigravity)), denied commands, AUTO.
+  agy's settings runs sandboxed commands headless and soft-denies the way out (documented, not tried).
+  **Verified on real runs (agy 1.3.3, 2026-10-10, without `--dangerously-skip-permissions`):** agy takes no
+  permission at launch, but `--project <id>` runs it in one of its projects, a JSON file in
+  `~/.gemini/config/projects/`, whose `permissionGrants` it applies headless on top of the user's settings, untouched
+  (see [Antigravity](#antigravity)). So Djinn writes one project of its own per worktree. **Lost:** an auto mode
+  (AUTO grants the commit commands, nothing more); a command neither listed nor granted by the user's settings is
+  denied, and the denial ends the turn.
 
 ### Instructions: every agent reads `AGENTS.md`
 
@@ -400,7 +403,8 @@ cheapest model>`, then `djinn task watch <task> --raw --json > turn.jsonl`. A se
 
 ## Antigravity
 
-**Command.** `agy --input-format stream-json --output-format stream-json`, then `--conversation <id>` to resume,
+**Command.** `agy --input-format stream-json --output-format stream-json`, then, with permissions, `--mode
+accept-edits`, `--sandbox` without the network and `--project <Djinn's agy project>`; `--conversation <id>` to resume,
 `--model`; outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
 input replaces it. Each message on the input is `{"event":"user","message":{"content":"…"}}` and runs one turn;
 the input is closed once every message has its result. agy cannot fork a conversation, and has no spending cap.
@@ -426,9 +430,47 @@ ended its turn at once: the denied step without output, a result with status `SU
 done with no change in their worktrees. Such a run now fails. In W36, `git status` and `cat .git` ran before
 `go tool task --list` was denied: which commands agy lets through is its own decision, listed in `.agents/` or not.
 
-**So today an agy worker can read and edit files, but cannot run a command:** it suits only edit-only tasks, with
-no test, build nor search by shell to run. Give any other task to claude or codex. Whether Djinn should pass
-`--dangerously-skip-permissions` is an open question (Q43).
+**Real case, 2026-10-10, agy 1.3.2.** W198 and W207 (gemini-3.8-flash-high) failed at their first command, `git
+status`: "agy stopped: headless, it cannot ask for the "unsandboxed" permission (git status)". `git status` was
+allowed by the user's agy settings; the sandbox was the cause.
+
+**What agy's sandbox lets through (real runs, agy 1.3.3, 2026-10-10).** In a scratch repository under the home
+folder, with a linked worktree beside it as Djinn makes them, agy started as Djinn starts it (`--mode accept-edits
+--sandbox`, stream-json, never `--dangerously-skip-permissions`), each prompt one line ("Run git status, then git
+log -1, then stop."), the mount table read from inside the sandbox (`grep … /proc/self/mountinfo`):
+
+- The sandbox mounts the workspace **read-only** for commands (agy's own file tools still write), and every `.git`
+  read-only (its changelog: "read-only rather than writable access to a Git repository's `.git` directory"). The
+  repository of a linked worktree, outside the workspace, is not mounted at all: `git status` gives `fatal: not a
+  git repository: …/.git/worktrees/w1`, then agy asks for `unsandboxed`, which a headless run denies.
+- `--add-dir <repository>/.git` (or its `worktrees/<name>` and `objects`, or the repository's root) mounts it
+  **read-only**: `git status` and `git log` work, `git add` fails on `index.lock: Read-only file system`. A
+  workspace listed in `trustedWorkspaces` stays read-only. `GIT_DIR` and `GIT_COMMON_DIR` only tell git where to
+  look: what the mount table shows absent or read-only stays so (reasoned, not run). In a plain repository (no worktree), `git add` fails the same way on its own `.git`.
+- A `write_file(<folder>)` grant mounts the folder **writable** in the sandbox, `.git` included. A
+  `command(<prefix>)` grant lets a command starting with the prefix run without approval; a deny grant wins over
+  any allow, the user's settings' included, and its command fails (step `ERROR`) without ending the turn.
+- Grants are read from the user's `settings.json` (`permissions.allow`), or from an agy project:
+  `~/.gemini/config/projects/<id>.json` with `{"id", "name", "permissionGrants": {"permissionGrants": {"allow": [],
+  "deny": []}}}` (field names from the project descriptor in the binary), chosen with `--project <id>`; agy's log
+  says `ApplyProjectPermissionGrants: stored N allow, M deny grants`. A project's `settings` (`autoExecutionPolicy:
+  …PROCEED_IN_SANDBOX`) are not applied by the command line, and `ANTIGRAVITY_PERM_GRANTS` does nothing to it.
+
+**So Djinn writes an agy project per worktree** (`agyProject`, `internal/harness/agy.go`), for a worker with
+permissions: id `djinn-<16 hex digits of the folder's SHA-256>`, the same for every worker of the folder, as agy
+resumes a conversation in the project it began in; rewritten at each start, removed with the worktree. Its grants:
+`write_file` of the worker's folder and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
+the repository and the repository's common `.git`, read from the `.git` and `commondir` files, without running
+git), `command(<p>)` for each listed command, deny `command(<p>)` for each denied one, and in AUTO in a Git worktree
+`git status`, `git diff`, `git log`, `git show`, `git add` and `git commit`, since Djinn asks the worker to commit
+and agy has no auto mode. Djinn writes nothing else of agy's, reads nothing of it, and leaves the user's settings
+alone. The run recorded in `testdata/antigravity/commit.jsonl` wrote a file, then ran `git status`, `git add`, `git
+commit`, `git diff` and `git log` in the worktree, all sandboxed, nothing denied, no network granted.
+
+**So today an agy worker with permissions runs Git and the listed commands in its worktree;** a command neither
+listed nor allowed by the user's own agy settings is still denied, and ends its turn: in LISTED, list what its
+tasks run, `git add` and `git commit` among them. Whether Djinn should pass `--dangerously-skip-permissions` is an
+open question (Q43).
 
 **Verified:** the command line, from `agy --help` (1.3.0); the stream's shapes, from the official headless
 documentation (`antigravity.google/docs/cli/headless`, read 2026-10-08); the field names `event`, `step_update`,

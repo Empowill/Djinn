@@ -276,6 +276,36 @@ func catalog() []catalogCase {
 					t.Errorf("cut text = %q", got)
 				}
 			}},
+		// A worker with permissions commits in a linked worktree, its repository outside agy's workspace: Djinn's agy
+		// project grants the folders and the commands (real run, agy 1.3.3).
+		{provider: "antigravity", fixture: "commit",
+			spec: Spec{Permissions: &djinnv1.Permissions{Edit: true, Commands: []string{"git add", "git commit"}, DeniedCommands: []string{"git push"}}},
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT",
+				"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, args, _ string) {
+				if got := texts(events, "TOOL_RESULT"); !slices.Contains(got, "[w1 fea0a4e] b\r\n 1 file changed, 1 insertion(+)\r\n create mode 100644 b.txt") {
+					t.Errorf("results = %q", got)
+				}
+				list := strings.Split(args, "\n")
+				i := slices.Index(list, "--project")
+				if i < 0 || !slices.Contains(list, "--sandbox") {
+					t.Fatalf("args = %q", args)
+				}
+				dir, _ := agyProjectsDir()
+				b, err := os.ReadFile(filepath.Join(dir, list[i+1]+".json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var f agyProjectFile
+				if err := json.Unmarshal(b, &f); err != nil || f.ID != list[i+1] {
+					t.Fatalf("project %s: %v", b, err)
+				}
+				g := f.PermissionGrants.PermissionGrants
+				if len(g.Allow) != 3 || !strings.HasPrefix(g.Allow[0], "write_file(") || g.Allow[2] != "command(git commit)" ||
+					!slices.Equal(g.Deny, []string{"command(git push)"}) {
+					t.Errorf("grants = %+v", g)
+				}
+			}},
 		{provider: "antigravity", fixture: "two-turns", send: []string{"And then?"},
 			want: []string{"STATUS", "TEXT", "USAGE", "TEXT", "USAGE"},
 			check: func(t *testing.T, _ []Event, _, input string) {
@@ -513,10 +543,11 @@ func TestProviderArgs(t *testing.T) {
 			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--conversation", "c1", "--model", "gemini-3.8-flash-medium"}, false},
 		{Spec{ReadOnly: true}, nil, true},
 		{Spec{Resume: "c1", Fork: true}, nil, true},
-		{Spec{Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
-			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--sandbox"}, false},
-		{Spec{Permissions: &djinnv1.Permissions{Edit: true, Network: true}},
-			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits"}, false},
+		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--sandbox",
+				"--project", agyProjectID("/w")}, false},
+		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Network: true}},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--project", agyProjectID("/w")}, false},
 		{Spec{Permissions: &djinnv1.Permissions{Commands: []string{"git status"}}}, nil, true},
 	}
 	for _, tt := range agy {
