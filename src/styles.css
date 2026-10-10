@@ -130,6 +130,7 @@ button {
   background: transparent;
 }
 .app {
+  --sidebar-width: 222px;
   display: flex;
   width: 100vw;
   height: 100vh;
@@ -137,7 +138,7 @@ button {
   overflow: hidden;
 }
 .sidebar {
-  width: 222px;
+  width: var(--sidebar-width);
   flex-shrink: 0;
   background: var(--n-14);
   border-right: 1px solid var(--line);
@@ -443,6 +444,65 @@ html[data-theme="light"] .wordmark-period {
   flex-shrink: 0;
 }
 
+.page-header {
+  position: relative;
+  z-index: 6;
+  height: 64px;
+  gap: 12px;
+  margin-left: calc(-1 * var(--sidebar-width));
+  width: calc(100% + var(--sidebar-width));
+  padding-left: 100px;
+  border-bottom: 0;
+}
+.sidebar-collapsed .page-header {
+  margin-left: 0;
+  width: 100%;
+}
+.page-header > .breadcrumbs {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.page-header > .breadcrumbs > strong {
+  min-width: 0;
+  max-width: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+.page-header > .topbar-actions {
+  flex: 0 0 auto;
+  gap: 12px;
+}
+.page-header-action {
+  flex: 0 0 32px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  gap: 6px;
+}
+.app .page-header-action.button.secondary {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  border-radius: var(--radius-control, 7px);
+}
+.app .page-header-action.button.secondary:hover {
+  border-color: transparent;
+  background: var(--surface-raised);
+  color: var(--accent);
+}
+.page-header-action svg {
+  width: 16px;
+  height: 16px;
+}
+.page-header-action.wish-provider {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0 8px;
+  font-size: var(--font-size-body, 12px);
+}
 .button {
   display: inline-flex;
   align-items: center;
@@ -1359,8 +1419,8 @@ html[data-theme="light"] .wordmark-period {
 }
 
 @media (min-width: 1750px) {
-  .sidebar {
-    width: 240px;
+  .app {
+    --sidebar-width: 240px;
   }
 
   .overview-content {
@@ -1392,8 +1452,10 @@ html[data-theme="light"] .wordmark-period {
   }
 }
 @media (max-width: 1300px) {
+  .app {
+    --sidebar-width: 197px;
+  }
   .sidebar {
-    width: 197px;
     padding: 0 11px;
   }
   .version-tag {
@@ -1474,8 +1536,8 @@ html[data-theme="light"] .wordmark-period {
   }
 }
 @media (max-width: 1080px) {
-  .sidebar {
-    width: 190px;
+  .app {
+    --sidebar-width: 190px;
   }
   .overview-content {
     padding: 0 30px 25px;
@@ -1507,13 +1569,18 @@ html[data-theme="light"] .wordmark-period {
     display: none;
   }
 
+  .page-header-action.wish-provider > span {
+    display: inline;
+  }
   .question-context {
     font-size: var(--font-size-body, 12px);
   }
 }
 @media (max-width: 820px) {
+  .app {
+    --sidebar-width: 67px;
+  }
   .sidebar {
-    width: 67px;
     padding: 0 10px;
   }
   .sidebar-brand-main .brand {
@@ -1969,6 +2036,10 @@ html.native-mac [role="button"] {
 }
 .app-toolbar-toggle {
   flex: 0 0 32px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 6px;
 }
 html.native-mac .app-toolbar {
   top: 6px;
@@ -1983,13 +2054,45 @@ html.native-mac .app-toolbar-toggle {
   height: 20px;
   padding: 2px;
 }
+html.native-mac .page-header {
+  height: 32px;
+  padding-left: 166px;
+}
+html.native-mac .page-header-action {
+  flex-basis: 20px;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 2px;
+}
+html.native-mac .page-header-action.wish-provider {
+  flex-basis: auto;
+  width: auto;
+  padding: 2px 5px;
+}
+.app .page-header {
+  padding-left: max(calc(var(--sidebar-width) + 26px), 100px);
+}
+html.native-mac .app .page-header {
+  padding-left: max(calc(var(--sidebar-width) + 26px), 166px);
+}
+.app.sidebar-collapsed .page-header {
+  padding-left: 100px;
+}
+html.native-mac .app.sidebar-collapsed .page-header {
+  padding-left: 166px;
+}
+@media (max-width: 540px) {
+  .app .page-header-action.wish-provider > span {
+    display: none;
+  }
+}
 /* Room for the toolbar above the sidebar's brand. */
 html:not(.native-mac) .sidebar {
   padding-top: 28px;
 }
 .sidebar {
-  --sidebar-open-width: 222px;
-  width: var(--sidebar-open-width);
+  width: var(--sidebar-width);
   transition:
     width 180ms cubic-bezier(0.22, 1, 0.36, 1),
     padding 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -2024,34 +2127,5 @@ html:not(.native-mac) .sidebar {
   from {
     opacity: 0;
     transform: translateX(-12px);
-  }
-}
-/* In the macOS window the toggle sits over the main view when the sidebar is a rail: the topbar starts after it. */
-html.native-mac .sidebar-collapsed .main-shell .topbar {
-  padding-left: 67px;
-}
-@media (max-width: 820px) {
-  html.native-mac .main-shell .topbar {
-    padding-left: 67px;
-  }
-}
-@media (min-width: 1750px) {
-  .sidebar {
-    --sidebar-open-width: 240px;
-  }
-}
-@media (max-width: 1300px) {
-  .sidebar {
-    --sidebar-open-width: 197px;
-  }
-}
-@media (max-width: 1080px) {
-  .sidebar {
-    --sidebar-open-width: 190px;
-  }
-}
-@media (max-width: 820px) {
-  .sidebar {
-    --sidebar-open-width: 67px;
   }
 }

@@ -133,6 +133,7 @@ import {
   WishTitle,
   recordedAgent,
 } from "./wish-head";
+import { PageHeader, PageHeaderAction } from "./page-header";
 
 // Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
 export interface Opening {
@@ -641,102 +642,104 @@ export function WishView({
 
   return (
     <div className="wish-view review">
-      <header className="topbar">
-        <div className="breadcrumbs">
-          {projects.map((project) => (
-            <span
-              className="header-project"
-              key={project.id}
-              title={project.directory || t("project.no_folder")}
-            >
-              {project.name}
-              <ChevronRight size={12} aria-hidden="true" />
-            </span>
-          ))}
-          <strong>{wish.title}</strong>
-        </div>
-        <OperatingLoad />
-        <div className="topbar-actions">
-          {granted ? (
-            <button
-              className="button secondary small"
+      <PageHeader
+        actions={
+          <>
+            <OperatingLoad />
+            {granted ? (
+              <button
+                className="button secondary small"
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.activate({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Play size={14} />
+                <span>{t("wish.reopen")}</span>
+              </button>
+            ) : isActive(wish) ? (
+              <button
+                className="button secondary small"
+                title={t("wish.pause_detail")}
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.pause({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Pause size={14} />
+                <span>{t("wish.pause")}</span>
+              </button>
+            ) : (
+              <button
+                className="button accent small"
+                title={t("wish.activate_detail", { max: MAX_ACTIVE })}
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.activate({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Play size={14} />
+                <span>{t("wish.activate")}</span>
+              </button>
+            )}
+            <LeadButton
+              recorded={recordedAgent(leadRecord)}
+              loadAgents={async () =>
+                (await clients.ui.getEnvironment({})).providers
+              }
+              onLead={() => lead()}
+              onPick={(provider) => lead(provider)}
+            />
+            <PageHeaderAction
+              label={t("app.share")}
               onClick={() =>
                 quiet(
-                  act(
-                    () => clients.wishes.activate({ wishId: wish.id }),
-                    [Change.WISH],
-                  ),
+                  (async () => {
+                    const res = await clients.wishes.export({
+                      wishId: wish.id,
+                    });
+                    onToast(t("wish.exported", { file: res.file }));
+                  })().catch((error) => onToast(message(error))),
                 )
               }
             >
-              <Play size={14} />
-              <span>{t("wish.reopen")}</span>
-            </button>
-          ) : isActive(wish) ? (
+              <Download size={16} aria-hidden="true" />
+            </PageHeaderAction>
             <button
-              className="button secondary small"
-              title={t("wish.pause_detail")}
-              onClick={() =>
-                quiet(
-                  act(
-                    () => clients.wishes.pause({ wishId: wish.id }),
-                    [Change.WISH],
-                  ),
-                )
-              }
+              className="icon-button danger"
+              title={t("wish.delete")}
+              aria-label={t("wish.delete")}
+              onClick={() => setDeleting(true)}
             >
-              <Pause size={14} />
-              <span>{t("wish.pause")}</span>
+              <Trash2 size={15} />
             </button>
-          ) : (
-            <button
-              className="button accent small"
-              title={t("wish.activate_detail", { max: MAX_ACTIVE })}
-              onClick={() =>
-                quiet(
-                  act(
-                    () => clients.wishes.activate({ wishId: wish.id }),
-                    [Change.WISH],
-                  ),
-                )
-              }
-            >
-              <Play size={14} />
-              <span>{t("wish.activate")}</span>
-            </button>
-          )}
-          <LeadButton
-            recorded={recordedAgent(leadRecord)}
-            loadAgents={async () =>
-              (await clients.ui.getEnvironment({})).providers
-            }
-            onLead={() => lead()}
-            onPick={(provider) => lead(provider)}
-          />
-          <button
-            className="button secondary small"
-            onClick={() =>
-              quiet(
-                (async () => {
-                  const res = await clients.wishes.export({ wishId: wish.id });
-                  onToast(t("wish.exported", { file: res.file }));
-                })().catch((error) => onToast(message(error))),
-              )
-            }
+          </>
+        }
+      >
+        {projects.map((project) => (
+          <span
+            className="header-project"
+            key={project.id}
+            title={project.directory || t("project.no_folder")}
           >
-            <Download size={14} />
-            <span>{t("app.share")}</span>
-          </button>
-          <button
-            className="icon-button danger"
-            title={t("wish.delete")}
-            aria-label={t("wish.delete")}
-            onClick={() => setDeleting(true)}
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
-      </header>
+            {project.name}
+            <ChevronRight size={12} aria-hidden="true" />
+          </span>
+        ))}
+        <strong>{wish.title}</strong>
+      </PageHeader>
       {deleting && (
         <DeleteWish
           wish={wish}
