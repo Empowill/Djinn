@@ -433,7 +433,7 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("project %s: %w", project.GetName(), err)})
 			return nil
 		}
-		r.branch, r.from, r.checks = settings.Branch, plan.IntegrationBranchOf(wish, project.GetId()), settings.ChecksBrief()
+		r.branch, r.from, r.checks = settings.Branch, h.workerStartBranch(h.ctx, wish, project, settings, t), settings.ChecksBrief()
 		if questionWorker(t) {
 			p, _, fb := questionProvider(settings)
 			if t.GetProvider() == p {
