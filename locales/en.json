@@ -557,7 +557,7 @@
   "wish.lead_missing": "{command} is not installed on this machine",
   "wish.lead_new": "Starts a new lead from the brief",
   "wish.lead_recorded": "The wish's lead: resumes its session",
-  "wish.main_held": "The merge of main waits",
+  "wish.main_held": "The merge of main waits: {reason}",
   "wish.main_merged.one": "{main} merged into {branch}: {count} commit, {when}",
   "wish.main_merged.other": "{main} merged into {branch}: {count} commits, {when}",
   "wish.main_merged_release.one": "{main} merged into {branch}: {count} commit, {release}, {when}",

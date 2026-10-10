@@ -639,7 +639,7 @@ func (w *Wishes) routeTo(
 		if err := tx.Journal(actor, planv1connect.BlockServicePutProcedure, block); err != nil {
 			return err
 		}
-		_, err := putBlock(ctx, tx, block)
+		_, err := PutBlock(ctx, tx, block)
 		return err
 	}
 	switch opt.GetKind() {

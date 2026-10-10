@@ -32,7 +32,7 @@ func (b *Blocks) Put(
 	var block *planv1.Block
 	err := write(ctx, b.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
-		block, err = putBlock(ctx, tx, req.Msg)
+		block, err = PutBlock(ctx, tx, req.Msg)
 		return err
 	})
 	if err != nil {
@@ -41,8 +41,8 @@ func (b *Blocks) Put(
 	return connect.NewResponse(&planv1.BlockServicePutResponse{Block: block}), nil
 }
 
-// putBlock adds or changes the block m names, in tx. The caller journals the command.
-func putBlock(ctx context.Context, tx *store.Tx, m *planv1.BlockServicePutRequest) (*planv1.Block, error) {
+// PutBlock adds or changes the block m names, in tx. The caller journals the command.
+func PutBlock(ctx context.Context, tx *store.Tx, m *planv1.BlockServicePutRequest) (*planv1.Block, error) {
 	var block *planv1.Block
 	if err := checkIcon(m.GetIcon()); err != nil {
 		return nil, err

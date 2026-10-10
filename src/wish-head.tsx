@@ -276,9 +276,15 @@ export function LastPushes({
   );
 }
 
+// shortReason returns the first line of s, trimmed of whitespace and trailing colon, for short display in the head.
+export function shortReason(s: string): string {
+  const line = s.split("\n")[0]?.trim() ?? "";
+  return line.replace(/:$/, "");
+}
+
 // MainMerges says, for each project of the wish, the last time Djinn merged the project's main branch into the wish's
 // integration branch, how many commits and which release it brought, their titles on hover; and why the next merge
-// waits, on hover, while it does. Names the project when the wish has several.
+// waits, visible without hovering, the full reason on hover. Names the project when the wish has several.
 export function MainMerges({
   mains,
   projects,
@@ -317,7 +323,7 @@ export function MainMerges({
             )}
             {main.held && (
               <span className="wish-push-refused" title={main.held}>
-                {t("wish.main_held")}
+                {t("wish.main_held", { reason: shortReason(main.held) })}
               </span>
             )}
           </span>
