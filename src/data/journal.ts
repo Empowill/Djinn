@@ -92,26 +92,42 @@ function summary(command: Command, exp: WishExport): string {
 const ms = (ts?: Timestamp) =>
   ts ? Number(ts.seconds) * 1000 + ts.nanos / 1e6 : 0;
 
+const blockEntries = new WeakMap<Block, Entry>();
+const commandEntries = new WeakMap<Command, Entry>();
+
 // journal is the wish's journal: its commands and its log blocks, the latest first, at most MAX_JOURNAL.
 export function journal(
   exp: WishExport | undefined,
   blocks: readonly Block[],
 ): Entry[] {
-  const entries: Entry[] = blocks.filter(isLog).map((b) => ({
-    id: b.id,
-    at: b.createTime,
-    command: "",
-    summary: b.title,
-    note: b.content.trim(),
-  }));
-  for (const c of exp?.commands ?? [])
-    entries.push({
-      id: c.id,
-      at: c.at,
-      command: commandName(c.method),
-      summary: summary(c, exp!),
-      note: "",
-    });
+  const entries: Entry[] = blocks.filter(isLog).map((b) => {
+    let entry = blockEntries.get(b);
+    if (!entry) {
+      entry = {
+        id: b.id,
+        at: b.createTime,
+        command: "",
+        summary: b.title,
+        note: b.content.trim(),
+      };
+      blockEntries.set(b, entry);
+    }
+    return entry;
+  });
+  for (const c of exp?.commands ?? []) {
+    let entry = commandEntries.get(c);
+    if (!entry) {
+      entry = {
+        id: c.id,
+        at: c.at,
+        command: commandName(c.method),
+        summary: summary(c, exp!),
+        note: "",
+      };
+      commandEntries.set(c, entry);
+    }
+    entries.push(entry);
+  }
   entries.sort((a, b) => ms(b.at) - ms(a.at));
   return entries.slice(0, MAX_JOURNAL);
 }

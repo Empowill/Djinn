@@ -23,6 +23,7 @@ import {
 import {
   type FormEvent,
   type ReactNode,
+  memo,
   useEffect,
   useRef,
   useState,
@@ -87,7 +88,7 @@ export function agentOf(task: Task): string {
   return task.model ? `${name} · ${task.model}` : name;
 }
 
-export function WishTask({
+export const WishTask = memo(function WishTask({
   task,
   project,
   codes,
@@ -113,13 +114,13 @@ export function WishTask({
   decision?: Decision;
   // Brought into sight and opened, from its decision.
   focused?: boolean;
-  onStop: () => void;
-  onSend: (text: string) => Promise<unknown>;
+  onStop: (task: Task) => void;
+  onSend: (text: string, task: Task) => Promise<unknown>;
   // Pauses the task's worker (true) or lets it go on (false); none where djinn cannot pause one (Windows).
-  onHold?: (pause: boolean) => void;
-  onDecision?: () => void;
+  onHold?: (pause: boolean, task: Task) => void;
+  onDecision?: (task: Task) => void;
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
-  onDone?: (note: string) => Promise<unknown>;
+  onDone?: (note: string, task: Task) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(focused);
   const [closing, setClosing] = useState(false);
@@ -195,7 +196,7 @@ export function WishTask({
         {holdable && (
           <button
             className="icon-button"
-            onClick={() => onHold?.(!paused)}
+            onClick={() => onHold?.(!paused, task)}
             title={t(paused ? "task.resume_detail" : "task.pause_detail")}
             aria-label={t(paused ? "task.resume" : "task.pause")}
           >
@@ -205,7 +206,7 @@ export function WishTask({
         {stoppable && (
           <button
             className="icon-button"
-            onClick={onStop}
+            onClick={() => onStop(task)}
             title={t("task.stop")}
             aria-label={t("task.stop")}
           >
@@ -226,11 +227,14 @@ export function WishTask({
       </div>
       {decision && onDecision && (
         <p className="wish-task-note wish-task-decision">
-          <DecisionLink decision={decision} onOpen={onDecision} />
+          <DecisionLink decision={decision} onOpen={() => onDecision(task)} />
         </p>
       )}
       {closing && onDone && closable(task.status) && (
-        <DoneBox onDone={onDone} onCancel={() => setClosing(false)} />
+        <DoneBox
+          onDone={(note) => onDone(note, task)}
+          onCancel={() => setClosing(false)}
+        />
       )}
       {task.closed && (
         <p className="wish-task-note wish-task-closed">
@@ -273,11 +277,11 @@ export function WishTask({
         <TaskBody task={task} forkOf={codes?.get(task.forkOf ?? "") ?? ""} />
       )}
       {open && task.status === TaskStatus.RUNNING && !watcher && (
-        <SendBox onSend={onSend} />
+        <SendBox onSend={(text) => onSend(text, task)} />
       )}
     </article>
   );
-}
+});
 
 // taskWork says where the finished work of a task stands on its way into its wish's integration branch (T07), as the
 // page says it, and its tone: undefined for work Djinn does not integrate. codes name the correction worker's task.

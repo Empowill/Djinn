@@ -13,17 +13,21 @@ import {
   BlockSchema,
   Change,
   type InboxItem,
+  InboxItemSchema,
   type InboxSource,
+  InboxSourceSchema,
   type Project,
+  ProjectSchema,
   type Question,
   QuestionSchema,
   type Task,
   type TaskEvent,
   TaskSchema,
   type Wish,
+  WishSchema,
   type WishChanges,
 } from "../../gen/ts/plan/v1/plan_pb";
-import type { Tilasm } from "../../gen/ts/plan/v1/tilasm_pb";
+import { type Tilasm, TilasmSchema } from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound } from "./client";
 
 // What the page shows of one wish, read while a screen shows it.
@@ -105,6 +109,41 @@ export const emptyDetail = EMPTY_DETAIL;
 const CARRIED = new Set([Change.TASK, Change.QUESTION, Change.BLOCK]);
 // What a wish shows, read again for it all.
 const DETAIL = [Change.TASK, Change.QUESTION, Change.BLOCK, Change.TILASM];
+
+const keyOf = (m: unknown) =>
+  m && typeof m === "object"
+    ? "id" in m
+      ? String((m as { id: unknown }).id)
+      : "name" in m
+        ? String((m as { name: unknown }).name)
+        : ""
+    : "";
+
+// reconcile compares incoming entities against prev, reusing previous objects if equal according to the schema.
+// If all elements in order match prev, prev itself is returned so the array reference remains stable.
+function reconcile<Desc extends DescMessage>(
+  schema: Desc,
+  prev: readonly MessageShape<Desc>[],
+  incoming: readonly MessageShape<Desc>[],
+): MessageShape<Desc>[] {
+  if (!prev.length && !incoming.length) return prev as MessageShape<Desc>[];
+  const oldByKey = new Map(prev.map((m) => [keyOf(m), m]));
+  let identical = prev.length === incoming.length;
+  const out: MessageShape<Desc>[] = [];
+  for (let i = 0; i < incoming.length; i++) {
+    const next = incoming[i];
+    const key = keyOf(next);
+    const old = key ? oldByKey.get(key) : undefined;
+    if (old && equals(schema, old, next)) {
+      out.push(old);
+      if (prev[i] !== old) identical = false;
+    } else {
+      out.push(next);
+      identical = false;
+    }
+  }
+  return identical ? (prev as MessageShape<Desc>[]) : out;
+}
 
 // merge puts the entities that changed in place of theirs in list, and takes out those deleted. The others keep their
 // place and their reference, and so does one that comes back equal: a screen that shows them draws them again only
@@ -349,64 +388,134 @@ export function createStore(clients: Clients, retry = 1000): Store {
       reads.push(run().catch((error) => void errors.push(message(error))));
     if (wishes)
       attempt(async () => {
-        patch.wishes = (await clients.wishes.list({})).wishes;
+        const list = (await clients.wishes.list({})).wishes;
+        const reconciled = reconcile(WishSchema, state.wishes, list);
+        if (reconciled !== state.wishes) patch.wishes = reconciled;
       });
     if (projects)
       attempt(async () => {
-        patch.projects = (await clients.projects.list({})).projects;
+        const list = (await clients.projects.list({})).projects;
+        const reconciled = reconcile(ProjectSchema, state.projects, list);
+        if (reconciled !== state.projects) patch.projects = reconciled;
       });
     if (inbox)
       attempt(async () => {
-        patch.inbox = (await clients.inbox.list({})).items;
+        const list = (await clients.inbox.list({})).items;
+        const reconciled = reconcile(InboxItemSchema, state.inbox, list);
+        if (reconciled !== state.inbox) patch.inbox = reconciled;
       });
     if (inbox)
       attempt(async () => {
-        patch.sources = (await clients.inbox.sources({})).sources;
+        const list = (await clients.inbox.sources({})).sources;
+        const reconciled = reconcile(InboxSourceSchema, state.sources, list);
+        if (reconciled !== state.sources) patch.sources = reconciled;
       });
     const read: Record<string, Partial<WishDetail>> = {};
     for (const [wishId, kinds] of details) {
+      const prevDetail = state.details[wishId] ?? EMPTY_DETAIL;
       const into: Partial<WishDetail> = (read[wishId] = {});
       if (kinds.has(Change.TASK))
         attempt(async () => {
           const res = await clients.tasks.list({ wishId });
-          into.tasks = res.tasks;
+          into.tasks = reconcile(TaskSchema, prevDetail.tasks, res.tasks);
           into.tasksTotal = res.total;
           into.tasksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.QUESTION))
         attempt(async () => {
           const res = await clients.questions.list({ wishId });
-          into.questions = res.questions;
+          into.questions = reconcile(
+            QuestionSchema,
+            prevDetail.questions,
+            res.questions,
+          );
           into.questionsTotal = res.total;
           into.questionsNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.BLOCK))
         attempt(async () => {
           const res = await clients.blocks.list({ wishId });
-          into.blocks = res.blocks;
+          into.blocks = reconcile(BlockSchema, prevDetail.blocks, res.blocks);
           into.blocksTotal = res.total;
           into.blocksNextToken = res.nextPageToken;
         });
       if (kinds.has(Change.TILASM))
         attempt(async () => {
-          into.tilasms = (await clients.tilasms.list({ wish: wishId })).tilasms;
+          const list = (await clients.tilasms.list({ wish: wishId })).tilasms;
+          into.tilasms = reconcile(TilasmSchema, prevDetail.tilasms, list);
         });
     }
     await Promise.all(reads);
     const next = { ...state.details };
     let touched = false;
     for (const [wishId, got] of Object.entries(read)) {
-      const prev = next[wishId] ?? EMPTY_DETAIL;
-      const loadedKinds = new Set(prev.loadedKinds);
+      const prevDetail = next[wishId] ?? EMPTY_DETAIL;
+      const tasks = got.tasks ?? prevDetail.tasks;
+      const questions = got.questions ?? prevDetail.questions;
+      const blocks = got.blocks ?? prevDetail.blocks;
+      const tilasms = got.tilasms ?? prevDetail.tilasms;
+      const tasksTotal =
+        got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
+      const questionsTotal =
+        got.questionsTotal !== undefined
+          ? got.questionsTotal
+          : prevDetail.questionsTotal;
+      const blocksTotal =
+        got.blocksTotal !== undefined
+          ? got.blocksTotal
+          : prevDetail.blocksTotal;
+      const tasksNextToken =
+        got.tasksNextToken !== undefined
+          ? got.tasksNextToken
+          : prevDetail.tasksNextToken;
+      const questionsNextToken =
+        got.questionsNextToken !== undefined
+          ? got.questionsNextToken
+          : prevDetail.questionsNextToken;
+      const blocksNextToken =
+        got.blocksNextToken !== undefined
+          ? got.blocksNextToken
+          : prevDetail.blocksNextToken;
+      const loadedKinds = new Set(prevDetail.loadedKinds);
+      let kindsChanged = false;
       const requested = details.find(([id]) => id === wishId)?.[1];
       if (requested) {
-        for (const k of requested) loadedKinds.add(k);
+        for (const k of requested) {
+          if (!loadedKinds.has(k)) {
+            loadedKinds.add(k);
+            kindsChanged = true;
+          }
+        }
+      }
+      if (
+        prevDetail.loaded &&
+        tasks === prevDetail.tasks &&
+        questions === prevDetail.questions &&
+        blocks === prevDetail.blocks &&
+        tilasms === prevDetail.tilasms &&
+        tasksTotal === prevDetail.tasksTotal &&
+        questionsTotal === prevDetail.questionsTotal &&
+        blocksTotal === prevDetail.blocksTotal &&
+        tasksNextToken === prevDetail.tasksNextToken &&
+        questionsNextToken === prevDetail.questionsNextToken &&
+        blocksNextToken === prevDetail.blocksNextToken &&
+        !kindsChanged
+      ) {
+        continue;
       }
       next[wishId] = {
-        ...prev,
-        ...got,
+        tasks,
+        questions,
+        blocks,
+        tilasms,
         loaded: true,
-        loadedKinds,
+        tasksTotal,
+        questionsTotal,
+        blocksTotal,
+        tasksNextToken,
+        questionsNextToken,
+        blocksNextToken,
+        loadedKinds: kindsChanged ? loadedKinds : prevDetail.loadedKinds,
       };
       touched = true;
     }
