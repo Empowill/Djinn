@@ -35,6 +35,11 @@ service LoadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+
+  // Follow the operating load notch and live memory: engaged peak forecasts, real worker memory, and machine RAM.
+  rpc Watch(LoadServiceWatchRequest) returns (stream LoadServiceWatchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+  }
 }
 
 message LoadServiceGetRequest {}
@@ -55,4 +60,19 @@ message LoadServiceSetRequest {
 message LoadServiceSetResponse {
   // The notch in effect.
   LoadNotch notch = 1;
+}
+
+message LoadServiceWatchRequest {}
+
+message LoadServiceWatchResponse {
+  // Operating load notch in effect.
+  LoadNotch notch = 1;
+  // Engaged memory: sum of peak forecasts (Policy.WorkerRoom) for running workers, in bytes.
+  uint64 engaged_memory_bytes = 2;
+  // Real measured resident memory of running workers, in bytes.
+  uint64 worker_memory_bytes = 3;
+  // Total RAM of the machine, in bytes.
+  uint64 memory_total_bytes = 4;
+  // Available RAM of the machine, in bytes.
+  uint64 memory_available_bytes = 5;
 }

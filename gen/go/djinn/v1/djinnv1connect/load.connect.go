@@ -38,6 +38,8 @@ const (
 	LoadServiceGetProcedure = "/djinn.v1.LoadService/Get"
 	// LoadServiceSetProcedure is the fully-qualified name of the LoadService's Set RPC.
 	LoadServiceSetProcedure = "/djinn.v1.LoadService/Set"
+	// LoadServiceWatchProcedure is the fully-qualified name of the LoadService's Watch RPC.
+	LoadServiceWatchProcedure = "/djinn.v1.LoadService/Watch"
 )
 
 // LoadServiceClient is a client for the djinn.v1.LoadService service.
@@ -46,6 +48,8 @@ type LoadServiceClient interface {
 	Get(context.Context, *connect.Request[v1.LoadServiceGetRequest]) (*connect.Response[v1.LoadServiceGetResponse], error)
 	// Choose the operating load notch in effect on this machine.
 	Set(context.Context, *connect.Request[v1.LoadServiceSetRequest]) (*connect.Response[v1.LoadServiceSetResponse], error)
+	// Follow the operating load notch and live memory: engaged peak forecasts, real worker memory, and machine RAM.
+	Watch(context.Context, *connect.Request[v1.LoadServiceWatchRequest]) (*connect.ServerStreamForClient[v1.LoadServiceWatchResponse], error)
 }
 
 // NewLoadServiceClient constructs a client for the djinn.v1.LoadService service. By default, it
@@ -72,13 +76,20 @@ func NewLoadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(loadServiceMethods.ByName("Set")),
 			connect.WithClientOptions(opts...),
 		),
+		watch: connect.NewClient[v1.LoadServiceWatchRequest, v1.LoadServiceWatchResponse](
+			httpClient,
+			baseURL+LoadServiceWatchProcedure,
+			connect.WithSchema(loadServiceMethods.ByName("Watch")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // loadServiceClient implements LoadServiceClient.
 type loadServiceClient struct {
-	get *connect.Client[v1.LoadServiceGetRequest, v1.LoadServiceGetResponse]
-	set *connect.Client[v1.LoadServiceSetRequest, v1.LoadServiceSetResponse]
+	get   *connect.Client[v1.LoadServiceGetRequest, v1.LoadServiceGetResponse]
+	set   *connect.Client[v1.LoadServiceSetRequest, v1.LoadServiceSetResponse]
+	watch *connect.Client[v1.LoadServiceWatchRequest, v1.LoadServiceWatchResponse]
 }
 
 // Get calls djinn.v1.LoadService.Get.
@@ -91,12 +102,19 @@ func (c *loadServiceClient) Set(ctx context.Context, req *connect.Request[v1.Loa
 	return c.set.CallUnary(ctx, req)
 }
 
+// Watch calls djinn.v1.LoadService.Watch.
+func (c *loadServiceClient) Watch(ctx context.Context, req *connect.Request[v1.LoadServiceWatchRequest]) (*connect.ServerStreamForClient[v1.LoadServiceWatchResponse], error) {
+	return c.watch.CallServerStream(ctx, req)
+}
+
 // LoadServiceHandler is an implementation of the djinn.v1.LoadService service.
 type LoadServiceHandler interface {
 	// Show the operating load notch in effect on this machine.
 	Get(context.Context, *connect.Request[v1.LoadServiceGetRequest]) (*connect.Response[v1.LoadServiceGetResponse], error)
 	// Choose the operating load notch in effect on this machine.
 	Set(context.Context, *connect.Request[v1.LoadServiceSetRequest]) (*connect.Response[v1.LoadServiceSetResponse], error)
+	// Follow the operating load notch and live memory: engaged peak forecasts, real worker memory, and machine RAM.
+	Watch(context.Context, *connect.Request[v1.LoadServiceWatchRequest], *connect.ServerStream[v1.LoadServiceWatchResponse]) error
 }
 
 // NewLoadServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -119,12 +137,20 @@ func NewLoadServiceHandler(svc LoadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(loadServiceMethods.ByName("Set")),
 		connect.WithHandlerOptions(opts...),
 	)
+	loadServiceWatchHandler := connect.NewServerStreamHandler(
+		LoadServiceWatchProcedure,
+		svc.Watch,
+		connect.WithSchema(loadServiceMethods.ByName("Watch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/djinn.v1.LoadService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LoadServiceGetProcedure:
 			loadServiceGetHandler.ServeHTTP(w, r)
 		case LoadServiceSetProcedure:
 			loadServiceSetHandler.ServeHTTP(w, r)
+		case LoadServiceWatchProcedure:
+			loadServiceWatchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -140,4 +166,8 @@ func (UnimplementedLoadServiceHandler) Get(context.Context, *connect.Request[v1.
 
 func (UnimplementedLoadServiceHandler) Set(context.Context, *connect.Request[v1.LoadServiceSetRequest]) (*connect.Response[v1.LoadServiceSetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("djinn.v1.LoadService.Set is not implemented"))
+}
+
+func (UnimplementedLoadServiceHandler) Watch(context.Context, *connect.Request[v1.LoadServiceWatchRequest], *connect.ServerStream[v1.LoadServiceWatchResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("djinn.v1.LoadService.Watch is not implemented"))
 }
