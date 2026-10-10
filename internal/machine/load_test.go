@@ -282,6 +282,130 @@ func TestLoadServiceWatch(t *testing.T) {
 	}
 }
 
+func TestLoadServiceAuto(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+
+	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return fakeNow }
+	var working bool
+	signal := func() bool { return working }
+
+	initPolicy := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
+	monitor := &Monitor{policy: initPolicy}
+
+	var latestPolicy Policy
+	setPolicy := func(p Policy) {
+		latestPolicy = p
+	}
+
+	var latestBroadcast djinnv1.LoadNotch
+	broadcast := func(n djinnv1.LoadNotch) {
+		latestBroadcast = n
+	}
+
+	ac := NewAutoController(
+		djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+		WithAutoClock(clock),
+		WithAutoSignal(signal),
+		WithAutoStepDuration(1*time.Minute),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(LoadHandler(
+		home,
+		monitor,
+		setPolicy,
+		broadcast,
+		nil,
+		WithLoadAutoController(ac),
+		WithLoadTickInterval(0), // manual ticking in test
+	))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := djinnv1connect.NewLoadServiceClient(srv.Client(), srv.URL)
+
+	// Initial state: medium, not auto
+	getRes, err := client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM || getRes.Msg.GetAuto() {
+		t.Fatalf("Initial Get: notch=%v auto=%v", getRes.Msg.GetNotch(), getRes.Msg.GetAuto())
+	}
+
+	// 1. Switch to AUTO mode while developer is working
+	working = true
+	setRes, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
+	}))
+	if err != nil {
+		t.Fatalf("Set AUTO: %v", err)
+	}
+	if !setRes.Msg.GetAuto() {
+		t.Errorf("Set AUTO response: auto=%v, want true", setRes.Msg.GetAuto())
+	}
+	if setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Errorf("Set AUTO while working: got notch=%v, want MINIMAL", setRes.Msg.GetNotch())
+	}
+	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Errorf("Policy notch: got %v, want MINIMAL", latestPolicy.Notch)
+	}
+	if latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Errorf("Broadcast notch: got %v, want MINIMAL", latestBroadcast)
+	}
+
+	// Get reflects auto state and effective notch
+	getRes, err = client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !getRes.Msg.GetAuto() || getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Errorf("Get after Set AUTO: auto=%v, notch=%v", getRes.Msg.GetAuto(), getRes.Msg.GetNotch())
+	}
+
+	// 2. Machine at rest: Tick advances notch to LIGHT after 1 minute
+	working = false
+	fakeNow = fakeNow.Add(1 * time.Minute)
+	changed, notch := ac.Tick()
+	if !changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
+		t.Fatalf("Tick after 1m rest: changed=%v, notch=%v, want LIGHT", changed, notch)
+	}
+	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
+		t.Errorf("Policy notch after tick: got %v, want LIGHT", latestPolicy.Notch)
+	}
+	if latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
+		t.Errorf("Broadcast notch after tick: got %v, want LIGHT", latestBroadcast)
+	}
+
+	// 3. Manual notch selection exits AUTO mode
+	setRes, err = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX,
+	}))
+	if err != nil {
+		t.Fatalf("Set MAX: %v", err)
+	}
+	if setRes.Msg.GetAuto() {
+		t.Errorf("Set MAX response: auto=%v, want false", setRes.Msg.GetAuto())
+	}
+	if setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
+		t.Errorf("Set MAX response: notch=%v, want MAX", setRes.Msg.GetNotch())
+	}
+	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
+		t.Errorf("Policy notch after manual set: got %v, want MAX", latestPolicy.Notch)
+	}
+
+	// Get reflects manual mode
+	getRes, err = client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if getRes.Msg.GetAuto() || getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
+		t.Errorf("Get after manual set: auto=%v, notch=%v", getRes.Msg.GetAuto(), getRes.Msg.GetNotch())
+	}
+}
+
 func containsSubstring(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

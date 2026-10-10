@@ -202,6 +202,9 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			ModelMemory:    16 * GiB,
 			ModelDisk:      10 * GiB,
 		}
+	case djinnv1.LoadNotch_LOAD_NOTCH_AUTO:
+		// Auto mode dynamically chooses among the 5 notches; its initial fallback is Minimal.
+		return NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
 	default: // LOAD_NOTCH_MEDIUM or LOAD_NOTCH_UNSPECIFIED
 		return Policy{
 			Notch:           djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
@@ -265,6 +268,8 @@ func NotchName(notch djinnv1.LoadNotch) string {
 		return "high"
 	case djinnv1.LoadNotch_LOAD_NOTCH_MAX:
 		return "max"
+	case djinnv1.LoadNotch_LOAD_NOTCH_AUTO:
+		return "auto"
 	default:
 		return "medium"
 	}
@@ -288,8 +293,10 @@ func ParseNotch(s string) (djinnv1.LoadNotch, error) {
 		return djinnv1.LoadNotch_LOAD_NOTCH_HIGH, nil
 	case "max":
 		return djinnv1.LoadNotch_LOAD_NOTCH_MAX, nil
+	case "auto":
+		return djinnv1.LoadNotch_LOAD_NOTCH_AUTO, nil
 	default:
-		return djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED, fmt.Errorf("unknown load notch %q: expected minimal, light, medium, high, or max", s)
+		return djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED, fmt.Errorf("unknown load notch %q: expected minimal, light, medium, high, max, or auto", s)
 	}
 }
 

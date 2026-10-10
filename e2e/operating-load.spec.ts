@@ -84,6 +84,14 @@ test.describe("operating load slider", () => {
 
     const activeBtn = page.locator(".operating-load-notch.active");
     await expect(activeBtn).toHaveAttribute("data-notch", "medium");
+
+    const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
+    await expect(autoBtn).toBeVisible();
+    const autoTitle = await autoBtn.getAttribute("title");
+    expect(autoTitle).toBeTruthy();
+    expect(autoTitle?.length).toBeGreaterThan(10);
+    await expect(autoBtn).not.toHaveClass(/active/);
+
     expect(errors).toEqual([]);
   });
 
@@ -147,6 +155,84 @@ test.describe("operating load slider", () => {
     await expect(range).toHaveValue("4");
     await expect(highBtn).toHaveClass(/active/);
     await expect.poll(getNotch).toBe("high");
+
+    expect(errors).toEqual([]);
+  });
+
+  test("auto mode selects a notch and manual selection exits auto mode", async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await page.goto(djinnURL());
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+
+    const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
+    await expect(autoBtn).toBeVisible();
+    await expect(autoBtn).not.toHaveClass(/active/);
+
+    // Clicking Auto button enables auto mode
+    await autoBtn.click();
+    await expect(autoBtn).toHaveClass(/active/);
+
+    // In auto mode, manual notch buttons must not have active class
+    const manualNotches = ["minimal", "light", "medium", "high", "max"];
+    for (const notch of manualNotches) {
+      await expect(
+        page.locator(`.operating-load-notch[data-notch="${notch}"]`),
+      ).not.toHaveClass(/active/);
+    }
+
+    // Effective notch is visible next to the slider
+    const effectiveEl = page.locator(".operating-load-effective");
+    await expect(effectiveEl).toBeVisible();
+    await expect(effectiveEl).toHaveText(/\(\w+\)/);
+
+    // Server reflects auto mode and effective notch
+    await expect.poll(() => djinn("load", "get")).toContain("auto: true");
+
+    // Clicking a manual notch exits auto mode
+    const lightBtn = page.locator('.operating-load-notch[data-notch="light"]');
+    await lightBtn.click();
+
+    await expect(lightBtn).toHaveClass(/active/);
+    await expect(autoBtn).not.toHaveClass(/active/);
+    await expect(effectiveEl).not.toBeVisible();
+    await expect.poll(() => djinn("load", "get")).not.toContain("auto: true");
+    await expect.poll(getNotch).toBe("light");
+
+    expect(errors).toEqual([]);
+  });
+
+  test("external change via cli sets auto mode and updates window", async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await page.goto(djinnURL());
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+
+    const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
+    const effectiveEl = page.locator(".operating-load-effective");
+
+    // Set auto via CLI
+    djinn("load", "set", "auto");
+    await expect(autoBtn).toHaveClass(/active/);
+    await expect(effectiveEl).toBeVisible();
+    await expect(effectiveEl).toHaveAttribute(
+      "data-effective",
+      /^(minimal|light|medium|high|max)$/,
+    );
+
+    // Set manual via CLI exits auto
+    djinn("load", "set", "high");
+    await expect(autoBtn).not.toHaveClass(/active/);
+    await expect(effectiveEl).not.toBeVisible();
+    await expect(
+      page.locator('.operating-load-notch[data-notch="high"]'),
+    ).toHaveClass(/active/);
 
     expect(errors).toEqual([]);
   });
@@ -237,6 +323,11 @@ test.describe("in French", () => {
       await expect(btn).toHaveText(fr[`load.notch.${notch}`]);
       await expect(btn).toHaveAttribute("title", fr[`load.tooltip.${notch}`]);
     }
+
+    const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
+    await expect(autoBtn).toBeVisible();
+    await expect(autoBtn).toHaveText(fr["load.notch.auto"]);
+    await expect(autoBtn).toHaveAttribute("title", fr["load.tooltip.auto"]);
 
     const memoryEl = page.locator(".operating-load-memory");
     await expect(memoryEl).toBeVisible();

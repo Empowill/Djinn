@@ -16,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
@@ -576,5 +577,33 @@ func TestScopeForWorkerMemoryGuard(t *testing.T) {
 	}
 	if foundMemMax != wantHard {
 		t.Errorf("MemoryMax with hard ceiling = %q, want %q", foundMemMax, wantHard)
+	}
+}
+
+func TestSetPolicyDoesNotKillRunningWorkers(t *testing.T) {
+	t.Parallel()
+	e := up(t, t.TempDir(), WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	// Start worker under MAX policy.
+	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX))
+	task := e.mustSpawn(t, wishID, "BusyWorker", "wait\ntext done", nil)
+	e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+
+	// Switch policy to MINIMAL while worker is actively running.
+	minPolicy := machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
+	e.h.SetPolicy(minPolicy)
+
+	// Verify running worker is not killed and remains running.
+	curr := e.get(t, task.GetId())
+	if curr.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Fatalf("worker was prematurely terminated by SetPolicy: status=%v", curr.GetStatus())
+	}
+
+	// Release worker and verify it finishes successfully.
+	e.release(t, task.GetId())
+	got := e.ended(t, task.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("worker failed after SetPolicy: status=%v", got.GetStatus())
 	}
 }

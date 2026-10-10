@@ -9,6 +9,7 @@ import "./operating-load.css";
 
 interface LoadData {
   notch: LoadNotch;
+  auto: boolean;
   engagedMemoryBytes: bigint;
   workerMemoryBytes: bigint;
   memoryTotalBytes: bigint;
@@ -18,6 +19,7 @@ interface LoadData {
 class LoadManager {
   private data: LoadData = {
     notch: LoadNotch.MEDIUM,
+    auto: false,
     engagedMemoryBytes: 0n,
     workerMemoryBytes: 0n,
     memoryTotalBytes: 0n,
@@ -36,6 +38,8 @@ class LoadManager {
   }
 
   getNotch = (): LoadNotch => this.data.notch;
+
+  isAuto = (): boolean => this.data.auto;
 
   getMemoryKey = (): string =>
     `${this.data.workerMemoryBytes}/${this.data.engagedMemoryBytes}/${this.data.memoryTotalBytes}`;
@@ -73,8 +77,10 @@ class LoadManager {
       .get({}, { signal })
       .then((res) => {
         if (signal.aborted) return;
-        if (res.notch && res.notch !== this.data.notch) {
-          this.data = { ...this.data, notch: res.notch };
+        const auto = Boolean(res.auto);
+        const notch = res.notch || this.data.notch;
+        if (notch !== this.data.notch || auto !== this.data.auto) {
+          this.data = { ...this.data, notch, auto };
           this.notify();
         }
       })
@@ -87,6 +93,7 @@ class LoadManager {
             if (signal.aborted) return;
             this.data = {
               notch: res.notch || this.data.notch,
+              auto: Boolean(res.auto),
               engagedMemoryBytes: res.engagedMemoryBytes,
               workerMemoryBytes: res.workerMemoryBytes,
               memoryTotalBytes: res.memoryTotalBytes,
@@ -114,12 +121,25 @@ class LoadManager {
   }
 
   async setNotch(notch: LoadNotch) {
-    if (notch === this.data.notch) return;
-    this.data = { ...this.data, notch };
+    if (notch === LoadNotch.AUTO) {
+      if (this.data.auto) return;
+      this.data = { ...this.data, auto: true };
+    } else {
+      if (!this.data.auto && notch === this.data.notch) return;
+      this.data = { ...this.data, notch, auto: false };
+    }
     this.notify();
     if (this.clients) {
       try {
-        await this.clients.load.set({ notch });
+        const res = await this.clients.load.set({ notch });
+        if (res.notch) {
+          this.data = {
+            ...this.data,
+            notch: res.notch,
+            auto: Boolean(res.auto),
+          };
+          this.notify();
+        }
       } catch {
         // Ignored; stream update will reconcile.
       }
@@ -149,6 +169,8 @@ function notchLabel(notch: LoadNotch): string {
       return t("load.notch.high");
     case LoadNotch.MAX:
       return t("load.notch.max");
+    case LoadNotch.AUTO:
+      return t("load.notch.auto");
     default:
       return "";
   }
@@ -166,6 +188,8 @@ function notchTooltip(notch: LoadNotch): string {
       return t("load.tooltip.high");
     case LoadNotch.MAX:
       return t("load.tooltip.max");
+    case LoadNotch.AUTO:
+      return t("load.tooltip.auto");
     default:
       return "";
   }
@@ -183,6 +207,8 @@ function notchSlug(notch: LoadNotch): string {
       return "high";
     case LoadNotch.MAX:
       return "max";
+    case LoadNotch.AUTO:
+      return "auto";
     default:
       return "";
   }
@@ -193,6 +219,11 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
     loadManager.subscribe,
     loadManager.getNotch,
     loadManager.getNotch,
+  );
+  const isAuto = useSyncExternalStore(
+    loadManager.subscribe,
+    loadManager.isAuto,
+    loadManager.isAuto,
   );
 
   return (
@@ -207,8 +238,12 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
           void loadManager.setNotch(Number(e.target.value) as LoadNotch)
         }
         aria-label={t("load.label")}
-        aria-valuetext={notchLabel(notch)}
-        title={notchTooltip(notch)}
+        aria-valuetext={
+          isAuto
+            ? t("load.effective", { notch: notchLabel(notch) })
+            : notchLabel(notch)
+        }
+        title={isAuto ? t("load.tooltip.auto") : notchTooltip(notch)}
         className="operating-load-input"
       />
       <div className="operating-load-notches">
@@ -218,7 +253,7 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
             type="button"
             tabIndex={-1}
             data-notch={notchSlug(n)}
-            className={`operating-load-notch ${notch === n ? "active" : ""}`}
+            className={`operating-load-notch ${!isAuto && notch === n ? "active" : ""}`}
             onClick={() => void loadManager.setNotch(n)}
             title={notchTooltip(n)}
           >
@@ -226,6 +261,43 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
           </button>
         ))}
       </div>
+    </div>
+  );
+});
+
+const OperatingLoadAuto = React.memo(function OperatingLoadAuto() {
+  const notch = useSyncExternalStore(
+    loadManager.subscribe,
+    loadManager.getNotch,
+    loadManager.getNotch,
+  );
+  const isAuto = useSyncExternalStore(
+    loadManager.subscribe,
+    loadManager.isAuto,
+    loadManager.isAuto,
+  );
+
+  return (
+    <div className="operating-load-auto">
+      <button
+        type="button"
+        tabIndex={-1}
+        data-notch="auto"
+        className={`operating-load-notch ${isAuto ? "active" : ""}`}
+        onClick={() => void loadManager.setNotch(LoadNotch.AUTO)}
+        title={t("load.tooltip.auto")}
+      >
+        {t("load.notch.auto")}
+      </button>
+      {isAuto && (
+        <span
+          className="operating-load-effective"
+          data-effective={notchSlug(notch)}
+          title={t("load.tooltip.auto")}
+        >
+          ({notchLabel(notch)})
+        </span>
+      )}
     </div>
   );
 });
@@ -269,6 +341,7 @@ export const OperatingLoad = React.memo(function OperatingLoad() {
   return (
     <div className="operating-load" role="group" aria-label={t("load.label")}>
       <OperatingLoadSlider />
+      <OperatingLoadAuto />
       <OperatingLoadMemory />
     </div>
   );

@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/load.proto.
  */
 export const file_djinn_v1_load: GenFile = /*@__PURE__*/
-  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3QiPAoWTG9hZFNlcnZpY2VHZXRSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaCJKChVMb2FkU2VydmljZVNldFJlcXVlc3QSMQoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2hCDbpICsgBAYIBBBABIAAiPAoWTG9hZFNlcnZpY2VTZXRSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaCIZChdMb2FkU2VydmljZVdhdGNoUmVxdWVzdCK1AQoYTG9hZFNlcnZpY2VXYXRjaFJlc3BvbnNlEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEhwKFGVuZ2FnZWRfbWVtb3J5X2J5dGVzGAIgASgEEhsKE3dvcmtlcl9tZW1vcnlfYnl0ZXMYAyABKAQSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQqlQEKCUxvYWROb3RjaBIaChZMT0FEX05PVENIX1VOU1BFQ0lGSUVEEAASFgoSTE9BRF9OT1RDSF9NSU5JTUFMEAESFAoQTE9BRF9OT1RDSF9MSUdIVBACEhUKEUxPQURfTk9UQ0hfTUVESVVNEAMSEwoPTE9BRF9OT1RDSF9ISUdIEAQSEgoOTE9BRF9OT1RDSF9NQVgQBTKMAgoLTG9hZFNlcnZpY2USUQoDR2V0Eh8uZGppbm4udjEuTG9hZFNlcnZpY2VHZXRSZXF1ZXN0GiAuZGppbm4udjEuTG9hZFNlcnZpY2VHZXRSZXNwb25zZSIHkAIByPMYARJSCgNTZXQSHy5kamlubi52MS5Mb2FkU2VydmljZVNldFJlcXVlc3QaIC5kamlubi52MS5Mb2FkU2VydmljZVNldFJlc3BvbnNlIgjI8xgB4PMYARJWCgVXYXRjaBIhLmRqaW5uLnYxLkxvYWRTZXJ2aWNlV2F0Y2hSZXF1ZXN0GiIuZGppbm4udjEuTG9hZFNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgBMAFCjQEKDGNvbS5kamlubi52MUIJTG9hZFByb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL2RqaW5uL3YxO2RqaW5udjGiAgNEWFiqAghEamlubi5WMcoCCERqaW5uXFYx4gIURGppbm5cVjFcR1BCTWV0YWRhdGHqAglEamlubjo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3QiSgoWTG9hZFNlcnZpY2VHZXRSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIMCgRhdXRvGAIgASgIIkoKFUxvYWRTZXJ2aWNlU2V0UmVxdWVzdBIxCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaEINukgKyAEBggEEEAEgACJKChZMb2FkU2VydmljZVNldFJlc3BvbnNlEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEgwKBGF1dG8YAiABKAgiGQoXTG9hZFNlcnZpY2VXYXRjaFJlcXVlc3QiwwEKGExvYWRTZXJ2aWNlV2F0Y2hSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIcChRlbmdhZ2VkX21lbW9yeV9ieXRlcxgCIAEoBBIbChN3b3JrZXJfbWVtb3J5X2J5dGVzGAMgASgEEhoKEm1lbW9yeV90b3RhbF9ieXRlcxgEIAEoBBIeChZtZW1vcnlfYXZhaWxhYmxlX2J5dGVzGAUgASgEEgwKBGF1dG8YBiABKAgqqgEKCUxvYWROb3RjaBIaChZMT0FEX05PVENIX1VOU1BFQ0lGSUVEEAASFgoSTE9BRF9OT1RDSF9NSU5JTUFMEAESFAoQTE9BRF9OT1RDSF9MSUdIVBACEhUKEUxPQURfTk9UQ0hfTUVESVVNEAMSEwoPTE9BRF9OT1RDSF9ISUdIEAQSEgoOTE9BRF9OT1RDSF9NQVgQBRITCg9MT0FEX05PVENIX0FVVE8QBjKMAgoLTG9hZFNlcnZpY2USUQoDR2V0Eh8uZGppbm4udjEuTG9hZFNlcnZpY2VHZXRSZXF1ZXN0GiAuZGppbm4udjEuTG9hZFNlcnZpY2VHZXRSZXNwb25zZSIHkAIByPMYARJSCgNTZXQSHy5kamlubi52MS5Mb2FkU2VydmljZVNldFJlcXVlc3QaIC5kamlubi52MS5Mb2FkU2VydmljZVNldFJlc3BvbnNlIgjI8xgB4PMYARJWCgVXYXRjaBIhLmRqaW5uLnYxLkxvYWRTZXJ2aWNlV2F0Y2hSZXF1ZXN0GiIuZGppbm4udjEuTG9hZFNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgBMAFCjQEKDGNvbS5kamlubi52MUIJTG9hZFByb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL2RqaW5uL3YxO2RqaW5udjGiAgNEWFiqAghEamlubi5WMcoCCERqaW5uXFYx4gIURGppbm5cVjFcR1BCTWV0YWRhdGHqAglEamlubjo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * @generated from message djinn.v1.LoadServiceGetRequest
@@ -39,6 +39,13 @@ export type LoadServiceGetResponse = Message<"djinn.v1.LoadServiceGetResponse"> 
    * @generated from field: djinn.v1.LoadNotch notch = 1;
    */
   notch: LoadNotch;
+
+  /**
+   * Whether auto mode is active.
+   *
+   * @generated from field: bool auto = 2;
+   */
+  auto: boolean;
 };
 
 /**
@@ -77,6 +84,13 @@ export type LoadServiceSetResponse = Message<"djinn.v1.LoadServiceSetResponse"> 
    * @generated from field: djinn.v1.LoadNotch notch = 1;
    */
   notch: LoadNotch;
+
+  /**
+   * Whether auto mode is active.
+   *
+   * @generated from field: bool auto = 2;
+   */
+  auto: boolean;
 };
 
 /**
@@ -137,6 +151,13 @@ export type LoadServiceWatchResponse = Message<"djinn.v1.LoadServiceWatchRespons
    * @generated from field: uint64 memory_available_bytes = 5;
    */
   memoryAvailableBytes: bigint;
+
+  /**
+   * Whether auto mode is active.
+   *
+   * @generated from field: bool auto = 6;
+   */
+  auto: boolean;
 };
 
 /**
@@ -193,6 +214,13 @@ export enum LoadNotch {
    * @generated from enum value: LOAD_NOTCH_MAX = 5;
    */
   MAX = 5,
+
+  /**
+   * Auto load: adapts operating load between minimal and max based on developer activity.
+   *
+   * @generated from enum value: LOAD_NOTCH_AUTO = 6;
+   */
+  AUTO = 6,
 }
 
 /**
