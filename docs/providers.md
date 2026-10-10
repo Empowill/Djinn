@@ -104,6 +104,22 @@ for skills. Djinn's own: [`.agents/permissions.txtpb`](../.agents/permissions.tx
 Reading is always allowed. A word holds no wildcard nor shell operator (the file is refused otherwise), so a
 prefix never widens into a pattern.
 
+#### No worker pushes
+
+Pushing is the orchestrator's. A denied `git push` is only a first line: a prefix, it lets `sh -c "git push"` or
+`git -C . push` through, under Claude's rules as under agy's deny grants. So Djinn makes the push impossible by
+environment, for every worker whatever its provider (Claude, Codex, Antigravity, the fake; question workers and warm
+ones alike): their environment gives Git a command-line configuration (`GIT_CONFIG_COUNT`, after the user's own)
+that includes, in the project's repository only (`includeIf.gitdir` on its `.git` and its worktrees), Djinn's
+`git/no-push.gitconfig`. It holds one empty `pushInsteadOf`, a prefix of every URL: any push from the worker, to a
+remote, to one it added, to a path or URL on the command line, `--no-verify` or not, goes to the
+`djinn-workers-do-not-push://` transport, which Git does not have, and fails. Fetching, committing, merging,
+rebasing, stashing and worktrees work as before, and the project's own hooks still run. Other repositories (the
+ones a project's tests make) push as before. The orchestrator's push from the integration worktree runs in Djinn's
+own environment, which never holds the guard. What the guard does not stop: a command that clears Git's environment
+first, or a remote given an explicit `pushurl` (which `pushInsteadOf` leaves alone).
+`TestGitGuardKeepsWorkersFromPushing` (`internal/harness/guard_test.go`) proves each case.
+
 Next to it, `.agents/settings.txtpb` gives the project's workers their default agent, model, budget and branch
 name, shared by the team, your own file winning: [team settings](team-settings.md).
 
@@ -154,7 +170,8 @@ What is verified and what is supposed:
   (see [Antigravity](#antigravity)). So Djinn writes one project of its own per worktree. In AUTO it grants
   `command(*)`: any command runs, in the sandbox, but the denied ones (real runs, agy 1.3.3, 2026-10-10). **Lost:**
   a review of what runs (agy has no auto mode: `command(*)` approves every command, where Claude's classifier reviews
-  them); a deny grant is a prefix, so `sh -c "git push"` or `git -C . push` gets past it (as past Claude's rules);
+  them); a deny grant is a prefix, so `sh -c "git push"` or `git -C . push` gets past it (as past Claude's rules), and
+  only Djinn's environment then keeps the push from happening ([no worker pushes](#no-worker-pushes));
   in LISTED, a command neither listed nor granted by the user's settings is denied, and the denial ends the turn;
   in both, a command that asks to leave the sandbox (`unsandboxed`) is denied, and the denial ends the turn.
 
@@ -469,7 +486,8 @@ resumes a conversation in the project it began in; rewritten at each start, remo
 `write_file` of the worker's folder and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
 the repository and the repository's common `.git`, read from the `.git` and `commondir` files, without running
 git), `command(<p>)` for each listed command in LISTED, `command(*)` in AUTO, and deny `command(<p>)` for each denied one,
-with `git push` always denied in AUTO, since pushing is the orchestrator's. Djinn writes nothing else of agy's,
+with `git push` always denied in AUTO, since pushing is the orchestrator's (a first line: see
+[no worker pushes](#no-worker-pushes)). Djinn writes nothing else of agy's,
 reads nothing of it, and leaves the user's settings alone. The run recorded in `testdata/antigravity/commit.jsonl`
 wrote a file, then ran `git status`, `git add`, `git commit`, `git diff` and `git log` in the worktree, all
 sandboxed, nothing denied, no network granted.
@@ -487,7 +505,8 @@ and denying `command(git push)`, the user's settings untouched (`wc`, `echo`, `p
 - The deny grant wins: `git push origin w1`, `echo x && git push origin w1` and `GIT_TRACE=0 git push origin w1` end
   in `ERROR`, "Permission denied for command(…). Matches user-configured deny rule.", and the turn goes on to the
   next command (recorded in `testdata/antigravity/auto.jsonl`). It is a prefix: `sh -c "git push origin w1"` and
-  `git -C . push origin w1` ran, and failed only for want of a remote.
+  `git -C . push origin w1` ran, and failed only for want of a remote; Djinn's environment now refuses them all
+  ([no worker pushes](#no-worker-pushes)).
 - The network stays off under `--sandbox`: `curl https://example.com` and `git ls-remote https://github.com/…` gave
   "Could not resolve host". `command(*)` does not let a command out of the sandbox: asked to run `touch` outside the
   worktree with `BypassSandbox: true`, agy asked for `unsandboxed`, which headless denied (ending the turn), and no
