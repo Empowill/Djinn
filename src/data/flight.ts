@@ -26,12 +26,12 @@ export interface OpenQuestion extends Item<Question> {
   blocking: string[];
 }
 
-// Something that waits for the user and is not a question: a worker that waits for an answer, one cut short.
 // urgency is how much an open question holds up, as the lamp computes it (internal/render.UrgencyOf): 0 blocking, a
-// task waits for it; 1 needed before something, its before words; 2 it can wait.
+// task waits for it; 1 a move only the developer can make; 2 needed before something, its before words; 3 it can wait.
 export function urgency(question: OpenQuestion): number {
   if (question.blocking.length) return 0;
-  return question.item.before ? 1 : 2;
+  if (question.item.move) return 1;
+  return question.item.before ? 2 : 3;
 }
 
 // byUrgency orders open questions: blocking, then before X, then can wait. A sort keeps the order within a level.

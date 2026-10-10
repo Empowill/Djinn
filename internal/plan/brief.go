@@ -58,8 +58,11 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"have led the wish before you: its plan carries over, its session does not.\n" +
 	"- **Ask, do not guess, and never in your terminal.** Everything for the developer is a question, " +
 	"`djinn question ask`, with its options and your recommendation, or with none when you really do not know what " +
-	"to think; the analysis behind it goes in its `--context`. A question, a proposal or a \"shall I?\" written in " +
-	"your terminal reaches neither the window, nor the decision log, nor the question workers: there, only name its " +
+	"to think; the analysis behind it goes in its `--context`. Every move only the developer can make (push a tag, " +
+	"merge or open a pull request, create a release, try something on a machine Djinn does not have, grant a right, " +
+	"install and restart) is asked as a question (`djinn question ask`, with what exactly to run or click, and why now), " +
+	"the moment it becomes due; never left in a note or a terminal line. A question, a proposal or a \"shall I?\" " +
+	"written in your terminal reaches neither the window, nor the decision log, nor the question workers: there, only name its " +
 	"code (Q12). A decision the developer takes in the terminal gets a block of kind decision. An answered question " +
 	"is a decision, resolved: do not bring it back to the developer; ask again, a new question, only on a real " +
 	"doubt. A block of kind decision is a decision too. A task that follows from one names it: `--decision Q03`, or " +
@@ -124,8 +127,8 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"where it goes. The developer edits it in the window too.\n" +
 	"- `djinn question ask \"<question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔒` (one " +
 	"emoji for the subject); `--before \"before the merge\"` says what the answer is needed before, without it the " +
-	"question can wait (a question a waiting task needs is blocking anyway); " +
-	"`djinn question list --wish-id <wish> --open`.\n" +
+	"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
+	"developer can make; `djinn question list --wish-id <wish> --open`.\n" +
 	"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
 	"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`); " +
 	"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima; " +
@@ -368,6 +371,8 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 			switch render.UrgencyOf(q, blocked) {
 			case render.Blocking:
 				level = "blocking: " + strings.Join(blocked[q.GetId()], ", ") + " waits"
+			case render.Move:
+				level = "your move"
 			case render.Before:
 				level = clipLine(q.GetBefore())
 			}

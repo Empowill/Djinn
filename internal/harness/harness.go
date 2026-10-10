@@ -95,20 +95,22 @@ type Harness struct {
 	loopDone   chan struct{} // closed when the scheduler has stopped; nil until Schedule
 
 	// The integration of finished work (integrate.go).
-	gates         TakeGate      // nil: commands run without a gate
-	commands      RunCommand    // nil: the processes the commands name
-	integrateTick time.Duration // a pass at least this often; 0: a minute
-	integrateKick chan struct{} // wakes the integration
-	integrating   sync.Once
-	integrateDone chan struct{}         // closed when the integration has stopped; nil until Integrate
-	tested        map[string]tested     // by wish/project; owned by the integration's pass
-	integrateMu   sync.Mutex            // held while a batch is integrated, main merged, or the push checks run: they share a worktree
-	installMu     sync.Mutex            // held while a build is installed
-	installing    string                // the commit installed now, guarded by mu
-	pushMu        sync.Mutex            // held while an integration branch is pushed
-	built         func(Built)           // nil: no build is proposed
-	mainTested    map[string]mainTested // by wish/project; owned by the integration's pass
-	mainNow       atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
+	gates            TakeGate      // nil: commands run without a gate
+	commands         RunCommand    // nil: the processes the commands name
+	integrateTick    time.Duration // a pass at least this often; 0: a minute
+	integrateKick    chan struct{} // wakes the integration
+	integrating      sync.Once
+	integrateDone    chan struct{}         // closed when the integration has stopped; nil until Integrate
+	tested           map[string]tested     // by wish/project; owned by the integration's pass
+	integrateMu      sync.Mutex            // held while a batch is integrated, main merged, or the push checks run: they share a worktree
+	installMu        sync.Mutex            // held while a build is installed
+	installing       string                // the commit installed now, guarded by mu
+	installed        map[string]string     // by projectID: sha of last installed build, guarded by mu
+	uninstalledDelay time.Duration         // how long a build waits uninstalled before asking; 0: defaultUninstalledDelay
+	pushMu           sync.Mutex            // held while an integration branch is pushed
+	built            func(Built)           // nil: no build is proposed
+	mainTested       map[string]mainTested // by wish/project; owned by the integration's pass
+	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 
 	// Warm workers (warm.go), guarded by sched.
 	warmOn bool
@@ -192,11 +194,20 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}), warm: map[string]*warm{},
 		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
+		installed: map[string]string{},
 	}
 	for _, o := range opts {
 		o(h)
 	}
 	return h
+}
+
+// defaultUninstalledDelay is how long a build waits uninstalled before Djinn asks to install and restart.
+const defaultUninstalledDelay = 5 * time.Minute
+
+// WithUninstalledDelay sets how long an integrated build may stay uninstalled before Djinn asks to install it.
+func WithUninstalledDelay(d time.Duration) Option {
+	return func(h *Harness) { h.uninstalledDelay = d }
 }
 
 // Close stops the scheduler and every worker, waits for them to end, and records their tasks as interrupted.
@@ -562,12 +573,19 @@ func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.
 	return p, nil
 }
 
+const workerMoveRule = "When your work leaves a move only the developer can make (push a tag, open or merge a PR, start a release, check on a Mac or Windows, install), ask it with `djinn question ask` before you end, with the exact command."
+
 // briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
-// ends.
+// ends, and to ask every move only the developer can make.
 func briefed(r *run, prompt string, readOnly bool) string {
-	if r.checks != "" && r.task.GetBranch() != "" && !readOnly {
-		return prompt + "\n\n" + r.checks
+	if r.task.GetBranch() != "" && !readOnly {
+		if r.checks != "" {
+			return prompt + "\n\n" + r.checks + " " + workerMoveRule
+		}
+		if r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
+			return prompt + "\n\n" + workerMoveRule
+		}
 	}
 	return prompt
 }

@@ -220,7 +220,7 @@ func converterPrompt(q *planv1.Question, retry, brief string) (title, prompt str
 		"will no existing one carries. A task that extends an azima beyond its goal: say so in your last line, the "+
 		"lead rephrases its goal.\n"+
 		"3. If the answer leaves something open, do not guess: ask it, `djinn question ask \"…\" %[2]s --options \"…\" "+
-		"--options \"…\" --recommendation \"…\" --context \"…\"`, its context naming %[1]s.\n"+
+		"--options \"…\" --recommendation \"…\" --context \"…\"`, its context naming %[1]s. Every move only the developer can make (push a tag, merge or open a pull request, create a release, try something on a machine Djinn does not have, grant a right, install and restart) is asked as a question (`djinn question ask`, with what exactly to run or click, and why now), the moment it becomes due; never left in a note or a terminal line.\n"+
 		"4. If the decision calls for no work, spawn nothing and say why in one sentence.\n"+
 		"5. End with one line: what you spawned or asked.\n\n", code, wish)
 	b.WriteString(questionAccess + retry + "## Where the wish stands\n\n" + brief)

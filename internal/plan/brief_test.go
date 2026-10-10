@@ -119,6 +119,8 @@ func TestBrief(t *testing.T) {
 		// Everything for the developer is a question; a resolved one is resolved; blocks are for agents.
 		"Everything for the developer is a question", "with none when you really do not know what to think",
 		"goes in its `--context`", "ask again, a new question, only on a real doubt", "**Blocks are for agents**",
+		"Every move only the developer can make (push a tag, merge or open a pull request, create a release",
+		"--move",
 		// An azima carries one clear goal, and new work finds its azima first.
 		"**An azima carries one clear goal**", "rephrase its goal (its plan file's Goal and its title",
 		"open a new azima only for a will no existing one carries",

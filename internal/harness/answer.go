@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -41,6 +42,9 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	if d, ok := h.answerPush(ctx, q); ok {
 		did = append(did, d)
 	}
+	if d, ok := h.answerMove(ctx, q); ok {
+		did = append(did, d)
+	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"edit_question_id": q.GetId()})
 	if err != nil {
 		log.Printf("djinn: question %s: find its task: %v", q.GetCode(), err)
@@ -62,11 +66,103 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 		}
 	}
 	// A decision for the lead to act on: a converter turns it into tasks. An edit question, a question on work that
-	// failed to integrate, one about a push, a routed request and a grant are settled by Djinn itself.
-	if len(tasks) == 0 && len(did) == 0 && q.GetRoute() == nil && !q.GetGrant() {
+	// failed to integrate, one about a push, a routed request, a grant and a move are settled by Djinn itself.
+	if len(tasks) == 0 && len(did) == 0 && q.GetRoute() == nil && !q.GetGrant() && !q.GetMove() {
 		h.askWorker(ctx, q, planv1.TaskRole_TASK_ROLE_CONVERTER, "")
 	}
 	return strings.Join(slices.DeleteFunc(did, func(d string) bool { return d == "" }), "; ")
+}
+
+// answerMove takes the person's answer to a question Djinn asked for a move only the developer can make:
+// a push of a tag, installing an integrated build, verifying an azima proof, or a pull request / release dry run.
+func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, bool) {
+	if !q.GetMove() {
+		return "", false
+	}
+	choice := q.GetAnswer().GetChoice()
+	if choice != planv1.Choice_CHOICE_A && choice != planv1.Choice_CHOICE_YES {
+		return "left for later", true
+	}
+
+	// 1. Azima proof
+	if q.GetTaskId() != "" {
+		task, err := store.Get[*planv1.Task](ctx, h.store, q.GetTaskId())
+		if err == nil && plan.IsAzima(task) {
+			_, err := h.Done(ctx, "", &planv1.TaskServiceDoneRequest{
+				TaskId: q.GetTaskId(),
+				Note:   "proof verified",
+				By:     planv1.Closer_CLOSER_DEVELOPER,
+			})
+			if err != nil {
+				return "Djinn could not mark azima done: " + err.Error(), true
+			}
+			return fmt.Sprintf("Djinn marked %s done", task.GetCode()), true
+		}
+	}
+
+	textLower := strings.ToLower(q.GetText() + " " + q.GetContext())
+
+	// 2. Push tag
+	if strings.Contains(textLower, "push tag") {
+		var tagName string
+		fields := strings.Fields(q.GetText() + " " + q.GetContext())
+		for i, f := range fields {
+			if strings.EqualFold(f, "tag") && i+1 < len(fields) {
+				tagName = strings.Trim(fields[i+1], "?:, ")
+				break
+			}
+		}
+		if tagName != "" {
+			wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
+			if err == nil && len(wish.GetProjectIds()) > 0 {
+				project, err := store.Get[*planv1.Project](ctx, h.store, wish.GetProjectIds()[0])
+				if err == nil {
+					repo := project.GetDirectory()
+					remote, _ := pushTarget(ctx, repo, "HEAD")
+					if remote == "" {
+						remote = "origin"
+					}
+					if _, err := git(ctx, repo, "push", remote, tagName); err != nil {
+						return fmt.Sprintf("Djinn pushed tag %s: %v", tagName, err), true
+					}
+				}
+			}
+			return "Djinn pushed tag " + tagName, true
+		}
+	}
+
+	// 3. Install and restart
+	if strings.Contains(textLower, "install") {
+		wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
+		if err == nil && len(wish.GetProjectIds()) > 0 {
+			projectID := wish.GetProjectIds()[0]
+			project, err := store.Get[*planv1.Project](ctx, h.store, projectID)
+			if err == nil {
+				branch, _ := h.integrationBranch(ctx, wish, project)
+				sha, _ := git(ctx, project.GetDirectory(), "rev-parse", "refs/heads/"+branch)
+				if sha != "" {
+					if _, err := h.Install(ctx, q.GetWishId(), projectID, sha, nil); err != nil {
+						return fmt.Sprintf("Djinn install failed: %v", err), true
+					}
+					h.mu.Lock()
+					h.installed[projectID] = sha
+					h.mu.Unlock()
+					return "Djinn installed build " + short8(sha), true
+				}
+			}
+		}
+		return "install noted", true
+	}
+
+	// 4. PR / Release dry run / Other moves
+	if strings.Contains(textLower, "pull request") {
+		return "Djinn noted: open pull request", true
+	}
+	if strings.Contains(textLower, "release") {
+		return "Djinn noted: start release dry run", true
+	}
+
+	return "Djinn noted move", true
 }
 
 // answer gives the answer q to the task id: to its run, which applies it, or to the task itself when no worker runs

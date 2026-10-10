@@ -438,7 +438,7 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
   assert.equal(f.workCount(tasks), 2);
 });
 
-test("open questions come blocking, then before X, then can wait, across the wishes", () => {
+test("open questions come blocking, then your move, then before X, then can wait, across the wishes", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const oil = wish("w2", "Find the oil", 2);
   const plan = f.flightPlan([lamp, oil], {
@@ -447,6 +447,7 @@ test("open questions come blocking, then before X, then can wait, across the wis
       [
         { id: "q1", code: "Q01", text: "Brass?" },
         { id: "q2", code: "Q02", text: "Wick?", before: "before the merge" },
+        { id: "q6", code: "Q03", text: "Push tag?", move: true },
       ],
     ),
     w2: detail(
@@ -474,10 +475,11 @@ test("open questions come blocking, then before X, then can wait, across the wis
     plan.questions.map((q) => [q.item.id, f.urgency(q)]),
     [
       ["q5", 0],
-      ["q2", 1],
-      ["q4", 1],
-      ["q1", 2],
-      ["q3", 2],
+      ["q6", 1],
+      ["q2", 2],
+      ["q4", 2],
+      ["q1", 3],
+      ["q3", 3],
     ],
   );
   // One wish alone sorts the same way.
