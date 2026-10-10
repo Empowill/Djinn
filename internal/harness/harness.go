@@ -195,12 +195,19 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}), warm: map[string]*warm{},
 		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
+		policy: machine.DefaultPolicy(),
 	}
 	for _, o := range opts {
 		o(h)
 	}
 	h.batcher = newTellBatcher(h)
 	return h
+}
+
+// lowPriority reports whether workers should run with low CPU priority under the current policy.
+// The caller holds h.sched.
+func (h *Harness) lowPriority() bool {
+	return h.policy.LowPriority()
 }
 
 // Close stops the scheduler and every worker, waits for them to end, and records their tasks as interrupted.
@@ -602,7 +609,7 @@ func (h *Harness) launch(
 	perms = withCommit(task, perms)
 	wk := r.warm
 	r.warm = nil
-	if wk != nil && !wk.fits(readOnly, perms) {
+	if wk != nil && (!wk.fits(readOnly, perms) || wk.spec.LowPriority != h.lowPriority()) {
 		// Decided otherwise in the meantime: its worktree is the task's, so it goes first.
 		h.stopWarm(wk)
 		wk = nil
@@ -719,6 +726,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
 	spec.Scope = h.scope(t.GetCode())
+	spec.LowPriority = h.lowPriority()
 	w, err := provider.Start(h.ctx, spec)
 	if err != nil {
 		return err

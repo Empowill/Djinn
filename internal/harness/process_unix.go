@@ -11,8 +11,16 @@ import (
 )
 
 // ownGroup makes the process lead a group of its own: a signal to the group reaches what it started.
-func ownGroup(cmd *exec.Cmd) {
+func ownGroup(cmd *exec.Cmd, _ bool) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+}
+
+// applyPriority sets low CPU priority (nice 10) on the started process if lowPriority is true.
+func applyPriority(cmd *exec.Cmd, lowPriority bool) {
+	if !lowPriority || cmd.Process == nil {
+		return
+	}
+	_ = syscall.Setpriority(syscall.PRIO_PROCESS, cmd.Process.Pid, 10)
 }
 
 // terminate asks the process group to stop, and in a scope every process of its cgroup that left the group. A

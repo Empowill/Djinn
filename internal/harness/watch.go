@@ -207,7 +207,7 @@ func (w *watchWorker) loop() {
 			return
 		}
 		started := time.Now()
-		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Scope, w.c.Grace, w.c.Items)
+		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Scope, w.c.Grace, w.c.Items, w.spec.LowPriority)
 		if err != nil {
 			w.res = Result{ExitCode: -1, Err: err}
 			return
