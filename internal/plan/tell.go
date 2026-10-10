@@ -53,9 +53,10 @@ func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 	return w.Leads.Say(name, line)
 }
 
-// Answered tells the lead of q's wish that the developer answered q, in one line. Handlers calls it once the
-// answer is stored, when it serves the leads; the answer stays in the brief whatever happens here.
-func (w *Wishes) Answered(ctx context.Context, q *planv1.Question) {
+// Answered tells the lead of q's wish that the developer answered q, in one line, with what Djinn did with the
+// answer (did) when it settled it. Handlers calls it once the answer is stored, when it serves the leads; the answer
+// stays in the brief whatever happens here.
+func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
 	if q.GetAnswer() == nil {
 		return
 	}
@@ -63,7 +64,7 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question) {
 		w.tell(ctx, q, RoutedLine(q))
 		return
 	}
-	w.tell(ctx, q, AnswerLine(q, w.workerOf(ctx, q, planv1.TaskRole_TASK_ROLE_CONVERTER)))
+	w.tell(ctx, q, AnswerLine(q, w.workerOf(ctx, q, planv1.TaskRole_TASK_ROLE_CONVERTER), did))
 }
 
 // Enlightened tells the lead of q's wish that the developer wants to know more before answering q, with their note.
@@ -109,8 +110,9 @@ func (w *Wishes) tell(ctx context.Context, q *planv1.Question, line string) {
 }
 
 // AnswerLine is the line that tells a lead the answer to q: the choice, the option and the note, on one line; then
-// the question worker that turns it into tasks, when worker names one, or else that the lead acts on it.
-func AnswerLine(q *planv1.Question, worker string) string {
+// what Djinn did with it, when did says it settled it; else the question worker that turns it into tasks, when worker
+// names one, or else that the lead acts on it.
+func AnswerLine(q *planv1.Question, worker, did string) string {
 	choice := choiceText(q)
 	if letter, option, ok := strings.Cut(choice, ": "); ok {
 		choice = fmt.Sprintf("%s — %q", letter, option)
@@ -119,6 +121,10 @@ func AnswerLine(q *planv1.Question, worker string) string {
 	fmt.Fprintf(&b, "Djinn: %s answered %s.", q.GetCode(), choice)
 	if note := q.GetAnswer().GetNote(); note != "" {
 		fmt.Fprintf(&b, " Note: %q.", clipLine(note))
+	}
+	if did != "" {
+		fmt.Fprintf(&b, " %s.", strings.TrimSuffix(did, "."))
+		return b.String()
 	}
 	if worker != "" {
 		fmt.Fprintf(&b, " %s turns it into tasks; you will hear when it ends.", worker)

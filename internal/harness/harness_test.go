@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +33,19 @@ type env struct {
 	wishes  planv1connect.WishServiceClient
 	plans   planv1connect.PlanServiceClient
 	last    string // the wish e.wish made last
+
+	mu  sync.Mutex
+	did []string // what Djinn said it did with each answer, for the lead
+}
+
+// lastDid is what Djinn said it did with the last answer.
+func (e *env) lastDid() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.did) == 0 {
+		return ""
+	}
+	return e.did[len(e.did)-1]
 }
 
 // testProviders are the providers of a test: a watcher's waits are the test's, not a second.
@@ -62,21 +76,27 @@ func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, o
 		t.Fatal(err)
 	}
 	h.Schedule()
+	e := &env{home: home, db: db, h: h}
+	answered := func(ctx context.Context, q *planv1.Question) string {
+		did := h.Answered(ctx, q)
+		e.mu.Lock()
+		e.did = append(e.did, did)
+		e.mu.Unlock()
+		return did
+	}
 	mux := http.NewServeMux()
-	for prefix, handler := range plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithEnlightened(h.Enlightened),
+	for prefix, handler := range plan.Handlers(db, plan.WithAnswered(answered), plan.WithEnlightened(h.Enlightened),
 		plan.WithWorkers(h)) {
 		mux.Handle(prefix, handler)
 	}
 	mux.Handle(Handler(h))
 	mux.Handle(PlanHandler(h))
 	srv := httptest.NewServer(mux)
-	e := &env{
-		home: home, db: db, h: h, srv: srv,
-		tasks:   planv1connect.NewTaskServiceClient(srv.Client(), srv.URL),
-		project: planv1connect.NewProjectServiceClient(srv.Client(), srv.URL),
-		wishes:  planv1connect.NewWishServiceClient(srv.Client(), srv.URL),
-		plans:   planv1connect.NewPlanServiceClient(srv.Client(), srv.URL),
-	}
+	e.srv = srv
+	e.tasks = planv1connect.NewTaskServiceClient(srv.Client(), srv.URL)
+	e.project = planv1connect.NewProjectServiceClient(srv.Client(), srv.URL)
+	e.wishes = planv1connect.NewWishServiceClient(srv.Client(), srv.URL)
+	e.plans = planv1connect.NewPlanServiceClient(srv.Client(), srv.URL)
 	t.Cleanup(e.down)
 	return e
 }

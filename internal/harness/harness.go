@@ -42,6 +42,7 @@ const (
 	methodHold     = "harness/hold"     // the task's worker was paused or resumed; the request is the task
 	methodMeasure  = "harness/measure"  // what the task's worker uses was read; the request is the reading
 	methodAzima    = "harness/azima"    // djinn up found an azima stored as work, from before kinds; the request is the task
+	methodUngroup  = "harness/ungroup"  // djinn up found a task part of an azima that is gone; the request is the task, part of none
 )
 
 // maxText is the most of an event's text, and of its raw line, that is kept.
@@ -213,7 +214,7 @@ func (h *Harness) Close() {
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
 // what resuming them needs (provider, session, worktree). Then every interrupted task Djinn may resume waits for the
 // scheduler to resume it (queueInterrupted). First, the azimas stored as work before tasks had kinds become azimas
-// (migrateAzimas).
+// (migrateAzimas), and a task part of an azima that is gone becomes part of none (ungroupOrphans).
 func (h *Harness) Recover(ctx context.Context) error {
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
@@ -221,6 +222,9 @@ func (h *Harness) Recover(ctx context.Context) error {
 		return err
 	}
 	if err := h.migrateAzimas(ctx, tasks); err != nil {
+		return err
+	}
+	if err := h.ungroupOrphans(ctx, tasks); err != nil {
 		return err
 	}
 	h.recoverIntegrations(ctx, tasks)
@@ -750,21 +754,35 @@ func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id str
 	return project, nil
 }
 
-// nextCode is the code of a new task of the wish: W1, W2…, after the highest one. Tasks are never deleted, so a
-// code is never given twice; the unique index guards it anyway.
-func nextCode(ctx context.Context, tx *store.Tx, wishID string) (string, error) {
-	tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wishID})
+// nextCode is the code of a new task of the wish: W1, W2…, after the highest one ever given (nextNumber).
+func nextCode(ctx context.Context, r store.Reader, wishID string) (string, error) {
+	return nextNumber(ctx, r, wishID, "W")
+}
+
+// nextNumber is the code of a new task of the wish wishID lettered letter, W for work and T for an azima: the number
+// after the highest one its tasks have or its deleted tasks had (Wish.retired_codes), so that a code is never given
+// twice, deleted or not. The unique index guards the tasks' codes anyway.
+func nextNumber(ctx context.Context, r store.Reader, wishID, letter string) (string, error) {
+	wish, err := store.Get[*planv1.Wish](ctx, r, wishID)
 	if err != nil {
 		return "", err
 	}
-	last := 0
+	tasks, err := store.List[*planv1.Task](ctx, r, store.Where{"wish_id": wishID})
+	if err != nil {
+		return "", err
+	}
+	codes := wish.GetRetiredCodes()
 	for _, t := range tasks {
+		codes = append(codes, t.GetCode())
+	}
+	last := 0
+	for _, c := range codes {
 		var n int
-		if _, err := fmt.Sscanf(t.GetCode(), "W%d", &n); err == nil && n > last {
+		if _, err := fmt.Sscanf(strings.ToUpper(c), letter+"%d", &n); err == nil && n > last {
 			last = n
 		}
 	}
-	return fmt.Sprintf("W%d", last+1), nil
+	return fmt.Sprintf("%s%d", letter, last+1), nil
 }
 
 // pump records the worker's events until the task ends for good: a worker stopped to start again, allowed to

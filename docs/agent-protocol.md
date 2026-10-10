@@ -100,7 +100,8 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
     keeps its azima in progress;
   - re-sequence as the plan learns: `djinn task depend <task> --after … --also W6=W5,W3` replaces what several
     tasks wait for at once, all or none, `djinn task group <task> --part-of T07` its azima. Djinn refuses a cycle,
-    through dependencies and azimas together, naming it, and then changes nothing. `--depends-on` is the former
+    through dependencies and azimas together, naming it, and then changes nothing. An azima absorbed into another is
+    deleted (`djinn task delete`) only once its parts are regrouped: Djinn names them; its code is never given again. `--depends-on` is the former
     name of `--after`, still read.
 - **Watchers.** To wait on something outside, the lead spawns a watcher instead of polling:
   `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model

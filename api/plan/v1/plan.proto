@@ -275,6 +275,9 @@ message Wish {
   // Where the push of each Git project's integration branch stands: its last push, and the question Djinn asks about
   // the next one.
   repeated WishPush pushes = 17;
+  // The codes of the wish's tasks and azimas that were deleted (djinn task delete), W12 or T27: never given again,
+  // so that a commit, a plan file or a decision that names one names one task only.
+  repeated string retired_codes = 18;
 }
 
 // PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.

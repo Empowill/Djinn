@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -65,24 +66,26 @@ func (h *Harness) failed(
 
 // correct settles the integration of group, tasks whose work failed as in says, after attempts correction workers:
 // another one starts when more are allowed and the project's correction_attempts are not spent; otherwise Djinn asks
-// the person. text is the event that says what failed.
+// the person. text is the event that says what failed. It says what Djinn did, for the lead.
 func (h *Harness) correct(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, group []*planv1.Task,
 	in *planv1.TaskIntegration, text string, attempts int32, more bool,
-) {
+) string {
 	in = proto.CloneOf(in)
 	in.CorrectedBy, in.QuestionId, in.Attempts = "", "", attempts
+	var unstarted error
 	if more && int(attempts) < settings.CorrectionAttempts {
 		c, err := h.spawnCorrection(ctx, wish, project, group, in, attempts+1)
 		if err == nil {
 			in.CorrectedBy, in.Attempts = c.GetId(), attempts+1
 			h.settleIntegration(ctx, group, in, fmt.Sprintf("%s; %s corrects it, attempt %d of %d", text, c.GetCode(),
 				attempts+1, settings.CorrectionAttempts), nil)
-			return
+			return didStart(c)
 		}
+		unstarted = err
 		text += "; the correction worker could not start: " + err.Error()
 	}
-	q, err := h.askIntegration(ctx, wish, group, in)
+	q, err := h.askIntegration(ctx, wish, group, in, unstarted)
 	if err != nil {
 		log.Printf("djinn: integrate %s: ask: %v", codes(group), err)
 	} else {
@@ -90,6 +93,28 @@ func (h *Harness) correct(
 		text += "; Djinn asks you " + q.GetCode()
 	}
 	h.settleIntegration(ctx, group, in, text, nil)
+	return didAsk("correction", unstarted, q)
+}
+
+// didStart says, for the lead, that Djinn started the worker t.
+func didStart(t *planv1.Task) string {
+	return fmt.Sprintf("Djinn started %s: %s", t.GetCode(), t.GetTitle())
+}
+
+// didAsk says, for the lead, that the next worker did not start, unstarted saying why when it was tried, and that
+// Djinn asked q instead, when it could.
+func didAsk(worker string, unstarted error, q *planv1.Question) string {
+	var did []string
+	if unstarted != nil {
+		did = append(did, fmt.Sprintf("Djinn could not start a %s worker (%v)", worker, unstarted))
+	}
+	if q != nil {
+		did = append(did, "Djinn asks "+q.GetCode())
+	}
+	if len(did) == 0 {
+		return "Djinn could not ask the developer again: its log says why"
+	}
+	return strings.Join(did, "; ")
 }
 
 // spawnCorrection starts the attempt-th correction worker of group, tasks whose work failed as in says: a work task of
@@ -103,11 +128,33 @@ func (h *Harness) spawnCorrection(
 	if err != nil {
 		return nil, err
 	}
-	return h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
+	azima, note := h.azimaOf(ctx, from)
+	c, err := h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: correctionTitle(group, f, in.GetBranch()),
 		Prompt:   correctionPrompt(group, f, in.GetBranch(), settings, attempt),
-		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: from.GetPartOf(),
+		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: azima,
 	}, &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}})
+	if err == nil && note != "" {
+		h.Note(c.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: note})
+	}
+	return c, err
+}
+
+// azimaOf is the azima a worker Djinn starts on from's work is part of: from's, while its wish still has it; else
+// none, note saying why, for the worker's events. A missing azima never keeps a correction or a review from starting.
+func (h *Harness) azimaOf(ctx context.Context, from *planv1.Task) (azima, note string) {
+	id := from.GetPartOf()
+	if id == "" {
+		return "", ""
+	}
+	a, err := store.Get[*planv1.Task](ctx, h.store, id)
+	switch {
+	case err == nil && plan.IsAzima(a) && a.GetWishId() == from.GetWishId():
+		return id, ""
+	case err != nil && !errors.Is(err, store.ErrNotFound):
+		return "", fmt.Sprintf("part of no azima: the azima of %s, %s, could not be read: %v", from.GetCode(), short8(id), err)
+	}
+	return "", fmt.Sprintf("part of no azima: %s was part of %s, which is no longer one of the wish's azimas", from.GetCode(), short8(id))
 }
 
 // failedTask is the task of group whose work failed: the one whose merge conflicted, or the first one not a
@@ -182,8 +229,11 @@ func headline(s string) string {
 }
 
 // askIntegration asks the person, on wish, what to do with the work of group, which failed as in says once the
-// correction attempts were spent: try again, leave it, or take it.
-func (h *Harness) askIntegration(ctx context.Context, wish *planv1.Wish, group []*planv1.Task, in *planv1.TaskIntegration) (*planv1.Question, error) {
+// correction attempts were spent, or once unstarted kept the next correction worker from starting: try again, leave
+// it, or take it.
+func (h *Harness) askIntegration(
+	ctx context.Context, wish *planv1.Wish, group []*planv1.Task, in *planv1.TaskIntegration, unstarted error,
+) (*planv1.Question, error) {
 	f := in.GetFailure()
 	tried := fmt.Sprintf("Djinn started %d correction workers, one after the other: none got it in.", in.GetAttempts())
 	switch in.GetAttempts() {
@@ -192,6 +242,7 @@ func (h *Harness) askIntegration(ctx context.Context, wish *planv1.Wish, group [
 	case 1:
 		tried = "Djinn started a correction worker: it did not get it in."
 	}
+	tried = unstartedText(tried, "correction", in.GetAttempts(), unstarted)
 	var ctxt strings.Builder
 	fmt.Fprintf(&ctxt, "**What failed.** %s\n\n", f.GetReason())
 	if len(f.GetFiles()) > 0 {
@@ -234,6 +285,18 @@ func (h *Harness) askIntegration(ctx context.Context, wish *planv1.Wish, group [
 	}
 	h.notify()
 	return q, nil
+}
+
+// unstartedText is tried, what the attempts of a worker did, once unstarted kept the next one from starting: the
+// reason it did not start, in place of the settings when none had started.
+func unstartedText(tried, worker string, attempts int32, unstarted error) string {
+	switch {
+	case unstarted == nil:
+		return tried
+	case attempts == 0:
+		return fmt.Sprintf("Djinn could not start a %s worker: %v.", worker, unstarted)
+	}
+	return fmt.Sprintf("%s Djinn could not start another one: %v.", tried, unstarted)
 }
 
 // settleCorrected records the work the correction workers of batch corrected as committed with theirs, in in.Sha:
@@ -334,16 +397,16 @@ func (h *Harness) integrationOf(ctx context.Context, t *planv1.Task) (*planv1.Wi
 
 // answerIntegration takes the person's answer to a question Djinn asked once a failed integration's attempts were
 // spent: A starts a new correction worker, or review worker, its attempts counted again from one; B leaves the work
-// out; C leaves it to the person. It tells whether q was such a question.
-func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) bool {
+// out; C leaves it to the person. It tells whether q was such a question, and what Djinn did, for the lead.
+func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) (string, bool) {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
 	if err != nil {
 		log.Printf("djinn: question %s: %v", q.GetCode(), err)
-		return false
+		return "", false
 	}
 	group := slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return t.GetIntegration().GetQuestionId() != q.GetId() })
 	if len(group) == 0 {
-		return false
+		return "", false
 	}
 	slices.SortFunc(group, func(a, b *planv1.Task) int { return a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime()) })
 	in := proto.CloneOf(group[0].GetIntegration())
@@ -352,24 +415,26 @@ func (h *Harness) answerIntegration(ctx context.Context, q *planv1.Question) boo
 		wish, project, settings, err := h.integrationOf(ctx, group[0])
 		if err != nil {
 			log.Printf("djinn: question %s: %v", q.GetCode(), err)
-			return true
+			return "Djinn could not try again: " + err.Error(), true
 		}
 		settings.CorrectionAttempts = max(settings.CorrectionAttempts, 1) // Asked for, even where none starts by itself.
 		text := "integration: you said to try again (" + q.GetCode() + ")"
 		if in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED {
-			h.review(ctx, wish, project, settings, group, in, text, 0, true)
-			return true
+			return h.review(ctx, wish, project, settings, group, in, text, 0, true), true
 		}
-		h.correct(ctx, wish, project, settings, group, in, text, 0, true)
+		return h.correct(ctx, wish, project, settings, group, in, text, 0, true), true
 	case planv1.Choice_CHOICE_B:
 		in.Reason = "left out (" + q.GetCode() + "): " + in.GetReason()
 		h.settleIntegration(ctx, group, in, "integration: left out of "+in.GetBranch()+" ("+q.GetCode()+")", nil)
+		return fmt.Sprintf("Djinn leaves the work of %s out of %s", codes(originals(group)), in.GetBranch()), true
 	case planv1.Choice_CHOICE_C:
 		in.Reason = "you take it (" + q.GetCode() + "): " + in.GetReason()
 		h.settleIntegration(ctx, group, in, "integration: you take it ("+q.GetCode()+"); it stays out of "+in.GetBranch()+
 			" until you bring it in", nil)
+		return fmt.Sprintf("Djinn leaves the work of %s to the developer: it stays out of %s until they bring it in",
+			codes(originals(group)), in.GetBranch()), true
 	}
-	return true
+	return "", true
 }
 
 // unique is ids without repeats, in the order they first come.

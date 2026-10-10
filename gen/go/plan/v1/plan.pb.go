@@ -2135,7 +2135,10 @@ type Wish struct {
 	PushMode PushMode `protobuf:"varint,16,opt,name=push_mode,json=pushMode,proto3,enum=plan.v1.PushMode" json:"push_mode,omitempty"`
 	// Where the push of each Git project's integration branch stands: its last push, and the question Djinn asks about
 	// the next one.
-	Pushes        []*WishPush `protobuf:"bytes,17,rep,name=pushes,proto3" json:"pushes,omitempty"`
+	Pushes []*WishPush `protobuf:"bytes,17,rep,name=pushes,proto3" json:"pushes,omitempty"`
+	// The codes of the wish's tasks and azimas that were deleted (djinn task delete), W12 or T27: never given again,
+	// so that a commit, a plan file or a decision that names one names one task only.
+	RetiredCodes  []string `protobuf:"bytes,18,rep,name=retired_codes,json=retiredCodes,proto3" json:"retired_codes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2285,6 +2288,13 @@ func (x *Wish) GetPushMode() PushMode {
 func (x *Wish) GetPushes() []*WishPush {
 	if x != nil {
 		return x.Pushes
+	}
+	return nil
+}
+
+func (x *Wish) GetRetiredCodes() []string {
+	if x != nil {
+		return x.RetiredCodes
 	}
 	return nil
 }
@@ -12576,7 +12586,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0eProjectSetting\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12.\n" +
-	"\x06source\x18\x03 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\"\xef\x05\n" +
+	"\x06source\x18\x03 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\"\x94\x06\n" +
 	"\x04Wish\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1f\n" +
@@ -12601,7 +12611,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x10push_after_tasks\x18\x0e \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x0epushAfterTasks\x12 \n" +
 	"\vdescription\x18\x0f \x01(\tR\vdescription\x12.\n" +
 	"\tpush_mode\x18\x10 \x01(\x0e2\x11.plan.v1.PushModeR\bpushMode\x12)\n" +
-	"\x06pushes\x18\x11 \x03(\v2\x11.plan.v1.WishPushR\x06pushes\"\xfd\x01\n" +
+	"\x06pushes\x18\x11 \x03(\v2\x11.plan.v1.WishPushR\x06pushes\x12#\n" +
+	"\rretired_codes\x18\x12 \x03(\tR\fretiredCodes\"\xfd\x01\n" +
 	"\bWishPush\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12,\n" +
