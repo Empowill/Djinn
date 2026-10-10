@@ -453,7 +453,7 @@ func (h *Harness) spawn(
 		}
 		return nil, err
 	}
-	r.warm, r.branch, r.from = wk, settings.Branch, plan.IntegrationBranchOf(wish, project.GetId())
+	r.warm, r.branch, r.from = wk, settings.Branch, h.workerStartBranch(ctx, wish, project, settings, task)
 	r.checks = settings.ChecksBrief()
 	if questionWorker(task) {
 		p, _, fb := questionProvider(settings)
