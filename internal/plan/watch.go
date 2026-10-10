@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -36,6 +37,7 @@ const maxChanged = 200
 var everything = []planv1.Change{
 	planv1.Change_CHANGE_WISH, planv1.Change_CHANGE_TASK, planv1.Change_CHANGE_QUESTION,
 	planv1.Change_CHANGE_BLOCK, planv1.Change_CHANGE_PROJECT, planv1.Change_CHANGE_INBOX, planv1.Change_CHANGE_TILASM,
+	planv1.Change_CHANGE_LOAD,
 }
 
 // watchers fans the committed changes of the store out to the open Watch streams. Its zero value is ready: it
@@ -62,6 +64,7 @@ type watcher struct {
 type unsent struct {
 	kinds                    map[planv1.Change]bool
 	tasks, questions, blocks map[string]bool
+	load                     *djinnv1.LoadNotch
 }
 
 // Watch follows the changes of the wishes: a first message that names everything, then the changes, coalesced, with
@@ -76,7 +79,12 @@ func (w *Wishes) Watch(
 	}
 	sub := w.watch.add(w, req.Msg.GetWishId())
 	defer w.watch.remove(sub)
-	if err := stream.Send(&planv1.WishServiceWatchResponse{Changes: everything}); err != nil {
+	initial := &planv1.WishServiceWatchResponse{Changes: everything}
+	if w.Load != nil {
+		n := w.Load()
+		initial.Load = &n
+	}
+	if err := stream.Send(initial); err != nil {
 		return err
 	}
 	for {
@@ -189,6 +197,33 @@ func (ws *watchers) changed(ms []proto.Message) {
 	}
 }
 
+// changeLoad notes that Djinn's load notch changed, for every open stream.
+func (ws *watchers) changeLoad(notch djinnv1.LoadNotch) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	for sub := range ws.subs {
+		sub.mu.Lock()
+		p := sub.pending[""]
+		if p == nil {
+			p = &unsent{kinds: map[planv1.Change]bool{}}
+			sub.pending[""] = p
+		}
+		p.kinds[planv1.Change_CHANGE_LOAD] = true
+		n := notch
+		p.load = &n
+		sub.mu.Unlock()
+		select {
+		case sub.kick <- struct{}{}:
+		default: // Already kicked.
+		}
+	}
+}
+
+// ChangeLoad tells the open Watch streams that Djinn's load notch changed.
+func (w *Wishes) ChangeLoad(notch djinnv1.LoadNotch) {
+	w.watch.changeLoad(notch)
+}
+
 func mark(ids map[string]bool, id string) map[string]bool {
 	if ids == nil {
 		ids = map[string]bool{}
@@ -220,6 +255,9 @@ func (sub *watcher) take(ctx context.Context, s *store.Store) []*planv1.WishServ
 			p.kinds[planv1.Change_CHANGE_WISH] = true
 		}
 		msg.Changes = slices.Sorted(maps.Keys(p.kinds))
+		if p.load != nil {
+			msg.Load = p.load
+		}
 		out = append(out, msg)
 	}
 	return out

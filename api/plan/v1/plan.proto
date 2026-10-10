@@ -5,6 +5,7 @@ syntax = "proto3";
 package plan.v1;
 
 import "buf/validate/validate.proto";
+import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
@@ -1892,6 +1893,8 @@ message WishServiceWatchResponse {
   // them and keep the others. Unset in the first message, or when too many changed at once to send: then read again
   // what changes names.
   WishChanges changed = 3;
+  // The machine's operating load notch, when the change includes CHANGE_LOAD, or in the first message.
+  optional djinn.v1.LoadNotch load = 4;
 }
 
 // WishChanges are the tasks, questions and blocks of a wish that changed, whole.
@@ -1923,6 +1926,8 @@ enum Change {
   CHANGE_INBOX = 6;
   // Its tilasms: one put, restored or imported.
   CHANGE_TILASM = 7;
+  // The machine operating load notch changed.
+  CHANGE_LOAD = 8;
 }
 
 message WishServiceRenderRequest {

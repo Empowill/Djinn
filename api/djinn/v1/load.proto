@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+// The operating load slider that controls how much of the machine Djinn uses.
+package djinn.v1;
+
+import "buf/validate/validate.proto";
+import "djinn/v1/options.proto";
+
+// LoadNotch is the operating load slider notch that controls how much of the machine Djinn uses.
+enum LoadNotch {
+  // Not set.
+  LOAD_NOTCH_UNSPECIFIED = 0;
+  // Minimal load: at most 1 worker, strict pressure thresholds, large gate margin, at most 20% of RAM committed.
+  LOAD_NOTCH_MINIMAL = 1;
+  // Light load: up to 3 workers, conservative pressure thresholds, moderate gate margin, up to 40% of RAM committed.
+  LOAD_NOTCH_LIGHT = 2;
+  // Medium load: default behavior, up to 16 workers, balanced pressure thresholds, 512 MiB gate margin, up to 70% of RAM committed.
+  LOAD_NOTCH_MEDIUM = 3;
+  // High load: up to 24 workers, tolerant pressure thresholds, 384 MiB gate margin, up to 85% of RAM committed.
+  LOAD_NOTCH_HIGH = 4;
+  // Max load: up to 32 workers, aggressive pressure thresholds, 256 MiB gate margin, all RAM except safety margin committed.
+  LOAD_NOTCH_MAX = 5;
+}
+
+// LoadService gets and sets the machine's operating load notch.
+service LoadService {
+  // Show the operating load notch in effect on this machine.
+  rpc Get(LoadServiceGetRequest) returns (LoadServiceGetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Choose the operating load notch in effect on this machine.
+  rpc Set(LoadServiceSetRequest) returns (LoadServiceSetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+message LoadServiceGetRequest {}
+
+message LoadServiceGetResponse {
+  // The notch in effect.
+  LoadNotch notch = 1;
+}
+
+message LoadServiceSetRequest {
+  // The notch to set.
+  LoadNotch notch = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum = {defined_only: true, not_in: [0]}
+  ];
+}
+
+message LoadServiceSetResponse {
+  // The notch in effect.
+  LoadNotch notch = 1;
+}

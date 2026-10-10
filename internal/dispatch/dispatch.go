@@ -32,7 +32,9 @@ type Machine struct {
 	// worker back. Policy weighs it against what a worker of the task's provider typically takes
 	// (machine.Policy.WorkerRoom).
 	Available uint64
-	Policy    machine.Policy
+	// Total is the machine's total RAM in bytes; 0 when unknown.
+	Total  uint64
+	Policy machine.Policy
 }
 
 // Situation is what a pass knows: every task, every wish, which projects are in Git, and the machine. Its zero
@@ -363,7 +365,7 @@ func (s *Situation) full(t *planv1.Task) string {
 		return fmt.Sprintf("%s goes first: %s", s.short.GetCode(), s.shortWhy)
 	}
 	peak, measured := s.typical(provider(t))
-	why := m.Policy.WorkerRoom(m.Available, s.growing(), provider(t), peak, measured)
+	why := m.Policy.WorkerRoom(m.Total, m.Available, s.growing(), s.engaged(), provider(t), peak, measured)
 	if why != "" {
 		s.short, s.shortWhy = t, why
 	}
@@ -407,6 +409,25 @@ func (s *Situation) growing() uint64 {
 		} else if !running {
 			sum += peak
 		}
+	}
+	return sum
+}
+
+// engaged is the sum of peak forecasts of the workers running or started in this pass.
+func (s *Situation) engaged() uint64 {
+	if s.machine == nil {
+		return 0
+	}
+	var sum uint64
+	margin := s.machine.Policy.WorkerMargin
+	for _, t := range s.tasks {
+		running := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && !Watcher(t)
+		if !running && !s.started[t.GetId()] && !s.reading[t.GetId()] {
+			continue
+		}
+		peak, _ := s.typical(provider(t))
+		uses := t.GetResources().GetMemoryBytes()
+		sum += max(peak, uses) + margin
 	}
 	return sum
 }
