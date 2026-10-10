@@ -557,7 +557,7 @@
   "wish.lead_missing": "{command} n’est pas installé sur cette machine",
   "wish.lead_new": "Démarre un nouveau lead depuis le brief",
   "wish.lead_recorded": "Le lead du vœu : reprend sa session",
-  "wish.main_held": "La fusion de main attend",
+  "wish.main_held": "La fusion de main attend : {reason}",
   "wish.main_merged.one": "{main} fusionnée dans {branch} : {count} commit, {when}",
   "wish.main_merged.other": "{main} fusionnée dans {branch} : {count} commits, {when}",
   "wish.main_merged_release.one": "{main} fusionnée dans {branch} : {count} commit, {release}, {when}",

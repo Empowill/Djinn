@@ -43,6 +43,7 @@ export {
   LastPushes,
   LeadButton,
   LeadMenu,
+  MainMerges,
   WishDescription,
   recordedAgent,
 } from "@/src/wish-head.tsx";
@@ -2598,6 +2599,24 @@ test("the wish's head says a push its checks hold, why on hover", () => {
   assert.match(
     html,
     /<span class="wish-push-refused" title="at 1a2b3c4d, test: go tool task test exited 1">The push is held: its checks are red<\/span>/,
+  );
+});
+
+test("the wish's head says the merge of main waits, why visible and on hover", () => {
+  const html = s.renderToStaticMarkup(
+    h(s.MainMerges, {
+      mains: [
+        {
+          projectId: "p1",
+          held: "fetch main from origin: fatal: repository 'foo' does not exist\nfatal: Could not read from remote repository.",
+        },
+      ],
+      projects: [{ id: "p1", name: "app" }],
+    }),
+  );
+  assert.match(
+    html,
+    /<span class="wish-push-refused" title="fetch main from origin: fatal: repository &#x27;foo&#x27; does not exist\nfatal: Could not read from remote repository\.">The merge of main waits: fetch main from origin: fatal: repository &#x27;foo&#x27; does not exist<\/span>/,
   );
 });
 
