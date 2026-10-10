@@ -72,6 +72,9 @@ func (s *Tasks) Get(
 	if err := plan.FillTilasms(ctx, s.h.store, filled); err != nil {
 		return nil, plan.Status(err)
 	}
+	if p, err := firstPrompt(s.h.store, task.GetId()); err == nil {
+		filled[0].Prompt = p
+	}
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: filled[0]}), nil
 }
 
@@ -190,4 +193,14 @@ func (s *Tasks) Send(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TaskServiceSendResponse{Event: ev}), nil
+}
+
+func (s *Tasks) SetAgent(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceSetAgentRequest],
+) (*connect.Response[planv1.TaskServiceSetAgentResponse], error) {
+	task, err := s.h.SetAgent(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceSetAgentResponse{Task: task}), nil
 }

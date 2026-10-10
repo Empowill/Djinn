@@ -713,6 +713,10 @@ message Task {
   // For a review worker, which Djinn starts by itself when a task's worktree holds changes not committed: what it
   // reviews. It works in that task's worktree, on its branch, and its branch integrates like any task's.
   TaskReview review = 46;
+  // What the task was asked to do, from its first prompt: computed on every read, never stored.
+  string prompt = 47;
+  // Provider the task ran with before it was changed (TaskService.SetAgent); empty if never changed.
+  Provider prior_provider = 48;
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
@@ -2641,6 +2645,12 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Change the provider and/or the model of a task no worker runs now: planned, waiting, failed, stopped, cut short
+  // (for a finished one, its next djinn task continue uses them). Refused while a worker runs or pauses.
+  rpc SetAgent(TaskServiceSetAgentRequest) returns (TaskServiceSetAgentResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message TaskServiceSpawnRequest {
@@ -2957,6 +2967,26 @@ message TaskServiceContinueRequest {
 
 message TaskServiceContinueResponse {
   // The task, planned again: running, or waiting with its reason.
+  Task task = 1;
+}
+
+message TaskServiceSetAgentRequest {
+  // The task.
+  string task_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Kind of agent that works on the task.
+  optional Provider provider = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0, 5]
+  }];
+  // Model of the agent; empty for the provider's default.
+  optional string model = 3 [(buf.validate.field).string.max_len = 200];
+}
+
+message TaskServiceSetAgentResponse {
+  // The task, with its new provider and model.
   Task task = 1;
 }
 
