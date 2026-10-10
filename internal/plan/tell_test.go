@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -25,12 +26,12 @@ func TestAnswerLine(t *testing.T) {
 		planv1.Choice_CHOICE_YES: `Djinn: Q43 answered yes. Note: "brighter, then cheaper". Act on it: djinn wish brief w1 has the context.`,
 	} {
 		q.Answer = &planv1.Answer{Choice: choice, Note: "brighter,\nthen cheaper"}
-		if got := AnswerLine(q, ""); got != want {
+		if got := AnswerLine(q, "", ""); got != want {
 			t.Errorf("%v:\n got %s\nwant %s", choice, got, want)
 		}
 	}
 	q.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_A}
-	if got, want := AnswerLine(q, ""), `Djinn: Q43 answered A — "Olive". Act on it: djinn wish brief w1 has the context.`; got != want {
+	if got, want := AnswerLine(q, "", ""), `Djinn: Q43 answered A — "Olive". Act on it: djinn wish brief w1 has the context.`; got != want {
 		t.Errorf("without a note:\n got %s\nwant %s", got, want)
 	}
 	if got, want := EnlightenLine(q, "what does each cost?", ""),
@@ -39,8 +40,13 @@ func TestAnswerLine(t *testing.T) {
 		t.Errorf("enlighten:\n got %s\nwant %s", got, want)
 	}
 	// A question worker took it: the lead is informed, not asked to act.
-	if got, want := AnswerLine(q, "W12"), `Djinn: Q43 answered A — "Olive". W12 turns it into tasks; you will hear when it ends.`; got != want {
+	if got, want := AnswerLine(q, "W12", ""), `Djinn: Q43 answered A — "Olive". W12 turns it into tasks; you will hear when it ends.`; got != want {
 		t.Errorf("with a converter:\n got %s\nwant %s", got, want)
+	}
+	// An answer Djinn settles itself: the line says what Djinn did, never to act on it.
+	if got, want := AnswerLine(q, "", "Djinn started W168: Settle the conflict of W156 with main."),
+		`Djinn: Q43 answered A — "Olive". Djinn started W168: Settle the conflict of W156 with main.`; got != want {
+		t.Errorf("settled by Djinn:\n got %s\nwant %s", got, want)
 	}
 	if got, want := EnlightenLine(q, "", "W13"),
 		`Djinn: Q43, the developer wants to know more before answering. W13 investigates, then revises it; you will `+
@@ -52,7 +58,8 @@ func TestAnswerLine(t *testing.T) {
 func TestAnswerReachesTheLead(t *testing.T) {
 	ctx := t.Context()
 	leads := &fakeLeads{}
-	c := serve(t, WithLeads(leads))
+	settled := "" // What the harness did with the next answer.
+	c := serve(t, WithLeads(leads), WithAnswered(func(context.Context, *planv1.Question) string { return settled }))
 	dir := t.TempDir()
 	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
 	if err != nil {
@@ -97,6 +104,16 @@ func TestAnswerReachesTheLead(t *testing.T) {
 		t.Errorf("shown %q: telling the lead does not take the window", leads.shown)
 	}
 
+	// An answer Djinn settles itself (a failed integration, a push, an edit): the lead hears what Djinn did with it.
+	settled = "Djinn started W168: Settle the conflict of W156 with main"
+	c.answer(t, c.ask(t, id, "Try again", "Leave it"), planv1.Choice_CHOICE_A, "")
+	settled = ""
+	if got, want := leads.said[len(leads.said)-1], terminal+`: Djinn: Q04 answered A — "Try again". `+
+		`Djinn started W168: Settle the conflict of W156 with main.`; got != want {
+		t.Errorf("settled by Djinn: said\n%s\nwant\n%s", got, want)
+	}
+	leads.said = leads.said[:len(leads.said)-1]
+
 	// The lead's terminal runs a shell: the line would run as a command, so it is not typed.
 	leads.running[terminal], leads.said = []string{"/bin/sh"}, nil
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
@@ -112,7 +129,7 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
 	delete(leads.running, terminal)
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
-	if len(leads.said) != 1 || !strings.Contains(leads.said[0], "Q05 answered yes") || len(leads.opened) != 1 {
+	if len(leads.said) != 1 || !strings.Contains(leads.said[0], "Q06 answered yes") || len(leads.opened) != 1 {
 		t.Errorf("paused: said %q, opened %q; want Q05 told, nothing reopened", leads.said, leads.opened)
 	}
 }

@@ -391,15 +391,15 @@ func editPush(ctx context.Context, tx *store.Tx, wishID, projectID string, edit 
 
 // answerPush takes the person's answer to a question Djinn asked about a push: A pushes at the integration's next
 // pass, B waits for the next push due; once the push checks stay red, B pushes without them and C waits. It tells
-// whether q was such a question.
-func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) bool {
+// whether q was such a question, and what Djinn does, for the lead.
+func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, bool) {
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
 	if err != nil {
-		return false
+		return "", false
 	}
 	i := slices.IndexFunc(wish.GetPushes(), func(p *planv1.WishPush) bool { return p.GetQuestionId() == q.GetId() })
 	if i < 0 {
-		return false
+		return "", false
 	}
 	// Once the push checks stay red: A checks again and pushes if they pass, B pushes without them, C waits for the next
 	// push due. Otherwise A pushes, B waits.
@@ -416,13 +416,21 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) bool {
 	})
 	if err != nil {
 		log.Printf("djinn: question %s: %v", q.GetCode(), err)
-		return true
+		return "Djinn could not take the answer: " + err.Error(), true
 	}
 	h.notify()
 	if push {
 		h.kickIntegrate()
 	}
-	return true
+	switch {
+	case held && choice == planv1.Choice_CHOICE_A:
+		return "Djinn runs the push checks again at the integration's next pass, and pushes if they pass", true
+	case held && push:
+		return "Djinn pushes at the integration's next pass, without the push checks", true
+	case push:
+		return "Djinn pushes at the integration's next pass", true
+	}
+	return "Djinn waits for the next push due", true
 }
 
 // pushTarget is the remote the integration branch goes to, and its name there: the branch's upstream when it has one,

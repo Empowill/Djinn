@@ -207,7 +207,8 @@ To use Djinn, see the [README](README.md). To work on it:
   proof ("Proof awaited"): a person, a machine, a release or a real model gives it, never a worker.
 - `djinn task done <task-id> --note "…"` closes a task no worker runs (planned, cut short, failed, stopped,
   imported) once its work is done, with who closed it and why; "Mark done" on its card does it in the window.
-  `djinn task delete` stays for a task made by mistake.
+  `djinn task delete` stays for a task made by mistake; an azima goes once no task is part of it (regroup them first,
+  `djinn task group`), and a deleted task's code (W12, T27) is never given again in its wish.
 - `djinn task continue <task-id> --prompt "…"` gives a task no worker runs (done, failed, stopped, cut short) a new
   turn of its own session, in its own worktree and branch: the same task, back through the scheduler, its usage
   summed. Refused while it runs, once its worktree is gone, or for an agent that cannot resume a session (Antigravity,

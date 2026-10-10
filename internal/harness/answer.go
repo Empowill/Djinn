@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 
 	"google.golang.org/protobuf/proto"
@@ -28,28 +29,44 @@ const (
 // leaves it reading only. When Djinn asked it about work that failed to integrate, it settles that work
 // (answerIntegration); about a push, it pushes or waits (answerPush). Any other answer is a decision: a converter
 // turns it into tasks (question.go). Only the first answer counts. The plan services call it once the answer is
-// stored.
-func (h *Harness) Answered(ctx context.Context, q *planv1.Question) {
+// stored. It says what Djinn did with the answer, for the lead; "" when the answer is the lead's to act on.
+func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	if q.GetAnswer() == nil {
-		return
+		return ""
 	}
-	integration := h.answerIntegration(ctx, q)
-	pushed := h.answerPush(ctx, q)
+	var did []string
+	if d, ok := h.answerIntegration(ctx, q); ok {
+		did = append(did, d)
+	}
+	if d, ok := h.answerPush(ctx, q); ok {
+		did = append(did, d)
+	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"edit_question_id": q.GetId()})
 	if err != nil {
 		log.Printf("djinn: question %s: find its task: %v", q.GetCode(), err)
-		return
+		return strings.Join(did, "; ")
 	}
 	for _, t := range tasks {
 		if err := h.answer(t.GetId(), q); err != nil {
 			log.Printf("djinn: task %s: answer %s: %v", t.GetCode(), q.GetCode(), err)
+			did = append(did, fmt.Sprintf("Djinn could not give the answer to %s: %v", t.GetCode(), err))
+			continue
+		}
+		switch {
+		case t.GetAccess() != planv1.TaskAccess_TASK_ACCESS_ASKING:
+			did = append(did, t.GetCode()+" took an answer before: this one changes nothing")
+		case yes(q):
+			did = append(did, "Djinn allows "+t.GetCode()+" to edit the project's files")
+		default:
+			did = append(did, "Djinn keeps "+t.GetCode()+" reading only")
 		}
 	}
 	// A decision for the lead to act on: a converter turns it into tasks. An edit question, a question on work that
 	// failed to integrate, one about a push, a routed request and a grant are settled by Djinn itself.
-	if len(tasks) == 0 && !integration && !pushed && q.GetRoute() == nil && !q.GetGrant() {
+	if len(tasks) == 0 && len(did) == 0 && q.GetRoute() == nil && !q.GetGrant() {
 		h.askWorker(ctx, q, planv1.TaskRole_TASK_ROLE_CONVERTER, "")
 	}
+	return strings.Join(slices.DeleteFunc(did, func(d string) bool { return d == "" }), "; ")
 }
 
 // answer gives the answer q to the task id: to its run, which applies it, or to the task itself when no worker runs

@@ -2237,7 +2237,10 @@ type Wish struct {
 	Pushes []*WishPush `protobuf:"bytes,17,rep,name=pushes,proto3" json:"pushes,omitempty"`
 	// Where each Git project's integration branch stands against the project's main branch, which Djinn merges into it
 	// by itself: its last merge of main, and why the next one waits.
-	Mains         []*WishMain `protobuf:"bytes,18,rep,name=mains,proto3" json:"mains,omitempty"`
+	Mains []*WishMain `protobuf:"bytes,18,rep,name=mains,proto3" json:"mains,omitempty"`
+	// The codes of the wish's tasks and azimas that were deleted (djinn task delete), W12 or T27: never given again,
+	// so that a commit, a plan file or a decision that names one names one task only.
+	RetiredCodes  []string `protobuf:"bytes,19,rep,name=retired_codes,json=retiredCodes,proto3" json:"retired_codes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2394,6 +2397,13 @@ func (x *Wish) GetPushes() []*WishPush {
 func (x *Wish) GetMains() []*WishMain {
 	if x != nil {
 		return x.Mains
+	}
+	return nil
+}
+
+func (x *Wish) GetRetiredCodes() []string {
+	if x != nil {
+		return x.RetiredCodes
 	}
 	return nil
 }
@@ -12952,7 +12962,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0eProjectSetting\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12.\n" +
-	"\x06source\x18\x03 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\"\x98\x06\n" +
+	"\x06source\x18\x03 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\"\xbd\x06\n" +
 	"\x04Wish\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1f\n" +
@@ -12978,7 +12988,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vdescription\x18\x0f \x01(\tR\vdescription\x12.\n" +
 	"\tpush_mode\x18\x10 \x01(\x0e2\x11.plan.v1.PushModeR\bpushMode\x12)\n" +
 	"\x06pushes\x18\x11 \x03(\v2\x11.plan.v1.WishPushR\x06pushes\x12'\n" +
-	"\x05mains\x18\x12 \x03(\v2\x11.plan.v1.WishMainR\x05mains\"\xfd\x01\n" +
+	"\x05mains\x18\x12 \x03(\v2\x11.plan.v1.WishMainR\x05mains\x12#\n" +
+	"\rretired_codes\x18\x13 \x03(\tR\fretiredCodes\"\xfd\x01\n" +
 	"\bWishPush\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12,\n" +

@@ -202,7 +202,9 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 	}
 
 	// Try again: a new review, its attempts counted from one, which commits; the work goes in.
-	in.answer(t, q, planv1.Choice_CHOICE_A)
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn started W4: Review the work W1 left not committed" {
+		t.Errorf("what Djinn did: %q", did)
+	}
 	got, texts = in.integration(t, w1)
 	if got.GetQuestionId() != "" || got.GetAttempts() != 1 || got.GetReason() != "uncommitted: reviewed by W4" ||
 		texts[len(texts)-1] != "you said to try again ("+q.GetCode()+"); W4 reviews it, attempt 1 of 2" {
@@ -297,5 +299,48 @@ func TestAReviewThatFailsAfterItsCommit(t *testing.T) {
 	}
 	if out := in.git(t, in.repo, "show", in.tip(t)+":app/src/b.txt"); out != "b" {
 		t.Errorf("b.txt in the branch: %q", out)
+	}
+}
+
+// TestAReviewOfWorkWhoseAzimaIsGone: the azima of the work left not committed was deleted: the review worker starts
+// all the same, part of no azima, and says so in its events.
+func TestAReviewOfWorkWhoseAzimaIsGone(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	azima := in.azima(t, in.wishID, "Absorbed")
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
+	dropTask(t, in.db, azima)
+	in.correctWith(func(string, string) string { return "" })
+
+	in.pass(t, 0)
+	w2 := in.reviewer(t, w1)
+	if w2.GetPartOf() != "" {
+		t.Errorf("W2 part of %q, an azima that is gone", w2.GetPartOf())
+	}
+	want := "part of no azima: W1 was part of " + azima.GetId()[:8] + ", which is no longer one of the wish's azimas"
+	if texts := storedTexts(t, in.db, w2.GetId()); !slices.Contains(texts, want) {
+		t.Errorf("W2's events %q lack %q", texts, want)
+	}
+}
+
+// TestAReviewThatCannotStart: when the review worker cannot start, the question says why, not that the settings
+// start none.
+func TestAReviewThatCannotStart(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
+	delete(in.h.providers, planv1.Provider_PROVIDER_FAKE) // W1's provider: its review worker cannot start.
+
+	in.pass(t, 0)
+	q := in.question(t, w1)
+	if !strings.Contains(q.GetText(), "Djinn could not start a review worker: invalid_argument: provider PROVIDER_FAKE is not available.") ||
+		strings.Contains(q.GetText(), "correction_attempts") {
+		t.Errorf("the question %q", q.GetText())
+	}
+	if got, texts := in.integration(t, w1); got.GetReviewedBy() != "" ||
+		!strings.Contains(texts[len(texts)-1], "; the review worker could not start: invalid_argument: provider") {
+		t.Errorf("W1's integration %v; events %q", got, texts)
 	}
 }

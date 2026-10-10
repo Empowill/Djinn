@@ -44,7 +44,10 @@ func TestRecommended(t *testing.T) {
 func TestMarks(t *testing.T) {
 	ctx := t.Context()
 	var answered []string
-	c := serve(t, WithAnswered(func(_ context.Context, q *planv1.Question) { answered = append(answered, q.GetCode()) }))
+	c := serve(t, WithAnswered(func(_ context.Context, q *planv1.Question) string {
+		answered = append(answered, q.GetCode())
+		return ""
+	}))
 	wish := c.wish(t)
 	res, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
 		Text: "Which oil?", Options: []string{"Olive", "Paraffin"}, WishId: wish, Recommendation: "B: brighter.",

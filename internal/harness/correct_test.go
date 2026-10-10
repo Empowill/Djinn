@@ -57,8 +57,8 @@ func (in *integration) question(t *testing.T, task *planv1.Task) *planv1.Questio
 	return q
 }
 
-// answer answers q with choice, as the plan services do once the answer is stored.
-func (in *integration) answer(t *testing.T, q *planv1.Question, choice planv1.Choice) {
+// answer answers q with choice, as the plan services do once the answer is stored, and gives what Djinn says it did.
+func (in *integration) answer(t *testing.T, q *planv1.Question, choice planv1.Choice) string {
 	t.Helper()
 	q = proto.CloneOf(q)
 	q.Answer = &planv1.Answer{Choice: choice, CreateTime: timestamppb.Now()}
@@ -70,7 +70,30 @@ func (in *integration) answer(t *testing.T, q *planv1.Question, choice planv1.Ch
 	}); err != nil {
 		t.Fatal(err)
 	}
-	in.h.Answered(t.Context(), q)
+	return in.h.Answered(t.Context(), q)
+}
+
+// dropTask deletes task from the store as Djinn did before Delete kept an azima with parts: nothing else changes.
+func dropTask(t *testing.T, db *store.Store, task *planv1.Task) {
+	t.Helper()
+	if err := db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal(actorLocal, "test/drop", task); err != nil {
+			return err
+		}
+		return tx.Delete(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// storedTexts are the texts of the stored events of the task id.
+func storedTexts(t *testing.T, db *store.Store, id string) []string {
+	t.Helper()
+	events, err := store.List[*planv1.TaskEvent](t.Context(), db, store.Where{"task_id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return eventTexts(events)
 }
 
 // TestCorrectACodeConflict: a conflict in code starts a correction worker by itself, part of the azima, of the failed
@@ -251,8 +274,10 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 	in.pass(t, time.Second)
 	q := in.question(t, w1)
 
-	// Try again: a new correction, its attempts counted from one.
-	in.answer(t, q, planv1.Choice_CHOICE_A)
+	// Try again: a new correction, its attempts counted from one; the lead hears what Djinn did, not to act.
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn started W3: Make the tests pass with the work of W1" {
+		t.Errorf("what Djinn did: %q", did)
+	}
 	got, texts := in.integration(t, w1)
 	if got.GetQuestionId() != "" || got.GetAttempts() != 1 || got.GetCorrectedBy() == "" ||
 		texts[len(texts)-1] != "you said to try again ("+q.GetCode()+"); W3 corrects it, attempt 1 of 1" {
@@ -266,7 +291,10 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 	q = in.question(t, w1)
 
 	// I take it: the work stays out, and says so.
-	in.answer(t, q, planv1.Choice_CHOICE_C)
+	if did := in.answer(t, q, planv1.Choice_CHOICE_C); did != "Djinn leaves the work of W1 to the developer: it stays out of "+
+		in.branch+" until they bring it in" {
+		t.Errorf("what Djinn did: %q", did)
+	}
 	got, texts = in.integration(t, w1)
 	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_RED || !strings.HasPrefix(got.GetReason(), "you take it ("+q.GetCode()+"): ") ||
 		texts[len(texts)-1] != "you take it ("+q.GetCode()+"); it stays out of "+in.branch+" until you bring it in" {
@@ -305,9 +333,60 @@ func TestACorrectionWorkerThatFails(t *testing.T) {
 		t.Errorf("the question %q", q.GetText())
 	}
 	// Leave it: the work stays out, and nothing starts.
-	in.answer(t, q, planv1.Choice_CHOICE_B)
+	if did := in.answer(t, q, planv1.Choice_CHOICE_B); did != "Djinn leaves the work of W2 out of "+in.branch {
+		t.Errorf("what Djinn did: %q", did)
+	}
 	if got, texts := in.integration(t, w2); !strings.HasPrefix(got.GetReason(), "left out ("+q.GetCode()+"): W2 conflicts") ||
 		texts[len(texts)-1] != "left out of "+in.branch+" ("+q.GetCode()+")" {
 		t.Errorf("left: %v; events %q", got, texts)
+	}
+}
+
+// TestCorrectWorkWhoseAzimaIsGone: the azima of the failed work was deleted (as W158 did before Delete refused it):
+// the correction worker starts all the same, part of no azima, and says so in its events.
+func TestCorrectWorkWhoseAzimaIsGone(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	azima := in.azima(t, in.wishID, "Absorbed")
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	dropTask(t, in.db, azima)
+	in.correctWith(func(string, string) string { return "" })
+
+	in.pass(t, 0)
+	w2 := in.correction(t, w1)
+	if w2.GetPartOf() != "" {
+		t.Errorf("W2 part of %q, an azima that is gone", w2.GetPartOf())
+	}
+	want := "part of no azima: W1 was part of " + azima.GetId()[:8] + ", which is no longer one of the wish's azimas"
+	if texts := storedTexts(t, in.db, w2.GetId()); !slices.Contains(texts, want) {
+		t.Errorf("W2's events %q lack %q", texts, want)
+	}
+}
+
+// TestACorrectionThatCannotStart: when the correction worker cannot start, the question says why, not that the
+// settings start none.
+func TestACorrectionThatCannotStart(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.testCode = 1
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	delete(in.h.providers, planv1.Provider_PROVIDER_FAKE) // W1's provider: its correction worker cannot start.
+
+	in.pass(t, 0)
+	q := in.question(t, w1)
+	got, texts := in.integration(t, w1)
+	if got.GetAttempts() != 0 || got.GetCorrectedBy() != "" ||
+		!strings.Contains(texts[len(texts)-1], "; the correction worker could not start: invalid_argument: provider") {
+		t.Errorf("W1's integration %v; events %q", got, texts)
+	}
+	if !strings.Contains(q.GetText(), "Djinn could not start a correction worker: invalid_argument: provider PROVIDER_FAKE is not available.") ||
+		strings.Contains(q.GetText(), "correction_attempts") {
+		t.Errorf("the question %q", q.GetText())
+	}
+	// Tried again, it still cannot start: Djinn says so to the lead, and asks again.
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); !strings.HasPrefix(did, "Djinn could not start a correction worker (invalid_argument: provider") ||
+		!strings.Contains(did, "; Djinn asks Q") {
+		t.Errorf("what Djinn did: %q", did)
 	}
 }
