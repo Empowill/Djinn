@@ -236,3 +236,108 @@ test("a change of the inbox reads it and its sources again, and nothing else", a
   assert.equal(reads.wishes, before.wishes);
   assert.equal(reads.projects, before.projects);
 });
+
+// opened starts a store on sample data, with the wish shown and read.
+async function opened() {
+  const data = sample();
+  data.tasks.push({ id: `${taskId}9`, wishId, code: "T02", title: "Wick" });
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.loaded);
+  return { store, stop, watch, before: { ...reads }, reads };
+}
+
+const carried = (changed) => ({
+  tasks: [],
+  questions: [],
+  blocks: [],
+  deleted: [],
+  ...changed,
+});
+
+test("what the watch brings is put in place, without reading, and the rest keeps its reference", async () => {
+  const { store, stop, watch, before, reads } = await opened();
+  const shown = store.getState().details[wishId];
+  const [first, second] = shown.tasks;
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [{ ...second, status: 4, lastLine: "Done" }] }),
+  });
+  const state = await until(
+    store,
+    (s) => s.details[wishId].tasks[1].lastLine === "Done",
+  );
+  const detail = state.details[wishId];
+  assert.equal(detail.tasks.length, 2);
+  assert.equal(detail.tasks[0], first, "the task that did not change");
+  assert.equal(detail.questions, shown.questions);
+  assert.equal(detail.blocks, shown.blocks);
+  assert.equal(reads.tasks, before.tasks);
+  assert.equal(reads.wishes, before.wishes);
+
+  // One that comes back equal keeps its reference: nothing is drawn again.
+  const now = detail.tasks;
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [{ ...first }] }),
+  });
+  watch.push({ wishId: "", changes: [Change.PROJECT] });
+  await until(store, () => reads.projects === before.projects + 1);
+  assert.equal(store.getState().details[wishId].tasks, now);
+  stop();
+});
+
+test("a new one goes where the service lists it, and one deleted goes", async () => {
+  const { store, stop, watch, before, reads } = await opened();
+  const shown = store.getState().details[wishId];
+  watch.push({
+    wishId,
+    changes: [Change.TASK, Change.BLOCK, Change.QUESTION],
+    changed: carried({
+      // Between the two tasks, by id.
+      tasks: [{ id: `${taskId}5`, wishId, code: "T03", title: "Oil" }],
+      blocks: [
+        { id: "b0", wishId, title: "First", position: 0n },
+        { id: "b2", wishId, title: "Last", position: 5n },
+      ],
+      deleted: ["q1"],
+    }),
+  });
+  const state = await until(
+    store,
+    (s) => s.details[wishId].questions.length === 0,
+  );
+  const detail = state.details[wishId];
+  assert.deepEqual(
+    detail.tasks.map((t) => t.code),
+    ["T01", "T03", "T02"],
+  );
+  assert.deepEqual(
+    detail.blocks.map((b) => b.id),
+    ["b0", "b1", "b2"],
+  );
+  assert.equal(detail.blocks[1], shown.blocks[0]);
+  assert.equal(reads.tasks, before.tasks);
+  assert.equal(reads.blocks, before.blocks);
+  assert.equal(reads.questions, before.questions);
+  stop();
+});
+
+test("a change the page does not know reads everything again", async () => {
+  const { store, stop, watch, before, reads } = await opened();
+  watch.push({ wishId, changes: [99] });
+  await until(
+    store,
+    () =>
+      reads.tasks === before.tasks + 1 && reads.wishes === before.wishes + 1,
+  );
+  assert.equal(reads.blocks, before.blocks + 1);
+  assert.equal(reads.questions, before.questions + 1);
+  stop();
+});

@@ -921,9 +921,10 @@ type WishServiceClient interface {
 	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
 	// and starts its watcher and its lead in its own terminal.
 	Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error)
-	// Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
-	// itself: the first message names everything, then each change follows; changes close together come as one. A
-	// task's events come from TaskService.Watch.
+	// Follow what changes, as it changes: which wish, and what in it. The first message names everything, to read; then
+	// each change follows, with the tasks, questions and blocks that changed, whole, so that a reader replaces them
+	// without reading the others again; changes close together come as one. A task's events come from
+	// TaskService.Watch.
 	Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest]) (*connect.ServerStreamForClient[v1.WishServiceWatchResponse], error)
 }
 
@@ -1277,9 +1278,10 @@ type WishServiceHandler interface {
 	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
 	// and starts its watcher and its lead in its own terminal.
 	Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error)
-	// Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
-	// itself: the first message names everything, then each change follows; changes close together come as one. A
-	// task's events come from TaskService.Watch.
+	// Follow what changes, as it changes: which wish, and what in it. The first message names everything, to read; then
+	// each change follows, with the tasks, questions and blocks that changed, whole, so that a reader replaces them
+	// without reading the others again; changes close together come as one. A task's events come from
+	// TaskService.Watch.
 	Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest], *connect.ServerStream[v1.WishServiceWatchResponse]) error
 }
 
