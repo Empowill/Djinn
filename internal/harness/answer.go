@@ -349,8 +349,13 @@ func (h *Harness) again(r *run) error {
 	}
 	readOnly, perms := accessSpec(t.GetAccess(), nil)
 	r.base = t.GetUsage()
+	model := t.GetModel()
+	if foreignModel(t.GetProvider(), model) && !r.watcher {
+		model = DefaultModel(t.GetProvider())
+		t.Model = model
+	}
 	spec := Spec{
-		TaskID: t.GetId(), Dir: project.GetDirectory(), ReadOnly: readOnly, Permissions: perms, Model: t.GetModel(),
+		TaskID: t.GetId(), Dir: project.GetDirectory(), ReadOnly: readOnly, Permissions: perms, Model: model,
 		MaxBudgetUSD: budget, Resume: t.GetSessionId(), Prompt: editLine + prompt,
 	}
 	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)

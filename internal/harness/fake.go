@@ -152,6 +152,8 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 		rest = strings.TrimSpace(rest)
 		ev := Event{Raw: raw}
 		switch verb {
+		case "model":
+			ev.Kind, ev.Model, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, rest, "model "+rest
 		case "text":
 			ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, rest
 		case "tool":

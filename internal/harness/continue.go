@@ -61,6 +61,9 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	// Its own resumes count again from none: a person asked for this turn.
 	t.Status, t.Error, t.ResumeAfter, t.Resumes, t.Closed, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", nil, 0, nil, true
 	t.WaitReason = ""
+	if foreignModel(t.GetProvider(), t.GetModel()) {
+		t.Model = DefaultModel(t.GetProvider())
+	}
 	sit, err := h.situation(ctx, replaced(tasks, t))
 	if err != nil {
 		return nil, plan.Status(err)

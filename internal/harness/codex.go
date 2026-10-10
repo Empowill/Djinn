@@ -75,7 +75,7 @@ func (c Codex) threadRequest(spec Spec) (string, map[string]any) {
 			params["approvalsReviewer"] = reviewer
 		}
 	}
-	if spec.Model != "" {
+	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_CODEX, spec.Model) {
 		params["model"] = spec.Model
 	}
 	if text := skillsInstructions(spec.Skills); text != "" {
@@ -108,7 +108,7 @@ func (c Codex) turnParams(spec Spec, thread, text string) map[string]any {
 			params["approvalsReviewer"] = reviewer
 		}
 	}
-	if spec.Model != "" {
+	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_CODEX, spec.Model) {
 		params["model"] = spec.Model
 	}
 	return params

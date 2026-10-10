@@ -102,3 +102,79 @@ func TestTaskModelDefault(t *testing.T) {
 		t.Errorf("watch model = %q, want %q", got, want)
 	}
 }
+
+// TestForeignModel: foreignModel recognizes model identifiers belonging to other providers,
+// but leaves custom/unknown models and empty strings alone.
+func TestForeignModel(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	cases := []struct {
+		provider planv1.Provider
+		model    string
+		want     bool
+	}{
+		// Claude provider
+		{planv1.Provider_PROVIDER_CLAUDE, "claude-sonnet-5-5", false},
+		{planv1.Provider_PROVIDER_CLAUDE, "claude-sonnet-4-5", false},
+		{planv1.Provider_PROVIDER_CLAUDE, "claude-3-7-sonnet", false},
+		{planv1.Provider_PROVIDER_CLAUDE, "claude-opus-4-0", false},
+		{planv1.Provider_PROVIDER_CLAUDE, "sonnet", false},
+		{planv1.Provider_PROVIDER_CLAUDE, "opus", false},
+		{planv1.Provider_PROVIDER_CLAUDE, "haiku", false},
+		{planv1.Provider_PROVIDER_CLAUDE, "anthropic/claude-3.5-sonnet", false},
+		{planv1.Provider_PROVIDER_CLAUDE, "gemini-3.8-flash-high", true},
+		{planv1.Provider_PROVIDER_CLAUDE, "gemini-3.8-flash-medium", true},
+		{planv1.Provider_PROVIDER_CLAUDE, "google/gemini-2.5-flash", true},
+		{planv1.Provider_PROVIDER_CLAUDE, "gpt-5.1-codex", true},
+		{planv1.Provider_PROVIDER_CLAUDE, "gpt-5.5", true},
+		{planv1.Provider_PROVIDER_CLAUDE, "openai/gpt-4o", true},
+		{planv1.Provider_PROVIDER_CLAUDE, "o1-mini", true},
+		{planv1.Provider_PROVIDER_CLAUDE, "o3", true},
+		{planv1.Provider_PROVIDER_CLAUDE, "my-custom-model", false},
+		{planv1.Provider_PROVIDER_CLAUDE, "", false},
+
+		// Antigravity provider
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "gemini-3.8-flash-high", false},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "gemini-3.8-flash-medium", false},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "google/gemini-pro", false},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "claude-sonnet-5-5", true},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "sonnet", true},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "opus", true},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "gpt-5.5", true},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "o3", true},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "my-custom-model", false},
+		{planv1.Provider_PROVIDER_ANTIGRAVITY, "", false},
+
+		// Codex provider
+		{planv1.Provider_PROVIDER_CODEX, "gpt-5.5", false},
+		{planv1.Provider_PROVIDER_CODEX, "gpt-5.1-codex", false},
+		{planv1.Provider_PROVIDER_CODEX, "o1-mini", false},
+		{planv1.Provider_PROVIDER_CODEX, "claude-sonnet-5-5", true},
+		{planv1.Provider_PROVIDER_CODEX, "gemini-3.8-flash-high", true},
+		{planv1.Provider_PROVIDER_CODEX, "my-custom-model", false},
+		{planv1.Provider_PROVIDER_CODEX, "", false},
+
+		// Watch provider has no model
+		{planv1.Provider_PROVIDER_WATCH, "claude-sonnet-5-5", true},
+		{planv1.Provider_PROVIDER_WATCH, "gemini-3.8-flash-high", true},
+		{planv1.Provider_PROVIDER_WATCH, "", false},
+
+		// Fake provider allows any model
+		{planv1.Provider_PROVIDER_FAKE, "claude-sonnet-5-5", false},
+		{planv1.Provider_PROVIDER_FAKE, "gemini-3.8-flash-high", false},
+		{planv1.Provider_PROVIDER_FAKE, "gpt-5.5", false},
+		{planv1.Provider_PROVIDER_FAKE, "", false},
+
+		// Unspecified provider defaults to Claude
+		{planv1.Provider_PROVIDER_UNSPECIFIED, "claude-sonnet-5-5", false},
+		{planv1.Provider_PROVIDER_UNSPECIFIED, "gemini-3.8-flash-high", true},
+		{planv1.Provider_PROVIDER_UNSPECIFIED, "gpt-5.5", true},
+	}
+
+	for _, c := range cases {
+		if got := foreignModel(c.provider, c.model); got != c.want {
+			t.Errorf("foreignModel(%v, %q) = %v; want %v", c.provider, c.model, got, c.want)
+		}
+	}
+}
