@@ -692,6 +692,9 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
 	r.failure, r.limit = "", nil
 	fresh(t)
+	if t.GetModel() == "" && !r.watcher {
+		t.Model = DefaultModel(t.GetProvider())
+	}
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
@@ -849,6 +852,9 @@ func (h *Harness) drain(r *run) Result {
 // record writes an event of the worker, with the task when the event changes it.
 func (h *Harness) record(r *run, ev Event) {
 	changed := false
+	if ev.Model != "" && ev.Model != r.task.GetModel() {
+		r.task.Model, changed = ev.Model, true
+	}
 	if ev.SessionID != "" && ev.SessionID != r.task.GetSessionId() {
 		r.task.SessionId, changed = ev.SessionID, true
 	}
@@ -949,6 +955,9 @@ func (h *Harness) end(r *run, res Result) {
 	stopping, shelved := r.stopping, r.shelved
 	h.mu.Unlock()
 	t := r.task
+	if t.GetModel() == "" && !r.watcher {
+		t.Model = DefaultModel(t.GetProvider())
+	}
 	t.EndTime, t.ExitCode = timestamppb.Now(), int32(res.ExitCode)
 	switch {
 	case stopping:
@@ -1439,4 +1448,18 @@ func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskS
 func short(e fmt.Stringer) string {
 	s := strings.TrimPrefix(strings.TrimPrefix(e.String(), "TASK_STATUS_"), "PROVIDER_")
 	return strings.ToLower(s)
+}
+
+// DefaultModel is the model a provider runs when no model was requested; empty when it has none.
+func DefaultModel(p planv1.Provider) string {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_UNSPECIFIED:
+		return "claude-sonnet-5-5"
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		return "gemini-3.8-flash-high"
+	case planv1.Provider_PROVIDER_CODEX:
+		return "gpt-5.5"
+	default:
+		return ""
+	}
 }

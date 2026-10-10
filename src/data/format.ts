@@ -329,3 +329,46 @@ export function wishTone(
   if (watching > 0) return "watching";
   return "planned";
 }
+
+// shortModel turns a provider's model identifier into a short, readable label:
+// "claude-sonnet-5-5" -> "sonnet 5.5", "gemini-3.8-flash-high" -> "gemini 3.8 flash", "gpt-5.5" -> "gpt-5.5".
+export function shortModel(model: string): string {
+  if (!model) return "";
+  let m = model.trim();
+  // Strip trailing snapshot date e.g. -20250929
+  m = m.replace(/-\d{8}$/, "");
+  // Strip provider / registry prefix e.g. anthropic/ or openai/
+  m = m.replace(/^[a-z0-9-._]+\//, "");
+  // Strip endpoint prefix e.g. us.anthropic.
+  m = m.replace(/^[a-z0-9-._]+\.(?=claude|gemini|gpt)/, "");
+
+  // Claude: claude-(sonnet|opus|haiku)-(X-Y|X.Y) -> $1 X.Y
+  const claudeMatch = /^claude-(sonnet|opus|haiku)-(\d+)[.-](\d+)$/.exec(m);
+  if (claudeMatch) {
+    return `${claudeMatch[1]} ${claudeMatch[2]}.${claudeMatch[3]}`;
+  }
+  // Claude: claude-(X-Y|X.Y)-(sonnet|opus|haiku) -> $3 X.Y
+  const claudeOldMatch = /^claude-(\d+)[.-](\d+)-(sonnet|opus|haiku)$/.exec(m);
+  if (claudeOldMatch) {
+    return `${claudeOldMatch[3]} ${claudeOldMatch[1]}.${claudeOldMatch[2]}`;
+  }
+  // Claude single tier: claude-(sonnet|opus|haiku) -> $1
+  const claudeTier = /^claude-(sonnet|opus|haiku)$/.exec(m);
+  if (claudeTier) {
+    return claudeTier[1];
+  }
+
+  // Gemini: gemini-X.Y-tier(-level)? -> gemini X.Y tier
+  // e.g. gemini-3.8-flash-high -> gemini 3.8 flash, gemini-3.8-flash-medium -> gemini 3.8 flash
+  // Strip -high, -medium, -low
+  if (m.startsWith("gemini-")) {
+    return m.replace(/-(high|medium|low)$/, "").replace(/-/g, " ");
+  }
+
+  // Codex / GPT: gpt-X.Y-codex -> gpt-X.Y, gpt-5.5 -> gpt-5.5
+  if (m.startsWith("gpt-")) {
+    return m.replace(/-(codex|preview)$/, "");
+  }
+
+  return m;
+}

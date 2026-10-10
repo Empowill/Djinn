@@ -277,9 +277,16 @@ type tasks struct {
 func (f tasks) Get(_ context.Context, req *connect.Request[planv1.TaskServiceGetRequest]) (*connect.Response[planv1.TaskServiceGetResponse], error) {
 	f.record(req.Msg)
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: &planv1.Task{
-		Id: req.Msg.GetTaskId(), Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE, Integration: &planv1.TaskIntegration{
+		Id: req.Msg.GetTaskId(), Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE, Model: "claude-sonnet-5-5", Integration: &planv1.TaskIntegration{
 			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Branch: "feat/x", Reason: "test exited 1", CorrectedBy: "W9",
 		},
+	}}), nil
+}
+
+func (f tasks) List(_ context.Context, req *connect.Request[planv1.TaskServiceListRequest]) (*connect.Response[planv1.TaskServiceListResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TaskServiceListResponse{Tasks: []*planv1.Task{
+		{Id: taskID, WishId: req.Msg.GetWishId(), Code: "W1", Title: "Ship it", Status: planv1.TaskStatus_TASK_STATUS_DONE, Model: "claude-sonnet-5-5"},
 	}}), nil
 }
 
@@ -346,7 +353,9 @@ func TestRun(t *testing.T) {
 		{name: "text output", args: []string{"question", "answer", "Q03", "B", "--note", "ok"}, wantOut: "answer:\n  choice: b\n  note: ok\n", wantCalled: true},
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
 		{name: "where a task's work stands", args: []string{"task", "get", wishID}, wantOut: "status: done\n" +
+			"model: claude-sonnet-5-5\n" +
 			"integration:\n  state: red\n  branch: feat/x\n  reason: test exited 1\n  corrected_by: W9\n", wantCalled: true},
+		{name: "task list output", args: []string{"task", "list", "--wish-id", wishID}, wantOut: "model: claude-sonnet-5-5\n", wantCalled: true},
 		{name: "list output", args: []string{"pr", "l"}, wantOut: "- id: " + projectID + "\n  name: api\n", wantCalled: true},
 		{name: "server error", args: []string{"q", "answer", "Q99", "a"}, wantCode: 1, wantErr: "not_found: no question Q99", wantCalled: true},
 		{name: "validation before sending", args: []string{"q", "answer"}, wantCode: 2, wantErr: "<question>: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\n  <choice>: value is required; expected one of yes, no, a, b, c, d"},

@@ -42,6 +42,7 @@ import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
 import { useData, useTaskEvents } from "./data/djinn";
 import {
+  shortModel,
   taskFinished,
   taskStatusText,
   taskTime,
@@ -172,6 +173,11 @@ export function WishTask({
             {time.text && (
               <span className="task-time" title={time.title}>
                 {time.text}
+              </span>
+            )}
+            {!watcher && task.model && (
+              <span className="task-model" title={task.model}>
+                {shortModel(task.model)}
               </span>
             )}
             <TaskUsage usage={task.usage} />

@@ -136,6 +136,9 @@
 .task-time {
   font-variant-numeric: tabular-nums;
 }
+.task-model {
+  flex-shrink: 0;
+}
 .wish-task-note {
   margin: 0;
   padding: 0 14px 11px 34px;

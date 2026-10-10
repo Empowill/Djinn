@@ -304,7 +304,11 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool) string {
 	if len(running) > 0 {
 		b.WriteString("\n## Running\n\n")
 		for _, t := range running {
-			fmt.Fprintf(&b, "- **%s** %s (%s", t.GetCode(), clipLine(t.GetTitle()), providerName(t.GetProvider()))
+			name := providerName(t.GetProvider())
+			if t.GetModel() != "" {
+				name += " · " + t.GetModel()
+			}
+			fmt.Fprintf(&b, "- **%s** %s (%s", t.GetCode(), clipLine(t.GetTitle()), name)
 			if e := codes[t.GetPartOf()]; e != "" {
 				b.WriteString(", part of " + e)
 			}
