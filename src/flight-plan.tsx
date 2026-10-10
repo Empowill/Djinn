@@ -46,7 +46,13 @@ import { Inbox } from "./inbox";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
-import { AzimaCard, azimaFinished, proofWords } from "./azima";
+import {
+  AzimaCard,
+  azimaFinished,
+  DraftAzimaCard,
+  MoveAzimaDialog,
+  proofWords,
+} from "./azima";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -101,6 +107,10 @@ export function FlightPlan({
     [plan.questions, plan.waiting, plan.ready, renderAttentionOrigin],
   );
   const [view, setView] = useState<View>("main");
+  const [movingAzima, setMovingAzima] = useState<{
+    wishId: string;
+    task: Task;
+  } | null>(null);
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
   const show = useCallback((to: View, id = "") => {
@@ -285,6 +295,44 @@ export function FlightPlan({
     [renderTask],
   );
 
+  const showDrafts = useMemo(
+    () => plan.drafts.some(({ item }) => item.id === focus),
+    [plan.drafts, focus],
+  );
+
+  const handleOpenDraft = useCallback(
+    (wish: Wish, task: Task) => {
+      quiet(
+        act(
+          wish.id,
+          () => clients.tasks.open({ azima: task.id }),
+          [Change.TASK],
+          t("azima.opened_toast", { code: task.code }),
+        ),
+      );
+    },
+    [quiet, act, clients.tasks],
+  );
+
+  const handleMoveDraft = useCallback((wish: Wish, task: Task) => {
+    setMovingAzima({ wishId: wish.id, task });
+  }, []);
+
+  const renderDraftItem = useCallback(
+    ({ wish, item }: { wish: Wish; item: Task }) => (
+      <DraftAzimaCard
+        key={item.id}
+        azima={item}
+        tasks={tasksOf(wish)}
+        origin={wishOrigin(wish)}
+        focus={focus}
+        onOpen={() => handleOpenDraft(wish, item)}
+        onMove={() => handleMoveDraft(wish, item)}
+      />
+    ),
+    [tasksOf, focus, handleOpenDraft, handleMoveDraft],
+  );
+
   const handleQuestionAnswer = useCallback(
     (choice: Choice, note: string, q?: Question) => {
       if (q) return answer(q.wishId, q.id, choice, note);
@@ -388,9 +436,12 @@ export function FlightPlan({
               moving={plan.moving}
               azimas={activeAzimas}
               doneAzimas={doneAzimas}
+              drafts={plan.drafts}
               fold="plan"
               showDone={showDone}
+              showDrafts={showDrafts}
               renderAzima={renderAzimaItem}
+              renderDraft={renderDraftItem}
               render={renderMovingItem}
             />
           )}
@@ -628,6 +679,30 @@ export function FlightPlan({
           )}
         </div>
       </div>
+      {movingAzima && (
+        <MoveAzimaDialog
+          azima={movingAzima.task}
+          wishes={wishes}
+          currentWishId={movingAzima.wishId}
+          onClose={() => setMovingAzima(null)}
+          onMove={(targetWishId) => {
+            const moving = movingAzima;
+            setMovingAzima(null);
+            quiet(
+              act(
+                moving.wishId,
+                () =>
+                  clients.tasks.move({
+                    azima: moving.task.id,
+                    wish: targetWishId,
+                  }),
+                [Change.TASK, Change.WISH],
+                t("azima.moved_toast", { code: moving.task.code }),
+              ),
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

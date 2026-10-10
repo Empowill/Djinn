@@ -173,6 +173,12 @@ const (
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
 	// TaskServiceSetAgentProcedure is the fully-qualified name of the TaskService's SetAgent RPC.
 	TaskServiceSetAgentProcedure = "/plan.v1.TaskService/SetAgent"
+	// TaskServiceDescribeProcedure is the fully-qualified name of the TaskService's Describe RPC.
+	TaskServiceDescribeProcedure = "/plan.v1.TaskService/Describe"
+	// TaskServiceOpenProcedure is the fully-qualified name of the TaskService's Open RPC.
+	TaskServiceOpenProcedure = "/plan.v1.TaskService/Open"
+	// TaskServiceMoveProcedure is the fully-qualified name of the TaskService's Move RPC.
+	TaskServiceMoveProcedure = "/plan.v1.TaskService/Move"
 	// PlanServiceSyncProcedure is the fully-qualified name of the PlanService's Sync RPC.
 	PlanServiceSyncProcedure = "/plan.v1.PlanService/Sync"
 )
@@ -1907,6 +1913,12 @@ type TaskServiceClient interface {
 	// Change the provider and/or the model of a task no worker runs now: planned, waiting, failed, stopped, cut short
 	// (for a finished one, its next djinn task continue uses them). Refused while a worker runs or pauses.
 	SetAgent(context.Context, *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error)
+	// Edit the description of an azima.
+	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
+	// Open a draft azima: turns it open, ready for parts to be spawned, and notifies the wish's lead.
+	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
+	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
+	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the plan.v1.TaskService service. By default, it uses
@@ -2012,6 +2024,24 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("SetAgent")),
 			connect.WithClientOptions(opts...),
 		),
+		describe: connect.NewClient[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse](
+			httpClient,
+			baseURL+TaskServiceDescribeProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Describe")),
+			connect.WithClientOptions(opts...),
+		),
+		open: connect.NewClient[v1.TaskServiceOpenRequest, v1.TaskServiceOpenResponse](
+			httpClient,
+			baseURL+TaskServiceOpenProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Open")),
+			connect.WithClientOptions(opts...),
+		),
+		move: connect.NewClient[v1.TaskServiceMoveRequest, v1.TaskServiceMoveResponse](
+			httpClient,
+			baseURL+TaskServiceMoveProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Move")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -2032,6 +2062,9 @@ type taskServiceClient struct {
 	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
 	send      *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
 	setAgent  *connect.Client[v1.TaskServiceSetAgentRequest, v1.TaskServiceSetAgentResponse]
+	describe  *connect.Client[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse]
+	open      *connect.Client[v1.TaskServiceOpenRequest, v1.TaskServiceOpenResponse]
+	move      *connect.Client[v1.TaskServiceMoveRequest, v1.TaskServiceMoveResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -2109,6 +2142,21 @@ func (c *taskServiceClient) SetAgent(ctx context.Context, req *connect.Request[v
 	return c.setAgent.CallUnary(ctx, req)
 }
 
+// Describe calls plan.v1.TaskService.Describe.
+func (c *taskServiceClient) Describe(ctx context.Context, req *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error) {
+	return c.describe.CallUnary(ctx, req)
+}
+
+// Open calls plan.v1.TaskService.Open.
+func (c *taskServiceClient) Open(ctx context.Context, req *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error) {
+	return c.open.CallUnary(ctx, req)
+}
+
+// Move calls plan.v1.TaskService.Move.
+func (c *taskServiceClient) Move(ctx context.Context, req *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error) {
+	return c.move.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
@@ -2163,6 +2211,12 @@ type TaskServiceHandler interface {
 	// Change the provider and/or the model of a task no worker runs now: planned, waiting, failed, stopped, cut short
 	// (for a finished one, its next djinn task continue uses them). Refused while a worker runs or pauses.
 	SetAgent(context.Context, *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error)
+	// Edit the description of an azima.
+	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
+	// Open a draft azima: turns it open, ready for parts to be spawned, and notifies the wish's lead.
+	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
+	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
+	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -2264,6 +2318,24 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("SetAgent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceDescribeHandler := connect.NewUnaryHandler(
+		TaskServiceDescribeProcedure,
+		svc.Describe,
+		connect.WithSchema(taskServiceMethods.ByName("Describe")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceOpenHandler := connect.NewUnaryHandler(
+		TaskServiceOpenProcedure,
+		svc.Open,
+		connect.WithSchema(taskServiceMethods.ByName("Open")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceMoveHandler := connect.NewUnaryHandler(
+		TaskServiceMoveProcedure,
+		svc.Move,
+		connect.WithSchema(taskServiceMethods.ByName("Move")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceSpawnProcedure:
@@ -2296,6 +2368,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceSendHandler.ServeHTTP(w, r)
 		case TaskServiceSetAgentProcedure:
 			taskServiceSetAgentHandler.ServeHTTP(w, r)
+		case TaskServiceDescribeProcedure:
+			taskServiceDescribeHandler.ServeHTTP(w, r)
+		case TaskServiceOpenProcedure:
+			taskServiceOpenHandler.ServeHTTP(w, r)
+		case TaskServiceMoveProcedure:
+			taskServiceMoveHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2363,6 +2441,18 @@ func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1
 
 func (UnimplementedTaskServiceHandler) SetAgent(context.Context, *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.SetAgent is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Describe is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Open is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Move is not implemented"))
 }
 
 // PlanServiceClient is a client for the plan.v1.PlanService service.

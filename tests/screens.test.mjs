@@ -26,12 +26,13 @@ export { attentionOf } from "@/src/attention.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
 export {
   azimaGroups,
+  draftAzimas,
   flightPlan,
   movingTasks,
   taskDealtWith,
   waitingTasks,
 } from "@/src/data/flight.ts";
-export { AzimaCard, azimaFinished } from "@/src/azima.tsx";
+export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
 export {
   FolderField,
   ProjectChecks,
@@ -78,6 +79,7 @@ function live(component, props) {
         };
         return [states[i], set];
       },
+      useEffect() {},
     };
     try {
       const fn = typeof component === "function" ? component : component.type;
@@ -3056,5 +3058,168 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
   assert.match(
     htmlOnDemand,
     /<button type="button" class="">Standard<\/button><button type="button" class="active">On demand<\/button>/,
+  );
+});
+
+test("draft azimas: fold, card with description, actions, and flight plan", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const draft = (code, title, extra = {}) => ({
+    id: code,
+    code,
+    title,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    draft: true,
+    description: "Explore multi-machine distribution.",
+    dependsOn: [],
+    createTime: at(1),
+    azima: { state: s.AzimaState.DRAFT },
+    ...extra,
+  });
+  const regular = (code, title, extra = {}) => ({
+    id: code,
+    code,
+    title,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    draft: false,
+    dependsOn: [],
+    createTime: at(1),
+    azima: { state: s.AzimaState.OPEN, ready: true },
+    ...extra,
+  });
+  const work = (code, status) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    dependsOn: [],
+    createTime: at(1),
+  });
+
+  const d1 = draft("T31", "Spread work over other machines", {
+    description: "Anticipate spreading work across nodes before launch.",
+  });
+  const d2 = draft("T32", "Cold storage backup", { description: "" });
+  const openAzima = regular("T01", "Core pipeline");
+  const runningWork = work("W01", s.TaskStatus.RUNNING);
+
+  const allTasks = [d1, d2, openAzima, runningWork];
+  const byId = new Map(allTasks.map((t) => [t.id, t]));
+
+  // 1. Flight plan: drafts are collected in drafts, NOT in moving, waiting, or azimas.
+  const myWish = wish("w1", "Multi-machine", s.WishState.ACTIVE, 1);
+  const plan = s.flightPlan([myWish], {
+    [myWish.id]: {
+      wish: myWish,
+      tasks: allTasks,
+      questions: [],
+      blocks: [],
+      allowances: [],
+      runs: [],
+      loaded: true,
+    },
+  });
+  assert.equal(plan.drafts.length, 2);
+  assert.deepEqual(
+    plan.drafts.map((x) => x.item.code),
+    ["T31", "T32"],
+  );
+  // Drafts are not moving tasks:
+  assert.deepEqual(
+    plan.moving.map((x) => x.item.code),
+    ["W01"],
+  );
+  // Drafts are not in active azimas list:
+  assert.deepEqual(
+    plan.azimas.map((x) => x.item.azima.code),
+    ["T01"],
+  );
+
+  // 2. DraftAzimaCard rendered directly: shows draft badge, code, title.
+  let openedCode = "";
+  let movedCode = "";
+  const cardComponent = (az) =>
+    h(s.DraftAzimaCard, {
+      key: az.id,
+      azima: az,
+      tasks: byId,
+      onOpen: () => {
+        openedCode = az.code;
+      },
+      onMove: () => {
+        movedCode = az.code;
+      },
+      focus: az.id,
+    });
+
+  const cardHtml = s.renderToStaticMarkup(cardComponent(d1));
+  assert.match(cardHtml, /azima-card tone-later open/);
+  assert.match(cardHtml, /<span class="agent-code">T31<\/span>/);
+  assert.match(cardHtml, /<strong title="Spread work over other machines">/);
+  assert.match(
+    cardHtml,
+    /Anticipate spreading work across nodes before launch\./,
+  );
+  assert.match(cardHtml, />Open this azima<\/button>/);
+  assert.match(cardHtml, />Move<\/button>/);
+
+  // When card has no description: shows muted "No description yet."
+  const emptyCardHtml = s.renderToStaticMarkup(cardComponent(d2));
+  assert.match(emptyCardHtml, /No description yet\./);
+
+  // Clicking open and move triggers callbacks:
+  const liveCard = live(s.DraftAzimaCard, {
+    azima: d1,
+    tasks: byId,
+    onOpen: () => {
+      openedCode = d1.code;
+    },
+    onMove: () => {
+      movedCode = d1.code;
+    },
+    focus: d1.id,
+  });
+  const buttons = liveCard.all("button");
+  const openBtn = buttons.find((b) => b.props.children === "Open this azima");
+  const moveBtn = buttons.find((b) => b.props.children === "Move");
+  assert.ok(openBtn && moveBtn);
+  openBtn.props.onClick();
+  assert.equal(openedCode, "T31");
+  moveBtn.props.onClick();
+  assert.equal(movedCode, "T31");
+
+  // 3. TaskSections fold: "Later: 2 drafts"
+  const sectionsHtml = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(allTasks),
+      azimas: s.azimaGroups(allTasks),
+      doneAzimas: [],
+      drafts: s.draftAzimas(allTasks),
+      showDrafts: false,
+      renderDraft: (draft) => cardComponent(draft),
+      render: () => null,
+    }),
+  );
+  assert.match(sectionsHtml, /Later: 2 drafts/);
+  // When fold is closed, cards are not rendered
+  assert.doesNotMatch(sectionsHtml, /Anticipate spreading work/);
+
+  // When fold is open: cards are rendered
+  const openSectionsHtml = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(allTasks),
+      azimas: s.azimaGroups(allTasks),
+      doneAzimas: [],
+      drafts: s.draftAzimas(allTasks),
+      showDrafts: true,
+      renderDraft: (draft) => cardComponent(draft),
+      render: () => null,
+    }),
+  );
+  assert.match(openSectionsHtml, /Hide drafts/);
+  assert.match(
+    openSectionsHtml,
+    /Anticipate spreading work across nodes before launch\./,
   );
 });

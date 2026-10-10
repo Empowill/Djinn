@@ -229,6 +229,9 @@ func resolveAzima(ctx context.Context, r store.Reader, wishID, name string) (str
 	case !plan.IsAzima(tasks[i]):
 		return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
 			"%s is work, not an azima: a task is part of an azima", tasks[i].GetCode()))
+	case tasks[i].GetDraft():
+		return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"azima %s is a draft: open it first with djinn task open %s", tasks[i].GetCode(), tasks[i].GetCode()))
 	}
 	return tasks[i].GetId(), nil
 }

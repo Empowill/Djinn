@@ -295,6 +295,9 @@ func (h *Harness) spawn(
 	if req.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		return h.spawnAzima(ctx, procedure, req)
 	}
+	if req.GetDraft() || req.GetDescription() != "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("only an azima can be a draft or have a description"))
+	}
 	scopes, err := cleanScopes(req.GetWriteScopes())
 	if err != nil {
 		return nil, err
