@@ -128,13 +128,14 @@ func AnswerLine(q *planv1.Question, worker string) string {
 	return b.String()
 }
 
-// EnlightenLine is the line that tells a lead the developer wants to know more before answering q: the question
-// worker that investigates, when worker names one, or else that the lead does.
+// EnlightenLine is the line that tells a lead the developer wants to know more before answering q: what they want to
+// know, as they typed it, on one line; then the question worker that investigates, when worker names one, or else
+// that the lead does.
 func EnlightenLine(q *planv1.Question, note, worker string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Djinn: %s, the developer wants to know more before answering.", q.GetCode())
-	if note != "" {
-		fmt.Fprintf(&b, " Note: %q.", clipLine(note))
+	if note := oneLine(note); note != "" {
+		fmt.Fprintf(&b, " Note: \"%s\".", note)
 	}
 	if worker != "" {
 		fmt.Fprintf(&b, " %s investigates, then revises it; you will hear when it ends.", worker)

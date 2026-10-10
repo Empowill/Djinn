@@ -7,7 +7,10 @@ import { bundle } from "./bundle.mjs";
 
 const s = await bundle(
   "screens",
-  `export { createElement } from "react";
+  `export {
+  createElement,
+  __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE as reactInternals,
+} from "react";
 export { renderToStaticMarkup } from "react-dom/server";
 export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
@@ -50,6 +53,64 @@ export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
 
+// live renders a component whose state lives between renders, so that a test types and clicks with no DOM: it calls
+// the component with a dispatcher that keeps its useState, as React does, and walks the elements it returns. The
+// components it reaches use no other hook.
+function live(component, props) {
+  const states = [];
+  const render = () => {
+    const internals = s.reactInternals;
+    const before = internals.H;
+    let at = 0;
+    internals.H = {
+      useState(initial) {
+        const i = at++;
+        if (!(i in states))
+          states[i] = typeof initial === "function" ? initial() : initial;
+        const set = (value) => {
+          states[i] = typeof value === "function" ? value(states[i]) : value;
+        };
+        return [states[i], set];
+      },
+    };
+    try {
+      return component(props);
+    } finally {
+      internals.H = before;
+    }
+  };
+  // The elements of the tree of tag name, or whose class has name, in order.
+  const all = (name) => {
+    const found = [];
+    const walk = (node) => {
+      if (Array.isArray(node)) node.forEach(walk);
+      else if (node && typeof node === "object" && node.props) {
+        const classes = String(node.props.className ?? "").split(" ");
+        if (node.type === name || classes.includes(name)) found.push(node);
+        walk(node.props.children);
+      }
+    };
+    walk(render());
+    return found;
+  };
+  const one = (name) => {
+    const found = all(name);
+    assert.equal(found.length, 1, `one ${name}`);
+    return found[0].props;
+  };
+  return {
+    html: () => s.renderToStaticMarkup(render()),
+    all,
+    one,
+    // Its props change, as when djinn sends the question again.
+    update(next) {
+      props = { ...props, ...next };
+    },
+    // The handlers' promises settle.
+    settle: () => new Promise((resolve) => setImmediate(resolve)),
+  };
+}
+
 const wish = (id, title, state, rank, extra = {}) => ({
   id,
   title,
@@ -58,6 +119,7 @@ const wish = (id, title, state, rank, extra = {}) => ({
   projectIds: [],
   allowances: [],
   pushes: [],
+  mains: [],
   ...extra,
 });
 
@@ -276,28 +338,39 @@ test("a question shows its options by letter and its recommendation; answered, w
     /title="Pick an option first" disabled=""><svg[^]*?Rub the lamp<\/button>/,
   );
 
-  // Being investigated, then revised: its own state, the note, the badge, the history folded.
-  const digging = s.renderToStaticMarkup(
-    h(s.WishQuestion, {
-      question: {
-        id: "q1",
-        code: "Q01",
-        text: "Which oil?",
-        options: ["Olive", "Paraffin"],
-        recommendation: "A: it smells good.",
-        revision: 1,
-        rounds: [
-          { kind: s.RoundKind.ENLIGHTEN, note: "Burn time?" },
-          { kind: s.RoundKind.REVISE, recommendation: "B: brighter." },
-          { kind: s.RoundKind.ENLIGHTEN, note: "And the price?" },
-        ],
-      },
-      onAnswer: async () => {},
-      onEnlighten: async () => {},
-    }),
+  // Being investigated, then revised: one line out of the way, which opens on its state, the note, the badge, the
+  // history folded.
+  const card = live(s.WishQuestion, {
+    question: {
+      id: "q1",
+      code: "Q01",
+      text: "Which oil?",
+      options: ["Olive", "Paraffin"],
+      recommendation: "A: it smells good.",
+      revision: 1,
+      rounds: [
+        { kind: s.RoundKind.ENLIGHTEN, note: "Burn time?" },
+        { kind: s.RoundKind.REVISE, recommendation: "B: brighter." },
+        { kind: s.RoundKind.ENLIGHTEN, note: "And the price?" },
+      ],
+    },
+    onAnswer: async () => {},
+    onEnlighten: async () => {},
+  });
+  const folded = card.html();
+  assert.match(folded, /question-card investigating {2}folded/);
+  assert.match(
+    folded,
+    /<button class="question-heading question-fold" aria-expanded="false"><svg[^>]*lucide-lightbulb[^]*?<span class="question-id">Q01<\/span><span class="question-fold-text">Which oil\?<\/span>.*Being investigated.*<span class="question-fold-note">You asked: And the price\?<\/span>/,
   );
-  assert.match(digging, /question-card investigating/);
-  assert.match(digging, /Being investigated/);
+  assert.doesNotMatch(folded, /question-inner|Olive|<textarea/);
+  card.one("question-fold").onClick();
+  const digging = card.html();
+  assert.doesNotMatch(digging, /folded/);
+  assert.match(
+    digging,
+    /<button class="question-heading" aria-expanded="true">/,
+  );
   assert.match(digging, /You asked to find out more: And the price\?/);
   assert.match(digging, /Revised/);
   assert.match(
@@ -306,7 +379,33 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.match(digging, /Recommended before: B: brighter\./);
   // Already asked: no second request.
-  assert.doesNotMatch(digging, /Enlighten me/);
+  assert.doesNotMatch(digging, /lamp-enlighten/);
+  // A click on its heading folds it again.
+  card.one("question-heading").onClick();
+  assert.match(card.html(), /question-fold/);
+  // The investigator revises it: it waits for an answer again, open by itself.
+  card.update({
+    question: {
+      id: "q1",
+      code: "Q01",
+      text: "Which oil?",
+      options: ["Olive", "Paraffin"],
+      recommendation: "B: it lasts longer.",
+      revision: 2,
+      rounds: [
+        { kind: s.RoundKind.ENLIGHTEN, note: "Burn time?" },
+        { kind: s.RoundKind.REVISE, recommendation: "B: brighter." },
+        { kind: s.RoundKind.ENLIGHTEN, note: "And the price?" },
+        { kind: s.RoundKind.REVISE, recommendation: "A: it smells good." },
+      ],
+    },
+  });
+  const revised = card.html();
+  assert.match(revised, /question-card open can-wait"/);
+  assert.doesNotMatch(revised, /question-fold|Being investigated/);
+  assert.match(revised, /<div class="question-heading">/);
+  assert.match(revised, /Paraffin.*<textarea/);
+  assert.match(revised, /lamp-enlighten/);
 
   const answered = s.renderToStaticMarkup(
     h(s.WishQuestion, {
@@ -322,6 +421,69 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.match(answered, /B · Paraffin/);
   assert.match(answered, /Decision recorded/);
+});
+
+test("Enlighten me sends the answer's note in one click: no second field", async () => {
+  const sent = [];
+  const card = live(s.WishQuestion, {
+    question: {
+      id: "q1",
+      code: "Q01",
+      text: "Which oil?",
+      options: ["Olive", "Paraffin"],
+      recommendation: "A: it smells good.",
+      rounds: [],
+    },
+    onAnswer: async () => assert.fail("Enlighten me answers nothing"),
+    onEnlighten: async (note) => {
+      sent.push(note);
+    },
+  });
+  // One field, for both gestures; Enlighten me opens nothing.
+  const open = card.html();
+  assert.equal(open.match(/<textarea/g).length, 1);
+  assert.match(
+    open,
+    /placeholder="A note with your choice, or what to look into for Enlighten me \(optional\)"/,
+  );
+  assert.match(
+    open,
+    /<button class="button secondary lamp-enlighten" title="Find out more before deciding: the lead looks into what your note asks, then revises the question">/,
+  );
+  assert.doesNotMatch(open, /aria-expanded|Ask the lead to investigate/);
+
+  // Typed in the note, sent at the first click, as typed; the note is cleared.
+  card.one("textarea").onChange({
+    target: { value: "  How long does each burn?\nAnd the price?  " },
+  });
+  assert.match(card.html(), /<textarea[^>]*> {2}How long does each burn\?/);
+  card.one("lamp-enlighten").onClick();
+  await card.settle();
+  assert.deepEqual(sent, ["How long does each burn?\nAnd the price?"]);
+  assert.match(card.html(), /<textarea[^>]*><\/textarea>/);
+  assert.equal(card.all("textarea").length, 1);
+
+  // Nothing typed: it asks to investigate in general.
+  card.one("lamp-enlighten").onClick();
+  await card.settle();
+  assert.deepEqual(sent.at(-1), "");
+
+  // Refused: the note stays, to try again.
+  const kept = live(s.WishQuestion, {
+    question: { id: "q2", code: "Q02", text: "Which wick?", options: [] },
+    onAnswer: async () => {},
+    onEnlighten: async () => {
+      throw new Error("refused");
+    },
+  });
+  assert.match(
+    kept.html(),
+    /placeholder="Your answer, or what to look into for Enlighten me"/,
+  );
+  kept.one("textarea").onChange({ target: { value: "Cotton?" } });
+  kept.one("lamp-enlighten").onClick();
+  await kept.settle();
+  assert.match(kept.html(), /<textarea[^>]*>Cotton\?<\/textarea>/);
 });
 
 test("a question of a wish without a lead session says no lead is told: open, then answered", () => {
@@ -534,9 +696,11 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
     /<h2>Being investigated<span class="count">1<\/span><\/h2>/,
   );
   assert.match(html, /1 question being investigated by the lead/);
-  assert.match(html, /You asked to find out more: Burn time\?/);
-  // No mark on what the wish shows, but on the open question; the journal is folded.
-  assert.doesNotMatch(html, /Approve as it is/);
+  // Folded to one line, what you asked with it.
+  assert.match(html, /question-card investigating {2}folded/);
+  assert.match(html, /You asked: Burn time\?/);
+  // No mark on what the wish shows, nor on the folded question; the journal is folded.
+  assert.doesNotMatch(html, /Approve as it is|Mark read/);
   assert.match(html, /class="fold-heading" aria-expanded="false"/);
 });
 
