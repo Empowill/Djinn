@@ -328,13 +328,15 @@ func (s *Situation) limited(t *planv1.Task) string {
 	return fmt.Sprintf("%s waits for %s", provider(t), cmp.Or(holder.GetWaitReason(), "its usage limit"))
 }
 
-// provider names the task's agent; none is claude.
-func provider(t *planv1.Task) string {
+// Provider names the task's agent; none is claude.
+func Provider(t *planv1.Task) string {
 	if t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED {
 		return "claude"
 	}
 	return strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 }
+
+func provider(t *planv1.Task) string { return Provider(t) }
 
 // full says why the task's worker may not start now, or "" when it may: a slot is free (a question worker takes none),
 // and the memory holds a worker of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
@@ -376,8 +378,7 @@ func (s *Situation) full(t *planv1.Task) string {
 	return why
 }
 
-// typical is the typical peak memory of a worker of the provider, and how many measured workers gave it
-// ProviderPeaks returns the measured peak memory values for each provider, ordered by task end time descending.
+// ProviderPeaks returns the measured peak memories of finished workers, by provider, the latest first.
 func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
 	var ended []*planv1.Task
 	for _, t := range tasks {
@@ -390,7 +391,8 @@ func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
 	})
 	peaks := map[string][]uint64{}
 	for _, t := range ended {
-		peaks[provider(t)] = append(peaks[provider(t)], t.GetResources().GetPeakMemoryBytes())
+		p := Provider(t)
+		peaks[p] = append(peaks[p], t.GetResources().GetPeakMemoryBytes())
 	}
 	return peaks
 }

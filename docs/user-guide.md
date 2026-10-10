@@ -39,6 +39,9 @@ djinn up --browser    # no window: prints the URL to open in your browser
   Ctrl+Q (Cmd+Q on macOS), or stop `djinn up`.
 - **How many workers at once.** The machine decides: one per 2 cores and per 2 GiB of memory.
   `djinn up --workers 4` (1 to 16) sets it. The status bar shows `Workers 2/4`, and whether the page is `Live`.
+- **Worker CPU and memory limits.** On Linux, workers run in systemd user scopes. CPU can be capped with
+  `--worker-cpu` (e.g. `150` for 1.5 cores). Memory limits can be set with an expert static ceiling (`--worker-memory`)
+  or an adaptive guardrail based on observed provider peaks (`--worker-memory-guard 2.5`): [worker memory](worker-memory.md).
 
 ### The terminal
 
@@ -347,6 +350,6 @@ over it: Djinn merges main into the wishes' branches instead, and proposes their
 
 - **Documentation**, in Connections & preferences: **Open** shows Djinn's concepts and its API, also served at
   `/docs/` while `djinn up` runs.
-- [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md)
+- [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md) · [Worker memory](worker-memory.md)
 - The language follows the system (English or French); change it, and the theme, in **Connections & preferences**.
 - To build Djinn, or work on it: [`CONTRIBUTING.md`](../CONTRIBUTING.md).
