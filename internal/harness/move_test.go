@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -440,5 +441,188 @@ func TestComputedMoveOpenPR(t *testing.T) {
 	did := in.answer(t, prQ, planv1.Choice_CHOICE_A)
 	if did != "Djinn noted: open pull request" {
 		t.Errorf("what Djinn did: %q", did)
+	}
+}
+
+// TestComputedMoveTwoPushesOneQuestion: two pushes of the same commit sha
+// raise at most one install question.
+func TestComputedMoveTwoPushesOneQuestion(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generate: \"gen\"\ntest: \"test\"\ninstall: \"install\"\n")
+
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "v1\n"})
+	in.pass(t, 0)
+	in.pass(t, 10*time.Minute)
+
+	// First pass after delay: exactly one install question raised
+	questions, _ := store.List[*planv1.Question](t.Context(), in.db, nil)
+	count := 0
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 install question after first push and delay, got %d", count)
+	}
+
+	// A second pass / push of the same sha
+	in.pass(t, 10*time.Minute)
+
+	questions, _ = store.List[*planv1.Question](t.Context(), in.db, nil)
+	count = 0
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected still exactly 1 install question after second push, got %d", count)
+	}
+
+	// A second wish targeting the same project also does not duplicate the question
+	w2, err := in.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Second wish", ProjectIds: []string{in.projectID},
+	}))
+	if err == nil && w2 != nil {
+		in.pass(t, 10*time.Minute)
+		questions, _ = store.List[*planv1.Question](t.Context(), in.db, nil)
+		count = 0
+		for _, q := range questions {
+			if strings.Contains(q.GetText(), "Install and restart") {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Fatalf("expected 1 install question even with second wish, got %d", count)
+		}
+	}
+}
+
+// TestComputedMoveInstallDoneNoNewQuestionAfterRestart: once an install is done,
+// no new question is raised after restarting Djinn.
+func TestComputedMoveInstallDoneNoNewQuestionAfterRestart(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generate: \"gen\"\ntest: \"test\"\ninstall: \"install\"\n")
+
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "v1\n"})
+	in.pass(t, 0)
+	in.pass(t, 10*time.Minute)
+
+	questions, _ := store.List[*planv1.Question](t.Context(), in.db, nil)
+	var installQ *planv1.Question
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			installQ = q
+			break
+		}
+	}
+	if installQ == nil {
+		t.Fatalf("no install question asked before restart")
+	}
+
+	// Developer answers "Install and restart"
+	did := in.answer(t, installQ, planv1.Choice_CHOICE_A)
+	if !strings.HasPrefix(did, "Djinn installed build") {
+		t.Fatalf("what Djinn did: %q; want prefix 'Djinn installed build'", did)
+	}
+
+	// Restart Djinn
+	in.restart(t)
+
+	// Advance clock and run integration pass
+	in.pass(t, 10*time.Minute)
+
+	// Verify no new install question was raised
+	questions, _ = store.List[*planv1.Question](t.Context(), in.db, nil)
+	openInstallCount := 0
+	totalInstallCount := 0
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			totalInstallCount++
+			if q.GetAnswer() == nil {
+				openInstallCount++
+			}
+		}
+	}
+	if openInstallCount != 0 {
+		t.Errorf("expected 0 open install questions after restart, got %d", openInstallCount)
+	}
+	if totalInstallCount != 1 {
+		t.Errorf("expected exactly 1 total install question (the answered one), got %d", totalInstallCount)
+	}
+}
+
+// TestComputedMoveNewerBuildSupersedesOldQuestion: when a newer build is integrated,
+// the old uninstalled question is closed with a note, and exactly one new question is raised.
+func TestComputedMoveNewerBuildSupersedesOldQuestion(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+		"generate: \"gen\"\ntest: \"test\"\ninstall: \"install\"\n")
+
+	// First build
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "v1\n"})
+	in.pass(t, 0)
+	in.pass(t, 10*time.Minute)
+
+	questions, _ := store.List[*planv1.Question](t.Context(), in.db, nil)
+	var q1 *planv1.Question
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			q1 = q
+			break
+		}
+	}
+	if q1 == nil {
+		t.Fatalf("no install question asked for first build")
+	}
+	if q1.GetAnswer() != nil {
+		t.Fatalf("expected q1 to be open, got answer: %v", q1.GetAnswer())
+	}
+
+	// Second build integrated
+	in.finished(t, "W2", map[string]string{"app/src/a.txt": "v2\n"})
+	in.pass(t, 0)
+	in.pass(t, 10*time.Minute)
+
+	// Check questions
+	questions, _ = store.List[*planv1.Question](t.Context(), in.db, nil)
+	var q1Updated, q2 *planv1.Question
+	openCount := 0
+	for _, q := range questions {
+		if strings.Contains(q.GetText(), "Install and restart") {
+			if q.GetId() == q1.GetId() {
+				q1Updated = q
+			} else {
+				q2 = q
+			}
+			if q.GetAnswer() == nil {
+				openCount++
+			}
+		}
+	}
+
+	if q1Updated == nil || q1Updated.GetAnswer() == nil {
+		t.Fatalf("expected old question q1 to be closed, got: %v", q1Updated)
+	}
+	if !strings.Contains(q1Updated.GetAnswer().GetNote(), "superseded by build") {
+		t.Errorf("q1 note = %q, want containing 'superseded by build'", q1Updated.GetAnswer().GetNote())
+	}
+	if q2 == nil {
+		t.Fatalf("expected new question q2 to be raised, but none found")
+	}
+	if q2.GetAnswer() != nil {
+		t.Errorf("expected q2 to be open, got answer: %v", q2.GetAnswer())
+	}
+	if openCount != 1 {
+		t.Errorf("expected exactly 1 open question, got %d", openCount)
 	}
 }

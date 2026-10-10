@@ -74,6 +74,13 @@ func (in *integration) pass(t *testing.T, d time.Duration) {
 	in.h.integratePass(t.Context())
 }
 
+// restart stops Djinn and starts it again on the same home and database.
+func (in *integration) restart(t *testing.T, opts ...Option) {
+	t.Helper()
+	in.down()
+	in.env = up(t, in.home, append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate)}, opts...)...)
+}
+
 // run is the fake of the project's commands: gen lists the files of src in gen/index.txt, test says testOut and
 // exits testCode.
 func (in *integration) run(_ context.Context, dir string, args []string) (string, int, error) {

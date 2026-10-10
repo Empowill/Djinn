@@ -454,6 +454,9 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 	h.mu.Lock()
 	h.installed[projectID] = sha
 	h.mu.Unlock()
+	_ = os.MkdirAll(filepath.Dir(installedFile(h.home, projectID)), 0o755)
+	_ = os.WriteFile(installedFile(h.home, projectID), []byte(sha+"\n"), 0o600)
+	h.closeInstallQuestions(ctx, projectID, sha)
 	return out, nil
 }
 
@@ -461,6 +464,117 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 // next to its integration worktrees, apart from them so that an install never waits for an integration.
 func installDir(home, projectID string) string {
 	return filepath.Join(home, "projects", projectID, "install")
+}
+
+// installedFile is the file that records the sha of the build installed last for projectID.
+func installedFile(home, projectID string) string {
+	return filepath.Join(home, "projects", projectID, "installed")
+}
+
+// installedSha returns the sha of the build installed last in projectID:
+// checked from memory first, then installed file, then the install worktree's HEAD.
+func (h *Harness) installedSha(ctx context.Context, projectID string) string {
+	h.mu.Lock()
+	sha, ok := h.installed[projectID]
+	h.mu.Unlock()
+	if ok && sha != "" {
+		return sha
+	}
+	if data, err := os.ReadFile(installedFile(h.home, projectID)); err == nil {
+		s := strings.TrimSpace(string(data))
+		if s != "" {
+			h.mu.Lock()
+			h.installed[projectID] = s
+			h.mu.Unlock()
+			return s
+		}
+	}
+	wt := installDir(h.home, projectID)
+	if s := commitOf(ctx, wt, "HEAD"); s != "" {
+		h.mu.Lock()
+		h.installed[projectID] = s
+		h.mu.Unlock()
+		return s
+	}
+	return ""
+}
+
+// closeInstallQuestions closes open install questions for projectID when sha was installed:
+// the question for sha is marked installed (Choice A); open questions for older shas are marked superseded (Choice B).
+func (h *Harness) closeInstallQuestions(ctx context.Context, projectID, sha string) {
+	questions, err := store.List[*planv1.Question](ctx, h.store, nil)
+	if err != nil {
+		return
+	}
+	wishesByID := make(map[string]*planv1.Wish)
+	s := short8(sha)
+	for _, q := range questions {
+		if !q.GetMove() || q.GetAnswer() != nil {
+			continue
+		}
+		if !strings.Contains(q.GetText(), "Install and restart") {
+			continue
+		}
+		if !h.isQuestionForProject(ctx, q, projectID, wishesByID) {
+			continue
+		}
+		if strings.Contains(q.GetText(), s) {
+			_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_A, "installed")
+		} else {
+			_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_B, fmt.Sprintf("superseded by build %s", s))
+		}
+	}
+}
+
+// isQuestionForProject tells whether question q belongs to a wish that targets projectID.
+func (h *Harness) isQuestionForProject(ctx context.Context, q *planv1.Question, projectID string, wishesByID map[string]*planv1.Wish) bool {
+	if q.GetWishId() == "" {
+		return false
+	}
+	w, ok := wishesByID[q.GetWishId()]
+	if !ok {
+		var err error
+		w, err = store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
+		if err != nil {
+			return false
+		}
+		wishesByID[q.GetWishId()] = w
+	}
+	return slices.Contains(w.GetProjectIds(), projectID)
+}
+
+// closeMove records answer on an open move question q, journaled and notified.
+func (h *Harness) closeMove(ctx context.Context, q *planv1.Question, choice planv1.Choice, note string) error {
+	ctx = context.WithoutCancel(ctx)
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		cur, err := store.Get[*planv1.Question](ctx, tx, q.GetId())
+		if err != nil {
+			return err
+		}
+		if cur.GetAnswer() != nil {
+			return nil
+		}
+		cur.Answer = &planv1.Answer{
+			Choice:     choice,
+			Note:       note,
+			CreateTime: timestamppb.New(h.now()),
+		}
+		if err := tx.Journal(actorHarness, methodIntegrate, cur); err != nil {
+			return err
+		}
+		return tx.Put(cur)
+	})
+	if err != nil {
+		log.Printf("djinn: move: close: %v", err)
+		return err
+	}
+	q.Answer = &planv1.Answer{
+		Choice:     choice,
+		Note:       note,
+		CreateTime: timestamppb.New(h.now()),
+	}
+	h.notify()
+	return nil
 }
 
 // integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish made before
@@ -1155,13 +1269,16 @@ func (h *Harness) handleMergeMoves(
 				if remote == "" {
 					remote = "origin"
 				}
-				_ = h.askMove(ctx, &planv1.Question{
+				q := &planv1.Question{
 					WishId:  wish.GetId(),
 					Text:    fmt.Sprintf("Push tag %s to %s?", tag, remote),
 					Context: fmt.Sprintf("Run `git push %s %s` to push the release tag to %s.", remote, tag, remote),
 					Options: []string{"Push tag " + tag, "Skip"},
 					Move:    true,
-				})
+				}
+				if err := h.askMove(ctx, q); err == nil {
+					existing = append(existing, q)
+				}
 			}
 		}
 	}
@@ -1202,13 +1319,16 @@ func (h *Harness) handleMergeMoves(
 				return strings.Contains(strings.ToLower(q.GetText()), "release")
 			})
 			if !asked {
-				_ = h.askMove(ctx, &planv1.Question{
+				q := &planv1.Question{
 					WishId:  wish.GetId(),
 					Text:    "Start release dry run?",
 					Context: fmt.Sprintf("Release files changed in %s. Trigger the release workflow dry run or prepare the release.", short8(sha)),
 					Options: []string{"Start release dry run", "Skip"},
 					Move:    true,
-				})
+				}
+				if err := h.askMove(ctx, q); err == nil {
+					existing = append(existing, q)
+				}
 			}
 		}
 	}
@@ -1232,16 +1352,20 @@ func (h *Harness) handleMergeMoves(
 				if !slices.Contains(moves, moveName) {
 					moves = append(moves, moveName)
 					asked := hasQuestion(func(q *planv1.Question) bool {
-						return strings.Contains(strings.ToLower(q.GetText()), strings.ToLower(machine))
+						tl := strings.ToLower(q.GetText())
+						return strings.Contains(tl, strings.ToLower(machine)) && (box == "" || strings.Contains(tl, strings.ToLower(box)))
 					})
 					if !asked {
-						_ = h.askMove(ctx, &planv1.Question{
+						q := &planv1.Question{
 							WishId:  wish.GetId(),
 							Text:    fmt.Sprintf("Check %s on %s?", box, machine),
 							Context: fmt.Sprintf("A verification is needed on %s:\n- [ ] %s (needs: %s)", machine, box, machine),
 							Options: []string{"Verified", "Not yet"},
 							Move:    true,
-						})
+						}
+						if err := h.askMove(ctx, q); err == nil {
+							existing = append(existing, q)
+						}
 					}
 				}
 			}
@@ -1284,13 +1408,16 @@ func (h *Harness) handleMergeMoves(
 						})
 						if !asked {
 							title, body := h.draftPR(ctx, wish, project, ref, branch)
-							_ = h.askMove(ctx, &planv1.Question{
+							q := &planv1.Question{
 								WishId:  wish.GetId(),
 								Text:    fmt.Sprintf("Open a pull request to %s?", main),
 								Context: fmt.Sprintf("### %s\n\n%s", title, body),
 								Options: []string{"Open pull request", "Not yet"},
 								Move:    true,
-							})
+							}
+							if err := h.askMove(ctx, q); err == nil {
+								existing = append(existing, q)
+							}
 						}
 					}
 				}
@@ -1321,48 +1448,62 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	allQuestions, err := store.List[*planv1.Question](ctx, h.store, nil)
+	if err != nil {
+		return
+	}
+	wishesByID := make(map[string]*planv1.Wish, len(wishes))
+	for _, w := range wishes {
+		wishesByID[w.GetId()] = w
+	}
 	for _, wish := range wishes {
 		if ctx.Err() != nil {
 			return
-		}
-		existing, err := store.List[*planv1.Question](ctx, h.store, store.Where{"wish_id": wish.GetId()})
-		if err != nil {
-			continue
-		}
-		hasQuestion := func(match func(q *planv1.Question) bool) bool {
-			for _, q := range existing {
-				if q.GetMove() && match(q) {
-					return true
-				}
-			}
-			return false
 		}
 
 		// 1. Azima awaiting proof
 		tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
 		if err == nil {
 			for _, t := range plan.WithAzimas(tasks) {
-				if plan.IsAzima(t) && t.GetAzima().GetState() == planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF {
-					if !hasQuestion(func(q *planv1.Question) bool { return q.GetTaskId() == t.GetId() }) {
-						needs := t.GetProofNeeds()
-						if len(needs) == 0 {
-							continue
+				if plan.IsAzima(t) {
+					if t.GetAzima().GetState() == planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF {
+						asked := false
+						for _, q := range allQuestions {
+							if q.GetMove() && q.GetTaskId() == t.GetId() {
+								asked = true
+								break
+							}
 						}
-						needsWords := plan.NeedsWords(needs)
-						prompt := fmt.Sprintf("Check %s on %s?", t.GetCode(), needsWords)
-						var boxes []string
-						for _, n := range needs {
-							boxes = append(boxes, fmt.Sprintf("- [ ] %s (needs: %s)", n.GetBox(), n.GetNeeds()))
+						if !asked {
+							needs := t.GetProofNeeds()
+							if len(needs) == 0 {
+								continue
+							}
+							needsWords := plan.NeedsWords(needs)
+							prompt := fmt.Sprintf("Check %s on %s?", t.GetCode(), needsWords)
+							var boxes []string
+							for _, n := range needs {
+								boxes = append(boxes, fmt.Sprintf("- [ ] %s (needs: %s)", n.GetBox(), n.GetNeeds()))
+							}
+							ctxt := fmt.Sprintf("Azima %s is awaiting proof:\n\n%s", t.GetCode(), strings.Join(boxes, "\n"))
+							q := &planv1.Question{
+								WishId:  wish.GetId(),
+								TaskId:  t.GetId(),
+								Text:    prompt,
+								Context: ctxt,
+								Options: []string{"Verified", "Not yet"},
+								Move:    true,
+							}
+							if err := h.askMove(ctx, q); err == nil {
+								allQuestions = append(allQuestions, q)
+							}
 						}
-						ctxt := fmt.Sprintf("Azima %s is awaiting proof:\n\n%s", t.GetCode(), strings.Join(boxes, "\n"))
-						_ = h.askMove(ctx, &planv1.Question{
-							WishId:  wish.GetId(),
-							TaskId:  t.GetId(),
-							Text:    prompt,
-							Context: ctxt,
-							Options: []string{"Verified", "Not yet"},
-							Move:    true,
-						})
+					} else {
+						for _, q := range allQuestions {
+							if q.GetMove() && q.GetTaskId() == t.GetId() && q.GetAnswer() == nil {
+								_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_A, "proof settled")
+							}
+						}
 					}
 				}
 			}
@@ -1387,27 +1528,42 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 			// (a) Uninstalled build
 			if settings.Install != "" {
 				sha, _ := git(ctx, repo, "rev-parse", "refs/heads/"+branch)
-				h.mu.Lock()
-				inst := h.installed[projectID]
-				h.mu.Unlock()
-				if sha != "" && inst != sha {
+				inst := h.installedSha(ctx, projectID)
+				if sha != "" && inst == sha {
+					h.closeInstallQuestions(ctx, projectID, sha)
+				} else if sha != "" && inst != sha {
+					s := short8(sha)
+					// Supersede open install questions for older shas in this project
+					for _, q := range allQuestions {
+						if q.GetMove() && q.GetAnswer() == nil && strings.Contains(q.GetText(), "Install and restart") && !strings.Contains(q.GetText(), s) && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
+							_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_B, fmt.Sprintf("superseded by build %s", s))
+						}
+					}
 					tsStr, err := git(ctx, repo, "log", "-1", "--format=%ct", sha)
 					if err == nil {
 						ts, _ := strconv.ParseInt(strings.TrimSpace(tsStr), 10, 64)
 						commitTime := time.Unix(ts, 0)
 						delay := cmp.Or(h.uninstalledDelay, defaultUninstalledDelay)
 						if h.now().Sub(commitTime) >= delay {
-							if !hasQuestion(func(q *planv1.Question) bool {
-								return strings.Contains(q.GetText(), short8(sha))
-							}) {
-								_ = h.askMove(ctx, &planv1.Question{
+							asked := false
+							for _, q := range allQuestions {
+								if q.GetMove() && strings.Contains(q.GetText(), "Install and restart") && strings.Contains(q.GetText(), s) && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
+									asked = true
+									break
+								}
+							}
+							if !asked {
+								q := &planv1.Question{
 									WishId: wish.GetId(),
-									Text:   fmt.Sprintf("Install and restart %s?", short8(sha)),
+									Text:   fmt.Sprintf("Install and restart %s?", s),
 									Context: fmt.Sprintf("The build %s on %s has been integrated for %s and is not installed yet. Install and restart?",
-										short8(sha), branch, delay.Round(time.Minute)),
+										s, branch, delay.Round(time.Minute)),
 									Options: []string{"Install and restart", "Skip"},
 									Move:    true,
-								})
+								}
+								if err := h.askMove(ctx, q); err == nil {
+									allQuestions = append(allQuestions, q)
+								}
 							}
 						}
 					}
@@ -1423,17 +1579,31 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 					countStr, err := git(ctx, repo, "rev-list", "--count", ref+".."+pushedSha)
 					count, _ := strconv.Atoi(strings.TrimSpace(countStr))
 					if err == nil && count > 0 && h.isWishSettled(ctx, wish.GetId()) {
-						if !hasQuestion(func(q *planv1.Question) bool {
-							return strings.Contains(strings.ToLower(q.GetText()), "pull request")
-						}) {
+						asked := false
+						for _, q := range allQuestions {
+							if q.GetMove() && strings.Contains(strings.ToLower(q.GetText()), "pull request") && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
+								asked = true
+								break
+							}
+						}
+						if !asked {
 							title, body := h.draftPR(ctx, wish, project, ref, branch)
-							_ = h.askMove(ctx, &planv1.Question{
+							q := &planv1.Question{
 								WishId:  wish.GetId(),
 								Text:    fmt.Sprintf("Open a pull request to %s?", main),
 								Context: fmt.Sprintf("### %s\n\n%s", title, body),
 								Options: []string{"Open pull request", "Not yet"},
 								Move:    true,
-							})
+							}
+							if err := h.askMove(ctx, q); err == nil {
+								allQuestions = append(allQuestions, q)
+							}
+						}
+					} else if err == nil && count == 0 {
+						for _, q := range allQuestions {
+							if q.GetMove() && q.GetAnswer() == nil && strings.Contains(strings.ToLower(q.GetText()), "pull request") && h.isQuestionForProject(ctx, q, projectID, wishesByID) {
+								_ = h.closeMove(ctx, q, planv1.Choice_CHOICE_A, "merged to "+main)
+							}
 						}
 					}
 				}
