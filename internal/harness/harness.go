@@ -70,9 +70,10 @@ type Harness struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // one per run
 
-	answering   sync.Mutex // one answer to an edit question at a time
-	questioning sync.Mutex // one question worker decided at a time (question.go)
-	questions   bool       // question workers start (WithQuestionWorkers)
+	answering        sync.Mutex // one answer to an edit question at a time
+	questioning      sync.Mutex // one question worker decided at a time (question.go)
+	answerWorkers    *bool      // answer workers start (WithAnswerWorkers); nil: follows project settings
+	enlightenWorkers *bool      // enlighten workers start (WithEnlightenWorkers); nil: follows project settings
 
 	scopes *machine.Scopes // the systemd scopes the workers run in, one each (WithScopes); nil: none
 

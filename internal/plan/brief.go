@@ -90,11 +90,12 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
 	"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
 	"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
-	"- **Djinn acts on the developer's answers.** An answer starts a question worker, \"Q03 → tasks\": it turns " +
-	"the decision into tasks (`--decision Q03`), or asks what the answer leaves open. \"Enlighten me\" starts " +
-	"\"Q03: enlighten\": it reads, then revises the question. You are told when each one starts and ends, and what it " +
-	"spawned, asked or revised: check it, do not do it again. When the line says \"Act on it\" or \"Investigate\", " +
-	"question workers are off and the move is yours.\n" +
+	"- **Djinn acts on the developer's answers.** By default you turn answers into tasks yourself, in one pass, " +
+	"placing them in the graph (azimas, --after, --blocks), and check what an investigator revised. " +
+	"\"Enlighten me\" starts \"Q03: enlighten\": it reads, then revises the question. You are told when each one " +
+	"starts and ends, and what it spawned, asked or revised: check it, do not do it again. When answer workers " +
+	"are on, an answer starts \"Q03 → tasks\" instead. When the line says \"Investigate\", enlighten workers are " +
+	"off and the move is yours.\n" +
 	"- **Blocks are for agents**: a hand-off, a reference, a decision taken outside a question (kind decision, which " +
 	"the decision log shows). The developer does not read blocks: what the developer must see is a question.\n" +
 	"- **To explain a concept, make a tilasm** (the developer may say talisman): a folder with an `index.html` and its " +

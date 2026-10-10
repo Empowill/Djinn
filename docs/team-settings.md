@@ -51,22 +51,25 @@ install: "go tool task install"
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
-Four more set the *question workers*, the small tasks Djinn starts by itself on a question of a wish: after an
-answer, `Q03 → tasks` turns the decision into tasks; after "Enlighten me", `Q03: enlighten` investigates and revises
-the question ([agent protocol](agent-protocol.md)). They run read-only and take no slot: on the project's `provider`
+Five more set the *question workers*, the small tasks Djinn starts by itself on a question of a wish: after an
+answer, `Q03 → tasks` turns the decision into tasks (converter); after "Enlighten me", `Q03: enlighten` investigates and revises
+the question (investigator; see [agent protocol](agent-protocol.md)). They run read-only and take no slot: on the project's `provider`
 when that provider can run them read-only (claude, codex), falling back to claude otherwise; or on `question_provider`.
 
-| Setting               | What it sets                                                          | Not set                    |
-| --------------------- | --------------------------------------------------------------------- | -------------------------- |
-| `question_workers`    | `false`: none starts, the lead is told to act on each answer itself.  | on                         |
-| `question_provider`   | Their provider (`PROVIDER_CLAUDE`, `PROVIDER_CODEX`...).              | the project's provider when read-only, else claude |
-| `question_model`      | Their model. `""`: the provider's default.                            | `sonnet` for claude, else the provider's default |
-| `question_budget_usd` | The most one may spend, when its provider can enforce it. `0`: no limit. | 2                       |
+| Setting               | What it sets                                                                                 | Not set                    |
+| --------------------- | -------------------------------------------------------------------------------------------- | -------------------------- |
+| `answer_workers`      | `true`: start a converter (`Q03 → tasks`) to turn an answer into tasks; `false`: the lead does it. | off                        |
+| `enlighten_workers`   | `false`: no investigator starts after "Enlighten me"; the lead investigates itself.           | on                         |
+| `question_workers`    | Deprecated: set `answer_workers` and `enlighten_workers` instead; sets both when given.      | `answer_workers: false`, `enlighten_workers: true` |
+| `question_provider`   | Their provider (`PROVIDER_CLAUDE`, `PROVIDER_CODEX`...).                                     | the project's provider when read-only, else claude |
+| `question_model`      | Their model. `""`: the provider's default.                                                   | `sonnet` for claude, else the provider's default |
+| `question_budget_usd` | The most one may spend, when its provider can enforce it. `0`: no limit.                    | 2                          |
 
 A file that sets `provider` or `question_provider` resets `question_model` to its default too. When the project's
 provider cannot run read-only (like Antigravity), question workers fall back to claude with `question_model` (`sonnet`),
-and their start event says why (`antigravity cannot run read-only: claude`). `djinn up --question-workers=false` (or
-`DJINN_QUESTION_WORKERS=off`) turns them off for every project.
+and their start event says why (`antigravity cannot run read-only: claude`). On `djinn up`, `--answer-workers` (or
+`DJINN_ANSWER_WORKERS`) and `--enlighten-workers` (or `DJINN_ENLIGHTEN_WORKERS`) override the settings across all projects;
+`--question-workers` (or `DJINN_QUESTION_WORKERS`) is deprecated and sets both.
 
 ## Branch names
 
