@@ -111,6 +111,7 @@ func TestBrief(t *testing.T) {
 		"**W3** Reopen the leads: resuming by itself, the account's session limit, resets at 07:20",
 		"**W4** Pause a worker: resumed as W5",
 		"**To follow up on a task, continue it**", "Fork it only to start a different task from its context",
+		"`djinn task set-agent <task> --provider … --model …`",
 		"`djinn wish route \"<request>\" --wish-id <wish> --ask`", "`--provider watch --prompt \"<command>\"`",
 		"`--restart` starts again", "`metadata.djinn.wish`", "`djinn skill list`",
 		// The decisions say who took them, and what they led to.

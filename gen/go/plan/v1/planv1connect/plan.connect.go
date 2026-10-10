@@ -167,6 +167,8 @@ const (
 	TaskServiceContinueProcedure = "/plan.v1.TaskService/Continue"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
+	// TaskServiceSetAgentProcedure is the fully-qualified name of the TaskService's SetAgent RPC.
+	TaskServiceSetAgentProcedure = "/plan.v1.TaskService/SetAgent"
 	// PlanServiceSyncProcedure is the fully-qualified name of the PlanService's Sync RPC.
 	PlanServiceSyncProcedure = "/plan.v1.PlanService/Sync"
 )
@@ -1842,6 +1844,9 @@ type TaskServiceClient interface {
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
+	// Change the provider and/or the model of a task no worker runs now: planned, waiting, failed, stopped, cut short
+	// (for a finished one, its next djinn task continue uses them). Refused while a worker runs or pauses.
+	SetAgent(context.Context, *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the plan.v1.TaskService service. By default, it uses
@@ -1941,6 +1946,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Send")),
 			connect.WithClientOptions(opts...),
 		),
+		setAgent: connect.NewClient[v1.TaskServiceSetAgentRequest, v1.TaskServiceSetAgentResponse](
+			httpClient,
+			baseURL+TaskServiceSetAgentProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("SetAgent")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1960,6 +1971,7 @@ type taskServiceClient struct {
 	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
 	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
 	send      *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
+	setAgent  *connect.Client[v1.TaskServiceSetAgentRequest, v1.TaskServiceSetAgentResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -2032,6 +2044,11 @@ func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.Ta
 	return c.send.CallUnary(ctx, req)
 }
 
+// SetAgent calls plan.v1.TaskService.SetAgent.
+func (c *taskServiceClient) SetAgent(ctx context.Context, req *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error) {
+	return c.setAgent.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
@@ -2083,6 +2100,9 @@ type TaskServiceHandler interface {
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
+	// Change the provider and/or the model of a task no worker runs now: planned, waiting, failed, stopped, cut short
+	// (for a finished one, its next djinn task continue uses them). Refused while a worker runs or pauses.
+	SetAgent(context.Context, *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -2178,6 +2198,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Send")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceSetAgentHandler := connect.NewUnaryHandler(
+		TaskServiceSetAgentProcedure,
+		svc.SetAgent,
+		connect.WithSchema(taskServiceMethods.ByName("SetAgent")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceSpawnProcedure:
@@ -2208,6 +2234,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceContinueHandler.ServeHTTP(w, r)
 		case TaskServiceSendProcedure:
 			taskServiceSendHandler.ServeHTTP(w, r)
+		case TaskServiceSetAgentProcedure:
+			taskServiceSetAgentHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2271,6 +2299,10 @@ func (UnimplementedTaskServiceHandler) Continue(context.Context, *connect.Reques
 
 func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Send is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) SetAgent(context.Context, *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.SetAgent is not implemented"))
 }
 
 // PlanServiceClient is a client for the plan.v1.PlanService service.

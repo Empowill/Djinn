@@ -184,8 +184,10 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
 		return nil
 	}
+	priorProvider := t.GetPriorProvider()
+	providerChanged := priorProvider != planv1.Provider_PROVIDER_UNSPECIFIED && priorProvider != t.GetProvider()
 	prompt, err := firstPrompt(h.store, t.GetId())
-	if by == byContinue {
+	if by == byContinue && !providerChanged {
 		prompt, err = lastPrompt(ctx, h.store, t.GetId())
 	}
 	if err != nil {
@@ -226,13 +228,16 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 				t.Access, prep.declared = access, declared
 			}
 		}
+		if t.GetPriorProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
+			t.PriorProvider = planv1.Provider_PROVIDER_UNSPECIFIED
+		}
 		if err := tx.Journal(actorHarness, methodSchedule, t); err != nil {
 			return err
 		}
 		return tx.Put(t)
 	})
 	if err == nil {
-		err = h.resumeWorker(r, provider, project, prep, prompt, by)
+		err = h.resumeWorker(r, provider, project, prep, prompt, by, priorProvider)
 	}
 	if err != nil {
 		h.finish(r, Result{ExitCode: -1, Err: err})
@@ -244,7 +249,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 
 // resumeWorker starts the worker of a resumed task where its last one worked, by: byRestart, byLimit, or byContinue
 // with the prompt it was continued with. The caller owns the run's task.
-func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Project, prep prepared, prompt, by string) error {
+func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Project, prep prepared, prompt, by string, priorProvider planv1.Provider) error {
 	t := r.task
 	dir := project.GetDirectory()
 	switch {
@@ -304,10 +309,15 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		Resume: t.GetSessionId(), Prompt: line,
 	}
 	how := ", resuming its session"
-	if by == byContinue && spec.Resume == "" {
+	providerChanged := priorProvider != planv1.Provider_PROVIDER_UNSPECIFIED && priorProvider != t.GetProvider()
+	switch {
+	case providerChanged:
+		spec.Resume = ""
+		spec.Prompt = briefed(r, prompt, readOnly)
+		how = fmt.Sprintf(", provider changed: %s → %s, starts from its first prompt", short(priorProvider), short(t.GetProvider()))
+	case by == byContinue && spec.Resume == "":
 		return errors.New("its session cannot be resumed")
-	}
-	if spec.Resume == "" {
+	case spec.Resume == "":
 		// A worker whose session was never known starts again on its first prompt, its checks with it as at launch.
 		spec.Resume, spec.Prompt, how = "", briefed(r, prompt, readOnly)+"\n\n"+line, ", from its first prompt"
 		if by == byAnswer {

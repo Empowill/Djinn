@@ -133,7 +133,8 @@ func (h *Harness) continuable(ctx context.Context, t *planv1.Task, running bool)
 	if _, ok := h.providers[t.GetProvider()]; !ok {
 		return refuse("runs %s, which is not available", short(t.GetProvider()))
 	}
-	if t.GetSessionId() == "" {
+	providerChanged := t.GetPriorProvider() != planv1.Provider_PROVIDER_UNSPECIFIED && t.GetPriorProvider() != t.GetProvider()
+	if t.GetSessionId() == "" && !providerChanged {
 		return refuse("has no session to resume: its worker never said one")
 	}
 	if b := t.GetMaxBudgetUsd(); b > 0 && t.GetUsage().GetCostUsd() >= b {

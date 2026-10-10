@@ -25,7 +25,10 @@ func (e *env) spawnReq(t *testing.T, wishID, title, prompt string, req *planv1.T
 	if req == nil {
 		req = &planv1.TaskServiceSpawnRequest{}
 	}
-	req.WishId, req.Title, req.Prompt, req.Provider = wishID, title, prompt, planv1.Provider_PROVIDER_FAKE
+	if req.Provider == 0 {
+		req.Provider = planv1.Provider_PROVIDER_FAKE
+	}
+	req.WishId, req.Title, req.Prompt = wishID, title, prompt
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(req))
 	if err != nil {
 		return nil, err
