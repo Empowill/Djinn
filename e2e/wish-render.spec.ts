@@ -1,5 +1,5 @@
 // End-to-end render performance on a real-size wish (W174): measures opening the wish, switching between tabs
-// (tasks, decisions, journal, blocks) and change arrival over the live watch stream.
+// (tasks, decisions, journal, blocks), opening a task, and change arrival over the live watch stream.
 // Run alone with: go tool task e2e -- e2e/wish-render.spec.ts
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -10,12 +10,14 @@ import { portable } from "./portable";
 
 // Budgets in milliseconds, set from first measurements on Linux with margin:
 // open ~68 ms (budget 300 ms), tasks ~55 ms (budget 250 ms), decisions ~46 ms (budget 250 ms),
-// journal ~34 ms (budget 200 ms), blocks ~60 ms (budget 250 ms), change ~125 ms (budget 500 ms).
+// journal ~34 ms (budget 200 ms), blocks ~60 ms (budget 250 ms), task open ~20 ms (budget 200 ms),
+// change ~125 ms (budget 500 ms).
 export const BUDGET_OPEN_MS = 300;
 export const BUDGET_TAB_TASKS_MS = 250;
 export const BUDGET_TAB_DECISIONS_MS = 250;
 export const BUDGET_TAB_JOURNAL_MS = 200;
 export const BUDGET_TAB_BLOCKS_MS = 250;
+export const BUDGET_TASK_OPEN_MS = 200;
 export const BUDGET_CHANGE_ARRIVAL_MS = 500;
 
 const binary = path.resolve(
@@ -234,7 +236,92 @@ test.describe("wish render performance @render", () => {
       }
     }
 
-    // 3. Measure change arrival (one change arriving over watch stream)
+    // 3. Measure opening of a task (on the tasks tab)
+    const tasksTab = page.locator("#view-tab-tasks");
+    if ((await tasksTab.getAttribute("aria-selected")) !== "true") {
+      await tasksTab.click();
+      await expect(page.locator(".tasks-moving")).toBeVisible();
+    }
+
+    const taskOpenMeasures: number[] = [];
+    for (let i = 0; i < runs; i++) {
+      const startMark = `task-open-start-${i}`;
+      const endMark = `task-open-end-${i}`;
+      const measureName = `task-open-duration-${i}`;
+
+      const duration = await page.evaluate(
+        async ({ startMark, endMark, measureName }) => {
+          const closedTask = document.querySelector<HTMLElement>(
+            ".wish-task:not(.open)",
+          );
+          if (!closedTask) throw new Error("No closed .wish-task found");
+          const headingBtn = closedTask.querySelector<HTMLButtonElement>(
+            "button.wish-task-heading",
+          );
+          if (!headingBtn)
+            throw new Error("No button.wish-task-heading found in closed task");
+
+          performance.mark(startMark);
+          const t0 = performance.now();
+          headingBtn.click();
+
+          await new Promise<void>((resolve) => {
+            const isReady = () =>
+              closedTask.querySelector(".wish-task-body") !== null;
+            if (isReady()) {
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              );
+              return;
+            }
+            const observer = new MutationObserver(() => {
+              if (isReady()) {
+                observer.disconnect();
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => resolve()),
+                );
+              }
+            });
+            observer.observe(closedTask, { childList: true, subtree: true });
+          });
+
+          performance.mark(endMark);
+          performance.measure(measureName, startMark, endMark);
+          const entries = performance.getEntriesByName(measureName);
+          const dur =
+            entries[entries.length - 1]?.duration ?? performance.now() - t0;
+
+          // Close the task card again so it can be re-opened
+          headingBtn.click();
+          await new Promise<void>((resolve) => {
+            const isClosed = () =>
+              closedTask.querySelector(".wish-task-body") === null;
+            if (isClosed()) {
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              );
+              return;
+            }
+            const observer = new MutationObserver(() => {
+              if (isClosed()) {
+                observer.disconnect();
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => resolve()),
+                );
+              }
+            });
+            observer.observe(closedTask, { childList: true, subtree: true });
+          });
+
+          return dur;
+        },
+        { startMark, endMark, measureName },
+      );
+
+      taskOpenMeasures.push(duration);
+    }
+
+    // 4. Measure change arrival (one change arriving over watch stream)
     // Make sure we are on the main/journal tab where questions are shown in the action center
     const mainTab = page.locator("#view-tab-main");
     if ((await mainTab.getAttribute("aria-selected")) !== "true") {
@@ -310,6 +397,7 @@ test.describe("wish render performance @render", () => {
     const medianDecisions = median(tabMeasures.decisions);
     const medianJournal = median(tabMeasures.journal);
     const medianBlocks = median(tabMeasures.blocks);
+    const medianTaskOpen = median(taskOpenMeasures);
     const medianChange = median(changeMeasures);
 
     console.log("MEASUREMENTS (runs = 3):");
@@ -329,6 +417,9 @@ test.describe("wish render performance @render", () => {
       `Tab blocks: raw=[${tabMeasures.blocks.map((n) => n.toFixed(1)).join(", ")}] ms, median=${medianBlocks.toFixed(1)} ms`,
     );
     console.log(
+      `Open task: raw=[${taskOpenMeasures.map((n) => n.toFixed(1)).join(", ")}] ms, median=${medianTaskOpen.toFixed(1)} ms`,
+    );
+    console.log(
       `Change arrival: raw=[${changeMeasures.map((n) => n.toFixed(1)).join(", ")}] ms, median=${medianChange.toFixed(1)} ms`,
     );
 
@@ -338,6 +429,7 @@ test.describe("wish render performance @render", () => {
     expect(medianDecisions).toBeLessThanOrEqual(BUDGET_TAB_DECISIONS_MS);
     expect(medianJournal).toBeLessThanOrEqual(BUDGET_TAB_JOURNAL_MS);
     expect(medianBlocks).toBeLessThanOrEqual(BUDGET_TAB_BLOCKS_MS);
+    expect(medianTaskOpen).toBeLessThanOrEqual(BUDGET_TASK_OPEN_MS);
     expect(medianChange).toBeLessThanOrEqual(BUDGET_CHANGE_ARRIVAL_MS);
   });
 });
