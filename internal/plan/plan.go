@@ -208,6 +208,7 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
 	repo, dev, _ := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
 	project.Push = settings.Push
+	project.PushStrategy = settings.PushStrategy
 
 	if p.Pusher != nil {
 		wish, _ := p.wishForProject(ctx, project.GetId(), "")
@@ -400,6 +401,29 @@ func (p *Projects) SetPush(
 	return connect.NewResponse(&planv1.ProjectServiceSetPushResponse{Project: project}), nil
 }
 
+func (p *Projects) PushStrategy(
+	ctx context.Context, req *connect.Request[planv1.ProjectServicePushStrategyRequest],
+) (*connect.Response[planv1.ProjectServicePushStrategyResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	if req.Msg.Strategy != nil && req.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+			return SaveDeveloperPushStrategy(p.Home, project.GetId(), req.Msg.GetStrategy())
+		})
+		if err != nil {
+			return nil, Status(err)
+		}
+	}
+	repo, dev, _ := loadSettings(p.Home, project)
+	settings := ResolveSettings(repo, dev)
+	return connect.NewResponse(&planv1.ProjectServicePushStrategyResponse{
+		Strategy: settings.PushStrategy,
+		Source:   settings.PushStrategyFrom,
+	}), nil
+}
+
 // unattached returns the project without a folder that has this remote, or else this name, case ignored; nil
 // when there is none.
 func unattached(ctx context.Context, tx *store.Tx, remote, name string) (*planv1.Project, error) {
@@ -498,7 +522,10 @@ func (w *Wishes) Make(
 // makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused. The caller journals
 // the command.
 func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest) (*planv1.Wish, error) {
-	wish := &planv1.Wish{Id: store.NewID(), Title: req.GetTitle(), CreateTime: timestamppb.Now()}
+	wish := &planv1.Wish{
+		Id: store.NewID(), Title: req.GetTitle(), CreateTime: timestamppb.Now(),
+		PushStrategy: req.GetPushStrategy(),
+	}
 	for _, id := range req.GetProjectIds() {
 		project, err := store.Get[*planv1.Project](ctx, tx, id)
 		if err != nil {

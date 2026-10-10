@@ -38,6 +38,8 @@ message Project {
   ProjectSync sync = 9;
   // When Djinn pushes its integration branch: standard cadence or on demand.
   ProjectPush push = 10;
+  // Push strategy for the project's wishes: one integration branch per wish (wish) or per azima (azima).
+  PushStrategy push_strategy = 11;
 }
 
 // ProjectSync says how the project's integration branch stands against its remote target for a wish.
@@ -219,6 +221,12 @@ message ProjectSettings {
   optional bool answer_workers = 21;
   // Djinn starts a small worker to investigate and revise a question after "Enlighten me". Not set: on.
   optional bool enlighten_workers = 22;
+  // Push strategy for the project's wishes: one integration branch per wish (wish) or per azima (azima).
+  // Not set: wish.
+  optional PushStrategy push_strategy = 23 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -292,6 +300,8 @@ enum SettingSource {
   SETTING_SOURCE_REPOSITORY = 2;
   // The developer's own file, in Djinn's data folder.
   SETTING_SOURCE_DEVELOPER = 3;
+  // The wish itself, set for this wish specifically.
+  SETTING_SOURCE_WISH = 4;
 }
 
 // ProjectSetting is one setting of a project, as its workers get it.
@@ -362,6 +372,9 @@ message Wish {
   // The codes of the wish's tasks and azimas that were deleted (djinn task delete), W12 or T27: never given again,
   // so that a commit, a plan file or a decision that names one names one task only.
   repeated string retired_codes = 19;
+  // Push strategy for the wish: wish (one integration branch per wish) or azima (one branch per azima).
+  // Unset: takes the project's default.
+  PushStrategy push_strategy = 20;
 }
 
 // PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
@@ -372,6 +385,16 @@ enum PushMode {
   PUSH_MODE_AUTO = 1;
   // Djinn asks first: "Push feat/x to origin?", pushed in one click.
   PUSH_MODE_ASK = 2;
+}
+
+// PushStrategy is how a wish's tasks integrate their work into Git branches: one branch per wish or one per azima.
+enum PushStrategy {
+  // Not set: wish.
+  PUSH_STRATEGY_UNSPECIFIED = 0;
+  // Wish: one integration branch per wish and per project.
+  PUSH_STRATEGY_WISH = 1;
+  // Azima: one integration branch per azima.
+  PUSH_STRATEGY_AZIMA = 2;
 }
 
 // WishPush is where the push of a wish's integration branch to its remote stands, in one of its projects. Only Djinn
@@ -1428,6 +1451,11 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
+  rpc PushStrategy(ProjectServicePushStrategyRequest) returns (ProjectServicePushStrategyResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message ProjectServiceAddRequest {
@@ -1512,6 +1540,23 @@ message ProjectServiceSetPushRequest {
 message ProjectServiceSetPushResponse {
   // The project updated.
   Project project = 1;
+}
+
+message ProjectServicePushStrategyRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // Push strategy for the project's wishes: wish or azima. Unset: show the current strategy and its source.
+  optional PushStrategy strategy = 2 [(buf.validate.field).enum.defined_only = true];
+}
+
+message ProjectServicePushStrategyResponse {
+  // The effective push strategy: wish or azima.
+  PushStrategy strategy = 1;
+  // Where the setting comes from: default, repository, or developer.
+  SettingSource source = 2;
 }
 
 // Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe
@@ -1885,6 +1930,11 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Show or change the push strategy of a wish: wish (one branch per wish) or azima (one branch per azima).
+  rpc PushStrategy(WishServicePushStrategyRequest) returns (WishServicePushStrategyResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
   // task finished, no question open), and you may grant it before.
   rpc Grant(WishServiceGrantRequest) returns (WishServiceGrantResponse) {
@@ -2114,11 +2164,30 @@ message WishServiceSetIntegrationRequest {
   }];
   // auto: Djinn pushes by itself; ask: it asks first. Unset: unchanged.
   PushMode push_mode = 6 [(buf.validate.field).enum.defined_only = true];
+  // Push strategy for the wish: wish or azima. Unset: unchanged.
+  optional PushStrategy push_strategy = 7 [(buf.validate.field).enum.defined_only = true];
 }
 
 message WishServiceSetIntegrationResponse {
   // The wish, with its integration settings.
   Wish wish = 1;
+}
+
+message WishServicePushStrategyRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Push strategy for the wish: wish or azima. Unset: show the current strategy and its source.
+  optional PushStrategy strategy = 2 [(buf.validate.field).enum.defined_only = true];
+}
+
+message WishServicePushStrategyResponse {
+  // The effective push strategy: wish or azima.
+  PushStrategy strategy = 1;
+  // Where the setting comes from: default, repository, developer, or wish.
+  SettingSource source = 2;
 }
 
 message WishServiceGrantRequest {
@@ -2234,6 +2303,9 @@ message WishServiceMakeRequest {
   repeated string project_ids = 2 [(buf.validate.field).repeated.items.string.uuid = true];
   // Make it paused: it waits, out of the three active wishes. Three being active, it is made paused anyway.
   bool paused = 3;
+  // Push strategy for the wish: wish (one integration branch per wish) or azima (one branch per azima).
+  // Unset: takes the project's default.
+  optional PushStrategy push_strategy = 4 [(buf.validate.field).enum.defined_only = true];
 }
 
 message WishServiceMakeResponse {

@@ -94,13 +94,91 @@ func (w *Wishes) SetIntegration(
 		if m := req.Msg.GetPushMode(); m != planv1.PushMode_PUSH_MODE_UNSPECIFIED {
 			wish.PushMode = m
 		}
+		if s := req.Msg.GetPushStrategy(); s != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+			curStrategy, _, err := EffectiveWishPushStrategy(ctx, tx, w.Home, wish)
+			if err != nil {
+				return err
+			}
+			if s != curStrategy {
+				tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wish.GetId()})
+				if err != nil {
+					return err
+				}
+				for _, t := range tasks {
+					if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+							"cannot switch push strategy: work of wish %q is already merged into its integration branch", wish.GetTitle()))
+					}
+				}
+			}
+			wish.PushStrategy = s
+		}
 		return tx.Put(wish)
 	})
 	if err != nil {
-		return nil, err
+		return nil, Status(err)
 	}
 	if err := fill(ctx, w.Store, wish); err != nil {
 		return nil, Status(err)
 	}
 	return connect.NewResponse(&planv1.WishServiceSetIntegrationResponse{Wish: wish}), nil
+}
+
+// PushStrategy shows or sets the push strategy of a wish.
+func (w *Wishes) PushStrategy(
+	ctx context.Context, req *connect.Request[planv1.WishServicePushStrategyRequest],
+) (*connect.Response[planv1.WishServicePushStrategyResponse], error) {
+	var (
+		strategy planv1.PushStrategy
+		source   planv1.SettingSource
+	)
+	if req.Msg.Strategy != nil && req.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
+		err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+			wish, err := store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId())
+			if err != nil {
+				return err
+			}
+			curStrategy, _, err := EffectiveWishPushStrategy(ctx, tx, w.Home, wish)
+			if err != nil {
+				return err
+			}
+			newStrategy := req.Msg.GetStrategy()
+			if newStrategy != curStrategy {
+				tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wish.GetId()})
+				if err != nil {
+					return err
+				}
+				for _, t := range tasks {
+					if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+							"cannot switch push strategy: work of wish %q is already merged into its integration branch", wish.GetTitle()))
+					}
+				}
+			}
+			wish.PushStrategy = newStrategy
+			strategy = newStrategy
+			source = planv1.SettingSource_SETTING_SOURCE_WISH
+			return tx.Put(wish)
+		})
+		if err != nil {
+			return nil, Status(err)
+		}
+		return connect.NewResponse(&planv1.WishServicePushStrategyResponse{
+			Strategy: strategy,
+			Source:   source,
+		}), nil
+	}
+
+	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
+	if err != nil {
+		return nil, Status(err)
+	}
+	strategy, source, err = EffectiveWishPushStrategy(ctx, w.Store, w.Home, wish)
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServicePushStrategyResponse{
+		Strategy: strategy,
+		Source:   source,
+	}), nil
 }
