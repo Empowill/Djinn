@@ -21,7 +21,7 @@ import {
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { compareCodes, finishedTask, isAzima } from "./data/flight";
-import type { Tone } from "./data/format";
+import { azimaTime, type Tone, useNow } from "./data/format";
 import { ModalFrame } from "./frame";
 import { t, type TextKey } from "./i18n";
 import { StatusBadge } from "./status";
@@ -147,6 +147,16 @@ export const AzimaCard = memo(function AzimaCard({
       ? x.azima?.state === AzimaState.DONE
       : x.status === TaskStatus.DONE,
   ).length;
+  const running = parts.filter(
+    (x) => x.status === TaskStatus.RUNNING || x.status === TaskStatus.RESUMING,
+  ).length;
+  const waiting = Math.max(0, parts.length - done - running);
+  const isRunning =
+    state === AzimaState.IN_PROGRESS ||
+    (azima.azima?.partsRunning ?? 0) > 0 ||
+    running > 0;
+  const now = useNow(isRunning);
+  const time = azimaTime(azima, parts, now);
   const proof = state === AzimaState.AWAITING_PROOF;
   // On hover, what validating it takes: each box left and what it needs, else that every task is finished.
   const needs = proof
@@ -206,9 +216,31 @@ export const AzimaCard = memo(function AzimaCard({
               title={t("azima.progress", { done, count: parts.length })}
             >
               <span className="azima-bar" aria-hidden="true">
-                <span style={{ width: `${(100 * done) / parts.length}%` }} />
+                <span
+                  className="azima-bar-done"
+                  style={{ width: `${(100 * done) / parts.length}%` }}
+                />
+                <span
+                  className="azima-bar-running"
+                  style={{ width: `${(100 * running) / parts.length}%` }}
+                />
               </span>
-              {done}/{parts.length}
+              <span className="azima-progress-counts">
+                {done}/{parts.length}
+              </span>
+            </span>
+          )}
+          {parts.length > 0 && (
+            <span
+              className="azima-progress-parts"
+              title={t("azima.progress_parts", { done, running, waiting })}
+            >
+              {t("azima.progress_parts", { done, running, waiting })}
+            </span>
+          )}
+          {time.text && (
+            <span className="task-time" title={time.title}>
+              {time.text}
             </span>
           )}
         </span>
@@ -250,16 +282,18 @@ export const AzimaCard = memo(function AzimaCard({
           )}
           {/* Every part finished, opening the azima was the click: they show. */}
           {moving.length === 0 ? (
-            finished.map(render)
+            <div className="card-grid task-grid">{finished.map(render)}</div>
           ) : (
             <>
-              {moving.map(render)}
+              <div className="card-grid task-grid">{moving.map(render)}</div>
               <Fold
                 id={`parts:${azima.id}`}
                 count={finished.length}
                 open={finished.some((x) => x.id === focus)}
               >
-                {finished.map(render)}
+                <div className="card-grid task-grid">
+                  {finished.map(render)}
+                </div>
               </Fold>
             </>
           )}

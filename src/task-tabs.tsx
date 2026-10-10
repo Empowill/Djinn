@@ -144,8 +144,8 @@ export function Fold({
   );
 }
 
-// TaskSections lays out the Tasks tab: the tasks that move or wait, then the azimas with the work part of them, the
-// done ones folded, and drafts at the end in their own fold. Without azimas or drafts, their sections are hidden.
+// TaskSections lays out the Tasks tab: the tasks that move or wait, then the azimas in a single column with the work
+// part of them, drafts, and the done ones folded at the end. Without azimas or drafts, their sections are hidden.
 export function TaskSections<T, A = never, D = never>({
   moving,
   render,
@@ -209,35 +209,44 @@ export function TaskSections<T, A = never, D = never>({
             </h2>
           </div>
           {azimas.length > 0 && (
-            <div className="card-grid azima-grid">
-              {azimas.map(renderAzima)}
+            <div className="azima-list">{azimas.map(renderAzima)}</div>
+          )}
+          {drafts.length > 0 && renderDraft && (
+            <div className="tasks-drafts">
+              <Fold
+                id={`drafts:${fold}`}
+                count={drafts.length}
+                open={showDrafts}
+                labelHidden={t("tasks.show_drafts", { count: drafts.length })}
+                labelShown={t("tasks.hide_drafts")}
+              >
+                <div className="azima-list">{drafts.map(renderDraft)}</div>
+              </Fold>
             </div>
           )}
           <Fold id={`azimas:${fold}`} count={doneAzimas.length} open={showDone}>
-            <div className="card-grid azima-grid">
-              {doneAzimas.map(renderAzima)}
-            </div>
+            <div className="azima-list">{doneAzimas.map(renderAzima)}</div>
           </Fold>
         </section>
       )}
-      {drafts.length > 0 && renderDraft && (
-        <section
-          className="wish-section tasks-drafts"
-          aria-label={t("tasks.show_drafts", { count: drafts.length })}
-        >
-          <Fold
-            id={`drafts:${fold}`}
-            count={drafts.length}
-            open={showDrafts}
-            labelHidden={t("tasks.show_drafts", { count: drafts.length })}
-            labelShown={t("tasks.hide_drafts")}
+      {!(azimas.length + doneAzimas.length > 0 && renderAzima) &&
+        drafts.length > 0 &&
+        renderDraft && (
+          <section
+            className="wish-section tasks-drafts"
+            aria-label={t("tasks.show_drafts", { count: drafts.length })}
           >
-            <div className="card-grid azima-grid">
-              {drafts.map(renderDraft)}
-            </div>
-          </Fold>
-        </section>
-      )}
+            <Fold
+              id={`drafts:${fold}`}
+              count={drafts.length}
+              open={showDrafts}
+              labelHidden={t("tasks.show_drafts", { count: drafts.length })}
+              labelShown={t("tasks.hide_drafts")}
+            >
+              <div className="azima-list">{drafts.map(renderDraft)}</div>
+            </Fold>
+          </section>
+        )}
     </div>
   );
 }

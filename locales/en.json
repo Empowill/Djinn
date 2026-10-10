@@ -40,6 +40,7 @@
   "azima.opened_toast": "Azima {code} opened.",
   "azima.progress.one": "{done} of {count} part done",
   "azima.progress.other": "{done} of {count} parts done",
+  "azima.progress_parts": "{done} done, {running} running, {waiting} waiting",
   "azima.state_awaiting_proof": "To validate",
   "azima.state_done": "Done",
   "azima.state_draft": "Draft",

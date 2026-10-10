@@ -20,12 +20,13 @@ export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
-export { shortModel } from "@/src/data/format.ts";
+export { azimaTime, shortModel } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { attentionOf, AttentionBar } from "@/src/attention.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
 export {
   azimaGroups,
+  azimaRank,
   draftAzimas,
   flightPlan,
   movingTasks,
@@ -3250,4 +3251,343 @@ test("draft azimas: fold, card with description, actions, and flight plan", () =
     openSectionsHtml,
     /Anticipate spreading work across nodes before launch\./,
   );
+});
+
+test("azimas are ordered in a stable 6-tier order and laid out in a single column", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const azima = (code, title, extra) => ({
+    id: code,
+    code,
+    title,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    proofNeeds: [],
+    createTime: at(100),
+    ...extra,
+  });
+  const work = (code, status, partOf, start, end) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    partOf,
+    dependsOn: [],
+    createTime: at(100),
+    startTime: start ? at(start) : undefined,
+    endTime: end ? at(end) : undefined,
+  });
+
+  // Six tiers of azimas:
+  // Tier 0: Moving (parts running or state in progress)
+  const aMoving1 = azima("T02", "Moving orchestrator", {
+    startTime: at(150),
+    azima: {
+      state: s.AzimaState.IN_PROGRESS,
+      ready: true,
+      parts: 3,
+      partsDone: 1,
+      partsRunning: 1,
+    },
+  });
+  const aMoving2 = azima("T01", "Moving builder", {
+    azima: {
+      state: s.AzimaState.OPEN,
+      ready: true,
+      parts: 2,
+      partsDone: 0,
+      partsRunning: 1,
+    },
+  });
+  // Tier 1: Awaiting proof
+  const aProof1 = azima("T04", "Validate release", {
+    azima: {
+      state: s.AzimaState.AWAITING_PROOF,
+      ready: true,
+      parts: 2,
+      partsDone: 2,
+    },
+  });
+  const aProof2 = azima("T03", "Review design", {
+    azima: {
+      state: s.AzimaState.AWAITING_PROOF,
+      ready: true,
+      parts: 1,
+      partsDone: 1,
+    },
+  });
+  // Tier 2: Ready not started
+  const aReady1 = azima("T06", "Ready pipeline B", {
+    azima: { state: s.AzimaState.OPEN, ready: true },
+  });
+  const aReady2 = azima("T05", "Ready pipeline A", {
+    azima: { state: s.AzimaState.OPEN, ready: true },
+  });
+  // Tier 3: Blocked
+  const aBlocked1 = azima("T08", "Blocked consumer", {
+    azima: { state: s.AzimaState.OPEN, ready: false },
+  });
+  const aBlocked2 = azima("T07", "Blocked worker", {
+    azima: { state: s.AzimaState.OPEN, ready: false },
+  });
+  // Tier 4: Draft
+  const aDraft1 = azima("T31", "Draft expansion", {
+    draft: true,
+    azima: { state: s.AzimaState.DRAFT },
+  });
+  const aDraft2 = azima("T30", "Draft caching", {
+    draft: true,
+  });
+  // Tier 5: Done
+  const aDone1 = azima("T10", "Done setup", {
+    status: s.TaskStatus.DONE,
+    startTime: at(110),
+    endTime: at(140),
+    azima: {
+      state: s.AzimaState.DONE,
+      ready: true,
+      parts: 1,
+      partsDone: 1,
+    },
+  });
+  const aDone2 = azima("T09", "Done foundation", {
+    status: s.TaskStatus.DONE,
+    startTime: at(105),
+    endTime: at(125),
+    azima: {
+      state: s.AzimaState.DONE,
+      ready: true,
+      parts: 1,
+      partsDone: 1,
+    },
+  });
+
+  // Parts for T02 (1 done, 1 running, 1 waiting)
+  const w1 = work("W01", s.TaskStatus.DONE, "T02", 150, 180);
+  const w2 = work("W02", s.TaskStatus.RUNNING, "T02", 185);
+  const w3 = work("W03", s.TaskStatus.WAITING, "T02");
+  // Part for T01 (1 running)
+  const w4 = work("W04", s.TaskStatus.RUNNING, "T01", 160);
+
+  // 1. Verify azimaRank for each tier
+  assert.equal(s.azimaRank(aMoving1), 0);
+  assert.equal(s.azimaRank(aMoving2), 0);
+  assert.equal(s.azimaRank(aProof1), 1);
+  assert.equal(s.azimaRank(aProof2), 1);
+  assert.equal(s.azimaRank(aReady1), 2);
+  assert.equal(s.azimaRank(aReady2), 2);
+  assert.equal(s.azimaRank(aBlocked1), 3);
+  assert.equal(s.azimaRank(aBlocked2), 3);
+  assert.equal(s.azimaRank(aDraft1), 4);
+  assert.equal(s.azimaRank(aDraft2), 4);
+  assert.equal(s.azimaRank(aDone1), 5);
+  assert.equal(s.azimaRank(aDone2), 5);
+
+  // Azimas in shuffled input order
+  const allTasks = [
+    aDone1,
+    aBlocked1,
+    aReady1,
+    aProof1,
+    aMoving1,
+    aDraft1,
+    w1,
+    w2,
+    w3,
+    w4,
+    aDraft2,
+    aMoving2,
+    aProof2,
+    aReady2,
+    aBlocked2,
+    aDone2,
+  ];
+
+  // 2. azimaGroups orders non-drafts strictly by azimaRank, then compareCodes
+  const groups = s.azimaGroups(allTasks);
+  const groupCodes = groups.map((g) => g.azima.code);
+  assert.deepEqual(groupCodes, [
+    // Tier 0 (moving, ordered by code)
+    "T01",
+    "T02",
+    // Tier 1 (awaiting proof, ordered by code)
+    "T03",
+    "T04",
+    // Tier 2 (ready, ordered by code)
+    "T05",
+    "T06",
+    // Tier 3 (blocked, ordered by code)
+    "T07",
+    "T08",
+    // Tier 5 (done, ordered by code)
+    "T09",
+    "T10",
+  ]);
+
+  // Drafts are collected separately, ordered by code
+  const drafts = s.draftAzimas(allTasks);
+  assert.deepEqual(
+    drafts.map((d) => d.code),
+    ["T30", "T31"],
+  );
+
+  // 3. Flight plan azimas are sorted by azimaRank, then compareCodes
+  const testWish = wish("w_test", "Azima layout wish", s.WishState.ACTIVE, 1);
+  const plan = s.flightPlan([testWish], {
+    [testWish.id]: {
+      wish: testWish,
+      tasks: allTasks,
+      questions: [],
+      blocks: [],
+      allowances: [],
+      runs: [],
+      loaded: true,
+    },
+  });
+  assert.deepEqual(
+    plan.azimas.map((x) => x.item.azima.code),
+    ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10"],
+  );
+  assert.deepEqual(
+    plan.drafts.map((x) => x.item.code),
+    ["T30", "T31"],
+  );
+
+  // 4. Layout: TaskSections renders in a single column (.azima-list), never .azima-grid
+  const byId = new Map(allTasks.map((t) => [t.id, t]));
+  const card = (task) =>
+    h(s.WishTask, {
+      key: task.id,
+      task,
+      onStop() {},
+      async onSend() {},
+      async onDone() {},
+    });
+  const renderAzima = ({ azima, parts }) =>
+    h(s.AzimaCard, {
+      key: azima.id,
+      azima,
+      parts,
+      tasks: byId,
+      render: card,
+    });
+  const renderDraft = (draft) =>
+    h(s.DraftAzimaCard, {
+      key: draft.id,
+      azima: draft,
+      tasks: byId,
+      onOpen() {},
+      onMove() {},
+    });
+
+  const activeAzimas = groups.filter((g) => !s.azimaFinished(g.azima));
+  const doneAzimas = groups.filter((g) => s.azimaFinished(g.azima));
+
+  const sectionsHtml = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(allTasks),
+      azimas: activeAzimas,
+      doneAzimas,
+      drafts,
+      showDone: true,
+      showDrafts: true,
+      renderAzima,
+      renderDraft,
+      render: card,
+    }),
+  );
+
+  // Must have .azima-list and never .azima-grid
+  assert.match(sectionsHtml, /<div class="azima-list">/);
+  assert.doesNotMatch(sectionsHtml, /azima-grid/);
+
+  // The active azimas appear in single column in exact stable order
+  const activeOrder = [
+    ...sectionsHtml.matchAll(/<span class="agent-code">(T\d+)<\/span>/g),
+  ].map((m) => m[1]);
+  assert.deepEqual(activeOrder, [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08",
+    "T30",
+    "T31",
+    "T09",
+    "T10",
+  ]);
+
+  // Fold order: drafts fold appears before done fold
+  const closedFoldsHtml = s.renderToStaticMarkup(
+    h(s.TaskSections, {
+      moving: s.movingTasks(allTasks),
+      azimas: activeAzimas,
+      doneAzimas,
+      drafts,
+      showDone: false,
+      showDrafts: false,
+      renderAzima,
+      renderDraft,
+      render: card,
+    }),
+  );
+  const draftsFoldIndex = closedFoldsHtml.indexOf("Later: 2 drafts");
+  const doneFoldIndex = closedFoldsHtml.indexOf("Show the 2 finished");
+  assert.ok(
+    draftsFoldIndex > 0 && doneFoldIndex > draftsFoldIndex,
+    "drafts fold must appear before done fold",
+  );
+
+  // 5. Azima row details: code, goal, state, progress bar, counts, parts text, time
+  const t2CardHtml = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: aMoving1,
+      parts: [w1, w2, w3],
+      tasks: byId,
+      render: card,
+      focus: aMoving1.id,
+    }),
+  );
+
+  // Code, goal (title), state badge
+  assert.match(t2CardHtml, /<span class="agent-code">T02<\/span>/);
+  assert.match(t2CardHtml, /Moving orchestrator/);
+  assert.match(
+    t2CardHtml,
+    /<span class="status-badge tone-running">[\s\S]*?<span>In progress<\/span><\/span>/,
+  );
+
+  // Progress: segmented bar, counts (1/3), parts detail (1 done, 1 running, 1 waiting)
+  assert.match(t2CardHtml, /<span class="azima-bar-done" style="width:33\.33/);
+  assert.match(
+    t2CardHtml,
+    /<span class="azima-bar-running" style="width:33\.33/,
+  );
+  assert.match(t2CardHtml, /<span class="azima-progress-counts">1\/3<\/span>/);
+  assert.match(
+    t2CardHtml,
+    /<span class="azima-progress-parts"[^>]*>1 done, 1 running, 1 waiting<\/span>/,
+  );
+
+  // Time: azimaTime formats running duration
+  assert.match(t2CardHtml, /<span class="task-time"/);
+
+  // Parts wrapped in .card-grid.task-grid inside .azima-parts (flowing in columns on wide screens)
+  assert.match(
+    t2CardHtml,
+    /<div class="azima-parts"><div class="card-grid task-grid">/,
+  );
+
+  // 6. Test azimaTime function directly
+  const nowMs = 200_000;
+  const runningTime = s.azimaTime(aMoving1, [w1, w2, w3], nowMs);
+  assert.ok(runningTime.text.length > 0);
+  assert.match(runningTime.title, /running since/i);
+
+  const doneTime = s.azimaTime(aDone1, [], nowMs);
+  assert.equal(doneTime.text, "30s");
+  assert.match(doneTime.title, /ran from .* to/i);
 });
