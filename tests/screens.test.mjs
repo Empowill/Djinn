@@ -40,6 +40,7 @@ export {
 export { UpdateBannerView } from "@/src/update-banner.tsx";
 export { memory, resourcesDetail } from "@/src/usage.tsx";
 export { TilasmList } from "@/src/tilasms.tsx";
+export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
 export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
 export { ConnectError, Code } from "@connectrpc/connect";
@@ -412,7 +413,7 @@ test("a running worker pauses from its card, a paused one resumes; none where dj
   assert.match(windows, /aria-label="Stop the worker"/);
 });
 
-test("a wish's screen puts its questions first, proposes to grant it when ready, and shows tasks and blocks", async () => {
+test("a wish's screen puts its questions first, proposes to grant it when ready, and leaves its blocks to the agents' tab", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const ready = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1, {
     ready: true,
@@ -472,6 +473,14 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
             title: "Lexicon",
             content: "A **wick** carries the oil.",
           },
+          {
+            id: "b2",
+            wishId,
+            kind: "decision",
+            title: "Olive oil only",
+            content: "It smells good.",
+          },
+          { id: "b3", wishId, kind: "log", title: "", content: "W1 started." },
         ],
       }),
     });
@@ -494,11 +503,19 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
     /role="tab" id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">2<\/span>/,
   );
   assert.doesNotMatch(html, /Trim the wick|Light the wick/);
-  assert.match(html, /<strong>wick<\/strong> carries the oil\./);
-  // The answered question is in the Decisions tab, apart, with no mark.
+  // No notes: the blocks for agents have the last tab, discreet, with their count: neither the decision nor the log.
+  assert.doesNotMatch(
+    html,
+    /Lexicon|wick<\/strong> carries|id="block-b1"|>Notes</,
+  );
   assert.match(
     html,
-    /role="tab" id="view-tab-decisions" aria-selected="false" class="">Decisions<span class="count">1<\/span>/,
+    /id="view-tab-tilasms".*role="tab" id="view-tab-agents" aria-selected="false" class="discreet">For agents<span class="count">1<\/span><\/button><\/div>/,
+  );
+  // The answered question and the decision block are in the Decisions tab, apart, with no mark.
+  assert.match(
+    html,
+    /role="tab" id="view-tab-decisions" aria-selected="false" class="">Decisions<span class="count">2<\/span>/,
   );
   assert.doesNotMatch(html, /Light it tonight\?/);
   // Nothing waits for an answer: no yes/no card waiting.
@@ -518,9 +535,45 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   );
   assert.match(html, /1 question being investigated by the lead/);
   assert.match(html, /You asked to find out more: Burn time\?/);
-  // A block has its read and approve marks; the journal is folded.
-  assert.match(html, /id="block-b1".*Mark read.*Approve as it is/);
+  // No mark on what the wish shows, but on the open question; the journal is folded.
+  assert.doesNotMatch(html, /Approve as it is/);
   assert.match(html, /class="fold-heading" aria-expanded="false"/);
+});
+
+test("the For agents tab folds each block under its title and kind, with no mark", () => {
+  const html = s.renderToStaticMarkup(
+    h(s.AgentBlocks, {
+      blocks: [
+        {
+          id: "b1",
+          wishId: "w",
+          taskId: "t1",
+          kind: "report",
+          title: "Where the oil is",
+          content: "In **the cellar**.",
+        },
+        { id: "b2", wishId: "w", kind: "hand-off", title: "", content: "x" },
+      ],
+      codes: new Map([["t1", "W1"]]),
+    }),
+  );
+  assert.match(html, /role="tabpanel" aria-labelledby="view-tab-agents"/);
+  assert.match(html, /Nothing here waits for you: what does is a question\./);
+  assert.match(
+    html,
+    /id="block-b1"><button class="fold-heading" aria-expanded="false">.*<h3>Where the oil is<\/h3><span class="eyebrow">report · About W1<\/span><\/button><\/article>/,
+  );
+  assert.match(
+    html,
+    /<h3>\(untitled\)<\/h3><span class="eyebrow">hand-off<\/span>/,
+  );
+  // Folded: the body is not rendered until opened (the e2e opens one).
+  assert.doesNotMatch(html, /the cellar/);
+  assert.doesNotMatch(html, /Mark read|Approve as it is|mark-toggle/);
+  const none = s.renderToStaticMarkup(
+    h(s.AgentBlocks, { blocks: [], codes: new Map() }),
+  );
+  assert.match(none, /No block for agents yet\./);
 });
 
 const usage = (input, output, read, write, costUsd) => ({

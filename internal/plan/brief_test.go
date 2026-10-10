@@ -116,13 +116,20 @@ func TestBrief(t *testing.T) {
 		// The decisions say who took them, and what they led to.
 		"- 💬 **Q01** Which store? → A: SQLite", ", by the developer; led to W2\n", "- 📌 **No CGO** (block ", "), by the lead\n",
 		"`--decision Q03`", "--icon 🔒",
+		// Everything for the developer is a question; a resolved one is resolved; blocks are for agents.
+		"Everything for the developer is a question", "with none when you really do not know what to think",
+		"goes in its `--context`", "ask again, a new question, only on a real doubt", "**Blocks are for agents**",
+		// An azima carries one clear goal, and new work finds its azima first.
+		"**An azima carries one clear goal**", "rephrase its goal (its plan file's Goal and its title",
+		"open a new azima only for a will no existing one carries",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the brief lacks %q:\n%s", want, text)
 		}
 	}
 	userHome, _ := os.UserHomeDir()
-	for _, never := range []string{repo, home, userHome, "hunter2", "bob@", "s3cret", "session-42", "secretCode", "the code itself", `"raw"`} {
+	for _, never := range []string{repo, home, userHome, "hunter2", "bob@", "s3cret", "session-42", "secretCode", "the code itself", `"raw"`,
+		"--kind report", "is a go"} {
 		if never != "" && strings.Contains(text, never) {
 			t.Errorf("the brief holds %q:\n%s", never, text)
 		}

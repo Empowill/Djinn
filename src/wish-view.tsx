@@ -1,10 +1,10 @@
 // The screen of one wish, read from the services: what waits for you first (its open questions, the blocking ones
-// first, its workers that wait, and "My wish is granted" once Djinn proposes it), its decisions, its blocks, its
-// journal and the rights its workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, and
-// its tilasms another (tilasms.tsx).
+// first, its workers that wait, and "My wish is granted" once Djinn proposes it), its journal and the rights its
+// workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
+// (decision-log.tsx), its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the last
+// (agent-blocks.tsx): what is for you is a question.
 // Djinn proposes; only the user grants.
 import {
-  ChevronDown,
   ChevronRight,
   Clock3,
   Download,
@@ -34,7 +34,7 @@ import {
   WishState,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
+import { decisionOf, decisionsOf } from "./data/decisions";
 import { useClients, useData, usePausable, useWishDetail } from "./data/djinn";
 import {
   type OpenQuestion,
@@ -64,11 +64,12 @@ import {
   runningOf,
   wishTone,
 } from "./data/format";
-import { type Entry, isLog, journal } from "./data/journal";
+import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
+import { AgentBlocks, agentBlocks } from "./agent-blocks";
 import { AttentionBar, attentionOf } from "./attention";
 import { ModalFrame } from "./frame";
-import { MarkButtons, type OnMark, useWrites } from "./marks";
+import { useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
@@ -111,7 +112,7 @@ export function WishView({
   const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
   const codes = new Map(detail.tasks.map((task) => [task.id, task.code]));
-  const notes = detail.blocks.filter((b) => !isLog(b) && !isDecisionBlock(b));
+  const forAgents = agentBlocks(detail.blocks);
   const decisions = decisionsOf(detail.questions, detail.blocks, detail.tasks);
   const { running, watching } = runningOf(detail.tasks);
   const done = detail.tasks.filter(
@@ -457,6 +458,7 @@ export function WishView({
             tasks={workCount(detail.tasks)}
             decisions={decisions.length}
             tilasms={detail.tilasms.length}
+            agents={forAgents.length}
             onView={(to) => show(to)}
           />
           {view === "tilasms" && (
@@ -468,6 +470,9 @@ export function WishView({
               tasks={detail.tasks}
               onToast={onToast}
             />
+          )}
+          {view === "agents" && (
+            <AgentBlocks blocks={forAgents} codes={codes} />
           )}
           {view === "decisions" && (
             <DecisionLog
@@ -599,33 +604,6 @@ export function WishView({
               )}
 
               <div className="main-side">
-                {notes.length > 0 && (
-                  <section
-                    className="wish-section"
-                    aria-label={t("wish.blocks")}
-                  >
-                    <div className="section-title">
-                      <h2>
-                        {t("wish.blocks")}
-                        <span className="count">{notes.length}</span>
-                      </h2>
-                      <p>{t("wish.blocks_detail")}</p>
-                    </div>
-                    <div className="card-grid notes-grid">
-                      {notes.map((block) => (
-                        <WishBlock
-                          key={block.id}
-                          block={block}
-                          task={codes.get(block.taskId) ?? ""}
-                          onMark={(kind, remove) =>
-                            mark(wish.id, block.id, kind, remove)
-                          }
-                        />
-                      ))}
-                    </div>
-                  </section>
-                )}
-
                 <Journal wish={wish} blocks={detail.blocks} />
 
                 {projects.length > 0 && (
@@ -762,64 +740,6 @@ export function WaitingTasks({
         </p>
       ))}
     </section>
-  );
-}
-
-// A block this long, in characters or lines, is folded under its title, as on the wish's page.
-const LONG_BLOCK = 800;
-const LONG_BLOCK_LINES = 16;
-
-// WishBlock shows a block as the lead wrote it: Markdown, or the text as it is for another media type. A long one
-// opens on a click.
-function WishBlock({
-  block,
-  task,
-  onMark,
-}: {
-  block: Block;
-  task: string;
-  onMark: OnMark;
-}) {
-  const markdown = !block.mediaType || block.mediaType === "text/markdown";
-  const long =
-    block.content.length > LONG_BLOCK ||
-    block.content.split("\n").length > LONG_BLOCK_LINES;
-  const [unfolded, setUnfolded] = useState(false);
-  const folded = long && !unfolded;
-  return (
-    <article
-      className={`wish-block ${folded ? "folded" : ""}`}
-      id={`block-${block.id}`}
-    >
-      <div className="wish-block-head">
-        <div>
-          <span className="eyebrow">
-            {block.kind}
-            {task && ` · ${t("page.about_task", { task })}`}
-            {block.updateTime && ` · ${when(block.updateTime)}`}
-          </span>
-          {block.title && <h3>{block.title}</h3>}
-        </div>
-        <MarkButtons item={block} approve onMark={onMark} />
-      </div>
-      <div className="wish-block-body prose">
-        {markdown ? (
-          <MarkdownBody text={block.content} />
-        ) : (
-          <pre className="wish-block-raw">{block.content}</pre>
-        )}
-      </div>
-      {long && (
-        <button
-          className="text-button"
-          onClick={() => setUnfolded(!unfolded)}
-          aria-expanded={!folded}
-        >
-          <ChevronDown size={13} className={folded ? "" : "rotated"} />
-          {folded ? t("wish.block_more") : t("wish.block_less")}
-        </button>
-      )}
-    </article>
   );
 }
 

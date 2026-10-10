@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/store"
 )
 
 func TestRecommended(t *testing.T) {
@@ -38,8 +39,8 @@ func TestRecommended(t *testing.T) {
 	}
 }
 
-// TestMarks: a block and a decision are marked read or approved, the mark is replaced or taken off, and approving an
-// open question answers it with its recommendation, as an answer does. The brief lists them.
+// TestMarks: a question is marked read, the mark replaced or taken off, and approving an open question answers it
+// with its recommendation, as an answer does. A block takes no mark: blocks are for agents. The brief lists the marks.
 func TestMarks(t *testing.T) {
 	ctx := t.Context()
 	var answered []string
@@ -92,22 +93,27 @@ func TestMarks(t *testing.T) {
 	if _, err := put(byID(vague.GetId()), planv1.MarkKind_MARK_KIND_APPROVED, false); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("approve a vague recommendation: %v, want failed_precondition", err)
 	}
-	// Read twice is one mark; then the block is read and approved, and the read mark comes off Q01.
+	// Read twice is one mark; then the read mark comes off Q01, and Q02 is read.
 	for range 2 {
 		if _, err := put(byCode("Q01"), planv1.MarkKind_MARK_KIND_READ, false); err != nil {
 			t.Fatal(err)
 		}
 	}
-	blockID := block.Msg.GetBlock().GetId()
-	if _, err := put(byID(blockID), planv1.MarkKind_MARK_KIND_READ, false); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := put(byID(blockID), planv1.MarkKind_MARK_KIND_APPROVED, false); err != nil || got.GetBlockId() != blockID ||
-		got.GetTitle() != "Ship on Friday" {
-		t.Fatalf("approve the block = %v, %v", got, err)
-	}
 	if _, err := put(byCode("Q01"), planv1.MarkKind_MARK_KIND_READ, true); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := put(byID(vague.GetId()), planv1.MarkKind_MARK_KIND_READ, false); err != nil {
+		t.Fatal(err)
+	}
+	// A block is neither read nor approved, and keeps no mark.
+	blockID := block.Msg.GetBlock().GetId()
+	for _, kind := range []planv1.MarkKind{planv1.MarkKind_MARK_KIND_READ, planv1.MarkKind_MARK_KIND_APPROVED} {
+		if _, err := put(byID(blockID), kind, false); code(err) != connect.CodeFailedPrecondition {
+			t.Errorf("mark a block %s: %v, want failed_precondition", markWord(kind), err)
+		}
+	}
+	if b, err := store.Get[*planv1.Block](ctx, c.store, blockID); err != nil || len(b.GetMarks()) > 0 {
+		t.Errorf("the block's marks = %v, %v; want none", b.GetMarks(), err)
 	}
 	if _, err := put(byID(wish), planv1.MarkKind_MARK_KIND_READ, false); code(err) != connect.CodeNotFound {
 		t.Errorf("mark a wish's id: %v, want not_found", err)
@@ -121,7 +127,7 @@ func TestMarks(t *testing.T) {
 	for _, m := range marks.Msg.GetMarks() {
 		seen = append(seen, m.GetLabel()+" "+markWord(m.GetMark().GetKind()))
 	}
-	if want := "Q01 approved,decision read,decision approved"; strings.Join(seen, ",") != want {
+	if want := "Q01 approved," + vague.GetCode() + " read"; strings.Join(seen, ",") != want {
 		t.Errorf("marks = %v, want %s", seen, want)
 	}
 
@@ -131,15 +137,18 @@ func TestMarks(t *testing.T) {
 	}
 	text := brief.Text()
 	for _, want := range []string{
-		"## Marked by the developer", "- **approved** block Ship on Friday (decision), ", "- **approved** Q01 Which oil?",
-		"- **read** block Ship on Friday (decision)", "`djinn mark list <wish>`",
+		"## Marked by the developer", "- **approved** Q01 Which oil?", "- **read** " + vague.GetCode() + " ",
+		"`djinn mark list <wish>`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("brief lacks %q:\n%s", want, text)
 		}
 	}
+	if strings.Contains(text, "block Ship on Friday") {
+		t.Errorf("the brief lists a mark on a block:\n%s", text)
+	}
 	// The latest first.
-	if strings.Index(text, "- **approved** block") > strings.Index(text, "- **approved** Q01") {
+	if strings.Index(text, "- **read** "+vague.GetCode()) > strings.Index(text, "- **approved** Q01") {
 		t.Errorf("the brief's marks are not the latest first:\n%s", text)
 	}
 }

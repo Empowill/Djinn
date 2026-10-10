@@ -251,9 +251,6 @@ html[data-theme="light"] {
   column-gap: var(--space-3);
   align-items: start;
 }
-.notes-grid {
-  --card-min: 520px;
-}
 .task-grid,
 .azima-grid {
   --card-min: 760px;
@@ -679,7 +676,7 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   color: var(--muted);
 }
 
-/* Read marks and approvals. */
+/* The read mark of an open question. */
 .mark-buttons {
   display: inline-flex;
   gap: 6px;
@@ -704,11 +701,6 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   color: var(--st-running);
   border-color: color-mix(in srgb, var(--st-running) 45%, transparent);
   background: color-mix(in srgb, var(--st-running) 10%, transparent);
-}
-.mark-toggle.approve.on {
-  color: var(--st-done);
-  border-color: color-mix(in srgb, var(--st-done) 45%, transparent);
-  background: color-mix(in srgb, var(--st-done) 10%, transparent);
 }
 
 /* Tasks: one row each, its state first. */
@@ -780,6 +772,15 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   color: var(--text);
   border-bottom-color: var(--lamp);
 }
+/* For agents: the last tab, discreet, apart from the others. */
+.view-tabs > button.discreet {
+  margin-left: auto;
+  opacity: 0.7;
+}
+.view-tabs > button.discreet:hover,
+.view-tabs > button.discreet.active {
+  opacity: 1;
+}
 .compact-table {
   width: 100%;
   border-collapse: collapse;
@@ -820,29 +821,26 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   transform: rotate(90deg);
 }
 
-/* Blocks: the lead's notes, with their marks. */
+/* Blocks for agents: one folded line each, its body once opened. */
 .review .wish-block {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 16px 20px 18px;
-  margin-bottom: 14px;
-}
-.wish-block-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
+  padding: 10px 16px;
   margin-bottom: 8px;
 }
-.wish-block-head .mark-buttons {
-  padding-top: 0;
+.agent-block > .fold-heading {
+  width: 100%;
+  text-align: left;
 }
-.review .wish-block h3 {
-  font-size: 16px;
-  font-weight: 600;
+.review .agent-block h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text);
-  margin-top: 4px;
+}
+.agent-block > .wish-block-body {
+  margin-top: 10px;
 }
 
 /* The flight plan: each wish at a glance. */

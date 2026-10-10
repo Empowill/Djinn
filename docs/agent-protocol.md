@@ -18,10 +18,13 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **A wish describes itself.** Its description is a few lines: what it is for, its scope, where it goes.
   `djinn wish describe <wish> --text "…"` sets it; the developer edits it in the wish's head, under its title (a
   click, saved when the field is left). Until someone writes one, the title stands for it.
-- **The lead asks through Djinn, and delegates.** Every question for the developer, the lead's own included, goes
-  through `djinn question ask`: one written in the lead's terminal reaches neither the window, nor the decision log,
-  nor the question workers. An analysis goes in a block, a decision taken in the terminal in a block of kind decision;
-  the work goes to tasks. Djinn's rules in the brief say it, and so does every lead's first message.
+- **The lead asks through Djinn, and delegates.** Everything for the developer is a question, the lead's own
+  included: `djinn question ask`, with options and a recommendation, or with none when the lead really does not know
+  what to think, the analysis behind it in its `--context`. One written in the lead's terminal reaches neither the
+  window, nor the decision log, nor the question workers. A decision taken in the terminal goes in a block of kind
+  decision; the work goes to tasks. A resolved question is resolved: the lead does not bring it back to the
+  developer, and asks again, a new question, only on a real doubt. Djinn's rules in the brief say it, and so does
+  every lead's first message.
 - **Every lead starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
   and antigravity: run `djinn wish brief <wish>`, then continue the wish from what it says (`StartLine` in
   `internal/plan/newlead.go`). Nothing in it is about one agent or the wish's state: a lead of another agent than the
@@ -46,8 +49,9 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   question worker (below), or else the lead, answers with `djinn question revise <question> --context …
   --recommendation …`; the question keeps each round, dated, with who revised it, and waits for the developer again.
   A decision may take several rounds.
-- **Marks.** What the developer read or approved as it is, from the window: `djinn mark list <wish>`, and the brief's
-  "Marked by the developer". An approved block or decision is a go.
+- **Marks.** The open questions the developer marked read, from the window: `djinn mark list <wish>`, and the
+  brief's "Marked by the developer". Approving an open question (`djinn mark put Q03 approved`) answers it with
+  its recommendation. A block takes no mark: Djinn refuses one.
 - **Question workers act on the developer's word; the lead stays informed.** When the developer answers a question
   ("Rub the lamp", or an answer) that Djinn does not settle itself (an edit question, a question on work that failed
   to integrate, a routed request, a grant), Djinn starts a small task in the wish, `Q43 → tasks`, a *converter*: its
@@ -84,6 +88,12 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   waits for the developer. `djinn plan sync <wish>` reads them from the projects' `plan/*.md` and writes each one's
   `after:` line back from the store; `djinn task spawn <wish> --kind azima --title "…"` makes one. The lead plans work
   as a graph, never as a line:
+  - give each azima one clear goal, one sentence a user reads as a feature, a will of its own; when a task extends
+    it, rephrase its goal (its plan file's **Goal** and its title, then `djinn plan sync`) rather than let it drift;
+  - before adding tasks or azimas, an answer turned into tasks included, look for the azima they belong to: group
+    what goes together, merge duplicates, open a new azima only for a will no existing one carries, never mix what
+    does not belong together. A question worker, which edits no file, says in its last line when a goal needs
+    rephrasing;
   - spawn each task `--part-of <azima>`: the azima it belongs to, a grouping and never a wait;
   - give it what comes before it at its spawn, `--after W1,W2`, only the tasks whose result it needs: two tasks
     that do not need each other run side by side;
@@ -112,8 +122,9 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   reads the request on its first line, before the line that sends it to the brief. A skill's [wish template](wish-templates.md) (`metadata.djinn.wish`)
   makes the new wish follow the skill, its watcher started; the brief tells the lead to propose one for a request
   that comes back.
-- **Blocks.** What Djinn does not compute (an analysis, a decision taken outside a question) is a block:
-  `djinn block put`. Djinn shows it as written.
+- **Blocks are for agents.** A hand-off, a reference, a decision taken outside a question (kind `decision`, which
+  the decision log shows) is a block: `djinn block put`. The developer does not read the others: the window keeps them
+  in a discreet last tab, **For agents**, folded, with no mark. What the developer must see is a question.
 - **Who did it.** `djinn block put`, `djinn question ask` and `djinn question revise` take `--task-id`, by default
   `$DJINN_TASK_ID`, which Djinn sets for every worker (`(djinn.v1.env)` in the protos): a worker's decision block
   reads "By W12" in the decision log, its revision "Revised by W12" on the page; the lead's, run without the

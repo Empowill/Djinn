@@ -1043,8 +1043,8 @@ enum RoundKind {
   ROUND_KIND_REVISE = 2;
 }
 
-// A mark the developer puts on a question, a decision or a block: read, or approved as it is. The lead reads the marks
-// in the wish's brief and with djinn mark list.
+// A mark the developer puts on a question: read, or approved as it is. The lead reads the marks in the wish's brief
+// and with djinn mark list. A block takes none: blocks are for agents.
 message Mark {
   // Which mark.
   MarkKind kind = 1;
@@ -2273,7 +2273,7 @@ message Block {
   google.protobuf.Timestamp create_time = 9;
   // When it last changed.
   google.protobuf.Timestamp update_time = 10;
-  // What the developer marked on it from the window: read, approved.
+  // Marks a block took before blocks were for agents only: none is put any more, and none is listed.
   repeated Mark marks = 11;
   // One emoji for its subject, set by its writer (djinn block put --icon 🧱): the decision log shows it first. Empty:
   // a default by kind.
@@ -2369,48 +2369,48 @@ message BlockServiceDeleteResponse {}
 // Marks: what the developer read or approved from the window, on questions, decisions and blocks, so that the lead
 // acts on a click without a word.
 service MarkService {
-  // Mark a question, a decision or a block: read, or approved as it is. Approving an open question answers it with
-  // the option its recommendation names, as djinn question answer does.
+  // Mark a question: read, or approved as it is. Approving an open question answers it with the option its
+  // recommendation names, as djinn question answer does. A block takes no mark: blocks are for agents.
   rpc Put(MarkServicePutRequest) returns (MarkServicePutResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // List the marks of a wish, the latest last.
+  // List the marks on a wish's questions, the latest last.
   rpc List(MarkServiceListRequest) returns (MarkServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
 
-// MarkTarget points to what a mark is on: a question by its code, or a question or a block by its identifier.
+// MarkTarget points to the question a mark is on, by its code or its identifier. A block's identifier is refused.
 message MarkTarget {
   oneof ref {
     option (buf.validate.oneof).required = true;
     // A question's code, like Q03.
     string code = 1 [(buf.validate.field).string.pattern = "^Q[0-9]{2,3}$"];
-    // The identifier of a question or of a block.
+    // The identifier of a question.
     string id = 2 [(buf.validate.field).string.uuid = true];
   }
 }
 
-// Marked is a mark with what it is on.
+// Marked is a mark with the question it is on.
 message Marked {
-  // Wish of the question or block.
+  // Wish of the question.
   string wish_id = 1;
-  // The question marked, if it is one.
+  // The question marked.
   string question_id = 2;
-  // The block marked, if it is one.
+  // Unused: a block takes no mark any more.
   string block_id = 3;
-  // The question's code, or the block's kind.
+  // The question's code.
   string label = 4;
-  // The question's text, or the block's title, in a line.
+  // The question's text, in a line.
   string title = 5;
   // The mark.
   Mark mark = 6;
 }
 
 message MarkServicePutRequest {
-  // What to mark: a question's code, like Q03, or the identifier of a question or of a block.
+  // What to mark: a question's code, like Q03, or its identifier.
   MarkTarget target = 1 [(buf.validate.field).required = true];
   // The mark: read, or approved.
   MarkKind kind = 2 [
