@@ -10,8 +10,8 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 )
 
-// TestAgyProject: the agy project of a worker grants its folder and Git's folders for it, the listed commands, the
-// commit commands in AUTO in a Git worktree, and denies the denied commands. Git's folders are found as git lays
+// TestAgyProject: the agy project of a worker grants its folder and Git's folders for it, the listed commands in
+// LISTED, every command in AUTO, and denies the denied commands, git push always in AUTO. Git's folders are found as git lays
 // them out, without running git: a linked worktree's .git file names its folder in the repository, whose commondir
 // names the repository's .git.
 func TestAgyProject(t *testing.T) {
@@ -51,15 +51,18 @@ func TestAgyProject(t *testing.T) {
 	auto := &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO, Commands: []string{"go tool task lint", "git status"},
 		DeniedCommands: []string{"git push"}}
 	listed := &djinnv1.Permissions{Edit: true, Commands: []string{"go tool task lint"}}
+	autoOwn := &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO, DeniedCommands: []string{"rm -rf"}}
 	projects := []struct {
 		spec        Spec
 		allow, deny []string
 	}{
-		{Spec{Dir: wt, Permissions: auto}, []string{
-			"write_file(" + wt + ")", "write_file(" + common + ")",
-			"command(go tool task lint)", "command(git status)", "command(git diff)", "command(git log)", "command(git show)",
-			"command(git add)", "command(git commit)",
-		}, []string{"command(git push)"}},
+		{Spec{Dir: wt, Permissions: auto}, []string{"write_file(" + wt + ")", "write_file(" + common + ")", "command(*)"},
+			[]string{"command(git push)"}},
+		// AUTO denies git push even when the project does not; outside Git, every command all the same.
+		{Spec{Dir: wt, Permissions: autoOwn}, []string{"write_file(" + wt + ")", "write_file(" + common + ")", "command(*)"},
+			[]string{"command(rm -rf)", "command(git push)"}},
+		{Spec{Dir: filepath.Join(root, "nogit"), Permissions: autoOwn}, []string{"write_file(" + filepath.Join(root, "nogit") + ")", "command(*)"},
+			[]string{"command(rm -rf)", "command(git push)"}},
 		// LISTED: only what is listed, Git's folders all the same.
 		{Spec{Dir: wt, Permissions: listed}, []string{"write_file(" + wt + ")", "write_file(" + common + ")", "command(go tool task lint)"}, nil},
 	}
@@ -84,7 +87,7 @@ func TestAgyProject(t *testing.T) {
 	}
 	dir, _ := agyProjectsDir()
 	path := filepath.Join(dir, agyProjectID(wt)+".json")
-	if b, err := os.ReadFile(path); err != nil || !strings.Contains(string(b), `"command(go tool task lint)"`) || strings.Contains(string(b), "git add") {
+	if b, err := os.ReadFile(path); err != nil || !strings.Contains(string(b), `"command(go tool task lint)"`) || strings.Contains(string(b), "command(*)") {
 		t.Errorf("project file = %s, %v", b, err)
 	}
 	forgetAgyProject(wt)
