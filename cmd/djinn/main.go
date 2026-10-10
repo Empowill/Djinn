@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -29,6 +31,48 @@ func moduleVersion(v string) string {
 	return v
 }
 
+// handwritten runs each command written here rather than generated from the protos, by its name in cli.Builtins,
+// whose entry is its --help and its documentation: given the arguments after its words, it returns the exit code.
+// cli.Run answers the other entries, djinn version and djinn mcp.
+var handwritten = map[string]func(args []string) int{
+	"up":   runUpCommand,
+	"open": func(args []string) int { return runOpen(args, os.Stdout, os.Stderr) },
+	"update": func(args []string) int {
+		if err := runUpdate(args); err != nil {
+			fmt.Fprintln(os.Stderr, "djinn update:", err)
+			return 1
+		}
+		return 0
+	},
+	// `djinn gate run` runs a command here, under a gate the server grants.
+	"gate run": runGate,
+	// `djinn backup` and `djinn backup restore` work with or without a running djinn.
+	"backup":         func(args []string) int { return runBackup(args, os.Stdout, os.Stderr) },
+	"backup restore": func(args []string) int { return runBackup(append([]string{"restore"}, args...), os.Stdout, os.Stderr) },
+}
+
+// runUpCommand is djinn up: it opens the app, and restarts on a newer binary when asked.
+func runUpCommand(args []string) int {
+	restart, err := runUp(args)
+	if errors.Is(err, flag.ErrHelp) {
+		return 0
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "djinn up:", err)
+		return 1
+	}
+	if restart {
+		// Everything is closed: the newer djinn at this path takes over, with the same flags.
+		home, _ := ui.Home()
+		if _, err := startDetached(context.Background(), home, os.Stderr, append([]string{"up"}, args...)...); err != nil {
+			fmt.Fprintf(os.Stderr, "djinn up: the update did not start: %v\n"+
+				"djinn up starts it again, and reopens the terminals noted in %s\n", err, RestartFile)
+			return 1
+		}
+	}
+	return 0
+}
+
 func main() {
 	version = moduleVersion(version)
 	ui.Develop = version == "dev"
@@ -39,41 +83,9 @@ func main() {
 		args = []string{"up"}
 	}
 	fromLauncher(args, os.Stderr)
-	if len(args) > 0 && args[0] == "open" {
-		os.Exit(runOpen(args[1:], os.Stdout, os.Stderr))
-	}
-	// `djinn up` opens the app; every other command is generated from the protos by the cli package.
-	if len(args) > 0 && args[0] == "up" {
-		restart, err := runUp(args[1:])
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "djinn up:", err)
-			os.Exit(1)
-		}
-		if restart {
-			// Everything is closed: the newer djinn at this path takes over, with the same flags.
-			home, _ := ui.Home()
-			if _, err := startDetached(context.Background(), home, os.Stderr, args...); err != nil {
-				fmt.Fprintf(os.Stderr, "djinn up: the update did not start: %v\n"+
-					"djinn up starts it again, and reopens the terminals noted in %s\n", err, RestartFile)
-				os.Exit(1)
-			}
-		}
-		return
-	}
-	if len(args) > 0 && args[0] == "update" {
-		if err := runUpdate(args[1:]); err != nil {
-			fmt.Fprintln(os.Stderr, "djinn update:", err)
-			os.Exit(1)
-		}
-		return
-	}
-	// `djinn gate run` runs a command here, under a gate the server grants.
-	if len(args) > 1 && args[0] == "gate" && args[1] == "run" {
-		os.Exit(runGate(args[2:]))
-	}
-	// `djinn backup` and `djinn backup restore` work with or without a running djinn.
-	if len(args) > 0 && args[0] == "backup" {
-		os.Exit(runBackup(args[1:], os.Stdout, os.Stderr))
+	// The commands written here run here; every other one is generated from the protos by the cli package.
+	if b, rest, ok := cli.Builtin(args); ok && handwritten[b.Name] != nil {
+		os.Exit(handwritten[b.Name](rest))
 	}
 	home, _ := ui.Home() // Only fails without a home directory; the command line then says it finds no server.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

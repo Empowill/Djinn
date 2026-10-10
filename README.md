@@ -132,8 +132,9 @@ djinn it runs in: the store stays on your machine, in Djinn's data folder.
 
 [User guide](docs/user-guide.md) · [Agent protocol](docs/agent-protocol.md) · [Adaptable wishes](docs/adaptable-wishes.md)
 
-The concepts and the API, in one site: **Documentation** in the window's settings, or `go tool task docs`, then
-`bin/docs/index.html` ([`docs/site`](docs/site), the API from [`docs/openapi.json`](docs/openapi.json)).
+The concepts and every command of the command line, in one site: **Documentation** in the window's settings, or
+`go tool task docs`, then `bin/docs/index.html` ([`docs/site`](docs/site), its Command line tab filled in from
+djinn's own commands).
 
 ## Credits
 

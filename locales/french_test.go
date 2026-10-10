@@ -39,7 +39,7 @@ var frenchQuoted = map[string][]string{
 }
 
 // skipFrench are the files that are not text the project writes: images, fonts, and the vendored bundles.
-var skipFrench = regexp.MustCompile(`\.(png|ico|icns|jpg|jpeg|gif|webp|woff2?|ttf|binpb|webm)$|^src/vendor/|^docs/site/vendor/|(^|/)package-lock\.json$|^go\.sum$`)
+var skipFrench = regexp.MustCompile(`\.(png|ico|icns|jpg|jpeg|gif|webp|woff2?|ttf|binpb|webm)$|^src/vendor/|(^|/)package-lock\.json$|^go\.sum$`)
 
 // TestNoFrench checks that French lives in locales/fr.json only: every other file of the repository, tracked or new,
 // is in English. A text a person reads in French is a key of the catalogs; a test of the French interface reads its

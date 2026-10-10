@@ -9,7 +9,7 @@ import (
 )
 
 // TestBuild builds the site of the repository and checks that every file index.html names is there: the styles,
-// the scripts, RapiDoc, the fonts, the mark, and the API document.
+// the scripts, the fonts and the mark; and that its Command line tab holds the commands.
 func TestBuild(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "docs")
 	if err := os.MkdirAll(filepath.Join(out, "stale"), 0o755); err != nil {
@@ -39,11 +39,9 @@ func TestBuild(t *testing.T) {
 			t.Errorf("%s is named and missing: %v", m[1], err)
 		}
 	}
-	script, err := os.ReadFile(filepath.Join(out, "openapi.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(script), "window.DJINN_OPENAPI = {") {
-		t.Errorf("openapi.js does not set the document: %.80s", script)
+	for _, want := range []string{`id="cmd-wish-make"`, `id="cmd-gate-run"`, `id="cmd-up"`, `id="group-tilasm"`} {
+		if !strings.Contains(string(index), want) {
+			t.Errorf("index.html has no %s", want)
+		}
 	}
 }

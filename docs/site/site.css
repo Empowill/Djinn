@@ -1100,89 +1100,229 @@ h3 {
   transform: none;
 }
 
-/* The API. */
-.api {
-  padding: 0 clamp(16px, 3vw, 40px) 24px;
+/* The command line: plain HTML, a table of contents beside the commands, nothing that moves. */
+.cli {
+  padding: 0 clamp(16px, 3vw, 40px) 48px;
 }
 
-.api-inner {
-  max-width: 1400px;
+.cli [hidden] {
+  display: none !important;
+}
+
+.cli-inner {
+  max-width: 1280px;
   margin: 0 auto;
 }
 
-.api-head {
+.cli-head {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: 1.4fr 1fr;
   gap: 32px;
   align-items: end;
   padding: 36px 0 26px;
 }
 
-.api-head h2 {
+.cli-head h2 {
   margin-bottom: 10px;
 }
 
-.api-head p {
+.cli-head p {
   margin: 0;
   color: var(--ink-soft);
 }
 
-.api-notes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.cli-search {
   display: grid;
   gap: 8px;
-}
-
-.api-notes li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  font-size: 0.85rem;
-}
-
-.api-notes span {
-  min-width: 52px;
   font: 600 0.68rem/1 var(--sans);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--brass-text);
 }
 
-.api-notes code {
-  background: none;
-  padding: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* RapiDoc sizes its parent to the viewport, inline: the frame keeps the column's width. */
-.api-frame {
-  width: auto !important;
-  height: auto !important;
+.cli-search input {
+  font: 400 0.95rem/1.4 var(--sans);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+  background: var(--panel-solid);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  overflow: hidden;
-  box-shadow: var(--shadow);
+  border-radius: 12px;
+  padding: 10px 14px;
 }
 
-.api-missing {
+.cli-search input:focus {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+
+.cli-reference {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.cli-toc {
+  position: sticky;
+  top: calc(var(--bar-height) + 16px);
+  max-height: calc(100vh - var(--bar-height) - 32px);
+  overflow-y: auto;
+  font-size: 0.86rem;
+}
+
+.cli-toc ul {
+  list-style: none;
   margin: 0;
-  padding: 40px;
-  text-align: center;
+  padding: 0;
+}
+
+.cli-toc > ul > li {
+  margin-bottom: 10px;
+}
+
+.cli-toc > ul > li > a {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cli-toc li li {
+  padding-left: 12px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.cli-toc a {
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.cli-toc a:hover {
+  color: var(--brass-text);
+}
+
+.cli-group {
+  padding-bottom: 12px;
+}
+
+.cli-group > h3 {
+  padding: 18px 0 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cli-group > p {
   color: var(--ink-soft);
 }
 
-rapi-doc {
+.cli-alias {
+  font: 400 0.9rem/1 var(--sans);
+  color: var(--ink-faint);
+}
+
+.cli-cmd {
+  margin: 14px 0;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-solid);
+}
+
+.cli-cmd h4 {
+  margin: 0 0 8px;
+  font: 600 1rem/1.3 var(--mono);
+}
+
+.cli-cmd h4 a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.cli-cmd p {
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+
+.cli-usage {
+  margin: 0;
+  overflow-x: auto;
+}
+
+.cli-usage code {
   display: block;
+  padding: 8px 12px;
+  white-space: pre;
+}
+
+.cli-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.cli-tags li {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.cli-params {
   width: 100%;
-  height: calc(100vh - var(--bar-height) - 40px);
-  min-height: 560px;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.cli-params th {
+  text-align: left;
+  font: 600 0.68rem/1 var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brass-text);
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+
+.cli-params td {
+  vertical-align: top;
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.cli-params td:nth-child(2) {
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+.cli-params td:nth-child(2) span {
+  display: block;
+  white-space: normal;
+}
+
+.cli-values code {
+  font-size: 0.75rem;
+  margin: 2px 2px 0 0;
+  display: inline-block;
+}
+
+.cli-note,
+.cli-env,
+.cli-expect {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}
+
+.cli-env {
+  font-family: var(--mono);
+}
+
+.cli-none {
+  color: var(--ink-soft);
 }
 
 @media (max-width: 1080px) {
@@ -1211,8 +1351,13 @@ rapi-doc {
   .hero,
   .duo,
   .three,
-  .api-head {
+  .cli-head,
+  .cli-reference {
     grid-template-columns: 1fr;
+  }
+  .cli-toc {
+    position: static;
+    max-height: none;
   }
   .hero {
     min-height: 0;

@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { t } from "./i18n";
 import { shownTheme } from "./theme";
 
-// DocsPath is where djinn serves its documentation site (docs/site): the concepts, and the API.
+// DocsPath is where djinn serves its documentation site (docs/site): the concepts, and the command line.
 export const DocsPath = "/docs/";
 
 // Docs shows the documentation site over the window, in the window's theme. It is a page of djinn's own server, in a

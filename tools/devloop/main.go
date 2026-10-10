@@ -134,10 +134,10 @@ func relay(home, origin string) http.Handler {
 	})
 }
 
-// watched are the Go sources of the djinn binary, and what it embeds besides the interface: the locales, the
-// documentation site and its API document.
+// watched are the Go sources of the djinn binary, and what it embeds besides the interface: the locales and the
+// documentation site.
 var watched = []string{
-	"cmd/djinn", "internal", "gen/go", "locales", "go.mod", "go.sum", "assets.go", "docs/site", "docs/openapi.json",
+	"cmd/djinn", "internal", "gen/go", "locales", "go.mod", "go.sum", "assets.go", "docs/site",
 }
 
 // snapshot is the modification time and size of every watched file.

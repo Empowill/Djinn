@@ -342,7 +342,7 @@
   "settings.cli_codex": "Codex:",
   "settings.cli_missing": "CLI not detected",
   "settings.docs": "Documentation",
-  "settings.docs_detail": "Djinn's concepts, and its API: every method of the command line, of MCP and of HTTP.",
+  "settings.docs_detail": "Djinn's concepts, and its command line: every command, its arguments and its flags.",
   "settings.docs_open": "Open",
   "settings.eyebrow": "CONNECTIONS & PREFERENCES",
   "settings.install_cli": "Install a CLI",

@@ -372,10 +372,15 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 func runUpdate(args []string) error {
 	yes := false
 	for _, a := range args {
-		if a != "--yes" {
+		switch a {
+		case "-h", "--help":
+			cli.Update.WriteHelp(os.Stdout)
+			return nil
+		case "--yes":
+			yes = true
+		default:
 			return fmt.Errorf("unexpected argument %q", a)
 		}
-		yes = true
 	}
 	if !yes && !term.IsTerminal(int(os.Stdin.Fd())) {
 		return errors.New("djinn update restarts the Djinn in use: run it from your terminal, or pass --yes")

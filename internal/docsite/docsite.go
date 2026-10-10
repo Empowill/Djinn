@@ -1,95 +1,131 @@
-// Package docsite is Djinn's documentation site, docs/site, with the OpenAPI document as the script its API tab
-// reads: what `go tool task docs` writes into bin/docs, and what djinn up serves at /docs/.
+// Package docsite is Djinn's documentation site, docs/site, with its Command line tab filled in from the command tree
+// of this very djinn (cli.Reference): what `go tool task docs` writes into bin/docs, and what djinn up serves at /docs/.
+// Nothing is generated ahead and committed, so the tab cannot lag behind the commands.
 package docsite
 
 import (
 	"bytes"
+	_ "embed"
+	"html/template"
 	"io"
 	"io/fs"
-	"slices"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/empowill/djinn/internal/cli"
 )
 
-// ScriptName is the file of the script, beside index.html.
-const ScriptName = "openapi.js"
+// Marker is where index.html takes the reference of the command line.
+const Marker = "<!-- djinn:commands -->"
 
-// Script wraps the OpenAPI document as a script: a page opened from a file may load a script, never fetch a file.
-func Script(spec []byte) []byte {
-	return slices.Concat(
-		[]byte("// The OpenAPI document of Djinn, docs/openapi.json, for the API tab of the documentation.\n"),
-		[]byte("window.DJINN_OPENAPI = "), bytes.TrimSpace(spec), []byte(";\n"),
-	)
+const index = "index.html"
+
+//go:embed commands.html
+var commandsTemplate string
+
+var commands = template.Must(template.New("commands").Funcs(template.FuncMap{
+	"anchor":     anchor,
+	"paragraphs": func(s string) []string { return strings.Split(s, "\n\n") },
+	"short": func(group, name string) string {
+		return strings.TrimPrefix(name, group+" ")
+	},
+	"own": func(group string) bool { return group == cli.Own },
+}).Parse(commandsTemplate))
+
+// anchor is the id of a command, or of a group with the prefix "group-": cmd-wish-make.
+func anchor(prefix, name string) string {
+	return prefix + "-" + strings.ReplaceAll(name, " ", "-")
 }
 
-// FS is the site with Script(spec) beside its index.html.
-func FS(site fs.FS, spec []byte) fs.FS {
-	return withScript{site: site, script: Script(spec)}
+// Commands is the HTML of the Command line tab: a table of contents, then every command of djinn by group, with its
+// usage, its help, its arguments and its flags.
+func Commands() []byte {
+	var b bytes.Buffer
+	if err := commands.Execute(&b, struct {
+		Groups []cli.Group
+		Global []cli.Param
+	}{cli.Reference(), cli.GlobalFlags}); err != nil {
+		panic(err) // The template and its data are fixed: a test executes it.
+	}
+	return b.Bytes()
 }
 
-type withScript struct {
-	site   fs.FS
-	script []byte
+// FS is the site with the reference of the command line in index.html, in place of Marker.
+func FS(site fs.FS) fs.FS {
+	return &withCommands{site: site}
 }
 
-func (s withScript) Open(name string) (fs.File, error) {
-	if name == ScriptName {
-		return &scriptFile{Reader: bytes.NewReader(s.script), size: int64(len(s.script))}, nil
+type withCommands struct {
+	site  fs.FS
+	once  sync.Once
+	index []byte
+	err   error
+}
+
+// page is index.html with the commands, made once, when first asked.
+func (s *withCommands) page() ([]byte, error) {
+	s.once.Do(func() {
+		var b []byte
+		if b, s.err = fs.ReadFile(s.site, index); s.err == nil {
+			s.index = bytes.Replace(b, []byte(Marker), Commands(), 1)
+		}
+	})
+	return s.index, s.err
+}
+
+func (s *withCommands) Open(name string) (fs.File, error) {
+	if name == index {
+		b, err := s.page()
+		if err != nil {
+			return nil, &fs.PathError{Op: "open", Path: name, Err: err}
+		}
+		return &pageFile{Reader: bytes.NewReader(b), size: int64(len(b))}, nil
 	}
 	f, err := s.site.Open(name)
 	if dir, ok := f.(fs.ReadDirFile); ok && name == "." {
-		return &root{ReadDirFile: dir, script: fs.FileInfoToDirEntry(scriptInfo(int64(len(s.script))))}, nil
+		return &root{ReadDirFile: dir, page: s.page}, nil
 	}
 	return f, err
 }
 
-// root is the site's root directory, opened: it lists the script too, so that a walk of the site, as os.CopyFS
-// does, finds it.
+// root is the site's root directory, opened: it gives index.html the size of the page with its commands, as a walk
+// of the site, as os.CopyFS does, reads it.
 type root struct {
 	fs.ReadDirFile
-	script  fs.DirEntry
-	entries []fs.DirEntry
-	read    bool
+	page func() ([]byte, error)
 }
 
 func (d *root) ReadDir(n int) ([]fs.DirEntry, error) {
-	if !d.read {
-		all, err := d.ReadDirFile.ReadDir(-1)
-		if err != nil {
-			return nil, err
+	entries, err := d.ReadDirFile.ReadDir(n)
+	for i, e := range entries {
+		if e.Name() == index {
+			b, perr := d.page()
+			if perr != nil {
+				return entries[:i], perr
+			}
+			entries[i] = fs.FileInfoToDirEntry(pageInfo(len(b)))
 		}
-		all = slices.DeleteFunc(all, func(e fs.DirEntry) bool { return e.Name() == ScriptName })
-		d.entries = append(all, d.script)
-		slices.SortFunc(d.entries, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
-		d.read = true
 	}
-	if n <= 0 {
-		out := d.entries
-		d.entries = nil
-		return out, nil
-	}
-	if len(d.entries) == 0 {
-		return nil, io.EOF
-	}
-	out := d.entries[:min(n, len(d.entries))]
-	d.entries = d.entries[len(out):]
-	return out, nil
+	return entries, err
 }
 
-// scriptFile is the script, opened. It seeks, as http.FileServerFS needs.
-type scriptFile struct {
+// pageFile is index.html with its commands, opened. It seeks, as http.FileServerFS needs.
+type pageFile struct {
 	*bytes.Reader
 	size int64
 }
 
-func (f *scriptFile) Stat() (fs.FileInfo, error) { return scriptInfo(f.size), nil }
-func (f *scriptFile) Close() error               { return nil }
+func (f *pageFile) Stat() (fs.FileInfo, error) { return pageInfo(f.size), nil }
+func (f *pageFile) Close() error               { return nil }
 
-type scriptInfo int64
+var _ io.ReadSeeker = (*pageFile)(nil)
 
-func (scriptInfo) Name() string       { return ScriptName }
-func (i scriptInfo) Size() int64      { return int64(i) }
-func (scriptInfo) Mode() fs.FileMode  { return 0o444 }
-func (scriptInfo) ModTime() time.Time { return time.Time{} }
-func (scriptInfo) IsDir() bool        { return false }
-func (scriptInfo) Sys() any           { return nil }
+type pageInfo int64
+
+func (pageInfo) Name() string       { return index }
+func (i pageInfo) Size() int64      { return int64(i) }
+func (pageInfo) Mode() fs.FileMode  { return 0o444 }
+func (pageInfo) ModTime() time.Time { return time.Time{} }
+func (pageInfo) IsDir() bool        { return false }
+func (pageInfo) Sys() any           { return nil }

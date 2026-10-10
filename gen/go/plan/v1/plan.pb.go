@@ -1792,7 +1792,7 @@ type ProjectSettings struct {
 	// out empty takes a separator next to it away. Letters, digits and placeholders, joined by at most one of . _ / -
 	// in a row. {uuid8} is required: two tasks never share a branch. Not set: {code}-{slug}-{uuid8}.
 	Branch *string `protobuf:"bytes,4,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
-	// The files code generation makes, as globs in the project's folder: "gen/**", "docs/openapi.json". "**" stands
+	// The files code generation makes, as globs in the project's folder: "gen/**", "docs/schema.json". "**" stands
 	// for any number of folders, "*" for any name in one. When merging a task's work into its wish's integration
 	// branch meets a conflict only in these files, Djinn takes one side and makes them again with generate. A file that
 	// sets some sets them all.
