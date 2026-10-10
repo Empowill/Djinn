@@ -13,6 +13,7 @@ import "./styles.css";
 import { applyTheme, followSystem } from "./theme";
 import { UpdateBanner } from "./update-banner";
 import { WishApp } from "./wish-app";
+import { startWishSmokePrewarm } from "./wish-smoke";
 
 document.documentElement.lang = language;
 applyTheme();
@@ -30,3 +31,4 @@ createRoot(document.getElementById("root")!).render(
     </DjinnProvider>
   </React.StrictMode>,
 );
+startWishSmokePrewarm();

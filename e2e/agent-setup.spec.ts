@@ -9,8 +9,10 @@ import {
   ProviderState,
   UiServiceGetEnvironmentResponseSchema,
 } from "../gen/ts/ui/v1/ui_pb";
+import { disableWishSmokeWebGL } from "./wish-smoke-fixture";
 
 test.skip(process.platform === "win32", "the commands are POSIX shell lines");
+test.beforeEach(async ({ page }) => disableWishSmokeWebGL(page));
 
 type States = {
   claude: ProviderState;
@@ -126,14 +128,20 @@ test("a new wish whose agent is not ready offers the setup, and keeps what was t
   await expect(page.locator(".sidebar")).toBeVisible();
   await page.locator(".sidebar .new-mission").click();
   const dialog = page.locator(".wish-creation");
-  await dialog.getByLabel("What do you wish?").fill("Polish the lamp");
+  await dialog
+    .getByLabel("What would you like to make happen?")
+    .fill("Polish the lamp");
   await expect(dialog.locator(".agent-warning")).toHaveCount(0);
 
-  await dialog.getByLabel("Agent").selectOption({ label: "Antigravity" });
+  await dialog.getByRole("button", { name: "Agent", exact: true }).click();
+  await dialog
+    .getByRole("option", { name: "Antigravity", exact: true })
+    .click();
   await expect(
     dialog.getByText("Antigravity is not installed on this computer yet."),
   ).toBeVisible();
-  await dialog.getByLabel("Agent").selectOption({ label: "Codex" });
+  await dialog.getByRole("button", { name: "Agent", exact: true }).click();
+  await dialog.getByRole("option", { name: "Codex", exact: true }).click();
   await expect(
     dialog.getByText("Codex is installed, but not signed in."),
   ).toBeVisible();
@@ -144,9 +152,9 @@ test("a new wish whose agent is not ready offers the setup, and keeps what was t
     row(page, "codex").getByRole("button", { name: "Sign in" }),
   ).toBeVisible();
   await dialog.getByRole("button", { name: "Back to the wish" }).click();
-  await expect(dialog.getByLabel("What do you wish?")).toHaveText(
-    "Polish the lamp",
-  );
+  await expect(
+    dialog.getByLabel("What would you like to make happen?"),
+  ).toHaveValue("Polish the lamp");
 });
 
 test("the settings show the setup of the agents", async ({ page }) => {

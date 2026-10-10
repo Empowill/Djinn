@@ -10,6 +10,7 @@ import {
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { disableWishSmokeWebGL } from "./wish-smoke-fixture";
 
 const binary = path.resolve(
   __dirname,
@@ -40,6 +41,7 @@ async function show(terminal: string) {
 }
 
 test.skip(process.platform === "win32", "the fake Codex is a shell script");
+test.beforeEach(async ({ page }) => disableWishSmokeWebGL(page));
 
 // The browser e2e server is shared by specs. Install the fake only for these tests and return its terminal to main
 // afterward so the next spec never follows a stale lead.
@@ -125,6 +127,11 @@ async function submitWish(page: Page, dialog: Locator, button: string) {
   return made.wish;
 }
 
+async function chooseDropdown(dialog: Locator, label: string, option: string) {
+  await dialog.getByRole("button", { name: label, exact: true }).click();
+  await dialog.getByRole("option", { name: option, exact: true }).click();
+}
+
 test("an active Codex wish starts once with Auto flags", async ({ page }) => {
   ensureActiveSlot();
   const folder = fs.realpathSync(
@@ -138,24 +145,28 @@ test("an active Codex wish starts once with Auto flags", async ({ page }) => {
   await page.goto(process.env.DJINN_URL!);
   await page.locator(".sidebar .new-mission").click();
   const dialog = page.locator(".wish-creation");
-  const editor = dialog.getByRole("textbox", { name: "What do you wish?" });
+  const editor = dialog.getByRole("textbox", {
+    name: "What would you like to make happen?",
+  });
   await expect(editor).toBeFocused();
   await expect(
     dialog.getByRole("button", { name: "Make the wish", exact: true }),
   ).toBeDisabled();
   await editor.fill(title);
-  await editor.press("ControlOrMeta+a");
-  await dialog.getByRole("button", { name: "Bold", exact: true }).click();
-  await expect(editor.locator("b,strong").first()).toBeVisible();
+  await dialog.locator(".wish-tag-dropdown").getByRole("button").click();
   await dialog.getByRole("searchbox").fill(projectName);
-  await expect(dialog.locator(".wish-project-card")).toHaveCount(1);
-  await expect(dialog.locator(".wish-project-card")).toContainText(folder);
-  await page.screenshot({ path: "test-results/wish-creation.png" });
-  await dialog.getByLabel("Agent").selectOption({ label: "Codex" });
+  await expect(dialog.locator(".wish-project-option")).toHaveCount(1);
+  await expect(
+    dialog.getByRole("checkbox", { name: projectName }),
+  ).toHaveAccessibleDescription(folder);
   await dialog.getByRole("checkbox", { name: projectName }).check();
-  await dialog
-    .getByLabel("Permissions in the selected projects")
-    .selectOption({ label: "Edit, in auto mode" });
+  await page.screenshot({ path: "test-results/wish-creation.png" });
+  await chooseDropdown(dialog, "Agent", "Codex");
+  await chooseDropdown(
+    dialog,
+    "Permissions in the selected projects",
+    "Edit, in auto mode",
+  );
   const wish = await submitWish(page, dialog, "Make the wish");
   await expect(dialog).toHaveCount(0);
 
@@ -163,7 +174,8 @@ test("an active Codex wish starts once with Auto flags", async ({ page }) => {
   await expect(page.locator(".hero h1")).toHaveText(wish.title);
   expect(wish.title).not.toBe(title);
   const brief = djinn("wish", "brief", wish.id);
-  expect(brief).toContain("**Auto launch the Codex lead");
+  expect(brief).toContain("Auto launch the Codex lead");
+  expect(brief).not.toContain("**Auto launch the Codex lead");
   expect(brief).toContain("Keep the full request. ".repeat(35).trim());
   await expect(status).toContainText("Lead ended (0)");
 
@@ -202,8 +214,10 @@ test("a paused wish stays unstarted until the user starts it", async ({
   await page.goto(process.env.DJINN_URL!);
   await page.locator(".sidebar .new-mission").click();
   const dialog = page.locator(".wish-creation");
-  await dialog.getByRole("textbox", { name: "What do you wish?" }).fill(title);
-  await dialog.getByLabel("Agent").selectOption({ label: "Codex" });
+  await dialog
+    .getByRole("textbox", { name: "What would you like to make happen?" })
+    .fill(title);
+  await chooseDropdown(dialog, "Agent", "Codex");
   const wish = await submitWish(page, dialog, "Make it paused");
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".hero h1")).toHaveText(wish.title);
@@ -233,12 +247,17 @@ test("an ended lead retains output and retries explicitly", async ({
   await page.goto(process.env.DJINN_URL!);
   await page.locator(".sidebar .new-mission").click();
   const dialog = page.locator(".wish-creation");
-  await dialog.getByRole("textbox", { name: "What do you wish?" }).fill(title);
-  await dialog.getByLabel("Agent").selectOption({ label: "Codex" });
-  await dialog.getByRole("checkbox", { name: projectName }).check();
   await dialog
-    .getByLabel("Permissions in the selected projects")
-    .selectOption({ label: "Edit, in auto mode" });
+    .getByRole("textbox", { name: "What would you like to make happen?" })
+    .fill(title);
+  await dialog.locator(".wish-tag-dropdown").getByRole("button").click();
+  await dialog.getByRole("checkbox", { name: projectName }).check();
+  await chooseDropdown(dialog, "Agent", "Codex");
+  await chooseDropdown(
+    dialog,
+    "Permissions in the selected projects",
+    "Edit, in auto mode",
+  );
   const wish = await submitWish(page, dialog, "Make the wish");
   await expect(dialog).toHaveCount(0);
 

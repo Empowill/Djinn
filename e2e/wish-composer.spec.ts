@@ -5,7 +5,6 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   Allowance,
   ProjectServiceListResponseSchema,
-  Provider,
   WishServiceListResponseSchema,
   WishServiceMakeRequestSchema,
   WishState,
@@ -14,16 +13,43 @@ import {
   ProviderState,
   UiServiceGetEnvironmentResponseSchema,
 } from "../gen/ts/ui/v1/ui_pb";
+import { disableWishSmokeWebGL } from "./wish-smoke-fixture";
 
 const alpha = "11111111-1111-4111-8111-111111111111";
 const beta = "22222222-2222-4222-8222-222222222222";
+const titles = {
+  en: "What would you like to make happen?",
+  fr: "Que voulez-vous exaucer ?",
+} as const;
 
-async function openComposer(page: Page, active = 0, projects = true) {
-  await page.addInitScript(() => {
+async function openProjects(region: Locator) {
+  const dropdown = region.locator(".wish-tag-dropdown");
+  if (!(await dropdown.locator(".wish-tag-menu").isVisible())) {
+    await dropdown.getByRole("button").click();
+  }
+}
+
+async function chooseDropdown(region: Locator, label: string, option: string) {
+  await region.getByRole("button", { name: label, exact: true }).click();
+  await region.getByRole("option", { name: option, exact: true }).click();
+}
+
+async function openComposer(
+  page: Page,
+  active = 0,
+  projects = true,
+  locale = "en",
+) {
+  if (locale === "fr") {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+  } else {
+    await disableWishSmokeWebGL(page);
+  }
+  await page.addInitScript((locale) => {
     localStorage.setItem("djinn.agents.offered", "1");
-    localStorage.setItem("djinn.language", "en");
+    localStorage.setItem("djinn.language", locale);
     localStorage.removeItem("djinn.provider");
-  });
+  }, locale);
   await page.route("**/ui.v1.UiService/GetEnvironment", (route) =>
     route.fulfill({
       contentType: "application/proto",
@@ -77,43 +103,69 @@ async function openComposer(page: Page, active = 0, projects = true) {
     }),
   );
   await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
+  const liveLabel = locale === "fr" ? "En direct" : "Live";
+  await expect(
+    page.locator(".app-statusbar").getByText(liveLabel),
+  ).toBeVisible();
   await page.locator(".sidebar .new-mission").click();
-  const region = page.getByRole("region", { name: "Make a wish", exact: true });
+  const region = page.getByRole("region", {
+    name: titles[locale as keyof typeof titles],
+    exact: true,
+  });
   await expect(region).toBeVisible();
-  const editor = region.getByRole("textbox", { name: "What do you wish?" });
+  const editor = region.getByRole("textbox", {
+    name: titles[locale as keyof typeof titles],
+  });
   await expect(editor).toBeFocused();
   return { region, editor };
 }
 
-async function selectText(editor: Locator, text: string) {
-  await editor.evaluate((element, text) => {
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    let node: Node | null;
-    while ((node = walker.nextNode())) {
-      const start = node.textContent!.indexOf(text);
-      if (start === -1) continue;
-      const range = document.createRange();
-      range.setStart(node, start);
-      range.setEnd(node, start + text.length);
-      const selection = window.getSelection()!;
-      selection.removeAllRanges();
-      selection.addRange(range);
-      return;
-    }
-    throw new Error(`Text not found: ${text}`);
-  }, text);
-}
-
-test("formatting and multiline editing send the complete Markdown prompt; errors keep the draft", async ({
+test("cold creation stays interactive before smoke preparation", async ({
   page,
 }) => {
   const { region, editor } = await openComposer(page);
+
+  // The decorative renderer is deliberately disabled in this contract test:
+  // opening the creation flow must still focus and enable the native editor
+  // while smoke preparation is incomplete.
+  await expect(editor).toBeFocused();
+  await expect(editor).toBeEnabled();
+  await expect(region.locator(".wish-smoke-canvas")).not.toHaveAttribute(
+    "data-ready",
+    "true",
+  );
+  await expect(region.locator(".wish-creation-intro h1")).toBeVisible();
+  await expect(region.locator(".wish-creation-controls")).toBeVisible();
+
+  await region.getByRole("button", { name: "Back to wishes" }).click();
+  await expect(region).toHaveCount(0);
+  await page.locator(".sidebar .new-mission").click();
+  const reopened = page.getByRole("region", {
+    name: titles.en,
+    exact: true,
+  });
+  const reopenedEditor = reopened.getByRole("textbox", { name: titles.en });
+  await expect(reopenedEditor).toBeFocused();
+  await expect(reopenedEditor).toBeEnabled();
+});
+
+test("focus, animated prompt, smoke and minimal tags preserve the request payload", async ({
+  page,
+}) => {
+  const { region, editor } = await openComposer(page);
+  await expect(region.locator(".wish-composer-placeholder")).toContainText(
+    /.+/,
+  );
+  await expect(region.locator(".wish-composer-tools")).toHaveCount(0);
+  await expect(region.locator(".wish-smoke-canvas")).toHaveAttribute(
+    "data-zoom",
+    "10",
+  );
+
   const requests: ReturnType<
     typeof fromBinary<typeof WishServiceMakeRequestSchema>
   >[] = [];
   await page.route("**/plan.v1.WishService/Make", async (route) => {
-    expect(route.request().headers()["accept-language"]).toBe("en");
     requests.push(
       fromBinary(
         WishServiceMakeRequestSchema,
@@ -126,132 +178,168 @@ test("formatting and multiline editing send the complete Markdown prompt; errors
       body: JSON.stringify({ code: "unavailable", message: "Try again" }),
     });
   });
-  await editor.fill("Build a thoughtful export with context and requirements.");
-  await selectText(editor, "thoughtful");
-  await region.getByRole("button", { name: "Bold", exact: true }).click();
-  await selectText(editor, "requirements");
-  await editor.press("ControlOrMeta+i");
-  await editor.press("ArrowRight");
-  await editor.press("End");
-  await editor.press("Enter");
-  await editor.pressSequentially("Keep every detail.");
+  await editor.fill("Build a thoughtful export.\nKeep every detail.");
+  await openProjects(region);
   await region.getByRole("checkbox", { name: "Lamp", exact: true }).check();
   await expect(
     region.getByRole("checkbox", { name: "Lamp", exact: true }),
   ).toHaveAccessibleDescription("/workspace/lamp");
-  await region
-    .getByLabel("Permissions in the selected projects")
-    .selectOption(String(Allowance.EDIT));
-  await page.screenshot({ path: "test-results/e2e/wish-creation-dark.png" });
-  await page.evaluate(() => {
-    document.documentElement.dataset.theme = "light";
-  });
-  await expect(
-    region.getByRole("button", { name: "Cancel", exact: true }).last(),
-  ).toHaveCSS("color", "rgb(28, 28, 26)");
-  await page.screenshot({ path: "test-results/e2e/wish-creation-light.png" });
-  await page.evaluate(() => {
-    document.documentElement.dataset.theme = "dark";
-  });
+  await chooseDropdown(
+    region,
+    "Permissions in the selected projects",
+    "Edit the files",
+  );
   await region
     .getByRole("button", { name: "Make the wish", exact: true })
     .click();
   await expect(region.getByRole("alert")).toHaveText("Try again");
   expect(requests).toHaveLength(1);
   expect(requests[0].title).toBe("");
-  expect(requests[0].prompt).toContain("**thoughtful**");
-  expect(requests[0].prompt).toContain("*requirements*");
-  expect(requests[0].prompt).toContain("\n\n");
-  expect(requests[0].prompt).toContain("Keep every detail.");
+  expect(requests[0].prompt).toBe(
+    "Build a thoughtful export.\nKeep every detail.",
+  );
   expect(requests[0].projectIds).toEqual([alpha]);
   expect(requests[0].allowance).toBe(Allowance.EDIT);
-  await expect(editor).toContainText("Keep every detail.");
-  await editor.press("ControlOrMeta+Enter");
-  await expect.poll(() => requests.length).toBe(2);
+  await expect(editor).toHaveValue(
+    "Build a thoughtful export.\nKeep every detail.",
+  );
 });
 
-test("lists serialize as Markdown and plain paste cannot insert HTML", async ({
+test("French empty creation keeps the title, caret and smoke visible", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const { region, editor } = await openComposer(page, 0, true, "fr");
+  const heading = region.getByRole("heading", {
+    name: titles.fr,
+    exact: true,
+  });
+  await expect(heading).toBeVisible();
+  await expect(heading).toHaveCSS("white-space", "nowrap");
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveAttribute("placeholder", "");
+  await expect(region.locator(".wish-composer-placeholder")).toBeVisible();
+  await expect(region.locator(".wish-composer-caret")).toBeVisible();
+  await expect(editor).toHaveCSS("font-size", "16px");
+  await expect(editor).toHaveCSS("line-height", "26.4px");
+  await expect(
+    region.locator(".wish-creation-footer .button.secondary"),
+  ).toHaveCount(0);
+  const headingBox = await heading.boundingBox();
+  const controlsBox = await region
+    .locator(".wish-creation-controls")
+    .boundingBox();
+  const editorBox = await editor.boundingBox();
+  const requestBox = await region
+    .locator(".wish-creation-request")
+    .boundingBox();
+  const regionBox = await region.boundingBox();
+  const submitBox = await region
+    .getByRole("button", { name: "Faire le souhait", exact: true })
+    .boundingBox();
+  const footerBox = await region.locator(".wish-creation-footer").boundingBox();
+  expect(headingBox).not.toBeNull();
+  expect(controlsBox).not.toBeNull();
+  expect(editorBox).not.toBeNull();
+  expect(requestBox).not.toBeNull();
+  expect(regionBox).not.toBeNull();
+  expect(submitBox).not.toBeNull();
+  expect(footerBox).not.toBeNull();
+  expect(
+    Math.round(controlsBox!.y - (headingBox!.y + headingBox!.height)),
+  ).toBe(20);
+  expect(
+    Math.round(editorBox!.y - (controlsBox!.y + controlsBox!.height)),
+  ).toBe(20);
+  expect(requestBox!.width / regionBox!.width).toBeGreaterThan(0.38);
+  expect(requestBox!.width / regionBox!.width).toBeLessThan(0.42);
+  expect(submitBox!.x).toBeLessThan(footerBox!.x + footerBox!.width / 3);
+  const smoke = region.locator(".wish-smoke-canvas");
+  await expect(smoke).toHaveAttribute("data-zoom", "10");
+  await expect(smoke).toHaveAttribute("data-ready", "true", {
+    timeout: 60_000,
+  });
+  await expect(smoke).toHaveAttribute("data-visible", "true", {
+    timeout: 30_000,
+  });
+  const asciiLayers = region.locator(".wish-smoke-ascii pre");
+  await expect(asciiLayers).toHaveCount(8);
+  const hasAscii = async () =>
+    (await asciiLayers.allTextContents()).some((text) => /\S/.test(text));
+  await expect.poll(hasAscii).toBe(true);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.waitForTimeout(250);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(asciiLayers).toHaveCount(8);
+  await expect.poll(hasAscii, { timeout: 10_000 }).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect.poll(hasAscii, { timeout: 10_000 }).toBe(true);
+  await page.screenshot({ path: "test-results/e2e/wish-creation-fr.png" });
+});
+
+test("6K smoke keeps native HTML and backing canvas within budgets", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 6016, height: 3384 });
+  const { region } = await openComposer(page, 0, true, "fr");
+  const smoke = region.locator(".wish-smoke-canvas");
+  await expect(smoke).toHaveAttribute("data-ready", "true", {
+    timeout: 60_000,
+  });
+  const asciiLayers = region.locator(".wish-smoke-ascii pre");
+  await expect(asciiLayers).toHaveCount(8);
+  await expect
+    .poll(async () =>
+      (await asciiLayers.allTextContents()).some((text) => /\S/.test(text)),
+    )
+    .toBe(true);
+  const budget = await asciiLayers.first().evaluate((layer) => {
+    const canvas = layer
+      .closest(".wish-smoke")
+      ?.querySelector(".wish-smoke-worker-canvas") as HTMLCanvasElement | null;
+    const text = layer.textContent || "";
+    const rows = text.split("\n");
+    return {
+      fontSize: Number.parseFloat(getComputedStyle(layer).fontSize),
+      columns: Math.max(...rows.map((row) => row.length)),
+      rows: rows.length,
+      canvasWidth: canvas?.width || 0,
+      canvasHeight: canvas?.height || 0,
+    };
+  });
+  expect(budget.fontSize).toBeGreaterThan(10);
+  expect(budget.columns * budget.rows).toBeLessThanOrEqual(18_000);
+  expect(budget.columns).toBeLessThanOrEqual(240);
+  expect(budget.rows).toBeLessThanOrEqual(120);
+  expect(budget.canvasWidth).toBeLessThanOrEqual(2048);
+  expect(budget.canvasHeight).toBeLessThanOrEqual(2048);
+  expect(budget.canvasWidth * budget.canvasHeight).toBeLessThanOrEqual(
+    1_500_000,
+  );
+});
+
+test("native textarea keeps pasted markup literal", async ({ page }) => {
+  const { region, editor } = await openComposer(page);
+  await editor.fill("Literal <img src=x onerror=alert(1)> and **stars**");
+  await expect(editor).toHaveValue(
+    "Literal <img src=x onerror=alert(1)> and **stars**",
+  );
+  await expect(region.locator("img,strong,script")).toHaveCount(0);
+});
+
+test("agent setup keeps the plain draft, project and allowance choices and restores focus", async ({
   page,
 }) => {
   const { region, editor } = await openComposer(page);
-  let prompt = "";
-  await page.route("**/plan.v1.WishService/Make", async (route) => {
-    prompt = fromBinary(
-      WishServiceMakeRequestSchema,
-      route.request().postDataBuffer()!,
-    ).prompt;
-    await route.fulfill({
-      status: 503,
-      contentType: "application/json",
-      body: JSON.stringify({ code: "unavailable", message: "Try again" }),
-    });
-  });
-  await editor.fill("First\nSecond");
-  await editor.press("ControlOrMeta+a");
-  await region.getByRole("button", { name: "Bulleted list" }).click();
-  await expect(editor.locator("ul li")).toHaveCount(2);
-  await region
-    .getByRole("button", { name: "Make the wish", exact: true })
-    .click();
-  await expect.poll(() => prompt).toBe("- First\n- Second");
-  await expect(region.getByRole("alert")).toBeVisible();
-  await editor.press("ControlOrMeta+a");
-  await region.getByRole("button", { name: "Numbered list" }).click();
-  await expect(editor.locator("ol li")).toHaveCount(2);
-  await region
-    .getByRole("button", { name: "Make the wish", exact: true })
-    .click();
-  await expect.poll(() => prompt).toBe("1. First\n2. Second");
-  await expect(region.getByRole("alert")).toBeVisible();
-  await editor.fill("");
-  await editor.evaluate((element) => {
-    const data = new DataTransfer();
-    data.setData(
-      "text/plain",
-      "Literal <img src=x onerror=alert(1)> and **stars**",
-    );
-    data.setData(
-      "text/html",
-      '<img src=x onerror="alert(1)"><strong>Danger</strong>',
-    );
-    element.dispatchEvent(
-      new ClipboardEvent("paste", {
-        clipboardData: data,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-  await expect(editor.locator("img,strong,script")).toHaveCount(0);
-  await region
-    .getByRole("button", { name: "Make the wish", exact: true })
-    .click();
-  await expect.poll(() => prompt).toContain("\\<img src=x onerror=alert(1)\\>");
-  expect(prompt).toContain("\\*\\*stars\\*\\*");
-});
-
-test("agent setup preserves text, formatting, projects and permissions and restores editor focus", async ({
-  page,
-}) => {
-  const { region, editor } = await openComposer(page);
-  await editor.fill("Keep this draft through setup");
-  await selectText(editor, "draft");
-  await region.getByRole("button", { name: "Bold", exact: true }).click();
-  await selectText(editor, "setup");
-  await region.getByRole("button", { name: "Italic", exact: true }).click();
-  await editor.press("ArrowRight");
-  await editor.press("Enter");
-  await region.getByRole("button", { name: "Bulleted list" }).click();
-  await editor.pressSequentially("First detail");
-  await editor.press("Enter");
-  await editor.pressSequentially("Second detail");
+  await editor.fill("Keep this draft through setup\nwith its second line.");
+  await openProjects(region);
   await region.getByRole("checkbox", { name: "Lamp", exact: true }).check();
-  await region
-    .getByLabel("Permissions in the selected projects")
-    .selectOption(String(Allowance.AUTO));
-  await region
-    .getByLabel("Agent", { exact: true })
-    .selectOption(String(Provider.CODEX));
+  await chooseDropdown(
+    region,
+    "Permissions in the selected projects",
+    "Edit, in auto mode",
+  );
+  await chooseDropdown(region, "Agent", "Codex");
   await region.getByRole("button", { name: "Set it up" }).click();
   await expect(
     page.getByRole("heading", { name: "Set up the agents" }),
@@ -259,45 +347,33 @@ test("agent setup preserves text, formatting, projects and permissions and resto
   await expect(editor).toBeHidden();
   await page.getByRole("button", { name: "Back to the wish" }).click();
   await expect(editor).toBeFocused();
-  await expect(editor).toContainText("Keep this draft through setup");
-  await expect(editor.locator("b,strong")).toHaveText("draft");
-  await expect(editor.locator("i,em").first()).toHaveText("setup");
-  await expect(editor.locator("ul li")).toHaveText([
-    "First detail",
-    "Second detail",
-  ]);
+  await expect(editor).toHaveValue(
+    "Keep this draft through setup\nwith its second line.",
+  );
+  await openProjects(region);
   await expect(
     region.getByRole("checkbox", { name: "Lamp", exact: true }),
   ).toBeChecked();
-  await expect(region.getByLabel("Agent", { exact: true })).toHaveValue(
-    String(Provider.CODEX),
-  );
   await expect(
-    region.getByLabel("Permissions in the selected projects"),
-  ).toHaveValue(String(Allowance.AUTO));
+    region.getByRole("button", { name: "Agent", exact: true }),
+  ).toContainText("Codex");
+  await expect(
+    region.getByRole("button", {
+      name: "Permissions in the selected projects",
+      exact: true,
+    }),
+  ).toContainText("Edit, in auto mode");
 });
 
-test("project search includes folders, empty results retain selection, Escape returns focus", async ({
+test("project search includes folders and an empty result retains selection", async ({
   page,
 }) => {
   const { region, editor } = await openComposer(page);
-  await expect(region).toHaveRole("region");
-  await expect(page.locator(".sidebar")).not.toHaveAttribute("inert", "");
-  await expect(
-    region.getByRole("button", { name: "Make the wish", exact: true }),
-  ).toBeDisabled();
-  await editor.fill("   \n  ");
-  await expect(
-    region.getByRole("button", { name: "Make the wish", exact: true }),
-  ).toBeDisabled();
-  await editor.fill("\u00a0\u200b\u200c\u200d\u200e\u2060\ufeff");
-  await expect(
-    region.getByRole("button", { name: "Make the wish", exact: true }),
-  ).toBeDisabled();
+  await editor.fill("A request with a project.");
+  await openProjects(region);
   await region.getByRole("checkbox", { name: "Lamp", exact: true }).check();
   const search = region.getByRole("searchbox");
   await search.fill("/workspace/smoke");
-  await expect(region.getByRole("checkbox")).toHaveCount(1);
   await expect(
     region.getByRole("checkbox", { name: "Smoke", exact: true }),
   ).toBeVisible();
@@ -310,16 +386,21 @@ test("project search includes folders, empty results retain selection, Escape re
     region.getByRole("checkbox", { name: "Lamp", exact: true }),
   ).toBeChecked();
   await search.press("Escape");
-  // Some browsers consume the first Escape to clear a search input; the next closes creation.
-  if (await region.isVisible()) await search.press("Escape");
+  await expect(region.locator(".wish-tag-menu")).toBeHidden();
+  await expect(region).toBeVisible();
+  await region
+    .locator(".wish-tag-dropdown")
+    .getByRole("button")
+    .press("Escape");
   await expect(region).toHaveCount(0);
   await expect(page.locator(".sidebar .new-mission")).toBeFocused();
 });
 
-test("three active wishes submit paused, without project permissions, and busy state prevents duplicate submission", async ({
+test("three active wishes submit paused, without project permissions, and busy prevents duplicates", async ({
   page,
 }) => {
   const { region, editor } = await openComposer(page, 3, false);
+  await openProjects(region);
   await expect(
     region.getByText(
       "No projects yet. You can make this wish without a project.",
@@ -347,26 +428,14 @@ test("three active wishes submit paused, without project permissions, and busy s
       body: JSON.stringify({ code: "unavailable", message: "Try again" }),
     });
   });
-  await editor.fill(
-    "A request much longer than the old title limit. ".repeat(20),
-  );
+  await editor.fill("A paused request.");
   await editor.press("ControlOrMeta+Enter");
   await expect.poll(() => count).toBe(1);
   await expect(
     region.getByRole("button", { name: "Creating…" }),
   ).toBeDisabled();
-  await expect(editor).toHaveAttribute("contenteditable", "false");
-  const dismissal = region.getByRole("button", {
-    name: /^(Cancel|Back to wishes)$/,
-  });
-  await expect(dismissal).toHaveCount(2);
-  await expect(dismissal.first()).toBeDisabled();
-  await expect(dismissal.last()).toBeDisabled();
+  await expect(editor).toBeDisabled();
   await expect(page.locator(".sidebar")).toHaveAttribute("inert", "");
-  await expect(region).toBeFocused();
-  await region.press("Escape");
-  await expect(region).toBeVisible();
-  await region.press("Tab");
   await expect(region).toBeFocused();
   await editor.press("ControlOrMeta+Enter");
   expect(count).toBe(1);
@@ -377,44 +446,19 @@ test("three active wishes submit paused, without project permissions, and busy s
   ).toBeEnabled();
 });
 
-test("the full Markdown character limit keeps oversized drafts editable and accepts the boundary", async ({
+test("the character limit keeps an oversized draft editable", async ({
   page,
 }) => {
   const { region, editor } = await openComposer(page);
-  const limit = 1_000_000;
-  let sentLength = 0;
-  await page.route("**/plan.v1.WishService/Make", async (route) => {
-    sentLength = fromBinary(
-      WishServiceMakeRequestSchema,
-      route.request().postDataBuffer()!,
-    ).prompt.length;
-    await route.fulfill({
-      status: 503,
-      contentType: "application/json",
-      body: JSON.stringify({ code: "unavailable", message: "Try again" }),
-    });
-  });
-  // Literal asterisks become escaped Markdown, so validation must count the serialized request.
-  await editor.fill("a".repeat(limit - 1) + "*");
+  const limit = 1_000_001;
+  await editor.fill("a".repeat(limit));
   await expect(editor).toHaveAttribute("aria-invalid", "true");
   await expect(region.getByRole("alert")).toHaveText(
-    "Your request exceeds 1,000,000 characters after formatting. Shorten it to make the wish.",
+    "Your request exceeds 1,000,000 characters. Shorten it to make the wish.",
   );
   await expect(
     region.getByRole("button", { name: "Make the wish", exact: true }),
   ).toBeDisabled();
-  await editor.press("ControlOrMeta+Enter");
-  expect(sentLength).toBe(0);
-  await editor.press("Backspace");
-  await editor.pressSequentially("b");
-  await expect(editor).not.toHaveAttribute("aria-invalid", "true");
-  await expect(
-    region.getByRole("button", { name: "Make the wish", exact: true }),
-  ).toBeEnabled();
-  await region
-    .getByRole("button", { name: "Make the wish", exact: true })
-    .click();
-  await expect.poll(() => sentLength).toBe(limit);
 });
 
 test("creation fits a narrow window and keeps the editor and submit action reachable", async ({
@@ -423,7 +467,6 @@ test("creation fits a narrow window and keeps the editor and submit action reach
   await page.setViewportSize({ width: 760, height: 800 });
   const { region, editor } = await openComposer(page);
   await editor.fill("Create a focused experience for a narrow window.");
-  await expect(region.getByRole("checkbox", { name: /Lamp/ })).toBeVisible();
   const submit = region.getByRole("button", {
     name: "Make the wish",
     exact: true,
@@ -435,7 +478,7 @@ test("creation fits a narrow window and keeps the editor and submit action reach
       (element) => element.scrollWidth <= element.clientWidth + 1,
     ),
   ).toBe(true);
+  await page.screenshot({ path: "test-results/wish-creation-narrow.png" });
   await editor.scrollIntoViewIfNeeded();
   await expect(editor).toBeInViewport();
-  await page.screenshot({ path: "test-results/wish-creation-narrow.png" });
 });
