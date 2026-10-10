@@ -170,6 +170,8 @@ jobs:
         run: |
           lipo -info bin/release/djinn_darwin_universal/djinn | grep -q "x86_64 arm64"
           DJINN_HOME="$RUNNER_TEMP/djinn-home" bin/release/djinn_darwin_universal/djinn version | grep -Fx "djinn $VERSION"
+          # Apple silicon runs only signed code: the linker signs the arm64 half ad hoc, never the amd64 one.
+          codesign --verify --arch arm64 bin/release/djinn_darwin_universal/djinn
       # Unzipped as Finder does, the app is whole: its Info.plist reads, names what the bundle holds, and its djinn runs.
       - name: Djinn.app is well formed
         run: |
@@ -179,13 +181,14 @@ jobs:
           plutil -lint "$plist"
           read_key() { /usr/libexec/PlistBuddy -c "Print :$1" "$plist"; }
           test "$(read_key CFBundleIdentifier)" = io.github.empowill.djinn
+          test "$(read_key 'CFBundleURLTypes:0:CFBundleURLSchemes:0')" = djinn
           test "$(read_key CFBundleShortVersionString)" = "$(echo "${VERSION#v}" | cut -d- -f1)"
           test -x "$app/Contents/MacOS/$(read_key CFBundleExecutable)"
           test -s "$app/Contents/Resources/$(read_key CFBundleIconFile)"
+          test -s "$app/Contents/Resources/NOTICE"
+          test -s "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
           cmp "$app/Contents/MacOS/djinn" bin/release/djinn_darwin_universal/djinn
           DJINN_HOME="$RUNNER_TEMP/djinn-home" "$app/Contents/MacOS/djinn" version | grep -Fx "djinn $VERSION"
-          # Apple silicon runs only signed code: the linker signs the arm64 half ad hoc, never the amd64 one.
-          codesign --verify --arch arm64 "$app/Contents/MacOS/djinn"
           # Unsigned: Gatekeeper refuses it, as expected until the project signs and notarizes (plan T19).
           spctl --assess --type execute "$app" || echo "Gatekeeper refuses the unsigned app, as expected"
       # Opened as from Finder, with no arguments, the app's djinn runs up (it knows its bundle by its path): it
@@ -262,5 +265,9 @@ jobs:
         run: |
           prerelease=""
           case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          notes=(--generate-notes)
+          if [ -f "docs/releases/$GITHUB_REF_NAME.md" ]; then
+            notes=(--notes-file "docs/releases/$GITHUB_REF_NAME.md")
+          fi
           gh release create "$GITHUB_REF_NAME" --draft --verify-tag $prerelease \
-            --title "Djinn $GITHUB_REF_NAME" --generate-notes bin/release/*
+            --title "Djinn $GITHUB_REF_NAME" "${notes[@]}" bin/release/*
