@@ -76,7 +76,7 @@ func (in *integration) pass(t *testing.T, d time.Duration) {
 
 // run is the fake of the project's commands: gen lists the files of src in gen/index.txt, test says testOut and
 // exits testCode.
-func (in *integration) run(_ context.Context, dir string, args []string) (string, int, error) {
+func (in *integration) run(ctx context.Context, dir string, args []string) (string, int, error) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	in.runs = append(in.runs, strings.Join(args, " ")+" in "+dir)
@@ -105,6 +105,16 @@ func (in *integration) run(_ context.Context, dir string, args []string) (string
 	case "install":
 		b, err := os.ReadFile(filepath.Join(dir, "src", "a.txt"))
 		return "installed " + string(b), 0, err
+	case "gh":
+		if os.Getenv("GH_DATA") == "" {
+			return "no gh configured in test", 127, nil
+		}
+		return runCommand(ctx, dir, args)
+	case "glab":
+		if os.Getenv("GLAB_DATA") == "" {
+			return "no glab configured in test", 127, nil
+		}
+		return runCommand(ctx, dir, args)
 	}
 	return "unknown command", 127, nil
 }
