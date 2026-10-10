@@ -1574,7 +1574,7 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 			// (b) PR to main: wish settled, pushed to remote, push checks green, ahead of remote default branch
 			strat, _ := plan.ResolveWishPushStrategy(wish, settings)
 			if strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
-				h.azimaPRPass(ctx, wish, project, settings, existing, hasQuestion)
+				allQuestions = h.azimaPRPass(ctx, wish, project, settings, allQuestions)
 				continue
 			}
 
@@ -2469,13 +2469,21 @@ func (h *Harness) retargetForgePR(ctx context.Context, repo string, project *pla
 // proposing open PR, retargeting when base azima merges, ready-to-merge notification, and marking merged.
 func (h *Harness) azimaPRPass(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings,
-	existing []*planv1.Question, hasQuestion func(func(*planv1.Question) bool) bool,
-) {
+	allQuestions []*planv1.Question,
+) []*planv1.Question {
+	hasQuestion := func(match func(q *planv1.Question) bool) bool {
+		for _, q := range allQuestions {
+			if q.GetMove() && match(q) {
+				return true
+			}
+		}
+		return false
+	}
 	repo := project.GetDirectory()
 	azimas := h.wishAzimas(ctx, wish)
 	for _, azima := range azimas {
 		if ctx.Err() != nil {
-			return
+			return allQuestions
 		}
 		branch := azimaBranchName(azima)
 		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
@@ -2502,14 +2510,17 @@ func (h *Harness) azimaPRPass(
 				return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "pull request")
 			}) {
 				title, desc := h.draftAzimaPR(ctx, azima, parts)
-				_ = h.askMove(ctx, &planv1.Question{
+				q := &planv1.Question{
 					WishId:  wish.GetId(),
 					TaskId:  azima.GetId(),
 					Text:    fmt.Sprintf("Open a pull request for %s to %s?", azima.GetCode(), base),
 					Context: fmt.Sprintf("**Title**: %s\n**Base**: %s\n\n%s", title, base, desc),
 					Options: []string{"Open pull request", "Not yet"},
 					Move:    true,
-				})
+				}
+				if err := h.askMove(ctx, q); err == nil {
+					allQuestions = append(allQuestions, q)
+				}
 			}
 			continue
 		}
@@ -2524,14 +2535,17 @@ func (h *Harness) azimaPRPass(
 				if !hasQuestion(func(q *planv1.Question) bool {
 					return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "ready to merge")
 				}) {
-					_ = h.askMove(ctx, &planv1.Question{
+					q := &planv1.Question{
 						WishId:  wish.GetId(),
 						TaskId:  azima.GetId(),
 						Text:    fmt.Sprintf("Pull request #%d for %s is ready to merge?", pr.Number, azima.GetCode()),
 						Context: fmt.Sprintf("Pull request #%d for azima %s (%s) is mergeable and all checks are green.", pr.Number, azima.GetCode(), azima.GetTitle()),
 						Options: []string{"Ready to merge", "Not yet"},
 						Move:    true,
-					})
+					}
+					if err := h.askMove(ctx, q); err == nil {
+						allQuestions = append(allQuestions, q)
+					}
 				}
 			}
 		} else if pr.State == "MERGED" {
@@ -2563,4 +2577,5 @@ func (h *Harness) azimaPRPass(
 			}
 		}
 	}
+	return allQuestions
 }
