@@ -37,7 +37,14 @@ const {
   interpolateWishSmokeCameraScale,
 } = layoutModule;
 
-function assertLayoutInvariants(layout, width, height, dpr, baseCharWidth = 6) {
+function assertLayoutInvariants(
+  layout,
+  width,
+  height,
+  dpr,
+  baseCharWidth = 6,
+  nativeMac = false,
+) {
   assert.ok(layout.fontSize >= SMOKE_BASE_FONT_SIZE);
   assert.equal(layout.fontSize * 2, Math.round(layout.fontSize * 2));
   assert.ok(layout.charWidth > 0);
@@ -83,7 +90,10 @@ function assertLayoutInvariants(layout, width, height, dpr, baseCharWidth = 6) {
   );
   assert.ok(
     Math.abs(
-      layout.lineHeight - (SMOKE_BASE_LINE_HEIGHT * layout.fontSize) / 10,
+      layout.lineHeight -
+        (nativeMac
+          ? Math.ceil((SMOKE_BASE_LINE_HEIGHT * layout.fontSize) / 10)
+          : (SMOKE_BASE_LINE_HEIGHT * layout.fontSize) / 10),
     ) < 1e-9,
   );
   assert.ok(width > 0 && height > 0);
@@ -97,6 +107,23 @@ test("keeps the 10px reference on a normal surface when the budgets fit", () => 
   assert.deepEqual([layout.gridWidth, layout.gridHeight], [213, 70]);
   assert.equal(layout.offsetY, 2);
   assertLayoutInvariants(layout, 1280, 800, 1);
+});
+
+test("quantizes native Mac row height in the shared grid budget", () => {
+  const layout = computeWishSmokeLayout(1084, 901, 6, 2, true);
+  assert.equal(layout.fontSize, 10);
+  assert.equal(layout.lineHeight, 12);
+  assert.equal(layout.gridHeight, 75);
+  assert.equal(layout.gridHeight * layout.lineHeight, 900);
+  assert.equal(layout.offsetY, 1);
+  assertLayoutInvariants(layout, 1084, 901, 2, 6, true);
+
+  const large = computeWishSmokeLayout(6016, 3384, 6, 2, true);
+  assert.equal(
+    large.lineHeight,
+    Math.ceil((SMOKE_BASE_LINE_HEIGHT * large.fontSize) / 10),
+  );
+  assertLayoutInvariants(large, 6016, 3384, 2, 6, true);
 });
 
 test("larger surfaces quantize upward smoothly and remain within all HTML budgets", () => {
