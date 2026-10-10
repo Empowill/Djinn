@@ -336,10 +336,14 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 	switch {
 	case m.Event == "init":
 		text := "session " + m.ConversationID
+		var model string
 		if m.Init != nil && m.Init.Model != "" {
 			text += ", model " + m.Init.Model
+			model = m.Init.Model
 		}
-		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text).SessionID = m.ConversationID
+		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+		ev.SessionID = m.ConversationID
+		ev.Model = model
 	case m.Event == "step_update" && m.StepUpdate != nil:
 		s := m.StepUpdate
 		what = "step " + s.StepType + " " + s.State

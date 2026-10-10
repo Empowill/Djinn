@@ -390,7 +390,9 @@ func (w *codexWorker) answer(events *lineEvents, m *codexMessage) string {
 		if r.Model != "" {
 			text += ", model " + r.Model
 		}
-		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text).SessionID = w.thread
+		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+		ev.SessionID = w.thread
+		ev.Model = r.Model
 		if len(w.queue) > 0 {
 			if err := w.startTurn(); err != nil {
 				w.fail(err.Error())

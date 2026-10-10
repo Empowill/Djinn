@@ -125,6 +125,8 @@ type Event struct {
 	Limit *Limit
 	// Watched is set on a paragraph a watcher's command printed: the wish's lead is told its first line.
 	Watched *Watched
+	// Model is the model the worker actually runs, when the event tells it.
+	Model string
 }
 
 // Result is how a worker ended.

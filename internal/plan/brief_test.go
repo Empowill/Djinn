@@ -575,3 +575,30 @@ func TestBriefOrder(t *testing.T) {
 		t.Errorf("a wish without a lead (%v):\n%s", err, bare.Moving)
 	}
 }
+
+// TestBriefRunningTaskModel: a running task's line includes the model when set.
+func TestBriefRunningTaskModel(t *testing.T) {
+	ctx := t.Context()
+	c, wish, _ := source(t)
+	tasks, err := store.List[*planv1.Task](ctx, c.store, store.Where{"wish_id": wish.GetId(), "code": "W1"})
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("W1: %v, %v", tasks, err)
+	}
+	task := tasks[0]
+	task.Model = "claude-sonnet-4-5"
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/put", task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wish.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(brief.Moving, "(claude · claude-sonnet-4-5, since ") {
+		t.Errorf("brief = %s\nwant to contain (claude · claude-sonnet-4-5, since ", brief.Moving)
+	}
+}

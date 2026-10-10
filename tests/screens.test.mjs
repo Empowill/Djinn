@@ -18,6 +18,7 @@ export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
+export { shortModel } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { attentionOf } from "@/src/attention.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
@@ -781,6 +782,85 @@ test("a task shows its tokens and its cost; a Codex task, its tokens only", () =
   );
   assert.match(codex, /6\.5K tokens</);
   assert.doesNotMatch(codex, /\$/);
+});
+
+test("shortModel formats model identifiers cleanly", () => {
+  assert.equal(s.shortModel("claude-sonnet-5-5-20250929"), "sonnet 5.5");
+  assert.equal(s.shortModel("gemini-3.8-flash-high"), "gemini 3.8 flash");
+  assert.equal(s.shortModel("gpt-5.5"), "gpt-5.5");
+  assert.equal(s.shortModel("claude-3-7-sonnet"), "sonnet 3.7");
+  assert.equal(s.shortModel("claude-opus-4-0"), "opus 4.0");
+  assert.equal(s.shortModel("gemini-pro"), "gemini pro");
+  assert.equal(s.shortModel("anthropic/claude-3.5-sonnet"), "sonnet 3.5");
+});
+
+test("a task card shows the model chosen for the worker; watchers do not show it", () => {
+  const card = (task) =>
+    s.renderToStaticMarkup(h(s.WishTask, { task, onStop() {} }));
+
+  // Regular task with model
+  const claude = card({
+    id: "t1",
+    code: "W1",
+    title: "Trim the wick",
+    status: s.TaskStatus.RUNNING,
+    model: "claude-sonnet-5-5-20250929",
+  });
+  assert.match(
+    claude,
+    /<span class="task-model" title="claude-sonnet-5-5-20250929">sonnet 5\.5<\/span>/,
+  );
+
+  // Question worker task with model
+  const questionWorker = card({
+    id: "t2",
+    code: "W2",
+    title: "Investigate Q01",
+    status: s.TaskStatus.RUNNING,
+    provider: s.Provider.ANTIGRAVITY,
+    model: "gemini-3.8-flash-high",
+    question: "q1",
+  });
+  assert.match(
+    questionWorker,
+    /<span class="task-model" title="gemini-3.8-flash-high">gemini 3\.8 flash<\/span>/,
+  );
+
+  // Correction worker task with model
+  const correctionWorker = card({
+    id: "t3",
+    code: "W3",
+    title: "Correct integration failure",
+    status: s.TaskStatus.RUNNING,
+    provider: s.Provider.CODEX,
+    model: "gpt-5.5",
+    correction: { attempts: 1 },
+  });
+  assert.match(
+    correctionWorker,
+    /<span class="task-model" title="gpt-5.5">gpt-5\.5<\/span>/,
+  );
+
+  // Watcher task does not show model even if set
+  const watcher = card({
+    id: "t4",
+    code: "W4",
+    title: "Watch checks",
+    status: s.TaskStatus.RUNNING,
+    provider: s.Provider.WATCH,
+    model: "claude-sonnet-5-5",
+  });
+  assert.doesNotMatch(watcher, /task-model/);
+
+  // Task with empty model does not show badge
+  const noModel = card({
+    id: "t5",
+    code: "W5",
+    title: "No model",
+    status: s.TaskStatus.RUNNING,
+    model: "",
+  });
+  assert.doesNotMatch(noModel, /task-model/);
 });
 
 test("a running task shows what its worker uses now; its facts, the peaks too", () => {
