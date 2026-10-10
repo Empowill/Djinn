@@ -178,6 +178,9 @@ html[data-theme="light"] {
 .attention-item.level-blocking {
   --tone: var(--st-failed);
 }
+.attention-item.level-move {
+  --tone: var(--st-human);
+}
 .attention-item.level-action {
   --tone: var(--st-interrupted);
 }
@@ -188,6 +191,9 @@ html[data-theme="light"] {
   --tone: var(--st-done);
 }
 .attention-level {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--tone);
   font-weight: 600;
   min-width: 78px;

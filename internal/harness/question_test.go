@@ -434,6 +434,11 @@ func TestOneConverterAtATime(t *testing.T) {
 	}
 }
 
+const checkRule = " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): " +
+	"when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial " +
+	"result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about " +
+	"it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too."
+
 // TestQuestionEndLine: what the lead hears when a question worker ends: what it spawned from its question, asked or
 // revised, and what is left to the lead.
 func TestQuestionEndLine(t *testing.T) {
@@ -450,7 +455,7 @@ func TestQuestionEndLine(t *testing.T) {
 		{Code: "W8", Decision: "Q03", CreateTime: later},
 	}
 	questions := []*planv1.Question{{Code: "Q04", TaskId: "c"}, {Code: "Q02"}}
-	if got, want := questionEndLine(conv, tasks, questions, ""), "Djinn: W5 (Q02 → tasks) ended: spawned W6, W7 from Q02; asked Q04."; got != want {
+	if got, want := questionEndLine(conv, tasks, questions, ""), "Djinn: W5 (Q02 → tasks) ended: spawned W6, W7 from Q02; asked Q04."+checkRule; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 	conv.Status, conv.Error = planv1.TaskStatus_TASK_STATUS_FAILED, "exit code 1"
@@ -545,12 +550,12 @@ func TestConverterRefusedThenSpawns(t *testing.T) {
 	}
 	prompt := events[0].GetText()
 	for _, want := range []string{"## How to work within your access", "in a Bash call of its own: no pipe", "Read, Grep and Glob tools",
-		"not that Bash is"} {
+		"not that Bash is", "Check every task that ends. Read its final note (`djinn task watch <task>"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q", want)
 		}
 	}
-	if got, want := lead.all(), []string{wishID + ": Djinn: W1 (Q01 → tasks) ended: spawned W2 from Q01."}; !slices.Equal(got, want) {
+	if got, want := lead.all(), []string{wishID + ": Djinn: W1 (Q01 → tasks) ended: spawned W2 from Q01." + checkRule}; !slices.Equal(got, want) {
 		t.Errorf("the lead was told\n%q\nwant\n%q", got, want)
 	}
 	if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)); n != 1 {

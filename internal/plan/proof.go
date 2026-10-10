@@ -89,7 +89,7 @@ func ReadDoneWhen(body []byte) DoneWhen {
 			continue
 		}
 		d.Unchecked++
-		text, need, ok := cutNeeds(b.text)
+		text, need, ok := CutNeeds(b.text)
 		if ok {
 			provers, reviewer := Provers(need)
 			needs = append(needs, &planv1.ProofNeed{Box: text, Needs: need, Provers: provers, Reviewer: reviewer})
@@ -120,9 +120,9 @@ func struck(text string) bool {
 	return ok && strings.Contains(rest, "~~")
 }
 
-// cutNeeds splits a box's text from its needs: "(needs: …)", a parenthesis that opens on them, to its closing one.
+// CutNeeds splits a box's text from its needs: "(needs: …)", a parenthesis that opens on them, to its closing one.
 // False when the box says none, or leaves the parenthesis open.
-func cutNeeds(text string) (rest, needs string, ok bool) {
+func CutNeeds(text string) (rest, needs string, ok bool) {
 	i := strings.Index(text, "(needs:")
 	if i < 0 {
 		return text, "", false
