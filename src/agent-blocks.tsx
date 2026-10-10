@@ -3,7 +3,7 @@
 // it waits for the developer: whatever does is a question. Each block is folded under its title; opened, Markdown is
 // rendered, another media type shown as it is. No mark: a block is not read nor approved.
 import { ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import { type Block } from "../gen/ts/plan/v1/plan_pb";
 import { isDecisionBlock } from "./data/decisions";
@@ -44,7 +44,13 @@ export function AgentBlocks({
   );
 }
 
-function AgentBlock({ block, task }: { block: Block; task: string }) {
+const AgentBlock = memo(function AgentBlock({
+  block,
+  task,
+}: {
+  block: Block;
+  task: string;
+}) {
   const [open, setOpen] = useState(false);
   const markdown = !block.mediaType || block.mediaType === "text/markdown";
   return (
@@ -73,4 +79,4 @@ function AgentBlock({ block, task }: { block: Block; task: string }) {
       )}
     </article>
   );
-}
+});

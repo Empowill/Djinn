@@ -26,6 +26,8 @@ export interface OpenQuestion extends Item<Question> {
   blocking: string[];
 }
 
+export const EMPTY_BLOCKING: string[] = [];
+
 // Something that waits for the user and is not a question: a worker that waits for an answer, one cut short.
 // urgency is how much an open question holds up, as the lamp computes it (internal/render.UrgencyOf): 0 blocking, a
 // task waits for it; 1 needed before something, its before words; 2 it can wait.
@@ -264,7 +266,11 @@ function questionsWhere(
   const blocks = blocking(detail.tasks);
   return detail.questions
     .filter(keep)
-    .map((item) => ({ wish, item, blocking: blocks.get(item.id) ?? [] }))
+    .map((item) => ({
+      wish,
+      item,
+      blocking: blocks.get(item.id) ?? EMPTY_BLOCKING,
+    }))
     .sort(byUrgency);
 }
 
@@ -425,4 +431,33 @@ export function spent(tasks: readonly Task[]): Spent {
     else out.withoutCost++;
   }
   return out;
+}
+
+const taskMaps = new WeakMap<readonly Task[], ReadonlyMap<string, Task>>();
+const EMPTY_TASKS: Task[] = [];
+
+// taskMapOf returns a map of tasks by id, cached by the tasks array reference.
+export function taskMapOf(
+  tasks: readonly Task[] = EMPTY_TASKS,
+): ReadonlyMap<string, Task> {
+  let m = taskMaps.get(tasks);
+  if (!m) {
+    m = new Map(tasks.map((task) => [task.id, task]));
+    taskMaps.set(tasks, m);
+  }
+  return m;
+}
+
+const codeMaps = new WeakMap<readonly Task[], ReadonlyMap<string, string>>();
+
+// codeMapOf returns a map of task codes by id, cached by the tasks array reference.
+export function codeMapOf(
+  tasks: readonly Task[] = EMPTY_TASKS,
+): ReadonlyMap<string, string> {
+  let m = codeMaps.get(tasks);
+  if (!m) {
+    m = new Map(tasks.map((task) => [task.id, task.code]));
+    codeMaps.set(tasks, m);
+  }
+  return m;
 }
