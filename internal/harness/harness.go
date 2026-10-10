@@ -146,18 +146,19 @@ type run struct {
 	subs     map[chan *planv1.TaskEvent]struct{}
 
 	// Owned by whoever writes the task: Spawn, then the pump.
-	task    *planv1.Task
-	seq     int64         // last event written
-	base    *planv1.Usage // what the task had spent before this worker
-	restart bool          // the worker stops to start again, allowed to edit
-	unread  []string      // messages the worker took on its input and has said nothing after yet
-	warm    *warm         // the warm worker the task takes, until launch
-	branch  string        // the branch template of the project's settings, for launch; empty: the default
-	from    string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
-	checks  string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
-	failure string        // the last error the current worker said: it never ends done
-	limit   *Limit        // the usage limit the current worker said it hit: it wins over failure
-	refused string        // the last call its permissions refused, as the worker said it (question.go)
+	task     *planv1.Task
+	seq      int64         // last event written
+	base     *planv1.Usage // what the task had spent before this worker
+	restart  bool          // the worker stops to start again, allowed to edit
+	unread   []string      // messages the worker took on its input and has said nothing after yet
+	warm     *warm         // the warm worker the task takes, until launch
+	branch   string        // the branch template of the project's settings, for launch; empty: the default
+	from     string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
+	checks   string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
+	fallback string        // why the worker fell back to another provider, for its start event
+	failure  string        // the last error the current worker said: it never ends done
+	limit    *Limit        // the usage limit the current worker said it hit: it wins over failure
+	refused  string        // the last call its permissions refused, as the worker said it (question.go)
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
@@ -428,6 +429,12 @@ func (h *Harness) spawn(
 	}
 	r.warm, r.branch, r.from = wk, settings.Branch, plan.IntegrationBranchOf(wish, project.GetId())
 	r.checks = settings.ChecksBrief()
+	if questionWorker(task) {
+		p, _, fb := questionProvider(settings)
+		if task.GetProvider() == p {
+			r.fallback = fb
+		}
+	}
 	var prep prepared
 	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -648,7 +655,11 @@ func (h *Harness) launch(
 		text = "started watch " + where + watchText(task)
 	}
 	if r.light {
-		text = "started " + short(task.GetProvider()) + " " + where + ": " + questionStart(task) + "; " +
+		how := ""
+		if r.fallback != "" {
+			how = " (" + r.fallback + ")"
+		}
+		text = "started " + short(task.GetProvider()) + how + " " + where + ": " + questionStart(task) + "; " +
 			accessText(task, nil)
 	}
 	var err error

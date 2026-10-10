@@ -183,6 +183,12 @@ message ProjectSettings {
   // left to the person's click. On a branch, a release never installs over the branch's build: main's merge brings it.
   // Not set: on.
   optional bool install_releases = 18;
+  // Kind of agent of the question workers. Not set: the project's provider when that provider can run
+  // read-only (claude, codex), else claude. A watcher is never a question worker.
+  optional Provider question_provider = 19 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0, 5]
+  }];
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
