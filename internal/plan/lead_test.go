@@ -118,20 +118,6 @@ func TestSetLead(t *testing.T) {
 		t.Errorf("stored lead = %v", got)
 	}
 
-	// Antigravity without a session id resumes the folder's most recent conversation.
-	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{
-		WishId: id, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Directory: sub,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	listed, err = c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := listed.Msg.GetWishes()[0].GetLead(); got.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY ||
-		got.GetSessionId() != "" || filepath.Base(got.GetDirectory()) != "sub" {
-		t.Errorf("antigravity lead = %v", got)
-	}
 	// Antigravity with a session id.
 	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{
 		WishId: id, SessionId: "c-1", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Directory: sub,
@@ -145,6 +131,7 @@ func TestSetLead(t *testing.T) {
 		"a missing folder":              {WishId: id, SessionId: session, Directory: filepath.Join(dir, "nowhere")},
 		"claude without session":        {WishId: id, SessionId: "", Provider: planv1.Provider_PROVIDER_CLAUDE},
 		"codex without session":         {WishId: id, SessionId: "", Provider: planv1.Provider_PROVIDER_CODEX},
+		"antigravity without session":   {WishId: id, SessionId: "", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY},
 	} {
 		if _, err := setLead(t, c, req); code(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v, want invalid_argument", name, err)

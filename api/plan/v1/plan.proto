@@ -2193,10 +2193,10 @@ message WishServiceSetLeadRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.uuid = true
   ];
-  // Identifier of the lead's session, as the agent names it. An antigravity lead may leave it empty to resume
-  // the folder's most recent conversation.
+  // Identifier of the lead's session, as the agent names it.
   string session_id = 2 [
-    (buf.validate.field).string.pattern = "^([A-Za-z0-9][A-Za-z0-9._-]{0,127})?$"
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
   ];
   // Kind of agent: claude (the default), codex or antigravity.
   Provider provider = 3;

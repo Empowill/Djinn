@@ -90,7 +90,7 @@ test.describe("Lead of another agent", () => {
   // The next specs find the window's own terminal again.
   test.afterAll(() => show("main"));
 
-  test("the arrow beside Lead starts an Antigravity lead, the claude lead kept", async ({
+  test("the arrow beside Lead starts an Antigravity lead, which becomes the wish's lead", async ({
     page,
   }) => {
     const folder = fs.realpathSync(
@@ -124,11 +124,11 @@ test.describe("Lead of another agent", () => {
         .filter({ hasText: "fake-agy -i You lead the Djinn wish" }),
     ).toHaveCount(1);
     await expect(page.locator(".toast")).toContainText(
-      "the wish's lead stays the claude session",
+      "The folder's most recent conversation is the wish's lead now",
     );
     expect(wishOf(wishId).lead).toMatchObject({
-      provider: "PROVIDER_CLAUDE",
-      session_id: session,
+      provider: "PROVIDER_ANTIGRAVITY",
+      directory: folder,
     });
     djinn("wish", "delete", wishId);
   });
