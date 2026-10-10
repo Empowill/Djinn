@@ -73,6 +73,11 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
 			return err
 		}
+		if task.PartOf != "" {
+			if err := reopenAzima(ctx, tx, task.PartOf, task.GetCode()+" spawned"); err != nil {
+				return err
+			}
+		}
 		return tx.Put(task)
 	})
 	if err != nil {
@@ -83,6 +88,44 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 		h.wake() // The tasks it blocks say what they wait for now.
 	}
 	return task, nil
+}
+
+// reopenAzima reopens a closed azima and any closed azima it is part of, recording an event.
+func reopenAzima(ctx context.Context, tx *store.Tx, id, reason string) error {
+	seen := map[string]bool{}
+	for id != "" && !seen[id] {
+		seen[id] = true
+		a, err := store.Get[*planv1.Task](ctx, tx, id)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				break
+			}
+			return err
+		}
+		if !plan.IsAzima(a) {
+			break
+		}
+		if a.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			a.Status = planv1.TaskStatus_TASK_STATUS_PENDING
+			a.EndTime = nil
+			a.Closed = nil
+			if err := tx.Put(a); err != nil {
+				return err
+			}
+			seq, err := lastSeq(ctx, tx, a.GetId())
+			if err != nil {
+				return err
+			}
+			if err := tx.Put(newEvent(a.GetId(), seq+1, Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: "reopened: " + reason,
+			})); err != nil {
+				return err
+			}
+		}
+		id = a.GetPartOf()
+	}
+	return nil
 }
 
 // azimaCode is the code of an azima: T1, T07.
@@ -152,6 +195,45 @@ func (h *Harness) ungroupOrphans(ctx context.Context, tasks []*planv1.Task) erro
 		})
 		if err != nil {
 			return fmt.Errorf("take %s out of its azima: %w", t.GetCode(), err)
+		}
+	}
+	return nil
+}
+
+// recoverAzimas reopens any azima whose status is DONE while a part is not finished: journaled, with an event.
+func (h *Harness) recoverAzimas(ctx context.Context, tasks []*planv1.Task) error {
+	byWish := map[string][]*planv1.Task{}
+	for _, t := range tasks {
+		byWish[t.GetWishId()] = append(byWish[t.GetWishId()], t)
+	}
+	for _, t := range tasks {
+		if !plan.IsAzima(t) || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			continue
+		}
+		wishTasks := byWish[t.GetWishId()]
+		if plan.HasUnfinishedParts(t.GetId(), wishTasks) {
+			t.Status = planv1.TaskStatus_TASK_STATUS_PENDING
+			t.EndTime = nil
+			t.Closed = nil
+			err := h.store.Tx(ctx, func(tx *store.Tx) error {
+				if err := tx.Journal(actorHarness, methodRecover, t); err != nil {
+					return err
+				}
+				seq, err := lastSeq(ctx, tx, t.GetId())
+				if err != nil {
+					return err
+				}
+				if err := tx.Put(t); err != nil {
+					return err
+				}
+				return tx.Put(newEvent(t.GetId(), seq+1, Event{
+					Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+					Text: "reopened: parts not finished",
+				}))
+			})
+			if err != nil {
+				return fmt.Errorf("recover azima %s: %w", t.GetCode(), err)
+			}
 		}
 	}
 	return nil
@@ -278,6 +360,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 		now := timestamppb.Now()
 		codes := map[string]string{}
 		var changed []*planv1.Task
+		var reopenedEvents []struct{ id, reason string }
 		for _, src := range sources {
 			for _, f := range src.files {
 				key := strings.ToUpper(f.Code)
@@ -328,17 +411,22 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 				if !f.Done() && f.DoneWhen.AllChecked() {
 					res.AllChecked = append(res.AllChecked, f.Path)
 				}
+				hasUnfinished := plan.HasUnfinishedParts(t.GetId(), tasks)
 				switch {
-				case f.Closes() && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
+				case f.Closes() && !hasUnfinished && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
 					note := f.Path + " says done"
 					if !f.Done() {
 						note = "every Done-when box of " + f.Path + " is checked"
 					}
 					t.Status, t.WaitReason, t.EndTime = planv1.TaskStatus_TASK_STATUS_DONE, "", now
 					t.Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_PLAN_FILE, CreateTime: now, Note: note}
-				case !f.Closes() && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE &&
-					t.GetClosed().GetActor() == planv1.Closer_CLOSER_PLAN_FILE:
+				case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && (!f.Closes() || hasUnfinished):
+					reason := "plan file in progress"
+					if hasUnfinished {
+						reason = "parts not finished"
+					}
 					t.Status, t.EndTime, t.Closed = planv1.TaskStatus_TASK_STATUS_PENDING, nil, nil
+					reopenedEvents = append(reopenedEvents, struct{ id, reason string }{t.GetId(), reason})
 				}
 				switch {
 				case before == nil:
@@ -349,6 +437,17 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 					changed = append(changed, t)
 				}
 				reads = append(reads, r)
+			}
+		}
+		for _, t := range tasks {
+			if !plan.IsAzima(t) || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+				continue
+			}
+			if plan.HasUnfinishedParts(t.GetId(), tasks) {
+				t.Status, t.EndTime, t.Closed = planv1.TaskStatus_TASK_STATUS_PENDING, nil, nil
+				res.Changed = append(res.Changed, t.GetCode())
+				changed = append(changed, t)
+				reopenedEvents = append(reopenedEvents, struct{ id, reason string }{t.GetId(), "parts not finished"})
 			}
 		}
 		// An azima made here takes its file's after line, once: the store holds the graph from then on. A code the
@@ -370,7 +469,7 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 			}
 			r.azima.DependsOn = deps
 		}
-		if len(changed) == 0 {
+		if len(changed) == 0 && len(reopenedEvents) == 0 {
 			return nil
 		}
 		if err := tx.Journal(actorLocal, procedure, req); err != nil {
@@ -378,6 +477,18 @@ func (h *Harness) SyncPlan(ctx context.Context, procedure string, req *planv1.Pl
 		}
 		for _, t := range changed {
 			if err := tx.Put(t); err != nil {
+				return err
+			}
+		}
+		for _, re := range reopenedEvents {
+			seq, err := lastSeq(ctx, tx, re.id)
+			if err != nil {
+				return err
+			}
+			if err := tx.Put(newEvent(re.id, seq+1, Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: "reopened: " + re.reason,
+			})); err != nil {
 				return err
 			}
 		}

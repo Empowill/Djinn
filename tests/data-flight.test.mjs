@@ -425,7 +425,12 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
       kind: f.TaskKind.AZIMA,
       azima: { state: f.AzimaState.IN_PROGRESS },
     },
-    { id: "c", kind: f.TaskKind.AZIMA, status: S.DONE },
+    {
+      id: "c",
+      kind: f.TaskKind.AZIMA,
+      status: S.DONE,
+      azima: { state: f.AzimaState.DONE },
+    },
     {
       id: "d",
       kind: f.TaskKind.AZIMA,
@@ -436,6 +441,17 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
   ];
   assert.deepEqual(f.azimasDone(tasks), { done: 2, proof: 1, count: 4 });
   assert.equal(f.workCount(tasks), 2);
+
+  // Status DONE never overrides computed state IN_PROGRESS.
+  const runningAzima = [
+    {
+      id: "e",
+      kind: f.TaskKind.AZIMA,
+      status: S.DONE,
+      azima: { state: f.AzimaState.IN_PROGRESS },
+    },
+  ];
+  assert.deepEqual(f.azimasDone(runningAzima), { done: 0, proof: 0, count: 1 });
 });
 
 test("open questions come blocking, then before X, then can wait, across the wishes", () => {

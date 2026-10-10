@@ -525,8 +525,9 @@ func commandWords(procedure string) string {
 // with what they wait for, then those whose work is done and that wait for their proof, with who gives it, then the
 // done ones on one line; each with the tilasms that explain it. Nothing without an azima.
 func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string, tilasms []*planv1.Tilasm) {
+	tasks = WithAzimas(tasks)
 	var ready, blocked, proof, done []*planv1.Task
-	for _, t := range WithAzimas(tasks) {
+	for _, t := range tasks {
 		switch e := t.GetAzima(); {
 		case !IsAzima(t):
 		case e.GetState() == planv1.AzimaState_AZIMA_STATE_DONE:
@@ -580,7 +581,16 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 		for _, id := range t.GetDependsOn() {
 			code := codes[id]
 			all = append(all, code)
-			if byID[id].GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			dep := byID[id]
+			depDone := false
+			if dep != nil {
+				if IsAzima(dep) {
+					depDone = dep.GetAzima().GetState() == planv1.AzimaState_AZIMA_STATE_DONE
+				} else {
+					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+				}
+			}
+			if !depDone {
 				waits = append(waits, code)
 			}
 		}

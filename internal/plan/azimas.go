@@ -62,6 +62,13 @@ func FillAzimas(tasks []*planv1.Task) {
 		}
 		states[t.GetId()] = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
 		s := planv1.AzimaState_AZIMA_STATE_OPEN
+		// unfinished tells whether a part is still to finish: work not finished, or an azima not done.
+		unfinished := slices.ContainsFunc(parts[t.GetId()], func(p *planv1.Task) bool {
+			if IsAzima(p) {
+				return state(p) != planv1.AzimaState_AZIMA_STATE_DONE
+			}
+			return !Finished(p)
+		})
 		// left tells whether a part is still to finish: work not finished, or an azima neither done nor to validate.
 		left := slices.ContainsFunc(parts[t.GetId()], func(p *planv1.Task) bool {
 			if IsAzima(p) {
@@ -71,7 +78,7 @@ func FillAzimas(tasks []*planv1.Task) {
 			return !Finished(p)
 		})
 		switch {
-		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !left:
+		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !unfinished:
 			s = planv1.AzimaState_AZIMA_STATE_DONE
 		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE:
 			// Closed, but work part of it still runs or waits: in progress until it ends.
@@ -93,7 +100,11 @@ func FillAzimas(tasks []*planv1.Task) {
 		e := &planv1.Azima{State: state(t), Ready: true}
 		for _, p := range parts[t.GetId()] {
 			e.Parts++
-			if p.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			if IsAzima(p) {
+				if state(p) == planv1.AzimaState_AZIMA_STATE_DONE {
+					e.PartsDone++
+				}
+			} else if p.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
 				e.PartsDone++
 			}
 			if working(p) {
@@ -101,12 +112,40 @@ func FillAzimas(tasks []*planv1.Task) {
 			}
 		}
 		for _, id := range t.GetDependsOn() {
-			if byID[id].GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			dep := byID[id]
+			depDone := false
+			if dep != nil {
+				if IsAzima(dep) {
+					depDone = state(dep) == planv1.AzimaState_AZIMA_STATE_DONE
+				} else {
+					depDone = dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+				}
+			}
+			if !depDone {
 				e.Ready = false
 			}
 		}
 		t.Azima = e
 	}
+}
+
+// HasUnfinishedParts tells whether an azima has parts still to finish: work not finished,
+// or an azima part of it not done.
+func HasUnfinishedParts(id string, tasks []*planv1.Task) bool {
+	tasks = WithAzimas(tasks)
+	for _, t := range tasks {
+		if t.GetPartOf() != id {
+			continue
+		}
+		if IsAzima(t) {
+			if t.GetAzima().GetState() != planv1.AzimaState_AZIMA_STATE_DONE {
+				return true
+			}
+		} else if !Finished(t) {
+			return true
+		}
+	}
+	return false
 }
 
 // Finished tells a task of work finished: done, stopped on request, or cut short for good. Djinn resumes by itself

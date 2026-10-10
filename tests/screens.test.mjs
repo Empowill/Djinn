@@ -2179,6 +2179,82 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
   assert.equal(fp.moving.length + fp.waiting.length, 0);
 });
 
+test("an azima whose status is done while its state is in progress shows in progress: the card and the wish pill", async () => {
+  const wishId = "01a11833-a440-7479-a067-52615c91da71";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const azimaTask = {
+    id: "t1",
+    wishId,
+    code: "T1",
+    title: "Lay the ground",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.DONE,
+    dependsOn: [],
+    proofNeeds: [],
+    azima: {
+      state: s.AzimaState.IN_PROGRESS,
+      partsRunning: 1,
+      parts: 2,
+      partsDone: 1,
+    },
+  };
+  const part1 = {
+    id: "w1",
+    wishId,
+    code: "W1",
+    title: "Foundations",
+    status: s.TaskStatus.DONE,
+    partOf: "t1",
+  };
+  const part2 = {
+    id: "w2",
+    wishId,
+    code: "W2",
+    title: "Plumbing",
+    status: s.TaskStatus.RUNNING,
+    partOf: "t1",
+  };
+  const tasks = [azimaTask, part1, part2];
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+
+  // The card shows in progress with its tone and badge, never done.
+  const card = s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima: azimaTask,
+      parts: [part1, part2],
+      tasks: byId,
+      render: () => null,
+    }),
+  );
+  assert.match(card, /azima-card tone-running/);
+  assert.match(
+    card,
+    /<span class="status-badge tone-running">.*?<span>In progress<\/span><\/span>/,
+  );
+  assert.doesNotMatch(card, /tone-done/);
+  assert.doesNotMatch(card, />Done<\/span>/);
+
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+    service(s.TaskService, { list: () => ({ tasks }) });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+  close();
+
+  // The wish's head pill counts 0 done of 1 azimas, not 1 done.
+  const page = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
+  );
+  assert.match(page, /title="0 of 1 azimas done"/);
+  assert.match(page, /<b>0<\/b>\/ 1 azimas<\/span>/);
+  assert.doesNotMatch(page, /title="1 of 1 azimas done"/);
+  assert.doesNotMatch(page, /<b>1<\/b>\/ 1 azimas<\/span>/);
+});
+
 test("Lead is split: the button resumes the recorded lead, the arrow lists this machine's agents", () => {
   const agents = [
     { id: "codex", name: "Codex", available: false, command: "codex" },

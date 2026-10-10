@@ -300,6 +300,11 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 			if err := tx.Put(task); err != nil {
 				return err
 			}
+			if method == methodResume && task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && task.GetPartOf() != "" {
+				if err := reopenAzima(ctx, tx, task.GetPartOf(), task.GetCode()+" started"); err != nil {
+					return err
+				}
+			}
 		}
 		return tx.Put(te)
 	})

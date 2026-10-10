@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -550,8 +551,228 @@ func TestRecoverUngroupsOrphans(t *testing.T) {
 		"part of no azima: its azima " + gone[:8] + " is no longer one of the wish's"}) {
 		t.Errorf("W2's events %q", texts)
 	}
-	ungrouped, err := store.Commands(t.Context(), e.db, func(c store.Command) bool { return c.Method == methodUngroup })
-	if err != nil || len(ungrouped) != 2 {
+	if ungrouped, err := store.Commands(t.Context(), e.db, func(c store.Command) bool { return c.Method == methodUngroup }); err != nil || len(ungrouped) != 2 {
 		t.Errorf("%d journaled, %v; want W2 and T2", len(ungrouped), err)
+	}
+}
+
+// TestAzimaReopenOnSpawnGroupContinue: when an azima is closed (by the developer or lead), adding new work
+// (spawning a part, grouping a task into it, or continuing/starting a part) reopens it (PENDING, Closed nil),
+// recording a reopened event. An azima with unfinished parts cannot be marked done.
+func TestAzimaReopenOnSpawnGroupContinue(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	ctx := t.Context()
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	top := e.azima(t, wishID, "Top Azima")
+	parent := e.azima(t, wishID, "Parent Azima")
+	if _, err := e.group(t, parent, top.GetCode()); err != nil {
+		t.Fatal(err)
+	}
+	// Mark both done by developer when they have no work parts: leaf first, then top.
+	for _, a := range []*planv1.Task{parent, top} {
+		if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
+			TaskId: a.GetId(), By: planv1.Closer_CLOSER_DEVELOPER, Note: "approved",
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := e.get(t, parent.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetClosed().GetActor() != planv1.Closer_CLOSER_DEVELOPER {
+		t.Fatalf("parent after Done: %v", got)
+	}
+	if got0 := e.get(t, top.GetId()); got0.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("top after Done: %v", got0)
+	}
+
+	// 1. Spawning a part reopens it and its ancestor azima.
+	w1 := e.mustSpawn(t, wishID, "Part One", "text part", &planv1.TaskServiceSpawnRequest{PartOf: parent.GetCode()})
+	for _, a := range []*planv1.Task{parent, top} {
+		got := e.get(t, a.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+			t.Errorf("%s after spawn: status %v, closed %v; want PENDING and nil", a.GetCode(), got.GetStatus(), got.GetClosed())
+		}
+		events := storedTexts(t, e.db, a.GetId())
+		if !slices.Contains(events, "reopened: W1 spawned") {
+			t.Errorf("%s events after spawn: %v, want 'reopened: W1 spawned'", a.GetCode(), events)
+		}
+	}
+
+	// Wait for W1 to finish.
+	e.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+
+	// Now mark parent and top done again (leaf first).
+	for _, a := range []*planv1.Task{parent, top} {
+		if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
+			TaskId: a.GetId(), By: planv1.Closer_CLOSER_DEVELOPER,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		if e.get(t, a.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Fatalf("%s not done", a.GetCode())
+		}
+	}
+
+	// 2. Grouping a task into it reopens it and its ancestor azima.
+	w2 := e.mustSpawn(t, wishID, "Part Two", "text part 2", nil)
+	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if _, err := e.group(t, w2, parent.GetCode()); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range []*planv1.Task{parent, top} {
+		got := e.get(t, a.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+			t.Errorf("%s after group: status %v, closed %v; want PENDING and nil", a.GetCode(), got.GetStatus(), got.GetClosed())
+		}
+		events := storedTexts(t, e.db, a.GetId())
+		if !slices.Contains(events, "reopened: W2 grouped") {
+			t.Errorf("%s events after group: %v, want 'reopened: W2 grouped'", a.GetCode(), events)
+		}
+	}
+
+	// Close parent and top again (leaf first).
+	for _, a := range []*planv1.Task{parent, top} {
+		if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
+			TaskId: a.GetId(), By: planv1.Closer_CLOSER_DEVELOPER,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		if e.get(t, a.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Fatalf("%s not done", a.GetCode())
+		}
+	}
+
+	// 3. Continuing a part reopens it and its ancestor azima.
+	if _, err := e.continueTask(t, w1.GetId(), "continue w1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range []*planv1.Task{parent, top} {
+		got := e.get(t, a.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+			t.Errorf("%s after continue: status %v, closed %v; want PENDING and nil", a.GetCode(), got.GetStatus(), got.GetClosed())
+		}
+		events := storedTexts(t, e.db, a.GetId())
+		if !slices.Contains(events, "reopened: W1 started") {
+			t.Errorf("%s events after continue: %v, want 'reopened: W1 started'", a.GetCode(), events)
+		}
+	}
+	e.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+}
+
+// TestAzimaDoneRefusedWithUnfinishedParts: an azima cannot be marked done while any of its parts is unfinished.
+func TestAzimaDoneRefusedWithUnfinishedParts(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	ctx := t.Context()
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	t1 := e.azima(t, wishID, "Azima With Parts")
+	w1 := e.mustSpawn(t, wishID, "Part One", "text part", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
+
+	// W1 is PENDING: Done on T1 must fail.
+	_, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: t1.GetId()}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "has parts still to finish") {
+		t.Fatalf("Done on T1 with unfinished part: %v, want CodeFailedPrecondition", err)
+	}
+
+	// Mark W1 done.
+	_, err = e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: w1.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Now Done on T1 succeeds.
+	_, err = e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: t1.GetId()}))
+	if err != nil {
+		t.Fatalf("Done on T1 with all parts finished: %v", err)
+	}
+	if e.get(t, t1.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("T1 status: %v, want DONE", e.get(t, t1.GetId()).GetStatus())
+	}
+}
+
+// TestSyncPlanReopensDeveloperClosedAzima: an azima closed by the developer is reopened at plan sync
+// if its plan file says in-progress with open boxes, or if it has unfinished parts.
+func TestSyncPlanReopensDeveloperClosedAzima(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	ctx := t.Context()
+	dir := t.TempDir()
+	writeAzimaFile(t, dir, "one.md", "T1")
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
+	wishID, _ := e.wish(t, dir)
+	sync := func() error {
+		_, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID}))
+		return err
+	}
+	if err := sync(); err != nil {
+		t.Fatal(err)
+	}
+	t1 := e.list(t, wishID)[0]
+	// Close it as developer.
+	_, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
+		TaskId: t1.GetId(), By: planv1.Closer_CLOSER_DEVELOPER,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.get(t, t1.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatal("t1 not done")
+	}
+	// Plan file says in-progress: sync reopens it.
+	if err := sync(); err != nil {
+		t.Fatal(err)
+	}
+	got := e.get(t, t1.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+		t.Errorf("t1 after sync: status %v, closed %v; want PENDING and nil", got.GetStatus(), got.GetClosed())
+	}
+	texts := storedTexts(t, e.db, t1.GetId())
+	if !slices.Contains(texts, "reopened: plan file in progress") {
+		t.Errorf("t1 events: %v, want 'reopened: plan file in progress'", texts)
+	}
+}
+
+// TestRecoverReopensAzimasWithUnfinishedParts: at startup, djinn up reopens any azima whose status
+// is DONE while a part is not finished.
+func TestRecoverReopensAzimasWithUnfinishedParts(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := store.NewID()
+	azima := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+		Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		Closed: &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, Note: "closed prematurely"},
+	}
+	part := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, Code: "W1", PartOf: azima.GetId(),
+		Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+	}
+	err = db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("local", "test", azima); err != nil {
+			return err
+		}
+		return errors.Join(tx.Put(azima), tx.Put(part))
+	})
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := up(t, home, WithCapacity((&limit{slots: 0}).capacity))
+	got := e.get(t, azima.GetId())
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+		t.Errorf("azima recovered: status %v, closed %v; want PENDING and nil", got.GetStatus(), got.GetClosed())
+	}
+	texts := storedTexts(t, e.db, azima.GetId())
+	if !slices.Contains(texts, "reopened: parts not finished") {
+		t.Errorf("azima events: %v, want 'reopened: parts not finished'", texts)
 	}
 }

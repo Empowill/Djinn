@@ -16,7 +16,7 @@ import {
 import { AttentionBar, attentionOf } from "./attention";
 import { decisionOf } from "./data/decisions";
 import { useData, usePausable, useWishDetails } from "./data/djinn";
-import { flightPlan, spent } from "./data/flight";
+import { flightPlan, isAzima, spent } from "./data/flight";
 import {
   investigating,
   noLead,
@@ -245,9 +245,10 @@ export function FlightPlan({
                         );
                         const done =
                           detail?.tasks.filter(
-                            (x) => x.status === TaskStatus.DONE,
+                            (x) => x.status === TaskStatus.DONE && !isAzima(x),
                           ).length ?? 0;
-                        const total = detail?.tasks.length ?? 0;
+                        const total =
+                          detail?.tasks.filter((x) => !isAzima(x)).length ?? 0;
                         const failed =
                           detail?.tasks.filter(
                             (x) => x.status === TaskStatus.FAILED,

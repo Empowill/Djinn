@@ -329,3 +329,81 @@ func TestBriefAzimas(t *testing.T) {
 		t.Errorf("the rules leave the azimas out:\n%s", brief.Stable)
 	}
 }
+
+// TestHasUnfinishedParts: tells whether an azima has unfinished parts or nested azimas with unfinished parts.
+func TestHasUnfinishedParts(t *testing.T) {
+	azima := func(id, partOf string, status planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: id, Code: id, Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: status, PartOf: partOf}
+	}
+	work := func(id, partOf string, status planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: id, Code: id, Kind: planv1.TaskKind_TASK_KIND_WORK, Status: status, PartOf: partOf}
+	}
+	const (
+		done    = planv1.TaskStatus_TASK_STATUS_DONE
+		pending = planv1.TaskStatus_TASK_STATUS_PENDING
+		running = planv1.TaskStatus_TASK_STATUS_RUNNING
+		stopped = planv1.TaskStatus_TASK_STATUS_STOPPED
+		failed  = planv1.TaskStatus_TASK_STATUS_FAILED
+	)
+	tasks := []*planv1.Task{
+		azima("T1", "", done),
+		work("W1", "T1", done),
+		work("W2", "T1", stopped),
+
+		azima("T2", "", done),
+		work("W3", "T2", done),
+		work("W4", "T2", running),
+
+		azima("T3", "", done),
+		azima("T3_sub", "T3", done),
+		work("W5", "T3_sub", done),
+
+		azima("T4", "", done),
+		azima("T4_sub", "T4", done),
+		work("W6", "T4_sub", pending),
+
+		azima("T5", "", done),
+		azima("T5_sub", "T5", pending),
+		work("W7", "T5_sub", done),
+
+		azima("T6", "", done),
+		work("W8", "T6", failed),
+	}
+
+	if HasUnfinishedParts("T1", tasks) {
+		t.Errorf("T1 has unfinished parts, want false")
+	}
+	if !HasUnfinishedParts("T2", tasks) {
+		t.Errorf("T2 has no unfinished parts, want true (W4 running)")
+	}
+	if HasUnfinishedParts("T3", tasks) {
+		t.Errorf("T3 has unfinished parts, want false")
+	}
+	if !HasUnfinishedParts("T4", tasks) {
+		t.Errorf("T4 has no unfinished parts, want true (W6 pending)")
+	}
+	if !HasUnfinishedParts("T5", tasks) {
+		t.Errorf("T5 has no unfinished parts, want true (T5_sub pending)")
+	}
+	if !HasUnfinishedParts("T6", tasks) {
+		t.Errorf("T6 has no unfinished parts, want true (W8 failed)")
+	}
+
+	FillAzimas(tasks)
+	for id, wantState := range map[string]planv1.AzimaState{
+		"T1":     planv1.AzimaState_AZIMA_STATE_DONE,
+		"T2":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T3":     planv1.AzimaState_AZIMA_STATE_DONE,
+		"T3_sub": planv1.AzimaState_AZIMA_STATE_DONE,
+		"T4":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T4_sub": planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T5":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+		"T5_sub": planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF,
+		"T6":     planv1.AzimaState_AZIMA_STATE_IN_PROGRESS,
+	} {
+		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetId() == id })
+		if got := tasks[i].GetAzima().GetState(); got != wantState {
+			t.Errorf("%s state: %v, want %v", id, got, wantState)
+		}
+	}
+}

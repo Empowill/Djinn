@@ -86,6 +86,7 @@ const time = (ts?: { seconds: bigint; nanos: number }) =>
 // say. Djinn resumes by itself every task it can (resuming), so one left cut short (taken over by a fork, imported
 // from another machine, its worktree gone) is history. Every other one still moves, or waits for someone.
 export function finishedTask(task: Task): boolean {
+  if (isAzima(task)) return task.azima?.state === AzimaState.DONE;
   return (
     task.status === TaskStatus.DONE ||
     task.status === TaskStatus.STOPPED ||
@@ -119,13 +120,9 @@ export function azimasDone(tasks: readonly Task[]): {
   count: number;
 } {
   const azimas = tasks.filter(isAzima);
-  const done = azimas.filter(
-    (x) => x.azima?.state === AzimaState.DONE || x.status === TaskStatus.DONE,
-  ).length;
+  const done = azimas.filter((x) => x.azima?.state === AzimaState.DONE).length;
   const proof = azimas.filter(
-    (x) =>
-      x.azima?.state === AzimaState.AWAITING_PROOF &&
-      x.status !== TaskStatus.DONE,
+    (x) => x.azima?.state === AzimaState.AWAITING_PROOF,
   ).length;
   return { done, proof, count: azimas.length };
 }
@@ -144,12 +141,7 @@ export function givenByAPerson(need: ProofNeed): boolean {
 // awaitedProofs are the proofs a person can give, of the azimas that await theirs, by code.
 export function awaitedProofs(tasks: readonly Task[]): Proof[] {
   return tasks
-    .filter(
-      (x) =>
-        isAzima(x) &&
-        x.azima?.state === AzimaState.AWAITING_PROOF &&
-        x.status !== TaskStatus.DONE,
-    )
+    .filter((x) => isAzima(x) && x.azima?.state === AzimaState.AWAITING_PROOF)
     .sort((a, b) => compareCodes(a.code, b.code))
     .flatMap((azima) =>
       azima.proofNeeds.filter(givenByAPerson).map((need) => ({ azima, need })),
@@ -191,7 +183,7 @@ export function compareCodes(a: string, b: string): number {
 // (Task.azima).
 function azimaRank(task: Task): number {
   const state = task.azima?.state ?? AzimaState.OPEN;
-  if (state === AzimaState.DONE || task.status === TaskStatus.DONE) return 4;
+  if (state === AzimaState.DONE) return 4;
   if (state === AzimaState.AWAITING_PROOF) return 3;
   if (task.azima && !task.azima.ready) return 2;
   return state === AzimaState.IN_PROGRESS ? 0 : 1;
