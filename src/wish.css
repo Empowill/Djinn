@@ -457,6 +457,22 @@
   border-top: 1px solid var(--line);
   padding: var(--space-2) var(--space-2) 0 24px;
 }
+/* The line that folds what is finished, the done azimas or the finished parts of one: discreet, under what moves. */
+.fold-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 0;
+  margin-bottom: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.fold-line:hover {
+  color: var(--accent);
+}
+.fold-line > svg {
+  transition: transform 0.25s;
+}
 /* What the proof of an azima whose work is done needs, box by box, above its parts. */
 .azima-proof {
   border-left: 2px solid var(--st-proof);

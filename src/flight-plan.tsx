@@ -31,7 +31,7 @@ import { Inbox } from "./inbox";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { CountPill, StatusBadge } from "./status";
-import { AzimaCard, proofWords } from "./azima";
+import { AzimaCard, azimaFinished, proofWords } from "./azima";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
@@ -188,7 +188,17 @@ export function FlightPlan({
             <TaskSections
               moving={plan.moving}
               finished={plan.finished}
-              azimas={plan.azimas}
+              azimas={plan.azimas.filter((x) => !azimaFinished(x.item.azima))}
+              doneAzimas={plan.azimas.filter((x) =>
+                azimaFinished(x.item.azima),
+              )}
+              fold="plan"
+              showDone={plan.azimas.some(
+                ({ item }) =>
+                  azimaFinished(item.azima) &&
+                  (item.azima.id === focus ||
+                    item.parts.some((p) => p.id === focus)),
+              )}
               renderAzima={({ wish, item }) => (
                 <AzimaCard
                   key={item.azima.id}
@@ -197,6 +207,7 @@ export function FlightPlan({
                   tasks={tasksOf(wish)}
                   origin={<WishOrigin wish={wish} />}
                   render={(task) => renderTask(wish, task)}
+                  focus={focus}
                   onValidate={() =>
                     act(
                       wish.id,

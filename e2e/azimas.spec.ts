@@ -1,6 +1,6 @@
 // The azimas of a wish in the window, against the real djinn up --browser (see global-setup.ts): in the Tasks tab, the
 // work part of an azima is grouped under it, each azima says what it waits for and its progress, and none is ever
-// said to wait for you. Every run makes fresh identifiers, so --repeat-each works on the same djinn.
+// said to wait for you. What is finished folds, the done azimas and the finished parts, until a click shows it. Every run makes fresh identifiers, so --repeat-each works on the same djinn.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -101,17 +101,36 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     ]);
     const azimas = page.locator(".tasks-azimas");
     await expect(azimas.locator("h2")).toHaveText("Azimas3");
-    // Under way first, then the blocked one, the done one last.
+    // Under way first, then the blocked one; the done one folded, not rendered.
     await expect(azimas.locator(".azima-heading .agent-code")).toHaveText([
       "T2",
       "T3",
-      "T1",
     ]);
     const t2 = azimas.locator(".azima-card").first();
     await expect(t2.locator(".azima-heading")).toContainText("In progress");
     await expect(t2.locator(".azima-progress")).toHaveText("1/2");
     await expect(t2.locator(".azima-after")).toHaveText("after T1");
-    // Opened on its work: what waits first, then what is done.
+    // Opened on its work: what waits, what is done folded under it; a click shows it.
+    await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2"]);
+    await t2.locator(".fold-line").click();
+    await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2", "W1"]);
+    await expect(t2.locator(".fold-line")).toHaveText("Hide the finished ones");
+    const doneFold = azimas.locator(":scope > .fold-line");
+    await expect(doneFold).toHaveText("Show 1 finished");
+    await doneFold.click();
+    await expect(azimas.locator(".azima-heading .agent-code")).toHaveText([
+      "T2",
+      "T3",
+      "T1",
+    ]);
+    // What a click unfolded stays so, the Tasks tab left and back.
+    await page.getByRole("tab", { name: /^Decisions/ }).click();
+    await tasksTab.click();
+    await expect(azimas.locator(".azima-heading .agent-code")).toHaveText([
+      "T2",
+      "T3",
+      "T1",
+    ]);
     await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2", "W1"]);
     const t3 = azimas.locator(".azima-card").nth(1);
     await expect(t3.locator(".azima-waits")).toHaveText("Waits for T2");

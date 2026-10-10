@@ -1,9 +1,10 @@
 // An azima of the plan in the Tasks tab: a task no worker runs, with the work part of it under it. Its heading says
 // where it stands (open, in progress, awaiting its proof, done: the lamp's, Task.azima), what it waits for (its after
-// codes), and its progress. Opened, what its proof needs, box by box, then its parts, as the Tasks tab shows any task.
+// codes), and its progress. Opened, what its proof needs, box by box, then its parts, as the Tasks tab shows any task:
+// under work that still moves, the finished parts fold behind "show the N finished" (src/task-tabs.tsx).
 // An azima never waits for the person as work: its proof is no task.
 import { BadgeCheck, ChevronDown } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import {
   AzimaState,
@@ -16,6 +17,7 @@ import { compareCodes, finishedTask } from "./data/flight";
 import type { Tone } from "./data/format";
 import { t, type TextKey } from "./i18n";
 import { StatusBadge } from "./status";
+import { Fold } from "./task-tabs";
 
 // azimaTone and azimaLabel say where an azima stands: done in green, under way in blue while a worker runs on one of
 // its parts, its work done and its proof awaited in olive, planned grey otherwise. Never orange: an azima waits for no
@@ -23,6 +25,11 @@ import { StatusBadge } from "./status";
 function azimaState(azima: Task): AzimaState {
   if (azima.status === TaskStatus.DONE) return AzimaState.DONE;
   return azima.azima?.state ?? AzimaState.OPEN;
+}
+
+// azimaFinished tells a done azima: the Tasks tab folds it.
+export function azimaFinished(azima: Task): boolean {
+  return azimaState(azima) === AzimaState.DONE;
 }
 
 function azimaTone(azima: Task): Tone {
@@ -85,6 +92,7 @@ export function AzimaCard({
   tasks,
   origin,
   render,
+  focus = "",
   onValidate,
 }: {
   azima: Task;
@@ -95,13 +103,21 @@ export function AzimaCard({
   // Where it comes from, in the flight plan of several wishes: its wish.
   origin?: ReactNode;
   render: (task: Task) => ReactNode;
+  // What a link brings into sight: the azima, or one of its parts, opens on it.
+  focus?: string;
   // Validates the azima once its work is done: it is marked done, by you.
   onValidate?: () => void;
 }) {
   const state = azimaState(azima);
+  const holds = focus === azima.id || parts.some((x) => x.id === focus);
   const [open, setOpen] = useState(
-    state !== AzimaState.DONE && parts.some((x) => !finishedTask(x)),
+    holds || (state !== AzimaState.DONE && parts.some((x) => !finishedTask(x))),
   );
+  useEffect(() => {
+    if (holds) setOpen(true);
+  }, [holds]);
+  const moving = parts.filter((x) => !finishedTask(x));
+  const finished = parts.filter((x) => finishedTask(x));
   const deps = azima.dependsOn
     .map((id) => tasks.get(id))
     .filter((x): x is Task => !!x);
@@ -206,10 +222,23 @@ export function AzimaCard({
               )}
             </div>
           )}
-          {parts.length === 0 ? (
+          {parts.length === 0 && (
             <p className="muted-text">{t("azima.no_parts")}</p>
+          )}
+          {/* Every part finished, opening the azima was the click: they show. */}
+          {moving.length === 0 ? (
+            finished.map(render)
           ) : (
-            parts.map(render)
+            <>
+              {moving.map(render)}
+              <Fold
+                id={`parts:${azima.id}`}
+                count={finished.length}
+                open={finished.some((x) => x.id === focus)}
+              >
+                {finished.map(render)}
+              </Fold>
+            </>
           )}
         </div>
       )}

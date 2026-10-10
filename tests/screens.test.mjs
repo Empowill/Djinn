@@ -27,7 +27,7 @@ export {
   flightPlan,
   movingTasks,
 } from "@/src/data/flight.ts";
-export { AzimaCard } from "@/src/azima.tsx";
+export { AzimaCard, azimaFinished } from "@/src/azima.tsx";
 export {
   FolderField,
   ProjectChecks,
@@ -1016,28 +1016,63 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
       async onSend() {},
       async onDone() {},
     });
-  const html = s.renderToStaticMarkup(
-    h(s.TaskSections, {
-      moving: s.movingTasks(tasks),
-      finished: s.finishedTasks(tasks),
-      azimas: s.azimaGroups(tasks),
-      renderAzima: ({ azima, parts }) =>
-        h(s.AzimaCard, {
-          key: azima.id,
-          azima,
-          parts,
-          tasks: byId,
-          render: card,
-        }),
-      render: card,
-    }),
+  const groups = s.azimaGroups(tasks);
+  const sections = (focus = "") =>
+    s.renderToStaticMarkup(
+      h(s.TaskSections, {
+        moving: s.movingTasks(tasks),
+        finished: s.finishedTasks(tasks),
+        azimas: groups.filter((x) => !s.azimaFinished(x.azima)),
+        doneAzimas: groups.filter((x) => s.azimaFinished(x.azima)),
+        fold: `test-${focus}`,
+        showDone: focus === "T1",
+        renderAzima: ({ azima, parts }) =>
+          h(s.AzimaCard, {
+            key: azima.id,
+            azima,
+            parts,
+            tasks: byId,
+            render: card,
+            focus,
+          }),
+        render: card,
+      }),
+    );
+  const codes = (html) =>
+    [...html.matchAll(/<span class="agent-code">([TW]\d+)</g)].map((m) => m[1]);
+  const html = sections();
+  // Work of no azima moves or waits on its own; T2, under way, opened on its parts (running, planned), its finished
+  // one folded; T10 waits; T1, done, folded and not rendered; the finished work of no azima last, never folded.
+  assert.deepEqual(codes(html), ["W4", "T2", "W2", "W3", "T10", "W5"]);
+  const folds = [
+    ...html.matchAll(
+      /<button type="button" class="fold-line" aria-expanded="false">.*?<\/button>/g,
+    ),
+  ].map((m) => m[0].replace(/<[^>]+>/g, ""));
+  assert.deepEqual(folds, ["Show 1 finished", "Show 1 finished"]);
+  // A link to a finished part unfolds its azima's; a link to a done azima, the done ones.
+  assert.deepEqual(codes(sections("W1")), [
+    "W4",
+    "T2",
+    "W2",
+    "W3",
+    "W1",
+    "T10",
+    "W5",
+  ]);
+  assert.match(
+    sections("W1"),
+    /aria-expanded="true">.*?Hide the finished ones</,
   );
-  const order = [...html.matchAll(/<span class="agent-code">([TW]\d+)</g)].map(
-    (m) => m[1],
-  );
-  // Work of no azima moves or waits on its own; T2, under way, opened on its parts (running, planned, then done);
-  // T10 waits; T1, done, folded; the finished work of no azima last.
-  assert.deepEqual(order, ["W4", "T2", "W2", "W3", "W1", "T10", "T1", "W5"]);
+  assert.deepEqual(codes(sections("T1")), [
+    "W4",
+    "T2",
+    "W2",
+    "W3",
+    "T10",
+    "T1",
+    "W5",
+  ]);
   assert.match(html, /Moving or waiting<span class="count">1<\/span>/);
   assert.match(html, /Azimas<span class="count">3<\/span>/);
   assert.match(html, /Finished<span class="count">1<\/span>/);
