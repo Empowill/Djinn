@@ -3,7 +3,7 @@
 // agents (src/agent-blocks.tsx). And the writes the screens share: an answer, a mark, a request to investigate, each
 // read again once djinn has it.
 import { Check, Eye } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   Change,
@@ -16,20 +16,24 @@ import { useClients, useStore } from "./data/djinn";
 import { markOf } from "./data/format";
 import { t } from "./i18n";
 
-export type OnMark = (kind: MarkKind, remove: boolean) => Promise<void>;
+export type OnMark<T = unknown> = (
+  kind: MarkKind,
+  remove: boolean,
+  item?: T,
+) => Promise<void>;
 
 // MarkButtons are an open question's read mark, a toggle. A decision has none: it was taken (the decision log).
-export function MarkButtons({
+export function MarkButtons<T extends { marks?: Mark[] }>({
   item,
   onMark,
 }: {
-  item: { marks?: Mark[] };
-  onMark: OnMark;
+  item: T;
+  onMark: (kind: MarkKind, remove: boolean, item?: T) => Promise<void>;
 }) {
   const [sending, setSending] = useState(false);
   const toggle = (kind: MarkKind) => {
     setSending(true);
-    void onMark(kind, !!markOf(item, kind))
+    void onMark(kind, !!markOf(item, kind), item)
       .catch(() => {})
       .finally(() => setSending(false));
   };
@@ -50,35 +54,42 @@ export function MarkButtons({
   );
 }
 
+const QUESTIONS_CHANGES = [Change.QUESTION, Change.WISH];
+
 // useWrites gives the writes of the screens: djinn's refusal shows as a toast and rejects, and what changed in the
 // wish is read again either way.
 export function useWrites(onToast: (text: string) => void) {
   const clients = useClients();
   const store = useStore();
   // done is the toast once run succeeds, or makes it then, from what run found.
-  const act = async (
-    wishId: string,
-    run: () => Promise<unknown>,
-    changes: Change[],
-    done?: string | (() => string),
-  ) => {
-    try {
-      await run();
-      const text = typeof done === "function" ? done() : done;
-      if (text) onToast(text);
-    } catch (error) {
-      onToast(message(error));
-      throw error;
-    } finally {
-      void store.changed(wishId, changes);
-    }
-  };
-  const questions = [Change.QUESTION, Change.WISH];
-  return {
-    clients,
-    act,
-    quiet: (promise: Promise<unknown>) => void promise.catch(() => {}),
-    answer: (wishId: string, id: string, choice: Choice, note: string) =>
+  const act = useCallback(
+    async (
+      wishId: string,
+      run: () => Promise<unknown>,
+      changes: Change[],
+      done?: string | (() => string),
+    ) => {
+      try {
+        await run();
+        const text = typeof done === "function" ? done() : done;
+        if (text) onToast(text);
+      } catch (error) {
+        onToast(message(error));
+        throw error;
+      } finally {
+        void store.changed(wishId, changes);
+      }
+    },
+    [store, onToast],
+  );
+
+  const quiet = useCallback(
+    (promise: Promise<unknown>) => void promise.catch(() => {}),
+    [],
+  );
+
+  const answer = useCallback(
+    (wishId: string, id: string, choice: Choice, note: string) =>
       act(
         wishId,
         () =>
@@ -88,9 +99,13 @@ export function useWrites(onToast: (text: string) => void) {
             note,
             wishId,
           }),
-        questions,
+        QUESTIONS_CHANGES,
       ),
-    enlighten: (wishId: string, id: string, note: string) =>
+    [act, clients.questions],
+  );
+
+  const enlighten = useCallback(
+    (wishId: string, id: string, note: string) =>
       act(
         wishId,
         () =>
@@ -99,11 +114,15 @@ export function useWrites(onToast: (text: string) => void) {
             note,
             wishId,
           }),
-        questions,
+        QUESTIONS_CHANGES,
         t("question.enlighten_toast"),
       ),
-    // mark marks a question, by its id.
-    mark: (wishId: string, id: string, kind: MarkKind, remove: boolean) =>
+    [act, clients.questions],
+  );
+
+  // mark marks a question, by its id.
+  const mark = useCallback(
+    (wishId: string, id: string, kind: MarkKind, remove: boolean) =>
       act(
         wishId,
         () =>
@@ -113,7 +132,20 @@ export function useWrites(onToast: (text: string) => void) {
             remove,
             wishId,
           }),
-        questions,
+        QUESTIONS_CHANGES,
       ),
-  };
+    [act, clients.marks],
+  );
+
+  return useMemo(
+    () => ({
+      clients,
+      act,
+      quiet,
+      answer,
+      enlighten,
+      mark,
+    }),
+    [clients, act, quiet, answer, enlighten, mark],
+  );
 }

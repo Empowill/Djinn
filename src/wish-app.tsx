@@ -70,6 +70,7 @@ export function WishApp() {
   const [opening, setOpening] = useState<Opening>();
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
+  const closeDocs = useCallback(() => setModal(null), []);
 
   useEffect(() => store("djinn.wish", selected), [selected]);
   useEffect(
@@ -263,7 +264,7 @@ export function WishApp() {
             onDocs={() => setModal("docs")}
           />
         )}
-        {modal === "docs" && <Docs onClose={() => setModal(null)} />}
+        {modal === "docs" && <Docs onClose={closeDocs} />}
         {project && (
           <ProjectPanel project={project} onClose={() => setProjectId("")} />
         )}

@@ -5,7 +5,7 @@
 // sources the skills declare, each with "Plug in" or "Unplug"; with items, they fold under them. Without items nor
 // sources, it is hidden.
 import { Inbox as InboxIcon, Lamp, Plug, Unplug, X } from "lucide-react";
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 import {
   Change,
@@ -178,7 +178,7 @@ function optionText(
   );
 }
 
-function InboxCard({
+const InboxCard = memo(function InboxCard({
   item,
   onOpen,
   onToast,
@@ -191,10 +191,14 @@ function InboxCard({
   const store = useStore();
   const projects = useData((s) => s.projects);
   const wishes = useData((s) => s.wishes);
-  const names = new Map<string, string>([
-    ...projects.map((p) => [p.id, p.name] as [string, string]),
-    ...wishes.map((w) => [w.id, w.title] as [string, string]),
-  ]);
+  const names = useMemo(
+    () =>
+      new Map<string, string>([
+        ...projects.map((p) => [p.id, p.name] as [string, string]),
+        ...wishes.map((w) => [w.id, w.title] as [string, string]),
+      ]),
+    [projects, wishes],
+  );
   const [sending, setSending] = useState(false);
   const [first, ...rest] = item.text.split("\n");
   const options = item.route?.options ?? [];
@@ -294,4 +298,4 @@ function InboxCard({
       </div>
     </article>
   );
-}
+});

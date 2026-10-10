@@ -4,7 +4,7 @@
 // under work that still moves, the finished parts fold behind "show the N finished" (src/task-tabs.tsx).
 // An azima never waits for the person as work: its proof is no task.
 import { BadgeCheck, ChevronDown } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, memo, useEffect, useState } from "react";
 
 import {
   AzimaState,
@@ -86,7 +86,7 @@ export function proofWords(needs: readonly ProofNeed[]): string {
     .join(", ");
 }
 
-export function AzimaCard({
+export const AzimaCard = memo(function AzimaCard({
   azima,
   parts,
   tasks,
@@ -106,7 +106,7 @@ export function AzimaCard({
   // What a link brings into sight: the azima, or one of its parts, opens on it.
   focus?: string;
   // Validates the azima once its work is done: it is marked done, by you.
-  onValidate?: () => void;
+  onValidate?: (azima: Task) => void;
 }) {
   const state = azimaState(azima);
   const holds = focus === azima.id || parts.some((x) => x.id === focus);
@@ -215,7 +215,10 @@ export function AzimaCard({
               )}
               <p className="muted-text">{t("azima.how_to_validate")}</p>
               {onValidate && (
-                <button className="button accent small" onClick={onValidate}>
+                <button
+                  className="button accent small"
+                  onClick={() => onValidate(azima)}
+                >
                   <BadgeCheck size={14} />
                   {t("azima.validate")}
                 </button>
@@ -244,4 +247,4 @@ export function AzimaCard({
       )}
     </section>
   );
-}
+});

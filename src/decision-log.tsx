@@ -6,7 +6,7 @@
 // latest decisions show, the older ones fold behind a line (older.tsx); a long note folds under its first line, and
 // its body is rendered once opened.
 import { Bot, CornerDownRight } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, memo, useEffect, useState } from "react";
 
 import { type Decision, BY_LEAD } from "./data/decisions";
 import { answerText, when } from "./data/format";
@@ -110,7 +110,7 @@ export function Who({ decision: d }: { decision: Decision }) {
   );
 }
 
-function DecisionRow({
+const DecisionRow = memo(function DecisionRow({
   decision: d,
   origin,
   noLead,
@@ -179,7 +179,7 @@ function DecisionRow({
       </div>
     </article>
   );
-}
+});
 
 // FoldedNote is a long note under its first line: its Markdown is rendered once opened, not for every decision.
 function FoldedNote({ note }: { note: string }) {

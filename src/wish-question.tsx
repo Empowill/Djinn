@@ -16,9 +16,15 @@ import {
   Lightbulb,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, memo, useState } from "react";
 
-import { Choice, type Question, RoundKind } from "../gen/ts/plan/v1/plan_pb";
+import {
+  Choice,
+  MarkKind,
+  type Question,
+  RoundKind,
+} from "../gen/ts/plan/v1/plan_pb";
+import { EMPTY_BLOCKING } from "./data/flight";
 import {
   answerText,
   choiceOf,
@@ -28,15 +34,15 @@ import {
   when,
 } from "./data/format";
 import { t } from "./i18n";
-import { MarkButtons, type OnMark } from "./marks";
+import { MarkButtons } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
 
-export function WishQuestion({
+export const WishQuestion = memo(function WishQuestion({
   question: q,
   expanded: open = false,
   origin,
-  blocking = [],
+  blocking = EMPTY_BLOCKING,
   noLead = false,
   onAnswer,
   onMark,
@@ -52,11 +58,19 @@ export function WishQuestion({
   // The wish has no lead session: no lead is told the answer, it waits in the wish's brief.
   noLead?: boolean;
   // Answers the question; resolves once djinn has it. A rejection keeps the card open.
-  onAnswer: (choice: Choice, note: string) => Promise<void>;
+  onAnswer: (
+    choice: Choice,
+    note: string,
+    question?: Question,
+  ) => Promise<void>;
   // Marks an open question read.
-  onMark?: OnMark;
+  onMark?: (
+    kind: MarkKind,
+    remove: boolean,
+    question?: Question,
+  ) => Promise<void>;
   // Asks the lead to investigate before deciding, the note saying what to look into.
-  onEnlighten?: (note: string) => Promise<void>;
+  onEnlighten?: (note: string, question?: Question) => Promise<void>;
 }) {
   const answered = !!q.answer;
   // A message built by hand (a test) may leave the lists out.
@@ -259,7 +273,7 @@ export function WishQuestion({
                     disabled={sending}
                     onClick={() =>
                       void busy(async () => {
-                        await onEnlighten(note.trim());
+                        await onEnlighten(note.trim(), q);
                         setNote("");
                       })
                     }
@@ -279,7 +293,7 @@ export function WishQuestion({
                   disabled={sending || choice === undefined}
                   onClick={() => {
                     if (choice !== undefined)
-                      void busy(() => onAnswer(choice, note.trim()));
+                      void busy(() => onAnswer(choice, note.trim(), q));
                   }}
                 >
                   <Lamp size={14} />
@@ -305,7 +319,7 @@ export function WishQuestion({
       )}
     </motion.article>
   );
-}
+});
 
 // Rounds is a question's history, folded: each request to investigate and each revision, dated.
 function Rounds({ question }: { question: Question }) {

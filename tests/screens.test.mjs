@@ -9,8 +9,10 @@ const s = await bundle(
   "screens",
   `export {
   createElement,
+  act,
   __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE as reactInternals,
 } from "react";
+export { createRoot } from "react-dom/client";
 export { renderToStaticMarkup } from "react-dom/server";
 export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
@@ -74,7 +76,8 @@ function live(component, props) {
       },
     };
     try {
-      return component(props);
+      const fn = typeof component === "function" ? component : component.type;
+      return fn(props);
     } finally {
       internals.H = before;
     }
@@ -2369,4 +2372,246 @@ test("the project view lists the setup and the checks, when each runs, and how e
     html,
     /<strong>test<\/strong><p><code>go tool task test<\/code><\/p><p class="muted-text">Not run yet\.<\/p>/,
   );
+});
+
+function setupMockDom() {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+  class MockElement {
+    constructor(nodeType, nodeName) {
+      this.nodeType = nodeType;
+      this.nodeName = nodeName;
+      this.tagName = nodeName;
+      this.childNodes = [];
+      this.parentNode = null;
+      this.attributes = {};
+      this.style = {};
+      this.ownerDocument = globalThis.document;
+      this.namespaceURI = "http://www.w3.org/1999/xhtml";
+    }
+    get children() {
+      return this.childNodes.filter((c) => c.nodeType === 1);
+    }
+    appendChild(child) {
+      child.parentNode = this;
+      this.childNodes.push(child);
+      return child;
+    }
+    removeChild(child) {
+      const idx = this.childNodes.indexOf(child);
+      if (idx !== -1) {
+        this.childNodes.splice(idx, 1);
+        child.parentNode = null;
+      }
+      return child;
+    }
+    insertBefore(child, before) {
+      child.parentNode = this;
+      const idx = this.childNodes.indexOf(before);
+      if (idx !== -1) this.childNodes.splice(idx, 0, child);
+      else this.childNodes.push(child);
+      return child;
+    }
+    setAttribute(k, v) {
+      this.attributes[k] = String(v);
+    }
+    removeAttribute(k) {
+      delete this.attributes[k];
+    }
+    addEventListener() {}
+    removeEventListener() {}
+  }
+
+  globalThis.HTMLIFrameElement = class HTMLIFrameElement {};
+  globalThis.HTMLElement = MockElement;
+  globalThis.Element = MockElement;
+  globalThis.Node = MockElement;
+
+  globalThis.addEventListener = () => {};
+  globalThis.removeEventListener = () => {};
+  globalThis.CSS = { escape: (str) => str, supports: () => false };
+  globalThis.MutationObserver = class MutationObserver {
+    observe() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  };
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+
+  globalThis.document = {
+    nodeType: 9,
+    createElement(tag) {
+      return new MockElement(1, tag.toUpperCase());
+    },
+    createElementNS(ns, tag) {
+      return new MockElement(1, tag.toUpperCase());
+    },
+    createTextNode(text) {
+      const el = new MockElement(3, "#text");
+      el.nodeValue = text;
+      return el;
+    },
+    createComment(data) {
+      const el = new MockElement(8, "#comment");
+      el.data = data;
+      return el;
+    },
+    documentElement: new MockElement(1, "HTML"),
+    body: new MockElement(1, "BODY"),
+    activeElement: null,
+    addEventListener() {},
+    removeEventListener() {},
+    defaultView: globalThis,
+  };
+  globalThis.window = globalThis;
+  return new MockElement(1, "DIV");
+}
+
+test("a card does not re-render when another card changes in a list", async () => {
+  const container = setupMockDom();
+  const wishId = "01a118fa-4308-736a-9ff9-5fc373a4294f";
+  const activeWish = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+
+  // 1. In WishView, when question Q02 changes, Q01 does not re-render.
+  let questions = [
+    { id: "q1", wishId, code: "Q01", text: "Question 1", options: ["A", "B"] },
+    { id: "q2", wishId, code: "Q02", text: "Question 2", options: ["X", "Y"] },
+  ];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [activeWish] }),
+      describe: () => ({ wish: activeWish }),
+      watch: async function* () {},
+    });
+    service(s.TaskService, { list: () => ({ tasks: [] }) });
+    service(s.QuestionService, { list: () => ({ questions }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+
+  const questionRenders = {};
+  const origQuestionType = s.WishQuestion.type;
+  s.WishQuestion.type = function SpiedWishQuestion(props) {
+    questionRenders[props.question.id] =
+      (questionRenders[props.question.id] || 0) + 1;
+    return origQuestionType(props);
+  };
+
+  const root = s.createRoot(container);
+  s.act(() => {
+    root.render(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: activeWish, onToast() {} }),
+      ),
+    );
+  });
+
+  assert.equal(questionRenders.q1, 1, "Q1 renders once initially");
+  assert.equal(questionRenders.q2, 1, "Q2 renders once initially");
+
+  // Modify question 2 and notify the store.
+  questions = [
+    { id: "q1", wishId, code: "Q01", text: "Question 1", options: ["A", "B"] },
+    {
+      id: "q2",
+      wishId,
+      code: "Q02",
+      text: "Question 2 modified",
+      options: ["X", "Y"],
+    },
+  ];
+  await s.act(async () => {
+    await djinn.store.changed(wishId, [s.Change.QUESTION]);
+  });
+
+  assert.equal(questionRenders.q1, 1, "Q1 does not re-render when Q2 changes");
+  assert.equal(questionRenders.q2, 2, "Q2 re-renders when Q2 changes");
+  s.WishQuestion.type = origQuestionType;
+  close();
+
+  // 2. In TaskSections, when task T02 changes, T01 does not re-render.
+  const taskRenders = {};
+  const origTaskType = s.WishTask.type;
+  s.WishTask.type = function SpiedWishTask(props) {
+    taskRenders[props.task.id] = (taskRenders[props.task.id] || 0) + 1;
+    return origTaskType(props);
+  };
+
+  const task1 = {
+    id: "t1",
+    wishId,
+    code: "W1",
+    title: "Task 1",
+    status: s.TaskStatus.RUNNING,
+  };
+  const task2 = {
+    id: "t2",
+    wishId,
+    code: "W2",
+    title: "Task 2",
+    status: s.TaskStatus.RUNNING,
+  };
+
+  const onStop = () => {};
+  const onSend = async () => {};
+  const renderTask = (t) =>
+    h(s.WishTask, { key: t.id, task: t, onStop, onSend });
+
+  const taskRoot = s.createRoot(setupMockDom());
+  s.act(() => {
+    taskRoot.render(
+      h(s.TaskSections, {
+        moving: [task1, task2],
+        azimas: [],
+        doneAzimas: [],
+        render: renderTask,
+      }),
+    );
+  });
+
+  assert.equal(taskRenders.t1, 1, "T1 renders once initially");
+  assert.equal(taskRenders.t2, 1, "T2 renders once initially");
+
+  const task2Updated = { ...task2, status: s.TaskStatus.DONE };
+  s.act(() => {
+    taskRoot.render(
+      h(s.TaskSections, {
+        moving: [task1, task2Updated],
+        azimas: [],
+        doneAzimas: [],
+        render: renderTask,
+      }),
+    );
+  });
+
+  assert.equal(taskRenders.t1, 1, "T1 does not re-render when T2 changes");
+  assert.equal(taskRenders.t2, 2, "T2 re-renders when T2 changes");
+  s.WishTask.type = origTaskType;
+  s.act(() => {
+    root.unmount();
+    taskRoot.unmount();
+  });
+
+  for (const h of process._getActiveHandles()) {
+    if (
+      h &&
+      typeof h.unref === "function" &&
+      h.constructor?.name === "MessagePort"
+    ) {
+      h.unref();
+    }
+  }
 });
