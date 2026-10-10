@@ -81,7 +81,7 @@ func (c Claude) args(spec Spec) []string {
 		// session so (claude takes --session-id with --resume only when it forks).
 		args = append(args, "--session-id", spec.TaskID)
 	}
-	if spec.Model != "" {
+	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_CLAUDE, spec.Model) {
 		args = append(args, "--model", spec.Model)
 	}
 	if spec.MaxBudgetUSD > 0 {

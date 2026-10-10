@@ -321,7 +321,7 @@ func (h *Harness) adoptWarm(ctx context.Context, r *run, provider Provider, w *w
 	text += fmt.Sprintf(", on a warm worker loaded %s before", time.Since(w.since).Round(time.Second))
 	t := r.task
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
-	if t.GetModel() == "" && !r.watcher {
+	if (t.GetModel() == "" || foreignModel(t.GetProvider(), t.GetModel())) && !r.watcher {
 		t.Model = DefaultModel(t.GetProvider())
 	}
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})

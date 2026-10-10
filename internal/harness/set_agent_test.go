@@ -13,6 +13,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
 
@@ -295,5 +296,185 @@ func TestSetAgentCLI(t *testing.T) {
 	got := e.get(t, task.GetId())
 	if got.GetModel() != "" {
 		t.Errorf("model after clearing: %q, want empty", got.GetModel())
+	}
+
+	// djinn task set-agent --provider claude (no --model) resets model to claude's default and command output says it
+	out.Reset()
+	errs.Reset()
+	code = cli.Run(ctx, []string{"task", "set-agent", task.GetId(), "--provider", "claude"},
+		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+	if code != 0 || !strings.Contains(out.String(), "provider: claude") || !strings.Contains(out.String(), "model: claude-sonnet-5-5") {
+		t.Errorf("djinn task set-agent --provider claude: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+	}
+	got = e.get(t, task.GetId())
+	if got.GetModel() != "claude-sonnet-5-5" {
+		t.Errorf("model after provider change: %q, want %q", got.GetModel(), "claude-sonnet-5-5")
+	}
+}
+
+// TestSetAgentProviderChangeResetsModel: when a task ran on a provider that recorded a model from the stream,
+// changing provider without --model resets the model to the new provider's default and clears the recorded model;
+// continuing the worker uses the new provider's default model and never the foreign recorded model.
+func TestSetAgentProviderChangeResetsModel(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	claudeSpy := &spyProvider{}
+	agySpy := &spyProvider{}
+	providers := map[planv1.Provider]Provider{
+		planv1.Provider_PROVIDER_CLAUDE:      claudeSpy,
+		planv1.Provider_PROVIDER_ANTIGRAVITY: agySpy,
+		planv1.Provider_PROVIDER_FAKE:        Fake{},
+		planv1.Provider_PROVIDER_WATCH:       fastWatch,
+	}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	// Spawn a task on Antigravity that records gemini-3.8-flash-high from its stream and fails.
+	firstPrompt := "model gemini-3.8-flash-high\ntext working\nfail Antigravity failed"
+	first := e.ended(t, e.mustSpawn(t, wishID, "Antigravity task", firstPrompt, &planv1.TaskServiceSpawnRequest{
+		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}).GetId())
+	if first.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		t.Fatalf("task status: %v, want failed", first.GetStatus())
+	}
+	if got, want := first.GetModel(), "gemini-3.8-flash-high"; got != want {
+		t.Fatalf("task recorded model: %q, want %q", got, want)
+	}
+
+	// Change agent to claude without --model: model resets to claude default and output shows it.
+	claude := planv1.Provider_PROVIDER_CLAUDE
+	res, err := e.tasks.SetAgent(t.Context(), connect.NewRequest(&planv1.TaskServiceSetAgentRequest{
+		TaskId:   first.GetId(),
+		Provider: &claude,
+	}))
+	if err != nil {
+		t.Fatalf("set-agent: %v", err)
+	}
+	if got, want := res.Msg.GetTask().GetProvider(), planv1.Provider_PROVIDER_CLAUDE; got != want {
+		t.Errorf("set-agent response provider: %v, want %v", got, want)
+	}
+	if got, want := res.Msg.GetTask().GetModel(), "claude-sonnet-5-5"; got != want {
+		t.Errorf("set-agent response model: %q, want %q", got, want)
+	}
+
+	// Stored task has new provider and default model.
+	stored := e.get(t, first.GetId())
+	if got, want := stored.GetProvider(), planv1.Provider_PROVIDER_CLAUDE; got != want {
+		t.Errorf("stored provider: %v, want %v", got, want)
+	}
+	if got, want := stored.GetModel(), "claude-sonnet-5-5"; got != want {
+		t.Errorf("stored model: %q, want %q", got, want)
+	}
+
+	// Continue the task: claude spy receives claude-sonnet-5-5, never the foreign gemini model.
+	cont, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{
+		TaskId: first.GetId(),
+		Prompt: "text continue with claude",
+	}))
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if cont.Msg.GetTask().GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
+		t.Errorf("continued provider: %v, want claude", cont.Msg.GetTask().GetProvider())
+	}
+	e.ended(t, first.GetId())
+
+	spec := claudeSpy.lastSpec()
+	if got, want := spec.Model, "claude-sonnet-5-5"; got != want {
+		t.Errorf("continued worker spec.Model: %q, want %q", got, want)
+	}
+	for _, s := range claudeSpy.specs {
+		if s.Model == "gemini-3.8-flash-high" {
+			t.Errorf("claude worker was called with foreign model gemini-3.8-flash-high")
+		}
+	}
+}
+
+// TestSetAgentProviderChangeExplicitModelKept: when changing provider with an explicit model,
+// that model is kept.
+func TestSetAgentProviderChangeExplicitModelKept(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	claudeSpy := &spyProvider{}
+	agySpy := &spyProvider{}
+	providers := map[planv1.Provider]Provider{
+		planv1.Provider_PROVIDER_CLAUDE:      claudeSpy,
+		planv1.Provider_PROVIDER_ANTIGRAVITY: agySpy,
+		planv1.Provider_PROVIDER_FAKE:        Fake{},
+		planv1.Provider_PROVIDER_WATCH:       fastWatch,
+	}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	first := e.ended(t, e.mustSpawn(t, wishID, "Antigravity task", "model gemini-3.8-flash-high\nfail broke", &planv1.TaskServiceSpawnRequest{
+		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+	}).GetId())
+
+	// SetAgent with explicit model
+	claude := planv1.Provider_PROVIDER_CLAUDE
+	explicitModel := "claude-3-5-haiku-20241022"
+	res, err := e.tasks.SetAgent(t.Context(), connect.NewRequest(&planv1.TaskServiceSetAgentRequest{
+		TaskId:   first.GetId(),
+		Provider: &claude,
+		Model:    &explicitModel,
+	}))
+	if err != nil {
+		t.Fatalf("set-agent: %v", err)
+	}
+	if got, want := res.Msg.GetTask().GetModel(), explicitModel; got != want {
+		t.Errorf("set-agent model: %q, want %q", got, want)
+	}
+	stored := e.get(t, first.GetId())
+	if got, want := stored.GetModel(), explicitModel; got != want {
+		t.Errorf("stored model: %q, want %q", got, want)
+	}
+}
+
+// TestContinueWithForeignModelInStoreSanitizes: if a task in the store has a foreign model
+// recorded from another provider, Continue sanitizes it to the current provider's default model.
+func TestContinueWithForeignModelInStoreSanitizes(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	claudeSpy := &spyProvider{}
+	providers := map[planv1.Provider]Provider{
+		planv1.Provider_PROVIDER_CLAUDE: claudeSpy,
+		planv1.Provider_PROVIDER_FAKE:   Fake{},
+		planv1.Provider_PROVIDER_WATCH:  fastWatch,
+	}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	first := e.ended(t, e.mustSpawn(t, wishID, "Failed claude task", "fail broke", &planv1.TaskServiceSpawnRequest{
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+	}).GetId())
+
+	// Manually inject a foreign model into the store (simulating an old task or foreign stream record).
+	task := e.get(t, first.GetId())
+	task.Model = "gemini-3.8-flash-high"
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/put", task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Continue the task: Continue sanitizes the model.
+	cont, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{
+		TaskId: first.GetId(),
+		Prompt: "text continue",
+	}))
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if got, want := cont.Msg.GetTask().GetModel(), "claude-sonnet-5-5"; got != want {
+		t.Errorf("continued response model: %q, want %q", got, want)
+	}
+	e.ended(t, first.GetId())
+
+	spec := claudeSpy.lastSpec()
+	if got, want := spec.Model, "claude-sonnet-5-5"; got != want {
+		t.Errorf("worker spec.Model: %q, want %q", got, want)
 	}
 }

@@ -74,7 +74,7 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 		}
 		args = append(args, "--conversation", spec.Resume)
 	}
-	if spec.Model != "" {
+	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_ANTIGRAVITY, spec.Model) {
 		args = append(args, "--model", spec.Model)
 	}
 	// agy has no spending cap: MaxBudgetUSD is not enforced.

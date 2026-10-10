@@ -250,6 +250,9 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 		if t.GetPriorProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
 			t.PriorProvider = planv1.Provider_PROVIDER_UNSPECIFIED
 		}
+		if foreignModel(t.GetProvider(), t.GetModel()) && !r.watcher {
+			t.Model = DefaultModel(t.GetProvider())
+		}
 		if err := tx.Journal(actorHarness, methodSchedule, t); err != nil {
 			return err
 		}
@@ -323,8 +326,13 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case byAnswer:
 		line = editLine + briefed(r, prompt, readOnly)
 	}
+	model := t.GetModel()
+	if foreignModel(t.GetProvider(), model) && !r.watcher {
+		model = DefaultModel(t.GetProvider())
+		t.Model = model
+	}
 	spec := Spec{
-		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: t.GetModel(), MaxBudgetUSD: budget,
+		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: model, MaxBudgetUSD: budget,
 		Resume: t.GetSessionId(), Prompt: line,
 	}
 	how := ", resuming its session"

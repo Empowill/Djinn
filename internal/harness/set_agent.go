@@ -64,12 +64,15 @@ func (h *Harness) SetAgent(ctx context.Context, procedure string, req *planv1.Ta
 	}
 
 	t := proto.CloneOf(task)
-	if req.Provider != nil && *req.Provider != currentProvider {
+	providerChanged := req.Provider != nil && (*req.Provider != currentProvider || task.GetProvider() != *req.Provider)
+	if req.Provider != nil {
+		t.Provider = *req.Provider
+	}
+	if providerChanged {
 		if task.GetStartTime() != nil || task.GetSessionId() != "" || task.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
 			t.PriorProvider = currentProvider
 			t.SessionId = ""
 		}
-		t.Provider = *req.Provider
 		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil {
 			t.ResumeAfter = nil
 			t.WaitReason = ""
@@ -77,6 +80,8 @@ func (h *Harness) SetAgent(ctx context.Context, procedure string, req *planv1.Ta
 	}
 	if req.Model != nil {
 		t.Model = *req.Model
+	} else if providerChanged || foreignModel(t.GetProvider(), t.GetModel()) {
+		t.Model = DefaultModel(t.GetProvider())
 	}
 
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {

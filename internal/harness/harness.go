@@ -665,8 +665,13 @@ func (h *Harness) launch(
 	if task.GetBranch() != "" {
 		where += ", on branch " + task.GetBranch() + fromText
 	}
+	model := task.GetModel()
+	if foreignModel(task.GetProvider(), model) && !r.watcher {
+		model = DefaultModel(task.GetProvider())
+		task.Model = model
+	}
 	spec := Spec{
-		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: task.GetModel(),
+		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: model,
 		MaxBudgetUSD: task.GetMaxBudgetUsd(), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
 		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(),
 	}
@@ -717,7 +722,10 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
 	r.failure, r.limit = "", nil
 	fresh(t)
-	if t.GetModel() == "" && !r.watcher {
+	if foreignModel(t.GetProvider(), spec.Model) {
+		spec.Model = DefaultModel(t.GetProvider())
+	}
+	if (t.GetModel() == "" || foreignModel(t.GetProvider(), t.GetModel())) && !r.watcher {
 		t.Model = DefaultModel(t.GetProvider())
 	}
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
@@ -980,7 +988,7 @@ func (h *Harness) end(r *run, res Result) {
 	stopping, shelved := r.stopping, r.shelved
 	h.mu.Unlock()
 	t := r.task
-	if t.GetModel() == "" && !r.watcher {
+	if (t.GetModel() == "" || foreignModel(t.GetProvider(), t.GetModel())) && !r.watcher {
 		t.Model = DefaultModel(t.GetProvider())
 	}
 	t.EndTime, t.ExitCode = timestamppb.Now(), int32(res.ExitCode)
@@ -1514,5 +1522,57 @@ func DefaultModel(p planv1.Provider) string {
 		return "gpt-5.5"
 	default:
 		return ""
+	}
+}
+
+func isClaudeModel(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	return m == "claude" || strings.HasPrefix(m, "claude-") ||
+		strings.HasPrefix(m, "claude/") ||
+		strings.HasPrefix(m, "anthropic/") ||
+		strings.Contains(m, ".claude-") ||
+		m == "sonnet" || strings.HasPrefix(m, "sonnet-") || strings.HasPrefix(m, "sonnet/") ||
+		m == "opus" || strings.HasPrefix(m, "opus-") || strings.HasPrefix(m, "opus/") ||
+		m == "haiku" || strings.HasPrefix(m, "haiku-") || strings.HasPrefix(m, "haiku/")
+}
+
+func isAntigravityModel(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	return m == "gemini" || strings.HasPrefix(m, "gemini-") ||
+		strings.HasPrefix(m, "gemini/") ||
+		strings.HasPrefix(m, "google/") ||
+		strings.Contains(m, ".gemini-")
+}
+
+func isCodexModel(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	return strings.HasPrefix(m, "gpt-") ||
+		strings.HasPrefix(m, "openai/") ||
+		strings.Contains(m, ".gpt-") ||
+		strings.HasSuffix(m, "-codex") ||
+		strings.HasPrefix(m, "code-") ||
+		m == "o1" || strings.HasPrefix(m, "o1-") || strings.HasPrefix(m, "o1.") || strings.HasPrefix(m, "o1/") ||
+		m == "o3" || strings.HasPrefix(m, "o3-") || strings.HasPrefix(m, "o3.") || strings.HasPrefix(m, "o3/") ||
+		m == "o4" || strings.HasPrefix(m, "o4-") || strings.HasPrefix(m, "o4.") || strings.HasPrefix(m, "o4/")
+}
+
+// foreignModel reports whether model is a model identifier belonging to a provider other than p.
+// Unknown or custom models are not considered foreign.
+func foreignModel(p planv1.Provider, model string) bool {
+	if model == "" || p == planv1.Provider_PROVIDER_FAKE {
+		return false
+	}
+	if p == planv1.Provider_PROVIDER_WATCH {
+		return true
+	}
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_UNSPECIFIED:
+		return isAntigravityModel(model) || isCodexModel(model)
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		return isClaudeModel(model) || isCodexModel(model)
+	case planv1.Provider_PROVIDER_CODEX:
+		return isClaudeModel(model) || isAntigravityModel(model)
+	default:
+		return false
 	}
 }
