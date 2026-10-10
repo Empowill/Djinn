@@ -247,7 +247,8 @@ committed, committed as `1a2b3c4d`, conflict, red, corrected by W9, uncommitted,
 ### Pushing
 
 Pushing the integration branch to its remote is Djinn's, never an agent's: `.agents/permissions.txtpb` denies `git
-push` to every worker. Djinn checks it each time a task's merge ends, and a push is **due**:
+push` to every worker, and their environment makes the push impossible whatever the command ([no worker
+pushes](providers.md#no-worker-pushes)). Djinn checks it each time a task's merge ends, and a push is **due**:
 
 - when an azima ends: it is done or to validate, as its state says (every part finished: a failed part keeps it in
   progress, one cut short for good does not), and its last part is committed;
