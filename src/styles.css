@@ -146,7 +146,6 @@ button {
   display: flex;
   flex-direction: column;
   padding: 0 14px;
-  transition: width 0.25s;
 }
 .sidebar-brand {
   height: 79px;
@@ -157,6 +156,26 @@ button {
 }
 .sidebar-brand > button {
   padding: 0;
+}
+.sidebar-brand-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  border-radius: var(--radius-control, 7px);
+  color: var(--muted);
+}
+.sidebar-toggle:hover {
+  color: var(--text);
+  background: var(--surface-raised);
 }
 .brand {
   font-size: 29px;
@@ -3109,10 +3128,10 @@ button {
     width: 67px;
     padding: 0 10px;
   }
-  .sidebar-brand > button .brand {
+  .sidebar-brand-main .brand {
     font-size: 0;
   }
-  .sidebar-brand > button .brand-dot,
+  .sidebar-brand-main .brand-dot,
   .version-tag,
   .sidebar .new-mission > span,
   .sidebar .new-mission kbd,
@@ -3128,7 +3147,10 @@ button {
     display: none;
   }
   .sidebar-brand {
-    padding: 0 10px;
+    padding: 0 4px;
+  }
+  .sidebar-brand-main {
+    gap: 0;
   }
   .sidebar .new-mission,
   .sidebar-search,
@@ -4961,4 +4983,66 @@ html.native-mac textarea,
 html.native-mac select,
 html.native-mac [role="button"] {
   --wails-draggable: no-drag;
+}
+
+/* Collapsing removes the rail from layout. The retained brand node only holds
+   the focused toggle, which becomes the small floating reopen affordance. */
+.sidebar-brand {
+  justify-content: space-between;
+}
+.sidebar-toggle {
+  margin-left: auto;
+}
+.sidebar-collapsed .sidebar {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: visible;
+  border-right: 0;
+  transition: none;
+}
+.sidebar-collapsed .sidebar > :not(.sidebar-brand) {
+  display: none;
+}
+.sidebar-collapsed .sidebar-brand {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  display: flex;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+}
+.sidebar-collapsed .sidebar-brand-main {
+  display: none;
+}
+.sidebar-collapsed .sidebar-toggle {
+  width: 32px;
+  height: 32px;
+  margin-left: 0;
+}
+.sidebar-collapsed .main-shell .topbar {
+  padding-left: 60px;
+}
+html.native-mac .sidebar-collapsed .sidebar {
+  padding-top: 0;
+}
+html.native-mac .sidebar-collapsed .sidebar-brand {
+  left: 88px;
+}
+html.native-mac .sidebar-collapsed .main-shell .topbar {
+  padding-left: 130px;
+}
+@media (max-width: 820px) {
+  .sidebar-brand {
+    justify-content: center;
+  }
+  .sidebar-brand-main {
+    display: none;
+  }
+  .sidebar-toggle {
+    margin-left: 0;
+  }
 }

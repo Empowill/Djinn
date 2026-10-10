@@ -92,6 +92,50 @@ test("sidebar geometry stays stable while creation hides the terminal", async ({
   await expectSameGeometry(existing)(await snapshot());
 });
 
+test("sidebar collapse is immediate, focused, and persistent", async ({
+  page,
+}) => {
+  await disableWishSmokeWebGL(page);
+  await page.goto(djinnURL());
+  const app = page.locator(".wish-app");
+  const sidebar = page.locator(".sidebar");
+  const toggle = page.locator(".sidebar-toggle");
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await page.screenshot({
+    path: "test-results/e2e/sidebar-floating-expanded.png",
+  });
+
+  await toggle.click();
+  await expect(app).toHaveClass(/sidebar-collapsed/);
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(toggle).toBeFocused();
+  await expect
+    .poll(async () => (await sidebar.boundingBox())?.width ?? -1)
+    .toBe(0);
+  expect((await page.locator(".main-shell").boundingBox())?.x).toBe(0);
+  await page.screenshot({
+    path: "test-results/e2e/sidebar-floating-collapsed.png",
+  });
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("djinn.sidebar.collapsed")),
+    )
+    .toBe("1");
+  await page.reload();
+  await expect(app).toHaveClass(/sidebar-collapsed/);
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect
+    .poll(async () => (await sidebar.boundingBox())?.width ?? -1)
+    .toBe(0);
+
+  await toggle.click();
+  await expect(app).not.toHaveClass(/sidebar-collapsed/);
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(toggle).toBeFocused();
+  await expect(page.locator(".sidebar .new-mission")).toBeVisible();
+});
+
 test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   await page.addInitScript(() => {
     const userAgent = navigator.userAgent;
@@ -110,9 +154,14 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
 
   await expect(page.locator("html")).toHaveClass(/native-mac/);
   await expect(page.locator(".sidebar")).toHaveCSS("padding-top", "28px");
-  expect(await page.locator(".sidebar").boundingBox()).toMatchObject({
-    width: 67,
-  });
+  const sidebarBox = await page.locator(".sidebar").boundingBox();
+  expect(sidebarBox).toMatchObject({ width: 67 });
+  const toggleBox = await page.locator(".sidebar-toggle").boundingBox();
+  expect(toggleBox?.width).toBeGreaterThanOrEqual(30);
+  expect(toggleBox?.x).toBeGreaterThanOrEqual(sidebarBox?.x ?? Infinity);
+  expect(toggleBox?.x! + toggleBox?.width!).toBeLessThanOrEqual(
+    (sidebarBox?.x ?? 0) + (sidebarBox?.width ?? 0),
+  );
   await expect(page.locator(".sidebar-brand")).toHaveCSS(
     "--wails-draggable",
     "drag",
@@ -126,6 +175,9 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   const back = page.locator(".wish-creation-back");
   await expect(back).toBeVisible();
   expect((await back.boundingBox())?.y).toBeGreaterThanOrEqual(16);
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  expect((await back.boundingBox())?.x).toBeGreaterThanOrEqual(130);
 });
 
 // The browser has no folder dialog: the path is typed, and the button of the native window is not there.

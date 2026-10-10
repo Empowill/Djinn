@@ -1,7 +1,13 @@
 // The window, on the services: the side panel (the flight plan, the wishes by rank, the projects), the flight plan of
 // the active wishes or the wish shown, and the status bar (whether the page follows djinn, the machine). What stays on
 // this page is how it shows: what is shown and the side panel folded.
-import { Plus, Settings2, Upload } from "lucide-react";
+import {
+  PanelLeft,
+  PanelLeftClose,
+  Plus,
+  Settings2,
+  Upload,
+} from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -190,15 +196,30 @@ export function WishApp() {
 
   return (
     <div className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""}`}>
-      <aside className="sidebar" inert={modal === "make" && making}>
+      <aside
+        id="djinn-sidebar"
+        className="sidebar"
+        inert={modal === "make" && making}
+      >
         <div className="sidebar-brand">
+          <div className="sidebar-brand-main">
+            <Brand />
+            {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
+          </div>
           <button
+            className="sidebar-toggle"
             onClick={() => setCollapsed(!collapsed)}
             title={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+            aria-label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+            aria-expanded={!collapsed}
+            aria-controls="djinn-sidebar"
           >
-            <Brand small={collapsed} />
+            {collapsed ? (
+              <PanelLeft size={16} aria-hidden="true" />
+            ) : (
+              <PanelLeftClose size={16} aria-hidden="true" />
+            )}
           </button>
-          {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
         </div>
         <button
           className="new-mission"
