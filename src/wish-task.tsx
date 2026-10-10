@@ -273,7 +273,7 @@ export function WishTask({
   );
 }
 
-// taskWork says where the finished work of a task stands on its way into its wish's integration branch (T30), as the
+// taskWork says where the finished work of a task stands on its way into its wish's integration branch (T07), as the
 // page says it, and its tone: undefined for work Djinn does not integrate. codes name the correction worker's task.
 export function taskWork(
   task: Task,

@@ -222,7 +222,7 @@ func copyPlan(t *testing.T) string {
 	return dir
 }
 
-// TestSyncPlan: on a copy of the repository's plan, the azimas a wish imported before kinds (T01…T24, without the
+// TestSyncPlan: on a copy of the repository's plan, the azimas a wish imported before kinds (T01…T20, without the
 // last ones) become azimas and keep the graph the store holds; the missing ones are made, one taking its file's after
 // line; every file then says what its azima depends on; a file's status closes and opens its azima; a second sync
 // changes nothing; the boxes that wait for a proof go on their azima; a file whose boxes are all checked closes its
@@ -236,7 +236,7 @@ func TestSyncPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	newer := []string{"T25", "T26", "T27", "T28"}
+	newer := []string{"T25", "T26"}
 	// A made azima takes its file's after line, once.
 	t26 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T26" })
 	if _, err := plan.WriteAfter(filepath.Join(dir, files[t26].Path), []string{"T13"}); err != nil {
@@ -244,7 +244,7 @@ func TestSyncPlan(t *testing.T) {
 	}
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, dir)
-	// T01…T24, as a plan import left them before kinds: tasks with the files' ids, which no worker ran.
+	// T01…T20, as a plan import left them before kinds: tasks with the files' ids, which no worker ran.
 	err = e.db.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
 			return err
@@ -278,8 +278,8 @@ func TestSyncPlan(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	depend("T07", "T17", "T08")
-	depend("T15", "T07", "T17", "T18", "T24")
+	depend("T07", "T02", "T14")
+	depend("T20", "T02", "T07", "T13", "T14", "T18")
 	depend("T13")
 
 	sync := func() *planv1.PlanServiceSyncResponse {
@@ -320,11 +320,11 @@ func TestSyncPlan(t *testing.T) {
 		}
 	}
 	// The graph is the store's, the made azima took its file's line.
-	if got := after("T07"); !slices.Equal(got, []string{"T08", "T17"}) {
+	if got := after("T07"); !slices.Equal(got, []string{"T02", "T14"}) {
 		t.Errorf("T07 after %v", got)
 	}
-	if got := after("T15"); !slices.Equal(got, []string{"T07", "T17", "T18", "T24"}) {
-		t.Errorf("T15 after %v", got)
+	if got := after("T20"); !slices.Equal(got, []string{"T02", "T07", "T13", "T14", "T18"}) {
+		t.Errorf("T20 after %v", got)
 	}
 	if got := after("T26"); !slices.Equal(got, []string{"T13"}) {
 		t.Errorf("T26 after %v", got)
@@ -343,7 +343,7 @@ func TestSyncPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(data), "---\nid: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76\ncode: T07\nphase: 2\nstatus: in-progress\nafter: T08 T17\n---\n\n# T07") {
+	if !strings.HasPrefix(string(data), "---\nid: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76\ncode: T07\nphase: 2\nstatus: in-progress\nafter: T02 T14\n---\n\n# T07") {
 		t.Errorf("T07's file:\n%s", data[:200])
 	}
 
@@ -351,8 +351,8 @@ func TestSyncPlan(t *testing.T) {
 	if res := sync(); len(res.GetMade())+len(res.GetChanged())+len(res.GetWritten()) != 0 {
 		t.Errorf("second sync: %v", res)
 	}
-	// The boxes waiting for a proof no worker can give go on the azima; a box without needs leaves it none, as does a
-	// file without a Done-when section.
+	// The boxes waiting for a proof no worker can give go on the azima, those of every merged part; a box without needs
+	// leaves it none (T25, by the boxes of the part it merged from T29), as do boxes all checked (T02).
 	proofs := 0
 	for _, f := range files {
 		got := byCode[f.Code].GetProofNeeds()
@@ -363,13 +363,13 @@ func TestSyncPlan(t *testing.T) {
 			proofs++
 		}
 	}
-	if proofs == 0 || len(byCode["T09"].GetProofNeeds()) != 0 {
-		t.Errorf("%d azimas wait for a proof; T09, without a Done-when section, %v", proofs, byCode["T09"].GetProofNeeds())
+	if proofs == 0 || len(byCode["T25"].GetProofNeeds())+len(byCode["T02"].GetProofNeeds()) != 0 {
+		t.Errorf("%d azimas wait for a proof; T25 %v, T02 %v", proofs, byCode["T25"].GetProofNeeds(), byCode["T02"].GetProofNeeds())
 	}
 
 	// A file that says in-progress with every box checked is reported, and its azima stays done.
-	t08 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T08" })
-	path := filepath.Join(dir, files[t08].Path)
+	t02 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T02" })
+	path := filepath.Join(dir, files[t02].Path)
 	data, err = os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -378,20 +378,20 @@ func TestSyncPlan(t *testing.T) {
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if res := sync(); !slices.Equal(res.GetAllChecked(), []string{files[t08].Path}) || len(res.GetChanged()) != 0 {
-		t.Errorf("T08 all checked: %v", res)
+	if res := sync(); !slices.Equal(res.GetAllChecked(), []string{files[t02].Path}) || len(res.GetChanged()) != 0 {
+		t.Errorf("T02 all checked: %v", res)
 	}
-	if got := e.get(t, id("T08")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("T08: %v", got)
+	if got := e.get(t, id("T02")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("T02: %v", got)
 	}
 	// A box unchecked again opens the azima the file closed.
 	if err := os.WriteFile(path, []byte(strings.Replace(text, "- [x]", "- [ ]", 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if res := sync(); !slices.Equal(res.GetChanged(), []string{"T08"}) || len(res.GetAllChecked()) != 0 {
-		t.Errorf("T08 reopened: %v", res)
+	if res := sync(); !slices.Equal(res.GetChanged(), []string{"T02"}) || len(res.GetAllChecked()) != 0 {
+		t.Errorf("T02 reopened: %v", res)
 	}
-	if got := e.get(t, id("T08")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
-		t.Errorf("T08: %v", got)
+	if got := e.get(t, id("T02")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+		t.Errorf("T02: %v", got)
 	}
 }

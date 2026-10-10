@@ -14,7 +14,7 @@ func ownGroup(cmd *exec.Cmd) {
 }
 
 // terminate stops the process. Windows has no signal to ask a console process to stop: it is killed at once.
-// What it started survives; a job object will hold the whole tree when the machine task (T17) needs one.
+// What it started survives; a job object will hold the whole tree when the machine task (T14) needs one.
 func terminate(p *process) { kill(p) }
 
 // kill kills the process.
@@ -25,7 +25,7 @@ func kill(p *process) {
 }
 
 // errNoPause says why a worker's process cannot be paused on Windows. Windows has no signal that stops a process:
-// it would take suspending each thread of each process of the tree, or a job object holding the tree (T17).
+// it would take suspending each thread of each process of the tree, or a job object holding the tree (T14).
 var errNoPause = errors.New("pausing a worker is not possible on Windows yet: Windows has no signal that stops " +
 	"a process and what it started; stop the task instead, or let it run")
 

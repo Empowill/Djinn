@@ -1,4 +1,4 @@
-// The Tilasms tab of a wish: the material that explains it (T29), a folder with an index.html kept in Djinn's data
+// The Tilasms tab of a wish: the material that explains it (T25), a folder with an index.html kept in Djinn's data
 // folder. A row per tilasm, by code: its title, who made it, when, what it cites. One opens in a frame of its own,
 // served by Djinn at /tilasm/<id>/ with a policy of its own (internal/plan/tilasm_files.go): its scripts run, it reaches
 // no network and nothing of Djinn. A search finds words in the titles and the text, within the wish; "talisman" finds

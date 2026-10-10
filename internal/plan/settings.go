@@ -110,7 +110,7 @@ type Settings struct {
 	Model        string
 	MaxBudgetUSD float64
 	Branch       string // a template: {code}, {slug}, {uuid8}
-	// How Djinn integrates the project's finished work (T30): the generated files as globs, the command that makes
+	// How Djinn integrates the project's finished work (T07): the generated files as globs, the command that makes
 	// them, the one that makes a fresh worktree ready, and the one that installs its new build; empty when not set.
 	Generated                []string
 	Generate, Setup, Install string

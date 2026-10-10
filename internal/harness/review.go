@@ -20,7 +20,7 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// Review (T30): a task whose worktree holds changes not committed is not merged, and nothing commits them blindly:
+// Review (T07): a task whose worktree holds changes not committed is not merged, and nothing commits them blindly:
 // debug output, scratch files or artifacts would go in with the work. Djinn starts a review worker by itself: a work
 // task part of the same azima, of the task's provider, in that task's worktree and on its branch, the files and their
 // diff in its first prompt. It commits what belongs to the task and drops the rest; its branch then integrates like any

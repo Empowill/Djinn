@@ -1051,7 +1051,7 @@ func (x *UiServiceWatchUpdateResponse) GetBuild() *Build {
 	return nil
 }
 
-// Build is a wish's integration branch as Djinn pushed it (T30), to install.
+// Build is a wish's integration branch as Djinn pushed it (T07), to install.
 type Build struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The wish, and its title.

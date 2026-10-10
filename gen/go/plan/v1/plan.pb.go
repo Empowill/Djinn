@@ -3563,7 +3563,7 @@ func (x *IntegrationFailure) GetReason() string {
 	return ""
 }
 
-// TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T30). When a
+// TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T07). When a
 // worker ends done, Djinn checks that its worktree holds nothing not committed, merges its branch alone into the
 // integration branch in a worktree of its own, makes the generated files again on a conflict only in them, tests the
 // result through a gate, and moves the branch when it passes; its worktree is then removed when clean.

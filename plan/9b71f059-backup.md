@@ -2,12 +2,15 @@
 id: 01a118ac-4d4c-7def-9720-c8fc9b71f059
 code: T20
 phase: 3
-status: done
+status: in-progress
+after: T02 T07 T13 T14 T18
 ---
 
-# T20 · Backups, on a server of your choice
+# T20 · Your wishes follow you
 
-**Goal.** Djinn keeps everything on the machine, and closing it loses nothing. Losing the
+**Goal.** Your wishes follow you: backed up on your server, shared online, and later spread over your other machines.
+
+Djinn keeps everything on the machine, and closing it loses nothing. Losing the
 machine loses everything, unless you chose to back it up. Anyone who wants their backups on a
 central server finds the procedure written down, and later a command that does it.
 
@@ -66,3 +69,128 @@ central server finds the procedure written down, and later a command that does i
 - Should Djinn take a backup itself on a schedule while it runs, for those who set no scheduler?
 - How does a backup relate to work spread over trusted machines (T15): a backup is a copy, not
   a sync.
+
+## From T24 · A wish online: sync now, collaborate later
+
+**Goal.** A wish has a page anyone can open, kept up to date as the wish moves. Today, for
+hand-offs: one person works, the other reads. Later, several people work on the same wish.
+
+### Decided
+- **The word is `sync`.** `djinn wish sync <wish>`. One way today (Djinn to the page), both ways
+  once people collaborate.
+- **Djinn renders, the model does not.** Djinn writes the page from its store, in Go, on every
+  change of the wish: no token spent. Empty sections are not rendered (the lamp and the smoke).
+- **The lead only publishes.** When Djinn's lead is Claude, it republishes the rendered file as
+  an artifact at the same address, in one tool call, without reading the page. With another
+  agent, the page is a file to share.
+- **Nothing leaves without a go.** The first publish of a wish asks; then every sync goes to
+  the same page. No secret, no local path on the page.
+
+### Later: collaborate on a wish
+- Several people on one wish, even on one branch: answers and comments from the page come back
+  into the wish, through the lead, never by editing the page.
+- Not today: we hand off, we do not work at the same time.
+
+### Decided along the way
+- **One file, in the data folder.** `djinn wish sync` writes `<data>/wishes/<id>/page.html` and prints its path. A
+  page is synced while its file exists: `djinn up` takes back the pages it finds when it starts, and deleting the
+  file stops it. No new state in the store. `djinn wish render` writes the page once, to Downloads or `--file`.
+- **A commit hook, not a poll.** The store calls back after each commit with the entities it changed; the pages
+  mark the synced wishes they touch, and render them at most once a second.
+- **Order of the page:** what matters now first. A bar pinned to the top while something waits for the user (each
+  blocking question a line, the other questions a line each while they are two at most, else one line naming them;
+  the tasks cut short in one line; a project to attach; a ready wish), the most urgent first. Header with the tasks
+  counted by status and contents (pills naming only the sections present, coloured as their most urgent item). To
+  decide (open questions, a card each: the recommendation boxed and first, then the options, then the context; a
+  question a waiting task needs is red, open and first; then those needed before something, orange under their
+  `before` words; then those that can wait, grey; folded, their recommendation in sight; a lone question open), waiting for you, who runs now (the running workers as cards, with their last event; the
+  finished work folded below as a table), tasks (waiting, failed and cut short in clear, with their dependencies;
+  planned folded as a table with why each waits), decisions (the latest first, a table: when, the question and the
+  choice in bold, why; past 15, folded), notes (the blocks in their order, each under its title; a long block
+  folded; a run of more than three of one kind gathered in one card, a folded line each, eight in sight), journal
+  (commands and `log` blocks, the latest first, a compact table; past 10, folded), worker events (what they said,
+  their status changes and errors, the latest first; past 10, folded). Empty sections are not rendered.
+- **One colour language, never colour alone.** Each state has a colour, an icon and a word: done green ✓, running
+  blue with a live dot, waiting for you orange ?, planned grey ○, failed red ✕, interrupted amber ↺, paused indigo ‖,
+  stopped grey ■; and for what waits: blocking red !, waiting for you orange ?, can wait neutral ◷. Used by the
+  tasks, the workers, the bar and the pills. A test checks every colour at 4.5:1 at least on its soft colour and on a
+  card, in light and dark.
+- **A Mermaid diagram shows as its source**, with a line that says so: the page runs no script.
+- **"Waiting for you" comes from the lamp only:** a task waiting on its edit question, a task cut short by a stop,
+  a project not on this machine. No block kind is read as an action.
+- **Same scrubbing as the export,** plus the data folder (`djinn-data`). Tool calls and results stay out.
+- **Markdown by goldmark (MIT), raw HTML left out**, dangerous links emptied. A block of another media type shows
+  as text. No script, no external font: the page opens offline.
+- **The page's texts are translated** (`page.*` keys), in the language of the user's locale.
+
+### Done when
+- [ ] `djinn wish sync` renders the page in Go (done), and the lead republishes it in one call.
+  - [x] The lead's instructions say so. (d3881ed: the stable brief, `internal/plan/brief.go`: republish the
+    printed file as it is, in one call, without reading or rewriting it, no HTML by hand; `TestBrief` checks it)
+  - [ ] Seen publishing. (needs: a real lead session)
+- [x] A change in the wish updates the page without the model writing HTML.
+- [x] The page reads at a glance: a bar of what waits, questions first with their recommendation boxed, one colour
+  language with icons and words, who runs now, compact tables for the rest, light and dark, 375 px without
+  horizontal scroll. (w37: `TestBar`, `TestColourLanguage`, `TestContrast`, `TestEvents`, `TestDiagram`,
+  `TestBusyPage`; screenshots of an imported wish rendered by a test djinn, light, dark and 375 px)
+- [ ] A hand-off: the other person opens the link and sees the wish as it is. (needs: two people)
+
+### Open questions
+- Can Djinn publish without a Claude session (an API for artifacts)? Not known today.
+- How a comment on the page becomes an answer in the wish, safely.
+
+## From T15 · Work spread over trusted machines
+
+**Goal.** Later, after v1: a mission hands tasks to other machines its owner trusts, and shares
+its flight plan with them, semi-automatically, project by project.
+
+### Principles already set
+- **A machine can take a task for a project only if it can contribute to that project**: it can
+  clone it and push a branch to it. Being trusted by Djinn is not enough.
+- **A project that is not a Git repository is not distributable.** Its tasks always run on the
+  machine that holds the folder.
+- Trusted machines are listed per project; every event carries its machine id; shared events are
+  signed by the machine that made them, and replayed from a sequence number.
+- The services that serve the window today serve a peer tomorrow, over TCP with mutual TLS.
+- Never a secret in what travels between machines.
+
+
+### Building blocks found
+- Group membership and failure detection: `hashicorp/memberlist` (MPL-2.0, used as an unmodified
+  dependency), with our own mutual-TLS transport.
+
+### Agreeing on who runs what: what we know so far
+- **A consensus algorithm (Raft, Paxos) does not choose which task to run**: the scheduler does.
+  It makes several machines agree on the same log of decisions while some of them fail, so that no
+  task runs twice.
+- **On one machine there is nothing to agree on**: one process writes, SQLite orders every
+  decision.
+- **On a few trusted machines, a coordinator with leases may be enough**: the machine that holds
+  the wish assigns each task with a lease and a fencing number; a worker that loses its lease
+  stops, and a stale write is refused. The coordinator is a single point of failure, but the wish
+  lives on its machine anyway.
+- **Raft needs a majority**: three machines to survive one failure; with two, it survives none.
+  Candidate: `hashicorp/raft` (MPL-2.0, used as an unmodified dependency).
+
+### Open questions, to answer later
+- **Rights to redefine.** On one machine, a worker's rights come from where it runs (the
+  project's agent config, the wish's allowance, read-only outside a project). Sent to another
+  machine, who allows what? The wish's allowance (edit, auto mode) was given by a person for their
+  machine: does it travel, and does the other machine's owner have a say?
+- A coordinator with leases, or Raft from the start? Does a wish need to survive the loss of its
+  home machine without a human?
+- How long is a lease, who renews it, and what does a worker do with half-finished work when it
+  loses it?
+- What travels between machines: the command journal, the entities, or both? Signed by whom, and
+  replayed from which sequence number?
+- How does a machine prove it can contribute to a project before it is offered a task (clone and
+  push rights, the right toolchain, enough resources from T17)?
+- What happens to a machine that goes offline in the middle of a task, and to its worktree?
+- Clocks: leases and logs across machines need more than wall-clock time; do we use fencing
+  numbers only, or a hybrid logical clock?
+- Whose account pays when a task runs on another person's machine (see T18 for provider terms)?
+
+### Done when
+- [ ] A task of a Git project runs on a second trusted machine, which pushes its branch; the
+      mission on the first machine follows it live. (needs: after v1; two trusted machines)
+- [ ] A task of a non-Git project is never offered to another machine. (needs: after v1; nothing built)

@@ -109,12 +109,12 @@ tasks:
       - go test -tags headless -run '^$' -bench . -benchmem {{.CLI_ARGS}} ./internal/server
 
   bench-workers:
-    desc: "PAID: compare five ways Djinn starts a worker (cold, --bare, fork, warm, brief) on one small task with a real model. Prints its quote; runs only with BENCH_PAID=yes and BENCH_MAX_USD (see plan/1689571a-fast-workers.md)"
+    desc: "PAID: compare five ways Djinn starts a worker (cold, --bare, fork, warm, brief) on one small task with a real model. Prints its quote; runs only with BENCH_PAID=yes and BENCH_MAX_USD (see plan/8ce817da-cost.md)"
     cmds:
       - go run ./tools/benchworkers
 
   bench-dispatch:
-    desc: "Run the dispatch bench: the plain Go scheduler on hand-written dispatch cases (internal/dispatch/bench/cases.json), as a table of its decisions and the time per pass. No model (see plan/263f074f-dispatch-bench.md)"
+    desc: "Run the dispatch bench: the plain Go scheduler on hand-written dispatch cases (internal/dispatch/bench/cases.json), as a table of its decisions and the time per pass. No model (see plan/8e8d3d76-orchestrator.md)"
     cmds:
       - go run -tags headless ./tools/benchdispatch
 

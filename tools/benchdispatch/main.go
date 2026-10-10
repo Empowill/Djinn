@@ -1,4 +1,4 @@
-// Command benchdispatch is the dispatch bench (T16, plan/263f074f-dispatch-bench.md): it runs the plain Go
+// Command benchdispatch is the dispatch bench (T07, plan/8e8d3d76-orchestrator.md): it runs the plain Go
 // scheduler on every case of internal/dispatch/bench/cases.json and prints a Markdown table of its decisions, the
 // expected ones, and the time per pass. It calls no model. The local-model side is not here yet.
 //

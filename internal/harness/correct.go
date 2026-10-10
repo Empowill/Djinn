@@ -16,7 +16,7 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// Correction (T30): a batch whose merge conflicts in code, or whose tests fail, waits for no lead. Djinn starts a
+// Correction (T07): a batch whose merge conflicts in code, or whose tests fail, waits for no lead. Djinn starts a
 // correction worker by itself: a work task part of the same azima as the failed task, of its provider, whose worktree
 // starts on the failed merge, with what failed in its first prompt. Its branch integrates like any task's, and its
 // success commits the failed work with it. Past the project's correction_attempts, Djinn asks the person a question
