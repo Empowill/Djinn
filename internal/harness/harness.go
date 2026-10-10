@@ -715,8 +715,12 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		t.Model = DefaultModel(t.GetProvider())
 	}
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
-	// A worker that calls djinn knows its task.
-	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
+	// A worker that calls djinn knows its task; the Git guard keeps it from pushing.
+	guard, err := gitGuard(h.home, spec.Dir)
+	if err != nil {
+		return fmt.Errorf("git guard: %w", err)
+	}
+	spec.Env = append([]string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}, guard...)
 	spec.Scope = h.scope(t.GetCode())
 	w, err := provider.Start(h.ctx, spec)
 	if err != nil {

@@ -183,9 +183,15 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 			return
 		}
 	}
+	guard, err := gitGuard(h.home, dir)
+	if err != nil {
+		log.Printf("djinn: warm worker for %s: %v", ww.project.GetName(), err)
+		h.removeWarmTree(w)
+		return
+	}
 	w.spec = Spec{
 		TaskID: id, Dir: dir, ReadOnly: ww.readOnly, Permissions: ww.perms, Model: ww.model, MaxBudgetUSD: ww.budget,
-		Env: []string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID}, Scope: h.scope("warm"),
+		Env: append([]string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID}, guard...), Scope: h.scope("warm"),
 	}
 	worker, err := h.warmer().Warm(h.ctx, w.spec)
 	if err != nil {
