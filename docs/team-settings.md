@@ -19,11 +19,10 @@ model: "opus"
 max_budget_usd: 3
 branch: "djinn/{code}-{slug}-{uuid8}"
 
-# Djinn integrates their finished work by itself: npm ci makes a fresh worktree ready, go tool task gen makes gen/**
-# and docs/openapi.json, the lint runs before each commit and the tests before each push, go tool task install
-# installs the build pushed, once you say so.
+# Djinn integrates their finished work by itself: npm ci makes a fresh worktree ready, go tool task gen makes gen/**,
+# the lint runs before each commit and the tests before each push, go tool task install installs the build pushed,
+# once you say so.
 generated: "gen/**"
-generated: "docs/openapi.json"
 generate: "go tool task gen"
 setup: "npm ci"
 checks { name: "lint" command: "go tool task lint" when: CHECK_WHEN_COMMIT }

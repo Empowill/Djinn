@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -26,9 +27,6 @@ var (
 	// placeholder is a value a label takes, {wish}; the guide writes an example or <wish> in its place.
 	placeholder = regexp.MustCompile(`\\\{\w+\\\}`)
 )
-
-// builtIn are the commands cmd/djinn runs itself, outside the protos: their flags are not checked here.
-var builtIn = map[string]bool{"gate": true, "backup": true, "open": true, "update": true, "mcp": true}
 
 // guideCommands returns the djinn commands of the guide, each as its words.
 func guideCommands(guide string) [][]string {
@@ -91,12 +89,23 @@ func TestUserGuide(t *testing.T) {
 		}
 		for _, args := range commands {
 			line := "djinn " + strings.Join(args, " ")
+			b, rest, builtIn := cli.Builtin(args)
 			switch {
-			case builtIn[args[0]]:
 			case args[0] == "up":
 				// Parsing stops at --help, after every flag the guide gives: an unknown one fails before it.
 				if _, err := runUp(append(args[1:], "--help")); !errors.Is(err, flag.ErrHelp) {
 					t.Errorf("%s: %v", line, err)
+				}
+			case builtIn:
+				// A command written by hand: the flags its documentation gives.
+				for _, a := range rest {
+					name, _, _ := strings.Cut(a, "=")
+					if a == "--" {
+						break
+					}
+					if strings.HasPrefix(name, "--") && !slices.ContainsFunc(b.Flags, func(p cli.Param) bool { return p.Name == name }) {
+						t.Errorf("%s: %s is no flag of djinn %s", line, name, b.Name)
+					}
 				}
 			default:
 				if len(args) < 2 {

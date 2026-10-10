@@ -342,7 +342,7 @@
   "settings.cli_codex": "Codex :",
   "settings.cli_missing": "CLI non détectée",
   "settings.docs": "Documentation",
-  "settings.docs_detail": "Les concepts de Djinn, et son API : chaque méthode de la ligne de commande, de MCP et de HTTP.",
+  "settings.docs_detail": "Les concepts de Djinn, et sa ligne de commande : chaque commande, ses arguments et ses options.",
   "settings.docs_open": "Ouvrir",
   "settings.eyebrow": "CONNEXIONS & PRÉFÉRENCES",
   "settings.install_cli": "Installer une CLI",

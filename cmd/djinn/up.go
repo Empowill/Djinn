@@ -52,27 +52,16 @@ var readMachine func() (machine.Snapshot, error)
 // returns restart true when it stopped to restart on a newer binary (see update.go): the caller starts it, once
 // everything here is closed.
 func runUp(args []string) (restart bool, err error) {
-	flags := flag.NewFlagSet("up", flag.ContinueOnError)
-	browser := flags.Bool("browser", false, "print the URL to open in a browser instead of opening a window")
-	port := flags.Int("port", 0, "port of the loopback HTTP server (with --browser, and on Windows); 0 picks a free one")
-	term := flags.String("terminal", "", "command the terminal of the window runs, through the user's shell, "+
-		"e.g. \"claude --resume <session>\"; empty runs the shell itself")
-	termDir := flags.String("terminal-dir", "", "working directory of the terminal; empty is the folder of the first "+
-		"project, as the window lists them (never the home folder: with no project, the window asks to create one)")
-	maxWorkers := flags.Int("workers", 0, "most workers at once, 1 to 16; 0 decides from the machine "+
-		"(one per 2 cores and per 2 GiB of memory); default $DJINN_WORKERS")
-	warmWorkers := flags.Bool("warm-workers", false, "keep a claude loaded and waiting for the next task of each "+
-		"project of the active wishes, in the slots the running workers leave: it starts at once, and costs memory "+
-		"while it waits (about 300 MB each, supposed), no token")
-	workerCPU := flags.Int("worker-cpu", 0, "cap each worker's CPU at this percent of one core (150 is a core and a "+
-		"half), in a systemd user scope of its own; Linux with systemd only, and only where systemd gives your user the "+
-		"cpu controller, else workers run uncapped and djinn says why; 0 caps nothing; default $DJINN_WORKER_CPU")
-	workerMemory := flags.Int("worker-memory", 0, "cap each worker's memory at this many MiB, in its systemd user "+
-		"scope: past it the kernel reclaims, then kills a process of the worker; Linux with systemd only, and only "+
-		"where systemd gives your user the memory controller; 0 caps nothing; default $DJINN_WORKER_MEMORY")
-	questionWorkers := flags.Bool("question-workers", true, "start a small worker on each answer (it turns the decision "+
-		"into tasks) and each \"Enlighten me\" (it investigates, then revises the question); a project's settings "+
-		"turn them off too (question_workers: false); default $DJINN_QUESTION_WORKERS (on or off), else on")
+	var (
+		browser, warmWorkers, questionWorkers     bool
+		port, maxWorkers, workerCPU, workerMemory int
+		term, termDir                             string
+	)
+	flags := cli.Up.FlagSet(map[string]any{
+		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
+		"warm-workers": &warmWorkers, "worker-cpu": &workerCPU, "worker-memory": &workerMemory,
+		"question-workers": &questionWorkers,
+	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
 	}
@@ -81,34 +70,34 @@ func runUp(args []string) (restart bool, err error) {
 		if err != nil {
 			return false, fmt.Errorf("DJINN_QUESTION_WORKERS: %w", err)
 		}
-		*questionWorkers = on
+		questionWorkers = on
 	}
 	if flags.NArg() > 0 {
 		return false, fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
-	if *maxWorkers == 0 && os.Getenv("DJINN_WORKERS") != "" {
-		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKERS"), maxWorkers); err != nil {
+	if maxWorkers == 0 && os.Getenv("DJINN_WORKERS") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKERS"), &maxWorkers); err != nil {
 			return false, fmt.Errorf("DJINN_WORKERS: %w", err)
 		}
 	}
-	if *maxWorkers < 0 || *maxWorkers > 16 {
-		return false, fmt.Errorf("--workers %d: expected 1 to 16, or 0 to decide from the machine", *maxWorkers)
+	if maxWorkers < 0 || maxWorkers > 16 {
+		return false, fmt.Errorf("--workers %d: expected 1 to 16, or 0 to decide from the machine", maxWorkers)
 	}
-	if *workerCPU == 0 && os.Getenv("DJINN_WORKER_CPU") != "" {
-		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_CPU"), workerCPU); err != nil {
+	if workerCPU == 0 && os.Getenv("DJINN_WORKER_CPU") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_CPU"), &workerCPU); err != nil {
 			return false, fmt.Errorf("DJINN_WORKER_CPU: %w", err)
 		}
 	}
-	if most := 100 * runtime.NumCPU(); *workerCPU < 0 || *workerCPU > most {
-		return false, fmt.Errorf("--worker-cpu %d: expected 1 to %d (percent of one core), or 0 for no cap", *workerCPU, most)
+	if most := 100 * runtime.NumCPU(); workerCPU < 0 || workerCPU > most {
+		return false, fmt.Errorf("--worker-cpu %d: expected 1 to %d (percent of one core), or 0 for no cap", workerCPU, most)
 	}
-	if *workerMemory == 0 && os.Getenv("DJINN_WORKER_MEMORY") != "" {
-		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_MEMORY"), workerMemory); err != nil {
+	if workerMemory == 0 && os.Getenv("DJINN_WORKER_MEMORY") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_MEMORY"), &workerMemory); err != nil {
 			return false, fmt.Errorf("DJINN_WORKER_MEMORY: %w", err)
 		}
 	}
-	if *workerMemory < 0 {
-		return false, fmt.Errorf("--worker-memory %d: expected MiB, or 0 for no cap", *workerMemory)
+	if workerMemory < 0 {
+		return false, fmt.Errorf("--worker-memory %d: expected MiB, or 0 for no cap", workerMemory)
 	}
 	home, err := ui.Home()
 	if err != nil {
@@ -130,8 +119,8 @@ func runUp(args []string) (restart bool, err error) {
 	defer db.Close()
 	// The workers stop before the database closes: deferred calls run last first.
 	policy := machine.DefaultPolicy()
-	policy.Workers = *maxWorkers
-	policy.WorkerMemory = uint64(*workerMemory) << 20
+	policy.Workers = maxWorkers
+	policy.WorkerMemory = uint64(workerMemory) << 20
 	read := readMachine
 	if read == nil {
 		read = machine.Reader(home)
@@ -141,13 +130,13 @@ func runUp(args []string) (restart bool, err error) {
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
 	}
-	if *warmWorkers {
+	if warmWorkers {
 		opts = append(opts, harness.WithWarm())
 	}
-	if *questionWorkers {
+	if questionWorkers {
 		opts = append(opts, harness.WithQuestionWorkers())
 	}
-	if scopes := workerScopes(ctx, os.Stderr, *workerCPU, policy.WorkerMemory); scopes != nil {
+	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory); scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))
 	}
 	// The integration of finished work runs its gen, setup and checks under the gates, as djinn gate run does.
@@ -177,8 +166,8 @@ func runUp(args []string) (restart bool, err error) {
 		// A gate's holder is a process of its own, in no worker's scope: read from its processes.
 		gates.Measure(5*time.Second, func(pid int) (machine.Group, error) { return machine.ReadWorker(pid, "") })
 	}
-	if *termDir != "" {
-		if *termDir, err = filepath.Abs(*termDir); err != nil {
+	if termDir != "" {
+		if termDir, err = filepath.Abs(termDir); err != nil {
 			return false, err
 		}
 	}
@@ -187,18 +176,18 @@ func runUp(args []string) (restart bool, err error) {
 	leadNotes := newLeadNote(home, os.Stderr)
 	// The window's terminal opens in the first project, never in the home folder, where djinn starts from a menu.
 	terminals := terminal.NewManager(terminal.Config{
-		Command: terminal.ShellCommand(*term), Dir: *termDir, Changed: leadNotes.update,
+		Command: terminal.ShellCommand(term), Dir: termDir, Changed: leadNotes.update,
 		Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) },
 	})
 	leadNotes.terms = terminals
 	defer terminals.Close()
 	defer leadNotes.freeze()
-	if !hasWindow && !*browser {
+	if !hasWindow && !browser {
 		fmt.Fprintln(os.Stderr, "djinn: this build has no native window, serving the browser instead")
-		*browser = true
+		browser = true
 	}
 	transport := server.TransportFor(runtime.GOOS)
-	if *browser {
+	if browser {
 		transport = server.HTTP
 	}
 	if uiSvc, err = ui.New(version); err != nil {
@@ -229,12 +218,12 @@ func runUp(args []string) (restart bool, err error) {
 	workers.Integrate()
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
-	uiSvc.Window = !*browser
-	if !*browser {
+	uiSvc.Window = !browser
+	if !browser {
 		uiSvc.ChooseFolder = chooseFolder
 	}
 	uiSvc.Raise = func() {
-		if *browser {
+		if browser {
 			fmt.Println("djinn: open", url)
 			return
 		}
@@ -247,7 +236,7 @@ func runUp(args []string) (restart bool, err error) {
 	shortcuts := &ui.Shortcuts{
 		Home: home, Store: db, Show: func(wishID string) { leads{terminals, uiSvc}.Show(wishID, "") },
 	}
-	if !*browser {
+	if !browser {
 		uiSvc.Shortcuts = shortcuts
 	}
 	// The pages of the synced wishes follow every change, until djinn up stops.
@@ -288,7 +277,7 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		addr = "unix://" + ln.Addr().String()
 	case server.HTTP:
-		if ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port)); err != nil {
+		if ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)); err != nil {
 			return false, err
 		}
 		origin := "http://" + ln.Addr().String()
@@ -322,7 +311,7 @@ func runUp(args []string) (restart bool, err error) {
 		}
 	}
 	switch {
-	case *browser:
+	case browser:
 		fmt.Println("djinn: open", url)
 		err = <-served
 	default:

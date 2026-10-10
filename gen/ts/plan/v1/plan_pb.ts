@@ -274,7 +274,7 @@ export type ProjectSettings = Message<"plan.v1.ProjectSettings"> & {
   branch?: string | undefined;
 
   /**
-   * The files code generation makes, as globs in the project's folder: "gen/**", "docs/openapi.json". "**" stands
+   * The files code generation makes, as globs in the project's folder: "gen/**", "docs/schema.json". "**" stands
    * for any number of folders, "*" for any name in one. When merging a task's work into its wish's integration
    * branch meets a conflict only in these files, Djinn takes one side and makes them again with generate. A file that
    * sets some sets them all.

@@ -1,6 +1,6 @@
-// Command docsite builds the documentation site into a folder that opens offline: docs/site, with docs/openapi.json
-// as the script of its API tab. `go tool task docs` runs it: go run ./tools/docsite bin/docs. djinn up serves the
-// same site at /docs/.
+// Command docsite builds the documentation site into a folder that opens offline: docs/site, its Command line tab
+// filled in from the command tree djinn is built from. `go tool task docs` runs it: go run ./tools/docsite bin/docs.
+// djinn up serves the same site at /docs/.
 package main
 
 import (
@@ -26,12 +26,8 @@ func main() {
 
 // build writes the site of the repository at repo into out, in place of what out held.
 func build(repo, out string) error {
-	spec, err := os.ReadFile(filepath.Join(repo, "docs", "openapi.json"))
-	if err != nil {
-		return err
-	}
 	if err := os.RemoveAll(out); err != nil {
 		return err
 	}
-	return os.CopyFS(out, docsite.FS(os.DirFS(filepath.Join(repo, "docs", "site")), spec))
+	return os.CopyFS(out, docsite.FS(os.DirFS(filepath.Join(repo, "docs", "site"))))
 }

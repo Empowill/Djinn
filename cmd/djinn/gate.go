@@ -15,20 +15,8 @@ import (
 	"github.com/empowill/djinn/internal/ui"
 )
 
-const gateUsage = `Usage: djinn gate run <name> [--task-id <task>] -- <command> [arguments]
-
-Take the gate <name> (codegen, stack, e2e, paid, or any other), run the command once it is granted, and give the
-gate back when the command ends, fails or is interrupted. Djinn grants a gate to one holder at a time, and only
-while the machine is not under pressure; meanwhile it says why it waits. The exit code is the command's.
-Djinn records what the command cost in its project (CPU time, peak memory, duration): djinn command list.
-Outside a running worker, the gate takes a worker's slot. Djinn takes it back after an hour, the command going on.
-
-  --task-id <task>   Task the gate is taken for (default $DJINN_TASK_ID): its events show the gate.
-  --addr URL         Address of the djinn server (default $DJINN_ADDR, then the one djinn up writes).
-`
-
 // runGate is djinn gate run: the one command that runs something on the caller's side, so it is written here and
-// not generated from the protos. It returns the exit code.
+// not generated from the protos; its help is cli.GateRun. It returns the exit code.
 func runGate(args []string) int {
 	name, taskID, addr := "", os.Getenv("DJINN_TASK_ID"), os.Getenv("DJINN_ADDR")
 	var command []string
@@ -38,7 +26,7 @@ func runGate(args []string) int {
 			command = args[i+1:]
 			i = len(args)
 		case a == "-h" || a == "--help":
-			fmt.Print(gateUsage)
+			cli.GateRun.WriteHelp(os.Stdout)
 			return 0
 		case (a == "--task-id" || a == "--addr") && i+1 < len(args):
 			i++
@@ -54,12 +42,14 @@ func runGate(args []string) int {
 		case name == "" && !strings.HasPrefix(a, "-"):
 			name = a
 		default:
-			fmt.Fprintf(os.Stderr, "error: unexpected argument %q\n%s", a, gateUsage)
+			fmt.Fprintf(os.Stderr, "error: unexpected argument %q\n", a)
+			cli.GateRun.WriteHelp(os.Stderr)
 			return 2
 		}
 	}
 	if name == "" || len(command) == 0 {
-		fmt.Fprint(os.Stderr, "error: a gate name and a command after -- are required\n"+gateUsage)
+		fmt.Fprintln(os.Stderr, "error: a gate name and a command after -- are required")
+		cli.GateRun.WriteHelp(os.Stderr)
 		return 2
 	}
 	code, err := func() (int, error) {

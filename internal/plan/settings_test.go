@@ -151,10 +151,10 @@ func TestResolveSettings(t *testing.T) {
 			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
 		}},
 		{"the integration's, the developer's winning", &planv1.ProjectSettings{
-			Generated: []string{"gen/**", "docs/openapi.json"}, Generate: proto.String("go tool task gen"), Test: proto.String("go tool task test"),
+			Generated: []string{"gen/**", "docs/schema.json"}, Generate: proto.String("go tool task gen"), Test: proto.String("go tool task test"),
 			Install: proto.String("go tool task install"),
 		}, &planv1.ProjectSettings{Test: proto.String("go tool task test-go")}, Settings{
-			Provider: claude, Branch: DefaultBranch, Generated: []string{"gen/**", "docs/openapi.json"}, Generate: "go tool task gen",
+			Provider: claude, Branch: DefaultBranch, Generated: []string{"gen/**", "docs/schema.json"}, Generate: "go tool task gen",
 			Checks: []*planv1.ProjectCheck{atCommit("test", "go tool task test-go")}, ProviderFrom: def, ModelFrom: def,
 			BudgetFrom: def, BranchFrom: def, GeneratedFrom: repo, GenerateFrom: repo, SetupFrom: def, ChecksFrom: dev,
 			InstallFrom: repo, Install: "go tool task install", CorrectionAttempts: 2, AttemptsFrom: def,
@@ -274,10 +274,10 @@ func TestProjectShow(t *testing.T) {
 	}
 
 	writeSettings(t, repoFile, "provider: PROVIDER_CLAUDE\nmodel: \"opus\"\nmax_budget_usd: 3\nbranch: \"djinn/{code}-{uuid8}\"\n"+
-		"generated: \"gen/**\"\ngenerated: \"docs/openapi.json\"\ngenerate: \"go tool task gen\"\ntest: \"go tool task test\"\ncorrection_attempts: 3\ninstall: \"go tool task install\"\n")
+		"generated: \"gen/**\"\ngenerated: \"docs/schema.json\"\ngenerate: \"go tool task gen\"\ntest: \"go tool task test\"\ncorrection_attempts: 3\ninstall: \"go tool task install\"\n")
 	writeSettings(t, devFile, "model: \"sonnet\"\nbranch: \"me/{slug}-{uuid8}\"\ntest: \"go tool task test-go\"\n")
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
-		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/openapi.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
+		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, correction_attempts=3 REPOSITORY, "+
 		"install=go tool task install REPOSITORY"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
@@ -287,7 +287,7 @@ func TestProjectShow(t *testing.T) {
 	writeSettings(t, devFile, "model: sonnet\n")
 	res = show()
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
-		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/openapi.json REPOSITORY, "+
+		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, correction_attempts=3 REPOSITORY, "+
 		"install=go tool task install REPOSITORY"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)

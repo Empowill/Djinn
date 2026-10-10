@@ -1,8 +1,7 @@
-// The documentation site that djinn serves at /docs/ (docs/site): its concepts, its API tab with every operation of
-// docs/openapi.json (TestOpenAPI ties that file to the public methods of the protos), and the way to it from the
+// The documentation site that djinn serves at /docs/ (docs/site): its concepts, its Command line tab, filled in by
+// djinn from its own commands (TestCommands checks that every command has its entry), and the way to it from the
 // settings. Screenshots of both tabs, dark and light, go to test-results/e2e/docs-*.png.
 import { type Page, expect, test } from "@playwright/test";
-import fs from "node:fs";
 import path from "node:path";
 
 const shots = path.join(__dirname, "../test-results/e2e");
@@ -11,16 +10,6 @@ function djinnURL(pathname = "/"): string {
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = pathname;
   return url.toString();
-}
-
-// The operations of the API document, as RapiDoc names them: post-/plan.v1.QuestionService/Answer.
-function operations(): string[] {
-  const doc = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "../docs/openapi.json"), "utf8"),
-  ) as { paths: Record<string, Record<string, unknown>> };
-  return Object.entries(doc.paths)
-    .flatMap(([p, item]) => Object.keys(item).map((method) => `${method}-${p}`))
-    .sort();
 }
 
 function collectErrors(page: Page): string[] {
@@ -33,7 +22,7 @@ function collectErrors(page: Page): string[] {
 }
 
 for (const scheme of ["dark", "light"] as const) {
-  test(`the documentation shows its concepts and every operation of the API, ${scheme}`, async ({
+  test(`the documentation shows its concepts and every command, ${scheme}`, async ({
     page,
   }) => {
     const errors = collectErrors(page);
@@ -71,26 +60,39 @@ for (const scheme of ["dark", "light"] as const) {
       path: path.join(shots, `docs-concepts-${scheme}.png`),
     });
 
-    await page.getByRole("tab", { name: "API" }).click();
-    await expect(page).toHaveURL(/#api$/);
-    await expect(page.getByRole("tab", { name: "API" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    await page.getByRole("tab", { name: "Command line" }).click();
+    await expect(page).toHaveURL(/#commands$/);
+    await expect(
+      page.getByRole("tab", { name: "Command line" }),
+    ).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("#concepts")).toBeHidden();
-    const want = operations();
-    expect(want.length).toBeGreaterThan(50);
-    const nav = page.locator("rapi-doc .nav-bar-path");
-    await expect(nav).toHaveCount(want.length);
-    const shown = (
-      await nav.evaluateAll((items) =>
-        items.map((i) => i.getAttribute("data-content-id") ?? ""),
-      )
-    ).sort();
-    expect(shown).toEqual(want);
-    // Served by djinn, the console may call it.
-    await expect(page.locator("rapi-doc")).toHaveAttribute("allow-try", "true");
-    await page.screenshot({ path: path.join(shots, `docs-api-${scheme}.png`) });
+    const commands = page.locator("#commands .cli-cmd");
+    expect(await commands.count()).toBeGreaterThan(50);
+    for (const name of ["djinn wish make", "djinn gate run", "djinn up"])
+      await expect(
+        page.getByRole("heading", { level: 4, name, exact: true }),
+      ).toBeAttached();
+    await page.screenshot({
+      path: path.join(shots, `docs-commands-${scheme}.png`),
+    });
+
+    // The table of contents leads to a command.
+    await page
+      .locator(".cli-toc")
+      .getByRole("link", { name: "answer", exact: true })
+      .click();
+    await expect(page).toHaveURL(/#cmd-question-answer$/);
+    await expect(page.locator("#cmd-question-answer")).toBeInViewport();
+
+    // The search keeps what matches: an alias finds its group.
+    await page.getByRole("searchbox").fill("talisman");
+    await expect(page.locator("#group-tilasm")).toBeVisible();
+    await expect(page.locator("#group-wish")).toBeHidden();
+    await expect(page.locator("#cmd-tilasm-put")).toBeVisible();
+    await page.getByRole("searchbox").fill("no such command");
+    await expect(page.getByText("No command matches.")).toBeVisible();
+    await page.getByRole("searchbox").fill("");
+    await expect(page.locator("#group-wish")).toBeVisible();
 
     await page.getByRole("tab", { name: "Concepts" }).click();
     await expect(page.locator("#concepts")).toBeVisible();

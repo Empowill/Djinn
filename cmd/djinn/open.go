@@ -19,24 +19,18 @@ import (
 	"github.com/empowill/djinn/internal/ui"
 )
 
-const openUsage = `Usage: djinn open <link>
-
-Open a djinn:// link in Djinn: djinn://tilasm/<id> shows the wish's Tilasms tab on that tilasm, djinn://wish/<id> the
-wish. The system runs it for a link clicked anywhere (a browser, a chat, a Markdown file). It hands the link to the
-running Djinn, starting it in the background when none runs. A link Djinn does not know is refused, and the window
-says so. Without a link, djinn open is djinn up.
-`
-
 // runOpen is djinn open <link>: it hands the link to the djinn that runs on this data folder, one per folder as djinn
 // up and djinn wish resume find it, after starting one in the background when none answers. It returns the exit code:
-// 2 for a command line that is wrong, or a link that is not a djinn:// one, where nothing is started.
+// 2 for a command line that is wrong, or a link that is not a djinn:// one, where nothing is started. Its help is
+// cli.Open.
 func runOpen(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
-		fmt.Fprint(stdout, openUsage)
+		cli.Open.WriteHelp(stdout)
 		return 0
 	}
 	if len(args) != 1 {
-		fmt.Fprint(stderr, "djinn open: one link expected\n\n"+openUsage)
+		fmt.Fprint(stderr, "djinn open: one link expected\n\n")
+		cli.Open.WriteHelp(stderr)
 		return 2
 	}
 	raw := args[0]

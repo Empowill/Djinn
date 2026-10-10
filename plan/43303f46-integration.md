@@ -105,8 +105,8 @@ W115–W122, in this order, each merge tested green (`go tool task lint`, `go to
   means it, left with a reason.
 
 The method counts of `internal/cli`'s tests, which broke at every merge, are now derived from the protos: every public
-method is a command line with its help, every one that answers once is an MCP tool with its comment, and every one is
-described in `docs/openapi.json` (TestEveryPublicMethodIsExpressible, TestMCPListTools, TestOpenAPI).
+method is a command line with its help, and every one that answers once is an MCP tool with its comment
+(TestEveryPublicMethodIsExpressible, TestMCPListTools).
 
 ## Tests must be fast
 

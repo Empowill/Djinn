@@ -76,7 +76,7 @@ func TestDocs(t *testing.T) {
 	docs := fstest.MapFS{
 		"index.html": {Data: []byte("<title>docs</title>")},
 		"site.css":   {Data: []byte("main{}")},
-		"openapi.js": {Data: []byte("window.DJINN_OPENAPI = {};")},
+		"site.js":    {Data: []byte("window.site = {};")},
 	}
 	prefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	h := server.Handler(ui, docs, map[string]http.Handler{prefix: demoHandler})
@@ -87,7 +87,7 @@ func TestDocs(t *testing.T) {
 	}{
 		{"/docs/", http.StatusOK, "<title>docs</title>", "text/html"},
 		{"/docs/site.css", http.StatusOK, "main{}", "text/css"},
-		{"/docs/openapi.js", http.StatusOK, "window.DJINN_OPENAPI = {};", "text/javascript"},
+		{"/docs/site.js", http.StatusOK, "window.site = {};", "text/javascript"},
 		{"/docs/missing.js", http.StatusNotFound, "", ""},
 		{"/docs", http.StatusTemporaryRedirect, "", ""},
 		{"/", http.StatusOK, "<title>index</title>", "text/html"},

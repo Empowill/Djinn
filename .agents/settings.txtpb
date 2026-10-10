@@ -6,7 +6,6 @@
 # only in what go tool task gen makes is settled by making it again.
 setup: "npm ci"
 generated: "gen/**"
-generated: "docs/openapi.json"
 generate: "go tool task gen"
 
 # The lint before each task's work is committed; the whole test suite, too long for each commit, before each push.

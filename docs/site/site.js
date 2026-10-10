@@ -1,5 +1,5 @@
-// The two tabs (#concepts, #api), the theme, the chapters revealed as they come into view, and the API reference:
-// RapiDoc on window.DJINN_OPENAPI, which openapi.js sets.
+// The two tabs (#concepts, #commands), the theme, the chapters revealed as they come into view, and the search of the
+// command line, which only hides what does not match: the reference itself is plain HTML.
 (function () {
   "use strict";
   var root = document.documentElement;
@@ -7,78 +7,12 @@
 
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
   var ink = document.querySelector(".tab-ink");
-  var reference = document.getElementById("reference");
-  var loaded = false;
-
-  // The colors of the reference, from the site's palette (site.css).
-  var palettes = {
-    dark: {
-      "bg-color": "#0b1226",
-      "text-color": "#dfe3f2",
-      "primary-color": "#deb062",
-      "nav-bg-color": "#070b1a",
-      "nav-text-color": "#b4bbd6",
-      "nav-hover-bg-color": "#121b3a",
-      "nav-hover-text-color": "#f6dfa4",
-      "nav-accent-color": "#deb062",
-      "nav-accent-text-color": "#1a1305",
-    },
-    light: {
-      "bg-color": "#fffaf0",
-      "text-color": "#18203d",
-      "primary-color": "#8a6420",
-      "nav-bg-color": "#f2e9d4",
-      "nav-text-color": "#3d4668",
-      "nav-hover-bg-color": "#e9dcc0",
-      "nav-hover-text-color": "#18203d",
-      "nav-accent-color": "#a67a2e",
-      "nav-accent-text-color": "#fffaf0",
-    },
-  };
+  var commands = document.getElementById("commands");
 
   function paint() {
     var theme = root.dataset.theme === "light" ? "light" : "dark";
-    var palette = palettes[theme];
-    reference.setAttribute("theme", theme);
-    Object.keys(palette).forEach(function (name) {
-      reference.setAttribute(name, palette[name]);
-    });
     var toggle = document.querySelector(".theme-toggle");
     toggle.setAttribute("aria-label", theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme");
-  }
-
-  // RapiDoc 10.1 splits a const as a string: a number, as Connect-Protocol-Version's 1, breaks its rendering. The
-  // same value, as an enum of one, reads the same.
-  function constants(node) {
-    if (Array.isArray(node)) {
-      node.forEach(constants);
-    } else if (node && typeof node === "object") {
-      if ("const" in node && typeof node.const !== "string") {
-        node.enum = [node.const];
-        delete node.const;
-      }
-      Object.keys(node).forEach(function (key) {
-        constants(node[key]);
-      });
-    }
-    return node;
-  }
-
-  function load() {
-    if (loaded) return;
-    loaded = true;
-    if (!window.DJINN_OPENAPI || !customElements.get("rapi-doc")) {
-      document.querySelector(".api-missing").hidden = false;
-      reference.hidden = true;
-      return;
-    }
-    // Served by Djinn, the console calls the Djinn that serves the page; opened from a file, it reads only.
-    if (location.protocol === "http:" || location.protocol === "https:") {
-      reference.setAttribute("server-url", location.origin);
-      reference.setAttribute("default-api-server", location.origin);
-      reference.setAttribute("allow-try", "true");
-    }
-    reference.loadSpec(constants(window.DJINN_OPENAPI));
   }
 
   function place() {
@@ -99,22 +33,48 @@
       if (on && focus) tab.focus();
     });
     place();
-    if (name === "api") load();
   }
 
-  // A hash names a tab, or a place in the concepts.
+  // A hash names a tab, or a place in one: a chapter of the concepts, a command (#cmd-wish-make).
   function route() {
     var id = location.hash.slice(1);
-    if (id === "api") {
-      show("api");
-      window.scrollTo(0, 0);
-      return;
-    }
-    show("concepts");
     var target = id && document.getElementById(id);
-    if (target && target !== document.getElementById("concepts")) target.scrollIntoView();
-    else if (id === "concepts") window.scrollTo(0, 0);
+    var name = target && commands.contains(target) ? "commands" : "concepts";
+    show(name);
+    // A command is reached at once: the reference is long, and nothing in it moves.
+    if (target && target.getAttribute("role") !== "tabpanel") {
+      target.scrollIntoView(name === "commands" ? { behavior: "instant" } : undefined);
+    } else window.scrollTo(0, 0);
   }
+
+  // The search keeps the commands whose text holds every word typed, and the groups that keep one.
+  var search = document.querySelector(".cli-search input");
+  function filter() {
+    var words = search.value.toLowerCase().split(/\s+/).filter(Boolean);
+    var shown = 0;
+    Array.prototype.forEach.call(commands.querySelectorAll(".cli-group[data-group]"), function (group) {
+      var kept = 0;
+      Array.prototype.forEach.call(group.querySelectorAll(".cli-cmd"), function (cmd) {
+        var text = (group.dataset.group + " " + cmd.textContent).toLowerCase();
+        var on = words.every(function (w) {
+          return text.indexOf(w) >= 0;
+        });
+        cmd.hidden = !on;
+        var entry = commands.querySelector('.cli-toc li[data-command="' + cmd.dataset.command + '"]');
+        if (entry) entry.hidden = !on;
+        if (on) kept++;
+      });
+      group.hidden = kept === 0;
+      var toc = commands.querySelector('.cli-toc-group[data-group="' + group.id.replace(/^group-/, "") + '"]');
+      if (toc) toc.hidden = kept === 0;
+      shown += kept;
+    });
+    commands.querySelector("#global-flags").hidden = words.length > 0;
+    commands.querySelector(".cli-toc-global").hidden = words.length > 0;
+    var none = commands.querySelector(".cli-none");
+    if (none) none.hidden = shown > 0;
+  }
+  if (search) search.addEventListener("input", filter);
 
   tabs.forEach(function (tab, i) {
     tab.addEventListener("click", function () {

@@ -99,13 +99,14 @@ func run(ctx context.Context, args []string, cfg Config) error {
 		writeHelp(cfg.Stdout)
 		return nil
 	}
+	// The help of a command written by hand, which cmd/djinn runs: djinn help up.
+	if b, _, ok := Builtin(rest); ok && help {
+		b.WriteHelp(cfg.Stdout)
+		return nil
+	}
 	// djinn mcp serves the public methods to an agent that speaks MCP, on stdin and stdout.
 	if rest[0] == "mcp" {
-		switch {
-		case help:
-			fmt.Fprint(cfg.Stdout, mcpHelp)
-			return nil
-		case len(rest) > 1:
+		if len(rest) > 1 {
 			return usageError{fmt.Errorf("djinn mcp takes no argument, got %q", rest[1])}
 		}
 		return serveMCP(ctx, cfg)
@@ -143,7 +144,7 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 	md := methods[slices.Index(names, name)]
 	if help {
-		writeMethodHelp(cfg.Stdout, md)
+		methodCommand(md).WriteHelp(cfg.Stdout)
 		return nil
 	}
 
@@ -422,31 +423,24 @@ func writeHelp(w io.Writer) {
 		}
 		fmt.Fprintf(tw, "  %s\t%s\n", name, comment(sd))
 	}
-	fmt.Fprintf(tw, "  version\tPrint the version of djinn.\n")
-	fmt.Fprintf(tw, "  mcp\tServe these commands as MCP tools on stdin and stdout, for an agent that speaks MCP.\n")
-	fmt.Fprintf(tw, "  open\tOpen a djinn:// link in Djinn, starting it when it does not run: what the system runs for one.\n")
-	fmt.Fprintf(tw, "  update\tRestart the running djinn on the newer one installed at its path (go tool task install).\n")
+	for _, b := range Builtins {
+		if group(b) == Own {
+			fmt.Fprintf(tw, "  %s\t%s\n", b.Name, b.Summary)
+		}
+	}
 	tw.Flush()
-	fmt.Fprint(w, `
-Global flags, anywhere on the line:
-  --json        Print the result as JSON.
-  --addr URL    Address of the djinn server: unix:///path/to/djinn.sock, or http://127.0.0.1:PORT/?token=…
-                (default $DJINN_ADDR, then the address djinn up writes in the data directory).
-  -h, --help    Show help.
-
-A unique prefix of a command or a method is enough: djinn q answer.
-`)
+	fmt.Fprint(w, "\nGlobal flags, anywhere on the line:\n")
+	tw = tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	for _, p := range GlobalFlags {
+		name := p.Name
+		if p.Type != "bool" {
+			name += " value"
+		}
+		fmt.Fprintf(tw, "  %s\t%s\n", name, p.Help)
+	}
+	tw.Flush()
+	fmt.Fprint(w, "\nA unique prefix of a command or a method is enough: djinn q answer.\n")
 }
-
-const mcpHelp = `Usage: djinn mcp [--addr URL]
-
-Serve the commands of djinn as MCP tools, on stdin and stdout (the stdio transport of the Model Context
-Protocol). Each public method that answers once is a tool: djinn wish set-lead is wish_set_lead. Its arguments
-are the fields of the request, by their proto names, read and checked as the command line does. A relative path
-starts from the folder djinn mcp runs in. The streaming methods (watch, gate hold) stay on the command line.
-
-Add it to an agent, for example: claude mcp add djinn -- djinn mcp
-`
 
 func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 	fmt.Fprintf(w, "%s\n\nUsage: djinn %s <method> [arguments] [flags]\n\nMethods:\n", comment(sd), command(sd))
@@ -454,52 +448,12 @@ func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 	for _, md := range public(sd) {
 		fmt.Fprintf(tw, "  %s\t%s\n", kebab(string(md.Name())), comment(md))
 	}
-	tw.Flush()
-}
-
-func writeMethodHelp(w io.Writer, md protoreflect.MethodDescriptor) {
-	in := md.Input()
-	pos := positionals(in)
-	usage := "djinn " + command(md.Parent().(protoreflect.ServiceDescriptor)) + " " + kebab(string(md.Name()))
-	for _, fd := range pos {
-		usage += " " + label(fd)
-	}
-	if len(pos) < in.Fields().Len() {
-		usage += " [flags]"
-	}
-	fmt.Fprintf(w, "Usage: %s\n\n%s\n", usage, comment(md))
-	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	if len(pos) > 0 {
-		fmt.Fprintln(tw, "\nArguments:")
-	}
-	for _, fd := range pos {
-		fmt.Fprintf(tw, "  %s\t%s\n", label(fd), fieldHelp(fd))
-	}
-	if len(pos) < in.Fields().Len() {
-		fmt.Fprintln(tw, "\nFlags:")
-	}
-	for _, fd := range byNumber(in) {
-		if required(fd) {
-			continue
+	for _, b := range Builtins {
+		if group(b) == command(sd) {
+			fmt.Fprintf(tw, "  %s\t%s\n", strings.TrimPrefix(b.Name, command(sd)+" "), b.Summary)
 		}
-		name := label(fd)
-		if fd.Kind() != protoreflect.BoolKind || fd.IsList() {
-			name += " value"
-		}
-		fmt.Fprintf(tw, "  %s\t%s\n", name, fieldHelp(fd))
 	}
 	tw.Flush()
-}
-
-func fieldHelp(fd protoreflect.FieldDescriptor) string {
-	help := comment(fd)
-	if want := expect(fd); want != "" {
-		help += " Expects " + want + "."
-	}
-	if fd.IsList() {
-		help += " Repeatable."
-	}
-	return help
 }
 
 // writeText prints a response for a human: one "name: value" line per field set, nested messages indented, and

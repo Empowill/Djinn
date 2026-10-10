@@ -12,7 +12,7 @@ service adds a command, with its help, its arguments and their validation.
   `QuestionService.Answer` is `djinn question answer`.
 - A service may name another word for its command, `option (djinn.v1.alias) = "talisman"`: `djinn talisman list` is
   `djinn tilasm list`. An alias answers in full, or by a prefix no command's own name takes (`djinn t` stays
-  ambiguous); the help lists it, and MCP and OpenAPI know the command's own name only.
+  ambiguous); the help and the documentation list it, and MCP knows the command's own name only.
 - A unique prefix is enough: `djinn q answer`, `djinn pr l`. An ambiguous one is an error that lists the
   candidates (`djinn question a` matches `ask` and `answer`).
 - `djinn version` prints the version.
@@ -129,19 +129,27 @@ as above.
 No MCP library: the server is `internal/cli/mcp.go`, the protocol's `initialize`, `ping`, `tools/list`,
 `tools/call` and `notifications/cancelled`.
 
-## OpenAPI
+## Commands written by hand
 
-[`openapi.json`](openapi.json) describes the same public methods for any HTTP client, in OpenAPI 3.1: each is a
-`POST` of the [Connect protocol](https://connectrpc.com/docs/protocol) on `/<package>.<Service>/<Method>`, its body
-the request in protobuf JSON; a [read](#reads-and-writes) has a `GET` too, the request in the query. The streaming
-methods are described with Connect's streaming content types. `go tool task gen` writes it with
-[protoc-gen-connect-openapi](https://github.com/sudorandom/protoc-gen-connect-openapi), a plugin of `buf.gen.yaml`
-that starts from [`openapi.base.yaml`](openapi.base.yaml). The plugin knows only `google.api.visibility`, so
-`buf.gen.yaml` excludes the internal methods by name; `TestOpenAPI` fails when a public method is missing, an internal
-one is described, or a comment or a request field lags behind the protos.
+A few commands run on the caller's side or without a server, so `cmd/djinn` writes them: `djinn up`, `open`,
+`update`, `backup`, `backup restore` and `gate run`; `djinn version` and `djinn mcp` are the cli package's own. Each
+has its entry in `cli.Builtins` (`internal/cli/builtin.go`): its usage, its help, its arguments and its flags, with
+their types and defaults. That entry is what its `--help` prints and what the documentation shows; `djinn up` builds
+its flags from it. `TestEveryCommandIsDocumented` fails when `cmd/djinn` runs a command that has no entry, or when an
+entry runs nowhere.
 
-The API tab of the documentation site shows it: `go tool task docs` builds the site into `bin/docs`, and `djinn up`
-serves it at `/docs/`.
+## Documentation
+
+The Command line tab of the documentation site lists every command, grouped by service: its usage, its help, what
+it changes, its MCP tool, and each argument and flag with its type, its values, its default and its environment
+variable. `cli.Reference` reads it from the same command tree as `djinn` and from `cli.Builtins`, and
+`internal/docsite` writes it into the page when `djinn up` serves `/docs/` and when `go tool task docs` builds
+`bin/docs`. Nothing is generated ahead and committed: the tab is the commands of the djinn that shows it, and cannot
+lag behind them. `TestCommands` checks that each has its entry, its anchor and its table.
+
+The HTTP API itself is the [Connect protocol](https://connectrpc.com/docs/protocol) on the protos in `api/`: each
+method is a `POST` on `/<package>.<Service>/<Method>`, its body the request in protobuf JSON; a
+[read](#reads-and-writes) answers a `GET` too.
 
 ## How it works
 
