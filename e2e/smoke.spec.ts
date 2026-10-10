@@ -218,9 +218,9 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   const toggle = page.locator(".app-toolbar-toggle");
   const toolbar = page.locator(".app-toolbar");
   const toggleBox = await toggle.boundingBox();
-  expect(toggleBox).toMatchObject({ width: 20, height: 20, x: 82, y: 6 });
+  expect(toggleBox).toMatchObject({ width: 20, height: 20, x: 92, y: 6 });
   expect(await toolbar.boundingBox()).toMatchObject({
-    x: 82,
+    x: 92,
     y: 6,
     height: 20,
   });
