@@ -175,7 +175,7 @@ func TestInvestigator(t *testing.T) {
 	q := e.asker(wishID)
 	asked := q.ask(t, "wait") // It works until the test lets it go.
 	// What the developer typed in the card's note, as they typed it.
-	note := "what does each cost to run?\nAnd the \"smoke\" of the wick — été ?"
+	note := "what does each cost to run?\nAnd the \"smoke\" of the wick — and why?"
 	q.enlighten(t, asked.GetCode(), note)
 	investigators := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
 	if len(investigators) != 1 || len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_CONVERTER)) != 0 {

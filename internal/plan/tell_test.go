@@ -139,14 +139,14 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 	}
 	q := c.ask(t, id, "Olive", "Paraffin")
 	asked := strings.Repeat("What does each cost? ", 15)
-	note := asked + "\nAnd the \"smoke\" of the wick — été ?"
+	note := asked + "\nAnd the \"smoke\" of the wick — and why?"
 	if _, err := c.questions.Enlighten(ctx, connect.NewRequest(&planv1.QuestionServiceEnlightenRequest{
 		WishId: id, Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: q.GetCode()}}, Note: note,
 	})); err != nil {
 		t.Fatal(err)
 	}
 	want := LeadTerminal(id) + ": Djinn: Q01, the developer wants to know more before answering. Note: \"" + asked +
-		"And the \"smoke\" of the wick — été ?\". Investigate, then revise Q01: djinn wish brief " + id + " has the context."
+		"And the \"smoke\" of the wick — and why?\". Investigate, then revise Q01: djinn wish brief " + id + " has the context."
 	if len(leads.said) != 1 || leads.said[0] != want {
 		t.Errorf("said %q, want %q", leads.said, want)
 	}
