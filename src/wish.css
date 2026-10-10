@@ -495,6 +495,12 @@
   background: var(--surface);
   margin-bottom: var(--space-2);
 }
+.azima-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-2);
+}
 .azima-heading {
   width: 100%;
   display: flex;
@@ -502,6 +508,17 @@
   gap: var(--space-3);
   padding: 11px 14px;
   text-align: left;
+}
+.azima-row .azima-heading {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.azima-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 .azima-heading strong {
   flex: 1;
@@ -601,4 +618,46 @@
   display: flex;
   gap: var(--space-2);
   align-items: center;
+}
+.azima-branch {
+  color: var(--n-c4);
+  background: var(--n-20);
+  border: 1px solid var(--n-38);
+  border-radius: var(--radius-control);
+  padding: 1px 6px;
+  font-size: var(--font-size-body);
+}
+.azima-base-branch {
+  color: var(--n-8f);
+  font-size: var(--font-size-body);
+}
+.azima-sync-status {
+  font-size: var(--font-size-body);
+  color: var(--st-waiting);
+}
+.azima-pushed-status {
+  font-size: var(--font-size-body);
+  color: var(--st-done);
+}
+.azima-pr-badge,
+.azima-pr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-body);
+  border-radius: var(--radius-control);
+  padding: 2px 7px;
+  border: 1px solid var(--n-38);
+  background: var(--n-20);
+  color: var(--n-d1);
+  text-decoration: none;
+}
+.azima-pr-link:hover {
+  border-color: var(--n-5e);
+  color: var(--n-ff);
+}
+.wish-push-strategy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }

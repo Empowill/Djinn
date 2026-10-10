@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   CloudUpload,
+  GitBranch,
   GitMerge,
   Terminal,
 } from "lucide-react";
@@ -14,11 +15,13 @@ import {
   type Lead,
   ProjectPush,
   Provider,
+  PushStrategy,
+  type Wish,
   type WishMain,
   type WishPush,
 } from "../gen/ts/plan/v1/plan_pb";
 import type { Provider as Agent } from "../gen/ts/ui/v1/ui_pb";
-import { when } from "./data/format";
+import { effectivePushStrategy, when } from "./data/format";
 import { t } from "./i18n";
 
 // The agents a lead runs, in the order the menu lists them, by their identifier in UiService.GetEnvironment.
@@ -330,5 +333,49 @@ export function MainMerges({
         );
       })}
     </>
+  );
+}
+
+// PushStrategySelector lets the developer see and change the push strategy of a wish.
+export function PushStrategySelector({
+  wish,
+  projects,
+  onChange,
+  disabled,
+}: {
+  wish?: Wish;
+  projects?: { pushStrategy?: PushStrategy }[];
+  onChange: (strategy: PushStrategy) => void;
+  disabled?: boolean;
+}) {
+  const current = effectivePushStrategy(wish, projects);
+  return (
+    <span className="wish-push-strategy">
+      <GitBranch size={13} />
+      <div
+        className="segmented-switch"
+        role="group"
+        aria-label={t("wish.strategy_label")}
+      >
+        <button
+          type="button"
+          className={current !== PushStrategy.AZIMA ? "active" : ""}
+          title={t("wish.strategy_wish_detail")}
+          onClick={() => onChange(PushStrategy.WISH)}
+          disabled={disabled}
+        >
+          {t("wish.strategy_wish")}
+        </button>
+        <button
+          type="button"
+          className={current === PushStrategy.AZIMA ? "active" : ""}
+          title={t("wish.strategy_azima_detail")}
+          onClick={() => onChange(PushStrategy.AZIMA)}
+          disabled={disabled}
+        >
+          {t("wish.strategy_azima")}
+        </button>
+      </div>
+    </span>
   );
 }
