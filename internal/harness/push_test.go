@@ -14,6 +14,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // remote gives the repository a remote, origin, a bare repository in a temporary folder that holds the integration
@@ -81,6 +82,7 @@ func (in *integration) later(d time.Duration) {
 // TestPushAtAnAzimasEnd: the integration branch is pushed once an azima's last part is committed, not before, with
 // the person's own git, and the push recorded: in the journal, on the wish, in each task's events.
 func TestPushAtAnAzimasEnd(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -122,6 +124,7 @@ func TestPushAtAnAzimasEnd(t *testing.T) {
 // last push and more than an hour has passed since it, checked as a task's merge ends; not before. TestPushDue holds
 // three tasks within the hour.
 func TestPushAfterThreeTasksAndAnHour(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -150,6 +153,7 @@ func TestPushAfterThreeTasksAndAnHour(t *testing.T) {
 // TestPushAskMode: in ask mode, a push due asks the person, once, and pushes nothing; "Push it" pushes at the next
 // pass, with the work committed meanwhile.
 func TestPushAskMode(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -194,6 +198,7 @@ func TestPushAskMode(t *testing.T) {
 // says why and asks. Pushing again while it is behind is refused again; once the person brings the remote's commit
 // in, it passes.
 func TestARefusedPushIsNotForced(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	bare := in.remote(t)
 	// Someone else pushed to origin meanwhile.
@@ -247,6 +252,7 @@ func TestARefusedPushIsNotForced(t *testing.T) {
 // to propose: the commits' titles, and what to check, from what each worker said last. Installing it runs the command
 // in the integration worktree at that commit, under the install gate, never in the person's checkout.
 func TestABuildIsProposed(t *testing.T) {
+	testx.Portable(t)
 	var built []Built
 	in := integrating(t, WithBuilt(func(b Built) { built = append(built, b) }))
 	in.remote(t)
@@ -290,6 +296,7 @@ func TestABuildIsProposed(t *testing.T) {
 
 // TestNoRemoteNoPush: a repository without a remote pushes nothing, and says nothing about it.
 func TestNoRemoteNoPush(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	azima := in.azima(t, in.wishID, "Letters")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })

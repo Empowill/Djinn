@@ -14,11 +14,13 @@ import (
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // TestDone: a task no worker runs is marked done by hand, whatever it was, and records who closed it, when and why.
 // A running task, and a task done already, are refused.
 func TestDone(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
@@ -106,6 +108,7 @@ func cmpOr(c, def planv1.Closer) planv1.Closer {
 
 // TestDoneStartsDependent: a planned task marked done by hand lets the task waiting on it start.
 func TestDoneStartsDependent(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	l := &limit{slots: 0}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(20*time.Millisecond))
@@ -127,6 +130,7 @@ func TestDoneStartsDependent(t *testing.T) {
 // TestDoneWaitingThenYes: a task waiting for its edit question, marked done by hand, stays done when the question
 // is answered yes afterwards: its worker does not start again.
 func TestDoneWaitingThenYes(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	dir := folder(t)
@@ -155,6 +159,7 @@ func TestDoneWaitingThenYes(t *testing.T) {
 // TestDoneCommand: djinn task done closes a task from the command line, with a note; a second time says it is done
 // already, and exits 1.
 func TestDoneCommand(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())

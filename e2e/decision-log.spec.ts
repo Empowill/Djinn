@@ -7,6 +7,9 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { portable } from "./portable";
+
+portable();
 
 const shots = path.join(__dirname, "../test-results/e2e");
 const binary = path.resolve(

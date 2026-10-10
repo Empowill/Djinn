@@ -3,6 +3,9 @@
 // settings. Screenshots of both tabs, dark and light, go to test-results/e2e/docs-*.png.
 import { type Page, expect, test } from "@playwright/test";
 import path from "node:path";
+import { portable } from "./portable";
+
+portable();
 
 const shots = path.join(__dirname, "../test-results/e2e");
 

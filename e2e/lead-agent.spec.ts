@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { portable } from "./portable";
 
 const binary = path.resolve(
   __dirname,
@@ -62,6 +63,7 @@ async function open(
 test("the description under the title edits in place, as djinn wish describe", async ({
   page,
 }) => {
+  portable();
   const title = `Describe the lamp ${randomUUID().slice(0, 8)}`;
   const wishId = await open(page, title);
   // The title stands for it until someone writes one.

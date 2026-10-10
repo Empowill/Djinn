@@ -13,11 +13,13 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // TestDepend: a task's dependencies are set after it was made, by code; a cycle, a wait on itself or a task of
 // another wish is refused; none clears them; a planned task waits for its new dependencies.
 func TestDepend(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	ctx := t.Context()
 	// No slot: the planned tasks wait, for their dependencies first.
@@ -77,6 +79,7 @@ func TestDepend(t *testing.T) {
 // while scheduler passes run in a tight loop: as the slots free, W5 never starts before the new task is done. When a
 // pass started W5 first, the spawn is refused, saying where W5 stands, and makes nothing.
 func TestSpawnBlocksWhilePassesRun(t *testing.T) {
+	testx.Portable(t)
 	l := &limit{}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, nativeFolder(t)) // Outside Git: no worktree to make, the test stays fast.
@@ -137,6 +140,7 @@ func TestSpawnBlocksWhilePassesRun(t *testing.T) {
 // TestSpawnAfterAndBlocks: --after takes a comma list; --blocks puts the new task before planned tasks, and is refused
 // for a task that has started, saying where it stands, and for one that would close a cycle, naming it.
 func TestSpawnAfterAndBlocks(t *testing.T) {
+	testx.Portable(t)
 	l := &limit{slots: 1}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, nativeFolder(t))
@@ -202,6 +206,7 @@ func TestSpawnAfterAndBlocks(t *testing.T) {
 
 // TestDependSeveral: depend sets several tasks at once, all or none: one cyclic edge among them changes nothing.
 func TestDependSeveral(t *testing.T) {
+	testx.Portable(t)
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, nativeFolder(t))
 	later := &planv1.TaskServiceSpawnRequest{Later: true}

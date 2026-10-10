@@ -15,6 +15,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // counting is the fake agent, each worker working a while first, which counts its workers: the tasks it starts, in
@@ -134,6 +135,7 @@ func leftRunning(t *testing.T, db *store.Store, wishID, projectID, code, worktre
 // TestStoppedBeforeItsWorkerStarted: djinn up stops while the worktree of a planned task is being made, before its
 // worker starts: the task waits for a worker again, with no worktree to lose, and the next start runs it.
 func TestStoppedBeforeItsWorkerStarted(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home, WithTick(time.Hour))
@@ -164,6 +166,7 @@ func TestStoppedBeforeItsWorkerStarted(t *testing.T) {
 // second's, each in its own order, then the planned one, never more than 2 at once, the others waiting for a slot and
 // saying so; all end done, each worker started once. The paused wish's tasks wait for it, and resume once it is active.
 func TestRestartResumesInOrder(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
@@ -289,6 +292,7 @@ func TestRestartResumesInOrder(t *testing.T) {
 // TestRestartBeforeNewSpawn: a task spawned as a slot frees after a restart does not take it from a task Djinn
 // resumes: it waits, and starts once the resumed one is done.
 func TestRestartBeforeNewSpawn(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)

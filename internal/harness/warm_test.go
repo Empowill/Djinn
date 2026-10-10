@@ -13,6 +13,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // envClaude is Claude played by the test binary: the fake's environment is added to every worker's, warm or not,
@@ -156,6 +157,7 @@ func TestWarmWorker(t *testing.T) {
 // Spawn fills them, so that a task of the project takes it; when the settings change, it is replaced. A task that
 // asks for another model starts cold and leaves it.
 func TestWarmTakesTheProjectSettings(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	repo := gitRepo(t)
 	writeFile(t, repo, ".agents/settings.txtpb", "model: \"team-model\"\nmax_budget_usd: 2\n")
@@ -215,6 +217,7 @@ func TestWarmTakesTheProjectSettings(t *testing.T) {
 // TestWarmWithinTheMachine: the warm workers fit in the slots the running workers leave, and none waits while the
 // machine is under pressure.
 func TestWarmWithinTheMachine(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	providers, _ := warmProviders(t)
 	var mu sync.Mutex
@@ -257,6 +260,7 @@ func TestWarmWithinTheMachine(t *testing.T) {
 // TestWarmLeftovers: a djinn up that died leaves the worktree of a warm worker no task took; the next one removes
 // it, and only it.
 func TestWarmLeftovers(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	repo := gitRepo(t)
 	home := t.TempDir()

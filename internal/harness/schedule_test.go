@@ -16,6 +16,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // spawnReq spawns a fake task with req's own fields, the wish and the provider set.
@@ -101,7 +102,8 @@ func (l *limit) set(slots int, pressure string) {
 }
 
 // TestDependsOn: a task waits for its dependencies, says so, and starts once they are done; a task whose
-// dependency failed fails too, and so do its own dependents.
+// dependency failed fails too, and so do its own dependents. Not marked portable: the scheduler's smoke on Windows
+// (CONTRIBUTING.md).
 func TestDependsOn(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour)) // Only a task that ends wakes the scheduler.
@@ -156,6 +158,7 @@ func TestDependsOn(t *testing.T) {
 // on a full machine a new worker waits, saying so, and starts once the gate is given back, woken with no tick. A
 // running worker holds its own gates in its slot (Works).
 func TestGateHeldOutside(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	l := &limit{slots: 2}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
@@ -186,6 +189,7 @@ func TestGateHeldOutside(t *testing.T) {
 // TestSlots: never more workers than the slots, the next planned task starts as soon as one frees, and a planned
 // task waits while the machine is under pressure.
 func TestSlots(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	l := &limit{slots: 2}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
@@ -254,6 +258,7 @@ func TestSlots(t *testing.T) {
 // peak of a worker and the memory free; once the memory frees, it starts, the first one still running. The fake
 // worker runs in Djinn's process, never measured: its typical peak is the policy's default.
 func TestMemoryHoldsWorker(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	var mu sync.Mutex
 	free := uint64(2 * machine.GiB)
@@ -294,6 +299,7 @@ func TestMemoryHoldsWorker(t *testing.T) {
 
 // TestPlannedSurvivesRestart: a task planned for later waits across a restart of djinn up, then starts.
 func TestPlannedSurvivesRestart(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
 	l := &limit{slots: 1, pressure: "simulated"}
@@ -313,6 +319,7 @@ func TestPlannedSurvivesRestart(t *testing.T) {
 
 // TestStopPlanned: a planned task stops at once, and its dependents fail.
 func TestStopPlanned(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	l := &limit{slots: 0}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
@@ -400,6 +407,7 @@ func TestScopes(t *testing.T) {
 // TestRank: when a slot frees, the first wish of the rank is served first, whatever was planned first; the
 // tasks of a paused wish wait until it is active again.
 func TestRank(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(50*time.Millisecond))
 	repo := gitRepo(t)
@@ -443,6 +451,7 @@ func TestRank(t *testing.T) {
 
 // TestNote: an event from outside the worker reaches the task's events, whether its worker runs or not.
 func TestNote(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))

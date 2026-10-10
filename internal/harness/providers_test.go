@@ -15,6 +15,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // catalogCase is a row of the case catalog of docs/providers.md: a fixture replayed by the fake provider, and what
@@ -612,6 +613,7 @@ func (r recorder) Start(ctx context.Context, spec Spec) (Worker, error) {
 // TestSpawnOutsideProject: a task of a wish without any project runs read-only, in an empty folder of its own
 // under Djinn's data folder.
 func TestSpawnOutsideProject(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)

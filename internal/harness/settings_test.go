@@ -9,9 +9,11 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 func TestSpawnTakesTheProjectSettings(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home, dir := t.TempDir(), t.TempDir()
 	writeFile(t, dir, ".agents/settings.txtpb", "provider: PROVIDER_FAKE\nmodel: \"team-model\"\nmax_budget_usd: 2\n")
@@ -70,6 +72,7 @@ func TestSpawnTakesTheProjectSettings(t *testing.T) {
 // TestBranchFromSettings: a worker's branch follows the project's template, the developer's over the team's; a
 // planned task takes it when it starts.
 func TestBranchFromSettings(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home, repo := t.TempDir(), gitRepo(t)
 	writeFile(t, repo, ".agents/settings.txtpb", "branch: \"djinn/{code}-{uuid8}\"\n")

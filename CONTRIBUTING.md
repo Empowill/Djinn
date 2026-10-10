@@ -121,6 +121,16 @@ To use Djinn, see the [README](README.md). To work on it:
   `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 2 s on Linux,
   the reference, and over 15 s elsewhere, where a process costs ten times more and a test over 2 s is only reported
   (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
+  - **Windows runs what targets the system.** Linux and macOS run every test; the Windows job sets
+    `DJINN_TEST_SYSTEM_ONLY=1`, which skips the tests marked portable: `testx.Portable(t)` first in a Go test
+    (`internal/testx`), `portable()` in an end-to-end spec (`e2e/portable.ts`). Mark a test portable when it pays
+    for git, processes or a whole `djinn up` to check Djinn's own logic: the integration's merges, corrections,
+    reviews and pushes, the scheduler, the plan, questions, permissions (most of `internal/harness`), and specs of
+    the interface alone. Never mark one that reaches what differs on Windows: a `_windows.go` file or a
+    `runtime.GOOS` branch, processes and their stop, paths and worktrees, the terminal, the command line's files.
+    A test that costs nothing stays unmarked: it runs everywhere. Two portable tests stay unmarked as Windows'
+    smoke of that logic, end to end: `TestCommitEachTaskAlone` (the integration) and `TestDependsOn` (the
+    scheduler). `DJINN_TEST_SYSTEM_ONLY=1 go tool task test` runs on any system what Windows runs.
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
 - `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
   can be.
