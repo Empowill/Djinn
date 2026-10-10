@@ -23,6 +23,7 @@
   "attention.level_ready": "Prêt",
   "attention.summary.one": "{count} chose vous attend",
   "attention.summary.other": "{count} choses vous attendent",
+  "attention.worker_failed": "a échoué",
   "attention.worker_waits": "attend votre réponse avant de modifier",
   "azima.how_to_validate": "Vérifiez ce qui est listé, cochez les cases de sa fiche avec leur preuve (ou levez-les), puis validez-la : elle passe en fait.",
   "azima.needs": "Il faut {needs}",

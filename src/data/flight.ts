@@ -290,14 +290,38 @@ export function forkedAs(task: Task, tasks: readonly Task[]): string {
   );
 }
 
+// taskDealtWith tells whether a failed worker has been addressed: marked done, continued (or forked),
+// or a new task names it in its title, decision, forkOf, or as a correction/review target.
+export function taskDealtWith(task: Task, tasks: readonly Task[]): boolean {
+  if (task.status === TaskStatus.DONE) return true;
+  if (task.continuing) return true;
+  if (task.closed?.continuedIn) return true;
+  if (forkedAs(task, tasks) !== "") return true;
+  const code = task.code;
+  if (!code) return false;
+  const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const word = new RegExp(`\\b${escaped}\\b`);
+  return tasks.some(
+    (other) =>
+      other.id !== task.id &&
+      (other.forkOf === code ||
+        other.decision === code ||
+        word.test(other.title) ||
+        (other.correction?.failure?.taskIds ?? []).includes(task.id) ||
+        (other.review?.taskIds ?? []).includes(task.id)),
+  );
+}
+
 // waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, or cut short by a stop and
 // not resumed. A task Djinn resumes by itself (RESUMING), or one resumed as another task, is not the user's move.
 export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
   const questions = new Map(detail.questions.map((q) => [q.id, q]));
   return detail.tasks
     .filter(
-      // Only a worker that asks something waits for the user: Djinn resumes the ones it cut short by itself.
-      (task) => task.status === TaskStatus.WAITING,
+      (task) =>
+        task.status === TaskStatus.WAITING ||
+        (task.status === TaskStatus.FAILED &&
+          !taskDealtWith(task, detail.tasks)),
     )
     .map((item) => {
       const q = questions.get(item.editQuestionId);

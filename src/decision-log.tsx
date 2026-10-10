@@ -9,7 +9,7 @@ import { Bot, CornerDownRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
 import { type Decision, BY_LEAD } from "./data/decisions";
-import { answerText, when } from "./data/format";
+import { answerText, firstLine, when } from "./data/format";
 import { t } from "./i18n";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
@@ -222,14 +222,4 @@ export function DecisionLink({
       {t("decision.from", { decision: label })}
     </a>
   );
-}
-
-// firstLine is a note's first line of text, for its folded summary.
-function firstLine(text: string): string {
-  const line =
-    text
-      .split("\n")
-      .map((l) => l.replace(/^[#>*+\-\s]+/, "").trim())
-      .find(Boolean) ?? "";
-  return line.length > 140 ? `${line.slice(0, 139)}…` : line;
 }

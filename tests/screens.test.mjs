@@ -25,6 +25,8 @@ export {
   azimaGroups,
   flightPlan,
   movingTasks,
+  taskDealtWith,
+  waitingTasks,
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished } from "@/src/azima.tsx";
 export {
@@ -599,6 +601,7 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
             title: "Light the wick",
             status: s.TaskStatus.FAILED,
             error: "exit code 1",
+            continuing: true,
           },
         ],
       }),
@@ -2240,6 +2243,121 @@ test("the attention bar says how much each question holds up: blocking, before X
       ["ready-w1", "ready", undefined],
     ],
   );
+});
+
+test("the attention bar shows a failed worker until it is dealt with (continued, done, or a new task names it)", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const failedTask = {
+    id: "t1",
+    wishId: "w1",
+    code: "W1",
+    title: "Light the wick",
+    status: s.TaskStatus.FAILED,
+    error: "exit code 1: fuel line broken\nstack trace follows",
+  };
+
+  // 1. Initially, undealt-with failed task is in waitingTasks and attentionOf.
+  let tasks = [failedTask];
+  let waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 1);
+  assert.equal(waiting[0].item.id, "t1");
+
+  let items = s.attentionOf([], waiting, []);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].key, "t1");
+  assert.equal(items[0].level, "action");
+  assert.equal(items[0].target, "waiting-t1");
+  assert.equal(items[0].code, "W1");
+  assert.equal(items[0].text, "exit code 1: fuel line broken");
+
+  // 2. When marked done: dealt with, disappears from attention bar.
+  tasks = [{ ...failedTask, status: s.TaskStatus.DONE }];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 3. When continuing: true: dealt with, disappears.
+  tasks = [{ ...failedTask, continuing: true }];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 4. When closed.continuedIn is set: dealt with, disappears.
+  tasks = [{ ...failedTask, closed: { continuedIn: "t2" } }];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 5. When forked by another task (forkOf === "W1"): dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Forked",
+      status: s.TaskStatus.RUNNING,
+      forkOf: "W1",
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 6. When another task has decision === "W1": dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Follow up",
+      status: s.TaskStatus.RUNNING,
+      decision: "W1",
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 7. When another task's title names W1: dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Fix W1 build error",
+      status: s.TaskStatus.RUNNING,
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 8. When another task's correction failure taskIds includes t1.id: dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Correct W1",
+      status: s.TaskStatus.RUNNING,
+      correction: { failure: { taskIds: ["t1"] } },
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
+
+  // 9. When another task's review taskIds includes t1.id: dealt with, disappears.
+  tasks = [
+    failedTask,
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      title: "Review W1",
+      status: s.TaskStatus.RUNNING,
+      review: { taskIds: ["t1"] },
+    },
+  ];
+  waiting = s.waitingTasks(w, { tasks, questions: [] });
+  assert.equal(waiting.length, 0);
 });
 
 test("the wish's head says where Djinn last pushed its integration branch, and a push refused", () => {

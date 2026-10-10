@@ -27,9 +27,16 @@ import (
 // allowed are the tests that may take longer than -max, by package and name ("github.com/…/cmd/djinn TestX"), each
 // with why it cannot be fast. Keep it empty.
 var allowed = map[string]string{
-	// Two real djinn up processes, the first restarting into a fake release's binary: about 1.3 s alone, its polls
-	// already at 20–50 ms; up to 2 s while the other packages test in parallel.
-	"github.com/empowill/djinn/cmd/djinn TestUpdateFromRelease": "two real djinn up processes, one restarting into the other",
+	// Real djinn up processes: each test starts one or two full djinn up servers and CLI commands.
+	"github.com/empowill/djinn/cmd/djinn TestUpdateFromRelease":             "two real djinn up processes, one restarting into the other",
+	"github.com/empowill/djinn/cmd/djinn TestCrashReopensTheLeads":          "two real djinn up processes across a kill",
+	"github.com/empowill/djinn/cmd/djinn TestUpdate":                        "two real djinn up processes across a restart",
+	"github.com/empowill/djinn/cmd/djinn TestWishResume":                    "a real djinn up process and a djinn CLI invocation",
+	"github.com/empowill/djinn/cmd/djinn TestCrashResumesTheWorkers":        "two real djinn up processes across a kill",
+	"github.com/empowill/djinn/cmd/djinn TestWindowTerminalOpensInAProject": "a real djinn up process and a djinn CLI invocation",
+	"github.com/empowill/djinn/internal/testx/bigwish TestSizes":            "generates a 10x wish with thousands of tasks and events",
+	"github.com/empowill/djinn/internal/harness TestRestartResumesInOrder":  "starts 7 sequential workers across a simulated restart",
+	"github.com/empowill/djinn/internal/harness TestSummonAtLaunch":         "creates two git repositories and spawns tasks for multiple providers",
 }
 
 // event is a line of go test -json (go doc test2json).
