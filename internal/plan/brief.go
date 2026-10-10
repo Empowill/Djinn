@@ -101,7 +101,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"sources (a diagram, a data model walked through, a comparison), kept by Djinn outside the projects. " +
 	"`djinn tilasm put <folder> --wish <wish> --cites T07` makes it, `L01`, and names the azimas and tasks it " +
 	"explains; `--code L01` replaces it, its link unchanged. Cite it in blocks and questions by its link, " +
-	"`djinn://tilasm/<id>`, rather than explaining again; `--tilasm L01` gives it to a worker as context.\n" +
+	"`djinn://tilasm/<id>`, rather than explaining again; `--tilasm L01` gives it to a worker as context. Draw its " +
+	"diagrams as inline SVG laid out by hand (boxes, labelled arrows, a legend), in colours that read in light and " +
+	"dark, never Mermaid. A tilasm reaches no network: everything it needs, fonts and scripts, is in its folder.\n" +
 	"- **No secret, no local path** in the plan: name the project.\n" +
 	"- **Every request finds its wish.** A request that is not about this wish goes through " +
 	"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to open a new wish " +

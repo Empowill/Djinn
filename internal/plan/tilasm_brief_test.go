@@ -55,7 +55,7 @@ func TestBriefListsTilasms(t *testing.T) {
 		t.Errorf("the azima graph: %q, want T30 explained by none", l)
 	}
 	for _, want := range []string{"To explain a concept, make a tilasm", "talisman", "`djinn tilasm put <folder> --wish <wish>",
-		"by its link, `djinn://tilasm/<id>`", "`--tilasm L01`"} {
+		"inline SVG laid out by hand", "never Mermaid", "reaches no network", "by its link, `djinn://tilasm/<id>`", "`--tilasm L01`"} {
 		if !strings.Contains(brief.Stable, want) {
 			t.Errorf("the rules lack %q", want)
 		}

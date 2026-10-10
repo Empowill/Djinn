@@ -195,7 +195,8 @@ coded `L01`, `L02`…, versioned, and kept in Djinn's data folder, never in a pr
 **Open it here** shows one in a frame of its own: its scripts run, the network and Djinn stay out of its reach. The
 tab searches the tilasms' titles and text, lists each one's **Versions** (**Restore this version** makes an older one
 the latest again), and **Export as a .zip** writes one to your Downloads folder. Each tilasm says what it explains:
-the azimas and tasks it cites.
+the azimas and tasks it cites. Its agents draw its diagrams by hand, in SVG, and keep in its folder all it needs, its
+fonts and scripts: it reaches no network.
 
 A tilasm's link, `djinn://tilasm/<id>`, opens Djinn on it from a browser, a chat, a terminal or a Markdown file, and
 starts Djinn if it does not run; so does `djinn://wish/<id>` for a wish. Inside the window, such a link in a block, a

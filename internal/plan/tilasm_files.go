@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -125,7 +126,8 @@ func dropName(name string) string {
 // browser: it never shares Djinn's, so it reads neither Djinn's cookie nor its storage, and calls none of its
 // services. Only Djinn's own pages may frame it.
 //
-// A link the tilasm follows can still navigate its own frame away: a policy cannot forbid that.
+// A link the tilasm follows can still navigate its own frame away: a policy cannot forbid that. Each answer names the
+// server's own origin beside 'self' (tilasmPolicy).
 const TilasmPolicy = "default-src 'none'; " +
 	"script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; " +
 	"style-src 'self' 'unsafe-inline'; " +
@@ -140,6 +142,28 @@ const TilasmPolicy = "default-src 'none'; " +
 	"form-action 'none'; " +
 	"frame-ancestors 'self'; " +
 	"sandbox allow-scripts"
+
+// tilasmPolicy is TilasmPolicy for a request to host, its 'self' followed by the origin of the server that serves it.
+// WebKit, the window's engine on macOS and Linux, reads 'self' as the frame's own origin, which sandbox makes opaque:
+// it matches nothing, and every file the tilasm loads, a script, a font, a picture, is refused. Chromium reads it as
+// the origin of the address. The Wails asset server answers at wails://localhost, its host without a port; the loopback
+// server at http://127.0.0.1:<port>. A host that is not a plain name, or a plain name and port, adds nothing.
+func tilasmPolicy(host string) string {
+	self := "'self'"
+	if name, port, err := net.SplitHostPort(host); err == nil && plainHost(name) && port != "" &&
+		strings.Trim(port, "0123456789") == "" {
+		self += " http://" + host
+	} else if host == "localhost" {
+		self += " wails://localhost"
+	}
+	return strings.ReplaceAll(TilasmPolicy, "'self'", self)
+}
+
+// plainHost tells a host name or an IPv4 address: letters, digits, dots and hyphens, nothing a policy would read as
+// another source or directive.
+func plainHost(name string) bool {
+	return name != "" && strings.Trim(strings.ToLower(name), "abcdefghijklmnopqrstuvwxyz0123456789.-") == ""
+}
 
 // tilasmTypes are the content types of a tilasm's usual files, set here: on Windows Go reads them from the registry,
 // where another program may have changed them, and a browser refuses a module script that is not JavaScript.
@@ -164,12 +188,12 @@ var tilasmTypes = map[string]string{
 }
 
 // Files serves the latest version of each tilasm at server.TilasmPrefix: /tilasm/<id>/ is its index.html, and its
-// other files are under it, by their paths. Every answer carries TilasmPolicy. A folder serves its index.html, never a
+// other files are under it, by their paths. Every answer carries tilasmPolicy. A folder serves its index.html, never a
 // listing.
 func (t *Tilasms) Files() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", TilasmPolicy)
+		h.Set("Content-Security-Policy", tilasmPolicy(r.Host))
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-cache")
