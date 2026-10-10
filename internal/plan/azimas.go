@@ -174,7 +174,7 @@ type AzimaFile struct {
 	Title  string
 	// After is what the file says the azima depends on, by code.
 	After []string
-	// DoneWhen is what its Done-when section says: its boxes, and what the unchecked ones need.
+	// DoneWhen is what its Done-when sections say: their boxes, and what the unchecked ones need.
 	DoneWhen DoneWhen
 }
 

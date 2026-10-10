@@ -40,9 +40,10 @@ var (
 	heading     = regexp.MustCompile(`^(#{1,6}) `)
 )
 
-// ReadDoneWhen reads the Done-when section of a plan file's body: from its heading to the next heading of its level or
-// above. A box goes on over the lines indented under it; a box indented under another is nested in it; a box struck
-// through is left out.
+// ReadDoneWhen reads the Done-when sections of a plan file's body: each from its heading to the next heading of its
+// level or above. A file holds several when azimas were merged into it, one in each merged part ("### Done when"
+// under "## From T03 · …"): their boxes count together. A box goes on over the lines indented under it; a box
+// indented under another is nested in it; a box struck through is left out.
 func ReadDoneWhen(body []byte) DoneWhen {
 	var d DoneWhen
 	var boxes []*box
@@ -57,7 +58,11 @@ func ReadDoneWhen(body []byte) DoneWhen {
 			continue
 		}
 		if m := heading.FindStringSubmatch(line); m != nil && len(m[1]) <= level {
-			break
+			level, cur = 0, nil
+			if m := doneHeading.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+				level = len(m[1])
+			}
+			continue
 		}
 		if m := boxLine.FindStringSubmatch(line); m != nil {
 			cur = &box{indent: len(m[1]), checked: m[2] != " ", text: strings.TrimSpace(m[3])}

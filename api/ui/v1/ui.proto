@@ -194,7 +194,7 @@ message UiServiceWatchUpdateResponse {
   Build build = 5;
 }
 
-// Build is a wish's integration branch as Djinn pushed it (T30), to install.
+// Build is a wish's integration branch as Djinn pushed it (T07), to install.
 message Build {
   // The wish, and its title.
   string wish_id = 1;

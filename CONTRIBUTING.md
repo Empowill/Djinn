@@ -31,7 +31,7 @@ Each one is a decision. Changing one is a discussion first.
 - **No sudo for a user.** Djinn installs, runs and updates in the user's own folders.
   `go install` works everywhere: with CGO you get the native window, without it the browser.
   Contributors may need system packages to build the window. Releases will ship binaries that
-  update themselves ([T19](plan/71f9c331-releases.md), [T12](plan/1aa20487-auto-update.md)).
+  update themselves ([T19](plan/71f9c331-releases.md), [T04](plan/929d6a88-getting-started.md)).
 - **Djinn builds Djinn.** We use Djinn to build Djinn. Nothing we build or test may touch the
   Djinn we use. See [below](#djinn-builds-djinn).
 - **Portable tasks.** `filepath` and `os.UserConfigDir` in Go, `path` in Node, `{{exeExt}}` in
@@ -162,7 +162,7 @@ To use Djinn, see the [README](README.md). To work on it:
 - An inbox source a project's skill declares runs only once you plug it in, on your machine: `djinn inbox sources`
   lists them, `djinn inbox plug babysit-pr` runs Djinn's own (the pull requests assigned to you or that request your
   review, read with `gh`), `djinn inbox unplug <source>` stops one; the empty inbox does the same with its buttons
-  ([T28](plan/d6fb2417-inbox.md)).
+  ([T26](plan/e1210c5e-request-routing.md)).
 - Three wishes are active at most; the others wait, paused. `djinn wish pause <wish-id>` sets one aside and stops its
   workers; `djinn wish activate <wish-id>` takes it back, its workers resumed, in the last place (three being active,
   the third wish is paused); `djinn wish move <wish-id> --to 1` gives one priority, active or not;
@@ -176,7 +176,7 @@ To use Djinn, see the [README](README.md). To work on it:
   integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own
   (made ready by the `setup` command, again when a lock file changes), makes the generated files again on a conflict
   only in them, runs the `commit` checks each through a gate of its name, moves the wish's branch when they pass, and
-  removes the task's worktree when clean ([T30](plan/43303f46-integration.md)). It pushes the branch, never forcing,
+  removes the task's worktree when clean ([T07](plan/8e8d3d76-orchestrator.md)). It pushes the branch, never forcing,
   at an azima's end or once three tasks are committed and an hour has passed since the last push, once the `push`
   checks pass (red, the push is held, and asked about if they stay red); `--push-mode ask` asks first.
   Djinn's own checks are in [`.agents/settings.txtpb`](.agents/settings.txtpb): the lint at commit, the tests at push.
@@ -207,12 +207,12 @@ To use Djinn, see the [README](README.md). To work on it:
   summed. Refused while it runs, once its worktree is gone, or for an agent that cannot resume a session (Antigravity,
   a watcher). `djinn task spawn --fork` starts another task from a task's context; forking a task cut short, failed or
   stopped closes it, "continued in" the fork.
-- `djinn tilasm put <folder> --wish <wish-id> --cites T29 --cites W12` keeps a folder with an `index.html` (or a
+- `djinn tilasm put <folder> --wish <wish-id> --cites T25 --cites W12` keeps a folder with an `index.html` (or a
   `.zip` of one) as a tilasm of the wish, `L01`, `L02`…: the material that explains it, in the data folder
   (`tilasms/<id>/v<n>/`), never in a project; `--code L01` puts a new version of it. `djinn tilasm get L01` gives an
   agent its text and the folder of its files; `history`, `restore <version>`, `export` (a `.zip` with `tilasm.json`)
   and `import <zip> --wish <wish-id>` follow, and `djinn wish export` carries them. A tilasm holds 50 MiB at most.
-  `djinn talisman …` is the same command ([T29](plan/eee91edb-tilasms.md)). Djinn serves each one's latest version at
+  `djinn talisman …` is the same command ([T25](plan/4a699d0f-review-at-a-glance.md)). Djinn serves each one's latest version at
   `/tilasm/<id>/`, with a content security policy of its own: its scripts and files run, the network and Djinn stay
   out of reach. The wish's *Tilasms* tab lists them, opens one in a sandboxed frame, searches their titles and text,
   restores a version and exports one; a folder or a `.zip` dropped on it becomes a tilasm. The brief lists the wish's
@@ -237,15 +237,15 @@ To use Djinn, see the [README](README.md). To work on it:
   each worker runs in a systemd user scope of its own (`djinn-<task code>-<uuid8>`), which stopping, pausing and
   measuring take whole, even a process that left its group; elsewhere `djinn up` says so once, and workers run in their
   process group. `djinn up --worker-cpu 150` caps each worker at 150% of a core, `--worker-memory 4096` at 4 GiB, where
-  systemd gives your user the cpu and memory controllers ([T17](plan/3da7b334-machine-discovery.md),
-  [T09](plan/3792046b-quality-of-life.md)).
+  systemd gives your user the cpu and memory controllers ([T14](plan/8ce817da-cost.md),
+  [T02](plan/c30479be-api-and-cli.md)).
 - `djinn task get <task-id>` gives what its worker uses (CPU, memory, processes) and its peaks, read every 5 seconds
   from its scope's cgroup on Linux (else from its process group), from its process group on macOS; `djinn machine
   show` lists every running worker's, the busiest first, and the Tasks tab shows them. Not measured on Windows yet
-  ([T17](plan/3da7b334-machine-discovery.md)). Another worker starts only when the free memory holds the typical peak
+  ([T14](plan/8ce817da-cost.md)). Another worker starts only when the free memory holds the typical peak
   of its provider's workers (1 GiB while none is measured); else its task says what it waits for.
 - `go tool task bench-dispatch`: the scheduler's decisions on hand-written dispatch cases, as a table
-  ([T16](plan/263f074f-dispatch-bench.md)).
+  ([T07](plan/8e8d3d76-orchestrator.md)).
 - `djinn backup [--file <archive>]` copies the data folder, even while Djinn runs; `djinn backup restore <archive>`
   puts it back, Djinn stopped ([`docs/backup.md`](docs/backup.md)).
 - `djinn wish set-lead <wish-id> <session-id> --directory <folder>` records a wish's lead session;
@@ -263,7 +263,7 @@ To use Djinn, see the [README](README.md). To work on it:
   starts a lead of another agent than the recorded one's.
   `djinn task spawn … --fork W1` or `--from-lead` starts a worker from a copy of a conversation; `djinn up
   --warm-workers` keeps a claude loaded per project; `go tool task bench-workers` (paid, refuses without consent)
-  compares them ([T22](plan/1689571a-fast-workers.md)).
+  compares them ([T14](plan/8ce817da-cost.md)).
 - `djinn task send <task-id> "…"` gives a running worker an instruction (or the box under its events, in the window):
   an event of the task, then "received" once the worker says something after it.
 - A decision is an answered question or a block of kind decision. `djinn question ask … --icon 🔒` and `djinn block put
@@ -283,7 +283,7 @@ To use Djinn, see the [README](README.md). To work on it:
 - `go tool task check-window`: open a window a few seconds and check that a stream reaches it
   value by value. PASS or FAIL.
 - `go tool task e2e-native`: drive the real window end to end through the Wails MCP server (a test build, window
-  "Djinn e2e"). Opens a window a few seconds, so it is not in `test` ([T06](plan/b81b5d99-native-e2e.md)).
+  "Djinn e2e"). Opens a window a few seconds, so it is not in `test` ([T05](plan/b6a680bf-testing.md)).
 - Tests and CI build with `-tags headless`: no window, no CGO.
 
 ## How we work

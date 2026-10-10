@@ -9,8 +9,8 @@ import (
 
 // TestReadDoneWhen: the Done-when section is read on the shapes of the real plan files: top-level boxes over several
 // lines, boxes nested in one, a struck box, a section without boxes left, a file without the section (T09), a
-// parenthesis that holds needs without opening on them (T16). An unchecked box without needs is work: the azima gets
-// no needs.
+// parenthesis that holds needs without opening on them (T16), a file that merged azimas, one section in each part
+// (T02). An unchecked box without needs is work: the azima gets no needs.
 func TestReadDoneWhen(t *testing.T) {
 	for _, c := range []struct {
 		name               string
@@ -83,6 +83,15 @@ func TestReadDoneWhen(t *testing.T) {
 			name:  "every box checked, as T17 said in-progress",
 			body:  "## Done when\n- [x] One. (`TestOne`)\n- [x] Two.\n  - [X] Nested.\n## Open questions\n",
 			found: true, checked: 3,
+		},
+		{
+			name: "a section in each merged part counts, as T02",
+			body: "# T02 · The foundation\n\n## Done when\n- [x] Generated. (`TestGen`)\n\n## Open questions\n- [ ] Not a box.\n\n" +
+				"## From T08 · Data\n\n### Decided\n- [ ] Not a box either.\n\n### Done when\n- [x] Stored.\n" +
+				"- [ ] Seen on Windows. (needs: a Windows machine)\n\n#### Detail\n- [x] Nested deeper.\n\n" +
+				"## From T09 · Quality of life\n\n- [ ] Outside any section.\n",
+			found: true, checked: 3, unchecked: 1,
+			needs: [][2]string{{"Seen on Windows.", "a Windows machine"}},
 		},
 		{
 			name: "no Done-when section, as T09",

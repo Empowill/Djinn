@@ -203,7 +203,7 @@ func (p Policy) WorkerRoom(available, held uint64, provider string, peak uint64,
 }
 
 // LocalModel says whether a local open-weight model can run on the machine, and why: dispatch asks one only where it
-// can (T16). The first usable GPU decides; without one, the memory.
+// can (T07). The first usable GPU decides; without one, the memory.
 func (p Policy) LocalModel(s Snapshot) (bool, string) {
 	if s.Disk != nil && s.Disk.Available < p.ModelDisk {
 		return false, fmt.Sprintf("%s free on the disk of %s, %s at least for a model's weights", size(s.Disk.Available),

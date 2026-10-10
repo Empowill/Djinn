@@ -519,7 +519,7 @@ export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdate
   messageDesc(file_ui_v1_ui, 18);
 
 /**
- * Build is a wish's integration branch as Djinn pushed it (T30), to install.
+ * Build is a wish's integration branch as Djinn pushed it (T07), to install.
  *
  * @generated from message ui.v1.Build
  */

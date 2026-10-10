@@ -18,7 +18,7 @@ export interface UpdateState {
   build?: BuildProposal;
 }
 
-// A batch of finished work committed into a wish's integration branch, to install (T30).
+// A batch of finished work committed into a wish's integration branch, to install (T07).
 export interface BuildProposal {
   wishTitle: string;
   project: string;

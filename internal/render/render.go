@@ -832,7 +832,7 @@ func Translator(lang string) func(key string, params ...string) string {
 	}
 }
 
-// Work says where the finished work of t stands on its way into its wish's integration branch (T30), with tr, and
+// Work says where the finished work of t stands on its way into its wish's integration branch (T07), with tr, and
 // the class that colours it: "" for work Djinn does not integrate. code names a task of the wish by its identifier,
 // for the correction and the review worker; "": the identifier itself.
 func Work(t *planv1.Task, code func(id string) string, tr func(string, ...string) string) (text, class string) {

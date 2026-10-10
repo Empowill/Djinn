@@ -210,7 +210,7 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 		switch d.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_DONE:
 			// Work Djinn integrates counts once committed into the wish's integration branch, which the task starts
-			// from (T30); until then it waits, through a conflict or red tests a worker corrects too.
+			// from (T07); until then it waits, through a conflict or red tests a worker corrects too.
 			if waits, state := uncommitted(d); waits && why == "" {
 				why = fmt.Sprintf("waits for %s to be committed%s", d.GetCode(), state)
 			}

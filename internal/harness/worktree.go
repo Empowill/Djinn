@@ -156,7 +156,7 @@ func correctionWorktree(ctx context.Context, dir, path, branch string, f *planv1
 }
 
 // startPoint is the commit a task's worktree starts from in the repository holding dir: the tip of its wish's
-// integration branch there, integration, so that it builds on the work committed before it (T30); the checkout's
+// integration branch there, integration, so that it builds on the work committed before it (T07); the checkout's
 // HEAD when the wish has none, or the branch is not in the repository. from is "" for HEAD.
 func startPoint(ctx context.Context, dir, integration string) (sha, from string, err error) {
 	if integration != "" {

@@ -1,4 +1,4 @@
-// Package bench is the dispatch bench (T16): dispatch situations written as data, each with the decision expected
+// Package bench is the dispatch bench (T07): dispatch situations written as data, each with the decision expected
 // by hand, and what a contender decides for each. The plain Go scheduler (internal/dispatch) is the first
 // contender; a local model would read the same cases. go tool task bench-dispatch prints the table.
 package bench

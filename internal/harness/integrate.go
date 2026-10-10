@@ -23,7 +23,7 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// Integration (T30): a worker's work counts once it is in its wish's integration branch, tested. When a worker ends
+// Integration (T07): a worker's work counts once it is in its wish's integration branch, tested. When a worker ends
 // done in a project that names a check, its task's integration is pending; Djinn then commits the work at once,
 // task by task, by itself, no model: a task whose worktree holds changes not committed goes to a review worker instead
 // (review.go), and nothing commits them blindly; in a worktree of its own per wish and project, never the person's

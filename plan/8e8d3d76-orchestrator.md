@@ -3,12 +3,14 @@ id: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76
 code: T07
 phase: 2
 status: in-progress
-after: T08 T17
+after: T02
 ---
 
 # T07 · The orchestrator
 
-**Goal.** Decide who does what, run each worker safely, and protect the machine.
+**Goal.** Djinn decides, starts, resumes, integrates and pushes the workers' work by itself, in Go.
+
+Decide who does what, run each worker safely, and protect the machine.
 
 ## Decided
 - **Wishes have a rank, set by hand** (drag and drop in the interface): when workers or gates
@@ -189,7 +191,7 @@ after: T08 T17
 - **A task imported with a wish is not scheduled** on the importing machine (`scheduled` cleared on import).
 - **Gates** (`internal/gate`, `GateService` in `api/machine/v1`): any name (`codegen`, `stack`, `e2e`, `paid`…), case
   ignored; one holder per gate, granted only when the machine is not under pressure and holds the command's measured
-  peak memory ([T17](3da7b334-machine-discovery.md)), the first wish of the rank first, then the first come. A holder holds as long as its `Hold` stream is open: the gate goes back when the
+  peak memory ([T14](8ce817da-cost.md)), the first wish of the rank first, then the first come. A holder holds as long as its `Hold` stream is open: the gate goes back when the
   command ends, fails, is interrupted, or its process dies (the connection closes). `djinn gate run <name> --
   <command>` is the one command written by hand (`cmd/djinn/gate.go`): it runs the command on the caller's side,
   under the caller's own rights, never in Djinn's server. It returns the command's exit code. `djinn gate list`
@@ -343,3 +345,162 @@ after: T08 T17
   agent; a folder outside Git without configuration asks.*
 - An event is stored twice: in `task_event` and in the journal. *Recommendation: keep it until a long Claude
   run shows the size matters; then journal the event without its raw line.*
+
+## From T30 · Djinn integrates finished work by itself
+
+**Goal.** A worker's work counts once it is in the wish's branch, tested, not when its worker ends. Djinn brings it
+there by itself: the lead no longer merges, regenerates, tests and installs by hand, and the person is asked only
+what is theirs to decide.
+
+**The developer's words.** "Why is it you who coordinates, merges, runs the tests and all, when the Go orchestrator
+is supposed to do all that?" Today Djinn schedules, runs, resumes, gates and measures the workers; then each one's
+work sits on its branch, and the lead integrates it by hand (`git merge`, a generated file regenerated, the tests
+through a gate). It costs: nothing moves while the lead is away (W107–W110 waited through a session limit), a task
+that waits for another starts on a branch without its work (W112 and W113 started before W111 was merged), and the
+lead spends its tokens on mechanical work.
+
+### What is decided
+
+- **The deterministic part is Go, no model.** When a worker ends done, Djinn merges its branch into the wish's
+  integration branch (`feat/wails-go` here: a setting of the wish in its project), in a worktree of its own, never in
+  the person's checkout. A conflict only in generated files (a project setting: their paths, and the command that
+  makes them, `go tool task gen` here) is settled by making them again. Then the project's test command (a project
+  setting) runs through a gate; green, the integration branch moves on. The person's checkout of that branch, when
+  clean and behind, follows by a fast-forward; otherwise Djinn says so and leaves it.
+- **Judgement goes to a worker, not to the lead.** A conflict in code, or red tests, starts a worker of correction on
+  the merge, with what failed, part of the same azima; its work integrates the same way. After a few attempts
+  (a setting), Djinn asks the person a question.
+- **Commit at once, push on a cadence** (the developer, 09–10/10/2026). Each task's work is merged and tested into the
+  integration branch as soon as the task ends, alone: its dependents build on it at once. Pushing that branch to its
+  remote is the orchestrator's, never an agent's (agents keep `git push` denied, `.agents/permissions.txtpb`).
+  Djinn pushes **automatically by default**, checked each time a task's merge ends: when an azima ends (its last
+  part is committed), or when at least **three tasks are committed locally and more than an hour has passed since
+  the last push**. The count, the hour and the mode are settings of the wish: `auto` (the default) or `ask`, where a
+  question "Push feat/wails-go to origin? (3 commits: …)" lets the person push in one click (Rub the lamp). A push
+  refused by the remote (behind, protected) never forces: Djinn says why, and asks.
+- **A task done without its work committed is not done.** W94 ended "done" with its whole change staged in its
+  worktree and no commit: integration finds a branch with nothing new, or a worktree with changes, and says so (the
+  task is not done: its work waits, uncommitted), rather than counting it. Nor does Djinn commit it blindly (the
+  developer, 10/10/2026: debug files, abandoned attempts or artifacts would go in too): a review worker judges it.
+- **A task waits for its dependencies to be integrated**, not only done, and its worktree starts from the integration
+  branch, so it builds on their work.
+- **The person decides what is theirs**: to install and restart on the new build (Djinn proposes it, with what
+  changed and what to check), and the choices no worker can make.
+
+### Done when
+
+- [x] A task done integrates by itself: merged in its own worktree, generated files made again, tests through a gate,
+  the branch moved on, the person's clean checkout fast-forwarded; each step in the task's events and status.
+  (TestIntegrateADoneWorker, TestCommitEachTaskAlone, TestIntegrateGeneratedConflict, TestIntegrateCodeConflict,
+  TestIntegrateRedTests, TestIntegrateLeavesADirtyCheckout, TestIntegrateFollowsACleanedCheckout,
+  TestIntegrateABranchNoCheckoutHolds, TestRecoverAnIntegration)
+- [x] Each task committed alone as it ends; the push automatic at an azima's end, or with three tasks committed and an
+  hour since the last push, checked as each merge ends; `ask` mode by a question; a refused push never forced. Each
+  push in the journal and on the wish (its head shows the last one); the build proposed after a push; a task's
+  worktree removed once its work is committed, kept with changes not committed. Fake clock, bare remote in a temporary
+  folder. (TestCommitEachTaskAlone, TestPushAtAnAzimasEnd, TestPushAfterThreeTasksAndAnHour, TestPushDue,
+  TestCommittedSince, TestPushAskMode, TestARefusedPushIsNotForced, TestNoRemoteNoPush, TestABuildIsProposed,
+  TestRemoveTheWorktreeOnceCommitted, the screens test "the wish's head says where Djinn last pushed its integration
+  branch, and a push refused")
+- [x] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
+  (TestCorrectACodeConflict, TestCorrectRedTests, TestCorrectionAttemptsThenAQuestion,
+  TestAnswerAFailedIntegration, TestACorrectionWorkerThatFails)
+- [x] Work not committed is never merged nor committed blindly: before a task's merge, a correction worker's
+  included, Djinn reads its worktree (`git status --porcelain`, untracked files included, `.gitignore` applying);
+  with changes, a review worker starts in that worktree, part of the same azima, of the task's provider, the task's
+  title and prompt, the files and their diff in its first prompt; it commits what belongs to the task and drops the
+  rest, and its work integrates like any task's ("uncommitted: reviewed by W5"); past the attempts, a question.
+  (TestIntegrateACleanWorktree, TestReviewUncommittedWork, TestReviewAttemptsThenAQuestion,
+  TestReviewACorrectionsWork, TestAReviewThatFailsAfterItsCommit)
+- [x] A task waits for its dependencies to be integrated, and starts from the integration branch.
+  (TestWaitsForTheCommit, TestADependentStartsFromTheCommit)
+- [x] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
+  conflict, red), and propose installing once a batch is integrated. (TestWorkStands, TestBriefWorkStands, TestRun
+  "where a task's work stands", the screens tests "the Tasks tab says where each task's work stands" and "the update
+  banner proposes to install a build committed", TestABuildIsProposed, TestUpdateInstallsABuild)
+
+- [x] Each project says what Djinn checks (W141): `setup`, the command that makes a fresh integration worktree ready,
+  run once and again when its lock files change; `checks`, each with its gate and when it runs, before a commit (red,
+  a correction worker) or before a push (red, the push held and said, a question if it stays red); the former `test`
+  a check at commit. The brief and each worker's first prompt say them; `djinn project show` and the project view
+  show them with their last runs. Djinn's own: `npm ci`, lint at commit, test at push. (TestSetupOncePerWorktree,
+  TestSetupAgain, TestARedCommitCheck, TestPushChecksHoldThePush, TestPushWithoutTheChecks, TestReadSettings,
+  TestResolveSettings, TestProjectShow, TestChecksBrief, TestDjinnsOwnSettings, TestBrief, the screens tests "the
+  project view lists the setup and the checks, when each runs, and how each last ran" and "the wish's head says a push
+  its checks hold, why on hover")
+
+### Merged by hand into feat/wails-go
+
+Until Djinn integrates by itself, the lead merges finished branches. W129 (10/10/2026) brought four branches onto
+W115–W122, in this order, each merge tested green (`go tool task lint`, `go tool task test`) before the next:
+
+- **W123**, built on W121 beside W122: both kept. `ProjectSettings.install` took 9 (`correction_attempts` holds 8).
+  Its `TaskIntegration.corrected_by` is W122's (7): a task's id, which the page, the brief and the window show by its
+  code. A correction worker's worktree starts from its failure's base; any other from the wish's integration branch.
+- **W124**: `Task.proof_needs` took 43 (40–42 held by integration, tilasms, correction). The brief lists the azimas
+  awaiting their proof with the tilasms that explain them.
+- **W125**: `Wish.description` took 15 (12–14 held by the integration branches and the commit cadence). The brief
+  keeps its order, the wish before the rules, with the tilasms after what runs and waits.
+- **W127**: golangci-lint and ESLint now check the code W116–W125 brought too: their findings fixed or, where the code
+  means it, left with a reason.
+
+The method counts of `internal/cli`'s tests, which broke at every merge, are now derived from the protos: every public
+method is a command line with its help, and every one that answers once is an MCP tool with its comment
+(TestEveryPublicMethodIsExpressible, TestMCPListTools).
+
+### Tests must be fast
+
+No real sleep, fake clocks, milliseconds: a test over 1 s is a bug. Merges and conflicts on a real Git repository in
+a temporary folder, with a fake test command.
+
+## From T16 · Dispatch: plain Go code or a local model?
+
+**Goal.** Decide, on numbers, whether dispatching needs a model at all. Dispatch only: which ready
+task starts now, on which worker, once its dependencies, write scopes and gates allow it. Deciding
+*what* the tasks are, or recommending sub-agents, stays with the large model that plans the wish.
+
+### Depends on
+- **T17, knowing the machine.** Whether a local model can run at all comes from the discovery
+  (a usable GPU and its drivers, the memory), and a dispatcher must respect the machine's budget
+  whatever it is made of. (The verdict exists: `can_run_local_model` and its reason, in `djinn machine show`)
+
+### The contenders
+- **Plain Go code**: the scheduler of the orchestrator (T07). Deterministic, free, instant.
+  Preferred: if it covers the cases, no model is needed.
+- **A local open-weight model**: Gemma 4 (Apache-2.0, native tool calling), run by Ollama on the
+  machine, given the same inputs and asked for the same decision.
+
+- **Consensus across machines** (Raft and the like) is a different question: see T15.
+
+### The benchmark
+- A fixed set of dispatch situations, as data: task graphs, overlapping write scopes, busy gates,
+  machine pressure, a worker that failed, a question that blocks.
+- For each, the expected decision, written by hand.
+- Measured for each contender: decisions right, decisions wrong, time per decision, CPU and memory
+  used on a laptop without a GPU and on an Apple Silicon Mac.
+- The model gets a case only where the Go code has no rule; if there is none, the model has no role.
+
+#### The Go side (done)
+- The scheduler's rules are a pure function, `internal/dispatch`: a `Situation` (tasks, wishes, projects in Git,
+  the machine's slots, running workers and pressure) and a `Decision` per planned task (start, wait with its reason,
+  fail). The harness acts on it; nothing else changed in what it decides.
+- The cases: `internal/dispatch/bench/cases.json`, 35 situations written by hand with the expected decision of each
+  planned or resuming task: dependencies (running, done, chains, failed, stopped, interrupted or resuming and so
+  waited for, resumed as a fork that runs, is done or failed, gone, waiting for a question),
+  write scopes (outside Git, in Git, the whole folder, case, another project, two planned writers), the machine
+  (pressure, full, one slot for two), wish ranks (rank, then age, unranked, paused, granted), a busy gate. JSON, so
+  that a model reads the same file.
+- `go tool task bench-dispatch` prints the table. `TestGo` checks that Go decides every case as expected.
+- First run (linux/amd64, 16 cores): 31 of 31 cases right, 42 of 42 decisions, about 7 µs per pass, the
+  situation built included.
+- After the automatic resume (W60): an interrupted or resuming dependency is waited for, and a dependency resumed as
+  a fork is its fork. 35 of 35 cases right, 47 of 47 decisions, about 4 µs per pass.
+- What the cases show: Go has a rule for each of them. Gates are not a dispatch decision: a worker waits for its gate
+  when it runs the command, so a busy gate holds no task. A question blocks only through its task's state (waiting).
+
+### Done when
+- [ ] The benchmark runs with one task command and prints a table. (Go side done: `go tool task bench-dispatch`,
+  `TestGo` in `internal/dispatch/bench`; needs: Ollama with Gemma 4 on the machine, and a decision to download it,
+  for the model side)
+- [ ] A decision is written down: Go only, or Go plus a model for named cases, with the numbers. (needs: the
+  bench, then a person to decide)

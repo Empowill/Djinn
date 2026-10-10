@@ -22,7 +22,7 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// Pushing (T30): each task's work is committed into its wish's integration branch as soon as it ends; pushing that
+// Pushing (T07): each task's work is committed into its wish's integration branch as soon as it ends; pushing that
 // branch to its remote is the orchestrator's, never an agent's (.agents/ denies git push). Djinn checks it each time
 // a task's merge ends: a push is due when an azima ends, its last part committed, or once enough tasks are committed
 // since the last push and more than an hour has passed since it. In auto mode, the default, Djinn pushes, through git

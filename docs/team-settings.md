@@ -181,7 +181,7 @@ former single test command, still works: it is the check `test` at `commit`, unl
 ## Integration
 
 A worker's work counts once it is in its wish's branch, checked. In a project whose settings name a check, Djinn
-brings it there by itself, no model ([T30](../plan/43303f46-integration.md)):
+brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
 
 1. When a worker ends done, its task's work is **pending** (`djinn task get` shows `integration`).
 2. Djinn commits each task's work **at once, alone**, in the order the tasks ended: its dependents build on it
