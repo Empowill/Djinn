@@ -20,7 +20,7 @@ import (
 
 func (e *env) continueTask(t *testing.T, id, prompt string) (*planv1.Task, error) {
 	t.Helper()
-	res, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{TaskId: id, Prompt: prompt}))
+	res, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{TaskId: id, Prompt: &prompt}))
 	if err != nil {
 		return nil, err
 	}

@@ -41,6 +41,9 @@ extend google.protobuf.MethodOptions {
   bool autostart = 51003;
   // What the method changes, when it does not only read.
   Writes writes = 51004;
+  // Another name of the method's command: djinn task set-agent answers as djinn task update. Typed in full, or by a
+  // prefix no method's own name takes.
+  repeated string method_alias = 51007;
 }
 
 extend google.protobuf.ServiceOptions {

@@ -54,7 +54,17 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	if e := task.GetError(); e != "" {
 		text += " (" + e + ")"
 	}
-	if first := firstLine(req.GetPrompt()); first != "" {
+	turnPrompt := req.GetPrompt()
+	addPromptEvent := true
+	if req.Prompt == nil || *req.Prompt == "" {
+		lp, err := lastPrompt(ctx, h.store, id)
+		if err != nil {
+			return nil, plan.Status(err)
+		}
+		turnPrompt = lp
+		addPromptEvent = false
+	}
+	if first := firstLine(turnPrompt); first != "" {
 		text += ": " + first
 	}
 	t := proto.CloneOf(task)
@@ -91,7 +101,9 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 		}
 		events := []Event{
 			{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text},
-			{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: req.GetPrompt()},
+		}
+		if addPromptEvent {
+			events = append(events, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: turnPrompt})
 		}
 		if why != "" {
 			events = append(events, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
@@ -193,11 +205,11 @@ func firstLine(s string) string {
 	return ""
 }
 
-// lastPrompt is the task's last prompt: what djinn task continue asked last. Its events are read from the last back,
+// lastPrompt is the task's last prompt: what djinn task continue or update asked last. Its events are read from the last back,
 // as far as that prompt (lastSeq).
-func lastPrompt(ctx context.Context, s *store.Store, taskID string) (string, error) {
+func lastPrompt(ctx context.Context, r store.Reader, taskID string) (string, error) {
 	var last *planv1.TaskEvent
-	err := store.Latest(ctx, s, store.Where{"task_id": taskID}, func(ev *planv1.TaskEvent) bool {
+	err := store.Latest(ctx, r, store.Where{"task_id": taskID}, func(ev *planv1.TaskEvent) bool {
 		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
 			last = ev
 		}

@@ -291,6 +291,13 @@ func (f tasks) List(_ context.Context, req *connect.Request[planv1.TaskServiceLi
 	}}), nil
 }
 
+func (f tasks) Update(_ context.Context, req *connect.Request[planv1.TaskServiceUpdateRequest]) (*connect.Response[planv1.TaskServiceUpdateResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TaskServiceUpdateResponse{Task: &planv1.Task{
+		Id: req.Msg.GetTaskId(), Code: "W5", Model: req.Msg.GetModel(),
+	}}), nil
+}
+
 func (f questions) Answer(_ context.Context, req *connect.Request[planv1.QuestionServiceAnswerRequest]) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
 	f.record(req.Msg)
 	if req.Msg.GetQuestion().GetCode() == "Q99" {
@@ -442,6 +449,8 @@ func TestRun(t *testing.T) {
 		{name: "an alias by a prefix no command takes", args: []string{"tali", "l"}, wantOut: "code: L01", wantCalled: true},
 		{name: "a prefix a command takes is not an alias's", args: []string{"t", "list"}, wantCode: 2, wantErr: `command "t" is ambiguous: task, tilasm`},
 		{name: "help names the alias", args: []string{"help"}, wantOut: "  tilasm, talisman "},
+		{name: "method alias set-agent answers as update", args: []string{"task", "set-agent", taskID, "--model", "o3"}, wantOut: "code: W5\nmodel: o3", wantCalled: true},
+		{name: "help on service names the method alias", args: []string{"help", "task"}, wantOut: "  update, set-agent "},
 		{name: "help command", args: []string{"help", "pr"}, wantOut: "Methods:\n  add             Add a folder as a project."},
 		{name: "paginated list loops across pages", args: []string{"q", "list"}, wantOut: "code: Q01\n  text: First?\n- id: 22222222-2222-2222-2222-222222222222\n  code: Q02\n  text: Second?\n", wantCalled: true},
 		{name: "paginated list with explicit page-token", args: []string{"q", "list", "--page-token", "page-2"}, wantOut: "code: Q02\n  text: Second?\n", wantCalled: true},

@@ -177,8 +177,8 @@ const (
 	TaskServiceContinueProcedure = "/plan.v1.TaskService/Continue"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
-	// TaskServiceSetAgentProcedure is the fully-qualified name of the TaskService's SetAgent RPC.
-	TaskServiceSetAgentProcedure = "/plan.v1.TaskService/SetAgent"
+	// TaskServiceUpdateProcedure is the fully-qualified name of the TaskService's Update RPC.
+	TaskServiceUpdateProcedure = "/plan.v1.TaskService/Update"
 	// TaskServiceDescribeProcedure is the fully-qualified name of the TaskService's Describe RPC.
 	TaskServiceDescribeProcedure = "/plan.v1.TaskService/Describe"
 	// TaskServiceOpenProcedure is the fully-qualified name of the TaskService's Open RPC.
@@ -1972,9 +1972,10 @@ type TaskServiceClient interface {
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
-	// Change the provider and/or the model of a task no worker runs now: planned, waiting, failed, stopped, cut short
-	// (for a finished one, its next djinn task continue uses them). Refused while a worker runs or pauses.
-	SetAgent(context.Context, *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error)
+	// Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
+	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
+	// provider, model, prompt (for its next continue), and azima, never its dependencies once it ran.
+	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
 	// Open a draft azima: turns it open, ready for parts to be spawned, and notifies the wish's lead.
@@ -2080,10 +2081,10 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Send")),
 			connect.WithClientOptions(opts...),
 		),
-		setAgent: connect.NewClient[v1.TaskServiceSetAgentRequest, v1.TaskServiceSetAgentResponse](
+		update: connect.NewClient[v1.TaskServiceUpdateRequest, v1.TaskServiceUpdateResponse](
 			httpClient,
-			baseURL+TaskServiceSetAgentProcedure,
-			connect.WithSchema(taskServiceMethods.ByName("SetAgent")),
+			baseURL+TaskServiceUpdateProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Update")),
 			connect.WithClientOptions(opts...),
 		),
 		describe: connect.NewClient[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse](
@@ -2123,7 +2124,7 @@ type taskServiceClient struct {
 	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
 	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
 	send      *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
-	setAgent  *connect.Client[v1.TaskServiceSetAgentRequest, v1.TaskServiceSetAgentResponse]
+	update    *connect.Client[v1.TaskServiceUpdateRequest, v1.TaskServiceUpdateResponse]
 	describe  *connect.Client[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse]
 	open      *connect.Client[v1.TaskServiceOpenRequest, v1.TaskServiceOpenResponse]
 	move      *connect.Client[v1.TaskServiceMoveRequest, v1.TaskServiceMoveResponse]
@@ -2199,9 +2200,9 @@ func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.Ta
 	return c.send.CallUnary(ctx, req)
 }
 
-// SetAgent calls plan.v1.TaskService.SetAgent.
-func (c *taskServiceClient) SetAgent(ctx context.Context, req *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error) {
-	return c.setAgent.CallUnary(ctx, req)
+// Update calls plan.v1.TaskService.Update.
+func (c *taskServiceClient) Update(ctx context.Context, req *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error) {
+	return c.update.CallUnary(ctx, req)
 }
 
 // Describe calls plan.v1.TaskService.Describe.
@@ -2270,9 +2271,10 @@ type TaskServiceHandler interface {
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
-	// Change the provider and/or the model of a task no worker runs now: planned, waiting, failed, stopped, cut short
-	// (for a finished one, its next djinn task continue uses them). Refused while a worker runs or pauses.
-	SetAgent(context.Context, *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error)
+	// Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
+	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
+	// provider, model, prompt (for its next continue), and azima, never its dependencies once it ran.
+	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
 	// Open a draft azima: turns it open, ready for parts to be spawned, and notifies the wish's lead.
@@ -2374,10 +2376,10 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Send")),
 		connect.WithHandlerOptions(opts...),
 	)
-	taskServiceSetAgentHandler := connect.NewUnaryHandler(
-		TaskServiceSetAgentProcedure,
-		svc.SetAgent,
-		connect.WithSchema(taskServiceMethods.ByName("SetAgent")),
+	taskServiceUpdateHandler := connect.NewUnaryHandler(
+		TaskServiceUpdateProcedure,
+		svc.Update,
+		connect.WithSchema(taskServiceMethods.ByName("Update")),
 		connect.WithHandlerOptions(opts...),
 	)
 	taskServiceDescribeHandler := connect.NewUnaryHandler(
@@ -2428,8 +2430,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceContinueHandler.ServeHTTP(w, r)
 		case TaskServiceSendProcedure:
 			taskServiceSendHandler.ServeHTTP(w, r)
-		case TaskServiceSetAgentProcedure:
-			taskServiceSetAgentHandler.ServeHTTP(w, r)
+		case TaskServiceUpdateProcedure:
+			taskServiceUpdateHandler.ServeHTTP(w, r)
 		case TaskServiceDescribeProcedure:
 			taskServiceDescribeHandler.ServeHTTP(w, r)
 		case TaskServiceOpenProcedure:
@@ -2501,8 +2503,8 @@ func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Send is not implemented"))
 }
 
-func (UnimplementedTaskServiceHandler) SetAgent(context.Context, *connect.Request[v1.TaskServiceSetAgentRequest]) (*connect.Response[v1.TaskServiceSetAgentResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.SetAgent is not implemented"))
+func (UnimplementedTaskServiceHandler) Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Update is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error) {
