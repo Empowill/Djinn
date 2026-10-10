@@ -32,6 +32,8 @@
   "app.local_app": "Local app",
   "app.new_wish": "New wish",
   "app.personal_space": "Personal space",
+  "app.shortcut_enter": "Enter",
+  "app.shortcut_escape": "Esc",
   "app.share": "Share",
   "attention.interrupted": "cut short when Djinn stopped: start it again, or let it go",
   "attention.label": "What waits for you",

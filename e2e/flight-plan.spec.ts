@@ -248,6 +248,16 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
   await expect(pageHeader.locator(".page-header-action")).toHaveCount(4);
+  const providerAction = pageHeader.locator(
+    ".page-header-action.wish-provider",
+  );
+  await providerAction.hover();
+  await expect(page.locator('[role="tooltip"]')).toContainText("agent");
+  await expect(page.locator('[role="tooltip"] kbd')).toHaveCount(0);
+  await page.mouse.move(10, 300);
+  const leadAction = pageHeader.locator(".page-header-action").nth(1);
+  await leadAction.focus();
+  await expect(page.locator('[role="tooltip"]')).toContainText("lead");
   await assertHeaderChrome(248);
   await page.setViewportSize({ width: 760, height: 1000 });
   await assertHeaderChrome(100);

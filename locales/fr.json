@@ -32,6 +32,8 @@
   "app.local_app": "Application locale",
   "app.new_wish": "Nouveau souhait",
   "app.personal_space": "Espace personnel",
+  "app.shortcut_enter": "Entrée",
+  "app.shortcut_escape": "Échap",
   "app.share": "Partager",
   "attention.interrupted": "interrompue à l'arrêt de Djinn : relancez-la, ou laissez-la",
   "attention.label": "Ce qui vous attend",

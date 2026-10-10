@@ -595,6 +595,9 @@ test("creation fits a narrow window and keeps the editor and submit action reach
     name: "Make the wish",
     exact: true,
   });
+  await submit.hover();
+  await expect(page.locator('[role="tooltip"]')).toContainText("Make the wish");
+  await expect(page.locator('[role="tooltip"] kbd')).toHaveText(/Enter/);
   await submit.scrollIntoViewIfNeeded();
   await expect(submit).toBeInViewport();
   expect(

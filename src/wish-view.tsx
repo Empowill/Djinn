@@ -168,6 +168,7 @@ export function WishView({
             <PageHeaderAction
               className="wish-provider"
               label={`${t("wish.provider_detail")} (${providerName(wish.provider)})`}
+              title={`${t("provider.title")} (${providerName(wish.provider)})`}
               onClick={() => setChanging(true)}
             >
               <Bot size={16} aria-hidden="true" />

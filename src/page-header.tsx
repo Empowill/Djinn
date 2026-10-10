@@ -1,5 +1,7 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
+import { TooltipButton } from "./tooltip";
+
 export function PageHeader({
   children,
   actions,
@@ -21,25 +23,28 @@ type PageHeaderActionProps = Omit<
 > & {
   label: string;
   title?: string;
+  shortcut?: string;
   className?: string;
 };
 
 export function PageHeaderAction({
   label,
   title = label,
+  shortcut,
   className = "",
   children,
   ...props
 }: PageHeaderActionProps) {
   return (
-    <button
+    <TooltipButton
       {...props}
       type="button"
       className={`button secondary page-header-action ${className}`.trim()}
-      aria-label={label}
-      title={title}
+      label={label}
+      tooltip={title}
+      shortcut={shortcut}
     >
       {children}
-    </button>
+    </TooltipButton>
   );
 }

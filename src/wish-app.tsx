@@ -24,6 +24,7 @@ import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
 import { useTerminalFollows } from "./lead-terminal";
+import { platformShortcut, TooltipButton } from "./tooltip";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { WishSidebar } from "./wish-sidebar";
 import { WishView } from "./wish-view";
@@ -73,6 +74,7 @@ export function WishApp() {
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
   const closeMake = useCallback(() => setModal(null), []);
+  const toggleSidebar = useCallback(() => setCollapsed((value) => !value), []);
 
   useEffect(() => store("djinn.wish", selected), [selected]);
   useEffect(
@@ -120,6 +122,7 @@ export function WishApp() {
   // Ctrl+N (Cmd+N) makes a wish.
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
         event.preventDefault();
         setModal("make");
@@ -128,6 +131,27 @@ export function WishApp() {
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
   }, []);
+  // Ctrl+\ (Cmd+\) folds the navigation without taking shortcuts from the terminal.
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        (modal !== null && modal !== "make") ||
+        making ||
+        !(event.metaKey || event.ctrlKey) ||
+        (event.key !== "\\" && event.code !== "Backslash")
+      )
+        return;
+      if (event.target instanceof HTMLElement && event.target.closest(".xterm"))
+        return;
+      event.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, [making, modal, toggleSidebar]);
 
   // The active wishes are always read: the flight plan and the side panel count what waits in each.
   const active = wishes.filter(isActive);
@@ -148,6 +172,8 @@ export function WishApp() {
   const plan = !chosen && (selected === PLAN || active.length > 0);
   const wish = plan ? undefined : (chosen ?? wishes[0]);
   const shownId = wish?.id ?? "";
+  const newWishShortcut = platformShortcut("N");
+  const sidebarShortcut = platformShortcut("\\");
   useTerminalFollows(wish);
   // djinn sends no notification for the wish shown while the window is in front.
   useEffect(() => {
@@ -207,29 +233,35 @@ export function WishApp() {
           makeBackAction.current?.();
         }}
       >
-        <button
+        <TooltipButton
           type="button"
           className="wish-creation-back app-toolbar-back"
-          aria-label={makeBackInSetup ? t("agents.back") : t("make.back")}
-          title={makeBackInSetup ? t("agents.back") : t("make.back")}
+          label={makeBackInSetup ? t("agents.back") : t("make.back")}
+          tooltip={makeBackInSetup ? t("agents.back") : t("make.back")}
+          shortcut={
+            modal === "make" && !making ? t("app.shortcut_escape") : undefined
+          }
+          aria-keyshortcuts={modal === "make" && !making ? "Escape" : undefined}
           disabled={modal !== "make" || making}
           onClick={() => makeBackAction.current?.()}
           data-setup-back={makeBackInSetup || undefined}
         >
           <ArrowLeft size={16} aria-hidden="true" />
-        </button>
-        <button
+        </TooltipButton>
+        <TooltipButton
           type="button"
           className="sidebar-toggle app-toolbar-toggle"
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={toggleSidebar}
           disabled={making}
-          title={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-          aria-label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+          label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+          tooltip={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+          shortcut={sidebarShortcut.label}
+          aria-keyshortcuts={sidebarShortcut.aria}
           aria-expanded={!collapsed}
           aria-controls="djinn-sidebar"
         >
           <PanelLeft size={16} aria-hidden="true" />
-        </button>
+        </TooltipButton>
       </div>
       <aside
         id="djinn-sidebar"
@@ -247,15 +279,18 @@ export function WishApp() {
           aria-hidden={collapsed ? "true" : undefined}
           inert={collapsed}
         >
-          <button
+          <TooltipButton
             className="new-mission"
             onClick={() => setModal("make")}
-            title={t("app.new_wish")}
+            label={t("app.new_wish")}
+            tooltip={t("app.new_wish")}
+            shortcut={newWishShortcut.label}
+            aria-keyshortcuts={newWishShortcut.aria}
           >
             <Plus size={16} />
             <span>{t("app.new_wish")}</span>
-            <kbd>⌘ N</kbd>
-          </button>
+            <kbd>{newWishShortcut.label}</kbd>
+          </TooltipButton>
           <WishSidebar
             wishes={wishes}
             projects={projects}
