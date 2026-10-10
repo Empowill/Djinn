@@ -278,6 +278,16 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return fmt.Errorf("its budget of $%.2f is spent", t.GetMaxBudgetUsd())
 		}
 	}
+	if project.GetGit() {
+		// The checks its first prompt said at launch, as the project's settings say them now.
+		settings, err := plan.LoadSettings(h.home, project)
+		if err != nil {
+			return fmt.Errorf("project %s: %w", project.GetName(), err)
+		}
+		r.checks = settings.ChecksBrief()
+	}
+	readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
+	perms = withCommit(t, perms)
 	line := restartedLine
 	switch by {
 	case byLimit:
@@ -287,10 +297,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case byContinue:
 		line = prompt
 	case byAnswer:
-		line = editLine + prompt
+		line = editLine + briefed(r, prompt, readOnly)
 	}
-	readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
-	perms = withCommit(t, perms)
 	spec := Spec{
 		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: t.GetModel(), MaxBudgetUSD: budget,
 		Resume: t.GetSessionId(), Prompt: line,
@@ -301,8 +309,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	}
 	if t.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY || spec.Resume == "" {
 		// agy's resume is not verified (docs/providers.md): it starts again on its first prompt, as does a worker
-		// whose session was never known.
-		spec.Resume, spec.Prompt, how = "", prompt+"\n\n"+line, ", from its first prompt"
+		// whose session was never known, its checks with it as at launch.
+		spec.Resume, spec.Prompt, how = "", briefed(r, prompt, readOnly)+"\n\n"+line, ", from its first prompt"
 		if by == byAnswer {
 			spec.Prompt = line // It holds the first prompt already.
 		}

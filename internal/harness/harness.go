@@ -546,6 +546,16 @@ func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.
 	return p, nil
 }
 
+// briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
+// a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
+// ends.
+func briefed(r *run, prompt string, readOnly bool) string {
+	if r.checks != "" && r.task.GetBranch() != "" && !readOnly {
+		return prompt + "\n\n" + r.checks
+	}
+	return prompt
+}
+
 // launch starts the worker of the run's task, now written with its access: in its worktree, its project's folder,
 // or an empty folder of its own. A failure ends the task, and is returned.
 func (h *Harness) launch(
@@ -622,10 +632,7 @@ func (h *Harness) launch(
 	if task.GetForkOf() != "" {
 		where += ", forked from " + forkText(task.GetForkOf())
 	}
-	if r.checks != "" && task.GetBranch() != "" && !readOnly {
-		// A worker that edits a worktree learns which checks its work meets, to run the commit checks before it ends.
-		spec.Prompt += "\n\n" + r.checks
-	}
+	spec.Prompt = briefed(r, spec.Prompt, readOnly)
 	text := "started " + short(task.GetProvider()) + " " + where + ", " + accessText(task, prep.question) +
 		skillsText(spec.Skills)
 	if r.watcher {

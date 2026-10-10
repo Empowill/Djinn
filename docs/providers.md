@@ -245,7 +245,7 @@ resumes without finishing, the task fails, saying so. What each agent gets:
 | ------ | ------------------------------------------------------------------------------------------------------------------ |
 | Claude | `--resume <session>`, and "Djinn restarted while you worked; your worktree is as you left it. Continue your task." |
 | Codex  | `thread/resume` on its thread, and the same line                                                                   |
-| agy    | its first prompt again, followed by that line, in the same worktree: its resume is not verified                    |
+| agy    | its first prompt again, its checks with it, then that line, in the same worktree: its resume is not verified       |
 
 The limits Djinn recognizes, in the failure a worker ends with (`internal/harness/limit.go`): Claude's
 `rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your

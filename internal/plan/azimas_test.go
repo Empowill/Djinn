@@ -110,7 +110,8 @@ func TestFillAzimas(t *testing.T) {
 
 // TestAwaitingProof: an azima under way awaits its proof once its work is finished (done, stopped, or cut short for
 // good), its azimas done or awaiting theirs, and its plan file leaves only boxes that need a proof no worker can give.
-// Work left, a part failed or resuming, a box without needs, or nothing under way keeps it where it was.
+// Work left, a part failed or resuming, a box without needs, or nothing under way keeps it where it was. A closed azima
+// with a part failed is in progress, not done. The push takes the same rule for an azima's end (TestPushDue).
 func TestAwaitingProof(t *testing.T) {
 	needs := []*planv1.ProofNeed{{Box: "Opened on a Mac.", Needs: "a Mac", Provers: []planv1.Prover{planv1.Prover_PROVER_MAC}}}
 	azima := func(code, partOf string, proof bool) *planv1.Task {
@@ -153,12 +154,18 @@ func TestAwaitingProof(t *testing.T) {
 		{Id: "T13", Code: "T13", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W17", "T13", done),
 		work("W18", "T13", running),
 		{Id: "T14", Code: "T14", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W19", "T14", pending),
+		// Closed, with a part failed: in progress, as with the push (harness.azimaEnded); one cut short for good is
+		// finished, and it is done.
+		{Id: "T15", Code: "T15", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W20", "T15", done),
+		work("W21", "T15", failed),
+		{Id: "T16", Code: "T16", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W22", "T16", done),
+		work("W23", "T16", cut),
 	}
 	FillAzimas(tasks)
 	for code, want := range map[string]planv1.AzimaState{
 		"T1": proof, "T2": under, "T3": under, "T4": under, "T5": under, "T6": proof, "T7": open,
 		"T8": proof, "T9": proof, "T10": under, "T11": under, "T12": planv1.AzimaState_AZIMA_STATE_DONE,
-		"T13": under, "T14": under,
+		"T13": under, "T14": under, "T15": under, "T16": planv1.AzimaState_AZIMA_STATE_DONE,
 	} {
 		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
 		if got := tasks[i].GetAzima().GetState(); got != want {

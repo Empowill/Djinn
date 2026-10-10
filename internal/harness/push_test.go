@@ -80,19 +80,24 @@ func (in *integration) later(d time.Duration) {
 }
 
 // TestPushAtAnAzimasEnd: the integration branch is pushed once an azima's last part is committed, not before, with
-// the person's own git, and the push recorded: in the journal, on the wish, in each task's events.
+// the person's own git, and the push recorded: in the journal, on the wish, in each task's events. An azima with a
+// failed part has not ended, as its state says (plan.FillAzimas): its other part committed waits for the next push.
 func TestPushAtAnAzimasEnd(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
+	numbers := in.azima(t, in.wishID, "Numbers")
+	partOfNumbers := func(task *planv1.Task) { task.PartOf = numbers.GetId() }
+	w0 := in.finished(t, "W0", map[string]string{"app/src/0.txt": "0\n"}, partOfNumbers)
+	in.finished(t, "W9", nil, partOfNumbers, func(task *planv1.Task) { task.Status, task.Integration = planv1.TaskStatus_TASK_STATUS_FAILED, nil })
 	azima := in.azima(t, in.wishID, "Letters")
 	partOf := func(task *planv1.Task) { task.PartOf = azima.GetId() }
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, partOf)
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, partOf)
 
 	in.pass(t, 0)
-	// W1's merge ended with W2 still to commit: no push then; W2's ends the azima.
+	// W0's merge does not end Numbers, W9 failed: no push then (TestPushDue holds a part still to commit); W1's ends
+	// Letters.
 	tip := in.tip(t)
 	if got := in.remoteTip(t, bare); got != tip {
 		t.Fatalf("origin's %s is at %s; the branch at %s", in.branch, got, tip)
@@ -100,7 +105,7 @@ func TestPushAtAnAzimasEnd(t *testing.T) {
 	pushes := in.pushes(t)
 	want := &planv1.IntegrationPush{
 		WishId: in.wishID, ProjectId: in.projectID, Branch: in.branch, Remote: "origin", OldSha: old, NewSha: tip, Count: 2,
-		Commits: []string{"Work of W2", "Work of W1"}, TaskIds: []string{w1.GetId(), w2.GetId()},
+		Commits: []string{"Work of W1", "Work of W0"}, TaskIds: []string{w0.GetId(), w1.GetId()},
 	}
 	if len(pushes) != 1 || pushes[0].GetPushTime() == nil {
 		t.Fatalf("pushes %v", pushes)
@@ -113,7 +118,7 @@ func TestPushAtAnAzimasEnd(t *testing.T) {
 		t.Errorf("the wish's last push %v", last)
 	}
 	text := "pushed " + in.branch + " to origin as " + tip[:8] + ", 2 commits (the azima " + azima.GetCode() + " ends)"
-	for _, task := range []*planv1.Task{w1, w2} {
+	for _, task := range []*planv1.Task{w0, w1} {
 		if _, texts := in.integration(t, task); !slices.Contains(texts, text) {
 			t.Errorf("%s's events %q lack %q", task.GetCode(), texts, text)
 		}
@@ -318,6 +323,7 @@ func TestPushDue(t *testing.T) {
 	committed, pending := planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, planv1.IntegrationState_INTEGRATION_STATE_PENDING
 	none := planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED
 	t1 := &planv1.Task{Id: "a", Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA}
+	t2 := &planv1.Task{Id: "b", Code: "T2", Kind: planv1.TaskKind_TASK_KIND_AZIMA, PartOf: "a"}
 	w1, w2, w3 := task("W1", done, committed, "a"), task("W2", done, committed, ""), task("W3", done, committed, "")
 	for _, c := range []struct {
 		name             string
@@ -328,7 +334,11 @@ func TestPushDue(t *testing.T) {
 		{"an azima with a part still running", []*planv1.Task{w1}, []*planv1.Task{t1, w1, task("W4", running, none, "a")}, 0, ""},
 		{"an azima with a part still to commit", []*planv1.Task{w1}, []*planv1.Task{t1, w1, task("W4", done, pending, "a")}, 0, ""},
 		{"an azima's last part committed", []*planv1.Task{w1}, []*planv1.Task{t1, w1}, 0, "the azima T1 ends"},
-		{"an azima whose other part failed", []*planv1.Task{w1}, []*planv1.Task{t1, w1, task("W4", planv1.TaskStatus_TASK_STATUS_FAILED, none, "a")}, 0, "the azima T1 ends"},
+		// The rule of the azima's state (plan.FillAzimas): a failed part has not finished, one left interrupted has.
+		{"an azima whose other part failed", []*planv1.Task{w1}, []*planv1.Task{t1, w1, task("W4", planv1.TaskStatus_TASK_STATUS_FAILED, none, "a")}, 0, ""},
+		{"an azima whose other part was cut short", []*planv1.Task{w1}, []*planv1.Task{t1, w1, task("W4", planv1.TaskStatus_TASK_STATUS_INTERRUPTED, none, "a")}, 0, "the azima T1 ends"},
+		{"an azima whose azima part waits", []*planv1.Task{w1}, []*planv1.Task{t1, w1, t2, task("W6", done, pending, "b")}, 0, ""},
+		{"an azima whose azima part ended", []*planv1.Task{w1}, []*planv1.Task{t1, w1, t2, task("W6", done, committed, "b")}, 0, "the azima T1 ends"},
 		{"three tasks, 59 minutes", []*planv1.Task{w2, w3, task("W5", done, committed, "")}, nil, 59 * time.Minute, ""},
 		{"three tasks, an hour", []*planv1.Task{w2, w3, task("W5", done, committed, "")}, nil, time.Hour, ""},
 		{"three tasks, more than an hour", []*planv1.Task{w2, w3, task("W5", done, committed, "")}, nil, time.Hour + time.Second,

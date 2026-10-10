@@ -145,6 +145,7 @@ func committedSince(tasks []*planv1.Task, projectID string, since time.Time) []*
 // is part of has ended; or n tasks are committed since the last push, at since, and more than every has passed since.
 // tasks are all the wish's.
 func pushDue(committed, tasks []*planv1.Task, since, now time.Time, every time.Duration, n int) string {
+	tasks = plan.WithAzimas(tasks)
 	for _, t := range slices.Backward(committed) {
 		if a := t.GetPartOf(); a != "" && azimaEnded(a, tasks) {
 			return "the azima " + codeOf(a, tasks) + " ends"
@@ -156,17 +157,28 @@ func pushDue(committed, tasks []*planv1.Task, since, now time.Time, every time.D
 	return ""
 }
 
-// azimaEnded tells whether the azima id has ended: every work part of it has finished, done or not, and none waits
-// to be committed.
+// azimaEnded tells whether the azima id has ended for the push, by the rule of where it stands (plan.FillAzimas, which
+// tasks carry): done or to validate, every part finished (a failed part keeps it in progress), and no work part of it,
+// nor of its azimas, waits to be committed.
 func azimaEnded(id string, tasks []*planv1.Task) bool {
+	i := slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == id })
+	if i < 0 {
+		return false
+	}
+	switch tasks[i].GetAzima().GetState() {
+	case planv1.AzimaState_AZIMA_STATE_DONE, planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF:
+	default:
+		return false
+	}
 	for _, t := range tasks {
-		if t.GetPartOf() != id || plan.IsAzima(t) {
+		if t.GetPartOf() != id {
 			continue
 		}
-		switch t.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
-		default:
-			return false
+		if plan.IsAzima(t) {
+			if !azimaEnded(t.GetId(), tasks) {
+				return false
+			}
+			continue
 		}
 		switch t.GetIntegration().GetState() {
 		case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:

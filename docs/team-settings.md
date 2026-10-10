@@ -171,7 +171,7 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   made anew. Failed, the merge is red.
 - **The workers know them.** The lead's brief lists each project's checks and when they run; each worker that edits a
   worktree gets them at the end of its first prompt, to run the commit checks (`djinn gate run lint -- go tool task
-  lint`) before it ends.
+  lint`) before it ends; again when it resumes from its first prompt (agy, or a session never known).
 - `djinn project show <project>` and the project's view in the window list the setup and the checks, each with its
   last run: the commit it checked, when, how long, and why it failed.
 
@@ -236,7 +236,8 @@ committed, committed as `1a2b3c4d`, conflict, red, corrected by W9, uncommitted,
 Pushing the integration branch to its remote is Djinn's, never an agent's: `.agents/permissions.txtpb` denies `git
 push` to every worker. Djinn checks it each time a task's merge ends, and a push is **due**:
 
-- when an azima ends: every part of it has finished, and its last part is committed;
+- when an azima ends: it is done or to validate, as its state says (every part finished: a failed part keeps it in
+  progress, one cut short for good does not), and its last part is committed;
 - or once three tasks are committed since the last push and more than an hour has passed since it.
 
 The [push checks](#checks) run first, on the branch's tip: red, they hold the push.

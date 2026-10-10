@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -256,5 +257,69 @@ func TestResumeRules(t *testing.T) {
 	if got := e.get(t, worn.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
 		got.GetError() != "resumed 3 times without finishing; the last time: djinn up ended while the worker ran" {
 		t.Errorf("W6: %v", got)
+	}
+}
+
+// promptsProvider is a provider that keeps what each worker it starts is given: its prompt, and the session it resumes.
+type promptsProvider struct {
+	Provider
+	mu    *sync.Mutex
+	specs map[string]Spec
+}
+
+func (p promptsProvider) Start(ctx context.Context, spec Spec) (Worker, error) {
+	p.mu.Lock()
+	p.specs[spec.TaskID] = spec
+	p.mu.Unlock()
+	return p.Provider.Start(ctx, spec)
+}
+
+func (p promptsProvider) spec(id string) Spec {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.specs[id]
+}
+
+// TestResumeFromTheFirstPromptKeepsTheChecks: a worker resumed from its first prompt, agy's or one whose session was
+// never known, is told the project's checks as at launch (briefed); one resumed on its session has them there already.
+func TestResumeFromTheFirstPromptKeepsTheChecks(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	rec := promptsProvider{Provider: Fake{}, mu: &sync.Mutex{}, specs: map[string]Spec{}}
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_FAKE], providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = rec, rec
+	e := upWith(t, home, providers)
+	wishID, projectID := e.wish(t, gitRepo(t))
+	writeFile(t, home, filepath.Join("projects", projectID, "settings.txtpb"), lintAtCommit)
+	task := func(code string, provider planv1.Provider, session string) *planv1.Task {
+		tk := &planv1.Task{
+			Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: code, Title: code,
+			Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Provider: provider, Worktree: t.TempDir(),
+			Branch: strings.ToLower(code), SessionId: session, Scheduled: true, Error: "djinn up ended while the worker ran",
+			StartTime: timestamppb.Now(), EndTime: timestamppb.Now(),
+		}
+		putTask(t, e.db, tk, "text first prompt")
+		return tk
+	}
+	unknown := task("W1", planv1.Provider_PROVIDER_FAKE, "")
+	agy := task("W2", planv1.Provider_PROVIDER_ANTIGRAVITY, "s-W2")
+	session := task("W3", planv1.Provider_PROVIDER_FAKE, "s-W3")
+	e.down()
+
+	e = upWith(t, home, providers)
+	checks := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- lint`."
+	for _, tk := range []*planv1.Task{unknown, agy, session} {
+		e.until(t, tk.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	}
+	for _, tk := range []*planv1.Task{unknown, agy} {
+		spec := rec.spec(tk.GetId())
+		if !strings.HasPrefix(spec.Prompt, "text first prompt\n\n"+checks) || !strings.HasSuffix(spec.Prompt, "\n\n"+restartedLine) ||
+			spec.Resume != "" {
+			t.Errorf("%s resumed on %q with:\n%s", tk.GetCode(), spec.Resume, spec.Prompt)
+		}
+	}
+	if spec := rec.spec(session.GetId()); spec.Prompt != restartedLine || spec.Resume != "s-W3" {
+		t.Errorf("W3 resumed on %q with:\n%s", spec.Resume, spec.Prompt)
 	}
 }
