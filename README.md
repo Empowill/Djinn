@@ -119,7 +119,7 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/readme/tasks-light.png">
-  <img alt="The same wish: its tasks, what they cost, and the lead's notes" src="docs/screenshots/readme/tasks-dark.png">
+  <img alt="The same wish: its tasks, by status, and what they cost" src="docs/screenshots/readme/tasks-dark.png">
 </picture>
 
 _Screenshots of a demonstration wish, with fictional data. `go tool task screenshots` takes them again._

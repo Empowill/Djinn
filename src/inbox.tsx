@@ -41,14 +41,18 @@ export function Inbox({
         </h2>
         <p>{t("inbox.detail")}</p>
       </div>
-      {items.map((item) => (
-        <InboxCard
-          key={item.id}
-          item={item}
-          onOpen={onOpen}
-          onToast={onToast}
-        />
-      ))}
+      {items.length > 0 && (
+        <div className="card-grid">
+          {items.map((item) => (
+            <InboxCard
+              key={item.id}
+              item={item}
+              onOpen={onOpen}
+              onToast={onToast}
+            />
+          ))}
+        </div>
+      )}
       {items.length === 0 ? (
         <article className="question-card open inbox-empty">
           <p className="inbox-empty-text">{t("inbox.empty")}</p>

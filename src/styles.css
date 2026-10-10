@@ -414,7 +414,7 @@ html[data-theme="light"] .wordmark-period {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 360px;
+  max-width: max(360px, 30vw);
 }
 .topbar-actions {
   display: flex;

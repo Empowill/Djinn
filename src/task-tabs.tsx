@@ -89,7 +89,9 @@ export function TaskSections<T, A = never>({
         {moving.length === 0 && (
           <p className="muted-text">{t("tasks.none_live")}</p>
         )}
-        {moving.map(render)}
+        {moving.length > 0 && (
+          <div className="card-grid task-grid">{moving.map(render)}</div>
+        )}
       </section>
       {azimas.length > 0 && renderAzima && (
         <section
@@ -102,7 +104,7 @@ export function TaskSections<T, A = never>({
               <span className="count">{azimas.length}</span>
             </h2>
           </div>
-          {azimas.map(renderAzima)}
+          <div className="card-grid azima-grid">{azimas.map(renderAzima)}</div>
         </section>
       )}
       <section
@@ -118,7 +120,9 @@ export function TaskSections<T, A = never>({
         {finished.length === 0 && (
           <p className="muted-text">{t("tasks.none_done")}</p>
         )}
-        {finished.map(render)}
+        {finished.length > 0 && (
+          <div className="card-grid task-grid">{finished.map(render)}</div>
+        )}
       </section>
     </div>
   );

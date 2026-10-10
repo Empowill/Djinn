@@ -356,91 +356,93 @@ export function WishView({
                 )
               }
             />
-            <div className="review-pills">
-              <StatusBadge tone={tone} label={wishStateText(wish)} />
-              {open.length > 0 && (
-                <CountPill
-                  tone="waiting"
-                  count={open.length}
-                  label={t("wish.questions_wait", { count: open.length })}
-                >
-                  {t("pill.to_decide")}
-                </CountPill>
-              )}
-              {digging.length > 0 && (
-                <CountPill
-                  tone="investigating"
-                  count={digging.length}
-                  label={t("pill.investigating_detail", {
-                    count: digging.length,
-                  })}
-                >
-                  {t("pill.investigating")}
-                </CountPill>
-              )}
-              {running > 0 && (
-                <CountPill
-                  tone="running"
-                  count={running}
-                  label={t("plan.running", { count: running })}
-                >
-                  {t("pill.running")}
-                </CountPill>
-              )}
-              {watching > 0 && (
-                <CountPill
-                  tone="watching"
-                  count={watching}
-                  label={t("plan.watching", { count: watching })}
-                >
-                  {t("pill.watching")}
-                </CountPill>
-              )}
-              {azimaProgress.count > 0 && azimaProgress.proof === 0 && (
-                <CountPill
-                  tone="done"
-                  count={azimaProgress.done}
-                  label={t("pill.azimas_detail", {
-                    done: azimaProgress.done,
-                    count: azimaProgress.count,
-                  })}
-                >
-                  / {azimaProgress.count} {t("pill.azimas")}
-                </CountPill>
-              )}
-              {azimaProgress.proof > 0 && (
-                // The azimas awaiting their proof, apart from the done ones: their work is done, not them.
-                <CountPill
-                  tone="done"
-                  count={azimaProgress.done}
-                  label={t("pill.azimas_proof_detail", {
-                    done: azimaProgress.done,
-                    proof: azimaProgress.proof,
-                    count: azimaProgress.count,
-                  })}
-                >
-                  {t("pill.azimas_done")} ·{" "}
-                  <b className="tone-proof">{azimaProgress.proof}</b>{" "}
-                  {t("pill.azimas_proof")} / {azimaProgress.count}{" "}
-                  {t("pill.azimas")}
-                </CountPill>
-              )}
-              {work > 0 && (
-                <CountPill
-                  tone="done"
-                  count={done}
-                  label={t("pill.done_detail", { done, count: work })}
-                >
-                  / {work} {t("pill.done")}
-                </CountPill>
-              )}
-            </div>
-            <div className="hero-meta">
-              <span>
-                <Clock3 size={13} />
-                {when(wish.createTime)}
-              </span>
-              <LastPushes pushes={wish.pushes} projects={projects} />
+            <div className="review-facts">
+              <div className="review-pills">
+                <StatusBadge tone={tone} label={wishStateText(wish)} />
+                {open.length > 0 && (
+                  <CountPill
+                    tone="waiting"
+                    count={open.length}
+                    label={t("wish.questions_wait", { count: open.length })}
+                  >
+                    {t("pill.to_decide")}
+                  </CountPill>
+                )}
+                {digging.length > 0 && (
+                  <CountPill
+                    tone="investigating"
+                    count={digging.length}
+                    label={t("pill.investigating_detail", {
+                      count: digging.length,
+                    })}
+                  >
+                    {t("pill.investigating")}
+                  </CountPill>
+                )}
+                {running > 0 && (
+                  <CountPill
+                    tone="running"
+                    count={running}
+                    label={t("plan.running", { count: running })}
+                  >
+                    {t("pill.running")}
+                  </CountPill>
+                )}
+                {watching > 0 && (
+                  <CountPill
+                    tone="watching"
+                    count={watching}
+                    label={t("plan.watching", { count: watching })}
+                  >
+                    {t("pill.watching")}
+                  </CountPill>
+                )}
+                {azimaProgress.count > 0 && azimaProgress.proof === 0 && (
+                  <CountPill
+                    tone="done"
+                    count={azimaProgress.done}
+                    label={t("pill.azimas_detail", {
+                      done: azimaProgress.done,
+                      count: azimaProgress.count,
+                    })}
+                  >
+                    / {azimaProgress.count} {t("pill.azimas")}
+                  </CountPill>
+                )}
+                {azimaProgress.proof > 0 && (
+                  // The azimas awaiting their proof, apart from the done ones: their work is done, not them.
+                  <CountPill
+                    tone="done"
+                    count={azimaProgress.done}
+                    label={t("pill.azimas_proof_detail", {
+                      done: azimaProgress.done,
+                      proof: azimaProgress.proof,
+                      count: azimaProgress.count,
+                    })}
+                  >
+                    {t("pill.azimas_done")} ·{" "}
+                    <b className="tone-proof">{azimaProgress.proof}</b>{" "}
+                    {t("pill.azimas_proof")} / {azimaProgress.count}{" "}
+                    {t("pill.azimas")}
+                  </CountPill>
+                )}
+                {work > 0 && (
+                  <CountPill
+                    tone="done"
+                    count={done}
+                    label={t("pill.done_detail", { done, count: work })}
+                  >
+                    / {work} {t("pill.done")}
+                  </CountPill>
+                )}
+              </div>
+              <div className="hero-meta">
+                <span>
+                  <Clock3 size={13} />
+                  {when(wish.createTime)}
+                </span>
+                <LastPushes pushes={wish.pushes} projects={projects} />
+              </div>
             </div>
           </div>
           <div className="hero-visual">
@@ -513,124 +515,140 @@ export function WishView({
               />
             ))}
           {view === "main" && (
-            <>
-              {(open.length > 0 || waiting.length > 0 || wish.ready) && (
-                <section
-                  className="action-center"
-                  id="action-center"
-                  aria-label={t("panels.your_move")}
-                >
-                  <div className="section-title">
-                    <h2>{t("panels.your_move")}</h2>
-                    <p>
-                      {open.length
-                        ? t("wish.questions_wait", { count: open.length })
-                        : wish.ready
-                          ? t("wish.ready_detail")
-                          : t("panels.your_move_detail")}
-                    </p>
-                  </div>
-                  {open.length > 0 && (
-                    <section className="decisions-section">
-                      <div className="section-heading">
-                        <h3>
-                          {t("panels.decisions")}
-                          <span className="count">{open.length}</span>
-                        </h3>
+            <div className="main-columns">
+              {(open.length > 0 ||
+                waiting.length > 0 ||
+                wish.ready ||
+                digging.length > 0) && (
+                <div className="main-moves">
+                  {(open.length > 0 || waiting.length > 0 || wish.ready) && (
+                    <section
+                      className="action-center"
+                      id="action-center"
+                      aria-label={t("panels.your_move")}
+                    >
+                      <div className="section-title">
+                        <h2>{t("panels.your_move")}</h2>
+                        <p>
+                          {open.length
+                            ? t("wish.questions_wait", { count: open.length })
+                            : wish.ready
+                              ? t("wish.ready_detail")
+                              : t("panels.your_move_detail")}
+                        </p>
                       </div>
-                      <AnimatePresence mode="popLayout">
-                        {open.map(({ item: q, blocking }) => (
-                          <WishQuestion
-                            key={q.id}
-                            question={q}
-                            blocking={blocking}
-                            noLead={noLead(wish)}
-                            onAnswer={(choice, note) =>
-                              answer(wish.id, q.id, choice, note)
-                            }
-                            onMark={(kind, remove) =>
-                              mark(wish.id, q.id, kind, remove)
-                            }
-                            onEnlighten={(note) =>
-                              enlighten(wish.id, q.id, note)
-                            }
-                          />
-                        ))}
-                      </AnimatePresence>
+                      {open.length > 0 && (
+                        <section className="decisions-section">
+                          <div className="section-heading">
+                            <h3>
+                              {t("panels.decisions")}
+                              <span className="count">{open.length}</span>
+                            </h3>
+                          </div>
+                          <AnimatePresence mode="popLayout">
+                            {open.map(({ item: q, blocking }) => (
+                              <WishQuestion
+                                key={q.id}
+                                question={q}
+                                blocking={blocking}
+                                noLead={noLead(wish)}
+                                onAnswer={(choice, note) =>
+                                  answer(wish.id, q.id, choice, note)
+                                }
+                                onMark={(kind, remove) =>
+                                  mark(wish.id, q.id, kind, remove)
+                                }
+                                onEnlighten={(note) =>
+                                  enlighten(wish.id, q.id, note)
+                                }
+                              />
+                            ))}
+                          </AnimatePresence>
+                        </section>
+                      )}
+                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
+                      {wish.ready && (
+                        <GrantCard
+                          wish={wish}
+                          onGrant={() =>
+                            quiet(
+                              act(
+                                () => clients.wishes.grant({ wishId: wish.id }),
+                                [Change.WISH],
+                                t("wish.granted_toast"),
+                              ),
+                            )
+                          }
+                        />
+                      )}
                     </section>
                   )}
-                  {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-                  {wish.ready && (
-                    <GrantCard
-                      wish={wish}
-                      onGrant={() =>
-                        quiet(
-                          act(
-                            () => clients.wishes.grant({ wishId: wish.id }),
-                            [Change.WISH],
-                            t("wish.granted_toast"),
-                          ),
-                        )
+
+                  {digging.length > 0 && (
+                    <InvestigatingSection
+                      questions={digging}
+                      onAnswer={(q, choice, note) =>
+                        answer(wish.id, q, choice, note)
+                      }
+                      onMark={(q, kind, remove) =>
+                        mark(wish.id, q, kind, remove)
                       }
                     />
                   )}
-                </section>
+                </div>
               )}
 
-              {digging.length > 0 && (
-                <InvestigatingSection
-                  questions={digging}
-                  onAnswer={(q, choice, note) =>
-                    answer(wish.id, q, choice, note)
-                  }
-                  onMark={(q, kind, remove) => mark(wish.id, q, kind, remove)}
-                />
-              )}
+              <div className="main-side">
+                {notes.length > 0 && (
+                  <section
+                    className="wish-section"
+                    aria-label={t("wish.blocks")}
+                  >
+                    <div className="section-title">
+                      <h2>
+                        {t("wish.blocks")}
+                        <span className="count">{notes.length}</span>
+                      </h2>
+                      <p>{t("wish.blocks_detail")}</p>
+                    </div>
+                    <div className="card-grid notes-grid">
+                      {notes.map((block) => (
+                        <WishBlock
+                          key={block.id}
+                          block={block}
+                          task={codes.get(block.taskId) ?? ""}
+                          onMark={(kind, remove) =>
+                            mark(wish.id, block.id, kind, remove)
+                          }
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
 
-              {notes.length > 0 && (
-                <section className="wish-section" aria-label={t("wish.blocks")}>
-                  <div className="section-title">
-                    <h2>
-                      {t("wish.blocks")}
-                      <span className="count">{notes.length}</span>
-                    </h2>
-                    <p>{t("wish.blocks_detail")}</p>
-                  </div>
-                  {notes.map((block) => (
-                    <WishBlock
-                      key={block.id}
-                      block={block}
-                      task={codes.get(block.taskId) ?? ""}
-                      onMark={(kind, remove) =>
-                        mark(wish.id, block.id, kind, remove)
-                      }
-                    />
-                  ))}
-                </section>
-              )}
+                <Journal wish={wish} blocks={detail.blocks} />
 
-              <Journal wish={wish} blocks={detail.blocks} />
-
-              {projects.length > 0 && (
-                <Rights
-                  wish={wish}
-                  projects={projects}
-                  onAllow={(projectId, mode) =>
-                    quiet(
-                      act(
-                        () =>
-                          clients.wishes.allow({
-                            wishId: wish.id,
-                            projectId,
-                            mode,
-                          }),
-                        [Change.WISH],
-                      ),
-                    )
-                  }
-                />
-              )}
-            </>
+                {projects.length > 0 && (
+                  <Rights
+                    wish={wish}
+                    projects={projects}
+                    onAllow={(projectId, mode) =>
+                      quiet(
+                        act(
+                          () =>
+                            clients.wishes.allow({
+                              wishId: wish.id,
+                              projectId,
+                              mode,
+                            }),
+                          [Change.WISH],
+                        ),
+                      )
+                    }
+                  />
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -910,7 +928,10 @@ function Rights({
   onAllow: (projectId: string, mode: Allowance) => void;
 }) {
   return (
-    <section className="wish-section" aria-label={t("rights.title")}>
+    <section
+      className="wish-section wish-rights"
+      aria-label={t("rights.title")}
+    >
       <div className="section-heading">
         <h3>{t("rights.title")}</h3>
       </div>

@@ -183,7 +183,7 @@ export function TilasmList({
     <div
       role="tabpanel"
       aria-labelledby="view-tab-tilasms"
-      className={`tilasms ${over ? "dropping" : ""}`}
+      className={`tilasms ${over ? "dropping" : ""} ${open ? "has-open" : ""}`}
       onDragEnter={dragging}
       onDragOver={dragging}
       onDragLeave={(event) => {
