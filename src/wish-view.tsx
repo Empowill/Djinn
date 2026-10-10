@@ -83,6 +83,7 @@ import { WishTask } from "./wish-task";
 import {
   LastPushes,
   LeadButton,
+  MainMerges,
   WishDescription,
   recordedAgent,
 } from "./wish-head";
@@ -442,6 +443,7 @@ export function WishView({
                   {when(wish.createTime)}
                 </span>
                 <LastPushes pushes={wish.pushes} projects={projects} />
+                <MainMerges mains={wish.mains} projects={projects} />
               </div>
             </div>
           </div>

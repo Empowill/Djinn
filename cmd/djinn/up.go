@@ -207,6 +207,11 @@ func runUp(args []string) (restart bool, err error) {
 	defer func() { restart = err == nil && updates.Restarting() }()
 	if updates != nil {
 		uiSvc.Restart = updates.restart
+		if commit, dirty, ok := localBuild(version); ok {
+			updates.fit = func(ctx context.Context, tag string) (harness.ReleaseFit, error) {
+				return workers.Release(ctx, commit, dirty, tag)
+			}
+		}
 		go updates.run(ctx)
 	}
 	uiSvc.Install = func(ctx context.Context, b *uiv1.Build) (bool, error) {

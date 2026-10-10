@@ -237,7 +237,8 @@ func TestGitHubSourcePrerelease(t *testing.T) {
 	}
 }
 
-// TestReleaseSource: a release binary follows the releases, a go install the module proxy, a checkout nothing.
+// TestReleaseSource: a release binary follows the releases, a go install the module proxy, a build from a checkout the
+// releases too, a development build nothing.
 func TestReleaseSource(t *testing.T) {
 	asset, check := releaseAsset, checkReleases
 	t.Cleanup(func() { releaseAsset, checkReleases = asset, check })
@@ -247,7 +248,7 @@ func TestReleaseSource(t *testing.T) {
 	}{
 		{"v1.0.0", "djinn_linux_amd64", "*main.githubSource"},
 		{"v1.0.0", "", "main.proxySource"},
-		{"local-ab12cd3-dirty", "", "<nil>"},
+		{"local-ab12cd3-dirty", "", "*main.githubSource"},
 		{"dev", "", "<nil>"},
 	} {
 		releaseAsset = c.asset
@@ -259,5 +260,27 @@ func TestReleaseSource(t *testing.T) {
 	checkReleases = false
 	if src, _ := releaseSource("v1.0.0"); src != nil {
 		t.Errorf("releases off: %T", src)
+	}
+}
+
+// TestLocalBuild reads the commit a build from a checkout comes from in its version, as go tool task install stamps it.
+func TestLocalBuild(t *testing.T) {
+	for _, c := range []struct {
+		version, commit string
+		dirty, ok       bool
+	}{
+		{"local-1a2b3c4", "1a2b3c4", false, true},
+		{"local-1a2b3c4-dirty", "1a2b3c4", true, true},
+		{"local-v0.1.0-3-g1a2b3c4", "1a2b3c4", false, true},
+		{"local-v0.1.0-3-g1a2b3c4-dirty", "1a2b3c4", true, true},
+		{"local-", "", false, false},
+		{"local-v0.1.0", "", false, false},
+		{"v0.1.0", "", false, false},
+		{"dev", "", false, false},
+	} {
+		commit, dirty, ok := localBuild(c.version)
+		if ok != c.ok || ok && (commit != c.commit || dirty != c.dirty) {
+			t.Errorf("localBuild(%q) = %q, %v, %v; want %q, %v, %v", c.version, commit, dirty, ok, c.commit, c.dirty, c.ok)
+		}
 	}
 }
