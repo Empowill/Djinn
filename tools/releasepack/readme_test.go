@@ -75,3 +75,38 @@ func TestReadmeInstallLines(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseNotes(t *testing.T) {
+	notes := read(t, "docs/releases/v0.1.0.md")
+	if !strings.HasPrefix(notes, "# Djinn v0.1.0\n") {
+		t.Errorf("v0.1.0.md does not start with # Djinn v0.1.0")
+	}
+	workflow := read(t, ".github/workflows/release.yml")
+	if !strings.Contains(workflow, `docs/releases/$GITHUB_REF_NAME.md`) || !strings.Contains(workflow, `--notes-file`) {
+		t.Errorf(".github/workflows/release.yml does not use --notes-file with docs/releases/$GITHUB_REF_NAME.md")
+	}
+	for _, feature := range []string{
+		"The window",
+		"Wishes and azimas",
+		"Questions that wait for you",
+		"Workers on Claude, Codex, or Antigravity",
+		"The orchestrator that integrates and pushes by itself",
+		"Tilasms",
+		"The command line",
+		"Backups",
+		"Updates from inside the app",
+	} {
+		if !strings.Contains(notes, feature) {
+			t.Errorf("v0.1.0.md missing feature: %s", feature)
+		}
+	}
+	for _, section := range []string{
+		"## Install",
+		"## Status and Verification",
+		"## License",
+	} {
+		if !strings.Contains(notes, section) {
+			t.Errorf("v0.1.0.md missing section: %s", section)
+		}
+	}
+}

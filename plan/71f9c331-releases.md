@@ -109,9 +109,14 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
     VERSION=v0.0.0-dryrun BINARY=<a GOOS=darwin build>` on Linux wrote `bin/release/djinn_darwin_universal_app.zip`,
     11 entries, `djinn` 0755)
   - [x] The release workflow builds it next to the bare archive, checks it and ships it with the sums.
-    (`release.yml`, job `macos`; `actionlint` v1.7.12 passes; never run)
-  - [ ] The dry run passes on GitHub: the bundle is well formed and opens. (needs: the lead to put `release.yml` on
-    the default branch, then `gh workflow run release.yml --ref <branch> -f version=v0.0.0-dryrun`)
+    (`release.yml`, job `macos`; `actionlint` v1.7.12 passes; dry run dispatched 2026-10-10, run 38049665651)
+  - [ ] The dry run passes on GitHub: the bundle is well formed and opens.
+    - [x] Dry run 38049665651 (2026-10-10, W243, macos-15 arm64): the universal binary builds, `lipo -info`
+      confirms `x86_64 arm64`, runs and prints `djinn v0.0.0-dryrun`. Djinn.app is laid out, unzips with `ditto`,
+      `plutil` lints `Info.plist`, `CFBundleIdentifier` is `io.github.empowill.djinn`, binary matches `cmp`, and runs
+      from inside the bundle. It proved that `codesign --verify` cannot check `$app/Contents/MacOS/djinn` directly on an
+      unsigned bundle without failing on missing bundle resources: moved to standalone binary and added
+      `CFBundleURLTypes` checking. The full pass with `open` and artifact upload awaits the next run.
   - [ ] Opened on a Mac from Finder: the window, the icon in the Dock and Launchpad, a notification. (needs: a Mac)
 
 ## Decided along the way
