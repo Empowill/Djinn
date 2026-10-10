@@ -457,9 +457,10 @@ enum WishState {
 // The lead of a wish: an agent session the user talks to, in the lead's terminal. Never a secret: the provider and
 // the session's identifier, which the agent's own command line resumes.
 message Lead {
-  // Kind of agent: claude or codex.
+  // Kind of agent: claude, codex or antigravity.
   Provider provider = 1;
-  // Identifier of the session, as the agent names it: claude --resume takes it.
+  // Identifier of the session, as the agent names it: claude --resume takes it. An antigravity lead does not
+  // know its session id and leaves it empty; djinn wish resume resumes the folder's most recent conversation (agy --continue).
   string session_id = 2;
   // Folder the session runs in on this machine: an agent finds its sessions by folder. An export replaces it by
   // its project's name or ~, and an import puts this machine's folder back when it knows it.
@@ -2197,7 +2198,7 @@ message WishServiceSetLeadRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
   ];
-  // Kind of agent: claude (the default) or codex.
+  // Kind of agent: claude (the default), codex or antigravity.
   Provider provider = 3;
   // Folder the session runs in. By default, the folder of the wish's first project. Never the home folder, nor
   // a folder above it.

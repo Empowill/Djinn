@@ -3033,9 +3033,10 @@ func (x *WishTemplate) GetRestart() bool {
 // the session's identifier, which the agent's own command line resumes.
 type Lead struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Kind of agent: claude or codex.
+	// Kind of agent: claude, codex or antigravity.
 	Provider Provider `protobuf:"varint,1,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
-	// Identifier of the session, as the agent names it: claude --resume takes it.
+	// Identifier of the session, as the agent names it: claude --resume takes it. An antigravity lead does not
+	// know its session id and leaves it empty; djinn wish resume resumes the folder's most recent conversation (agy --continue).
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// Folder the session runs in on this machine: an agent finds its sessions by folder. An export replaces it by
 	// its project's name or ~, and an import puts this machine's folder back when it knows it.
@@ -9423,7 +9424,7 @@ type WishServiceSetLeadRequest struct {
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	// Identifier of the lead's session, as the agent names it.
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	// Kind of agent: claude (the default) or codex.
+	// Kind of agent: claude (the default), codex or antigravity.
 	Provider Provider `protobuf:"varint,3,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
 	// Folder the session runs in. By default, the folder of the wish's first project. Never the home folder, nor
 	// a folder above it.

@@ -251,7 +251,7 @@ resumes without finishing, the task fails, saying so. What each agent gets:
 | ------ | ------------------------------------------------------------------------------------------------------------------ |
 | Claude | `--resume <session>`, and "Djinn restarted while you worked; your worktree is as you left it. Continue your task." |
 | Codex  | `thread/resume` on its thread, and the same line                                                                   |
-| agy    | its first prompt again, its checks with it, then that line, in the same worktree: its resume is not verified       |
+| agy    | `--conversation <session>`, and the resume line (restarted, limit, answer, continue), like claude; from the first prompt only when no conversation id is known |
 
 The limits Djinn recognizes, in the failure a worker ends with (`internal/harness/limit.go`): Claude's
 `rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your
@@ -411,6 +411,8 @@ accept-edits`, `--sandbox` without the network and `--project <Djinn's agy proje
 `--model`; outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
 input replaces it. Each message on the input is `{"event":"user","message":{"content":"…"}}` and runs one turn;
 the input is closed once every message has its result. agy cannot fork a conversation, and has no spending cap.
+ 
+**Resume.** A worker's worktree is its own isolated workspace. When resumed (after a restart, a session limit, an answer, or `djinn task continue`), Djinn resumes an agy worker with `--conversation <id>` and its resume line, falling back to the first prompt only when no conversation id is known. An Antigravity lead starts interactively with `agy -i '<start line>'` in the wish's project directory; because interactive `agy` does not expose its conversation id on launch, Djinn records the lead by provider and folder (without a session id), and resumes it with `agy --continue` in the lead's folder, documented as "the folder's most recent conversation".
 
 **Stream.** `{"event":"init","conversation_id":…}`, then `step_update` lines (`step_type` `user_input`,
 `agent_response` with `text_delta`, `tool` with `tool_info` {name, parameters, output}, `checkpoint`), and one
