@@ -74,6 +74,15 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
       "task",
       "spawn",
       wishId,
+      "--kind",
+      "azima",
+      "--title",
+      "Paraffin preparation",
+    );
+    djinn(
+      "task",
+      "spawn",
+      wishId,
       "--title",
       "Fill with paraffin",
       "--provider",
@@ -82,6 +91,8 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
       "text filled",
       "--decision",
       "Q01",
+      "--part-of",
+      "T1",
     );
 
     const tab = page.getByRole("tab", { name: /^Decisions/ });

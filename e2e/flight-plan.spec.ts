@@ -32,11 +32,21 @@ const wishes = (): Wish[] =>
 const at = "2026-10-08T09:10:00Z";
 const lampOf = (wishId: string, title: string) => {
   const w1 = randomUUID();
+  const azimaId = randomUUID();
   return {
     version: 1,
     create_time: at,
     wish: { id: wishId, title, create_time: at },
     tasks: [
+      {
+        id: azimaId,
+        wish_id: wishId,
+        code: "T1",
+        title: "The lamp's voyage",
+        kind: "TASK_KIND_AZIMA",
+        status: "TASK_STATUS_PENDING",
+        create_time: at,
+      },
       {
         id: w1,
         wish_id: wishId,
@@ -53,13 +63,14 @@ const lampOf = (wishId: string, title: string) => {
           cost_usd: 0.42,
         },
         create_time: at,
+        part_of: azimaId,
       },
       {
         id: randomUUID(),
         wish_id: wishId,
         code: "W2",
         title: "Read the map",
-        status: "TASK_STATUS_DONE",
+        status: "TASK_STATUS_WAITING",
         provider: "PROVIDER_CODEX",
         usage: {
           input_tokens: "1200",
@@ -67,6 +78,7 @@ const lampOf = (wishId: string, title: string) => {
           cache_read_tokens: "5000",
         },
         create_time: at,
+        part_of: azimaId,
       },
     ],
     questions: [
@@ -207,6 +219,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   await page.getByRole("button", { name: /^Journal/ }).click();
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
   await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await page.locator(".fold-line").click();
   await page
     .locator(".wish-task")
     .filter({ hasText: "Trim the wick" })
