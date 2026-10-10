@@ -880,6 +880,71 @@ test("a task card shows the model chosen for the worker; watchers do not show it
   assert.doesNotMatch(noModel, /task-model/);
 });
 
+test("a task row reads on two lines: code and long title on the first, details on the second", () => {
+  const longTitle =
+    "Configure the multi-environment deployment pipeline with automated rollbacks and canary release verification across staging and production clusters";
+  const task = {
+    id: "t1",
+    code: "W42",
+    title: longTitle,
+    status: s.TaskStatus.RUNNING,
+    model: "claude-sonnet-5-5-20250929",
+    startTime: { seconds: 1760000000n, nanos: 0 },
+  };
+  const markup = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task,
+      project: { id: "p1", name: "Djinn Core" },
+      onStop() {},
+    }),
+  );
+
+  // 1. Two-line layout structure
+  assert.match(markup, /class="wish-task-row has-actions"/);
+  assert.match(markup, /<button class="wish-task-heading"/);
+  assert.match(markup, /<span class="wish-task-first-line">/);
+  assert.match(markup, /<span class="wish-task-second-line">/);
+
+  // 2. First line: code, whole title without string truncation, and chevron
+  const firstLine = markup.match(
+    /<span class="wish-task-first-line">([\s\S]*?)<\/span><span class="wish-task-second-line">/,
+  )?.[1];
+  assert.ok(firstLine, "first line exists");
+  assert.match(firstLine, /<span class="agent-code">W42<\/span>/);
+  assert.match(
+    firstLine,
+    new RegExp(`<strong class="task-title">${longTitle}</strong>`),
+  );
+  // Full title preserved, not truncated into characters + ellipsis in markup
+  assert.doesNotMatch(firstLine, /<strong class="task-title">[^<]*…<\/strong>/);
+
+  // 3. Second line: project, model, elapsed time, status badge in order
+  const secondLine = markup.match(
+    /<span class="wish-task-second-line">([\s\S]*?)<\/span><\/button>/,
+  )?.[1];
+  assert.ok(secondLine, "second line exists");
+  assert.match(secondLine, /<span class="task-project">Djinn Core<\/span>/);
+  assert.match(
+    secondLine,
+    /<span class="task-model" title="claude-sonnet-5-5-20250929">sonnet 5\.5<\/span>/,
+  );
+  assert.match(secondLine, /<span class="status-badge/);
+
+  // Verify the order of elements in the second line: project -> model -> time -> status
+  const projectIdx = secondLine.indexOf('class="task-project"');
+  const modelIdx = secondLine.indexOf('class="task-model"');
+  const statusIdx = secondLine.indexOf('class="status-badge');
+  assert.ok(projectIdx < modelIdx, "project comes before model");
+  assert.ok(modelIdx < statusIdx, "model comes before status");
+
+  // 4. Action buttons aligned in actions block outside the heading button
+  assert.match(
+    markup,
+    /<span class="wish-task-actions">[\s\S]*?<\/span><\/div>/,
+  );
+  assert.match(markup, /aria-label="Stop the worker"/);
+});
+
 test("a task card shows its prompt on hover, and opened shows prompt and no logs until the button", () => {
   const task = {
     id: "t1",

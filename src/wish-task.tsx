@@ -209,86 +209,97 @@ export const WishTask = memo(function WishTask({
   const now = useNow(!taskFinished(task.status) && !!task.startTime);
   const time = taskTime(task, now);
   const work = taskWork(task, codes);
+  const hasActions =
+    holdable || stoppable || (!!onDone && closable(task.status));
   return (
     <article
       className={`wish-task tone-${tone} ${open ? "open" : ""} ${focused ? "focused" : ""}`}
       id={`task-${task.id}`}
     >
-      <div className="wish-task-row">
+      <div className={`wish-task-row ${hasActions ? "has-actions" : ""}`}>
         <button
           className="wish-task-heading"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
         >
-          <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
-          <span className="agent-code">{task.code}</span>
-          {project?.name && (
-            <span className="task-project">{project.name}</span>
-          )}
-          {/* Cut to the room left: the whole title shows on hover. */}
-          <span className="task-title-wrap">
-            <strong className="task-title">{task.title}</strong>
-            <span className="task-tooltip" role="tooltip">
-              <span className="task-tooltip-title">{task.title}</span>
-              {preview ? (
-                <span className="task-tooltip-prompt">{preview}</span>
-              ) : null}
+          <span className="wish-task-first-line">
+            <span className="agent-code">{task.code}</span>
+            {/* Cut to the room left: the whole title shows on hover. */}
+            <span className="task-title-wrap">
+              <strong className="task-title">{task.title}</strong>
+              <span className="task-tooltip" role="tooltip">
+                <span className="task-tooltip-title">{task.title}</span>
+                {preview ? (
+                  <span className="task-tooltip-prompt">{preview}</span>
+                ) : null}
+              </span>
+            </span>
+            <ChevronDown size={14} className={open ? "rotated" : ""} />
+          </span>
+          <span className="wish-task-second-line">
+            <span className="wish-task-meta">
+              {project?.name && (
+                <span className="task-project">{project.name}</span>
+              )}
+              {!watcher && task.model && (
+                <span className="task-model" title={task.model}>
+                  {shortModel(task.model)}
+                </span>
+              )}
+              {time.text && (
+                <span className="task-time" title={time.title}>
+                  {time.text}
+                </span>
+              )}
+              <StatusBadge tone={tone} label={taskStatusText(task, forkedAs)} />
+              {origin}
+              <TaskUsage usage={task.usage} />
+              {task.status === TaskStatus.RUNNING &&
+                task.resources?.readTime && (
+                  <span
+                    className="task-usage"
+                    title={resourcesDetail(task.resources, true)}
+                  >
+                    {resourcesNow(task.resources)}
+                  </span>
+                )}
             </span>
           </span>
-          <span className="wish-task-meta">
-            {origin}
-            {time.text && (
-              <span className="task-time" title={time.title}>
-                {time.text}
-              </span>
-            )}
-            {!watcher && task.model && (
-              <span className="task-model" title={task.model}>
-                {shortModel(task.model)}
-              </span>
-            )}
-            <TaskUsage usage={task.usage} />
-            {task.status === TaskStatus.RUNNING && task.resources?.readTime && (
-              <span
-                className="task-usage"
-                title={resourcesDetail(task.resources, true)}
+        </button>
+        {hasActions && (
+          <span className="wish-task-actions">
+            {holdable && (
+              <button
+                className="icon-button"
+                onClick={() => onHold?.(!paused, task)}
+                title={t(paused ? "task.resume_detail" : "task.pause_detail")}
+                aria-label={t(paused ? "task.resume" : "task.pause")}
               >
-                {resourcesNow(task.resources)}
-              </span>
+                {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}
+              </button>
+            )}
+            {stoppable && (
+              <button
+                className="icon-button"
+                onClick={() => onStop(task)}
+                title={t("task.stop")}
+                aria-label={t("task.stop")}
+              >
+                <CircleStop size={14} />
+              </button>
+            )}
+            {onDone && closable(task.status) && (
+              <button
+                className="icon-button"
+                onClick={() => setClosing(!closing)}
+                title={t("task.mark_done_detail")}
+                aria-label={t("task.mark_done")}
+                aria-expanded={closing}
+              >
+                <CheckCircle2 size={14} />
+              </button>
             )}
           </span>
-          <ChevronDown size={14} className={open ? "rotated" : ""} />
-        </button>
-        {holdable && (
-          <button
-            className="icon-button"
-            onClick={() => onHold?.(!paused, task)}
-            title={t(paused ? "task.resume_detail" : "task.pause_detail")}
-            aria-label={t(paused ? "task.resume" : "task.pause")}
-          >
-            {paused ? <CirclePlay size={14} /> : <CirclePause size={14} />}
-          </button>
-        )}
-        {stoppable && (
-          <button
-            className="icon-button"
-            onClick={() => onStop(task)}
-            title={t("task.stop")}
-            aria-label={t("task.stop")}
-          >
-            <CircleStop size={14} />
-          </button>
-        )}
-        {onDone && closable(task.status) && (
-          <button
-            className="icon-button"
-            onClick={() => setClosing(!closing)}
-            title={t("task.mark_done_detail")}
-            aria-label={t("task.mark_done")}
-            aria-expanded={closing}
-          >
-            <CheckCircle2 size={14} />
-          </button>
         )}
       </div>
       {decision && onDecision && (

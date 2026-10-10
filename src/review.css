@@ -102,6 +102,7 @@ html[data-theme="light"] {
   white-space: nowrap;
 }
 .status-badge {
+  font-family: var(--font-sans);
   padding: 1px 9px 1px 7px;
   font-weight: 600;
 }
@@ -746,18 +747,14 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
   border-left-color: var(--tone, var(--line));
 }
 .review .wish-task-heading {
-  gap: 12px;
   padding: 10px 14px;
 }
 .review .wish-task-heading strong {
   color: var(--text);
   font-size: 13px;
 }
-.review .wish-task-heading .status-badge {
-  min-width: 112px;
-}
 .review .wish-task-note {
-  padding-left: 140px;
+  padding-left: 34px;
 }
 .review .wish-task-note.error {
   color: var(--st-failed);

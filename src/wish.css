@@ -98,19 +98,35 @@
   margin-bottom: var(--space-2);
 }
 .wish-task-row {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding-right: var(--space-2);
+  align-items: stretch;
 }
 .wish-task-heading {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 11px 14px;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 10px 14px;
   text-align: left;
+}
+.wish-task-first-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  width: 100%;
+}
+.wish-task-first-line > .agent-code {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.wish-task-first-line > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--muted);
+  transition: transform 0.25s;
 }
 .task-title-wrap {
   flex: 1;
@@ -122,19 +138,42 @@
 .task-title {
   flex: 1;
   min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
   font-weight: 500;
+  line-height: var(--line-height-body, 1.55);
 }
 .wish-task.open .task-title {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
   word-break: break-word;
 }
-.wish-task.open .wish-task-heading {
-  align-items: flex-start;
+.wish-task-second-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+}
+.wish-task-row.has-actions .wish-task-second-line {
+  padding-right: 95px;
+}
+.wish-task-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  z-index: 2;
 }
 .task-tooltip {
   position: absolute;
@@ -175,9 +214,14 @@
 }
 .wish-task-meta {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-3);
   color: var(--muted);
   font: var(--font-size-body) var(--mono);
+}
+.wish-task-meta .status-badge {
+  font-family: var(--font-sans);
 }
 /* The project, just before the task's title, in the grey of the facts after it. */
 .task-project {
@@ -191,6 +235,7 @@
 }
 .task-model {
   flex-shrink: 0;
+  color: var(--st-investigating);
 }
 .wish-task-note {
   margin: 0;
