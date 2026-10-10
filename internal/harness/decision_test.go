@@ -7,11 +7,13 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // TestSpawnDecision: djinn task spawn --decision stores the decision the task comes from, as the question's code or
 // the block's id; an open question or a block that is no decision is refused, and no task is made.
 func TestSpawnDecision(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())

@@ -17,6 +17,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // integration is djinn up with what integrating finished work needs in a test: a fake clock, a fake gen and a fake
@@ -244,7 +245,7 @@ func (in *integration) states(t *testing.T, tasks ...*planv1.Task) string {
 
 // TestCommitEachTaskAlone: each task's work is committed into the integration branch as soon as it ends, alone, in
 // the order the tasks ended: merged without fast-forward, tested once each, the journal recording each commit; its
-// worktree is then removed, its branch kept.
+// worktree is then removed, its branch kept. Not marked portable: the integration's smoke on Windows (CONTRIBUTING.md).
 func TestCommitEachTaskAlone(t *testing.T) {
 	in := integrating(t)
 	old := in.tip(t)
@@ -321,6 +322,7 @@ func TestCommitEachTaskAlone(t *testing.T) {
 // TestRemoveTheWorktreeOnceCommitted: once a task's work is committed, its worktree is removed, as djinn task clean
 // does, its branch kept; a worktree that holds changes not committed stays, said.
 func TestRemoveTheWorktreeOnceCommitted(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.pass(t, 0)
@@ -350,6 +352,7 @@ func TestRemoveTheWorktreeOnceCommitted(t *testing.T) {
 }
 
 func TestIntegrateGeneratedConflict(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	old := in.tip(t)
 	// Each worker made the generated index again on its own: the two branches change it differently.
@@ -385,6 +388,7 @@ func (in *integration) noCorrection(t *testing.T) {
 }
 
 func TestIntegrateCodeConflict(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.noCorrection(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/README.md": "# One\n"})
@@ -429,6 +433,7 @@ func TestIntegrateCodeConflict(t *testing.T) {
 }
 
 func TestIntegrateRedTests(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.noCorrection(t)
 	old := in.tip(t)
@@ -451,6 +456,7 @@ func TestIntegrateRedTests(t *testing.T) {
 }
 
 func TestIntegrateLeavesADirtyCheckout(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	old := in.tip(t)
 	writeFile(t, in.repo, "app/README.md", "# Mine, not committed\n")
@@ -482,6 +488,7 @@ func TestIntegrateLeavesADirtyCheckout(t *testing.T) {
 }
 
 func TestIntegrateFollowsACleanedCheckout(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	writeFile(t, in.repo, "app/README.md", "# Mine, not committed\n")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -498,6 +505,7 @@ func TestIntegrateFollowsACleanedCheckout(t *testing.T) {
 }
 
 func TestIntegrateABranchNoCheckoutHolds(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.git(t, in.repo, "branch", "feat/x")
 	if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
@@ -523,6 +531,7 @@ func TestIntegrateABranchNoCheckoutHolds(t *testing.T) {
 }
 
 func TestIntegrateADoneWorker(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	task := in.spawn(t, in.wishID, "write src/a.txt a")
 	in.watch(t.Context(), t, task.GetId(), 0)
@@ -542,6 +551,7 @@ func TestIntegrateADoneWorker(t *testing.T) {
 }
 
 func TestIntegrateNeedsATestCommand(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "generate: \"gen\"\n")
 	task := in.spawn(t, in.wishID, "write src/a.txt a")
@@ -552,6 +562,7 @@ func TestIntegrateNeedsATestCommand(t *testing.T) {
 }
 
 func TestRecoverAnIntegration(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	w1 := in.finished(t, "W1", nil, func(task *planv1.Task) {
 		task.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, Branch: "main"}
@@ -591,6 +602,7 @@ func TestMatchGlob(t *testing.T) {
 // be committed, not only done; the work is committed at once, alone, and the task then starts from the integration
 // branch, its worktree holding the dependency's change, even when the person's checkout is on another branch.
 func TestADependentStartsFromTheCommit(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t, WithTick(time.Hour)) // Only the commit wakes the scheduler.
 	in.git(t, in.repo, "checkout", "--quiet", "-b", "elsewhere")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})

@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { portable } from "./portable";
 
 const binary = path.resolve(
   __dirname,
@@ -154,6 +155,7 @@ const readyOf = (readyId: string, title: string) => ({
 test("a ready wish is granted by the user, from the interface", async ({
   page,
 }) => {
+  portable();
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-import-"));

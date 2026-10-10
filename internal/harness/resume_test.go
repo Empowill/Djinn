@@ -13,6 +13,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // fakeClock is the harness's time in a test: it moves only when the test says.
@@ -97,6 +98,7 @@ var resetAt = time.Unix(1791436800, 0)
 // task does not fail, it waits for the reset the provider gave, and no other claude worker starts meanwhile. Once
 // the reset is past, the scheduler resumes it on its session, and it finishes.
 func TestSessionLimitWaitsThenResumes(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	limit, _, _ := fake{provider: "claude", fixture: "session-limit"}.env(t)
 	success, args, _ := fake{provider: "claude", fixture: "success"}.env(t)
@@ -171,6 +173,7 @@ func TestSessionLimitWaitsThenResumes(t *testing.T) {
 // TestSessionLimitBounded: a task the limit stops each time it resumes waits after a backoff once the reset it was
 // given is past (15 minutes, doubled each time), and after 3 resumes it fails, saying so.
 func TestSessionLimitBounded(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	limit, _, _ := fake{provider: "claude", fixture: "session-limit"}.env(t)
 	providers, _ := claudePlaying(limit)
@@ -209,6 +212,7 @@ func TestSessionLimitBounded(t *testing.T) {
 // TestResumeRules: at the start, a task cut short resumes; one stopped by a person, one already resumed as another
 // task (a fork of it), one imported, never do; one resumed 3 times already fails.
 func TestResumeRules(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)

@@ -11,6 +11,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // measuredClaude runs a fake claude that waits until it is stopped, measured every 20 ms with read.
@@ -33,6 +34,7 @@ func measuredClaude(t *testing.T, read MeasureFunc) (*env, *planv1.Task) {
 // TestMeasurePeaks: the task keeps the latest reading of its worker and the peaks; the machine lists the worker
 // while it runs; once it is stopped, the task keeps its peaks.
 func TestMeasurePeaks(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	var mu sync.Mutex
 	readings := []machine.Group{
@@ -77,6 +79,7 @@ func TestMeasurePeaks(t *testing.T) {
 
 // TestNotMeasured: the fake agent runs in Djinn's process, and a harness without a measure reads no worker.
 func TestNotMeasured(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	read := func(int, string) (machine.Group, error) {
 		t.Error("an in-process worker read")

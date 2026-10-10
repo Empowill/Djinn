@@ -11,6 +11,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // reviewer is the review worker that reviews task's work left not committed, once it has ended.
@@ -36,6 +37,7 @@ func (in *integration) wishTasks(t *testing.T) []*planv1.Task {
 // TestIntegrateACleanWorktree: a worktree whose work is committed, a file the project's .gitignore ignores left in it,
 // integrates as it is: no review worker, the ignored file left out.
 func TestIntegrateACleanWorktree(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n", ".gitignore": "*.log\n"})
 	in.leave(t, w1, map[string]string{"app/build.log": "built\n"})
@@ -57,6 +59,7 @@ func TestIntegrateACleanWorktree(t *testing.T) {
 // review worker starts by itself in that worktree, the files and their diff in its first prompt; it commits what
 // belongs to the task and drops the rest, and its work integrates like any task's, the reviewed work with it.
 func TestReviewUncommittedWork(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	old := in.tip(t)
 	azima := in.azima(t, in.wishID, "The sources")
@@ -144,6 +147,7 @@ func TestReviewUncommittedWork(t *testing.T) {
 // TestReviewAttemptsThenAQuestion: a review worker that fails, then one that leaves the work not committed in turn,
 // spend the attempts; Djinn then asks the person, and trying again starts a new review, its attempts counted from one.
 func TestReviewAttemptsThenAQuestion(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
@@ -218,6 +222,7 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 // worker commits it, in the correction's worktree, which concludes the merge; its success brings in the correction's
 // work and the work it corrected.
 func TestReviewACorrectionsWork(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	azima := in.azima(t, in.wishID, "The readme")
 	partOf := func(task *planv1.Task) { task.PartOf = azima.GetId() }
@@ -272,6 +277,7 @@ func TestReviewACorrectionsWork(t *testing.T) {
 // TestAReviewThatFailsAfterItsCommit: a review worker that fails once the work is committed leaves nothing to review:
 // the work waits to be merged, and integrates.
 func TestAReviewThatFailsAfterItsCommit(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})

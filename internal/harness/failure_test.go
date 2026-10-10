@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // envProvider starts its provider with more environment: what makes the test binary play a fixture.
@@ -25,6 +26,7 @@ func (p envProvider) Start(ctx context.Context, spec Spec) (Worker, error) {
 // TestAgyDenialFailsTask replays a real agy run that stopped at a denied command (agy 1.3.0, 2026-10-08): its
 // turn ended with SUCCESS and its process exited 0, and Djinn marked the task done. The task fails, saying why.
 func TestAgyDenialFailsTask(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	env, _, _ := fake{provider: "antigravity", fixture: "permission-denied"}.env(t)
 	providers := testProviders()
@@ -53,6 +55,7 @@ func TestAgyDenialFailsTask(t *testing.T) {
 // TestErrorNeverDone: a worker that said an error and then ended with exit code 0 and no error of its own fails
 // with that error, whatever its provider. Here the fake, whose script goes on after a line it cannot read.
 func TestErrorNeverDone(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())

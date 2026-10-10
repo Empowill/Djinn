@@ -10,6 +10,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // checking writes the project's settings as the developer's file, with what each fake command named exits with.
@@ -63,6 +64,7 @@ const lintAtCommit = "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN
 // TestSetupOncePerWorktree: the setup makes the integration worktree ready before its first check, once, while no lock
 // file changes. Each runs through the gate of its name, and the project keeps their last runs.
 func TestSetupOncePerWorktree(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	in.ran()
@@ -86,6 +88,7 @@ func TestSetupOncePerWorktree(t *testing.T) {
 
 // TestSetupAgain: the setup runs again when a lock file changes, and in an integration worktree made anew.
 func TestSetupAgain(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	in.finished(t, "W1", map[string]string{"app/package-lock.json": "{}\n"})
@@ -112,6 +115,7 @@ func TestSetupAgain(t *testing.T) {
 // and starts a correction worker, whose first prompt says the checks Djinn runs and when. A push check does not run
 // at the commit. Djinn's former test command is the check test at commit (the other integration tests).
 func TestARedCommitCheck(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n",
 		map[string]int{"setup": 0, "lint": 1})
@@ -149,6 +153,7 @@ func TestARedCommitCheck(t *testing.T) {
 // the tasks' events and on the wish. Red while work is left to commit, Djinn checks again at the next push due; red
 // again, it asks. Checking again once they pass pushes, and the push held is forgotten.
 func TestPushChecksHoldThePush(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.checking(t, lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin"
@@ -200,6 +205,7 @@ func TestPushChecksHoldThePush(t *testing.T) {
 // TestPushWithoutTheChecks: red once no work is left to commit, Djinn asks at once; "push it without the checks"
 // pushes once, saying so. A check that passed on the tip as a commit check does not run again before the push.
 func TestPushWithoutTheChecks(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})

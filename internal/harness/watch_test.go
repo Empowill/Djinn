@@ -19,6 +19,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // fakeWatchArg, as the test binary's first argument, makes it play a watcher's command: each next argument is a
@@ -374,6 +375,7 @@ func TestWatcherEnds(t *testing.T) {
 // TestWatcherResumes: a watcher djinn up cut short is resumed on its command at the next start, however many times,
 // in its project's folder, on a full machine under pressure.
 func TestWatcherResumes(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
 	l := &limit{slots: 0, pressure: "simulated"}
@@ -420,6 +422,7 @@ func TestWatcherPermissions(t *testing.T) {
 // paragraph reaches plan.Wishes.Watched, and its done line asks the developer whether to grant the wish. Djinn
 // grants nothing itself.
 func TestWatcherDoneLine(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
 	wishes := &plan.Wishes{Store: e.db, Language: "en"}
@@ -475,6 +478,7 @@ func TestWatcherDoneLine(t *testing.T) {
 // TestWatcherFinishes: a watcher that restarts its command ends, done, on its template's done line; one stopped on
 // request still ends stopped.
 func TestWatcherFinishes(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
 	e.h.OnWatched(func(_ context.Context, _ *planv1.Task, text string) (bool, error) {

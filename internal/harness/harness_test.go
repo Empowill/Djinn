@@ -18,6 +18,7 @@ import (
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // env is djinn up in a test: the plan and task services on a store, behind a real Connect server.
@@ -239,6 +240,7 @@ func TestSpawnInGit(t *testing.T) {
 }
 
 func TestSpawnOutsideGit(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -265,6 +267,7 @@ func TestSpawnOutsideGit(t *testing.T) {
 }
 
 func TestSpawnRefused(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, projectID := e.wish(t, t.TempDir())
@@ -295,6 +298,7 @@ func TestSpawnRefused(t *testing.T) {
 }
 
 func TestStopLongWorker(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
@@ -327,6 +331,7 @@ func TestStopLongWorker(t *testing.T) {
 // needs, and its events survive the restart. The next start resumes it, in the same task, worktree and session, and
 // it finishes. A task a crash left running is resumed the same way.
 func TestNothingLostOnShutdown(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	repo := gitRepo(t)
 	home := t.TempDir()
@@ -428,6 +433,7 @@ func putTask(t *testing.T, db *store.Store, task *planv1.Task, prompt string) {
 }
 
 func TestWatchUnknown(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: store.NewID()}))
@@ -444,6 +450,7 @@ func TestWatchUnknown(t *testing.T) {
 // TestRecoverLeavesPlannedTasks: a task that no worker ever started, such as the plan of an imported wish, stays
 // pending across a restart; only a started one is interrupted.
 func TestRecoverLeavesPlannedTasks(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)

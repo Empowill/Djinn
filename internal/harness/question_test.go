@@ -15,6 +15,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // fakeProject is a project folder whose workers, question workers included, run the fake provider, with more
@@ -102,6 +103,7 @@ func (e *env) prompt(t *testing.T, id string) string {
 // commands, in the project's folder, takes no slot of the machine even when they are all taken, and the lead hears
 // when it ends.
 func TestConverter(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	lim := &limit{slots: 1}
 	e := up(t, t.TempDir(), WithQuestionWorkers(), WithCapacity(lim.capacity))
@@ -164,6 +166,7 @@ func TestConverter(t *testing.T) {
 // TestInvestigator: "Enlighten me" starts one investigator with the developer's note; a revision it makes is
 // attributed to it, and the lead hears it.
 func TestInvestigator(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithQuestionWorkers())
 	lead := &told{}
@@ -233,6 +236,7 @@ func TestQuestionWorkersOff(t *testing.T) {
 // TestOneConverterAtATime: a second answer to a question whose converter still works starts no other: the converter
 // is told the new answer.
 func TestOneConverterAtATime(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithQuestionWorkers())
 	wishID, _ := e.wish(t, fakeProject(t, ""))

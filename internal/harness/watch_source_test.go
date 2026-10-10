@@ -16,6 +16,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // files are the files under dir, with their contents.
@@ -186,6 +187,7 @@ func TestSourceRefused(t *testing.T) {
 // plugged in, its command never starts; plugged in, it starts once, and passes start no other; unplugged, its watcher
 // stops, and plugging it in again starts a new one.
 func TestSourceUnplugged(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	dir := t.TempDir()

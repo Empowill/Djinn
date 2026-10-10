@@ -11,6 +11,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 func connectCode(err error) connect.Code {
@@ -41,6 +42,7 @@ func TestForkArguments(t *testing.T) {
 // TestSpawnFork: a task starts from a copy of another task's session, or of the lead's, with a session of its own;
 // the default stays a worker that starts from its prompt alone.
 func TestSpawnFork(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	ctx := t.Context()
 	e := up(t, t.TempDir())

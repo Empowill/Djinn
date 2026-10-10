@@ -15,6 +15,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // ticks is a long script: a tick every 30 ms, for about 6 s.
@@ -69,6 +70,7 @@ func (e *env) resume(t *testing.T, id string) *planv1.Task {
 
 // TestPauseResume: a paused worker says nothing and frees its slot, goes on when resumed, and stops while paused.
 func TestPauseResume(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(20*time.Millisecond))
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -153,6 +155,7 @@ func TestPauseResume(t *testing.T) {
 // worker, nor one that waits for a gate, which would hold it frozen once its turn comes; it is once it has given the
 // gate back.
 func TestPauseHoldingGate(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -209,6 +212,7 @@ func TestPauseHoldingGate(t *testing.T) {
 // resumes it; one left paused in the store by a crash is interrupted at the next start, as a running one, then
 // resumed.
 func TestPausedInterrupted(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)

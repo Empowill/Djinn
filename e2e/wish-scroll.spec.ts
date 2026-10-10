@@ -6,6 +6,9 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { portable } from "./portable";
+
+portable();
 
 const at = "2026-10-07T21:10:00Z";
 

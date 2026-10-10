@@ -10,11 +10,13 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // TestSendToRunningWorker: a message sent while the worker works is an event of the task, journaled as the
 // command that sent it, and the worker's next words come after a "received" event.
 func TestSendToRunningWorker(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
@@ -75,6 +77,7 @@ func TestSendToRunningWorker(t *testing.T) {
 
 // TestSendUnacknowledged: a worker that says nothing after a message never acknowledges it.
 func TestSendUnacknowledged(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
@@ -98,6 +101,7 @@ func TestSendUnacknowledged(t *testing.T) {
 }
 
 func TestSendRefused(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())

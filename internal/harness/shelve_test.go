@@ -8,11 +8,13 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // TestWishPauseStopsItsWorkers: pausing a wish stops its worker, and the task waits to resume with its wish; making
 // the wish active again starts the worker on its session, told why, without spending a resume.
 func TestWishPauseStopsItsWorkers(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(20*time.Millisecond))
 	wishID, _ := e.wish(t, gitRepo(t))

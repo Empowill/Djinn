@@ -75,6 +75,10 @@ jobs:
     timeout-minutes: 40
     # It reports without blocking until it is green once (plan T11); then this line goes.
     continue-on-error: true
+    # Only the tests that target the system, and the smoke of the portable logic that Linux and macOS prove whole:
+    # testx.Portable and e2e/portable.ts skip the others (CONTRIBUTING.md).
+    env:
+      DJINN_TEST_SYSTEM_ONLY: "1"
     steps:
       # Keep the files as committed: the golden files expect LF. Worktrees nest deep paths.
       - run: |

@@ -14,6 +14,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // corrector is the fake agent of a test's correction workers: before it plays its script, it does what work says in
@@ -76,6 +77,7 @@ func (in *integration) answer(t *testing.T, q *planv1.Question, choice planv1.Ch
 // task's provider, in a worktree on the failed merge, the conflict in its first prompt; its success commits its work
 // and the failed task's, which says it was corrected. The task committed before stays as it went in.
 func TestCorrectACodeConflict(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	old := in.tip(t)
 	azima := in.azima(t, in.wishID, "The readme")
@@ -158,6 +160,7 @@ func TestCorrectACodeConflict(t *testing.T) {
 // TestCorrectRedTests: red tests start a correction worker on the merged work, the command and its output in its
 // first prompt.
 func TestCorrectRedTests(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin\nFAIL"
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -195,6 +198,7 @@ func TestCorrectRedTests(t *testing.T) {
 // TestCorrectionAttemptsThenAQuestion: two corrections whose work fails in turn spend the attempts; Djinn then asks
 // the person, and starts nothing more by itself.
 func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin"
 	in.correctWith(func(string, string) string { return "" })
@@ -234,6 +238,7 @@ func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
 // TestAnswerAFailedIntegration: trying again starts a new correction, its attempts counted from one; taking it leaves
 // the work out, saying so.
 func TestAnswerAFailedIntegration(t *testing.T) {
+	testx.Portable(t)
 	// Question workers on, of the fake agent: Djinn settles the question itself, no converter starts on it.
 	in := integrating(t, WithQuestionWorkers())
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
@@ -275,6 +280,7 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 // TestACorrectionWorkerThatFails: a correction worker that fails counts as an attempt; with the project's
 // correction_attempts spent, Djinn asks.
 func TestACorrectionWorkerThatFails(t *testing.T) {
+	testx.Portable(t)
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 1\n")
