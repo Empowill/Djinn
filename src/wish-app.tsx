@@ -385,11 +385,7 @@ export function WishApp() {
               onToast={setToast}
             />
           ) : (
-            <Welcome
-              loaded={loaded}
-              onMake={() => setModal("make")}
-              onImport={() => importRef.current?.click()}
-            />
+            <HomePlaceholder />
           )}
           <StatusBar live={live} error={error} />
         </LayoutGroup>
@@ -434,41 +430,10 @@ export function WishApp() {
   );
 }
 
-// Welcome is the window without a wish: make one, or import one.
-function Welcome({
-  loaded,
-  onMake,
-  onImport,
-}: {
-  loaded: boolean;
-  onMake: () => void;
-  onImport: () => void;
-}) {
+function HomePlaceholder() {
   return (
-    <div className="mission-scroll wish-welcome">
-      <div className="hero">
-        <div className="hero-copy">
-          <h1>{t("welcome.title")}</h1>
-          <p>{loaded ? t("welcome.detail") : t("common.loading")}</p>
-          <div className="hero-meta">
-            <button className="button accent" onClick={onMake}>
-              <Plus size={14} />
-              {t("app.new_wish")}
-            </button>
-            <button
-              className="button secondary"
-              onClick={onImport}
-              disabled={!loaded}
-            >
-              <Upload size={14} />
-              {t("app.import_wish")}
-            </button>
-          </div>
-          <p className="form-tip">
-            {t("welcome.cli", { command: 'djinn wish make "…"' })}
-          </p>
-        </div>
-      </div>
+    <div className="wish-home-placeholder">
+      <h1>{t("home.title")}</h1>
     </div>
   );
 }
