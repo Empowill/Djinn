@@ -101,20 +101,18 @@
   isolation: isolate;
   border-radius: 999px;
   color: var(--workspace-action-ink, var(--text));
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--text) 18%, transparent);
+  box-shadow: 0 5px 16px var(--workspace-action-shadow);
 }
 .workspace-action-surface {
   position: absolute;
   inset: 0;
   z-index: 0;
-  border: 1px solid var(--workspace-action-line, var(--line-strong));
+  border: 0;
   border-radius: inherit;
   background: var(--surface-raised);
   overflow: hidden;
   pointer-events: none;
-  transition:
-    background-color 0.26s ease,
-    border-color 0.26s ease;
+  transition: background-color 0.26s ease;
 }
 .workspace-action-surface-fill {
   position: absolute;
@@ -126,7 +124,6 @@
 }
 .workspace-action-primary {
   --workspace-action-ink: var(--n-25);
-  --workspace-action-line: var(--n-e7);
 }
 .workspace-action-secondary {
   --workspace-action-ink: var(--text);
