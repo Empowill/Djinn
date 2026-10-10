@@ -106,6 +106,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	_ = h.unblockDependencyFailed(ctx, t.GetCode())
 	h.notify()
 	if why == "" {
 		if err := h.relaunch(ctx, t); err != nil {

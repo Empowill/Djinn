@@ -11,6 +11,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -48,6 +49,17 @@ func (s *Tasks) List(
 	tasks, err := store.List[*planv1.Task](ctx, s.h.store, where)
 	if err != nil {
 		return nil, plan.Status(err)
+	}
+	if req.Msg.GetFailed() {
+		var filtered []*planv1.Task
+		for _, t := range tasks {
+			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED &&
+				!render.TaskDealtWith(t, tasks) &&
+				!(t.GetEnvCause() != "" && t.GetEnvReplays() < 2) {
+				filtered = append(filtered, t)
+			}
+		}
+		tasks = filtered
 	}
 	page, nextToken, total, err := plan.Paginate(tasks, req.Msg.GetPageSize(), req.Msg.GetPageToken())
 	if err != nil {

@@ -19,6 +19,7 @@ import (
 	"html/template"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -793,6 +794,31 @@ func ForkedAs(t *planv1.Task, tasks []*planv1.Task) string {
 		}
 	}
 	return ""
+}
+
+// TaskDealtWith tells whether a failed worker has been addressed: marked done, continued (or forked),
+// or a new task names it in its title, decision, forkOf, or as a correction/review target.
+func TaskDealtWith(t *planv1.Task, tasks []*planv1.Task) bool {
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE || t.GetContinuing() || t.GetClosed().GetContinuedIn() != "" || ForkedAs(t, tasks) != "" {
+		return true
+	}
+	code := t.GetCode()
+	if code == "" {
+		return false
+	}
+	word := regexp.MustCompile(`\b` + regexp.QuoteMeta(code) + `\b`)
+	for _, o := range tasks {
+		if o.GetId() == t.GetId() {
+			continue
+		}
+		if o.GetForkOf() == code || o.GetDecision() == code || word.MatchString(o.GetTitle()) {
+			return true
+		}
+		if slices.Contains(o.GetCorrection().GetFailure().GetTaskIds(), t.GetId()) || slices.Contains(o.GetReview().GetTaskIds(), t.GetId()) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewestEnded orders finished tasks the latest ended first, then the latest created: the window, the page and the

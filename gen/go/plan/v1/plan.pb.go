@@ -3655,7 +3655,13 @@ type Task struct {
 	// For an azima: its description, read from its plan file's body or set when spawned or edited with djinn task describe.
 	Description string `protobuf:"bytes,49,opt,name=description,proto3" json:"description,omitempty"`
 	// For an azima: whether it is a draft (AzimaState.AZIMA_STATE_DRAFT), not ready to spawn parts into nor counted in wish progress.
-	Draft         bool `protobuf:"varint,50,opt,name=draft,proto3" json:"draft,omitempty"`
+	Draft bool `protobuf:"varint,50,opt,name=draft,proto3" json:"draft,omitempty"`
+	// How many times Djinn replayed the task on an environment failure (at most twice).
+	EnvReplays int32 `protobuf:"varint,51,opt,name=env_replays,json=envReplays,proto3" json:"env_replays,omitempty"`
+	// Build (version) of djinn when the environment failure happened.
+	EnvBuild string `protobuf:"bytes,52,opt,name=env_build,json=envBuild,proto3" json:"env_build,omitempty"`
+	// Cause of the environment failure; empty when it failed for a work failure.
+	EnvCause      string `protobuf:"bytes,53,opt,name=env_cause,json=envCause,proto3" json:"env_cause,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4038,6 +4044,27 @@ func (x *Task) GetDraft() bool {
 		return x.Draft
 	}
 	return false
+}
+
+func (x *Task) GetEnvReplays() int32 {
+	if x != nil {
+		return x.EnvReplays
+	}
+	return 0
+}
+
+func (x *Task) GetEnvBuild() string {
+	if x != nil {
+		return x.EnvBuild
+	}
+	return ""
+}
+
+func (x *Task) GetEnvCause() string {
+	if x != nil {
+		return x.EnvCause
+	}
+	return ""
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
@@ -12358,7 +12385,9 @@ type TaskServiceListRequest struct {
 	// The most tasks to return. Not set: 50. Max: 200.
 	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// The page token from a previous list response, to fetch the next page.
-	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	PageToken string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Only the failed tasks that wait for the lead.
+	Failed        bool `protobuf:"varint,5,opt,name=failed,proto3" json:"failed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -12419,6 +12448,13 @@ func (x *TaskServiceListRequest) GetPageToken() string {
 		return x.PageToken
 	}
 	return ""
+}
+
+func (x *TaskServiceListRequest) GetFailed() bool {
+	if x != nil {
+		return x.Failed
+	}
+	return false
 }
 
 type TaskServiceListResponse struct {
@@ -14488,7 +14524,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\routput_tokens\x18\x02 \x01(\x03R\foutputTokens\x12*\n" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
-	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xaf\x0e\n" +
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\x9e\x0f\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -14551,7 +14587,11 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06prompt\x18/ \x01(\tR\x06prompt\x128\n" +
 	"\x0eprior_provider\x180 \x01(\x0e2\x11.plan.v1.ProviderR\rpriorProvider\x12 \n" +
 	"\vdescription\x181 \x01(\tR\vdescription\x12\x14\n" +
-	"\x05draft\x182 \x01(\bR\x05draft:\x13\xd2\xf3\x18\x0f\n" +
+	"\x05draft\x182 \x01(\bR\x05draft\x12\x1f\n" +
+	"\venv_replays\x183 \x01(\x05R\n" +
+	"envReplays\x12%\n" +
+	"\tenv_build\x184 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x01R\benvBuild\x12%\n" +
+	"\tenv_cause\x185 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\benvCause:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"A\n" +
 	"\n" +
@@ -15158,7 +15198,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05draft\x18\x14 \x01(\bR\x05draft\x12+\n" +
 	"\vdescription\x18\x15 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\vdescription\"=\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xbc\x01\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xd4\x01\n" +
 	"\x16TaskServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12*\n" +
 	"\n" +
@@ -15166,7 +15206,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\tpage_size\x18\x03 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xc8\x01(\x00R\bpageSize\x12'\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\tpageToken\"|\n" +
+	"page_token\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\tpageToken\x12\x16\n" +
+	"\x06failed\x18\x05 \x01(\bR\x06failed\"|\n" +
 	"\x17TaskServiceListResponse\x12#\n" +
 	"\x05tasks\x18\x01 \x03(\v2\r.plan.v1.TaskR\x05tasks\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x14\n" +

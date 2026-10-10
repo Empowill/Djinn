@@ -44,13 +44,13 @@
     "expect": { "W3": "wait" }
   },
   {
-    "name": "a dependency failed: its dependent never starts",
+    "name": "a dependency failed: its dependent waits",
     "wishes": [{ "id": "A" }],
     "tasks": [
       { "code": "W1", "wish": "A", "status": "failed" },
       { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
     ],
-    "expect": { "W2": "fail" }
+    "expect": { "W2": "wait" }
   },
   {
     "name": "a dependency stopped by the user",
@@ -107,7 +107,7 @@
       { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] },
       { "code": "W3", "wish": "A", "status": "failed", "fork_of": "W1" }
     ],
-    "expect": { "W2": "fail" }
+    "expect": { "W2": "wait" }
   },
   {
     "name": "a dependency that is gone",
@@ -339,13 +339,13 @@
     "expect": { "W2": "wait" }
   },
   {
-    "name": "a failed dependency fails its dependent even under pressure",
+    "name": "a failed dependency makes its dependent wait even under pressure",
     "machine": { "slots": 1, "running": 1, "pressure": "the system reports memory pressure" },
     "wishes": [{ "id": "A" }],
     "tasks": [
       { "code": "W1", "wish": "A", "status": "failed" },
       { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
     ],
-    "expect": { "W2": "fail" }
+    "expect": { "W2": "wait" }
   }
 ]

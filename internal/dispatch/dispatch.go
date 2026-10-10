@@ -221,8 +221,12 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 				why = fmt.Sprintf("waits for %s to be committed%s", d.GetCode(), state)
 			}
 			continue
-		case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED:
-			// Failed covers a task resumed maxResumes times without finishing: Djinn resumes it no more.
+		case planv1.TaskStatus_TASK_STATUS_FAILED:
+			if why == "" {
+				why = fmt.Sprintf("waits while its dependency %s is failed", ended)
+			}
+			continue
+		case planv1.TaskStatus_TASK_STATUS_STOPPED:
 			return "", fmt.Sprintf("its dependency %s ended %s", ended, status(d.GetStatus()))
 		}
 		// Interrupted or resuming: Djinn resumes it by itself, so the task waits for it. An azima waits to be marked

@@ -81,6 +81,7 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	_ = h.unblockDependencyFailed(ctx, task.GetCode())
 	h.notify()
 	h.wake() // A task waiting on it may start.
 	return task, nil

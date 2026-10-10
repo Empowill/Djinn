@@ -137,22 +137,36 @@ func TestDependsOn(t *testing.T) {
 		t.Errorf("second started at %v, the first ended at %v: %v", second.GetStartTime().AsTime(), first.GetEndTime().AsTime(), second)
 	}
 
-	// A dependency that fails takes its dependents with it, down the chain.
+	// A dependency that fails holds its dependents waiting instead of failing them.
 	failing := e.mustSpawn(t, wishID, "Failing", "wait\nfail boom", nil)
 	child := e.mustSpawn(t, wishID, "Child", "text never", &planv1.TaskServiceSpawnRequest{DependsOn: []string{failing.GetCode()}})
 	grandchild := e.mustSpawn(t, wishID, "Grandchild", "text never", &planv1.TaskServiceSpawnRequest{DependsOn: []string{child.GetId()}})
 	e.release(t, failing.GetId())
-	if got := e.ended(t, grandchild.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
-		got.GetError() != "its dependency "+child.GetCode()+" ended failed" || got.GetStartTime() != nil {
-		t.Errorf("grandchild = %v", got)
+	if got := e.ended(t, failing.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		t.Fatalf("failing = %v", got)
 	}
-	if got := e.get(t, child.GetId()); got.GetError() != "its dependency "+failing.GetCode()+" ended failed" {
+	if got := e.get(t, child.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
+		got.GetWaitReason() != "waits while its dependency "+failing.GetCode()+" is failed" || got.GetStartTime() != nil {
 		t.Errorf("child = %v", got)
 	}
+	if got := e.get(t, grandchild.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
+		got.GetWaitReason() != "waits for "+child.GetCode()+" (pending)" || got.GetStartTime() != nil {
+		t.Errorf("grandchild = %v", got)
+	}
 
-	// A dependency that already failed, or that is not a task of the wish, refuses the spawn.
-	if _, err := e.spawnReq(t, wishID, "Late", "x", &planv1.TaskServiceSpawnRequest{DependsOn: []string{failing.GetCode()}}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Errorf("on a failed dependency: %v", err)
+	// Spawning on a failed dependency is planned (it waits).
+	late := e.mustSpawn(t, wishID, "Late", "x", &planv1.TaskServiceSpawnRequest{DependsOn: []string{failing.GetCode()}})
+	if late.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || late.GetWaitReason() != "waits while its dependency "+failing.GetCode()+" is failed" {
+		t.Errorf("late = %v", late)
+	}
+
+	// A dependency that already stopped, or that is not a task of the wish, refuses the spawn.
+	st := e.mustSpawn(t, wishID, "ToStop", "wait\ntext", nil)
+	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: st.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.spawnReq(t, wishID, "AfterStop", "x", &planv1.TaskServiceSpawnRequest{DependsOn: []string{st.GetCode()}}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("on a stopped dependency: %v", err)
 	}
 	for _, dep := range []string{"W99", store.NewID()} {
 		if _, err := e.spawnReq(t, wishID, "Lost", "x", &planv1.TaskServiceSpawnRequest{DependsOn: []string{dep}}); connect.CodeOf(err) != connect.CodeInvalidArgument {
