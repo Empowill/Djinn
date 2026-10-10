@@ -3648,9 +3648,9 @@ type Task struct {
 	// For a review worker, which Djinn starts by itself when a task's worktree holds changes not committed: what it
 	// reviews. It works in that task's worktree, on its branch, and its branch integrates like any task's.
 	Review *TaskReview `protobuf:"bytes,46,opt,name=review,proto3" json:"review,omitempty"`
-	// What the task was asked to do, from its first prompt: computed on every read, never stored.
+	// What the task was asked to do, from its latest prompt: computed on every read, never stored.
 	Prompt string `protobuf:"bytes,47,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	// Provider the task ran with before it was changed (TaskService.SetAgent); empty if never changed.
+	// Provider the task ran with before it was changed (TaskService.Update); empty if never changed.
 	PriorProvider Provider `protobuf:"varint,48,opt,name=prior_provider,json=priorProvider,proto3,enum=plan.v1.Provider" json:"prior_provider,omitempty"`
 	// For an azima: its description, read from its plan file's body or set when spawned or edited with djinn task describe.
 	Description string `protobuf:"bytes,49,opt,name=description,proto3" json:"description,omitempty"`
@@ -13634,8 +13634,8 @@ type TaskServiceContinueRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The task.
 	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// What to ask its worker now, on its session.
-	Prompt string `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	// What to ask its worker now, on its session. Empty: uses the task's prompt (updated beforehand).
+	Prompt *string `protobuf:"bytes,2,opt,name=prompt,proto3,oneof" json:"prompt,omitempty"`
 	// Who continues it; by default the lead. The window says developer.
 	By            Closer `protobuf:"varint,3,opt,name=by,proto3,enum=plan.v1.Closer" json:"by,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -13680,8 +13680,8 @@ func (x *TaskServiceContinueRequest) GetTaskId() string {
 }
 
 func (x *TaskServiceContinueRequest) GetPrompt() string {
-	if x != nil {
-		return x.Prompt
+	if x != nil && x.Prompt != nil {
+		return *x.Prompt
 	}
 	return ""
 }
@@ -13738,32 +13738,47 @@ func (x *TaskServiceContinueResponse) GetTask() *Task {
 	return nil
 }
 
-type TaskServiceSetAgentRequest struct {
+type TaskServiceUpdateRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The task.
 	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// What the task does, in a sentence.
+	Title *string `protobuf:"bytes,2,opt,name=title,proto3,oneof" json:"title,omitempty"`
+	// What to ask the worker.
+	Prompt *string `protobuf:"bytes,3,opt,name=prompt,proto3,oneof" json:"prompt,omitempty"`
 	// Kind of agent that works on the task.
-	Provider *Provider `protobuf:"varint,2,opt,name=provider,proto3,enum=plan.v1.Provider,oneof" json:"provider,omitempty"`
+	Provider *Provider `protobuf:"varint,4,opt,name=provider,proto3,enum=plan.v1.Provider,oneof" json:"provider,omitempty"`
 	// Model of the agent; empty for the provider's default.
-	Model         *string `protobuf:"bytes,3,opt,name=model,proto3,oneof" json:"model,omitempty"`
+	Model *string `protobuf:"bytes,5,opt,name=model,proto3,oneof" json:"model,omitempty"`
+	// The azima the task belongs to: its code (T07) or its identifier. Empty: the task is part of no azima.
+	PartOf *string `protobuf:"bytes,6,opt,name=part_of,json=partOf,proto3,oneof" json:"part_of,omitempty"`
+	// What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
+	// Repeat it, or separate them with commas: --after W1,W2.
+	After []string `protobuf:"bytes,7,rep,name=after,proto3" json:"after,omitempty"`
+	// The decision the task comes from: an answered question's code (Q43), or the id of a block of kind decision. Empty: clear it.
+	Decision *string `protobuf:"bytes,8,opt,name=decision,proto3,oneof" json:"decision,omitempty"`
+	// Most the worker may spend, in US dollars, when the provider can enforce it. 0: no limit.
+	MaxBudgetUsd *float64 `protobuf:"fixed64,9,opt,name=max_budget_usd,json=maxBudgetUsd,proto3,oneof" json:"max_budget_usd,omitempty"`
+	// A path the task writes, in the project's folder; empty for the whole folder.
+	WriteScopes   []string `protobuf:"bytes,10,rep,name=write_scopes,json=writeScopes,proto3" json:"write_scopes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *TaskServiceSetAgentRequest) Reset() {
-	*x = TaskServiceSetAgentRequest{}
+func (x *TaskServiceUpdateRequest) Reset() {
+	*x = TaskServiceUpdateRequest{}
 	mi := &file_plan_v1_plan_proto_msgTypes[171]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *TaskServiceSetAgentRequest) String() string {
+func (x *TaskServiceUpdateRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*TaskServiceSetAgentRequest) ProtoMessage() {}
+func (*TaskServiceUpdateRequest) ProtoMessage() {}
 
-func (x *TaskServiceSetAgentRequest) ProtoReflect() protoreflect.Message {
+func (x *TaskServiceUpdateRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_plan_v1_plan_proto_msgTypes[171]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -13775,54 +13790,103 @@ func (x *TaskServiceSetAgentRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use TaskServiceSetAgentRequest.ProtoReflect.Descriptor instead.
-func (*TaskServiceSetAgentRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use TaskServiceUpdateRequest.ProtoReflect.Descriptor instead.
+func (*TaskServiceUpdateRequest) Descriptor() ([]byte, []int) {
 	return file_plan_v1_plan_proto_rawDescGZIP(), []int{171}
 }
 
-func (x *TaskServiceSetAgentRequest) GetTaskId() string {
+func (x *TaskServiceUpdateRequest) GetTaskId() string {
 	if x != nil {
 		return x.TaskId
 	}
 	return ""
 }
 
-func (x *TaskServiceSetAgentRequest) GetProvider() Provider {
+func (x *TaskServiceUpdateRequest) GetTitle() string {
+	if x != nil && x.Title != nil {
+		return *x.Title
+	}
+	return ""
+}
+
+func (x *TaskServiceUpdateRequest) GetPrompt() string {
+	if x != nil && x.Prompt != nil {
+		return *x.Prompt
+	}
+	return ""
+}
+
+func (x *TaskServiceUpdateRequest) GetProvider() Provider {
 	if x != nil && x.Provider != nil {
 		return *x.Provider
 	}
 	return Provider_PROVIDER_UNSPECIFIED
 }
 
-func (x *TaskServiceSetAgentRequest) GetModel() string {
+func (x *TaskServiceUpdateRequest) GetModel() string {
 	if x != nil && x.Model != nil {
 		return *x.Model
 	}
 	return ""
 }
 
-type TaskServiceSetAgentResponse struct {
+func (x *TaskServiceUpdateRequest) GetPartOf() string {
+	if x != nil && x.PartOf != nil {
+		return *x.PartOf
+	}
+	return ""
+}
+
+func (x *TaskServiceUpdateRequest) GetAfter() []string {
+	if x != nil {
+		return x.After
+	}
+	return nil
+}
+
+func (x *TaskServiceUpdateRequest) GetDecision() string {
+	if x != nil && x.Decision != nil {
+		return *x.Decision
+	}
+	return ""
+}
+
+func (x *TaskServiceUpdateRequest) GetMaxBudgetUsd() float64 {
+	if x != nil && x.MaxBudgetUsd != nil {
+		return *x.MaxBudgetUsd
+	}
+	return 0
+}
+
+func (x *TaskServiceUpdateRequest) GetWriteScopes() []string {
+	if x != nil {
+		return x.WriteScopes
+	}
+	return nil
+}
+
+type TaskServiceUpdateResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The task, with its new provider and model.
+	// The task, updated.
 	Task          *Task `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *TaskServiceSetAgentResponse) Reset() {
-	*x = TaskServiceSetAgentResponse{}
+func (x *TaskServiceUpdateResponse) Reset() {
+	*x = TaskServiceUpdateResponse{}
 	mi := &file_plan_v1_plan_proto_msgTypes[172]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *TaskServiceSetAgentResponse) String() string {
+func (x *TaskServiceUpdateResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*TaskServiceSetAgentResponse) ProtoMessage() {}
+func (*TaskServiceUpdateResponse) ProtoMessage() {}
 
-func (x *TaskServiceSetAgentResponse) ProtoReflect() protoreflect.Message {
+func (x *TaskServiceUpdateResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_plan_v1_plan_proto_msgTypes[172]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -13834,12 +13898,12 @@ func (x *TaskServiceSetAgentResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use TaskServiceSetAgentResponse.ProtoReflect.Descriptor instead.
-func (*TaskServiceSetAgentResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use TaskServiceUpdateResponse.ProtoReflect.Descriptor instead.
+func (*TaskServiceUpdateResponse) Descriptor() ([]byte, []int) {
 	return file_plan_v1_plan_proto_rawDescGZIP(), []int{172}
 }
 
-func (x *TaskServiceSetAgentResponse) GetTask() *Task {
+func (x *TaskServiceUpdateResponse) GetTask() *Task {
 	if x != nil {
 		return x.Task
 	}
@@ -15230,20 +15294,36 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12)\n" +
 	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\"<\n" +
 	"\x17TaskServiceDoneResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x92\x01\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xa2\x01\n" +
 	"\x1aTaskServiceContinueRequest\x12$\n" +
-	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12#\n" +
-	"\x06prompt\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xc0\x9a\fR\x06prompt\x12)\n" +
-	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\"@\n" +
+	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12(\n" +
+	"\x06prompt\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xc0\x9a\fH\x00R\x06prompt\x88\x01\x01\x12)\n" +
+	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02byB\t\n" +
+	"\a_prompt\"@\n" +
 	"\x1bTaskServiceContinueResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xc0\x01\n" +
-	"\x1aTaskServiceSetAgentRequest\x12$\n" +
-	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12@\n" +
-	"\bprovider\x18\x02 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12#\n" +
-	"\x05model\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01H\x01R\x05model\x88\x01\x01B\v\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x9b\x05\n" +
+	"\x18TaskServiceUpdateRequest\x12$\n" +
+	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12%\n" +
+	"\x05title\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xf4\x03H\x00R\x05title\x88\x01\x01\x12(\n" +
+	"\x06prompt\x18\x03 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xc0\x9a\fH\x01R\x06prompt\x88\x01\x01\x12@\n" +
+	"\bprovider\x18\x04 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x02R\bprovider\x88\x01\x01\x12#\n" +
+	"\x05model\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01H\x03R\x05model\x88\x01\x01\x12%\n" +
+	"\apart_of\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x18@H\x04R\x06partOf\x88\x01\x01\x12'\n" +
+	"\x05after\x18\a \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x05after\x12\x87\x01\n" +
+	"\bdecision\x18\b \x01(\tBf\xbaHcra2_^(|[Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$H\x05R\bdecision\x88\x01\x01\x129\n" +
+	"\x0emax_budget_usd\x18\t \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00H\x06R\fmaxBudgetUsd\x88\x01\x01\x124\n" +
+	"\fwrite_scopes\x18\n" +
+	" \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\vwriteScopesB\b\n" +
+	"\x06_titleB\t\n" +
+	"\a_promptB\v\n" +
 	"\t_providerB\b\n" +
-	"\x06_model\"@\n" +
-	"\x1bTaskServiceSetAgentResponse\x12!\n" +
+	"\x06_modelB\n" +
+	"\n" +
+	"\b_part_ofB\v\n" +
+	"\t_decisionB\x11\n" +
+	"\x0f_max_budget_usd\">\n" +
+	"\x19TaskServiceUpdateResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"_\n" +
 	"\x1aTaskServiceDescribeRequest\x12\"\n" +
 	"\x05azima\x18\x01 \x01(\tB\f\xbaH\t\xc8\x01\x01r\x04\x10\x01\x18@R\x05azima\x12\x1d\n" +
@@ -15490,7 +15570,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06Delete\x12\".plan.v1.BlockServiceDeleteRequest\x1a#.plan.v1.BlockServiceDeleteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x022\xb3\x01\n" +
 	"\vMarkService\x12P\n" +
 	"\x03Put\x12\x1e.plan.v1.MarkServicePutRequest\x1a\x1f.plan.v1.MarkServicePutResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
-	"\x04List\x12\x1f.plan.v1.MarkServiceListRequest\x1a .plan.v1.MarkServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\xc5\f\n" +
+	"\x04List\x12\x1f.plan.v1.MarkServiceListRequest\x1a .plan.v1.MarkServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\xcc\f\n" +
 	"\vTaskService\x12V\n" +
 	"\x05Spawn\x12 .plan.v1.TaskServiceSpawnRequest\x1a!.plan.v1.TaskServiceSpawnResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
 	"\x04List\x12\x1f.plan.v1.TaskServiceListRequest\x1a .plan.v1.TaskServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12O\n" +
@@ -15505,8 +15585,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06Delete\x12!.plan.v1.TaskServiceDeleteRequest\x1a\".plan.v1.TaskServiceDeleteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12S\n" +
 	"\x04Done\x12\x1f.plan.v1.TaskServiceDoneRequest\x1a .plan.v1.TaskServiceDoneResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12_\n" +
 	"\bContinue\x12#.plan.v1.TaskServiceContinueRequest\x1a$.plan.v1.TaskServiceContinueResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12S\n" +
-	"\x04Send\x12\x1f.plan.v1.TaskServiceSendRequest\x1a .plan.v1.TaskServiceSendResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12_\n" +
-	"\bSetAgent\x12#.plan.v1.TaskServiceSetAgentRequest\x1a$.plan.v1.TaskServiceSetAgentResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12_\n" +
+	"\x04Send\x12\x1f.plan.v1.TaskServiceSendRequest\x1a .plan.v1.TaskServiceSendResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12f\n" +
+	"\x06Update\x12!.plan.v1.TaskServiceUpdateRequest\x1a\".plan.v1.TaskServiceUpdateResponse\"\x15\xc8\xf3\x18\x01\xe0\xf3\x18\x01\xfa\xf3\x18\tset-agent\x12_\n" +
 	"\bDescribe\x12#.plan.v1.TaskServiceDescribeRequest\x1a$.plan.v1.TaskServiceDescribeResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12S\n" +
 	"\x04Open\x12\x1f.plan.v1.TaskServiceOpenRequest\x1a .plan.v1.TaskServiceOpenResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12S\n" +
 	"\x04Move\x12\x1f.plan.v1.TaskServiceMoveRequest\x1a .plan.v1.TaskServiceMoveResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x012b\n" +
@@ -15725,8 +15805,8 @@ var file_plan_v1_plan_proto_goTypes = []any{
 	(*TaskServiceDoneResponse)(nil),            // 193: plan.v1.TaskServiceDoneResponse
 	(*TaskServiceContinueRequest)(nil),         // 194: plan.v1.TaskServiceContinueRequest
 	(*TaskServiceContinueResponse)(nil),        // 195: plan.v1.TaskServiceContinueResponse
-	(*TaskServiceSetAgentRequest)(nil),         // 196: plan.v1.TaskServiceSetAgentRequest
-	(*TaskServiceSetAgentResponse)(nil),        // 197: plan.v1.TaskServiceSetAgentResponse
+	(*TaskServiceUpdateRequest)(nil),           // 196: plan.v1.TaskServiceUpdateRequest
+	(*TaskServiceUpdateResponse)(nil),          // 197: plan.v1.TaskServiceUpdateResponse
 	(*TaskServiceDescribeRequest)(nil),         // 198: plan.v1.TaskServiceDescribeRequest
 	(*TaskServiceDescribeResponse)(nil),        // 199: plan.v1.TaskServiceDescribeResponse
 	(*TaskServiceOpenRequest)(nil),             // 200: plan.v1.TaskServiceOpenRequest
@@ -15938,8 +16018,8 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	42,  // 194: plan.v1.TaskServiceDoneResponse.task:type_name -> plan.v1.Task
 	16,  // 195: plan.v1.TaskServiceContinueRequest.by:type_name -> plan.v1.Closer
 	42,  // 196: plan.v1.TaskServiceContinueResponse.task:type_name -> plan.v1.Task
-	11,  // 197: plan.v1.TaskServiceSetAgentRequest.provider:type_name -> plan.v1.Provider
-	42,  // 198: plan.v1.TaskServiceSetAgentResponse.task:type_name -> plan.v1.Task
+	11,  // 197: plan.v1.TaskServiceUpdateRequest.provider:type_name -> plan.v1.Provider
+	42,  // 198: plan.v1.TaskServiceUpdateResponse.task:type_name -> plan.v1.Task
 	42,  // 199: plan.v1.TaskServiceDescribeResponse.task:type_name -> plan.v1.Task
 	42,  // 200: plan.v1.TaskServiceOpenResponse.task:type_name -> plan.v1.Task
 	42,  // 201: plan.v1.TaskServiceMoveResponse.task:type_name -> plan.v1.Task
@@ -16005,7 +16085,7 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	192, // 261: plan.v1.TaskService.Done:input_type -> plan.v1.TaskServiceDoneRequest
 	194, // 262: plan.v1.TaskService.Continue:input_type -> plan.v1.TaskServiceContinueRequest
 	175, // 263: plan.v1.TaskService.Send:input_type -> plan.v1.TaskServiceSendRequest
-	196, // 264: plan.v1.TaskService.SetAgent:input_type -> plan.v1.TaskServiceSetAgentRequest
+	196, // 264: plan.v1.TaskService.Update:input_type -> plan.v1.TaskServiceUpdateRequest
 	198, // 265: plan.v1.TaskService.Describe:input_type -> plan.v1.TaskServiceDescribeRequest
 	200, // 266: plan.v1.TaskService.Open:input_type -> plan.v1.TaskServiceOpenRequest
 	202, // 267: plan.v1.TaskService.Move:input_type -> plan.v1.TaskServiceMoveRequest
@@ -16071,7 +16151,7 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	193, // 327: plan.v1.TaskService.Done:output_type -> plan.v1.TaskServiceDoneResponse
 	195, // 328: plan.v1.TaskService.Continue:output_type -> plan.v1.TaskServiceContinueResponse
 	176, // 329: plan.v1.TaskService.Send:output_type -> plan.v1.TaskServiceSendResponse
-	197, // 330: plan.v1.TaskService.SetAgent:output_type -> plan.v1.TaskServiceSetAgentResponse
+	197, // 330: plan.v1.TaskService.Update:output_type -> plan.v1.TaskServiceUpdateResponse
 	199, // 331: plan.v1.TaskService.Describe:output_type -> plan.v1.TaskServiceDescribeResponse
 	201, // 332: plan.v1.TaskService.Open:output_type -> plan.v1.TaskServiceOpenResponse
 	203, // 333: plan.v1.TaskService.Move:output_type -> plan.v1.TaskServiceMoveResponse
@@ -16105,6 +16185,7 @@ func file_plan_v1_plan_proto_init() {
 		(*MarkTarget_Code)(nil),
 		(*MarkTarget_Id)(nil),
 	}
+	file_plan_v1_plan_proto_msgTypes[169].OneofWrappers = []any{}
 	file_plan_v1_plan_proto_msgTypes[171].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

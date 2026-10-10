@@ -388,7 +388,7 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
 		return nil
 	}
-	prompt, err := firstPrompt(h.store, t.GetId())
+	prompt, err := lastPrompt(ctx, h.store, t.GetId())
 	if err != nil {
 		h.failPlanned(ctx, t, err.Error())
 		return nil

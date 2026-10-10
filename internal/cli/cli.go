@@ -140,7 +140,10 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 	name, err = pick(rest[1], names, command(sd)+" method")
 	if err != nil {
-		return err
+		var ok bool
+		if name, ok = aliasedMethod(rest[1], names, methods); !ok {
+			return err
+		}
 	}
 	md := methods[slices.Index(names, name)]
 	if help {
@@ -360,6 +363,33 @@ func aliases(sd protoreflect.ServiceDescriptor) []string {
 	return out
 }
 
+// aliasedMethod resolves a word no method's own name takes to the name of a method it is an alias of, in full or by
+// a unique prefix: djinn task set-agent is djinn task update.
+func aliasedMethod(word string, names []string, methods []protoreflect.MethodDescriptor) (string, bool) {
+	if slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, word) }) {
+		return "", false
+	}
+	var found []string
+	for _, md := range methods {
+		mName := kebab(string(md.Name()))
+		for _, alias := range methodAliases(md) {
+			if (alias == word || strings.HasPrefix(alias, word)) && !slices.Contains(found, mName) {
+				found = append(found, mName)
+			}
+		}
+	}
+	if len(found) != 1 {
+		return "", false
+	}
+	return found[0], true
+}
+
+// methodAliases are the other names of a method's command.
+func methodAliases(md protoreflect.MethodDescriptor) []string {
+	out, _ := proto.GetExtension(md.Options(), djinnv1.E_MethodAlias).([]string)
+	return out
+}
+
 // files are the protos of api/, read from the embedded descriptors so that they keep their comments.
 var files = sync.OnceValue(func() *protoregistry.Files {
 	var set descriptorpb.FileDescriptorSet
@@ -477,7 +507,11 @@ func writeServiceHelp(w io.Writer, sd protoreflect.ServiceDescriptor) {
 	fmt.Fprintf(w, "%s\n\nUsage: djinn %s <method> [arguments] [flags]\n\nMethods:\n", comment(sd), command(sd))
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	for _, md := range public(sd) {
-		fmt.Fprintf(tw, "  %s\t%s\n", kebab(string(md.Name())), comment(md))
+		name := kebab(string(md.Name()))
+		if a := methodAliases(md); len(a) > 0 {
+			name += ", " + strings.Join(a, ", ")
+		}
+		fmt.Fprintf(tw, "  %s\t%s\n", name, comment(md))
 	}
 	for _, b := range Builtins {
 		if group(b) == command(sd) {
