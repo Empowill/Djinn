@@ -23,6 +23,7 @@ import (
 	_ "github.com/empowill/djinn/gen/go/backup/v1"
 	_ "github.com/empowill/djinn/gen/go/demo/v1"
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
+	"github.com/empowill/djinn/gen/go/djinn/v1/djinnv1connect"
 	_ "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -339,6 +340,21 @@ func question() *planv1.Question {
 	}
 }
 
+type loads struct {
+	djinnv1connect.UnimplementedLoadServiceHandler
+	*fake
+}
+
+func (f loads) Get(_ context.Context, req *connect.Request[djinnv1.LoadServiceGetRequest]) (*connect.Response[djinnv1.LoadServiceGetResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&djinnv1.LoadServiceGetResponse{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM}), nil
+}
+
+func (f loads) Set(_ context.Context, req *connect.Request[djinnv1.LoadServiceSetRequest]) (*connect.Response[djinnv1.LoadServiceSetResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&djinnv1.LoadServiceSetResponse{Notch: req.Msg.GetNotch()}), nil
+}
+
 // serve starts the fake server and returns a function that runs a command line against it.
 func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr string)) {
 	t.Helper()
@@ -348,6 +364,7 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux.Handle(planv1connect.NewProjectServiceHandler(projects{fake: f}))
 	mux.Handle(planv1connect.NewTilasmServiceHandler(tilasms{fake: f}))
 	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
+	mux.Handle(djinnv1connect.NewLoadServiceHandler(loads{fake: f}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return f, func(args ...string) (int, string, string) {
@@ -382,7 +399,9 @@ func TestRun(t *testing.T) {
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
 		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},
 		{name: "ambiguous method", args: []string{"question", "a"}, wantCode: 2, wantErr: `question method "a" is ambiguous: ask, answer`},
-		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, machine, mark, plan, project, question, skill, task, tilasm, wish`},
+		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, load, machine, mark, plan, project, question, skill, task, tilasm, wish`},
+		{name: "load get", args: []string{"load", "get"}, wantOut: "notch: medium\n", wantCalled: true},
+		{name: "load set", args: []string{"load", "set", "minimal"}, wantOut: "notch: minimal\n", wantCalled: true},
 		{name: "internal service is hidden", args: []string{"ui", "get-environment"}, wantCode: 2, wantErr: `unknown command "ui"`},
 		{name: "version", args: []string{"v"}, wantOut: "djinn test\n"},
 		{name: "talisman answers as tilasm", args: []string{"talisman", "list", "--search", "model"}, wantOut: "code: L01", wantCalled: true},

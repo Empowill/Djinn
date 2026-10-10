@@ -5,6 +5,7 @@ syntax = "proto3";
 package machine.v1;
 
 import "buf/validate/validate.proto";
+import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
 import "google/protobuf/timestamp.proto";
 import "plan/v1/plan.proto";
@@ -72,6 +73,8 @@ message Machine {
   repeated WorkerUse worker_uses = 18;
   // Why the workers' CPU and memory are not measured on this machine; empty where they are (Linux, macOS).
   string worker_measure = 19;
+  // Operating load notch in effect on this machine.
+  djinn.v1.LoadNotch load = 20;
 }
 
 // WorkerUse is what the worker of a running task uses of the machine.

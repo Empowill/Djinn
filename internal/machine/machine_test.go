@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 )
 
 const meminfo = `MemTotal:       32466216 kB
@@ -323,8 +325,178 @@ func TestWorkerRoom(t *testing.T) {
 			"a claude worker peaks at 1.0 GiB (the one measured), 1.0 GiB free, 1.0 GiB of it for the workers running, 512 MiB kept"},
 		{"memory unknown", 0, GiB, GiB, 0, ""},
 	} {
-		if got := p.WorkerRoom(tt.available, tt.held, "claude", tt.peak, tt.measured); got != tt.want {
+		if got := p.WorkerRoom(0, tt.available, tt.held, 0, "claude", tt.peak, tt.measured); got != tt.want {
 			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestNotchPolicy(t *testing.T) {
+	for _, tt := range []struct {
+		notch      djinnv1.LoadNotch
+		name       string
+		workers    int
+		share      float64
+		gateMargin uint64
+		cpu        float64
+		mem        float64
+		load       float64
+		free       float64
+	}{
+		{djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, "minimal", 1, 0.20, 1024 * MiB, 25, 5, 1.0, 0.20},
+		{djinnv1.LoadNotch_LOAD_NOTCH_LIGHT, "light", 3, 0.40, 768 * MiB, 40, 8, 1.5, 0.15},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, "medium", 16, 0.70, 512 * MiB, 50, 10, 2.0, 0.10},
+		{djinnv1.LoadNotch_LOAD_NOTCH_HIGH, "high", 24, 0.85, 384 * MiB, 70, 15, 3.0, 0.05},
+		{djinnv1.LoadNotch_LOAD_NOTCH_MAX, "max", 32, 1.00, 256 * MiB, 90, 25, 5.0, 0.02},
+	} {
+		p := NotchPolicy(tt.notch)
+		if p.Notch != tt.notch {
+			t.Errorf("%s notch: got %v, want %v", tt.name, p.Notch, tt.notch)
+		}
+		if p.NotchName() != tt.name {
+			t.Errorf("%s name: got %s, want %s", tt.name, p.NotchName(), tt.name)
+		}
+		if p.MaxWorkers != tt.workers {
+			t.Errorf("%s MaxWorkers: got %d, want %d", tt.name, p.MaxWorkers, tt.workers)
+		}
+		if p.MemoryShare != tt.share {
+			t.Errorf("%s MemoryShare: got %f, want %f", tt.name, p.MemoryShare, tt.share)
+		}
+		if p.CommandMargin != tt.gateMargin {
+			t.Errorf("%s CommandMargin: got %d, want %d", tt.name, p.CommandMargin, tt.gateMargin)
+		}
+		if p.CPUPressure != tt.cpu {
+			t.Errorf("%s CPUPressure: got %f, want %f", tt.name, p.CPUPressure, tt.cpu)
+		}
+		if p.MemoryPressure != tt.mem {
+			t.Errorf("%s MemoryPressure: got %f, want %f", tt.name, p.MemoryPressure, tt.mem)
+		}
+		if p.LoadPerCore != tt.load {
+			t.Errorf("%s LoadPerCore: got %f, want %f", tt.name, p.LoadPerCore, tt.load)
+		}
+		if p.MemoryFree != tt.free {
+			t.Errorf("%s MemoryFree: got %f, want %f", tt.name, p.MemoryFree, tt.free)
+		}
+	}
+	// DefaultPolicy matches medium.
+	def := DefaultPolicy()
+	med := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
+	if def.Notch != med.Notch || def.MaxWorkers != med.MaxWorkers || def.MemoryShare != med.MemoryShare ||
+		def.CommandMargin != med.CommandMargin {
+		t.Errorf("DefaultPolicy does not match medium: %+v vs %+v", def, med)
+	}
+	// Unspecified falls back to medium.
+	unspec := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED)
+	if unspec.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("unspecified notch did not fall back to medium: %v", unspec.Notch)
+	}
+}
+
+func TestParseNotch(t *testing.T) {
+	for _, tt := range []struct {
+		s    string
+		want djinnv1.LoadNotch
+	}{
+		{"minimal", djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL},
+		{"light", djinnv1.LoadNotch_LOAD_NOTCH_LIGHT},
+		{"medium", djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
+		{"high", djinnv1.LoadNotch_LOAD_NOTCH_HIGH},
+		{"max", djinnv1.LoadNotch_LOAD_NOTCH_MAX},
+	} {
+		got, err := ParseNotch(tt.s)
+		if err != nil || got != tt.want {
+			t.Errorf("ParseNotch(%q) = %v, %v; want %v, nil", tt.s, got, err, tt.want)
+		}
+		if name := NotchName(tt.want); name != tt.s {
+			t.Errorf("NotchName(%v) = %q, want %q", tt.want, name, tt.s)
+		}
+	}
+	if _, err := ParseNotch("unknown"); err == nil {
+		t.Error("ParseNotch(unknown) should fail")
+	}
+}
+
+func TestCommittableLimit(t *testing.T) {
+	total16 := uint64(16 * GiB)
+	for _, tt := range []struct {
+		name  string
+		notch djinnv1.LoadNotch
+		total uint64
+		want  uint64
+	}{
+		{"minimal 16G", djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, total16, uint64(float64(total16) * 0.20)},
+		{"light 16G", djinnv1.LoadNotch_LOAD_NOTCH_LIGHT, total16, uint64(float64(total16) * 0.40)},
+		{"medium 16G", djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, total16, uint64(float64(total16) * 0.70)},
+		{"high 16G", djinnv1.LoadNotch_LOAD_NOTCH_HIGH, total16, uint64(float64(total16) * 0.85)},
+		{"max 16G", djinnv1.LoadNotch_LOAD_NOTCH_MAX, total16, total16 - 512*MiB},
+		{"zero total", djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, 0, 0},
+		{"max small total", djinnv1.LoadNotch_LOAD_NOTCH_MAX, 256 * MiB, 0},
+	} {
+		p := NotchPolicy(tt.notch)
+		if got := p.CommittableLimit(tt.total); got != tt.want {
+			t.Errorf("%s: got %d, want %d", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestWorkerRoomNotches(t *testing.T) {
+	total := uint64(16 * GiB)
+	available := uint64(12 * GiB)
+	for _, tt := range []struct {
+		notch   djinnv1.LoadNotch
+		engaged uint64
+		peak    uint64
+		wantWhy string
+	}{
+		{
+			djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
+			2 * GiB,
+			GiB, // forecast = 1.0 GiB + 512 MiB = 1.5 GiB; 2.0 GiB + 1.5 GiB = 3.5 GiB > 3.2 GiB (20%)
+			"load minimal commits up to 3.2 GiB of memory, 2.0 GiB already engaged, needs 1.5 GiB",
+		},
+		{
+			djinnv1.LoadNotch_LOAD_NOTCH_LIGHT,
+			5 * GiB,
+			GiB, // forecast = 1.5 GiB; 5.0 GiB + 1.5 GiB = 6.5 GiB > 6.4 GiB (40%)
+			"load light commits up to 6.4 GiB of memory, 5.0 GiB already engaged, needs 1.5 GiB",
+		},
+		{
+			djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+			10 * GiB,
+			GiB, // forecast = 1.5 GiB; 10.0 GiB + 1.5 GiB = 11.5 GiB > 11.2 GiB (70%)
+			"load medium commits up to 11.2 GiB of memory, 10.0 GiB already engaged, needs 1.5 GiB",
+		},
+		{
+			djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+			13 * GiB,
+			GiB, // forecast = 1.5 GiB; 13.0 GiB + 1.5 GiB = 14.5 GiB > 13.6 GiB (85%)
+			"load high commits up to 13.6 GiB of memory, 13.0 GiB already engaged, needs 1.5 GiB",
+		},
+		{
+			djinnv1.LoadNotch_LOAD_NOTCH_MAX,
+			15 * GiB,
+			GiB, // forecast = 1.5 GiB; 15.0 GiB + 1.5 GiB = 16.5 GiB > 15.5 GiB (16G - 512M)
+			"load max commits up to 15.5 GiB of memory, 15.0 GiB already engaged, needs 1.5 GiB",
+		},
+	} {
+		p := NotchPolicy(tt.notch)
+		why := p.WorkerRoom(total, available, 0, tt.engaged, "claude", tt.peak, 0)
+		if why != tt.wantWhy {
+			t.Errorf("%v WorkerRoom exceeded: got %q, want %q", tt.notch, why, tt.wantWhy)
+		}
+
+		// When within limit and memory is available, WorkerRoom allows it.
+		fits := p.WorkerRoom(total, available, 0, 0, "claude", 500*MiB, 0)
+		if fits != "" {
+			t.Errorf("%v WorkerRoom fits: got %q, want empty", tt.notch, fits)
+		}
+	}
+
+	// Verify message when engaged is 0.
+	pMin := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
+	whyZeroEngaged := pMin.WorkerRoom(total, available, 0, 0, "claude", 3*GiB, 0)
+	wantZeroEngaged := "load minimal commits up to 3.2 GiB of memory, needs 3.5 GiB"
+	if whyZeroEngaged != wantZeroEngaged {
+		t.Errorf("zero engaged WorkerRoom: got %q, want %q", whyZeroEngaged, wantZeroEngaged)
 	}
 }

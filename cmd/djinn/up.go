@@ -22,6 +22,7 @@ import (
 
 	"github.com/empowill/djinn"
 	"github.com/empowill/djinn/gen/go/demo/v1/demov1connect"
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
@@ -126,7 +127,8 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	defer db.Close()
 	// The workers stop before the database closes: deferred calls run last first.
-	policy := machine.DefaultPolicy()
+	savedNotch := machine.ReadNotch(home)
+	policy := machine.NotchPolicy(savedNotch)
 	policy.Workers = maxWorkers
 	policy.WorkerMemory = uint64(workerMemory) << 20
 	read := readMachine
@@ -134,7 +136,11 @@ func runUp(args []string) (restart bool, err error) {
 		read = machine.Reader(home)
 	}
 	monitor := machine.NewMonitor(policy, read)
-	opts := []harness.Option{harness.WithCapacity(monitor.Capacity), harness.WithMemory(monitor.Available, policy)}
+	opts := []harness.Option{
+		harness.WithCapacity(monitor.Capacity),
+		harness.WithMemory(monitor.Available, policy),
+		harness.WithTotal(monitor.Total),
+	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
 	}
@@ -276,7 +282,18 @@ func runUp(args []string) (restart bool, err error) {
 		uiSvc.PresentTilasm(wishID, tilasmID)
 		return uiSvc.Window
 	}
-	svc := services(db, home, workers, terminals, uiSvc, pages, plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL))
+	var broadcastLoad func(djinnv1.LoadNotch)
+	svc := services(db, home, workers, terminals, uiSvc, pages,
+		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL),
+		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
+		plan.WithLoadBroadcaster(&broadcastLoad),
+	)
+	loadPrefix, loadHandler := machine.LoadHandler(home, monitor, workers.SetPolicy, func(n djinnv1.LoadNotch) {
+		if broadcastLoad != nil {
+			broadcastLoad(n)
+		}
+	})
+	svc[loadPrefix] = loadHandler
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)

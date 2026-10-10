@@ -28,11 +28,13 @@ func (s *service) Show(
 	context.Context, *connect.Request[machinev1.MachineServiceShowRequest],
 ) (*connect.Response[machinev1.MachineServiceShowResponse], error) {
 	snap := s.m.Snapshot()
-	slots, rule := s.m.policy.Slots(snap)
+	p := s.m.Policy()
+	slots, rule := p.Slots(snap)
 	out := &machinev1.Machine{
 		Os: snap.OS, Arch: snap.Arch, Cores: int32(snap.Cores), MemoryTotalBytes: snap.MemoryTotal,
 		MemoryAvailableBytes: snap.MemoryAvailable, Workers: int32(slots), WorkersRule: rule,
-		Pressure: s.m.policy.Pressure(snap), ReadTime: timestamppb.New(snap.Time),
+		Pressure: p.Pressure(snap), ReadTime: timestamppb.New(snap.Time),
+		Load: p.Notch,
 	}
 	if snap.LoadKnown {
 		out.Load1 = &snap.Load1
@@ -52,7 +54,7 @@ func (s *service) Show(
 			UnifiedMemory: g.Unified,
 		})
 	}
-	out.CanRunLocalModel, out.LocalModelReason = s.m.policy.LocalModel(snap)
+	out.CanRunLocalModel, out.LocalModelReason = p.LocalModel(snap)
 	if s.running != nil {
 		out.Running = int32(s.running())
 	}

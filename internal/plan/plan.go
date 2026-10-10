@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -42,16 +43,18 @@ const actor = "local"
 type Option func(*options)
 
 type options struct {
-	leads    Leads
-	pages    *Pages
-	language string
-	home     string
-	watchers SpawnWatcher
-	workers  WishWorkers
-	answered []AnswerHook
-	show     func(wishID, tilasmID string) bool
-	url      func(id string) string
-	enlight  []func(context.Context, *planv1.Question, string)
+	leads           Leads
+	pages           *Pages
+	language        string
+	home            string
+	watchers        SpawnWatcher
+	workers         WishWorkers
+	answered        []AnswerHook
+	show            func(wishID, tilasmID string) bool
+	url             func(id string) string
+	enlight         []func(context.Context, *planv1.Question, string)
+	load            func() djinnv1.LoadNotch
+	loadBroadcaster *func(djinnv1.LoadNotch)
 }
 
 // WithShowTilasm gives TilasmService.Open the window: show shows a tilasm in its wish's Tilasms tab, and tells whether
@@ -89,6 +92,14 @@ func WithEnlightened(f func(context.Context, *planv1.Question, string)) Option {
 	return func(o *options) { o.enlight = append(o.enlight, f) }
 }
 
+// WithLoad gives the wishes Djinn's current load notch, for WishService.Watch.
+func WithLoad(load func() djinnv1.LoadNotch) Option { return func(o *options) { o.load = load } }
+
+// WithLoadBroadcaster gives the caller what notifies the open Watch streams of a load notch change.
+func WithLoadBroadcaster(b *func(djinnv1.LoadNotch)) Option {
+	return func(o *options) { o.loadBroadcaster = b }
+}
+
 // Handlers returns the Connect handlers of the plan services, by path prefix.
 func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	var o options
@@ -100,7 +111,10 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
-		Workers: o.workers, Home: o.home}
+		Workers: o.workers, Home: o.home, Load: o.load}
+	if o.loadBroadcaster != nil {
+		*o.loadBroadcaster = wishes.ChangeLoad
+	}
 	var told Told
 	if o.leads != nil {
 		told = wishes.Answered // The lead learns each answer, after the harness, and what it did.
@@ -329,6 +343,8 @@ type Wishes struct {
 	// Home is Djinn's data folder, which holds the tilasms' files; empty: a wish with tilasms neither exports nor
 	// imports.
 	Home string
+	// Load reports Djinn's current load notch; nil where djinn up does not run machine monitoring.
+	Load func() djinnv1.LoadNotch
 
 	watch watchers // the open Watch streams
 }

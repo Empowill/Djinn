@@ -11,8 +11,8 @@ package machinev1
 
 import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
-	_ "github.com/empowill/djinn/gen/go/djinn/v1"
-	v1 "github.com/empowill/djinn/gen/go/plan/v1"
+	v1 "github.com/empowill/djinn/gen/go/djinn/v1"
+	v11 "github.com/empowill/djinn/gen/go/plan/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -187,6 +187,8 @@ type Machine struct {
 	WorkerUses []*WorkerUse `protobuf:"bytes,18,rep,name=worker_uses,json=workerUses,proto3" json:"worker_uses,omitempty"`
 	// Why the workers' CPU and memory are not measured on this machine; empty where they are (Linux, macOS).
 	WorkerMeasure string `protobuf:"bytes,19,opt,name=worker_measure,json=workerMeasure,proto3" json:"worker_measure,omitempty"`
+	// Operating load notch in effect on this machine.
+	Load          v1.LoadNotch `protobuf:"varint,20,opt,name=load,proto3,enum=djinn.v1.LoadNotch" json:"load,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -354,6 +356,13 @@ func (x *Machine) GetWorkerMeasure() string {
 	return ""
 }
 
+func (x *Machine) GetLoad() v1.LoadNotch {
+	if x != nil {
+		return x.Load
+	}
+	return v1.LoadNotch(0)
+}
+
 // WorkerUse is what the worker of a running task uses of the machine.
 type WorkerUse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -366,7 +375,7 @@ type WorkerUse struct {
 	// What the task does.
 	Title string `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
 	// What its worker uses, at the last reading.
-	Resources     *v1.Resources `protobuf:"bytes,5,opt,name=resources,proto3" json:"resources,omitempty"`
+	Resources     *v11.Resources `protobuf:"bytes,5,opt,name=resources,proto3" json:"resources,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -429,7 +438,7 @@ func (x *WorkerUse) GetTitle() string {
 	return ""
 }
 
-func (x *WorkerUse) GetResources() *v1.Resources {
+func (x *WorkerUse) GetResources() *v11.Resources {
 	if x != nil {
 		return x.Resources
 	}
@@ -689,7 +698,7 @@ type Gate struct {
 	// is held, so no new worker starts on it.
 	TakesSlot bool `protobuf:"varint,6,opt,name=takes_slot,json=takesSlot,proto3" json:"takes_slot,omitempty"`
 	// What its holder's process uses, at the last reading; unset when its process is not known or not measured.
-	Resources *v1.Resources `protobuf:"bytes,7,opt,name=resources,proto3" json:"resources,omitempty"`
+	Resources *v11.Resources `protobuf:"bytes,7,opt,name=resources,proto3" json:"resources,omitempty"`
 	// When Djinn takes it back if its holder has not given it back by then.
 	ExpireTime    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expire_time,json=expireTime,proto3" json:"expire_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -768,7 +777,7 @@ func (x *Gate) GetTakesSlot() bool {
 	return false
 }
 
-func (x *Gate) GetResources() *v1.Resources {
+func (x *Gate) GetResources() *v11.Resources {
 	if x != nil {
 		return x.Resources
 	}
@@ -1397,12 +1406,12 @@ var File_machine_v1_machine_proto protoreflect.FileDescriptor
 const file_machine_v1_machine_proto_rawDesc = "" +
 	"\n" +
 	"\x18machine/v1/machine.proto\x12\n" +
-	"machine.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x12plan/v1/plan.proto\"H\n" +
+	"machine.v1\x1a\x1bbuf/validate/validate.proto\x1a\x13djinn/v1/load.proto\x1a\x16djinn/v1/options.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x12plan/v1/plan.proto\"H\n" +
 	"\bPressure\x12\x1d\n" +
 	"\n" +
 	"some_avg10\x18\x01 \x01(\x01R\tsomeAvg10\x12\x1d\n" +
 	"\n" +
-	"full_avg10\x18\x02 \x01(\x01R\tfullAvg10\"\xf7\x05\n" +
+	"full_avg10\x18\x02 \x01(\x01R\tfullAvg10\"\xa0\x06\n" +
 	"\aMachine\x12\x0e\n" +
 	"\x02os\x18\x01 \x01(\tR\x02os\x12\x12\n" +
 	"\x04arch\x18\x02 \x01(\tR\x04arch\x12\x14\n" +
@@ -1424,7 +1433,8 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x12local_model_reason\x18\x11 \x01(\tR\x10localModelReason\x126\n" +
 	"\vworker_uses\x18\x12 \x03(\v2\x15.machine.v1.WorkerUseR\n" +
 	"workerUses\x12%\n" +
-	"\x0eworker_measure\x18\x13 \x01(\tR\rworkerMeasureB\b\n" +
+	"\x0eworker_measure\x18\x13 \x01(\tR\rworkerMeasure\x12'\n" +
+	"\x04load\x18\x14 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x04loadB\b\n" +
 	"\x06_load1\"\x99\x01\n" +
 	"\tWorkerUse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x17\n" +
@@ -1556,7 +1566,8 @@ var file_machine_v1_machine_proto_goTypes = []any{
 	(*CommandServiceRecordRequest)(nil),  // 16: machine.v1.CommandServiceRecordRequest
 	(*CommandServiceRecordResponse)(nil), // 17: machine.v1.CommandServiceRecordResponse
 	(*timestamppb.Timestamp)(nil),        // 18: google.protobuf.Timestamp
-	(*v1.Resources)(nil),                 // 19: plan.v1.Resources
+	(v1.LoadNotch)(0),                    // 19: djinn.v1.LoadNotch
+	(*v11.Resources)(nil),                // 20: plan.v1.Resources
 }
 var file_machine_v1_machine_proto_depIdxs = []int32{
 	1,  // 0: machine.v1.Machine.cpu_pressure:type_name -> machine.v1.Pressure
@@ -1565,31 +1576,32 @@ var file_machine_v1_machine_proto_depIdxs = []int32{
 	4,  // 3: machine.v1.Machine.disk:type_name -> machine.v1.Disk
 	5,  // 4: machine.v1.Machine.gpus:type_name -> machine.v1.Gpu
 	3,  // 5: machine.v1.Machine.worker_uses:type_name -> machine.v1.WorkerUse
-	19, // 6: machine.v1.WorkerUse.resources:type_name -> plan.v1.Resources
-	2,  // 7: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
-	18, // 8: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
-	19, // 9: machine.v1.Gate.resources:type_name -> plan.v1.Resources
-	18, // 10: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
-	0,  // 11: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
-	8,  // 12: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
-	18, // 13: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
-	13, // 14: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
-	13, // 15: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
-	6,  // 16: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
-	9,  // 17: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
-	11, // 18: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
-	14, // 19: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
-	16, // 20: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
-	7,  // 21: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
-	10, // 22: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
-	12, // 23: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
-	15, // 24: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
-	17, // 25: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
-	21, // [21:26] is the sub-list for method output_type
-	16, // [16:21] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	19, // 6: machine.v1.Machine.load:type_name -> djinn.v1.LoadNotch
+	20, // 7: machine.v1.WorkerUse.resources:type_name -> plan.v1.Resources
+	2,  // 8: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
+	18, // 9: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
+	20, // 10: machine.v1.Gate.resources:type_name -> plan.v1.Resources
+	18, // 11: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
+	0,  // 12: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
+	8,  // 13: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
+	18, // 14: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
+	13, // 15: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
+	13, // 16: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
+	6,  // 17: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
+	9,  // 18: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
+	11, // 19: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
+	14, // 20: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
+	16, // 21: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
+	7,  // 22: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
+	10, // 23: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
+	12, // 24: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
+	15, // 25: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
+	17, // 26: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
+	22, // [22:27] is the sub-list for method output_type
+	17, // [17:22] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_machine_v1_machine_proto_init() }

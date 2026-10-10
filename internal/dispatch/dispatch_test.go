@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
 )
@@ -388,5 +389,56 @@ func TestWaitsForTheCommit(t *testing.T) {
 		if d.Why != c.want || d.Failed != "" || d.Commit != (c.want != "") {
 			t.Errorf("W5 %s: %+v; want %q", c.state, d, c.want)
 		}
+	}
+}
+
+// TestMemoryCommittableLimit: when machine Total is known, dispatch respects the load notch committable memory ceiling.
+func TestMemoryCommittableLimit(t *testing.T) {
+	at := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	// Measured claude worker peak is 1 GiB.
+	done := &planv1.Task{Id: "done", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, EndTime: timestamppb.New(at.Add(-time.Hour)),
+		Resources: &planv1.Resources{PeakMemoryBytes: machine.GiB}}
+
+	// One claude worker is already running at 1 GiB (forecast is 1 GiB).
+	busy := &planv1.Task{Id: "busy", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, Resources: &planv1.Resources{MemoryBytes: machine.GiB}}
+
+	// Two pending claude tasks.
+	t1 := &planv1.Task{Id: "t1", Code: "W1", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, Scheduled: true, CreateTime: timestamppb.New(at)}
+	t2 := &planv1.Task{Id: "t2", Code: "W2", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Provider: planv1.Provider_PROVIDER_CLAUDE, Scheduled: true, CreateTime: timestamppb.New(at.Add(time.Minute))}
+
+	tasks := []*planv1.Task{done, busy, t1, t2}
+
+	// 20 GiB total, 16 GiB available.
+	// On minimal load (20%), ceiling is 4.0 GiB.
+	// busy engaged is 1.5 GiB (1 GiB peak + 512 MiB margin).
+	// t1 forecast is 1.5 GiB.
+	// Total engaged with t1 would be 1.5 + 1.5 = 3.0 GiB <= 4.0 GiB -> t1 starts.
+	// Total engaged with t2 would be 3.0 + 1.5 = 4.5 GiB > 4.0 GiB -> t2 blocked by committable limit.
+	minPolicy := machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
+	m := &Machine{
+		Slots:     4,
+		Rule:      "test",
+		Running:   1,
+		Total:     20 * machine.GiB,
+		Available: 16 * machine.GiB,
+		Policy:    minPolicy,
+	}
+
+	got := map[string]string{}
+	for _, d := range New(tasks, []*planv1.Wish{wish}, nil, m).At(at).Pass() {
+		got[d.Task.GetId()] = d.Why
+	}
+
+	if got["t1"] != "" {
+		t.Errorf("t1 should start, but got why: %q", got["t1"])
+	}
+	wantWhy := "load minimal commits up to 4.0 GiB of memory, 3.0 GiB already engaged, needs 1.5 GiB"
+	if got["t2"] != wantWhy {
+		t.Errorf("t2 why:\ngot:  %q\nwant: %q", got["t2"], wantWhy)
 	}
 }

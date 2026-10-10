@@ -46,6 +46,19 @@ func WithMemory(available func() uint64, p machine.Policy) Option {
 	return func(h *Harness) { h.available, h.policy = available, p }
 }
 
+// WithTotal gives the machine's total RAM in bytes (0 when unknown) for peak forecast committable limits.
+func WithTotal(total func() uint64) Option {
+	return func(h *Harness) { h.total = total }
+}
+
+// SetPolicy updates the scheduling policy and wakes the scheduler for the next pass.
+func (h *Harness) SetPolicy(p machine.Policy) {
+	h.sched.Lock()
+	h.policy = p
+	h.sched.Unlock()
+	h.wake()
+}
+
 // WithScopes runs each worker in a systemd scope of its own, which stopping, pausing and measuring it take whole, its
 // CPU and memory capped as scopes says (djinn up --worker-cpu, --worker-memory; machine.ProbeScopes).
 func WithScopes(scopes *machine.Scopes) Option { return func(h *Harness) { h.scopes = scopes } }
@@ -210,6 +223,9 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		}
 		if h.available != nil {
 			m.Available, m.Policy = h.available(), h.policy
+		}
+		if h.total != nil {
+			m.Total = h.total()
 		}
 	}
 	return dispatch.New(tasks, wishes, git, m).At(h.now()), nil

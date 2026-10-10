@@ -10,7 +10,7 @@ package uiv1
 
 import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
-	_ "github.com/empowill/djinn/gen/go/djinn/v1"
+	v1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -282,7 +282,9 @@ func (x *Shortcut) GetProblem() string {
 type Settings struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The global shortcut's chord. Unset: the default one. Empty: off.
-	Shortcut      *string `protobuf:"bytes,1,opt,name=shortcut,proto3,oneof" json:"shortcut,omitempty"`
+	Shortcut *string `protobuf:"bytes,1,opt,name=shortcut,proto3,oneof" json:"shortcut,omitempty"`
+	// The operating load notch in effect on this machine. Unset: default (medium).
+	Load          *v1.LoadNotch `protobuf:"varint,2,opt,name=load,proto3,enum=djinn.v1.LoadNotch,oneof" json:"load,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -322,6 +324,13 @@ func (x *Settings) GetShortcut() string {
 		return *x.Shortcut
 	}
 	return ""
+}
+
+func (x *Settings) GetLoad() v1.LoadNotch {
+	if x != nil && x.Load != nil {
+		return *x.Load
+	}
+	return v1.LoadNotch(0)
 }
 
 // An agent command line.
@@ -1486,7 +1495,7 @@ var File_ui_v1_ui_proto protoreflect.FileDescriptor
 
 const file_ui_v1_ui_proto_rawDesc = "" +
 	"\n" +
-	"\x0eui/v1/ui.proto\x12\x05ui.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\" \n" +
+	"\x0eui/v1/ui.proto\x12\x05ui.v1\x1a\x1bbuf/validate/validate.proto\x1a\x13djinn/v1/load.proto\x1a\x16djinn/v1/options.proto\" \n" +
 	"\x1eUiServiceGetEnvironmentRequest\"\xd8\x01\n" +
 	"\x1fUiServiceGetEnvironmentResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1a\n" +
@@ -1498,10 +1507,12 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x05chord\x18\x01 \x01(\tR\x05chord\x12#\n" +
 	"\rdefault_chord\x18\x02 \x01(\tR\fdefaultChord\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x18\n" +
-	"\aproblem\x18\x04 \x01(\tR\aproblem\"8\n" +
+	"\aproblem\x18\x04 \x01(\tR\aproblem\"o\n" +
 	"\bSettings\x12\x1f\n" +
-	"\bshortcut\x18\x01 \x01(\tH\x00R\bshortcut\x88\x01\x01B\v\n" +
-	"\t_shortcut\"f\n" +
+	"\bshortcut\x18\x01 \x01(\tH\x00R\bshortcut\x88\x01\x01\x12,\n" +
+	"\x04load\x18\x02 \x01(\x0e2\x13.djinn.v1.LoadNotchH\x01R\x04load\x88\x01\x01B\v\n" +
+	"\t_shortcutB\a\n" +
+	"\x05_load\"f\n" +
 	"\bProvider\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -1635,38 +1646,40 @@ var file_ui_v1_ui_proto_goTypes = []any{
 	(*Build)(nil),                            // 22: ui.v1.Build
 	(*UiServiceUpdateRequest)(nil),           // 23: ui.v1.UiServiceUpdateRequest
 	(*UiServiceUpdateResponse)(nil),          // 24: ui.v1.UiServiceUpdateResponse
+	(v1.LoadNotch)(0),                        // 25: djinn.v1.LoadNotch
 }
 var file_ui_v1_ui_proto_depIdxs = []int32{
 	5,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
 	3,  // 1: ui.v1.UiServiceGetEnvironmentResponse.shortcut:type_name -> ui.v1.Shortcut
-	3,  // 2: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
-	22, // 3: ui.v1.UiServiceWatchUpdateResponse.build:type_name -> ui.v1.Build
-	20, // 4: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
-	0,  // 5: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
-	21, // 6: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
-	1,  // 7: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
-	6,  // 8: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
-	8,  // 9: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
-	10, // 10: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
-	12, // 11: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
-	14, // 12: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
-	16, // 13: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
-	18, // 14: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
-	23, // 15: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
-	2,  // 16: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	7,  // 17: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	9,  // 18: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	11, // 19: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	13, // 20: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	15, // 21: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
-	17, // 22: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	19, // 23: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	24, // 24: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	16, // [16:25] is the sub-list for method output_type
-	7,  // [7:16] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	25, // 2: ui.v1.Settings.load:type_name -> djinn.v1.LoadNotch
+	3,  // 3: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
+	22, // 4: ui.v1.UiServiceWatchUpdateResponse.build:type_name -> ui.v1.Build
+	20, // 5: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
+	0,  // 6: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
+	21, // 7: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
+	1,  // 8: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
+	6,  // 9: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
+	8,  // 10: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
+	10, // 11: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
+	12, // 12: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
+	14, // 13: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
+	16, // 14: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
+	18, // 15: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
+	23, // 16: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
+	2,  // 17: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	7,  // 18: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	9,  // 19: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	11, // 20: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	13, // 21: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	15, // 22: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
+	17, // 23: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	19, // 24: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	24, // 25: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	17, // [17:26] is the sub-list for method output_type
+	8,  // [8:17] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_ui_v1_ui_proto_init() }

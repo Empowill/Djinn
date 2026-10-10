@@ -89,6 +89,7 @@ type Harness struct {
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
 	available  func() uint64 // the memory available; nil: the memory holds no worker back
+	total      func() uint64 // the machine's total memory; nil: total RAM is unknown
 	policy     machine.Policy
 	tick       time.Duration // a pass at least this often
 	sched      sync.Mutex    // one scheduling decision at a time: a spawn, a pass, a planned task stopped

@@ -4,6 +4,7 @@ syntax = "proto3";
 package ui.v1;
 
 import "buf/validate/validate.proto";
+import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
 
 // What the window needs to show and follow the plan.
@@ -91,6 +92,8 @@ message Shortcut {
 message Settings {
   // The global shortcut's chord. Unset: the default one. Empty: off.
   optional string shortcut = 1;
+  // The operating load notch in effect on this machine. Unset: default (medium).
+  optional djinn.v1.LoadNotch load = 2;
 }
 
 // An agent command line.
