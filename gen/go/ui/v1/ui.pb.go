@@ -25,6 +25,66 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// InstallStep is where an install stands.
+type InstallStep int32
+
+const (
+	InstallStep_INSTALL_STEP_UNSPECIFIED InstallStep = 0
+	// It waits for its turn: Installing.waiting says for what.
+	InstallStep_INSTALL_STEP_WAITING InstallStep = 1
+	// It checks the build out in a worktree of its own, and sets that worktree up when the project's lock files changed.
+	InstallStep_INSTALL_STEP_PREPARING InstallStep = 2
+	// It runs the project's install command.
+	InstallStep_INSTALL_STEP_BUILDING InstallStep = 3
+	// Installed: Djinn restarts on it.
+	InstallStep_INSTALL_STEP_RESTARTING InstallStep = 4
+)
+
+// Enum value maps for InstallStep.
+var (
+	InstallStep_name = map[int32]string{
+		0: "INSTALL_STEP_UNSPECIFIED",
+		1: "INSTALL_STEP_WAITING",
+		2: "INSTALL_STEP_PREPARING",
+		3: "INSTALL_STEP_BUILDING",
+		4: "INSTALL_STEP_RESTARTING",
+	}
+	InstallStep_value = map[string]int32{
+		"INSTALL_STEP_UNSPECIFIED": 0,
+		"INSTALL_STEP_WAITING":     1,
+		"INSTALL_STEP_PREPARING":   2,
+		"INSTALL_STEP_BUILDING":    3,
+		"INSTALL_STEP_RESTARTING":  4,
+	}
+)
+
+func (x InstallStep) Enum() *InstallStep {
+	p := new(InstallStep)
+	*p = x
+	return p
+}
+
+func (x InstallStep) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (InstallStep) Descriptor() protoreflect.EnumDescriptor {
+	return file_ui_v1_ui_proto_enumTypes[0].Descriptor()
+}
+
+func (InstallStep) Type() protoreflect.EnumType {
+	return &file_ui_v1_ui_proto_enumTypes[0]
+}
+
+func (x InstallStep) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use InstallStep.Descriptor instead.
+func (InstallStep) EnumDescriptor() ([]byte, []int) {
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{0}
+}
+
 type UiServiceGetEnvironmentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -981,7 +1041,10 @@ type UiServiceWatchUpdateResponse struct {
 	NotesUrl string `protobuf:"bytes,4,opt,name=notes_url,json=notesUrl,proto3" json:"notes_url,omitempty"`
 	// The last push of a wish's integration branch, in a project whose settings name an install command, and not
 	// installed since: the window proposes to install it and restart on it. Unset for none.
-	Build         *Build `protobuf:"bytes,5,opt,name=build,proto3" json:"build,omitempty"`
+	Build *Build `protobuf:"bytes,5,opt,name=build,proto3" json:"build,omitempty"`
+	// The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
+	// of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
+	Installing    *Installing `protobuf:"bytes,6,opt,name=installing,proto3" json:"installing,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1051,6 +1114,77 @@ func (x *UiServiceWatchUpdateResponse) GetBuild() *Build {
 	return nil
 }
 
+func (x *UiServiceWatchUpdateResponse) GetInstalling() *Installing {
+	if x != nil {
+		return x.Installing
+	}
+	return nil
+}
+
+// Installing is an install of a build that runs now, and where it stands.
+type Installing struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The commit being installed.
+	Sha  string      `protobuf:"bytes,1,opt,name=sha,proto3" json:"sha,omitempty"`
+	Step InstallStep `protobuf:"varint,2,opt,name=step,proto3,enum=ui.v1.InstallStep" json:"step,omitempty"`
+	// What it waits for, while its step is waiting: another install, a gate and who holds it, the machine under
+	// pressure. Empty otherwise.
+	Waiting       string `protobuf:"bytes,3,opt,name=waiting,proto3" json:"waiting,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Installing) Reset() {
+	*x = Installing{}
+	mi := &file_ui_v1_ui_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Installing) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Installing) ProtoMessage() {}
+
+func (x *Installing) ProtoReflect() protoreflect.Message {
+	mi := &file_ui_v1_ui_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Installing.ProtoReflect.Descriptor instead.
+func (*Installing) Descriptor() ([]byte, []int) {
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *Installing) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *Installing) GetStep() InstallStep {
+	if x != nil {
+		return x.Step
+	}
+	return InstallStep_INSTALL_STEP_UNSPECIFIED
+}
+
+func (x *Installing) GetWaiting() string {
+	if x != nil {
+		return x.Waiting
+	}
+	return ""
+}
+
 // Build is a wish's integration branch as Djinn pushed it (T07), to install.
 type Build struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1077,7 +1211,7 @@ type Build struct {
 
 func (x *Build) Reset() {
 	*x = Build{}
-	mi := &file_ui_v1_ui_proto_msgTypes[19]
+	mi := &file_ui_v1_ui_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1089,7 +1223,7 @@ func (x *Build) String() string {
 func (*Build) ProtoMessage() {}
 
 func (x *Build) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[19]
+	mi := &file_ui_v1_ui_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1102,7 +1236,7 @@ func (x *Build) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Build.ProtoReflect.Descriptor instead.
 func (*Build) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{19}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Build) GetWishId() string {
@@ -1186,7 +1320,7 @@ type UiServiceUpdateRequest struct {
 
 func (x *UiServiceUpdateRequest) Reset() {
 	*x = UiServiceUpdateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[20]
+	mi := &file_ui_v1_ui_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1198,7 +1332,7 @@ func (x *UiServiceUpdateRequest) String() string {
 func (*UiServiceUpdateRequest) ProtoMessage() {}
 
 func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[20]
+	mi := &file_ui_v1_ui_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1211,7 +1345,7 @@ func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{20}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *UiServiceUpdateRequest) GetBuild() string {
@@ -1235,7 +1369,7 @@ type UiServiceUpdateResponse struct {
 
 func (x *UiServiceUpdateResponse) Reset() {
 	*x = UiServiceUpdateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[21]
+	mi := &file_ui_v1_ui_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1247,7 +1381,7 @@ func (x *UiServiceUpdateResponse) String() string {
 func (*UiServiceUpdateResponse) ProtoMessage() {}
 
 func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[21]
+	mi := &file_ui_v1_ui_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1260,7 +1394,7 @@ func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{21}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UiServiceUpdateResponse) GetVersion() string {
@@ -1339,14 +1473,22 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\bterminal\x18\x02 \x01(\tR\bterminal\x12\x1b\n" +
 	"\ttilasm_id\x18\x03 \x01(\tR\btilasmId\x12!\n" +
 	"\funknown_link\x18\x04 \x01(\tR\vunknownLink\"\x1d\n" +
-	"\x1bUiServiceWatchUpdateRequest\"\xb0\x01\n" +
+	"\x1bUiServiceWatchUpdateRequest\"\xe3\x01\n" +
 	"\x1cUiServiceWatchUpdateResponse\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\tR\acurrent\x12\x14\n" +
 	"\x05ready\x18\x02 \x01(\tR\x05ready\x12\x1f\n" +
 	"\vnot_resumed\x18\x03 \x03(\tR\n" +
 	"notResumed\x12\x1b\n" +
 	"\tnotes_url\x18\x04 \x01(\tR\bnotesUrl\x12\"\n" +
-	"\x05build\x18\x05 \x01(\v2\f.ui.v1.BuildR\x05build\"\x84\x02\n" +
+	"\x05build\x18\x05 \x01(\v2\f.ui.v1.BuildR\x05build\x121\n" +
+	"\n" +
+	"installing\x18\x06 \x01(\v2\x11.ui.v1.InstallingR\n" +
+	"installing\"`\n" +
+	"\n" +
+	"Installing\x12\x10\n" +
+	"\x03sha\x18\x01 \x01(\tR\x03sha\x12&\n" +
+	"\x04step\x18\x02 \x01(\x0e2\x12.ui.v1.InstallStepR\x04step\x12\x18\n" +
+	"\awaiting\x18\x03 \x01(\tR\awaiting\"\x84\x02\n" +
 	"\x05Build\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
 	"\n" +
@@ -1366,7 +1508,13 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x17UiServiceUpdateResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1c\n" +
 	"\tterminals\x18\x02 \x01(\x05R\tterminals\x12\x1c\n" +
-	"\tinstalled\x18\x03 \x01(\tR\tinstalled2\xc2\x06\n" +
+	"\tinstalled\x18\x03 \x01(\tR\tinstalled*\x99\x01\n" +
+	"\vInstallStep\x12\x1c\n" +
+	"\x18INSTALL_STEP_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14INSTALL_STEP_WAITING\x10\x01\x12\x1a\n" +
+	"\x16INSTALL_STEP_PREPARING\x10\x02\x12\x19\n" +
+	"\x15INSTALL_STEP_BUILDING\x10\x03\x12\x1b\n" +
+	"\x17INSTALL_STEP_RESTARTING\x10\x042\xc2\x06\n" +
 	"\tUiService\x12e\n" +
 	"\x0eGetEnvironment\x12%.ui.v1.UiServiceGetEnvironmentRequest\x1a&.ui.v1.UiServiceGetEnvironmentResponse\"\x04\xc8\xf3\x18\x02\x12h\n" +
 	"\x0fChooseDirectory\x12&.ui.v1.UiServiceChooseDirectoryRequest\x1a'.ui.v1.UiServiceChooseDirectoryResponse\"\x04\xc8\xf3\x18\x02\x12_\n" +
@@ -1391,59 +1539,64 @@ func file_ui_v1_ui_proto_rawDescGZIP() []byte {
 	return file_ui_v1_ui_proto_rawDescData
 }
 
-var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_ui_v1_ui_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_ui_v1_ui_proto_goTypes = []any{
-	(*UiServiceGetEnvironmentRequest)(nil),   // 0: ui.v1.UiServiceGetEnvironmentRequest
-	(*UiServiceGetEnvironmentResponse)(nil),  // 1: ui.v1.UiServiceGetEnvironmentResponse
-	(*Shortcut)(nil),                         // 2: ui.v1.Shortcut
-	(*Settings)(nil),                         // 3: ui.v1.Settings
-	(*Provider)(nil),                         // 4: ui.v1.Provider
-	(*UiServiceChooseDirectoryRequest)(nil),  // 5: ui.v1.UiServiceChooseDirectoryRequest
-	(*UiServiceChooseDirectoryResponse)(nil), // 6: ui.v1.UiServiceChooseDirectoryResponse
-	(*UiServiceOpenExternalRequest)(nil),     // 7: ui.v1.UiServiceOpenExternalRequest
-	(*UiServiceOpenExternalResponse)(nil),    // 8: ui.v1.UiServiceOpenExternalResponse
-	(*UiServiceSetShortcutRequest)(nil),      // 9: ui.v1.UiServiceSetShortcutRequest
-	(*UiServiceSetShortcutResponse)(nil),     // 10: ui.v1.UiServiceSetShortcutResponse
-	(*UiServiceShowRequest)(nil),             // 11: ui.v1.UiServiceShowRequest
-	(*UiServiceShowResponse)(nil),            // 12: ui.v1.UiServiceShowResponse
-	(*UiServiceOpenLinkRequest)(nil),         // 13: ui.v1.UiServiceOpenLinkRequest
-	(*UiServiceOpenLinkResponse)(nil),        // 14: ui.v1.UiServiceOpenLinkResponse
-	(*UiServiceWatchShowRequest)(nil),        // 15: ui.v1.UiServiceWatchShowRequest
-	(*UiServiceWatchShowResponse)(nil),       // 16: ui.v1.UiServiceWatchShowResponse
-	(*UiServiceWatchUpdateRequest)(nil),      // 17: ui.v1.UiServiceWatchUpdateRequest
-	(*UiServiceWatchUpdateResponse)(nil),     // 18: ui.v1.UiServiceWatchUpdateResponse
-	(*Build)(nil),                            // 19: ui.v1.Build
-	(*UiServiceUpdateRequest)(nil),           // 20: ui.v1.UiServiceUpdateRequest
-	(*UiServiceUpdateResponse)(nil),          // 21: ui.v1.UiServiceUpdateResponse
+	(InstallStep)(0),                         // 0: ui.v1.InstallStep
+	(*UiServiceGetEnvironmentRequest)(nil),   // 1: ui.v1.UiServiceGetEnvironmentRequest
+	(*UiServiceGetEnvironmentResponse)(nil),  // 2: ui.v1.UiServiceGetEnvironmentResponse
+	(*Shortcut)(nil),                         // 3: ui.v1.Shortcut
+	(*Settings)(nil),                         // 4: ui.v1.Settings
+	(*Provider)(nil),                         // 5: ui.v1.Provider
+	(*UiServiceChooseDirectoryRequest)(nil),  // 6: ui.v1.UiServiceChooseDirectoryRequest
+	(*UiServiceChooseDirectoryResponse)(nil), // 7: ui.v1.UiServiceChooseDirectoryResponse
+	(*UiServiceOpenExternalRequest)(nil),     // 8: ui.v1.UiServiceOpenExternalRequest
+	(*UiServiceOpenExternalResponse)(nil),    // 9: ui.v1.UiServiceOpenExternalResponse
+	(*UiServiceSetShortcutRequest)(nil),      // 10: ui.v1.UiServiceSetShortcutRequest
+	(*UiServiceSetShortcutResponse)(nil),     // 11: ui.v1.UiServiceSetShortcutResponse
+	(*UiServiceShowRequest)(nil),             // 12: ui.v1.UiServiceShowRequest
+	(*UiServiceShowResponse)(nil),            // 13: ui.v1.UiServiceShowResponse
+	(*UiServiceOpenLinkRequest)(nil),         // 14: ui.v1.UiServiceOpenLinkRequest
+	(*UiServiceOpenLinkResponse)(nil),        // 15: ui.v1.UiServiceOpenLinkResponse
+	(*UiServiceWatchShowRequest)(nil),        // 16: ui.v1.UiServiceWatchShowRequest
+	(*UiServiceWatchShowResponse)(nil),       // 17: ui.v1.UiServiceWatchShowResponse
+	(*UiServiceWatchUpdateRequest)(nil),      // 18: ui.v1.UiServiceWatchUpdateRequest
+	(*UiServiceWatchUpdateResponse)(nil),     // 19: ui.v1.UiServiceWatchUpdateResponse
+	(*Installing)(nil),                       // 20: ui.v1.Installing
+	(*Build)(nil),                            // 21: ui.v1.Build
+	(*UiServiceUpdateRequest)(nil),           // 22: ui.v1.UiServiceUpdateRequest
+	(*UiServiceUpdateResponse)(nil),          // 23: ui.v1.UiServiceUpdateResponse
 }
 var file_ui_v1_ui_proto_depIdxs = []int32{
-	4,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
-	2,  // 1: ui.v1.UiServiceGetEnvironmentResponse.shortcut:type_name -> ui.v1.Shortcut
-	2,  // 2: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
-	19, // 3: ui.v1.UiServiceWatchUpdateResponse.build:type_name -> ui.v1.Build
-	0,  // 4: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
-	5,  // 5: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
-	7,  // 6: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
-	9,  // 7: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
-	11, // 8: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
-	13, // 9: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
-	15, // 10: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
-	17, // 11: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
-	20, // 12: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
-	1,  // 13: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	6,  // 14: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	8,  // 15: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	10, // 16: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	12, // 17: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	14, // 18: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
-	16, // 19: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	18, // 20: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	21, // 21: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	13, // [13:22] is the sub-list for method output_type
-	4,  // [4:13] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	5,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
+	3,  // 1: ui.v1.UiServiceGetEnvironmentResponse.shortcut:type_name -> ui.v1.Shortcut
+	3,  // 2: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
+	21, // 3: ui.v1.UiServiceWatchUpdateResponse.build:type_name -> ui.v1.Build
+	20, // 4: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
+	0,  // 5: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
+	1,  // 6: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
+	6,  // 7: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
+	8,  // 8: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
+	10, // 9: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
+	12, // 10: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
+	14, // 11: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
+	16, // 12: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
+	18, // 13: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
+	22, // 14: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
+	2,  // 15: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	7,  // 16: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	9,  // 17: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	11, // 18: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	13, // 19: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	15, // 20: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
+	17, // 21: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	19, // 22: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	23, // 23: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	15, // [15:24] is the sub-list for method output_type
+	6,  // [6:15] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_ui_v1_ui_proto_init() }
@@ -1457,13 +1610,14 @@ func file_ui_v1_ui_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ui_v1_ui_proto_rawDesc), len(file_ui_v1_ui_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   22,
+			NumEnums:      1,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_ui_v1_ui_proto_goTypes,
 		DependencyIndexes: file_ui_v1_ui_proto_depIdxs,
+		EnumInfos:         file_ui_v1_ui_proto_enumTypes,
 		MessageInfos:      file_ui_v1_ui_proto_msgTypes,
 	}.Build()
 	File_ui_v1_ui_proto = out.File

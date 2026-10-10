@@ -521,3 +521,27 @@ func TestOnOff(t *testing.T) {
 		t.Errorf("onOff(maybe): %v", err)
 	}
 }
+
+// TestProfiles: with $DJINN_PPROF on, djinn up serves Go's profiles on its own address, as its services; off, the path
+// is the interface's, as any other.
+func TestProfiles(t *testing.T) {
+	home := t.TempDir()
+	_, addr := up(t, home, environ(home, t.TempDir(), "DJINN_PPROF=on"))
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+server.ProfilePath+"cmdline", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := httpClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil || res.StatusCode != http.StatusOK || !strings.Contains(string(body), "up") {
+		t.Errorf("GET %scmdline: %d %q, %v; want djinn's command line", server.ProfilePath, res.StatusCode, body, err)
+	}
+}

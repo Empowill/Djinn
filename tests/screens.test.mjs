@@ -41,6 +41,7 @@ export {
   recordedAgent,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
+export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
 export { memory, resourcesDetail } from "@/src/usage.tsx";
 export { TilasmList } from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
@@ -1914,7 +1915,7 @@ test("the update banner proposes to install a build committed, with what changed
     changes: ["Work of W6", "Work of W5"],
     checks: ["W5 Work of W5: To check: the banner shows the build."],
   };
-  const banner = (phase = { kind: "idle" }, dismissedBuild = "") =>
+  const banner = (phase = { kind: "idle" }, dismissedBuild = "", installing) =>
     s.renderToStaticMarkup(
       h(s.UpdateBannerView, {
         state: {
@@ -1923,6 +1924,7 @@ test("the update banner proposes to install a build committed, with what changed
           notResumed: [],
           notesUrl: "",
           build,
+          installing,
         },
         phase,
         dismissed: false,
@@ -1956,6 +1958,16 @@ test("the update banner proposes to install a build committed, with what changed
   const installing = banner({ kind: "installing" });
   assert.match(installing, /Installing…/);
   assert.doesNotMatch(installing, /<button/);
+  // Then it says where the install stands, as Djinn tells it, in this window or another: what it waits for, that it
+  // builds, that Djinn restarts.
+  const step = (step, waiting = "") =>
+    banner({ kind: "idle" }, "", { sha: build.sha, step, waiting });
+  const waits = step(s.InstallStep.WAITING, "gate install: held by W9 (Other)");
+  assert.match(waits, /Waiting — gate install: held by W9 \(Other\)/);
+  assert.doesNotMatch(waits, /<button/);
+  assert.match(step(s.InstallStep.PREPARING), /Preparing the build…/);
+  assert.match(step(s.InstallStep.BUILDING), /Building…/);
+  assert.match(step(s.InstallStep.RESTARTING), /Restarting…/);
   // Dismissed, that build no longer shows.
   assert.equal(banner({ kind: "idle" }, build.sha), "");
   // A build that installed no newer Djinn says it is installed, and restarts nothing.

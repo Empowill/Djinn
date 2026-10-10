@@ -102,7 +102,9 @@ type Harness struct {
 	integrating   sync.Once
 	integrateDone chan struct{}         // closed when the integration has stopped; nil until Integrate
 	tested        map[string]tested     // by wish/project; owned by the integration's pass
-	integrateMu   sync.Mutex            // held while a batch is integrated, or a build installed: they share a worktree
+	integrateMu   sync.Mutex            // held while a batch is integrated, main merged, or the push checks run: they share a worktree
+	installMu     sync.Mutex            // held while a build is installed
+	installing    string                // the commit installed now, guarded by mu
 	pushMu        sync.Mutex            // held while an integration branch is pushed
 	built         func(Built)           // nil: no build is proposed
 	mainTested    map[string]mainTested // by wish/project; owned by the integration's pass
@@ -1069,17 +1071,16 @@ func sum(base, run *planv1.Usage) *planv1.Usage {
 	}
 }
 
-// lastSeq is the position of the task's last event.
+// lastSeq is the position of the task's last event. A task's events are written in the order of their positions, each
+// one after the last (an import writes them in that order too): the last written holds it. It reads that one alone,
+// where a task may hold thousands, a tool's output in each.
 func lastSeq(ctx context.Context, r store.Reader, taskID string) (int64, error) {
-	events, err := store.List[*planv1.TaskEvent](ctx, r, store.Where{"task_id": taskID})
-	if err != nil {
-		return 0, err
-	}
 	var last int64
-	for _, e := range events {
-		last = max(last, e.GetSeq())
-	}
-	return last, nil
+	err := store.Latest(ctx, r, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
+		last = e.GetSeq()
+		return false
+	})
+	return last, err
 }
 
 // Stop asks the task's worker to stop, and waits until it has, or ctx ends.

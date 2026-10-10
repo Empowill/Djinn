@@ -262,14 +262,14 @@ func (h *Harness) again(r *run) error {
 		accessText(t, nil)+skillsText(spec.Skills))
 }
 
-// firstPrompt is what the task's worker was first asked: its first event.
+// firstPrompt is what the task's worker was first asked: its first event, read alone.
 func firstPrompt(s *store.Store, taskID string) (string, error) {
-	events, err := store.List[*planv1.TaskEvent](context.Background(), s, store.Where{"task_id": taskID})
+	events, err := store.List[*planv1.TaskEvent](context.Background(), s, store.Where{"task_id": taskID, "seq": 1})
 	if err != nil {
 		return "", err
 	}
 	for _, ev := range events {
-		if ev.GetSeq() == 1 && ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
 			return ev.GetText(), nil
 		}
 	}

@@ -109,7 +109,7 @@ func (in *integration) run(_ context.Context, dir string, args []string) (string
 	return "unknown command", 127, nil
 }
 
-func (in *integration) gate(ctx context.Context, name, taskID, what, dir string) (func(), error) {
+func (in *integration) gate(ctx context.Context, name, taskID, what, dir string, waiting func(string)) (func(), error) {
 	code := "-" // Taken for no task.
 	if taskID != "" {
 		task, err := store.Get[*planv1.Task](ctx, in.db, taskID)
@@ -117,6 +117,9 @@ func (in *integration) gate(ctx context.Context, name, taskID, what, dir string)
 			return nil, err
 		}
 		code = task.GetCode()
+	}
+	if name == installGate && waiting != nil {
+		waiting("held by W9 (Another install): install, for 3s") // Another install holds it, then gives it.
 	}
 	in.mu.Lock()
 	defer in.mu.Unlock()

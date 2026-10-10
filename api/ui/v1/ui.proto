@@ -192,6 +192,32 @@ message UiServiceWatchUpdateResponse {
   // The last push of a wish's integration branch, in a project whose settings name an install command, and not
   // installed since: the window proposes to install it and restart on it. Unset for none.
   Build build = 5;
+  // The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
+  // of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
+  Installing installing = 6;
+}
+
+// Installing is an install of a build that runs now, and where it stands.
+message Installing {
+  // The commit being installed.
+  string sha = 1;
+  InstallStep step = 2;
+  // What it waits for, while its step is waiting: another install, a gate and who holds it, the machine under
+  // pressure. Empty otherwise.
+  string waiting = 3;
+}
+
+// InstallStep is where an install stands.
+enum InstallStep {
+  INSTALL_STEP_UNSPECIFIED = 0;
+  // It waits for its turn: Installing.waiting says for what.
+  INSTALL_STEP_WAITING = 1;
+  // It checks the build out in a worktree of its own, and sets that worktree up when the project's lock files changed.
+  INSTALL_STEP_PREPARING = 2;
+  // It runs the project's install command.
+  INSTALL_STEP_BUILDING = 3;
+  // Installed: Djinn restarts on it.
+  INSTALL_STEP_RESTARTING = 4;
 }
 
 // Build is a wish's integration branch as Djinn pushed it (T07), to install.
