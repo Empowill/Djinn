@@ -572,7 +572,9 @@ func (s *Service) WatchShow(
 	}
 	s.watchers[ch] = struct{}{}
 	if s.lastShow != nil && time.Since(s.lastAt) < replay {
-		ch <- s.lastShow
+		last := proto.Clone(s.lastShow).(*uiv1.UiServiceWatchShowResponse)
+		last.Replay = true
+		ch <- last
 	}
 	s.shows.Unlock()
 	defer func() {

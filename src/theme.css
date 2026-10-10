@@ -62,11 +62,12 @@
   --smoke-fg: #d7dad4;
   --smoke-tint-low: #8f999f;
   --smoke-tint-high: #ede5d6;
-  --smoke-ascii-0: #a8b3bb;
-  --smoke-ascii-1: #bbc5ca;
-  --smoke-ascii-2: #ced5d3;
-  --smoke-ascii-3: #dfe3dc;
-  --smoke-ascii-4: #eceee8;
+  /* Keep the original fade endpoints; spread the middle tones for contrast. */
+  --smoke-ascii-0: #7d8790;
+  --smoke-ascii-1: #9da8af;
+  --smoke-ascii-2: #b8c2c3;
+  --smoke-ascii-3: #d1d7d3;
+  --smoke-ascii-4: #e7eae4;
   --smoke-ascii-5: #fffdf2;
   --smoke-ascii-6: #fff0d4;
   --smoke-ascii-7: #cad0d5;
@@ -147,12 +148,12 @@ html[data-theme="light"] {
   --smoke-fg: #262925;
   --smoke-tint-low: #515d62;
   --smoke-tint-high: #1b2527;
-  --smoke-ascii-0: #46565b;
-  --smoke-ascii-1: #3e4f55;
-  --smoke-ascii-2: #35474d;
-  --smoke-ascii-3: #2d3f46;
-  --smoke-ascii-4: #263840;
-  --smoke-ascii-5: #202f35;
+  --smoke-ascii-0: #5d696d;
+  --smoke-ascii-1: #536166;
+  --smoke-ascii-2: #48575c;
+  --smoke-ascii-3: #3d4d52;
+  --smoke-ascii-4: #34454b;
+  --smoke-ascii-5: #2d3a3f;
   --smoke-ascii-6: #1b292f;
   --smoke-ascii-7: #17252b;
   /* Every colour reads at 4.5:1 at least on the terminal's ground: white and bright white are dark greys. */

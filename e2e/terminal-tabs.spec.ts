@@ -57,6 +57,13 @@ test("a terminal opens at a project's root, another with Ctrl+Shift+T, and a tab
   djinn("project", "add", folder, "--name", name);
   await page.goto(process.env.DJINN_URL!);
   const terminal = page.getByRole("region", { name: "Terminal" });
+  // A reload folds the panel even when the previous window persisted it open; running sessions remain available in
+  // the tab strip for an explicit click to reopen.
+  await page.evaluate(() =>
+    localStorage.setItem("djinn.terminal.collapsed", "0"),
+  );
+  await page.reload();
+  await expect(terminal).toHaveClass(/collapsed/);
   const tabs = terminal.getByRole("tab");
 
   // The project's button opens a tab at its root, shown at once.
@@ -66,6 +73,14 @@ test("a terminal opens at a project's root, another with Ctrl+Shift+T, and a tab
     .getByRole("button", { name: `Open a terminal at the root of ${name}` })
     .click();
   const projectTab = tabs.filter({ hasText: name });
+  await expect(projectTab).toHaveAttribute("aria-selected", "true");
+  await expect(terminal).not.toHaveClass(/collapsed/);
+
+  // The project tab survives another reload while the panel folds back up; selecting it is an explicit open.
+  await page.reload();
+  await expect(terminal).toHaveClass(/collapsed/);
+  await expect(projectTab).toHaveCount(1);
+  await projectTab.click();
   await expect(projectTab).toHaveAttribute("aria-selected", "true");
   await page.locator(".lead-terminal .xterm").click();
   await page.keyboard.type("pwd");

@@ -186,9 +186,9 @@ function LeadTerminal({
   onNew: () => void;
 }) {
   const api = djinn.terminal;
-  const [collapsed, setCollapsed] = useState(
-    () => stored("djinn.terminal.collapsed") === "1",
-  );
+  // A reload starts with the panel folded even when the previous window left it open. Running sessions and tabs are
+  // restored below; explicit terminal actions (or a new focus request after mount) expand the panel again.
+  const [collapsed, setCollapsed] = useState(true);
   const [height, setHeight] = useState(() =>
     Math.max(MIN_HEIGHT, Number(stored("djinn.terminal.height")) || 300),
   );
@@ -242,20 +242,20 @@ function LeadTerminal({
     ...tabs.filter((x) => !x.name.startsWith("lead-")),
   ].map((x) => x.name);
   // Show the terminal djinn asks for, such as a wish's lead.
-  useEffect(
-    () =>
-      djinn.focus.subscribe((focus) => {
-        if (!focus.terminal) return;
-        ended.current = undefined;
-        add({ name: focus.terminal });
-        setName(focus.terminal);
-        // Resume replaces an ended lead terminal under the same name. Reopen even when the selected tab name did not
-        // change, so xterm follows the new PTY identity; attaching to an ended lead still replays its retained output.
-        setGeneration((g) => g + 1);
-        setCollapsed(false);
-      }),
-    [djinn],
-  );
+  useEffect(() => {
+    const unsubscribe = djinn.focus.subscribe((focus) => {
+      if (!focus.terminal) return;
+      ended.current = undefined;
+      add({ name: focus.terminal });
+      setName(focus.terminal);
+      if (focus.replay) return;
+      // Resume replaces an ended lead terminal under the same name. Reopen even when the selected tab name did not
+      // change, so xterm follows the new PTY identity; attaching to an ended lead still replays its retained output.
+      setGeneration((g) => g + 1);
+      setCollapsed(false);
+    });
+    return unsubscribe;
+  }, [djinn]);
   // Show the lead of the wish shown while it runs: never start a lead from here.
   useEffect(() => {
     if (!wishId) return;

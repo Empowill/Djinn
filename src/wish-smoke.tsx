@@ -280,9 +280,9 @@ const ASCII_PALETTE = Array.from(
   { length: 8 },
   (_, index) => `var(--smoke-ascii-${index})`,
 );
-// ASCII_TONES are density thresholds; the rendered overlay needs stronger
-// opacity so the low smoke layers remain visible on both theme backgrounds.
-const ASCII_OPACITIES = [0.65, 0.72, 0.79, 0.85, 0.91, 0.96, 0.98, 0.98];
+// Keep the original fade endpoints while separating the middle layers. The
+// final two layers are cursor/trail interaction layers, so they retain 0.95.
+const ASCII_OPACITIES = [0.14, 0.28, 0.44, 0.61, 0.77, 0.88, 0.95, 0.95];
 const CAMERA_BOTTOM_CUTOFF_ZOOM10 = 0.158724;
 
 function usesNativeMacSmokeLayout(): boolean {

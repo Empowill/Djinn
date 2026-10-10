@@ -266,6 +266,8 @@ message UiServiceWatchShowResponse {
   // The element of the wish to bring into view, by its id in the page: question-<id>, task-<id>, grant-<wish id>;
   // empty for the top of the wish.
   string target = 5;
+  // True only when this response is the recent request replayed for a watcher that just connected.
+  bool replay = 6;
 }
 
 message UiServiceWatchUpdateRequest {}

@@ -204,13 +204,20 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
 
   // Every ANSI colour, normal and bright, on the terminal.
   const terminal = page.locator(".lead-terminal .xterm");
-  if (!(await terminal.count())) {
-    await page
-      .getByRole("button", { name: /New terminal/ })
-      .last()
-      .click();
-  }
-  await expect(terminal).toBeVisible();
+  const openTerminal = async () => {
+    if (!(await terminal.count())) {
+      await page
+        .getByRole("button", { name: /New terminal/ })
+        .last()
+        .click();
+    }
+    const expandTerminal = page
+      .locator(".lead-terminal-bar button[title='Expand the terminal']")
+      .last();
+    if (await expandTerminal.isVisible()) await expandTerminal.click();
+    await expect(terminal).toBeVisible();
+  };
+  await openTerminal();
   await terminal.click();
   await page.keyboard.type(
     "for i in 0 1 2 3 4 5 6 7; do printf '\\033[3%sm col%s \\033[9%sm bright%s\\033[0m ' $i $i $i $i; done; echo",
@@ -227,6 +234,7 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
   for (const theme of ["dark", "light"] as const) {
     await choose(page, theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    await openTerminal();
     const look = looks[theme];
 
     // The lead's blocks, in the agents' tab, opened: Markdown, a code block, a Mermaid diagram on the card's ground.
@@ -429,6 +437,9 @@ test("the light smoke canvas fallback keeps its ASCII palette readable when work
       value: undefined,
     });
   });
+  // This path renders the ASCII fallback on the page thread. Keep the palette
+  // fixture compact so it checks readability without becoming a performance test.
+  await page.setViewportSize({ width: 800, height: 600 });
   await page.goto(process.env.DJINN_URL!);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByRole("button", { name: "New wish" }).first().click();

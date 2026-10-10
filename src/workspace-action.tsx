@@ -10,7 +10,8 @@ const ACTION_TONE_CLASS: Record<WorkspaceActionTone, string> = {
 };
 
 // WorkspaceAction is the shared surface used by wish creation and the floating indication editor. The content changes
-// between those states, while the surface keeps one motion identity so the background travels with the action.
+// between those states, while the pill keeps one motion identity so its geometry travels with the action. The content
+// uses a position-only projection so Motion never applies a size scale to its text or controls.
 export function WorkspaceAction({
   children,
   tone,
@@ -28,34 +29,32 @@ export function WorkspaceAction({
   const transition = reducedMotion
     ? { duration: 0 }
     : {
-        layout: {
-          duration: 0.34,
-          ease: [0.22, 1, 0.36, 1],
-        },
-        backgroundColor: { duration: 0.26 },
+        duration: 0.34,
+        ease: [0.22, 1, 0.36, 1] as const,
       };
   return (
     <motion.div
       layout
+      layoutId={`${layoutId}-surface`}
+      layoutAnchor={{ x: 0.5, y: 1 }}
       className={`workspace-action ${ACTION_TONE_CLASS[tone]}${expanded ? " is-expanded" : ""} ${className}`}
+      initial={false}
       transition={transition}
+      style={{ borderRadius: 999 }}
     >
-      <motion.div
-        layoutId={`${layoutId}-surface`}
-        className="workspace-action-surface"
-        transition={transition}
-        aria-hidden="true"
-      >
+      <div className="workspace-action-surface" aria-hidden="true">
         <motion.div
           layoutId={`${layoutId}-fill`}
           className="workspace-action-surface-fill"
           initial={false}
-          animate={{ x: tone === "primary" ? "0%" : "101%" }}
+          animate={{ y: tone === "primary" ? "0%" : "-101%" }}
           transition={transition}
           aria-hidden="true"
         />
+      </div>
+      <motion.div layout="position" className="workspace-action-content">
+        {children}
       </motion.div>
-      <div className="workspace-action-content">{children}</div>
     </motion.div>
   );
 }

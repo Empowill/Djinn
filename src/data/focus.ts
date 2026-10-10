@@ -12,6 +12,8 @@ export interface Focus {
   terminal: string;
   // The element of the wish to bring into view, by id; empty for none.
   target: string;
+  // True only for the recent request replayed when the watcher connected.
+  replay: boolean;
   // The tilasm to show, in the wish's Tilasms tab; empty for none.
   tilasmId: string;
   // A link the window was asked to open and does not know, or whose tilasm or wish is not on this machine; empty for
@@ -30,6 +32,7 @@ const none: Focus = {
   wishId: "",
   terminal: "",
   target: "",
+  replay: false,
   tilasmId: "",
   unknownLink: "",
 };
@@ -58,6 +61,7 @@ export function createFocus(transport: Transport, retry = 1000): DjinnFocus {
             wishId: res.wishId,
             terminal: res.terminal,
             target: res.target,
+            replay: res.replay,
             tilasmId: res.tilasmId,
             unknownLink: res.unknownLink,
           };

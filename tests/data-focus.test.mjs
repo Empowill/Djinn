@@ -29,6 +29,7 @@ test("a request to show a wish, its lead and a question reaches every subscriber
     wishId,
     terminal: `lead-${wishId}`,
     target: "question-q1",
+    replay: false,
     tilasmId: "",
     unknownLink: "",
   });
@@ -56,10 +57,25 @@ test("a broken stream is watched again", async () => {
     wishId: "",
     terminal: "main",
     target: "",
+    replay: false,
     tilasmId: "",
     unknownLink: "",
   });
   assert.equal(calls, 2);
+});
+
+test("a replayed server focus keeps its replay marker", async () => {
+  const transport = createRouterTransport(({ service }) => {
+    service(UiService, {
+      async *watchShow() {
+        yield { terminal: "main", replay: true };
+        await new Promise(() => {});
+      },
+    });
+  });
+  const focus = createFocus(transport, 10);
+  const got = await new Promise((resolve) => focus.subscribe(resolve));
+  assert.equal(got.replay, true);
 });
 
 test("a tilasm a link names, a link Djinn does not know, and a link clicked in the page reach every subscriber", async () => {
@@ -80,11 +96,19 @@ test("a tilasm a link names, a link Djinn does not know, and a link clicked in t
   );
   await two;
   assert.deepEqual(got, [
-    { wishId: "", terminal: "", target: "", tilasmId, unknownLink: "" },
     {
       wishId: "",
       terminal: "",
       target: "",
+      replay: false,
+      tilasmId,
+      unknownLink: "",
+    },
+    {
+      wishId: "",
+      terminal: "",
+      target: "",
+      replay: false,
       tilasmId: "",
       unknownLink: "djinn://moon/x",
     },
@@ -95,6 +119,7 @@ test("a tilasm a link names, a link Djinn does not know, and a link clicked in t
     wishId,
     terminal: "",
     target: "",
+    replay: false,
     tilasmId,
     unknownLink: "",
   });

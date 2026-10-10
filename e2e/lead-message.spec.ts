@@ -53,11 +53,8 @@ test("a word written in the window reaches the lead's terminal", async ({
   djinn("wish", "set-lead", wishId, session, "--directory", folder);
   try {
     await page.goto(process.env.DJINN_URL!);
-    // Folded, the terminal waits to be opened before it resumes the lead of the wish shown.
-    await page
-      .locator(".lead-terminal-bar button[title='Collapse the terminal']")
-      .last()
-      .click();
+    // A startup replay restores the terminal tabs without reopening the terminal panel.
+    await expect(page.locator(".lead-terminal")).toHaveClass(/collapsed/);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
 
     // Saving works before the fake lead resumes; Resume remains an explicit action. The shortcut opens the same pill.
@@ -72,13 +69,18 @@ test("a word written in the window reaches the lead's terminal", async ({
     ).toBeVisible();
     const box = panel.getByLabel("An indication for this wish");
     const action = page.locator(".workspace-action-lead");
-    const actionBox = await action.boundingBox();
-    const shellBox = await panel.boundingBox();
-    expect(actionBox).not.toBeNull();
-    expect(shellBox).not.toBeNull();
-    expect(Math.abs(shellBox!.width - actionBox!.width)).toBeLessThan(2);
+    await expect
+      .poll(async () => {
+        const actionBox = await action.boundingBox();
+        const shellBox = await panel.boundingBox();
+        return actionBox && shellBox
+          ? Math.abs(shellBox.width - actionBox.width)
+          : Number.POSITIVE_INFINITY;
+      })
+      .toBeLessThan(2);
     await expect(panel).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await expect(box).toHaveCSS("resize", "none");
+    await expect(box).toHaveCSS("font-size", "12px");
     await expect
       .poll(() =>
         box.evaluate((element) => getComputedStyle(element).fontFamily),

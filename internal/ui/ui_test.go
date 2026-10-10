@@ -126,12 +126,12 @@ func TestShow(t *testing.T) {
 		}
 		return stream.Msg()
 	}
-	if got := next(); got.GetWishId() != "w1" || got.GetTerminal() != "lead-w1" {
+	if got := next(); got.GetWishId() != "w1" || got.GetTerminal() != "lead-w1" || !got.GetReplay() {
 		t.Fatalf("first message = %v, want the earlier request", got)
 	}
 	// Then each request as it comes.
 	s.Present("w2", "lead-w2")
-	if got := next(); got.GetWishId() != "w2" || got.GetTerminal() != "lead-w2" {
+	if got := next(); got.GetWishId() != "w2" || got.GetTerminal() != "lead-w2" || got.GetReplay() {
 		t.Fatalf("next message = %v", got)
 	}
 	// A click on a notification: the wish, there.

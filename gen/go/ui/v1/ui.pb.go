@@ -1360,7 +1360,9 @@ type UiServiceWatchShowResponse struct {
 	UnknownLink string `protobuf:"bytes,4,opt,name=unknown_link,json=unknownLink,proto3" json:"unknown_link,omitempty"`
 	// The element of the wish to bring into view, by its id in the page: question-<id>, task-<id>, grant-<wish id>;
 	// empty for the top of the wish.
-	Target        string `protobuf:"bytes,5,opt,name=target,proto3" json:"target,omitempty"`
+	Target string `protobuf:"bytes,5,opt,name=target,proto3" json:"target,omitempty"`
+	// True only when this response is the recent request replayed for a watcher that just connected.
+	Replay        bool `protobuf:"varint,6,opt,name=replay,proto3" json:"replay,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1428,6 +1430,13 @@ func (x *UiServiceWatchShowResponse) GetTarget() string {
 		return x.Target
 	}
 	return ""
+}
+
+func (x *UiServiceWatchShowResponse) GetReplay() bool {
+	if x != nil {
+		return x.Replay
+	}
+	return false
 }
 
 type UiServiceWatchUpdateRequest struct {
@@ -2395,13 +2404,14 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1b\n" +
 	"\ttilasm_id\x18\x02 \x01(\tR\btilasmId\x12\x16\n" +
 	"\x06window\x18\x03 \x01(\bR\x06window\"\x1b\n" +
-	"\x19UiServiceWatchShowRequest\"\xa9\x01\n" +
+	"\x19UiServiceWatchShowRequest\"\xc1\x01\n" +
 	"\x1aUiServiceWatchShowResponse\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1a\n" +
 	"\bterminal\x18\x02 \x01(\tR\bterminal\x12\x1b\n" +
 	"\ttilasm_id\x18\x03 \x01(\tR\btilasmId\x12!\n" +
 	"\funknown_link\x18\x04 \x01(\tR\vunknownLink\x12\x16\n" +
-	"\x06target\x18\x05 \x01(\tR\x06target\"\x1d\n" +
+	"\x06target\x18\x05 \x01(\tR\x06target\x12\x16\n" +
+	"\x06replay\x18\x06 \x01(\bR\x06replay\"\x1d\n" +
 	"\x1bUiServiceWatchUpdateRequest\"\xe3\x01\n" +
 	"\x1cUiServiceWatchUpdateResponse\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\tR\acurrent\x12\x14\n" +
