@@ -58,6 +58,7 @@ const wish = (id, title, state, rank, extra = {}) => ({
   projectIds: [],
   allowances: [],
   pushes: [],
+  mains: [],
   ...extra,
 });
 
