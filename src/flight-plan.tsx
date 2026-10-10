@@ -54,6 +54,7 @@ import {
   proofWords,
 } from "./azima";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
+import { OperatingLoad } from "./operating-load";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
@@ -391,6 +392,7 @@ export function FlightPlan({
         <div className="breadcrumbs">
           <strong>{t("plan.title")}</strong>
         </div>
+        <OperatingLoad />
       </header>
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />

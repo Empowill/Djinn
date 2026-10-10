@@ -92,6 +92,7 @@ import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
 import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
+import { OperatingLoad } from "./operating-load";
 import { CountPill, StatusBadge } from "./status";
 import {
   AzimaCard,
@@ -502,6 +503,7 @@ export function WishView({
           ))}
           <strong>{wish.title}</strong>
         </div>
+        <OperatingLoad />
         <div className="topbar-actions">
           {granted ? (
             <button

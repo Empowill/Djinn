@@ -1,0 +1,71 @@
+.operating-load {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  -webkit-app-region: no-drag;
+  z-index: 2;
+}
+
+.operating-load-slider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 220px;
+}
+
+.operating-load-input {
+  width: 100%;
+  height: 6px;
+  cursor: pointer;
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.operating-load-notches {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.operating-load-notch {
+  background: transparent;
+  border: none;
+  padding: 1px 4px;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body, 12px);
+  color: var(--muted);
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.2;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.operating-load-notch:hover {
+  color: var(--n-e7);
+  background: var(--surface-raised);
+}
+
+.operating-load-notch.active {
+  color: var(--n-e7);
+  font-weight: 600;
+}
+
+.operating-load-memory {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: var(--font-size-body, 12px);
+  color: var(--muted);
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+}

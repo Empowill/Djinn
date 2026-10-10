@@ -25,6 +25,7 @@ import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
 import { type Opening, WishView } from "./wish-view";
+import { OperatingLoad } from "./operating-load";
 import "./wish.css";
 import "./review.css";
 
@@ -314,28 +315,35 @@ function Welcome({
   onImport: () => void;
 }) {
   return (
-    <div className="mission-scroll wish-welcome">
-      <div className="hero">
-        <div className="hero-copy">
-          <h1>{t("welcome.title")}</h1>
-          <p>{loaded ? t("welcome.detail") : t("common.loading")}</p>
-          <div className="hero-meta">
-            <button className="button accent" onClick={onMake}>
-              <Plus size={14} />
-              {t("app.new_wish")}
-            </button>
-            <button
-              className="button secondary"
-              onClick={onImport}
-              disabled={!loaded}
-            >
-              <Upload size={14} />
-              {t("app.import_wish")}
-            </button>
+    <div className="wish-view">
+      <header className="topbar">
+        <div className="breadcrumbs" />
+        <OperatingLoad />
+        <div className="topbar-actions" />
+      </header>
+      <div className="mission-scroll wish-welcome">
+        <div className="hero">
+          <div className="hero-copy">
+            <h1>{t("welcome.title")}</h1>
+            <p>{loaded ? t("welcome.detail") : t("common.loading")}</p>
+            <div className="hero-meta">
+              <button className="button accent" onClick={onMake}>
+                <Plus size={14} />
+                {t("app.new_wish")}
+              </button>
+              <button
+                className="button secondary"
+                onClick={onImport}
+                disabled={!loaded}
+              >
+                <Upload size={14} />
+                {t("app.import_wish")}
+              </button>
+            </div>
+            <p className="form-tip">
+              {t("welcome.cli", { command: 'djinn wish make "…"' })}
+            </p>
           </div>
-          <p className="form-tip">
-            {t("welcome.cli", { command: 'djinn wish make "…"' })}
-          </p>
         </div>
       </div>
     </div>

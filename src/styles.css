@@ -387,6 +387,7 @@ html[data-theme="light"] .wordmark-period {
   background: var(--bg);
 }
 .topbar {
+  position: relative;
   height: 57px;
   flex-shrink: 0;
   display: flex;
