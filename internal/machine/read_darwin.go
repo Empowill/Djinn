@@ -39,3 +39,14 @@ func Read() (Snapshot, error) {
 	}
 	return s, nil
 }
+
+// readGPUs gives the GPU of an Apple Silicon chip, which shares the machine's memory. An Intel Mac's GPUs are not
+// read: system_profiler takes seconds.
+func readGPUs() []GPU {
+	if runtime.GOARCH != "arm64" {
+		return nil
+	}
+	chip, _ := unix.Sysctl("machdep.cpu.brand_string")
+	memory, _ := unix.SysctlUint64("hw.memsize")
+	return []GPU{AppleGPU(chip, memory)}
+}

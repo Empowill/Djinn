@@ -13,6 +13,9 @@
 .wish-welcome {
   justify-content: center;
 }
+.wish-welcome .hero {
+  padding: 0 33px;
+}
 .wish-welcome .hero-meta {
   margin-top: var(--space-4);
 }
@@ -45,8 +48,35 @@
   letter-spacing: 0.5px;
   color: var(--muted-dim);
 }
+/* Three rows show; the others scroll under the pointer. */
 .wish-list {
   flex: 0 0 auto;
+  max-height: calc(3 * 36px + 14px);
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+.wish-list:hover,
+.wish-list:focus-within {
+  overflow-y: auto;
+}
+.sidebar-collapsed .wish-list {
+  max-height: none;
+}
+.wish-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.wish-first {
+  position: absolute;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.wish-row:hover .wish-first,
+.wish-first:focus-visible {
+  opacity: 1;
 }
 
 /* Sections of a wish. */
@@ -140,6 +170,16 @@
   color: var(--muted);
   font: var(--font-size-body) var(--mono);
 }
+/* The project, just before the task's title, in the grey of the facts after it. */
+.task-project {
+  flex-shrink: 0;
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+/* How long it runs: a counter that does not jiggle as it ticks. */
+.task-time {
+  font-variant-numeric: tabular-nums;
+}
 .wish-task-note {
   margin: 0;
   padding: 0 14px 11px 34px;
@@ -156,7 +196,11 @@
   font-weight: 600;
 }
 .wish-task-note.error {
-  color: #e0a0a0;
+  color: var(--danger);
+}
+/* Where the task's finished work stands on its way into the wish's branch: red when it is held. */
+.wish-task-work.work-failed {
+  color: var(--danger);
 }
 .wish-task-body {
   border-top: 1px solid var(--line);
@@ -195,7 +239,7 @@
   display: flex;
   gap: var(--space-2);
   padding: 3px 0;
-  color: #cfcfcf;
+  color: var(--n-d1);
 }
 .wish-event svg {
   flex-shrink: 0;
@@ -212,7 +256,7 @@
   color: var(--muted);
 }
 .wish-event.kind-7 {
-  color: #e0a0a0;
+  color: var(--danger);
 }
 .wish-event.kind-11 {
   color: var(--accent);
@@ -252,25 +296,6 @@
   font: var(--font-size-body) var(--mono);
 }
 
-/* Dialogs. */
-.wish-projects {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.wish-projects legend {
-  margin-bottom: var(--space-2);
-  color: var(--muted);
-}
-.wish-project-choice {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 /* What workers spent, summed for a wish. */
 .wish-spent {
   display: flex;
@@ -288,22 +313,10 @@
 /* The flight plan of the active wishes: each line shows its wish. */
 .plan-nav.selected,
 .plan-nav.selected:hover {
-  background: #272727;
-  color: #e7e7e7;
+  background: var(--n-28);
+  color: var(--n-e7);
 }
-.wish-waiting {
-  margin-left: auto;
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--bg);
-  font: var(--font-size-body) var(--mono);
-  text-align: center;
-}
-.wish-waiting + .wish-rank {
-  margin-left: var(--space-1);
-}
+
 .wish-origin {
   display: inline-flex;
   align-items: center;
@@ -315,25 +328,20 @@
   padding: 1px 7px;
   border: 1px solid var(--line-strong);
   border-radius: 9px;
-  color: #cfcfcf;
+  color: var(--n-d1);
   font: var(--font-size-body) var(--font-sans);
 }
 .question-meta .wish-origin {
-  color: #cfcfcf;
+  color: var(--n-d1);
 }
 .wish-origin b {
   font: 600 var(--font-size-body) var(--mono);
   color: var(--muted);
 }
-.question-blocking {
-  color: var(--accent);
-}
-.question-meta .question-blocking {
-  color: var(--accent);
-}
+
 .plan-wishes {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: var(--space-3);
   margin-bottom: 28px;
 }
@@ -353,7 +361,7 @@
 }
 .plan-wish strong {
   font-weight: 500;
-  color: #e7e7e7;
+  color: var(--n-e7);
 }
 .plan-wish-title {
   display: flex;
@@ -382,24 +390,11 @@
   align-items: center;
   gap: var(--space-2);
   margin: 0 0 var(--space-2);
-  color: #cfcfcf;
+  color: var(--n-d1);
 }
 .plan-line svg {
   flex-shrink: 0;
   color: var(--muted);
-}
-.plan-decisions .question-card {
-  margin-bottom: var(--space-2);
-}
-
-/* A long block, folded under its title. */
-.wish-block.folded .wish-block-body {
-  max-height: 180px;
-  overflow: hidden;
-  mask-image: linear-gradient(to bottom, #000 60%, transparent);
-}
-.wish-block > .text-button {
-  margin-top: var(--space-2);
 }
 
 /* The journal: commands and log blocks, the latest first. */
@@ -425,7 +420,7 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   min-width: 0;
-  color: #cfcfcf;
+  color: var(--n-d1);
 }
 .journal-list code {
   color: var(--muted);
@@ -434,12 +429,101 @@
 .journal-list li.log > div {
   flex-direction: column;
 }
-.plan-decisions h3 {
+.icon-button.danger:hover {
+  color: var(--danger);
+}
+
+/* An azima of the plan in the Tasks tab: its heading, then, opened, the work part of it, set in. */
+.azima-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--tone, var(--line));
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  margin-bottom: var(--space-2);
+}
+.azima-heading {
+  width: 100%;
   display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 11px 14px;
+  text-align: left;
+}
+.azima-heading strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.azima-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  font: var(--font-size-body) var(--mono);
+}
+.azima-waits {
+  color: var(--text);
+}
+.azima-needs {
+  color: var(--st-proof);
+}
+.azima-progress {
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
 }
+/* How much of its work is done: a thin bar, its numbers beside it. */
+.azima-bar {
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.azima-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--st-done);
+}
+.azima-parts {
+  border-top: 1px solid var(--line);
+  padding: var(--space-2) var(--space-2) 0 24px;
+}
+/* The line that folds what is finished, the done azimas or the finished parts of one: discreet, under what moves. */
+.fold-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 0;
+  margin-bottom: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.fold-line:hover {
+  color: var(--accent);
+}
+.fold-line > svg {
+  transition: transform 0.25s;
+}
+/* What the proof of an azima whose work is done needs, box by box, above its parts. */
+.azima-proof {
+  border-left: 2px solid var(--st-proof);
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.azima-proof p {
+  margin: 0;
+  font-weight: 600;
+}
+.azima-proof ul {
+  margin: var(--space-1) 0 var(--space-2);
+  padding-left: 18px;
+}
 
+/* Branch lead messaging and wish creation styles retained during the main merge. */
 /* The button at the bottom right that writes to the lead: above the status bar, beside the toast at the center. */
 .lead-message {
   position: absolute;
@@ -461,7 +545,7 @@
   border: 1px solid var(--line);
   background: var(--surface-raised);
   color: var(--muted);
-  box-shadow: 0 6px 18px #00000066;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow) 40%, transparent);
 }
 .lead-message-toggle:hover,
 .lead-message-toggle.open {
@@ -476,7 +560,7 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-panel);
   background: var(--surface);
-  box-shadow: 0 10px 35px #00000099;
+  box-shadow: 0 10px 35px color-mix(in srgb, var(--shadow) 60%, transparent);
   padding: var(--space-2) var(--space-3) var(--space-2);
   display: flex;
   flex-direction: column;
@@ -656,6 +740,38 @@
   font-size: 14px;
   line-height: 1.7;
 }
+/* The smoke follows the selected theme, so the request surface keeps a translucent plane over the solver without
+   hiding its texture behind an opaque card. */
+html[data-theme="light"] .wish-creation-content::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 1;
+  width: min(40%, 640px);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg) 91%, transparent),
+    color-mix(in srgb, var(--bg) 62%, transparent)
+  );
+  content: "";
+  pointer-events: none;
+}
+html[data-theme="light"] .wish-creation-intro h1,
+html[data-theme="light"] .wish-composer-input {
+  color: var(--text);
+}
+html[data-theme="light"] .wish-composer .wish-composer-input {
+  background: transparent;
+}
+html[data-theme="light"] .wish-creation-request {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg) 68%, transparent),
+    transparent 100%
+  );
+}
+html[data-theme="light"] .wish-composer-caret {
+  background: var(--text);
+}
 .wish-creation-form[hidden] {
   display: none;
 }
@@ -749,7 +865,7 @@
   width: 1px;
   height: 1.65em;
   opacity: 0;
-  background: #fff;
+  background: var(--n-ff);
   animation: wish-composer-caret 1s steps(1, end) infinite;
 }
 .wish-composer:focus-within .wish-composer-caret {
@@ -773,7 +889,7 @@
   overflow-y: auto;
   overflow-wrap: anywhere;
   background: transparent;
-  color: #eee;
+  color: var(--n-eb);
   font-size: 16px;
   line-height: 1.65;
   letter-spacing: normal;
@@ -817,7 +933,7 @@
   min-width: 0;
   min-height: 240px;
   overflow: hidden;
-  background: #060707;
+  background: var(--smoke-bg);
   isolation: isolate;
   --smoke-glyph-size: 10px;
   --smoke-row-height: 11.4px;
@@ -830,14 +946,14 @@
   display: block;
   width: 100%;
   height: 100%;
-  background: #060707;
+  background: var(--smoke-bg);
 }
 .wish-smoke-ascii {
   position: absolute;
   inset: 0;
   z-index: 1;
   overflow: hidden;
-  color: #d7dad4;
+  color: var(--smoke-fg);
   font-size: var(--smoke-glyph-size);
   line-height: var(--smoke-row-height);
   font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -965,7 +1081,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   background: var(--surface-raised);
-  box-shadow: 0 12px 32px #00000070;
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow) 43.9%, transparent);
 }
 .wish-dropdown-options {
   display: grid;

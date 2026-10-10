@@ -1,6 +1,6 @@
 // Review and decide at a glance, against the real djinn up --browser (see global-setup.ts): the bar of what waits,
 // "Enlighten me" read by the lead in the brief, a revision from the command line, "Rub the lamp" read back from the
-// command line, a block marked read and seen in the brief. Screenshots of the flight plan and of the wish, dark and
+// command line, a block for agents only in its discreet tab, folded, with no mark. Screenshots of the flight plan and of the wish, dark and
 // light, go to test-results/e2e/.
 import { type Page, expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -8,6 +8,9 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { portable } from "./portable";
+
+portable();
 
 const binary = path.resolve(
   __dirname,
@@ -70,7 +73,7 @@ async function theme(page: Page, value: "" | "light") {
   );
 }
 
-test("a question is enlightened, revised by the lead, then rubbed in one click; a block is marked read", async ({
+test("a question is enlightened, revised by the lead, then rubbed in one click; a block waits in the agents' tab", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -98,6 +101,8 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "A: it smells good, and the wick lasts.",
     "--context",
     "## What it changes\n\nThe oil sets how long the lamp burns.\n\n- Olive: softer light.\n- Paraffin: brighter, smells.",
+    "--before",
+    "before the first light",
   );
   djinn(
     "question",
@@ -112,7 +117,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "put",
     wishId,
     "--kind",
-    "decision",
+    "section",
     "--title",
     "Ship on Friday",
     "--content",
@@ -123,11 +128,15 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await page.setViewportSize({ width: 1440, height: 2200 });
   await page.goto(process.env.DJINN_URL!);
   await expect(page.locator(".hero h1")).toHaveText("Flight plan");
-  // The bar of what waits: one line per question and per worker cut short, a click goes there.
+  // The bar of what waits: one line per question, a click goes there; the one needed before the first light under
+  // those words, the other that can wait. W3, cut short and not resumed by Djinn, asks nothing: it is history.
   const bar = page.locator(".attention-bar");
-  await expect(bar).toContainText("3 things wait for you");
-  await expect(bar.locator(".attention-item")).toHaveCount(3);
-  await expect(bar.locator(".attention-item").last()).toContainText("W3");
+  await expect(bar).toContainText("2 things wait for you");
+  await expect(bar.locator(".attention-level")).toHaveText([
+    "before the first light",
+    "Can wait",
+  ]);
+  await expect(bar).not.toContainText("W3");
   await expect(
     page.locator(".plan-wish").filter({ hasText: title }),
   ).toContainText("2 questions");
@@ -151,27 +160,44 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   );
   await shoot(page, "review-wish-dark");
   await theme(page, "light");
+  await page.getByRole("tab", { name: /^Tasks/ }).click();
   await page
     .locator(".wish-task")
     .filter({ hasText: "Polish the brass" })
     .locator(".wish-task-heading")
     .click();
   await shoot(page, "review-wish-light");
+  await page.getByRole("tab", { name: /^Wish/ }).click();
   await theme(page, "");
 
-  // Enlighten me: what to dig into goes to the lead; the question waits for the lead, not for you.
-  await card.getByRole("button", { name: "Enlighten me" }).click();
+  // Enlighten me: one click sends what the answer's note says to the lead, no second field; the question waits for
+  // the lead, not for you, folded to one line out of the way, and opens on a click.
   await card
-    .getByLabel("What the lead should dig into")
+    .getByLabel("Note with the answer")
     .fill("How long does each burn?");
-  await card
-    .getByRole("button", { name: "Ask the lead to investigate" })
-    .click();
+  await card.getByRole("button", { name: "Enlighten me" }).click();
   const digging = page
     .locator(".investigating-section .question-card")
     .filter({ hasText: "Which oil for the wick?" });
-  await expect(digging).toContainText("Being investigated");
-  await expect(bar.locator(".attention-item")).toHaveCount(2);
+  await expect(digging).toHaveClass(/folded/);
+  await expect(digging.locator(".question-fold")).toContainText(
+    "Being investigated",
+  );
+  await expect(digging.locator(".question-fold-note")).toHaveText(
+    "You asked: How long does each burn?",
+  );
+  await expect(digging.locator("textarea, .option")).toHaveCount(0);
+  await expect(bar.locator(".attention-item")).toHaveCount(1);
+  await digging.screenshot({
+    path: path.join(shots, "review-question-folded.png"),
+  });
+  await digging.locator(".question-fold").click();
+  await expect(digging).not.toHaveClass(/folded/);
+  await expect(digging.locator(".investigating-note")).toHaveText(
+    "You asked to find out more: How long does each burn?",
+  );
+  await expect(digging.locator("textarea")).toHaveCount(1);
+  await expect(digging.getByLabel("Note with the answer")).toHaveValue("");
   const brief = djinn("wish", "brief", wishId);
   expect(brief).toContain("## To investigate");
   expect(brief).toContain("How long does each burn?");
@@ -191,7 +217,9 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   const revised = page
     .locator(".decisions-section .question-card")
     .filter({ hasText: "Which oil for the wick?" });
+  // Revised, it waits for an answer again, open by itself.
   await expect(revised.locator(".revised-badge")).toHaveText("Revised");
+  await expect(revised).not.toHaveClass(/folded/);
   await expect(revised.locator(".question-rounds summary")).toHaveText(
     "History: 2 rounds",
   );
@@ -206,7 +234,8 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await revised.scrollIntoViewIfNeeded();
   await shoot(page, "review-wish-revised-dark");
 
-  // Rub the lamp: one click answers with the recommended option, and the lead reads it from the command line.
+  // Rub the lamp: one click answers with the option selected, here the recommended one, and the lead reads it from
+  // the command line.
   await revised.getByRole("button", { name: "Rub the lamp" }).click();
   await expect(revised).toHaveCount(0);
   const [q01] = JSON.parse(
@@ -214,26 +243,26 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   ).questions;
   expect(q01.answer.choice).toBe("CHOICE_B");
   expect(q01.revision).toBe(1);
-  const marks = JSON.parse(djinn("mark", "list", wishId, "--json")).marks;
-  expect(marks).toEqual([
-    expect.objectContaining({
-      label: "Q01",
-      mark: expect.objectContaining({ kind: "MARK_KIND_APPROVED" }),
-    }),
-  ]);
 
-  // A block marked read, seen in the brief.
+  // A block is for agents: not on the wish's tab, but in the last one, folded, with no mark; opened, its Markdown.
+  await expect(page.locator(".wish-block")).toHaveCount(0);
+  const agents = page.getByRole("tab", { name: /^For agents/ });
+  await expect(agents).toHaveText("For agents1");
+  await agents.click();
   const block = page
     .locator(".wish-block")
     .filter({ hasText: "Ship on Friday" });
-  await block.getByRole("button", { name: "Mark read" }).click();
-  await expect(block.getByRole("button", { name: "Read" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  await expect(block.locator(".fold-heading")).toHaveAttribute(
+    "aria-expanded",
+    "false",
   );
-  expect(djinn("wish", "brief", wishId)).toContain(
-    "- **read** block Ship on Friday (decision), ",
-  );
+  await expect(block.locator("table")).toHaveCount(0);
+  await block.locator(".fold-heading").click();
+  await expect(block.locator("strong")).toHaveText("on Friday");
+  await expect(block.locator("table td").first()).toHaveText("Fri");
+  await expect(
+    block.getByRole("button", { name: /Mark read|Approve/ }),
+  ).toHaveCount(0);
 
   djinn("wish", "pause", wishId);
   fs.rmSync(dir, { recursive: true, force: true });

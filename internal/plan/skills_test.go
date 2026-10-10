@@ -68,7 +68,7 @@ func TestProjectSkills(t *testing.T) {
 func TestSummon(t *testing.T) {
 	c := serve(t)
 	skills := c.skills
-	app, infra := t.TempDir(), t.TempDir()
+	app, infra := resolvedTempDir(t), resolvedTempDir(t)
 	src := writeSkill(t, app, SkillFolders[0], "babysit-mr", "description: Watch a merge request.\n")
 	writeSkill(t, infra, SkillFolders[1], "terraform", "description: Plan and apply.\n")
 	for name, dir := range map[string]string{"app": app, "infra": infra} {

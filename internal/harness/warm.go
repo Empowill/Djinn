@@ -22,8 +22,9 @@ import (
 // loaded, and waiting for its first message on its input. The next task spawned there takes it instead of starting
 // an agent, and the scheduler starts another one. It costs no token while it waits, only memory. Only Claude warms
 // (Warmer), and only for what Djinn knows ahead: the task's identifier (its session, DJINN_TASK_ID, its worktree),
-// its folder and its rights. A task that asks for anything else (a model, a budget, a fork, other rights) starts
-// cold, as does a planned task: its identifier is older than the warm worker.
+// its folder, its rights, and the model and budget the project's settings give (plan.LoadSettings), as Spawn fills
+// them. A task that asks for anything else (another model or budget, a fork, other rights) starts cold, as does a
+// planned task: its identifier is older than the warm worker.
 
 // Warmer is a provider that starts its agent before it knows the first message. The first Send of the worker is
 // its first message.
@@ -57,17 +58,21 @@ type warm struct {
 	worktree string // in Git: its worktree, its placeholder branch and the commit it started from
 	branch   string
 	base     string
+	from     string // the wish's integration branch base was the tip of; empty: the project's HEAD
 	since    time.Time
 }
 
-// wantWarm is a warm worker the scheduler wants: for a wish, in one of its projects, with the rights its next task
-// would have.
+// wantWarm is a warm worker the scheduler wants: for a wish, in one of its projects, with the rights, the model and
+// the budget its next task would have.
 type wantWarm struct {
 	key      string
 	wishID   string
 	project  *planv1.Project
 	readOnly bool
 	perms    *djinnv1.Permissions
+	model    string
+	budget   float64
+	from     string // the wish's integration branch in the project, which a task's worktree starts from
 }
 
 func warmKey(wishID, projectID string) string { return wishID + "/" + projectID }
@@ -118,7 +123,9 @@ func (h *Harness) refreshWarm(ctx context.Context) {
 			h.dropWarm(w, "no longer wanted, or no slot left for it")
 		case !w.fits(ww.readOnly, ww.perms):
 			h.dropWarm(w, "the rights of its project changed")
-		case w.stale(ctx):
+		case !w.settled(ww.model, ww.budget):
+			h.dropWarm(w, "the settings of its project changed")
+		case w.stale(ctx, ww.from):
 			h.dropWarm(w, "its project moved on")
 		default:
 			continue
@@ -133,7 +140,7 @@ func (h *Harness) refreshWarm(ctx context.Context) {
 }
 
 // wantedWarm are the warm workers the active wishes call for, the first wish first: one per project with a folder
-// here whose next Claude task would start now, without a question to ask first.
+// here whose next task would be Claude's by default and start now, without a question to ask first.
 func (h *Harness) wantedWarm(ctx context.Context) []wantWarm {
 	wishes, err := plan.ActiveWishes(ctx, h.store)
 	if err != nil {
@@ -149,12 +156,21 @@ func (h *Harness) wantedWarm(ctx context.Context) []wantWarm {
 			if err != nil || project.GetDirectory() == "" {
 				continue
 			}
+			// Its model and budget are the ones Spawn fills from the project's settings. A project whose settings
+			// cannot be read spawns no task; one whose tasks go to another agent has no use for a claude.
+			settings, err := plan.LoadSettings(h.home, project)
+			if err != nil || settings.Provider != planv1.Provider_PROVIDER_CLAUDE {
+				continue
+			}
 			access, declared, err := decideAccess(project, planv1.Provider_PROVIDER_CLAUDE, plan.AllowanceOf(wish, id))
 			if err != nil || access == planv1.TaskAccess_TASK_ACCESS_ASKING || access == planv1.TaskAccess_TASK_ACCESS_READ_ONLY {
 				continue
 			}
 			readOnly, perms := accessSpec(access, declared)
-			out = append(out, wantWarm{key: warmKey(wish.GetId(), id), wishID: wish.GetId(), project: project, readOnly: readOnly, perms: perms})
+			out = append(out, wantWarm{
+				key: warmKey(wish.GetId(), id), wishID: wish.GetId(), project: project, readOnly: readOnly, perms: perms,
+				model: settings.Model, budget: settings.MaxBudgetUSD, from: plan.IntegrationBranchOf(wish, id),
+			})
 		}
 	}
 	return out
@@ -167,19 +183,19 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 	dir := ww.project.GetDirectory()
 	if ww.project.GetGit() {
 		var err error
-		if w.base, err = git(ctx, dir, "rev-parse", "HEAD"); err != nil {
+		if w.base, w.from, err = startPoint(ctx, dir, ww.from); err != nil {
 			log.Printf("djinn: warm worker for %s: %v", ww.project.GetName(), err)
 			return
 		}
 		w.worktree, w.branch = worktreeDir(h.home, ww.project.GetId(), id), warmBranchPrefix+id[len(id)-8:]
-		if dir, err = addWorktree(ctx, ww.project.GetDirectory(), w.worktree, w.branch); err != nil {
+		if dir, err = addWorktreeFrom(ctx, ww.project.GetDirectory(), w.worktree, w.branch, w.base); err != nil {
 			log.Printf("djinn: warm worker for %s: %v", ww.project.GetName(), err)
 			return
 		}
 	}
 	w.spec = Spec{
-		TaskID: id, Dir: dir, ReadOnly: ww.readOnly, Permissions: ww.perms,
-		Env: []string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID}, Prefix: h.prefix,
+		TaskID: id, Dir: dir, ReadOnly: ww.readOnly, Permissions: ww.perms, Model: ww.model, MaxBudgetUSD: ww.budget,
+		Env: []string{"DJINN_TASK_ID=" + id, "DJINN_WISH_ID=" + ww.wishID}, Scope: h.scope("warm"),
 	}
 	h.prepare()
 	worker, err := h.warmer().Warm(h.ctx, w.spec)
@@ -192,15 +208,18 @@ func (h *Harness) startWarm(ctx context.Context, ww wantWarm) {
 	h.warm[ww.key] = w
 }
 
-// claimWarm hands the warm worker of the wish in the project to a task that starts now with these rights, and
-// takes it out of the pool; nil when there is none, or it does not fit. Under h.sched.
-func (h *Harness) claimWarm(ctx context.Context, wish *planv1.Wish, project *planv1.Project, kind planv1.Provider) *warm {
-	if !h.warmOn || project == nil || kind != planv1.Provider_PROVIDER_CLAUDE {
+// claimWarm hands the warm worker of the wish in the project to the task, which starts now, and takes it out of the
+// pool; nil when there is none, or it does not fit. A task that asks for a fork, or another model or budget than
+// the warm worker's, leaves it to the next one. Under h.sched.
+func (h *Harness) claimWarm(ctx context.Context, wish *planv1.Wish, project *planv1.Project, task *planv1.Task) *warm {
+	kind := task.GetProvider()
+	if !h.warmOn || project == nil || kind != planv1.Provider_PROVIDER_CLAUDE || task.GetForkSession() != "" || task.GetCorrection() != nil ||
+		task.GetReview() != nil {
 		return nil
 	}
 	key := warmKey(wish.GetId(), project.GetId())
 	w := h.warm[key]
-	if w == nil {
+	if w == nil || !w.settled(task.GetModel(), task.GetMaxBudgetUsd()) {
 		return nil
 	}
 	delete(h.warm, key)
@@ -211,7 +230,7 @@ func (h *Harness) claimWarm(ctx context.Context, wish *planv1.Wish, project *pla
 		h.dropWarm(w, "its process ended")
 	case err != nil || !w.fits(readOnly, perms):
 		h.dropWarm(w, "the task's rights differ")
-	case w.stale(ctx):
+	case w.stale(ctx, plan.IntegrationBranchOf(wish, project.GetId())):
 		h.dropWarm(w, "its project moved on")
 	default:
 		h.wake() // Another warm worker for the next task.
@@ -225,14 +244,19 @@ func (w *warm) fits(readOnly bool, perms *djinnv1.Permissions) bool {
 	return w.spec.ReadOnly == readOnly && proto.Equal(w.spec.Permissions, perms)
 }
 
-// stale tells whether the project has moved on since the warm worker started: its HEAD is no longer the commit
-// the worktree started from.
-func (w *warm) stale(ctx context.Context) bool {
+// settled tells whether a task with this model and budget may take the warm worker.
+func (w *warm) settled(model string, budget float64) bool {
+	return w.spec.Model == model && w.spec.MaxBudgetUSD == budget
+}
+
+// stale tells whether the project has moved on since the warm worker started: the commit a task's worktree starts
+// from now, the tip of the wish's integration branch integration or else HEAD, is no longer the one it started from.
+func (w *warm) stale(ctx context.Context, integration string) bool {
 	if w.base == "" {
 		return false
 	}
-	head, err := git(ctx, w.project.GetDirectory(), "rev-parse", "HEAD")
-	return err != nil || head != w.base
+	sha, _, err := startPoint(ctx, w.project.GetDirectory(), integration)
+	return err != nil || sha != w.base
 }
 
 // dropWarm stops a warm worker and removes its worktree, in the background.
@@ -332,8 +356,8 @@ func (h *Harness) cleanWarmLeftovers(ctx context.Context) {
 		return
 	}
 	root := filepath.Join(h.home, "projects")
-	if real, err := filepath.EvalSymlinks(root); err == nil {
-		root = real
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
 	}
 	root += string(filepath.Separator)
 	for _, p := range projects {

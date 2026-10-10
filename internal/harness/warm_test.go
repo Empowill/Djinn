@@ -13,10 +13,11 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // envClaude is Claude played by the test binary: the fake's environment is added to every worker's, warm or not,
-// and each one records its input in a file named after its task, in dir.
+// and each one records its input and its arguments in files named after its task, in dir.
 type envClaude struct {
 	Claude
 	env []string
@@ -24,7 +25,8 @@ type envClaude struct {
 }
 
 func (c envClaude) with(spec Spec) Spec {
-	spec.Env = append(append(spec.Env, c.env...), "DJINN_FAKE_INPUT="+filepath.Join(c.dir, "input-"+spec.TaskID))
+	spec.Env = append(append(spec.Env, c.env...), "DJINN_FAKE_INPUT="+filepath.Join(c.dir, "input-"+spec.TaskID),
+		"DJINN_FAKE_ARGS="+filepath.Join(c.dir, "args-"+spec.TaskID))
 	return spec
 }
 
@@ -41,7 +43,7 @@ func warmProviders(t *testing.T) (map[planv1.Provider]Provider, func(taskID stri
 	t.Helper()
 	env, _, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
 	dir := t.TempDir()
-	providers := Providers()
+	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = envClaude{Claude: Claude{Command: os.Args[0], Grace: time.Second}, env: env, dir: dir}
 	return providers, func(taskID string) string { return filepath.Join(dir, "input-"+taskID) }
 }
@@ -77,6 +79,7 @@ func warmBranches(t *testing.T, repo string) string {
 // TestWarmWorker: a process loaded ahead is taken by the next task of its project, and replaced; the task gets
 // the warm worker's worktree, renamed after it, and its first message is the task's prompt.
 func TestWarmWorker(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	providers, input := warmProviders(t)
 	e := upWith(t, t.TempDir(), providers, WithWarm(), WithTick(20*time.Millisecond))
@@ -150,9 +153,72 @@ func TestWarmWorker(t *testing.T) {
 	}
 }
 
+// TestWarmTakesTheProjectSettings: a warm worker starts with the model and budget the project's settings give, as
+// Spawn fills them, so that a task of the project takes it; when the settings change, it is replaced. A task that
+// asks for another model starts cold and leaves it.
+func TestWarmTakesTheProjectSettings(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	writeFile(t, repo, ".agents/settings.txtpb", "model: \"team-model\"\nmax_budget_usd: 2\n")
+	home := t.TempDir()
+	providers, input := warmProviders(t)
+	args := func(taskID string) string {
+		b, _ := os.ReadFile(filepath.Join(filepath.Dir(input(taskID)), "args-"+taskID))
+		return string(b)
+	}
+	e := upWith(t, home, providers, WithWarm(), WithTick(20*time.Millisecond))
+	wishID, projectID := e.wish(t, repo)
+
+	waitFor(t, "a warm worker", func() bool { return e.warmOf(wishID, projectID) != nil })
+	w := e.warmOf(wishID, projectID)
+	waitFor(t, "the project's model and budget in the warm worker's arguments", func() bool {
+		a := args(w.id)
+		return strings.Contains(a, "--model\nteam-model\n") && strings.Contains(a, "--max-budget-usd\n2")
+	})
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Take the warm one", Prompt: "Say hello",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := res.Msg.GetTask()
+	if task.GetId() != w.id || task.GetModel() != "team-model" || task.GetMaxBudgetUsd() != 2 {
+		t.Errorf("task %v did not take the warm worker %s", task, w.id)
+	}
+	e.ended(t, task.GetId())
+
+	// The developer's settings change: the warm worker waiting is replaced by one with the new model.
+	waitFor(t, "a second warm worker", func() bool {
+		next := e.warmOf(wishID, projectID)
+		return next != nil && next.id != w.id
+	})
+	writeFile(t, home, "projects/"+projectID+"/settings.txtpb", "model: \"my-model\"\n")
+	waitFor(t, "a warm worker with the developer's model", func() bool {
+		next := e.warmOf(wishID, projectID)
+		return next != nil && next.spec.Model == "my-model" && next.spec.MaxBudgetUSD == 2
+	})
+
+	// A task that asks for another model starts cold, and the warm worker waits for the next one.
+	next := e.warmOf(wishID, projectID)
+	cold, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Cold", Prompt: "x", Model: "haiku",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cold.Msg.GetTask().GetId() == next.id || e.warmOf(wishID, projectID) != next {
+		t.Errorf("a task with another model took the warm worker")
+	}
+	e.ended(t, cold.Msg.GetTask().GetId())
+	e.down()
+}
+
 // TestWarmWithinTheMachine: the warm workers fit in the slots the running workers leave, and none waits while the
 // machine is under pressure.
 func TestWarmWithinTheMachine(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	providers, _ := warmProviders(t)
 	var mu sync.Mutex
 	slots, pressure := 1, ""
@@ -172,9 +238,10 @@ func TestWarmWithinTheMachine(t *testing.T) {
 
 	// A task runs in the only slot: the warm worker gives its place.
 	set(2, "")
-	running := e.mustSpawn(t, wishID, "Sleep", "sleep 2s", nil)
+	running := e.mustSpawn(t, wishID, "Busy", "wait", nil)
 	set(1, "")
 	waitFor(t, "the warm worker to leave the slot", func() bool { return e.h.WarmCount() == 0 })
+	e.release(t, running.GetId())
 	e.ended(t, running.GetId())
 	waitFor(t, "the warm worker back", func() bool { return e.h.WarmCount() == 1 })
 
@@ -193,6 +260,8 @@ func TestWarmWithinTheMachine(t *testing.T) {
 // TestWarmLeftovers: a djinn up that died leaves the worktree of a warm worker no task took; the next one removes
 // it, and only it.
 func TestWarmLeftovers(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	repo := gitRepo(t)
 	home := t.TempDir()
 	e := up(t, home)

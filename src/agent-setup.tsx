@@ -59,12 +59,13 @@ export function useAgents(): Agents {
       .catch((err) => n === asked.current && setError(message(err)))
       .finally(() => n === asked.current && setChecking(false));
   }, [clients]);
+  const cancelPending = useCallback(() => {
+    asked.current++; // Unmounted: what comes back is dropped.
+  }, []);
   useEffect(() => {
     check();
-    return () => {
-      asked.current++; // Unmounted: what comes back is dropped.
-    };
-  }, [check]);
+    return cancelPending;
+  }, [cancelPending, check]);
   return { env, checking, error, check };
 }
 

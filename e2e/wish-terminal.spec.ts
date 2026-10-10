@@ -1,6 +1,5 @@
-// The window's terminal follows the wish shown: on a wish with a lead, it shows that lead, resumed if it does not
-// run, without a click on Lead; another wish shown takes its own. A shell shows only when asked. The leads are the
-// fake claude of global-setup.ts: no model is called.
+// The window's terminal follows the running lead of the wish shown; independent shells stay in tabs. The leads are
+// the fake claude of global-setup.ts: no model is called.
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -28,6 +27,7 @@ function wishWithLead(title: string, session: string) {
   const id = JSON.parse(djinn("wish", "make", title, "--paused", "--json")).wish
     .id as string;
   djinn("wish", "set-lead", id, session, "--directory", folder);
+  djinn("wish", "resume", id);
 }
 
 async function expectLead(page: Page, session: string) {
@@ -55,9 +55,10 @@ test("the terminal shows the lead of the wish shown, and follows the wish", asyn
   await page.goto(process.env.DJINN_URL!);
   const nav = (title: string) =>
     page.locator(".wish-nav").filter({ hasText: title });
-  const bar = page.locator(".lead-terminal-bar");
+  const terminal = page.getByRole("region", { name: "Terminal" });
+  const bar = terminal.locator(".lead-terminal-bar");
 
-  // The lead of the wish shows, resumed, without a click on Lead.
+  // The running lead of the wish appears without a separate terminal action.
   await nav("Follow me first").click();
   await expectLead(page, first);
   // Another wish: its own lead.
@@ -67,21 +68,30 @@ test("the terminal shows the lead of the wish shown, and follows the wish", asyn
   await nav("Follow me first").click();
   await expectLead(page, first);
 
-  // A shell only when asked; Lead takes the wish's lead back.
-  await bar.getByRole("button", { name: "Shell", exact: true }).click();
+  // An independent shell opens in a new tab, and selecting the lead tab takes us back to the first lead.
+  const tabs = terminal.getByRole("tab");
+  const tabsBeforeShell = await tabs.count();
+  await bar.getByRole("button", { name: /^New terminal/ }).click();
+  await expect(tabs).toHaveCount(tabsBeforeShell + 1);
+  const shell = terminal.getByRole("tab", { name: /^Shell/ }).last();
+  await expect(shell).toHaveAttribute("aria-selected", "true");
   await expect(bar.locator(".lead-terminal-command").first()).not.toContainText(
     "claude",
   );
-  await bar.getByRole("button", { name: "Lead", exact: true }).click();
+  await terminal.getByRole("tab", { name: /Lead · Follow me first/ }).click();
   await expectLead(page, first);
+  await shell.click();
+  await expect(shell).toHaveAttribute("aria-selected", "true");
 
-  // A wish without a lead keeps the window's terminal, and proposes to resume the wish.
+  // A wish without a lead keeps the independently selected shell and offers Start lead in the wish UI.
   await nav("No lead here").click();
   await expect(bar.locator(".lead-terminal-command").first()).not.toContainText(
     "claude",
   );
+  await expect(shell).toHaveAttribute("aria-selected", "true");
+  await expect(tabs).toHaveCount(tabsBeforeShell + 1);
   await expect(
-    bar.getByRole("button", { name: "Resume the wish" }),
+    page.locator(".lead-status").getByRole("button", { name: "Start lead" }),
   ).toBeVisible();
   expect(errors).toEqual([]);
 });

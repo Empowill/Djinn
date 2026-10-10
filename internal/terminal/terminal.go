@@ -37,14 +37,18 @@ var (
 	ErrExited   = errors.New("the program of this terminal has ended")
 	ErrClosed   = errors.New("the terminals are closed: djinn is stopping")
 	ErrBusy     = errors.New("already running in another terminal")
+	ErrNoFolder = errors.New("no folder to start in")
 )
 
 // Config is what djinn up says about the terminals the window opens.
 type Config struct {
 	// Command runs when the window gives none: program first. Empty: the user's shell.
 	Command []string
-	// Dir is the working directory when the window gives none. Empty: the home directory.
+	// Dir is the working directory when the window gives none.
 	Dir string
+	// Folder, when Dir is empty, gives the working directory when the window gives none, asked at each start: the
+	// first project's folder in djinn up. Neither: ErrNoFolder. A terminal never opens in the home folder by default.
+	Folder func() (string, error)
 	// Changed, when set, runs once a program started and once one ended, outside the manager's lock: Running
 	// tells what runs then. Calls may overlap.
 	Changed func()
@@ -120,6 +124,7 @@ type Terminal struct {
 	answered  string    // choice already sent, until it changes or disappears
 	shown     string    // the choice on screen as last seen (promptKey)
 	prompted  func(*Terminal)
+	voice     voice // the lines Djinn types, under mu
 }
 
 // Open returns the running terminal of name, attached true, or starts one: command in dir at cols×rows, each
@@ -168,10 +173,13 @@ func (m *Manager) OpenExclusive(
 	if dir == "" {
 		dir = m.cfg.Dir
 	}
-	if dir == "" {
-		if dir, err = os.UserHomeDir(); err != nil {
-			return nil, false, err
+	if dir == "" && m.cfg.Folder != nil {
+		if dir, err = m.cfg.Folder(); err != nil {
+			return nil, false, fmt.Errorf("%w: %w", ErrNoFolder, err)
 		}
+	}
+	if dir == "" {
+		return nil, false, ErrNoFolder
 	}
 	if !filepath.IsAbs(dir) {
 		return nil, false, fmt.Errorf("the working directory must be absolute: %s", dir)
@@ -188,7 +196,7 @@ func (m *Manager) OpenExclusive(
 	t = &Terminal{
 		ID: uuid.NewString(), Name: name, Command: slices.Clone(command), Dir: dir,
 		p: p, done: make(chan struct{}), cols: cols, rows: rows, changed: make(chan struct{}),
-		screen: newScreen(cols, rows), prompted: m.cfg.Prompted,
+		screen: newScreen(cols, rows), prompted: m.cfg.Prompted, voice: voice{started: time.Now()},
 	}
 	if old := m.byName[name]; old != nil {
 		delete(m.byID, old.ID) // Ended: its output goes with it.
@@ -251,6 +259,18 @@ func (m *Manager) Running() []*Terminal {
 	return out
 }
 
+// Hangup hangs up the running terminal called name, as the window closing it does, and tells whether one ran.
+func (m *Manager) Hangup(name string) bool {
+	m.mu.Lock()
+	t := m.byName[name]
+	m.mu.Unlock()
+	if t == nil || t.Exited() {
+		return false
+	}
+	t.Hangup()
+	return true
+}
+
 // Close hangs up every terminal, kills the programs still there after Grace, and returns once they ended. No
 // terminal opens after.
 func (m *Manager) Close() {
@@ -308,6 +328,7 @@ func (t *Terminal) append(b []byte) {
 	t.buf = append(t.buf, b...)
 	t.pasteMode(from)
 	t.screen.write(b)
+	t.voice.output = time.Now()
 	if len(t.buf) > Scrollback+Scrollback/4 {
 		drop := len(t.buf) - Scrollback
 		t.base += uint64(drop)
@@ -342,6 +363,13 @@ func (t *Terminal) Exited() bool {
 	return t.exited
 }
 
+// End returns the offset the output has reached: the bytes the program has written so far.
+func (t *Terminal) End() uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.base + uint64(len(t.buf))
+}
+
 // State returns the size of the terminal, whether its program ended, and its exit code.
 func (t *Terminal) State() (cols, rows int, exited bool, code int) {
 	t.mu.Lock()
@@ -352,8 +380,19 @@ func (t *Terminal) State() (cols, rows int, exited bool, code int) {
 // Done is closed once the program ended and its output was read.
 func (t *Terminal) Done() <-chan struct{} { return t.done }
 
-// Write sends b to the program, as typed.
+// Write sends b to the program, as the person typed it.
 func (t *Terminal) Write(b []byte) error {
+	if t.Exited() {
+		return ErrExited
+	}
+	t.mu.Lock()
+	t.voice.typed = time.Now()
+	t.mu.Unlock()
+	return t.put(b)
+}
+
+// put sends b to the program.
+func (t *Terminal) put(b []byte) error {
 	if t.Exited() {
 		return ErrExited
 	}

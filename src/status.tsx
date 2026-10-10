@@ -1,12 +1,19 @@
 // The window's status language: one colour, one icon and one word per state, never the colour alone. Done is green,
 // running blue with a live dot, waiting for you orange, investigating violet, planned grey, failed red, interrupted
-// amber, stopped and paused muted. The colours are tokens of review.css, checked for contrast in both themes.
+// amber, stopped and paused muted, watching teal with an eye; a decision the developer took is human, rose with a person;
+// an azima whose work is done and that awaits its proof is olive, with a clipboard to check; a question that can wait
+// is grey, with a clock.
+// The colours are tokens of review.css, checked for contrast in both themes.
 import {
   CheckCircle2,
   CircleDashed,
   CircleOff,
   CirclePause,
+  ClipboardCheck,
   CircleStop,
+  CircleUserRound,
+  Clock3,
+  Eye,
   Hand,
   type LucideIcon,
   Search,
@@ -27,6 +34,10 @@ const icons: Record<Tone, LucideIcon | null> = {
   interrupted: TriangleAlert,
   stopped: CircleStop,
   paused: CirclePause,
+  watching: Eye,
+  human: CircleUserRound,
+  proof: ClipboardCheck,
+  later: Clock3,
 };
 
 // ToneIcon is a state's icon; running is a live dot.
@@ -60,12 +71,15 @@ export function CountPill({
   tone,
   count,
   label,
+  icon: Icon,
   children,
 }: {
   tone: Tone;
   count: number;
   // What the count is, in words: "2 questions wait for your answer".
   label: string;
+  // What it counts, when the state's icon does not say it: the inbox.
+  icon?: LucideIcon;
   // The words shown beside the number; only the icon and the number when none.
   children?: ReactNode;
 }) {
@@ -76,7 +90,11 @@ export function CountPill({
       aria-label={label}
       role="img"
     >
-      <ToneIcon tone={tone} size={12} />
+      {Icon ? (
+        <Icon size={12} aria-hidden="true" />
+      ) : (
+        <ToneIcon tone={tone} size={12} />
+      )}
       <b>{count}</b>
       {children}
     </span>

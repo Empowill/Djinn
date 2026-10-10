@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -23,8 +25,11 @@ import (
 //	usage 1200 300 0.02   it has spent so far 1200 tokens in, 300 out, $0.02
 //	write notes.md Hi     it writes Hi in notes.md, in its folder, when it may edit (else: permission denied)
 //	sleep 5s              it works for a while
+//	wait                  it works until a message comes (Send), which it says back at the end as the others
 //	fail no tests         it fails with this reason
 //	exit 2                its process exits with this code
+//	djinn task list       it runs Djinn's command line, as an agent does: this djinn, in its folder, with its task's
+//	                      environment ($DJINN_TASK_ID); "…" and '…' quote an argument
 //
 // Any other line is said back as text. It runs in Djinn's process: stopping it ends its script at once, pausing it
 // holds its script before the next step until it is resumed.
@@ -32,7 +37,7 @@ type Fake struct{}
 
 func (Fake) Start(ctx context.Context, spec Spec) (Worker, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{})}
+	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1)}
 	go w.play(ctx, spec)
 	return w, nil
 }
@@ -42,6 +47,8 @@ type fakeWorker struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	res    Result
+
+	sent chan struct{} // a message came (wait)
 
 	mu    sync.Mutex
 	inbox []string
@@ -62,6 +69,10 @@ func (w *fakeWorker) Send(text string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.inbox = append(w.inbox, text)
+	select {
+	case w.sent <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -118,8 +129,11 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 		}
 	}
 	session := "fake session " + spec.TaskID
-	if spec.Fork {
+	switch {
+	case spec.Fork:
 		session += ", forked from " + spec.Resume
+	case spec.Resume != "":
+		session += ", resumed"
 	}
 	if !emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: session, SessionID: spec.TaskID}) {
 		w.res = stopped
@@ -168,6 +182,28 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 				w.res = stopped
 				return
 			}
+		case "wait":
+			w.mu.Lock()
+			waiting := len(w.inbox) == 0
+			w.mu.Unlock()
+			if !waiting {
+				continue
+			}
+			select {
+			case <-w.sent:
+				continue
+			case <-ctx.Done():
+				w.res = stopped
+				return
+			}
+		case "djinn":
+			call := Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, Text: "Bash " + raw, Raw: raw}
+			if !emit(call) {
+				w.res = stopped
+				return
+			}
+			ev = fakeDjinn(ctx, spec, rest)
+			ev.Raw = raw
 		case "fail":
 			emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: rest, Raw: raw})
 			w.res = Result{ExitCode: 1, Err: errors.New(rest)}
@@ -206,7 +242,7 @@ func fakeWrite(spec Spec, args string) Event {
 	name, text, _ := strings.Cut(args, " ")
 	call := Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, Text: "Write " + name}
 	if spec.ReadOnly || spec.Permissions != nil && !spec.Permissions.GetEdit() {
-		call.Kind, call.Text = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "permission denied: Write "+name
+		call.Kind, call.Text = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+"Write "+name
 		return call
 	}
 	path := filepath.Join(spec.Dir, filepath.FromSlash(name))
@@ -217,6 +253,65 @@ func fakeWrite(spec Spec, args string) Event {
 		return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: "write: " + err.Error()}
 	}
 	return call
+}
+
+// fakeDjinn runs this djinn's command line with args, in the worker's folder and environment, and gives what it
+// printed as the tool's result.
+func fakeDjinn(ctx context.Context, spec Spec, args string) Event {
+	// In a test, this program is the test binary: it would run the tests again, not djinn.
+	if testing.Testing() {
+		return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: "djinn: no djinn command in a test"}
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: "djinn: " + err.Error()}
+	}
+	words, err := splitWords(args)
+	if err != nil {
+		return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: "djinn: " + err.Error()}
+	}
+	cmd := exec.CommandContext(ctx, exe, words...)
+	cmd.Dir, cmd.Env = spec.Dir, append(os.Environ(), spec.Env...)
+	out, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(string(out))
+	if err != nil {
+		text = strings.TrimSpace(text + "\n" + err.Error())
+	}
+	return Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, Text: text}
+}
+
+// splitWords splits a command line into its words, as a shell would without expanding anything: blanks separate
+// words, double or single quotes hold one.
+func splitWords(s string) ([]string, error) {
+	var words []string
+	var word strings.Builder
+	inWord := false
+	var quote rune
+	for _, r := range s {
+		switch {
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote != 0:
+			word.WriteRune(r)
+		case r == '"' || r == '\'':
+			quote, inWord = r, true
+		case r == ' ' || r == '\t':
+			if inWord {
+				words, inWord = append(words, word.String()), false
+				word.Reset()
+			}
+		default:
+			word.WriteRune(r)
+			inWord = true
+		}
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unclosed %c in %s", quote, s)
+	}
+	if inWord {
+		words = append(words, word.String())
+	}
+	return words, nil
 }
 
 // fakeUsage reads "input output [cost]".

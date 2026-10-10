@@ -24,8 +24,8 @@ const (
 	burstPath = "/bench.v1.Bench/Burst"
 )
 
-// statePayload returns a JSON document of about size bytes shaped like the saved workspace (the stateJson of
-// ui.v1.SaveStateRequest): steps with text beyond ASCII, quotes and new lines, the characters JSON escapes.
+// statePayload returns a JSON document of about size bytes, carried in a string field: steps with text beyond
+// ASCII, quotes and new lines, the characters JSON escapes.
 func statePayload(size int) string {
 	var b strings.Builder
 	b.WriteString(`{"version":3,"steps":[`)
@@ -65,7 +65,7 @@ func benchHandler(gzip bool, payload string) http.Handler {
 	if gzip {
 		return mux
 	}
-	return Handler(fstest.MapFS{}, map[string]http.Handler{"/bench.v1.Bench/": mux})
+	return Handler(fstest.MapFS{}, nil, map[string]http.Handler{"/bench.v1.Bench/": mux})
 }
 
 // variant is one way to carry the calls over the socket.

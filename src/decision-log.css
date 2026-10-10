@@ -1,0 +1,78 @@
+/* The decision log: a row per decision, its subject's emoji first, a thin accent in its tone's colour on the left (the
+   developer's decisions, human), no tile. The links to tasks read as codes. */
+.decision-log .decision-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--tone, var(--line));
+  border-radius: 8px;
+  background: var(--surface);
+}
+.decision-log .decision-row.focused {
+  outline: 2px solid
+    color-mix(in srgb, var(--tone, var(--muted)) 45%, transparent);
+  outline-offset: 2px;
+}
+.decision-icon {
+  flex: none;
+  font-size: 18px;
+  line-height: 1.5;
+}
+.decision-main {
+  flex: 1;
+  min-width: 0;
+}
+.decision-meta,
+.decision-tasks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.decision-row h3 {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.decision-row .answer-value {
+  margin: 2px 0 0;
+}
+/* An answer in a wish without a lead session: no lead was told. */
+.no-lead {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+.decision-note {
+  margin-top: 6px;
+  color: var(--muted);
+}
+.decision-note summary {
+  cursor: pointer;
+}
+.decision-tasks {
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.decision-tasks a,
+.decision-link {
+  cursor: pointer;
+  text-decoration: none;
+}
+.decision-by,
+.decision-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.decision-link:hover,
+.decision-tasks a:hover {
+  color: var(--text);
+}

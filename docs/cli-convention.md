@@ -11,7 +11,10 @@ arguments and their validation.
   `VISIBILITY_INTERNAL` methods (the window's `UiService`) never do.
 - The command is the service name without `Service`, then the method, both in kebab-case:
   `QuestionService.Answer` is `djinn question answer`.
-- A unique prefix is enough: `djinn q answer`, `djinn p l`. An ambiguous one is an error that lists the
+- A service may name another word for its command, `option (djinn.v1.alias) = "talisman"`: `djinn talisman list` is
+  `djinn tilasm list`. An alias answers in full, or by a prefix no command's own name takes (`djinn t` stays
+  ambiguous); the help and the documentation list it, and MCP knows the command's own name only.
+- A unique prefix is enough: `djinn q answer`, `djinn pr l`. An ambiguous one is an error that lists the
   candidates (`djinn question a` matches `ask` and `answer`).
 - `djinn version` prints the version.
 - A method marked `option (djinn.v1.autostart) = true` starts `djinn up` in the background when no djinn
@@ -19,6 +22,22 @@ arguments and their validation.
   resume` and `djinn wish set-lead`. The background djinn is detached from the terminal, writes to `djinn.log` in
   the data directory, and the command prints its PID. `--addr` or `$DJINN_ADDR` turns this off. The other
   methods fail with a hint to run `djinn up`.
+
+## Reads and writes
+
+Every public method that answers once says what it changes, in its proto:
+
+- `option idempotency_level = NO_SIDE_EFFECTS;` when it only reads: the lists, `task get`, `machine show`,
+  `wish brief`.
+- `option (djinn.v1.writes) = WRITES_CHANGE;` when it adds or changes something, in Djinn or on the machine.
+- `option (djinn.v1.writes) = WRITES_DELETE;` when it deletes something, or may overwrite a file it is given:
+  `task delete`, `task clean` (a worktree), `block delete`, `skill unsummon`, `wish export` and `wish render`
+  (`--file`).
+
+`TestEveryMethodSaysWhatItChanges` fails on a method that says neither, or both. The streams (`gate hold`, `wish
+watch`, `task watch`) are not classified: they are neither tools nor GETs. A read is served as a `GET` of the
+Connect protocol too, the request in the query: `GET /plan.v1.ProjectService/List?encoding=json&message=%7B%7D`.
+connect-go does it from the option; a write answers a `GET` with 405.
 
 ## Arguments
 
@@ -34,8 +53,18 @@ The arguments are the fields of the request.
 | enum                                        | The value without its type prefix, any case: `b`, `B`; `yes` and `no` also in the user's language |
 | `google.protobuf.Timestamp`                 | RFC 3339: `2026-10-07T09:00:00Z`                         |
 | a message holding only a `oneof` of scalars | One input, stored in the first member whose rules pass   |
+| a message of a required string, then a repeated string | One input `key=a,b`: `--also W6=W5,W3`; `W7=` for an empty list |
 | `string directory` or `*_directory`         | A folder: a relative path is made absolute, from the current directory, before sending |
 | `string file` or `*_file`                   | A file, made absolute the same way: the server reads or writes it on this machine |
+| `string path` or `*_path`                   | A folder or a file, made absolute the same way: `djinn tilasm put` takes either |
+
+A pair is how `djinn task depend --also` sets several tasks in one call: `TaskAfter` has `task` (required) then
+`after`, so `W6=W5,W3` fills both. In MCP it is a string read the same way.
+
+A field marked `(djinn.v1.env) = "DJINN_TASK_ID"` takes that environment variable when the command line, or a tool
+call of `djinn mcp`, leaves it empty: Djinn sets `$DJINN_TASK_ID` for every worker, so `djinn block put`, `djinn
+question ask` and `djinn question revise` name the worker's task by themselves. A value given wins. The help says it,
+from the field's comment.
 
 A field marked `(djinn.v1.positional) = true` keeps its positional spelling even when validation allows
 it to be omitted; the help displays it in brackets. For example, `djinn wish make "Short title"` keeps its
@@ -100,16 +129,34 @@ as above.
 - **The answer is the response in protobuf JSON**, with the proto field names, as `--json` prints it. A call that
   fails is a tool error with the server's message (`not_found: no question Q99`).
 - **Autostart** works as on the command line: `wish_resume` starts `djinn up` when none answers.
+- **Each tool says what it changes**, in its `annotations`: a [read](#reads-and-writes) has `readOnlyHint: true`,
+  so a client may run it without asking; a write has `readOnlyHint: false`, and `destructiveHint: true` only when
+  it deletes. Both are always set: MCP takes a tool that says nothing for one that may delete.
 
 No MCP library: the server is `internal/cli/mcp.go`, the protocol's `initialize`, `ping`, `tools/list`,
 `tools/call` and `notifications/cancelled`.
 
-## OpenAPI
+## Commands written by hand
 
-[`openapi.json`](openapi.json) describes the same public methods for any HTTP client, in OpenAPI 3.1: each is a
-`POST` of the [Connect protocol](https://connectrpc.com/docs/protocol) on `/<package>.<Service>/<Method>`, its body
-the request in protobuf JSON. `go tool task gen` writes it (`tools/openapi`), and `TestOpenAPIIsFresh` fails when it
-lags behind the protos. Streaming methods are named there, not described.
+A few commands run on the caller's side or without a server, so `cmd/djinn` writes them: `djinn up`, `open`,
+`update`, `backup`, `backup restore` and `gate run`; `djinn version` and `djinn mcp` are the cli package's own. Each
+has its entry in `cli.Builtins` (`internal/cli/builtin.go`): its usage, its help, its arguments and its flags, with
+their types and defaults. That entry is what its `--help` prints and what the documentation shows; `djinn up` builds
+its flags from it. `TestEveryCommandIsDocumented` fails when `cmd/djinn` runs a command that has no entry, or when an
+entry runs nowhere.
+
+## Documentation
+
+The Command line tab of the documentation site lists every command, grouped by service: its usage, its help, what
+it changes, its MCP tool, and each argument and flag with its type, its values, its default and its environment
+variable. `cli.Reference` reads it from the same command tree as `djinn` and from `cli.Builtins`, and
+`internal/docsite` writes it into the page when `djinn up` serves `/docs/` and when `go tool task docs` builds
+`bin/docs`. Nothing is generated ahead and committed: the tab is the commands of the djinn that shows it, and cannot
+lag behind them. `TestCommands` checks that each has its entry, its anchor and its table.
+
+The HTTP API itself is the [Connect protocol](https://connectrpc.com/docs/protocol) on the protos in `api/`: each
+method is a `POST` on `/<package>.<Service>/<Method>`, its body the request in protobuf JSON; a
+[read](#reads-and-writes) answers a `GET` too.
 
 ## How it works
 

@@ -33,7 +33,7 @@ func TestGo(t *testing.T) {
 	}
 	var b strings.Builder
 	Table(&b, "Go", results)
-	if !strings.Contains(b.String(), "Go: 31 of 31 cases right") {
+	if !strings.Contains(b.String(), "Go: 35 of 35 cases right") {
 		t.Errorf("table:\n%s", b.String())
 	}
 }

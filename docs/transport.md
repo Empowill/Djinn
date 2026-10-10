@@ -36,8 +36,8 @@ fastest path their webview and kernel allow; Windows gets a path that works.
   so the window never showed that change until a reload (5 runs in 6 of the native e2e). `server.WholeWrites`
   gathers the writes until the flush: one chunk per message on `wails://`.
   It answers 501 to a request whose handler wrote neither a header nor a byte, where net/http answers 200; an empty
-  message in binary Protobuf is no byte at all, and connect-go then writes nothing (`LoadState` with nothing saved,
-  `SaveState`). `server.Handler` writes the 200 itself for the services.
+  message in binary Protobuf is no byte at all, and connect-go then writes nothing (`TerminalService.Write`,
+  `Resize`). `server.Handler` writes the 200 itself for the services.
 
 ## Measurements
 
@@ -74,6 +74,8 @@ rounds `performance.now()` to the millisecond, hence the long runs.
 Binary halves the round trip of a workspace of 32 KiB or more; a 1 KiB call is within the noise. A burst of 5000
 messages of 256 bytes takes 22 to 28 µs a message on `wails://` (the page reads them in about 10 reads), against
 130 µs on loopback HTTP (about two reads a message), in either format.
+
+For wish-level benchmarks measuring store reads, full Protobuf serialization, and incremental watch delivery on real-size wishes, see [`docs/performance.md`](performance.md).
 
 ## Set aside
 

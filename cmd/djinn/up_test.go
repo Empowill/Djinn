@@ -3,7 +3,8 @@
 // These tests run djinn itself: the test binary turns into the djinn command when DJINN_TEST_MAIN is set, so a
 // process it starts, and the djinn up that one starts in the background, are this same build. Each test has a data
 // directory of its own, and stops the processes it started by their PID, never by their name: the developer's own
-// djinn keeps running. The build is headless, so djinn up serves the browser: no window opens.
+// djinn keeps running. The build is headless, so djinn up serves the browser: no window opens. Not on Windows: they
+// stop djinn up with SIGINT, which Windows cannot send another process, and the fake claude is a shell script.
 package main
 
 import (
@@ -12,7 +13,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +38,7 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
@@ -54,7 +59,9 @@ func TestMain(m *testing.M) {
 				version = v
 			}
 		}
-		updatePoll = updatePollForTests
+		updatePoll, restartDelay = updatePollForTests, restartDelayForTests
+		launcherPath = false
+		readMachine = calmMachine
 		// No test reaches the network: only a fake release, served by the test, is looked for.
 		checkReleases = os.Getenv("DJINN_TEST_RELEASE_API") != ""
 		if checkReleases {
@@ -68,8 +75,17 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// calmMachine is this machine, its cores and memory, never under pressure. A djinn up of a test starts its workers
+// whatever else the machine runs: a macOS runner of the CI, with no pressure stall information, reads a load of 21
+// on 3 cores while the packages test in parallel, and its scheduler held a resumed worker past the test's wait.
+// The pressure has its own tests (internal/machine, internal/gate).
+func calmMachine() (machine.Snapshot, error) {
+	s, err := machine.Read()
+	return machine.Snapshot{Cores: s.Cores, MemoryTotal: s.MemoryTotal, MemoryAvailable: s.MemoryTotal}, err
+}
+
 // environ is the environment of a djinn of the test: its data directory (none when home is empty), a plain POSIX
-// shell, and the fake agents of bin first on the PATH.
+// shell, the fake agents of bin first on the PATH, and no question worker: an answer would start a real agent.
 func environ(home, bin string, extra ...string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
@@ -77,7 +93,7 @@ func environ(home, bin string, extra ...string) []string {
 			env = append(env, kv)
 		}
 	}
-	env = append(env, "DJINN_TEST_MAIN=1", "SHELL=/bin/sh", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	env = append(env, "DJINN_TEST_MAIN=1", "DJINN_QUESTION_WORKERS=off", "SHELL=/bin/sh", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if home != "" {
 		env = append(env, "DJINN_HOME="+home)
 	}
@@ -489,14 +505,14 @@ func TestWishResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No djinn runs: resume starts one in the background, then resumes the lead in its terminal.
+	// No djinn runs: resume starts one in the background, then resumes the lead in its terminal. The wish being the
+	// first active one, djinn up may have resumed its lead at its start already: resume attaches to it then.
 	code, out, errs := runDjinn(t, env, "wish", "resume", wish.GetId())
 	if strings.Contains(errs, "(pid ") {
 		stopStarted(t, home, errs)
 	}
 	name := "lead-" + wish.GetId()
-	if code != 0 || !strings.Contains(errs, "started djinn up in the background") || !strings.Contains(out, "terminal: "+name) ||
-		strings.Contains(out, "attached: true") {
+	if code != 0 || !strings.Contains(errs, "started djinn up in the background") || !strings.Contains(out, "terminal: "+name) {
 		t.Fatalf("resume: exit %d\n%s%s", code, out, errs)
 	}
 	addr := answering(t, home, func() string { return errs })
@@ -614,5 +630,133 @@ func TestModuleVersion(t *testing.T) {
 	}
 	if got := moduleVersion("dev"); got != "dev" {
 		t.Errorf("moduleVersion(dev) from a checkout = %q, want dev", got)
+	}
+}
+
+// TestReadOnlyMethodsAnswerAGet calls a method that only reads as a GET on a real djinn up, the request in the
+// query; a method that writes refuses the GET.
+func TestReadOnlyMethodsAnswerAGet(t *testing.T) {
+	home := t.TempDir()
+	env := environ(home, t.TempDir())
+	_, addr := up(t, home, env)
+	if code, out, errs := runDjinn(t, env, "project", "add", t.TempDir(), "--name", "lamp"); code != 0 {
+		t.Fatalf("djinn project add: exit %d\n%s%s", code, out, errs)
+	}
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(method, message string) (int, string) {
+		t.Helper()
+		u := base + "/plan.v1.ProjectService/" + method + "?encoding=json&message=" + url.QueryEscape(message)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, u, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := httpClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.StatusCode, string(body)
+	}
+	if code, body := get("List", "{}"); code != http.StatusOK || !strings.Contains(body, `"name":"lamp"`) {
+		t.Errorf("GET List: %d %s, want 200 with the project", code, body)
+	}
+	if code, body := get("Add", `{"directory":"/tmp"}`); code != http.StatusMethodNotAllowed {
+		t.Errorf("GET Add: %d %s, want 405", code, body)
+	}
+}
+
+// TestWindowTerminalOpensInAProject: started without --terminal-dir, as from a menu, the window's terminal opens in
+// the first project's folder, never in the home folder; with no project, it does not start, and says to create one.
+func TestWindowTerminalOpensInAProject(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	user, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := environ(home, t.TempDir(), "HOME="+user)
+	_, addr := startUp(t, home, env)
+	_, terminals := clients(t, addr)
+
+	_, err = terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main"}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "create a project first") {
+		t.Fatalf("the terminal without a project: %v, want failed_precondition asking for a project", err)
+	}
+	folder := filepath.Join(user, "code", "lamp")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errs := runDjinn(t, env, "project", "add", folder); code != 0 {
+		t.Fatalf("project add: exit %d\n%s%s", code, out, errs)
+	}
+	opened, err := terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir := opened.Msg.GetTerminal().GetDirectory(); dir != folder {
+		t.Errorf("the terminal opened in %q, want the project's folder %q", dir, folder)
+	}
+}
+
+// TestWorkerScopesFallback: without systemd-run, djinn up says once that workers run in their process group,
+// uncapped when caps were asked, and starts no scope.
+func TestWorkerScopesFallback(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var out bytes.Buffer
+	if s := workerScopes(t.Context(), &out, 150, 1<<30); s != nil {
+		t.Errorf("scopes %+v without systemd-run", s)
+	}
+	if got := out.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "no systemd scope per worker") ||
+		!strings.HasSuffix(got, "workers run in their process group, uncapped\n") {
+		t.Errorf("djinn up said %q", got)
+	}
+	out.Reset()
+	workerScopes(t.Context(), &out, 0, 0)
+	if got := out.String(); strings.Contains(got, "uncapped") || !strings.HasSuffix(got, "workers run in their process group\n") {
+		t.Errorf("without caps, djinn up said %q", got)
+	}
+}
+
+// TestOnOff: $DJINN_QUESTION_WORKERS reads on or off, in any case, and what strconv.ParseBool reads; anything else is
+// an error that says what it expects.
+func TestOnOff(t *testing.T) {
+	for v, want := range map[string]bool{"on": true, "OFF": false, " off ": false, "true": true, "0": false} { //nolint:gocritic // " off " checks that the value is trimmed
+		if got, err := onOff(v); err != nil || got != want {
+			t.Errorf("onOff(%q) = %v, %v; want %v", v, got, err, want)
+		}
+	}
+	if _, err := onOff("maybe"); err == nil || !strings.Contains(err.Error(), "expected on or off") {
+		t.Errorf("onOff(maybe): %v", err)
+	}
+}
+
+// TestProfiles: with $DJINN_PPROF on, djinn up serves Go's profiles on its own address, as its services; off, the path
+// is the interface's, as any other.
+func TestProfiles(t *testing.T) {
+	home := t.TempDir()
+	_, addr := up(t, home, environ(home, t.TempDir(), "DJINN_PPROF=on"))
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+server.ProfilePath+"cmdline", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := httpClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil || res.StatusCode != http.StatusOK || !strings.Contains(string(body), "up") {
+		t.Errorf("GET %scmdline: %d %q, %v; want djinn's command line", server.ProfilePath, res.StatusCode, body, err)
 	}
 }

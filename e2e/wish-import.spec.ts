@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { portable } from "./portable";
 
 const binary = path.resolve(
   __dirname,
@@ -107,12 +108,15 @@ test("a wish file imports from the interface", async ({ page }) => {
 
   await expect(page.getByText("Ship the lamp").first()).toBeVisible();
   await expect(page.getByText("Which oil for the wick?").first()).toBeVisible();
-  await expect(page.getByText("Lexicon of the lamp").first()).toBeVisible();
-  // A block shows as the lead wrote it, in Markdown.
+  // A block, in the agents' tab: opened, it shows as the lead wrote it, in Markdown.
+  await page.getByRole("tab", { name: /^For agents/ }).click();
+  await page.getByRole("button", { name: /Lexicon of the lamp/ }).click();
   await expect(page.getByText("A wick carries the oil.").first()).toBeVisible();
   await expect(page.locator(".wish-block strong")).toHaveText("wick");
-  // Its task, from the file.
+  // Its task, from the file, in the Tasks tab.
+  await page.getByRole("tab", { name: /^Tasks/ }).click();
   await expect(page.getByText("Polish the brass").first()).toBeVisible();
+  await page.getByRole("tab", { name: /^Wish/ }).click();
   // A wish at work: nothing to grant.
   await expect(page.getByText("My wish is granted")).toHaveCount(0);
   await page.screenshot({
@@ -152,6 +156,7 @@ const readyOf = (readyId: string, title: string) => ({
 test("a ready wish is granted by the user, from the interface", async ({
   page,
 }) => {
+  portable();
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-import-"));

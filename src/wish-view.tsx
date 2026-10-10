@@ -1,33 +1,34 @@
 // The screen of one wish, read from the services: what waits for you first (its open questions, the blocking ones
-// first, its workers that wait, and "My wish is granted" once Djinn proposes it), then its tasks (those that need an
-// eye first) with what they spent, its decisions, its blocks, its journal and the rights its workers have. Djinn
-// proposes; only the user grants.
+// first, its workers that wait, and "My wish is granted" once Djinn proposes it), its journal and the rights its
+// workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
+// (decision-log.tsx), its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the last
+// (agent-blocks.tsx): what is for you is a question.
+// Djinn proposes; only the user grants.
 import {
-  CheckCircle2,
-  ChevronDown,
   Bot,
   ChevronRight,
   Clock3,
   Download,
   FileText,
-  GitBranch,
-  Hourglass,
   Pause,
   Play,
   ScrollText,
   Sparkles,
-  Terminal,
+  Trash2,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   Allowance,
   type Block,
   Change,
   type Choice,
+  Closer,
+  type KeptWorktree,
   type MarkKind,
   type Project,
+  type Provider,
   type Task,
   TaskStatus,
   type Wish,
@@ -35,71 +36,147 @@ import {
   WishState,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { useClients, useData, useStore, useWishDetail } from "./data/djinn";
+import { decisionOf, decisionsOf } from "./data/decisions";
+import {
+  useClients,
+  useData,
+  usePausable,
+  useStore,
+  useWishDetail,
+} from "./data/djinn";
 import {
   type OpenQuestion,
+  azimaGroups,
+  forkedAs,
+  finishedTasks,
   investigatingQuestions,
+  isAzima,
+  movingTasks,
   openQuestions,
   spent,
   waitingTasks,
+  azimasDone,
+  workCount,
 } from "./data/flight";
 import {
   allowanceOf,
+  deletedText,
+  MAX_ACTIVE,
   isActive,
-  isOpen,
+  noLead,
   projectsOf,
   taskStatusText,
   taskTone,
   when,
   wishStateText,
+  runningOf,
   wishTone,
 } from "./data/format";
-import { type Entry, isLog, journal } from "./data/journal";
+import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
+import { AgentBlocks, agentBlocks } from "./agent-blocks";
 import { AttentionBar, attentionOf } from "./attention";
-import { MarkButtons, type OnMark, useWrites } from "./marks";
+import { ModalFrame } from "./frame";
+import { useWrites } from "./marks";
 import { InstructionList } from "./instruction-list";
 import { LeadMessage } from "./lead-message";
 import { LeadPromptCard } from "./lead-prompt";
 import { leadTerminal } from "./lead-terminal";
 import { LeadStatus } from "./lead-status";
 import { MarkdownBody } from "./markdown-body";
-import { providerName } from "./provider";
+import { OlderLine, useRecent } from "./older";
 import { useKeepPlace } from "./scroll-anchor";
+import { DecisionLog } from "./decision-log";
 import { CountPill, StatusBadge } from "./status";
+import { AzimaCard, azimaFinished } from "./azima";
+import { TaskSections, type View, ViewTabs } from "./task-tabs";
+import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { ChangeProvider } from "./wish-dialogs";
 import { WishTask } from "./wish-task";
 import { PageHeader, PageHeaderAction } from "./page-header";
+import {
+  LastPushes,
+  LeadButton,
+  MainMerges,
+  WishDescription,
+  recordedAgent,
+} from "./wish-head";
+import { providerName } from "./provider";
+
+// Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
+export interface Opening {
+  wishId: string;
+  tilasmId: string;
+}
 
 export function WishView({
   wish,
+  opening,
   onToast,
 }: {
   wish: Wish;
+  // A tilasm of the wish to show now, in its Tilasms tab.
+  opening?: Opening;
   onToast: (text: string) => void;
 }) {
   const allProjects = useData((s) => s.projects);
   const data = useStore();
+  const pausable = usePausable();
   const detail = useWishDetail(wish.id);
   const projects = projectsOf(wish, allProjects);
   const open = openQuestions(wish, detail);
   const digging = investigatingQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
   const codes = new Map(detail.tasks.map((task) => [task.id, task.code]));
-  const notes = detail.blocks.filter((b) => !isLog(b));
-  const decided = detail.questions.filter((q) => !isOpen(q));
-  const running = detail.tasks.filter(
-    (task) => task.status === TaskStatus.RUNNING,
-  ).length;
+  // Read again only when the wish's questions, blocks or tasks change, not at every render of the screen.
+  const forAgents = useMemo(() => agentBlocks(detail.blocks), [detail.blocks]);
+  const decisions = useMemo(
+    () => decisionsOf(detail.questions, detail.blocks, detail.tasks),
+    [detail.questions, detail.blocks, detail.tasks],
+  );
+  const decisionItems = useMemo(
+    () => decisions.map((item) => ({ item })),
+    [decisions],
+  );
+  const { running, watching } = runningOf(detail.tasks);
   const done = detail.tasks.filter(
-    (task) => task.status === TaskStatus.DONE,
+    (task) => task.status === TaskStatus.DONE && !isAzima(task),
   ).length;
+  // The azimas' progress, then the work's: the azimas are not counted as tasks.
+  const azimaProgress = azimasDone(detail.tasks);
+  const work = workCount(detail.tasks);
   const granted = wish.state === WishState.GRANTED;
-  const [history, setHistory] = useState(false);
   const [changing, setChanging] = useState(false);
+  const [view, setView] = useState<View>(opening ? "tilasms" : "main");
+  const [deleting, setDeleting] = useState(false);
+  // What a link between a decision and a task brings into sight in the other tab: its id.
+  const [focus, setFocus] = useState("");
+  const show = (to: View, id = "") => (setView(to), setFocus(id));
+  // The tilasm a link opened: the Tilasms tab shows it, again at each new request.
+  const [opened, setOpened] = useState(opening);
+  useEffect(() => {
+    if (!opening) return;
+    setView("tilasms");
+    setOpened(opening);
+  }, [opening]);
+  useEffect(() => {
+    if (view !== "tasks" || !focus) return;
+    document
+      .querySelector<HTMLButtonElement>(`#task-${focus} .wish-task-heading`)
+      ?.focus({ preventScroll: true });
+  }, [view, focus]);
+  const moving = movingTasks(detail.tasks);
+  const finished = finishedTasks(detail.tasks);
+  // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
+  const azimas = azimaGroups(detail.tasks);
+  const doneAzimas = azimas.filter((x) => azimaFinished(x.azima));
+  const showDone = doneAzimas.some(
+    (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
+  );
+  const byId = new Map(detail.tasks.map((task) => [task.id, task]));
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
@@ -111,17 +188,82 @@ export function WishView({
     enlighten,
     mark,
   } = useWrites(onToast);
-  const act = (run: () => Promise<unknown>, changes: Change[], done?: string) =>
-    write(wish.id, run, changes, done);
+  const act = (
+    run: () => Promise<unknown>,
+    changes: Change[],
+    done?: string | (() => string),
+  ) => write(wish.id, run, changes, done);
+  const renderTask = (task: Task) => (
+    <WishTask
+      key={task.id}
+      task={task}
+      codes={codes}
+      forkedAs={forkedAs(task, detail.tasks)}
+      decision={decisionOf(task, decisions)}
+      focused={focus === task.id}
+      onDecision={() => show("decisions", decisionOf(task, decisions)?.id)}
+      project={allProjects.find((p) => p.id === task.projectId)}
+      onStop={() =>
+        quiet(act(() => clients.tasks.stop({ taskId: task.id }), [Change.TASK]))
+      }
+      onStart={() =>
+        quiet(
+          act(() => clients.tasks.start({ taskId: task.id }), [Change.TASK]),
+        )
+      }
+      onSend={(text) =>
+        act(() => clients.tasks.send({ taskId: task.id, text }), [])
+      }
+      onHold={
+        pausable
+          ? (pause) =>
+              quiet(
+                act(
+                  () =>
+                    pause
+                      ? clients.tasks.pause({ taskId: task.id })
+                      : clients.tasks.resume({ taskId: task.id }),
+                  [Change.TASK],
+                ),
+              )
+          : undefined
+      }
+      onDone={(note) =>
+        act(
+          () =>
+            clients.tasks.done({
+              taskId: task.id,
+              note,
+              by: Closer.DEVELOPER,
+            }),
+          [Change.TASK],
+          t("task.marked_done", { task: task.code }),
+        )
+      }
+    />
+  );
+  // lead resumes the wish's lead, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
+  // that runs a program already, a session Djinn does not know.
+  const lead = (provider?: Provider) => {
+    let note = "";
+    quiet(
+      act(
+        async () => {
+          ({ note } = await clients.wishes.resume({
+            wishId: wish.id,
+            provider,
+          }));
+        },
+        [Change.WISH],
+        () => note,
+      ),
+    );
+  };
   const viewLead = async () => {
-    try {
-      await clients.ui.show({
-        wishId: wish.id,
-        terminal: leadTerminal(wish.id),
-      });
-    } catch (error) {
-      onToast(message(error));
-    }
+    await clients.ui.show({
+      wishId: wish.id,
+      terminal: leadTerminal(wish.id),
+    });
   };
   const startLead = async () => {
     try {
@@ -136,10 +278,6 @@ export function WishView({
       throw error;
     }
   };
-  const openLead = () =>
-    wish.leadRunning || wish.leadExit
-      ? viewLead()
-      : startLead().catch((error) => onToast(message(error)));
   const prompt = wish.leadRunning ? wish.leadPrompt : undefined;
   const attention = attentionOf(
     open,
@@ -148,7 +286,7 @@ export function WishView({
     undefined,
     prompt ? [wish] : [],
   );
-  const tone = wishTone(wish, open.length, running);
+  const tone = wishTone(wish, open.length, running, watching);
 
   return (
     <div className="wish-view review">
@@ -174,13 +312,14 @@ export function WishView({
               <Bot size={16} aria-hidden="true" />
               <span>{providerName(wish.provider)}</span>
             </PageHeaderAction>
-            <PageHeaderAction
-              label={t("wish.resume")}
-              title={t("wish.resume_detail")}
-              onClick={() => quiet(openLead())}
-            >
-              <Terminal size={16} aria-hidden="true" />
-            </PageHeaderAction>
+            <LeadButton
+              recorded={recordedAgent(wish.lead)}
+              loadAgents={async () =>
+                (await clients.ui.getEnvironment({})).providers
+              }
+              onLead={() => lead()}
+              onPick={(provider) => lead(provider)}
+            />
             <PageHeaderAction
               label={t("wish.page")}
               title={t("wish.page_detail")}
@@ -212,6 +351,13 @@ export function WishView({
             >
               <Download size={16} aria-hidden="true" />
             </PageHeaderAction>
+            <PageHeaderAction
+              className="danger"
+              label={t("wish.delete")}
+              onClick={() => setDeleting(true)}
+            >
+              <Trash2 size={16} aria-hidden="true" />
+            </PageHeaderAction>
           </>
         }
       >
@@ -227,6 +373,27 @@ export function WishView({
         ))}
         <strong>{wish.title}</strong>
       </PageHeader>
+      {deleting && (
+        <DeleteWish
+          wish={wish}
+          tasks={detail.tasks.length}
+          running={running + watching}
+          onClose={() => setDeleting(false)}
+          onDelete={() => {
+            setDeleting(false);
+            let kept: KeptWorktree[] = [];
+            quiet(
+              act(
+                async () => {
+                  ({ kept } = await clients.wishes.delete({ wishId: wish.id }));
+                },
+                [Change.WISH],
+                () => deletedText(wish.title, kept),
+              ),
+            );
+          }}
+        />
+      )}
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />
         <div className="hero mission-header review-head">
@@ -235,101 +402,155 @@ export function WishView({
               {projects.map((p) => p.name).join(" · ") || t("wish.no_project")}
             </span>
             <h1>{wish.title}</h1>
-            <div className="review-pills">
-              <StatusBadge tone={tone} label={wishStateText(wish)} />
-              {open.length > 0 && (
-                <CountPill
-                  tone="waiting"
-                  count={open.length}
-                  label={t("wish.questions_wait", { count: open.length })}
-                >
-                  {t("pill.to_decide")}
-                </CountPill>
-              )}
-              {digging.length > 0 && (
-                <CountPill
-                  tone="investigating"
-                  count={digging.length}
-                  label={t("pill.investigating_detail", {
-                    count: digging.length,
-                  })}
-                >
-                  {t("pill.investigating")}
-                </CountPill>
-              )}
-              {running > 0 && (
-                <CountPill
-                  tone="running"
-                  count={running}
-                  label={t("plan.running", { count: running })}
-                >
-                  {t("pill.running")}
-                </CountPill>
-              )}
-              {detail.tasks.length > 0 && (
-                <CountPill
-                  tone="done"
-                  count={done}
-                  label={t("pill.done_detail", {
-                    done,
-                    count: detail.tasks.length,
-                  })}
-                >
-                  / {detail.tasks.length} {t("pill.done")}
-                </CountPill>
-              )}
-            </div>
-            <div className="hero-meta">
-              <span>
-                <Clock3 size={13} />
-                {when(wish.createTime)}
-              </span>
-              {granted ? (
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    quiet(
-                      act(
-                        () => clients.wishes.activate({ wishId: wish.id }),
-                        [Change.WISH],
-                      ),
-                    )
-                  }
-                >
-                  <Play size={13} />
-                  {t("wish.reopen")}
-                </button>
-              ) : isActive(wish) ? (
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    quiet(
-                      act(
-                        () => clients.wishes.pause({ wishId: wish.id }),
-                        [Change.WISH],
-                      ),
-                    )
-                  }
-                >
-                  <Pause size={13} />
-                  {t("wish.pause")}
-                </button>
-              ) : (
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    quiet(
-                      act(
-                        () => clients.wishes.activate({ wishId: wish.id }),
-                        [Change.WISH],
-                      ),
-                    )
-                  }
-                >
-                  <Play size={13} />
-                  {t("wish.activate")}
-                </button>
-              )}
+            <WishDescription
+              key={wish.id + wish.description}
+              title={wish.title}
+              description={wish.description}
+              onSave={(text) =>
+                quiet(
+                  act(
+                    () => clients.wishes.describe({ wishId: wish.id, text }),
+                    [Change.WISH],
+                  ),
+                )
+              }
+            />
+            <div className="review-facts">
+              <div className="review-pills">
+                <StatusBadge tone={tone} label={wishStateText(wish)} />
+                {open.length > 0 && (
+                  <CountPill
+                    tone="waiting"
+                    count={open.length}
+                    label={t("wish.questions_wait", { count: open.length })}
+                  >
+                    {t("pill.to_decide")}
+                  </CountPill>
+                )}
+                {digging.length > 0 && (
+                  <CountPill
+                    tone="investigating"
+                    count={digging.length}
+                    label={t("pill.investigating_detail", {
+                      count: digging.length,
+                    })}
+                  >
+                    {t("pill.investigating")}
+                  </CountPill>
+                )}
+                {running > 0 && (
+                  <CountPill
+                    tone="running"
+                    count={running}
+                    label={t("plan.running", { count: running })}
+                  >
+                    {t("pill.running")}
+                  </CountPill>
+                )}
+                {watching > 0 && (
+                  <CountPill
+                    tone="watching"
+                    count={watching}
+                    label={t("plan.watching", { count: watching })}
+                  >
+                    {t("pill.watching")}
+                  </CountPill>
+                )}
+                {azimaProgress.count > 0 && azimaProgress.proof === 0 && (
+                  <CountPill
+                    tone="done"
+                    count={azimaProgress.done}
+                    label={t("pill.azimas_detail", {
+                      done: azimaProgress.done,
+                      count: azimaProgress.count,
+                    })}
+                  >
+                    / {azimaProgress.count} {t("pill.azimas")}
+                  </CountPill>
+                )}
+                {azimaProgress.proof > 0 && (
+                  // The azimas awaiting their proof, apart from the done ones: their work is done, not them.
+                  <CountPill
+                    tone="done"
+                    count={azimaProgress.done}
+                    label={t("pill.azimas_proof_detail", {
+                      done: azimaProgress.done,
+                      proof: azimaProgress.proof,
+                      count: azimaProgress.count,
+                    })}
+                  >
+                    {t("pill.azimas_done")} ·{" "}
+                    <b className="tone-proof">{azimaProgress.proof}</b>{" "}
+                    {t("pill.azimas_proof")} / {azimaProgress.count}{" "}
+                    {t("pill.azimas")}
+                  </CountPill>
+                )}
+                {work > 0 && (
+                  <CountPill
+                    tone="done"
+                    count={done}
+                    label={t("pill.done_detail", { done, count: work })}
+                  >
+                    / {work} {t("pill.done")}
+                  </CountPill>
+                )}
+              </div>
+              <div className="hero-meta">
+                <span>
+                  <Clock3 size={13} />
+                  {when(wish.createTime)}
+                </span>
+                {granted ? (
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      quiet(
+                        act(
+                          () => clients.wishes.activate({ wishId: wish.id }),
+                          [Change.WISH],
+                        ),
+                      )
+                    }
+                  >
+                    <Play size={13} />
+                    {t("wish.reopen")}
+                  </button>
+                ) : isActive(wish) ? (
+                  <button
+                    className="text-button"
+                    title={t("wish.pause_detail")}
+                    onClick={() =>
+                      quiet(
+                        act(
+                          () => clients.wishes.pause({ wishId: wish.id }),
+                          [Change.WISH],
+                        ),
+                      )
+                    }
+                  >
+                    <Pause size={13} />
+                    {t("wish.pause")}
+                  </button>
+                ) : (
+                  <button
+                    className="text-button"
+                    title={t("wish.activate_detail", { max: MAX_ACTIVE })}
+                    onClick={() =>
+                      quiet(
+                        act(
+                          () => clients.wishes.activate({ wishId: wish.id }),
+                          [Change.WISH],
+                        ),
+                      )
+                    }
+                  >
+                    <Play size={13} />
+                    {t("wish.activate")}
+                  </button>
+                )}
+                <LastPushes pushes={wish.pushes} projects={projects} />
+                <MainMerges mains={wish.mains} projects={projects} />
+              </div>
             </div>
           </div>
           <div className="hero-visual">
@@ -343,222 +564,216 @@ export function WishView({
             onView={() => void viewLead()}
             onStart={startLead}
           />
-          {(prompt || open.length > 0 || waiting.length > 0 || wish.ready) && (
-            <section
-              className="action-center"
-              id="action-center"
-              aria-label={t("panels.your_move")}
-            >
-              <div className="section-title">
-                <h2>{t("panels.your_move")}</h2>
-                <p>
-                  {prompt
-                    ? t("lead_prompt.waits")
-                    : open.length
-                      ? t("wish.questions_wait", { count: open.length })
-                      : wish.ready
-                        ? t("wish.ready_detail")
-                        : t("panels.your_move_detail")}
-                </p>
-              </div>
-              {prompt && (
-                <LeadPromptCard
-                  wishId={wish.id}
-                  prompt={prompt}
-                  onChoose={(index) =>
-                    act(
-                      () =>
-                        clients.wishes.choose({
-                          wishId: wish.id,
-                          option: index + 1,
-                          title: prompt.title,
-                          lines: prompt.lines,
-                          options: prompt.options,
-                        }),
-                      [Change.WISH],
-                    )
-                  }
-                />
-              )}
-              {open.length > 0 && (
-                <section className="decisions-section">
-                  <div className="section-heading">
-                    <h3>
-                      {t("panels.decisions")}
-                      <span className="count">{open.length}</span>
-                    </h3>
-                  </div>
-                  <AnimatePresence mode="popLayout">
-                    {open.map(({ item: q, blocking }) => (
-                      <WishQuestion
-                        key={q.id}
-                        question={q}
-                        blocking={blocking}
-                        onAnswer={(choice, note) =>
-                          answer(wish.id, q.id, choice, note)
-                        }
-                        onMark={(kind, remove) =>
-                          mark(wish.id, q.id, kind, remove)
-                        }
-                        onEnlighten={(note) => enlighten(wish.id, q.id, note)}
-                      />
-                    ))}
-                  </AnimatePresence>
-                </section>
-              )}
-              {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-              {wish.ready && (
-                <GrantCard
-                  wish={wish}
-                  onGrant={() =>
-                    quiet(
-                      act(
-                        () => clients.wishes.grant({ wishId: wish.id }),
-                        [Change.WISH],
-                        t("wish.granted_toast"),
-                      ),
-                    )
-                  }
-                />
-              )}
-            </section>
-          )}
-
-          {digging.length > 0 && (
-            <InvestigatingSection
-              questions={digging}
-              onAnswer={(q, choice, note) => answer(wish.id, q, choice, note)}
-              onMark={(q, kind, remove) => mark(wish.id, q, kind, remove)}
+          <ViewTabs
+            view={view}
+            main={t("tabs.wish")}
+            tasks={workCount(detail.tasks)}
+            decisions={decisions.length}
+            tilasms={detail.tilasms.length}
+            agents={forAgents.length}
+            onView={(to) => show(to)}
+          />
+          {view === "tilasms" && (
+            <TilasmsTab
+              key={wish.id}
+              wishId={wish.id}
+              opening={opened}
+              tilasms={detail.tilasms}
+              tasks={detail.tasks}
+              onToast={onToast}
             />
           )}
-
-          <section className="wish-section" aria-label={t("wish.tasks")}>
-            <div className="section-title">
-              <h2>
-                {t("wish.tasks")}
-                <span className="count">{detail.tasks.length}</span>
-              </h2>
-              <SpentLine spent={spent(detail.tasks)} />
-            </div>
-            {detail.tasks.length === 0 ? (
-              <p className="muted-text">
-                {detail.loaded
-                  ? wish.leadRunning
-                    ? t("wish.no_tasks")
-                    : t("wish.no_tasks_not_started")
-                  : t("common.loading")}
+          {view === "agents" && (
+            <AgentBlocks blocks={forAgents} codes={codes} />
+          )}
+          {view === "decisions" && (
+            <DecisionLog
+              items={decisionItems}
+              noLead={() => noLead(wish)}
+              focus={focus}
+              onTask={(id) => show("tasks", id)}
+            />
+          )}
+          {view === "tasks" &&
+            (detail.tasks.length === 0 ? (
+              <p className="muted-text" role="tabpanel">
+                {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
               </p>
             ) : (
-              byAttention(detail.tasks).map((task) => (
-                <WishTask
-                  key={task.id}
-                  task={task}
-                  codes={codes}
-                  project={allProjects.find((p) => p.id === task.projectId)}
-                  onStop={() =>
-                    quiet(
-                      act(
-                        () => clients.tasks.stop({ taskId: task.id }),
-                        [Change.TASK],
-                      ),
-                    )
-                  }
-                  onStart={() =>
-                    quiet(
-                      act(
-                        () => clients.tasks.start({ taskId: task.id }),
-                        [Change.TASK],
-                      ),
-                    )
-                  }
-                  onSend={(text) =>
-                    act(() => clients.tasks.send({ taskId: task.id, text }), [])
-                  }
-                />
-              ))
-            )}
-          </section>
-
-          {notes.length > 0 && (
-            <section className="wish-section" aria-label={t("wish.blocks")}>
-              <div className="section-title">
-                <h2>
-                  {t("wish.blocks")}
-                  <span className="count">{notes.length}</span>
-                </h2>
-                <p>{t("wish.blocks_detail")}</p>
-              </div>
-              {notes.map((block) => (
-                <WishBlock
-                  key={block.id}
-                  block={block}
-                  task={codes.get(block.taskId) ?? ""}
-                  onMark={(kind, remove) =>
-                    mark(wish.id, block.id, kind, remove)
-                  }
-                />
-              ))}
-            </section>
-          )}
-
-          <InstructionList
-            instructions={detail.instructions}
-            tasks={detail.tasks}
-          />
-
-          {decided.length > 0 && (
-            <div className="decision-history">
-              <button
-                className="text-button"
-                onClick={() => setHistory(!history)}
-                aria-expanded={history}
-              >
-                <CheckCircle2 size={14} />
-                {t("panels.decisions_recorded", { count: decided.length })}
-                <ChevronDown size={13} className={history ? "rotated" : ""} />
-              </button>
-              <AnimatePresence>
-                {history && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                  >
-                    {decided.map((q) => (
-                      <WishQuestion
-                        key={q.id}
-                        question={q}
-                        onAnswer={async () => {}}
-                        onMark={(kind, remove) =>
-                          mark(wish.id, q.id, kind, remove)
-                        }
-                      />
-                    ))}
-                  </motion.div>
+              <TaskSections
+                moving={moving}
+                finished={finished}
+                azimas={azimas.filter((x) => !azimaFinished(x.azima))}
+                doneAzimas={doneAzimas}
+                fold={wish.id}
+                showDone={showDone}
+                renderAzima={({ azima, parts }) => (
+                  <AzimaCard
+                    key={azima.id}
+                    azima={azima}
+                    parts={parts}
+                    tasks={byId}
+                    render={renderTask}
+                    focus={focus}
+                    onValidate={() =>
+                      quiet(
+                        act(
+                          () =>
+                            clients.tasks.done({
+                              taskId: azima.id,
+                              note: t("azima.validated_note"),
+                              by: Closer.DEVELOPER,
+                            }),
+                          [Change.TASK],
+                          t("azima.validated", { code: azima.code }),
+                        ),
+                      )
+                    }
+                  />
                 )}
-              </AnimatePresence>
+                aside={<SpentLine spent={spent(detail.tasks)} />}
+                render={renderTask}
+              />
+            ))}
+          {view === "main" && (
+            <div className="main-columns">
+              {(open.length > 0 ||
+                waiting.length > 0 ||
+                wish.ready ||
+                !!prompt ||
+                digging.length > 0) && (
+                <div className="main-moves">
+                  {(open.length > 0 ||
+                    waiting.length > 0 ||
+                    wish.ready ||
+                    prompt) && (
+                    <section
+                      className="action-center"
+                      id="action-center"
+                      aria-label={t("panels.your_move")}
+                    >
+                      <div className="section-title">
+                        <h2>{t("panels.your_move")}</h2>
+                        <p>
+                          {prompt
+                            ? t("lead_prompt.waits")
+                            : open.length
+                              ? t("wish.questions_wait", { count: open.length })
+                              : wish.ready
+                                ? t("wish.ready_detail")
+                                : t("panels.your_move_detail")}
+                        </p>
+                      </div>
+                      {prompt && (
+                        <LeadPromptCard
+                          wishId={wish.id}
+                          prompt={prompt}
+                          onChoose={(index) =>
+                            act(
+                              () =>
+                                clients.wishes.choose({
+                                  wishId: wish.id,
+                                  option: index + 1,
+                                  title: prompt.title,
+                                  lines: prompt.lines,
+                                  options: prompt.options,
+                                }),
+                              [Change.WISH],
+                            )
+                          }
+                        />
+                      )}
+                      {open.length > 0 && (
+                        <section className="decisions-section">
+                          <div className="section-heading">
+                            <h3>
+                              {t("panels.decisions")}
+                              <span className="count">{open.length}</span>
+                            </h3>
+                          </div>
+                          <AnimatePresence mode="popLayout">
+                            {open.map(({ item: q, blocking }) => (
+                              <WishQuestion
+                                key={q.id}
+                                question={q}
+                                blocking={blocking}
+                                noLead={noLead(wish)}
+                                onAnswer={(choice, note) =>
+                                  answer(wish.id, q.id, choice, note)
+                                }
+                                onMark={(kind, remove) =>
+                                  mark(wish.id, q.id, kind, remove)
+                                }
+                                onEnlighten={(note) =>
+                                  enlighten(wish.id, q.id, note)
+                                }
+                              />
+                            ))}
+                          </AnimatePresence>
+                        </section>
+                      )}
+                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
+                      {wish.ready && (
+                        <GrantCard
+                          wish={wish}
+                          onGrant={() =>
+                            quiet(
+                              act(
+                                () => clients.wishes.grant({ wishId: wish.id }),
+                                [Change.WISH],
+                                t("wish.granted_toast"),
+                              ),
+                            )
+                          }
+                        />
+                      )}
+                    </section>
+                  )}
+
+                  {digging.length > 0 && (
+                    <InvestigatingSection
+                      questions={digging}
+                      onAnswer={(q, choice, note) =>
+                        answer(wish.id, q, choice, note)
+                      }
+                      onMark={(q, kind, remove) =>
+                        mark(wish.id, q, kind, remove)
+                      }
+                    />
+                  )}
+                </div>
+              )}
+
+              <div className="main-side">
+                <Journal wish={wish} blocks={detail.blocks} />
+
+                {projects.length > 0 && (
+                  <Rights
+                    wish={wish}
+                    projects={projects}
+                    onAllow={(projectId, mode) =>
+                      quiet(
+                        act(
+                          () =>
+                            clients.wishes.allow({
+                              wishId: wish.id,
+                              projectId,
+                              mode,
+                            }),
+                          [Change.WISH],
+                        ),
+                      )
+                    }
+                  />
+                )}
+              </div>
             </div>
           )}
-
-          <Journal wish={wish} blocks={detail.blocks} />
-
-          {projects.length > 0 && (
-            <Rights
-              wish={wish}
-              projects={projects}
-              onAllow={(projectId, mode) =>
-                quiet(
-                  act(
-                    () =>
-                      clients.wishes.allow({
-                        wishId: wish.id,
-                        projectId,
-                        mode,
-                      }),
-                    [Change.WISH],
-                  ),
-                )
-              }
+          {view === "main" && (
+            <InstructionList
+              instructions={detail.instructions}
+              tasks={detail.tasks}
+              onTask={(id) => show("tasks", id)}
             />
           )}
         </div>
@@ -625,6 +840,7 @@ export function InvestigatingSection({
           key={item.id}
           question={item}
           blocking={blocking}
+          noLead={noLead(wish)}
           origin={origin ? <WishOrigin wish={wish} /> : undefined}
           onAnswer={(choice, note) => onAnswer(item.id, choice, note)}
           onMark={(kind, remove) => onMark(item.id, kind, remove)}
@@ -644,7 +860,7 @@ export function WishOrigin({ wish }: { wish: Wish }) {
   );
 }
 
-// WaitingTasks are the workers that wait for the user: for an answer before they edit, or cut short by a stop.
+// WaitingTasks are the workers that wait for the user: for an answer before they edit.
 export function WaitingTasks({
   waiting,
   origin = false,
@@ -663,17 +879,12 @@ export function WaitingTasks({
       </div>
       {waiting.map(({ item, question, wish }) => (
         <p className="plan-line" key={item.id} id={`waiting-${item.id}`}>
-          <StatusBadge
-            tone={taskTone(item.status)}
-            label={taskStatusText(item.status)}
-          />
+          <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
           {origin && <WishOrigin wish={wish} />}
           <span>
-            {item.status === TaskStatus.INTERRUPTED
-              ? t("page.action_interrupted", { task: item.code })
-              : question
-                ? t("page.action_waiting", { task: item.code, question })
-                : t("page.action_waiting_unknown", { task: item.code })}
+            {question
+              ? t("page.action_waiting", { task: item.code, question })
+              : t("page.action_waiting_unknown", { task: item.code })}
           </span>
         </p>
       ))}
@@ -681,77 +892,8 @@ export function WaitingTasks({
   );
 }
 
-// The tasks that need an eye come first (running, waiting, failed, cut short), then the planned ones, then the
-// finished ones; each group keeps the lamp's order.
-function byAttention(tasks: readonly Task[]): Task[] {
-  const group = (task: Task) =>
-    task.status === TaskStatus.PENDING || task.status === TaskStatus.UNSPECIFIED
-      ? 1
-      : task.status === TaskStatus.DONE || task.status === TaskStatus.STOPPED
-        ? 2
-        : 0;
-  return [...tasks].sort((a, b) => group(a) - group(b));
-}
-
-// A block this long, in characters or lines, is folded under its title, as on the wish's page.
-const LONG_BLOCK = 800;
-const LONG_BLOCK_LINES = 16;
-
-// WishBlock shows a block as the lead wrote it: Markdown, or the text as it is for another media type. A long one
-// opens on a click.
-function WishBlock({
-  block,
-  task,
-  onMark,
-}: {
-  block: Block;
-  task: string;
-  onMark: OnMark;
-}) {
-  const markdown = !block.mediaType || block.mediaType === "text/markdown";
-  const long =
-    block.content.length > LONG_BLOCK ||
-    block.content.split("\n").length > LONG_BLOCK_LINES;
-  const [unfolded, setUnfolded] = useState(false);
-  const folded = long && !unfolded;
-  return (
-    <article
-      className={`wish-block ${folded ? "folded" : ""}`}
-      id={`block-${block.id}`}
-    >
-      <div className="wish-block-head">
-        <div>
-          <span className="eyebrow">
-            {block.kind}
-            {task && ` · ${t("page.about_task", { task })}`}
-            {block.updateTime && ` · ${when(block.updateTime)}`}
-          </span>
-          {block.title && <h3>{block.title}</h3>}
-        </div>
-        <MarkButtons item={block} approve onMark={onMark} />
-      </div>
-      <div className="wish-block-body prose">
-        {markdown ? (
-          <MarkdownBody text={block.content} />
-        ) : (
-          <pre className="wish-block-raw">{block.content}</pre>
-        )}
-      </div>
-      {long && (
-        <button
-          className="text-button"
-          onClick={() => setUnfolded(!unfolded)}
-          aria-expanded={!folded}
-        >
-          <ChevronDown size={13} className={folded ? "" : "rotated"} />
-          {folded ? t("wish.block_more") : t("wish.block_less")}
-        </button>
-      )}
-    </article>
-  );
-}
-
-// Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for.
+// Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for. The
+// latest entries show, the older ones fold behind a line (older.tsx).
 // WishService.Snapshot reads the whole wish, events included: it is read on a click, then again as the wish changes.
 function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
   const clients = useClients();
@@ -767,7 +909,9 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
     clients.wishes
       .snapshot({ wishId: wish.id })
       .then((res) => {
-        if (current) (setExp(res.export), setError(""));
+        if (!current) return;
+        setExp(res.export);
+        setError("");
       })
       .catch((err) => {
         if (current) setError(message(err));
@@ -776,7 +920,11 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
       current = false;
     };
   }, [clients, wish, commands, shown, detail]);
-  const entries = journal(commands ? exp : undefined, blocks);
+  const entries = useMemo(
+    () => journal(commands ? exp : undefined, blocks),
+    [commands, exp, blocks],
+  );
+  const { shown: recent, more } = useRecent(entries.length);
   return (
     <section
       className="wish-section wish-journal"
@@ -811,11 +959,22 @@ function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
       {shown && entries.length > 0 && (
         <table className="compact-table journal-list">
           <tbody>
-            {entries.map((entry) => (
+            {entries.slice(0, recent).map((entry) => (
               <JournalEntry key={entry.id} entry={entry} />
             ))}
           </tbody>
         </table>
+      )}
+      {shown && (
+        <OlderLine
+          hidden={entries.length - recent}
+          label={(count, hidden) =>
+            count < hidden
+              ? t("wish.journal_older_some", { count, hidden })
+              : t("wish.journal_older", { count })
+          }
+          onShow={more}
+        />
       )}
     </section>
   );
@@ -854,7 +1013,10 @@ function Rights({
   onAllow: (projectId: string, mode: Allowance) => void;
 }) {
   return (
-    <section className="wish-section" aria-label={t("rights.title")}>
+    <section
+      className="wish-section wish-rights"
+      aria-label={t("rights.title")}
+    >
       <div className="section-heading">
         <h3>{t("rights.title")}</h3>
       </div>
@@ -879,5 +1041,53 @@ function Rights({
         </div>
       ))}
     </section>
+  );
+}
+
+// DeleteWish asks before a wish goes for good, with its tasks, their events, its questions and its blocks
+// (WishService.Delete). Its workers stop first and its lead's terminal closes; a worktree with no work of its own
+// goes, the others and every branch stay, as the toast says after the delete.
+function DeleteWish({
+  wish,
+  tasks,
+  running,
+  onDelete,
+  onClose,
+}: {
+  wish: Wish;
+  tasks: number;
+  running: number;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <ModalFrame
+      title={t("wish.delete_title", { title: wish.title })}
+      eyebrow={t("wish.delete_eyebrow")}
+      onClose={onClose}
+    >
+      <div className="form-fields">
+        <p>{t("wish.delete_what", { count: tasks })}</p>
+        {running > 0 && (
+          <p className="login-message">
+            {t("wish.delete_running", { count: running })}
+          </p>
+        )}
+        <p className="form-tip">{t("wish.delete_kept")}</p>
+        <div className="modal-footer">
+          <button type="button" className="button secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            className="button danger-button"
+            onClick={onDelete}
+          >
+            <Trash2 size={14} />
+            {t("wish.delete_confirm")}
+          </button>
+        </div>
+      </div>
+    </ModalFrame>
   );
 }

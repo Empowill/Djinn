@@ -2,6 +2,7 @@
 // settings that stay on this page (the language).
 import {
   ArrowRight,
+  BookOpen,
   Bot,
   Check,
   Folder,
@@ -21,12 +22,17 @@ import {
 
 import {
   Allowance,
+  type CheckRun,
+  CheckWhen,
   type Project,
+  type ProjectCheck,
+  type ProjectServiceShowResponse,
   Provider,
   type Skill,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { NotificationAccess, ProviderState } from "../gen/ts/ui/v1/ui_pb";
+import type { Shortcut } from "../gen/ts/ui/v1/ui_pb";
 import {
   AgentSetupPanel,
   agentOf,
@@ -36,7 +42,7 @@ import {
 } from "./agent-setup";
 import { message } from "./data/client";
 import { useClients } from "./data/djinn";
-import { MAX_ACTIVE } from "./data/format";
+import { MAX_ACTIVE, span, when } from "./data/format";
 import { Brand, ModalFrame } from "./frame";
 import {
   chosenLanguage,
@@ -53,7 +59,7 @@ import {
   setDefaultProvider,
   wishProviders,
 } from "./provider";
-import { type Theme, chosenTheme, setTheme } from "./theme";
+import { type Theme, chosenTheme, setTheme as saveTheme } from "./theme";
 import { WishComposer } from "./wish-composer";
 import { WishDropdown } from "./wish-dropdown";
 import { WishSmoke } from "./wish-smoke";
@@ -105,9 +111,9 @@ export function MakeWish({
     document.activeElement as HTMLElement | null,
   );
   useEffect(() => {
+    const focus = previousFocus.current;
     return () => {
-      if (previousFocus.current?.isConnected)
-        previousFocus.current.focus({ preventScroll: true });
+      if (focus?.isConnected) focus.focus({ preventScroll: true });
     };
   }, []);
   useLayoutEffect(() => {
@@ -700,7 +706,7 @@ export function FolderField({
   );
 }
 
-// ProjectPanel shows a project as djinn knows it, and its skills (SkillService.List): its own and those it summons.
+// ProjectPanel shows a project as djinn knows it, its checks, and its skills (SkillService.List): its own and those it summons.
 export function ProjectPanel({
   project,
   onClose,
@@ -710,12 +716,17 @@ export function ProjectPanel({
 }) {
   const clients = useClients();
   const [skills, setSkills] = useState<Skill[] | undefined>();
+  const [shown, setShown] = useState<ProjectServiceShowResponse>();
   const [error, setError] = useState("");
   useEffect(() => {
     let live = true;
     clients.skills
       .list({ project: project.id })
       .then((res) => live && setSkills(res.skills))
+      .catch((err) => live && setError(message(err)));
+    clients.projects
+      .show({ project: project.id })
+      .then((res) => live && setShown(res))
       .catch((err) => live && setError(message(err)));
     return () => {
       live = false;
@@ -746,6 +757,18 @@ export function ProjectPanel({
         </div>
       )}
       <div className="settings-divider" />
+      <h3>{t("project.checks")}</h3>
+      {shown === undefined && !error && (
+        <p className="muted-text">{t("common.loading")}</p>
+      )}
+      {shown && (
+        <ProjectChecks
+          setup={shown.setup}
+          checks={shown.checks}
+          runs={shown.project?.checkRuns ?? []}
+        />
+      )}
+      <div className="settings-divider" />
       <h3>{t("project.skills")}</h3>
       {error && <p className="login-message">{error}</p>}
       {skills === undefined && !error && (
@@ -768,6 +791,151 @@ export function ProjectPanel({
         </div>
       ))}
     </ModalFrame>
+  );
+}
+
+const whenKeys = {
+  [CheckWhen.UNSPECIFIED]: "project.check_setup",
+  [CheckWhen.COMMIT]: "project.check_commit",
+  [CheckWhen.PUSH]: "project.check_push",
+} as const;
+
+export function ProjectChecks({
+  setup,
+  checks,
+  runs,
+}: {
+  setup: string;
+  checks: ProjectCheck[];
+  runs: CheckRun[];
+}) {
+  if (!setup && checks.length === 0)
+    return <p className="muted-text">{t("project.no_checks")}</p>;
+  const last = (name: string, isSetup: boolean) =>
+    runs.find(
+      (run) =>
+        run.setup === isSetup && run.name.toLowerCase() === name.toLowerCase(),
+    );
+  const row = (
+    key: string,
+    name: string,
+    command: string,
+    whens: CheckWhen[],
+    run?: CheckRun,
+  ) => (
+    <div className="setting-row" key={key}>
+      <div>
+        <strong>{name}</strong>
+        <p>
+          <code>{command}</code>
+        </p>
+        <p
+          className={run && !run.passed ? "login-message" : "muted-text"}
+          title={run?.output || undefined}
+        >
+          {runText(run)}
+        </p>
+      </div>
+      <span>
+        {whens.map((when) => (
+          <span className="badge muted" key={when}>
+            {t(whenKeys[when])}
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+  return (
+    <>
+      <p className="muted-text">{t("project.checks_detail")}</p>
+      {setup &&
+        row(
+          "setup",
+          "setup",
+          setup,
+          [CheckWhen.UNSPECIFIED],
+          last("setup", true),
+        )}
+      {checks.map((check) =>
+        row(
+          `check-${check.name}`,
+          check.name,
+          check.command,
+          check.when,
+          last(check.name, false),
+        ),
+      )}
+    </>
+  );
+}
+
+function runText(run?: CheckRun): string {
+  if (!run) return t("project.check_never");
+  const at = {
+    sha: run.sha.slice(0, 8),
+    when: when(run.endTime),
+    took: span(Number(run.durationMs)),
+  };
+  if (run.passed) return t("project.check_passed", at);
+  const reason = run.reason.split("\n")[0].replace(/:$/, "");
+  return t("project.check_red", { ...at, reason });
+}
+
+export function ShortcutField({
+  shortcut,
+  onSave,
+}: {
+  shortcut?: Shortcut;
+  onSave: (chord: string) => Promise<void>;
+}) {
+  const id = useId();
+  const [draft, setDraft] = useState<string>();
+  const [error, setError] = useState("");
+  const available = shortcut?.available ?? false;
+  const value = draft ?? shortcut?.chord ?? "";
+  const save = () => {
+    if (draft === undefined || draft === shortcut?.chord) return;
+    onSave(draft).then(
+      () => {
+        setDraft(undefined);
+        setError("");
+      },
+      (err) => setError(message(err)),
+    );
+  };
+  return (
+    <div className="setting-row">
+      <div>
+        <label htmlFor={id}>
+          <strong>{t("settings.shortcut")}</strong>
+        </label>
+        <p>
+          {available
+            ? t("settings.shortcut_detail", {
+                chord: shortcut?.defaultChord ?? "",
+              })
+            : t("settings.shortcut_unavailable")}
+        </p>
+        {available && shortcut?.problem && !error && (
+          <p className="login-message">
+            {t("settings.shortcut_problem", { problem: shortcut.problem })}
+          </p>
+        )}
+        {error && <p className="login-message">{error}</p>}
+      </div>
+      <input
+        id={id}
+        value={value}
+        disabled={!available}
+        placeholder={t("settings.shortcut_off")}
+        spellCheck={false}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={save}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") save();
+        }}
+      />
+    </div>
   );
 }
 
@@ -858,11 +1026,20 @@ function NotificationSetting() {
   );
 }
 
-// Settings: the agents djinn finds on this machine, and how to set them up; the language of the page.
-export function Settings({ onClose }: { onClose: () => void }) {
+// Settings: the agents djinn finds on this machine, and how to set them up; the language of the page and shortcuts.
+export function Settings({
+  onClose,
+  onDocs,
+}: {
+  onClose: () => void;
+  onDocs?: () => void;
+}) {
+  const clients = useClients();
   const agents = useAgents();
   const env = agents.env;
-  const [theme, setThemeState] = useState<Theme>(chosenTheme);
+  const [shortcut, setShortcut] = useState<Shortcut>();
+  const [theme, setTheme] = useState<Theme>(chosenTheme);
+  useEffect(() => setShortcut(env?.shortcut), [env?.shortcut]);
   return (
     <ModalFrame
       title={t("app.connections")}
@@ -894,6 +1071,25 @@ export function Settings({ onClose }: { onClose: () => void }) {
           ))}
         </select>
       </div>
+      <ShortcutField
+        shortcut={shortcut}
+        onSave={async (chord) => {
+          const res = await clients.ui.setShortcut({ chord });
+          setShortcut(res.shortcut);
+        }}
+      />
+      {onDocs && (
+        <div className="setting-row">
+          <div>
+            <strong>{t("settings.docs")}</strong>
+            <p>{t("settings.docs_detail")}</p>
+          </div>
+          <button type="button" className="button secondary" onClick={onDocs}>
+            <BookOpen size={14} />
+            {t("settings.docs_open")}
+          </button>
+        </div>
+      )}
       <DefaultProviderSetting />
       <div className="setting-row">
         <div>
@@ -905,13 +1101,13 @@ export function Settings({ onClose }: { onClose: () => void }) {
           aria-label={t("settings.theme")}
           onChange={(e) => {
             const next = e.target.value as Theme;
-            setThemeState(next);
             setTheme(next);
+            saveTheme(next);
           }}
         >
-          <option value="">{t("settings.theme_dark")}</option>
+          <option value="">{t("settings.theme_system")}</option>
+          <option value="dark">{t("settings.theme_dark")}</option>
           <option value="light">{t("settings.theme_light")}</option>
-          <option value="system">{t("settings.theme_system")}</option>
         </select>
       </div>
       <div className="settings-foot">

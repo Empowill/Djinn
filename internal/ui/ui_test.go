@@ -16,6 +16,8 @@ import (
 
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
+	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/link"
 )
 
 func newService(t *testing.T) (*Service, *[]string) {
@@ -236,10 +238,6 @@ func TestValidateProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := validate(plain); err != nil || got.GetDirectory() != plain || got.GetGit() {
-		t.Fatalf("plain directory = %v, %v; want %s without git", got, err, plain)
-	}
-
 	repo := filepath.Join(plain, "repo")
 	sub := filepath.Join(repo, "sub")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o700); err != nil {
@@ -247,6 +245,9 @@ func TestValidateProject(t *testing.T) {
 	}
 	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatal(err)
+	}
+	if got, err := validate(plain); err != nil || got.GetDirectory() != plain || got.GetGit() {
+		t.Fatalf("plain directory = %v, %v; want %s without git", got, err, plain)
 	}
 	if got, err := validate(repo); err != nil || !got.GetGit() {
 		t.Fatalf("repository = %v, %v; want git", got, err)
@@ -410,14 +411,215 @@ func TestHandler(t *testing.T) {
 	if env.Msg.GetVersion() != "test" || env.Msg.GetPlatform() == "" || len(env.Msg.GetProviders()) != 3 {
 		t.Fatalf("GetEnvironment = %v", env.Msg)
 	}
+}
 
-	stream, err := client.Watch(context.Background(), connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+func TestOpenLink(t *testing.T) {
+	s, _ := newService(t)
+	raised := 0
+	s.Raise = func() { raised++ }
+	s.Window = true
+	const tilasm, wish = "01a1223a-ae45-728f-8c37-c005eee91edb", "01a11833-a440-7479-a067-52615c91da70"
+	s.Linked = func(_ context.Context, l link.Link) (string, error) {
+		if l.ID == tilasm || l.ID == wish {
+			return wish, nil
+		}
+		return "", connect.NewError(connect.CodeNotFound, errors.New("no tilasm "+l.ID))
+	}
+	mux := http.NewServeMux()
+	mux.Handle(uiv1connect.NewUiServiceHandler(s))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := uiv1connect.NewUiServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	stream, err := client.WatchShow(ctx, connect.NewRequest(&uiv1.UiServiceWatchShowRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream.Receive()
-	if code(stream.Err()) != connect.CodeUnimplemented {
-		t.Fatalf("Watch = %v, want unimplemented", stream.Err())
+	t.Cleanup(func() { stream.Close() })
+	next := func() *uiv1.UiServiceWatchShowResponse {
+		t.Helper()
+		if !stream.Receive() {
+			t.Fatalf("the stream ended: %v", stream.Err())
+		}
+		return stream.Msg()
+	}
+	open := func(url string) (*uiv1.UiServiceOpenLinkResponse, error) {
+		res, err := client.OpenLink(ctx, connect.NewRequest(&uiv1.UiServiceOpenLinkRequest{Url: url}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+
+	// A tilasm's link shows its wish's Tilasms tab on it, the window in front.
+	res, err := open("djinn://tilasm/" + strings.ToUpper(tilasm))
+	if err != nil || res.GetWishId() != wish || res.GetTilasmId() != tilasm || !res.GetWindow() || raised != 1 {
+		t.Fatalf("a tilasm's link: %v, %v, raised %d", res, err, raised)
+	}
+	if got := next(); got.GetWishId() != wish || got.GetTilasmId() != tilasm || got.GetUnknownLink() != "" {
+		t.Fatalf("shown: %v", got)
+	}
+	// A wish's link, the wish.
+	if res, err = open("djinn://wish/" + wish); err != nil || res.GetWishId() != wish || res.GetTilasmId() != "" {
+		t.Fatalf("a wish's link: %v, %v", res, err)
+	}
+	if got := next(); got.GetWishId() != wish || got.GetTilasmId() != "" {
+		t.Fatalf("shown: %v", got)
+	}
+	// A link Djinn does not know, or whose tilasm is not here: refused, and the window says so.
+	for _, c := range []struct {
+		url  string
+		code connect.Code
+	}{
+		{"djinn://moon/" + wish, connect.CodeInvalidArgument},
+		{"djinn://tilasm/01a1223a-ae45-728f-8c37-000000000000", connect.CodeNotFound},
+	} {
+		if _, err := open(c.url); code(err) != c.code {
+			t.Errorf("%s: %v, want %v", c.url, err, c.code)
+		}
+		if got := next(); got.GetUnknownLink() != c.url || got.GetWishId() != "" {
+			t.Errorf("%s: shown %v", c.url, got)
+		}
+	}
+	if raised != 4 {
+		t.Errorf("raised %d times, want 4: the window comes forward to say so", raised)
+	}
+}
+
+// TestUpdateInstallsABuild: a build committed is proposed to the window; installing it runs its install command, then
+// restarts on the newer Djinn it installed, or restarts nothing when it installed none. Only the build proposed
+// installs. While it installs, the window is told where it stands: what it waits for, that it builds, that Djinn
+// restarts.
+func TestUpdateInstallsABuild(t *testing.T) {
+	s, _ := newService(t)
+	var installed []string
+	newer, restarts := false, 0
+	proceed := make(chan struct{}) // the first install waits until the window has seen it wait
+	s.Install = func(_ context.Context, b *uiv1.Build, progress func(uiv1.InstallStep, string)) (bool, error) {
+		if proceed != nil {
+			progress(uiv1.InstallStep_INSTALL_STEP_WAITING, "gate install: held by W1")
+			<-proceed
+		}
+		progress(uiv1.InstallStep_INSTALL_STEP_BUILDING, "")
+		installed = append(installed, b.GetSha())
+		return newer, nil
+	}
+	s.Restart = func() (string, int, error) { restarts++; return "v2", 1, nil }
+	s.SetBuild(&uiv1.Build{WishId: "w", ProjectId: "p", Branch: "feat/x", Sha: "abc", Changes: []string{"Work of W1"}})
+
+	path, handler := uiv1connect.NewUiServiceHandler(s)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := uiv1connect.NewUiServiceClient(server.Client(), server.URL)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	watch, err := client.WatchUpdate(ctx, connect.NewRequest(&uiv1.UiServiceWatchUpdateRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !watch.Receive() || watch.Msg().GetBuild().GetSha() != "abc" || watch.Msg().GetBuild().GetChanges()[0] != "Work of W1" {
+		t.Fatalf("the window is not proposed the build: %v, %v", watch.Msg(), watch.Err())
+	}
+
+	update := func(sha string) (*uiv1.UiServiceUpdateResponse, error) {
+		res, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: sha}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	if _, err := update("other"); code(err) != connect.CodeFailedPrecondition || len(installed) != 0 {
+		t.Errorf("a build not proposed: %v, installed %v", err, installed)
+	}
+	type result struct {
+		res *uiv1.UiServiceUpdateResponse
+		err error
+	}
+	done := make(chan result, 1)
+	go func() { res, err := update("abc"); done <- result{res, err} }()
+	if !watch.Receive() || watch.Msg().GetInstalling().GetStep() != uiv1.InstallStep_INSTALL_STEP_WAITING ||
+		watch.Msg().GetInstalling().GetWaiting() != "gate install: held by W1" || watch.Msg().GetInstalling().GetSha() != "abc" {
+		t.Errorf("the window is not told what the install waits for: %v, %v", watch.Msg(), watch.Err())
+	}
+	close(proceed)
+	proceed = nil
+	r := <-done
+	if r.err != nil || r.res.GetInstalled() != "abc" || r.res.GetVersion() != "" || restarts != 0 {
+		t.Errorf("a build that installed no newer Djinn: %v, %v, %d restarts", r.res, r.err, restarts)
+	}
+	// The window sees it build, maybe, then the install over: nothing proposed, nothing installing.
+	for watch.Receive() && (watch.Msg().GetBuild() != nil || watch.Msg().GetInstalling() != nil) {
+		if step := watch.Msg().GetInstalling().GetStep(); step != uiv1.InstallStep_INSTALL_STEP_BUILDING {
+			t.Errorf("installing: %v", watch.Msg())
+		}
+	}
+	if watch.Err() != nil {
+		t.Errorf("still proposed or installing once installed: %v", watch.Err())
+	}
+	newer = true
+	s.SetBuild(&uiv1.Build{Sha: "def"})
+	if res, err := update("def"); err != nil || res.GetInstalled() != "def" || res.GetVersion() != "v2" || restarts != 1 {
+		t.Errorf("a build that installed a newer Djinn: %v, %v, %d restarts", res, err, restarts)
+	}
+	restarting := false
+	for !restarting && watch.Receive() {
+		restarting = watch.Msg().GetInstalling().GetStep() == uiv1.InstallStep_INSTALL_STEP_RESTARTING
+	}
+	if !restarting {
+		t.Errorf("the window is not told Djinn restarts: %v", watch.Err())
+	}
+}
+
+// The agents a lead may run, found on the PATH: Antigravity is the program agy.
+func TestEnvironmentProviders(t *testing.T) {
+	bin := t.TempDir()
+	agy := filepath.Join(bin, "agy")
+	if runtime.GOOS == "windows" {
+		agy += ".exe"
+	}
+	if err := os.WriteFile(agy, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	s, _ := newService(t)
+	env, err := s.GetEnvironment(context.Background(), connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]*uiv1.Provider{}
+	for _, p := range env.Msg.GetProviders() {
+		got[p.GetId()] = p
+	}
+	if p := got["antigravity"]; p.GetName() != "Antigravity" || !p.GetAvailable() || p.GetCommand() != agy {
+		t.Errorf("antigravity = %v, want available at %s", p, agy)
+	}
+	if p := got["claude"]; p.GetAvailable() || p.GetCommand() != "claude" {
+		t.Errorf("claude = %v, want missing from this PATH", p)
+	}
+}
+
+// TestWriteAtomicRetriesARefusedRename: a rename refused for a moment, as Windows refuses one while an antivirus
+// scans settings.json, is tried again, and the new content lands.
+func TestWriteAtomicRetriesARefusedRename(t *testing.T) {
+	path := filepath.Join(t.TempDir(), settingsFile)
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tries := 0
+	refused := func(oldpath, newpath string) error {
+		if tries++; tries <= 2 {
+			return errors.New("Access is denied")
+		}
+		return os.Rename(oldpath, newpath)
+	}
+	r := fsx.Renamer{Func: refused, Wait: time.Second, Sleep: func(time.Duration) {}}
+	if err := writeAtomic(path, []byte("new"), r); err != nil || tries != 3 {
+		t.Fatalf("writeAtomic = %v after %d tries, want nil after 3", err, tries)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "new" {
+		t.Errorf("file = %q, want the new content", got)
 	}
 }
 

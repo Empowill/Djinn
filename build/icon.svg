@@ -1,1 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="b" x2="1" y2="1"><stop stop-color="#2a2a2a"/><stop offset="1" stop-color="#121212"/></linearGradient><linearGradient id="l" x2=".4" y2="1"><stop stop-color="#f7f7f7"/><stop offset="1" stop-color="#ababab"/></linearGradient></defs><rect x="10" y="10" width="492" height="492" rx="108" fill="url(#b)" stroke="#464646" stroke-width="4"/><path d="m256 92 144 82v164l-144 82-144-82V174Z" fill="#252525" stroke="url(#l)" stroke-width="9" stroke-linejoin="round"/><path d="m256 149 94 54v108l-94 54-94-54V203Zm0 0v216m-94-162 188 108m0-108-188 108" fill="none" stroke="url(#l)" stroke-width="9" stroke-linejoin="round"/><circle cx="256" cy="256" r="15" fill="#ececec"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<!-- Djinn's icon, plain enough to read at 16 px: one brass lamp, solid, of straight lines and exact arcs, and one thick
+     curl of smoke rising from its spout. build/icon.png is this drawing at 1024 px (tools/icons); the earlier, richer
+     drawing is build/icon-alt-detailed.svg. -->
+<defs>
+<linearGradient id="ground" x2="1" y2="1"><stop stop-color="#262636"/><stop offset="1" stop-color="#121218"/></linearGradient>
+<linearGradient id="brass" x1="0" y1="226" x2="0" y2="460" gradientUnits="userSpaceOnUse"><stop stop-color="#ffdb8a"/><stop offset="1" stop-color="#c4852b"/></linearGradient>
+<linearGradient id="smoke" x1="440" y1="226" x2="170" y2="70" gradientUnits="userSpaceOnUse"><stop stop-color="#b9adff"/><stop offset=".45" stop-color="#e9e4ff"/><stop offset="1" stop-color="#9483ff"/></linearGradient>
+</defs>
+<rect x="8" y="8" width="496" height="496" rx="112" fill="url(#ground)"/>
+<path d="M444 222C486 172 450 124 380 134C312 144 260 130 246 88C234 52 180 42 160 78C144 108 178 128 202 106" fill="none" stroke="url(#smoke)" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+<g fill="url(#brass)" transform="translate(-26 -28) scale(1.08)">
+<path d="M104 330A40 40 0 1 0 110 402" fill="none" stroke="url(#brass)" stroke-width="30"/>
+<path d="M300 320 424 214 452 244 330 372Z"/>
+<path d="M108 320A128 88 0 0 0 364 320Z"/>
+<path d="M164 322A72 54 0 0 1 308 322Z"/>
+<circle cx="236" cy="256" r="20"/>
+<path d="M212 404h48v16h-48Z"/>
+<path d="M172 416H300L324 446H148Z"/>
+</g>
+</svg>

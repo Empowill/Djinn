@@ -11,6 +11,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/machine"
 )
 
 func collect(w Worker) []Event {
@@ -33,6 +34,7 @@ func kinds(events []Event) []string {
 // the format the Claude Agent SDK documents (system init, assistant and user messages with content blocks, a
 // final result carrying the usage and total_cost_usd).
 func TestParseClaude(t *testing.T) {
+	t.Parallel()
 	var events []Event
 	var results []*turnEnd
 	for _, l := range fixtureLines(t, "testdata/claude/tool-call.jsonl") {
@@ -96,6 +98,7 @@ func TestParseClaude(t *testing.T) {
 // decide; with the project's .agents permissions, Djinn passes them as settings; outside any project the worker
 // only reads. A worker in a project reads AGENTS.md as well as CLAUDE.md.
 func TestClaudeArgs(t *testing.T) {
+	t.Parallel()
 	base := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 		"--permission-prompts", "none"}
 	const agentsMd = `"pluginConfigs":{"cc-plugin-agents-md@builtin":{"options":{"instructionFiles":"claude-md-and-agents-md"}}}`
@@ -176,7 +179,46 @@ func TestPrefix(t *testing.T) {
 	}
 }
 
+// TestScopePrefix: a worker runs under its scope's prefix (systemd-run, played by the fake), its own program found
+// first, and keeps the scope's cgroup.
+func TestScopePrefix(t *testing.T) {
+	t.Parallel()
+	env, args, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
+	record := filepath.Join(t.TempDir(), "prefix")
+	env = append(env, "DJINN_FAKE_PREFIX="+record)
+	scope := func() machine.Scope {
+		return machine.Scope{Prefix: []string{os.Args[0], "--scope", "--"}, Cgroup: "/sys/fs/cgroup/djinn-W1-0a1b2c3d.scope"}
+	}
+	w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env, Scope: scope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := collect(w)
+	if res := w.Wait(); res.ExitCode != 0 || res.Err != nil || !slices.Contains(kinds(events), "TEXT") {
+		t.Errorf("under the prefix: %+v, %v", res, kinds(events))
+	}
+	got, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claudeArgs, err := os.ReadFile(args)
+	if err != nil {
+		t.Fatal("the agent did not run:", err)
+	}
+	if want := "--scope\n--\n" + os.Args[0] + "\n" + string(claudeArgs); string(got) != want {
+		t.Errorf("the prefix ran %q, want %q", got, want)
+	}
+	if p, ok := w.(Process); !ok || p.Cgroup() != scope().Cgroup {
+		t.Errorf("the worker's cgroup is not its scope's")
+	}
+	if _, err := (Claude{Command: "djinn-no-such-agent"}).Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Scope: scope}); err == nil ||
+		!strings.Contains(err.Error(), "djinn-no-such-agent not found in PATH") {
+		t.Errorf("a missing agent under a prefix: %v", err)
+	}
+}
+
 func TestClaudeWorkerStops(t *testing.T) {
+	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "process-dies", end: "wait"}.env(t)
 	w, err := Claude{Command: os.Args[0], Grace: 5 * time.Second}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env})
 	if err != nil {
@@ -196,6 +238,7 @@ func TestClaudeWorkerStops(t *testing.T) {
 }
 
 func TestClaudeWorkerKilledAfterGrace(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows kills at once: no grace to test")
 	}

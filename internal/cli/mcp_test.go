@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -20,6 +21,12 @@ import (
 // by request id.
 func mcpSession(t *testing.T, requests ...string) (*fake, map[string]rpcMessage) {
 	t.Helper()
+	return mcpSessionEnv(t, noEnv, requests...)
+}
+
+// mcpSessionEnv is mcpSession in the environment getenv reads.
+func mcpSessionEnv(t *testing.T, getenv func(string) string, requests ...string) (*fake, map[string]rpcMessage) {
+	t.Helper()
 	f := &fake{}
 	mux := http.NewServeMux()
 	mux.Handle(planv1connect.NewQuestionServiceHandler(questions{fake: f}))
@@ -28,7 +35,7 @@ func mcpSession(t *testing.T, requests ...string) (*fake, map[string]rpcMessage)
 	t.Cleanup(srv.Close)
 	var out, errs bytes.Buffer
 	in := strings.NewReader(strings.Join(requests, "\n") + "\n")
-	cfg := Config{Version: "test", Addr: srv.URL, HTTP: srv.Client(), Stdin: in, Stdout: &out, Stderr: &errs}
+	cfg := Config{Version: "test", Addr: srv.URL, HTTP: srv.Client(), Stdin: in, Stdout: &out, Stderr: &errs, Getenv: getenv}
 	if code := Run(context.Background(), []string{"mcp"}, cfg); code != 0 {
 		t.Fatalf("djinn mcp exited with %d: %s", code, errs.String())
 	}
@@ -89,15 +96,29 @@ func TestMCPListTools(t *testing.T) {
 					Items       *struct{ Type string }
 				}
 			}
+			Annotations map[string]bool
 		}
 	}](t, answers["2"])
 	var names []string
 	for _, tool := range list.Tools {
 		names = append(names, tool.Name)
 	}
-	// Every public method that answers once: the three streams (gate hold, wish watch, task watch) are left out.
-	if len(names) != 50 {
-		t.Errorf("got %d tools, want 50: %v", len(names), names)
+
+	// Every public method of the protos that answers once is a tool, with its comment; a stream is none.
+	var want []string
+	for _, md := range protoMethods(t) {
+		if md.IsStreamingClient() || md.IsStreamingServer() {
+			continue
+		}
+		want = append(want, toolName(md))
+		if i := slices.Index(names, toolName(md)); i < 0 || list.Tools[i].Description != comment(md) {
+			t.Errorf("%s is no tool %s with its comment", md.FullName(), toolName(md))
+		}
+	}
+	for _, name := range names {
+		if !slices.Contains(want, name) {
+			t.Errorf("tool %s is no public method that answers once", name)
+		}
 	}
 	for _, want := range []string{"question_answer", "wish_set_lead", "project_list", "machine_show"} {
 		if !slices.Contains(names, want) {
@@ -107,6 +128,19 @@ func TestMCPListTools(t *testing.T) {
 	for _, unwanted := range []string{"wish_watch", "gate_hold", "ui_get_environment"} {
 		if slices.Contains(names, unwanted) {
 			t.Errorf("tool %s should not be served", unwanted)
+		}
+	}
+
+	// A read says so, and a write says whether it deletes: MCP takes a tool that says nothing for one that may.
+	for name, want := range map[string]map[string]bool{
+		"project_list":    {"readOnlyHint": true, "destructiveHint": false},
+		"wish_brief":      {"readOnlyHint": true, "destructiveHint": false},
+		"question_answer": {"readOnlyHint": false, "destructiveHint": false},
+		"task_delete":     {"readOnlyHint": false, "destructiveHint": true},
+		"skill_unsummon":  {"readOnlyHint": false, "destructiveHint": true},
+	} {
+		if got := list.Tools[slices.Index(names, name)].Annotations; !maps.Equal(got, want) {
+			t.Errorf("%s: annotations %v, want %v", name, got, want)
 		}
 	}
 	makeTool := list.Tools[slices.Index(names, "wish_make")]
@@ -130,6 +164,11 @@ func TestMCPListTools(t *testing.T) {
 	ask := list.Tools[slices.Index(names, "question_ask")].InputSchema.Properties["options"]
 	if ask.Type != "array" || ask.Items == nil || ask.Items.Type != "string" {
 		t.Errorf("options %+v", ask)
+	}
+	// A pair is read from one string, as on the command line.
+	also := list.Tools[slices.Index(names, "task_depend")].InputSchema.Properties["also"]
+	if also.Type != "array" || also.Items == nil || also.Items.Type != "string" || !strings.Contains(also.Description, "Expects task=after,….") {
+		t.Errorf("also %+v", also)
 	}
 }
 

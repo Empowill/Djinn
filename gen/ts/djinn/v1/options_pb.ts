@@ -6,7 +6,7 @@
 
 import type { GenEnum, GenExtension, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, extDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { FieldOptions, MessageOptions, MethodOptions } from "@bufbuild/protobuf/wkt";
+import type { FieldOptions, MessageOptions, MethodOptions, ServiceOptions } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_descriptor } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/options.proto.
  */
 export const file_djinn_v1_options: GenFile = /*@__PURE__*/
-  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SwoGdW5pcXVlEh8uZ29vZ2xlLnByb3RvYnVmLk1lc3NhZ2VPcHRpb25zGLqOAyADKAsyEC5kamlubi52MS5VbmlxdWVSBnVuaXF1ZTo/Cgpwb3NpdGlvbmFsEh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxi8jgMgASgIUgpwb3NpdGlvbmFsQpABCgxjb20uZGppbm4udjFCDE9wdGlvbnNQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9kamlubi92MTtkamlubnYxogIDRFhYqgIIRGppbm4uVjHKAghEamlublxWMeICFERqaW5uXFYxXEdQQk1ldGFkYXRh6gIJRGppbm46OlYxYgZwcm90bzM", [file_google_protobuf_descriptor]);
+  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACKkYKBldyaXRlcxIWChJXUklURVNfVU5TUEVDSUZJRUQQABIRCg1XUklURVNfQ0hBTkdFEAESEQoNV1JJVEVTX0RFTEVURRACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SgoGd3JpdGVzEh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYvI4DIAEoDjIQLmRqaW5uLnYxLldyaXRlc1IGd3JpdGVzOjcKBWFsaWFzEh8uZ29vZ2xlLnByb3RvYnVmLlNlcnZpY2VPcHRpb25zGL2OAyADKAlSBWFsaWFzOksKBnVuaXF1ZRIfLmdvb2dsZS5wcm90b2J1Zi5NZXNzYWdlT3B0aW9ucxi6jgMgAygLMhAuZGppbm4udjEuVW5pcXVlUgZ1bmlxdWU6PwoKcG9zaXRpb25hbBIdLmdvb2dsZS5wcm90b2J1Zi5GaWVsZE9wdGlvbnMYv44DIAEoCFIKcG9zaXRpb25hbDoxCgNlbnYSHS5nb29nbGUucHJvdG9idWYuRmllbGRPcHRpb25zGL6OAyABKAlSA2VudkKQAQoMY29tLmRqaW5uLnYxQgxPcHRpb25zUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_google_protobuf_descriptor]);
 
 /**
  * Unique is one group of fields whose values, taken together, identify a stored message.
@@ -72,6 +72,42 @@ export const VisibilitySchema: GenEnum<Visibility> = /*@__PURE__*/
   enumDesc(file_djinn_v1_options, 0);
 
 /**
+ * Writes says what a public method that answers once changes. A method that only reads says option
+ * idempotency_level = NO_SIDE_EFFECTS instead: djinn mcp tells an agent's client it may run it without asking, and
+ * Connect serves it as a GET too. Every public method that answers once says one or the other; a test checks it.
+ *
+ * @generated from enum djinn.v1.Writes
+ */
+export enum Writes {
+  /**
+   * Not set: the method must say option idempotency_level = NO_SIDE_EFFECTS.
+   *
+   * @generated from enum value: WRITES_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * It adds or changes something, in Djinn or on the machine.
+   *
+   * @generated from enum value: WRITES_CHANGE = 1;
+   */
+  CHANGE = 1,
+
+  /**
+   * It deletes something, or may overwrite a file it is given: what it removes does not come back by itself.
+   *
+   * @generated from enum value: WRITES_DELETE = 2;
+   */
+  DELETE = 2,
+}
+
+/**
+ * Describes the enum djinn.v1.Writes.
+ */
+export const WritesSchema: GenEnum<Writes> = /*@__PURE__*/
+  enumDesc(file_djinn_v1_options, 1);
+
+/**
  * Who may call the method. Only VISIBILITY_PUBLIC methods become commands.
  *
  * @generated from extension: djinn.v1.Visibility visibility = 51001;
@@ -89,18 +125,44 @@ export const autostart: GenExtension<MethodOptions, boolean> = /*@__PURE__*/
   extDesc(file_djinn_v1_options, 1);
 
 /**
+ * What the method changes, when it does not only read.
+ *
+ * @generated from extension: djinn.v1.Writes writes = 51004;
+ */
+export const writes: GenExtension<MethodOptions, Writes> = /*@__PURE__*/
+  extDesc(file_djinn_v1_options, 2);
+
+/**
+ * Another name of the service's command: djinn talisman answers as djinn tilasm. Typed in full, or by a prefix no
+ * command's own name takes.
+ *
+ * @generated from extension: repeated string alias = 51005;
+ */
+export const alias: GenExtension<ServiceOptions, string[]> = /*@__PURE__*/
+  extDesc(file_djinn_v1_options, 3);
+
+/**
  * Groups of fields that must be unique among stored messages of this type.
  *
  * @generated from extension: repeated djinn.v1.Unique unique = 51002;
  */
 export const unique: GenExtension<MessageOptions, Unique[]> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 2);
+  extDesc(file_djinn_v1_options, 4);
 
 /**
  * Keep a singular field positional when it becomes optional, preserving an existing command's arguments.
  *
- * @generated from extension: bool positional = 51004;
+ * @generated from extension: bool positional = 51007;
  */
 export const positional: GenExtension<FieldOptions, boolean> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 3);
+  extDesc(file_djinn_v1_options, 5);
+
+/**
+ * The command line and djinn mcp fill the field from this environment variable when the caller leaves it empty:
+ * a worker's commands name its task by $DJINN_TASK_ID, which Djinn sets for every worker.
+ *
+ * @generated from extension: string env = 51006;
+ */
+export const env: GenExtension<FieldOptions, string> = /*@__PURE__*/
+  extDesc(file_djinn_v1_options, 6);
 

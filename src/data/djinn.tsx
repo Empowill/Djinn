@@ -4,7 +4,7 @@ import type { Transport } from "@connectrpc/connect";
 import {
   type ReactNode,
   createContext,
-  useContext,
+  use,
   useEffect,
   useSyncExternalStore,
 } from "react";
@@ -51,18 +51,16 @@ export function DjinnProvider({
   children: ReactNode;
 }) {
   useEffect(() => djinn.store.start(), [djinn]);
-  return (
-    <DjinnContext.Provider value={djinn}>{children}</DjinnContext.Provider>
-  );
+  return <DjinnContext value={djinn}>{children}</DjinnContext>;
 }
 
 // useDjinn is djinn, or null outside a DjinnProvider: a screen rendered alone, in a test.
 export function useDjinn(): Djinn | null {
-  return useContext(DjinnContext);
+  return use(DjinnContext);
 }
 
 function useRequiredDjinn(): Djinn {
-  const djinn = useContext(DjinnContext);
+  const djinn = use(DjinnContext);
   if (!djinn) throw new Error("useDjinn: no DjinnProvider");
   return djinn;
 }
@@ -116,6 +114,12 @@ export function useMachine(every = 5000) {
     return () => clearInterval(timer);
   }, [store, every]);
   return useData((state) => state.machine);
+}
+
+// usePausable tells whether djinn can pause a worker: not on Windows, where no signal stops a process tree. Until the
+// machine is read, it says yes; djinn's refusal would say why.
+export function usePausable(): boolean {
+  return useData((state) => state.machine?.os !== "windows");
 }
 
 export function useClients(): Clients {

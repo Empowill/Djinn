@@ -43,6 +43,8 @@ const (
 	TerminalServiceResizeProcedure = "/terminal.v1.TerminalService/Resize"
 	// TerminalServiceReadProcedure is the fully-qualified name of the TerminalService's Read RPC.
 	TerminalServiceReadProcedure = "/terminal.v1.TerminalService/Read"
+	// TerminalServiceListProcedure is the fully-qualified name of the TerminalService's List RPC.
+	TerminalServiceListProcedure = "/terminal.v1.TerminalService/List"
 	// TerminalServiceCloseProcedure is the fully-qualified name of the TerminalService's Close RPC.
 	TerminalServiceCloseProcedure = "/terminal.v1.TerminalService/Close"
 )
@@ -59,6 +61,8 @@ type TerminalServiceClient interface {
 	// The output of the terminal from an offset on, then as it comes, until the program ends. Resume a broken stream
 	// from the last offset received plus its length; an offset no longer kept starts at the oldest byte kept.
 	Read(context.Context, *connect.Request[v1.TerminalServiceReadRequest]) (*connect.ServerStreamForClient[v1.TerminalServiceReadResponse], error)
+	// The terminals whose program runs, by name: the window shows a wish's lead (lead-<wish id>) only when it runs.
+	List(context.Context, *connect.Request[v1.TerminalServiceListRequest]) (*connect.Response[v1.TerminalServiceListResponse], error)
 	// Hang up the terminal: the program gets SIGHUP, and is killed if it is still there after a grace delay.
 	Close(context.Context, *connect.Request[v1.TerminalServiceCloseRequest]) (*connect.Response[v1.TerminalServiceCloseResponse], error)
 }
@@ -98,6 +102,12 @@ func NewTerminalServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(terminalServiceMethods.ByName("Read")),
 			connect.WithClientOptions(opts...),
 		),
+		list: connect.NewClient[v1.TerminalServiceListRequest, v1.TerminalServiceListResponse](
+			httpClient,
+			baseURL+TerminalServiceListProcedure,
+			connect.WithSchema(terminalServiceMethods.ByName("List")),
+			connect.WithClientOptions(opts...),
+		),
 		close: connect.NewClient[v1.TerminalServiceCloseRequest, v1.TerminalServiceCloseResponse](
 			httpClient,
 			baseURL+TerminalServiceCloseProcedure,
@@ -113,6 +123,7 @@ type terminalServiceClient struct {
 	write  *connect.Client[v1.TerminalServiceWriteRequest, v1.TerminalServiceWriteResponse]
 	resize *connect.Client[v1.TerminalServiceResizeRequest, v1.TerminalServiceResizeResponse]
 	read   *connect.Client[v1.TerminalServiceReadRequest, v1.TerminalServiceReadResponse]
+	list   *connect.Client[v1.TerminalServiceListRequest, v1.TerminalServiceListResponse]
 	close  *connect.Client[v1.TerminalServiceCloseRequest, v1.TerminalServiceCloseResponse]
 }
 
@@ -136,6 +147,11 @@ func (c *terminalServiceClient) Read(ctx context.Context, req *connect.Request[v
 	return c.read.CallServerStream(ctx, req)
 }
 
+// List calls terminal.v1.TerminalService.List.
+func (c *terminalServiceClient) List(ctx context.Context, req *connect.Request[v1.TerminalServiceListRequest]) (*connect.Response[v1.TerminalServiceListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
 // Close calls terminal.v1.TerminalService.Close.
 func (c *terminalServiceClient) Close(ctx context.Context, req *connect.Request[v1.TerminalServiceCloseRequest]) (*connect.Response[v1.TerminalServiceCloseResponse], error) {
 	return c.close.CallUnary(ctx, req)
@@ -153,6 +169,8 @@ type TerminalServiceHandler interface {
 	// The output of the terminal from an offset on, then as it comes, until the program ends. Resume a broken stream
 	// from the last offset received plus its length; an offset no longer kept starts at the oldest byte kept.
 	Read(context.Context, *connect.Request[v1.TerminalServiceReadRequest], *connect.ServerStream[v1.TerminalServiceReadResponse]) error
+	// The terminals whose program runs, by name: the window shows a wish's lead (lead-<wish id>) only when it runs.
+	List(context.Context, *connect.Request[v1.TerminalServiceListRequest]) (*connect.Response[v1.TerminalServiceListResponse], error)
 	// Hang up the terminal: the program gets SIGHUP, and is killed if it is still there after a grace delay.
 	Close(context.Context, *connect.Request[v1.TerminalServiceCloseRequest]) (*connect.Response[v1.TerminalServiceCloseResponse], error)
 }
@@ -188,6 +206,12 @@ func NewTerminalServiceHandler(svc TerminalServiceHandler, opts ...connect.Handl
 		connect.WithSchema(terminalServiceMethods.ByName("Read")),
 		connect.WithHandlerOptions(opts...),
 	)
+	terminalServiceListHandler := connect.NewUnaryHandler(
+		TerminalServiceListProcedure,
+		svc.List,
+		connect.WithSchema(terminalServiceMethods.ByName("List")),
+		connect.WithHandlerOptions(opts...),
+	)
 	terminalServiceCloseHandler := connect.NewUnaryHandler(
 		TerminalServiceCloseProcedure,
 		svc.Close,
@@ -204,6 +228,8 @@ func NewTerminalServiceHandler(svc TerminalServiceHandler, opts ...connect.Handl
 			terminalServiceResizeHandler.ServeHTTP(w, r)
 		case TerminalServiceReadProcedure:
 			terminalServiceReadHandler.ServeHTTP(w, r)
+		case TerminalServiceListProcedure:
+			terminalServiceListHandler.ServeHTTP(w, r)
 		case TerminalServiceCloseProcedure:
 			terminalServiceCloseHandler.ServeHTTP(w, r)
 		default:
@@ -229,6 +255,10 @@ func (UnimplementedTerminalServiceHandler) Resize(context.Context, *connect.Requ
 
 func (UnimplementedTerminalServiceHandler) Read(context.Context, *connect.Request[v1.TerminalServiceReadRequest], *connect.ServerStream[v1.TerminalServiceReadResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("terminal.v1.TerminalService.Read is not implemented"))
+}
+
+func (UnimplementedTerminalServiceHandler) List(context.Context, *connect.Request[v1.TerminalServiceListRequest]) (*connect.Response[v1.TerminalServiceListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("terminal.v1.TerminalService.List is not implemented"))
 }
 
 func (UnimplementedTerminalServiceHandler) Close(context.Context, *connect.Request[v1.TerminalServiceCloseRequest]) (*connect.Response[v1.TerminalServiceCloseResponse], error) {

@@ -1,5 +1,5 @@
 // Starts `djinn up --browser` on a free port, waits until it answers, and hands its URL (with the token) to the
-// specs through DJINN_URL. The teardown stops it with SIGINT and checks that it exits cleanly.
+// specs through DJINN_URL. The teardown stops it with SIGINT and checks that it exits cleanly; on Windows it kills it.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -13,21 +13,28 @@ const binary = path.resolve(
 export default async function globalSetup() {
   // A data directory of its own: the tests never touch the developer's state nor the address of their djinn.
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-"));
-  // A fake claude, first on the PATH of djinn: the lead's terminal runs it, and it only says how it was called.
+  // A fake claude and a fake agy (Antigravity), first on the PATH of djinn: the lead's terminal runs them, and they
+  // only say how they were called.
   const bin = path.join(home, "bin");
   fs.mkdirSync(bin);
   if (process.platform !== "win32")
-    fs.writeFileSync(
-      path.join(bin, "claude"),
-      '#!/bin/sh\necho "fake-claude $* in $(pwd)"\nexec cat\n',
-      { mode: 0o755 },
-    );
-  const djinn = spawn(binary, ["up", "--browser"], {
+    for (const agent of ["claude", "agy"])
+      fs.writeFileSync(
+        path.join(bin, agent),
+        `#!/bin/sh\necho "fake-${agent} $* in $(pwd)"\nexec cat\n`,
+        { mode: 0o755 },
+      );
+  // The window's terminal opens in a folder of its own: without a project, djinn would ask for one instead.
+  const shell = path.join(home, "shell");
+  fs.mkdirSync(shell);
+  const djinn = spawn(binary, ["up", "--browser", "--terminal-dir", shell], {
     stdio: ["ignore", "pipe", "inherit"],
     // The terminal of the window runs a plain POSIX shell, whatever the developer's own shell is.
     env: {
       ...process.env,
       DJINN_HOME: home,
+      // No question worker: an answer here only tells the lead. question-workers.spec.ts runs a djinn with them.
+      DJINN_QUESTION_WORKERS: "off",
       PATH: bin + path.delimiter + process.env.PATH,
       ...(process.platform === "win32" ? {} : { SHELL: "/bin/sh" }),
     },
@@ -68,6 +75,19 @@ export default async function globalSetup() {
   process.env.DJINN_E2E_HOME = home;
 
   return async () => {
+    if (process.platform === "win32") {
+      // Windows sends another process no signal: djinn ends at once, as after a crash. A process it started may
+      // still hold a file of its data directory a moment.
+      djinn.kill();
+      await exited;
+      fs.rmSync(home, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 250,
+      });
+      return;
+    }
     djinn.kill("SIGINT");
     const code = await exited;
     fs.rmSync(home, { recursive: true, force: true });

@@ -6,6 +6,9 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { portable } from "./portable";
+
+portable();
 
 const at = "2026-10-07T21:10:00Z";
 
@@ -101,9 +104,13 @@ for (const engine of ["native", "script"] as const)
 
     // The first question opens, then is answered, from out of sight: no click scrolls to it.
     await above.locator(".question-heading").dispatchEvent("click");
-    const confirm = above.getByRole("button", { name: "Confirm this choice" });
-    await expect(confirm).toBeAttached();
-    await confirm.dispatchEvent("click");
+    // No recommendation: the option is picked, then the lamp rubbed.
+    const yes = above.getByRole("button", { name: /Yes — go/ });
+    await expect(yes).toBeAttached();
+    await yes.dispatchEvent("click");
+    const rub = above.getByRole("button", { name: "Rub the lamp" });
+    await expect(rub).toBeEnabled();
+    await rub.dispatchEvent("click");
     await expect(above).toHaveCount(0);
     await expect(scroller.locator(".decisions-section .count")).toHaveText(
       "19",
@@ -111,7 +118,10 @@ for (const engine of ["native", "script"] as const)
 
     const tops = await page.evaluate(async () => {
       const w = window as unknown as { tops: number[]; sampling: boolean };
-      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+      // Let both engines expose a stable run of frames after the removal. The
+      // native anchor can settle in fewer frames than the script anchor.
+      for (let i = 0; i < 12; i++)
+        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
       w.sampling = false;
       return w.tops;
     });

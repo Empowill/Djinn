@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -18,7 +19,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -37,6 +41,9 @@ const (
 	methodAnswer   = "harness/answer"   // the task took the answer to its edit question; the request is the task
 	methodReceived = "harness/received" // the worker took a message in; the request is the event
 	methodHold     = "harness/hold"     // the task's worker was paused or resumed; the request is the task
+	methodMeasure  = "harness/measure"  // what the task's worker uses was read; the request is the reading
+	methodAzima    = "harness/azima"    // djinn up found an azima stored as work, from before kinds; the request is the task
+	methodUngroup  = "harness/ungroup"  // djinn up found a task part of an azima that is gone; the request is the task, part of none
 )
 
 // maxText is the most of an event's text, and of its raw line, that is kept.
@@ -49,6 +56,7 @@ func Providers() map[planv1.Provider]Provider {
 		planv1.Provider_PROVIDER_FAKE:        Fake{},
 		planv1.Provider_PROVIDER_CODEX:       Codex{},
 		planv1.Provider_PROVIDER_ANTIGRAVITY: Antigravity{},
+		planv1.Provider_PROVIDER_WATCH:       Watch{},
 	}
 }
 
@@ -62,18 +70,48 @@ type Harness struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // one per run
 
-	answering sync.Mutex // one answer to an edit question at a time
+	answering   sync.Mutex // one answer to an edit question at a time
+	questioning sync.Mutex // one question worker decided at a time (question.go)
+	questions   bool       // question workers start (WithQuestionWorkers)
 
-	prefix      []string // the command every worker runs under (WithPrefix)
-	beforeStart func()   // runs before a worker's process starts (WithBeforeStart); nil: nothing
+	scopes *machine.Scopes // the systemd scopes the workers run in, one each (WithScopes); nil: none
+
+	clock func() time.Time // nil: the machine's (WithClock)
+
+	measureEvery time.Duration // how often a worker is read (WithMeasure); 0: never
+	measureRead  MeasureFunc   // nil: workers are not measured
+
+	tell    TellFunc    // wakes the lead of a watcher's wish (TellLeads); guarded by mu
+	watched WatchedFunc // reads a watcher's new paragraph (OnWatched); guarded by mu
+
+	prefix      []string // compatibility prefix for workers when no scoped prefix is configured
+	beforeStart func()   // runs before a worker process starts
 
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
+	available  func() uint64 // the memory available; nil: the memory holds no worker back
+	policy     machine.Policy
 	tick       time.Duration // a pass at least this often
 	sched      sync.Mutex    // one scheduling decision at a time: a spawn, a pass, a planned task stopped
 	kick       chan struct{} // wakes the scheduler
 	scheduling sync.Once
 	loopDone   chan struct{} // closed when the scheduler has stopped; nil until Schedule
+
+	// The integration of finished work (integrate.go).
+	gates         TakeGate      // nil: commands run without a gate
+	commands      RunCommand    // nil: the processes the commands name
+	integrateTick time.Duration // a pass at least this often; 0: a minute
+	integrateKick chan struct{} // wakes the integration
+	integrating   sync.Once
+	integrateDone chan struct{}         // closed when the integration has stopped; nil until Integrate
+	tested        map[string]tested     // by wish/project; owned by the integration's pass
+	integrateMu   sync.Mutex            // held while a batch is integrated, main merged, or the push checks run: they share a worktree
+	installMu     sync.Mutex            // held while a build is installed
+	installing    string                // the commit installed now, guarded by mu
+	pushMu        sync.Mutex            // held while an integration branch is pushed
+	built         func(Built)           // nil: no build is proposed
+	mainTested    map[string]mainTested // by wish/project; owned by the integration's pass
+	mainNow       atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 
 	// Warm workers (warm.go), guarded by sched.
 	warmOn bool
@@ -81,13 +119,17 @@ type Harness struct {
 
 	mu      sync.Mutex
 	closed  bool
-	runs    map[string]*run // by task id
-	changed chan struct{}   // closed at the next change of a task without worker (notifyLocked)
+	held    func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
+	waiting func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
+	outside func() int                   // the gates held outside the running workers (GatesOutside); nil: none
+	runs    map[string]*run              // by task id
+	changed chan struct{}                // closed at the next change of a task without worker (notifyLocked)
 }
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
 type run struct {
 	id    string
+	wish  string             // the task's wish, which never changes
 	done  chan struct{}      // closed once the task has its final status
 	wake  chan struct{}      // an answer waits in answers
 	notes chan Event         // events from outside the worker (a gate), for the pump to write
@@ -97,9 +139,13 @@ type run struct {
 	// Guarded by Harness.mu.
 	worker   Worker
 	stopping bool
-	paused   bool               // the worker holds still: it takes no slot
-	final    bool               // the task is getting its final status: an answer waits for done instead
-	answers  []*planv1.Question // answers to the task's edit question, for the pump to apply
+	shelved  bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
+	paused   bool                 // the worker holds still: it takes no slot
+	watcher  bool                 // a watcher runs a command, and takes no slot
+	light    bool                 // a question worker reads and runs djinn's commands: it takes no slot
+	final    bool                 // the task is getting its final status: an answer waits for done instead
+	answers  []*planv1.Question   // answers to the task's edit question, for the pump to apply
+	use      *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one
 	subs     map[chan *planv1.TaskEvent]struct{}
 
 	// Owned by whoever writes the task: Spawn, then the pump.
@@ -109,16 +155,22 @@ type run struct {
 	restart bool          // the worker stops to start again, allowed to edit
 	unread  []string      // messages the worker took on its input and has said nothing after yet
 	warm    *warm         // the warm worker the task takes, until launch
+	branch  string        // the branch template of the project's settings, for launch; empty: the default
+	from    string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
+	checks  string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
 	failure string        // the last error the current worker said: it never ends done
+	limit   *Limit        // the usage limit the current worker said it hit: it wins over failure
+	refused string        // the last call its permissions refused, as the worker said it (question.go)
 }
 
 // newRun is the run of task, its next event after seq, registered so that a watcher never misses its first events.
 // It fails when Djinn is stopping, or when the task already runs.
 func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 	r := &run{
-		id: task.GetId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
+		id: task.GetId(), wish: task.GetWishId(), task: task, seq: seq, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
-		subs: map[chan *planv1.TaskEvent]struct{}{},
+		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
+		light: questionWorker(task),
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -141,6 +193,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}), warm: map[string]*warm{},
+		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{},
 	}
 	for _, o := range opts {
 		o(h)
@@ -158,18 +211,31 @@ func (h *Harness) Close() {
 	if h.loopDone != nil {
 		<-h.loopDone
 	}
+	h.integrating.Do(func() {}) // Nor any integration.
+	if h.integrateDone != nil {
+		<-h.integrateDone
+	}
 	h.closeWarm()
 	h.wg.Wait()
 }
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
-// what resuming them needs (provider, session, worktree); nothing restarts them.
+// what resuming them needs (provider, session, worktree). Then every interrupted task Djinn may resume waits for the
+// scheduler to resume it (queueInterrupted). First, the azimas stored as work before tasks had kinds become azimas
+// (migrateAzimas), and a task part of an azima that is gone becomes part of none (ungroupOrphans).
 func (h *Harness) Recover(ctx context.Context) error {
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		return err
 	}
+	if err := h.migrateAzimas(ctx, tasks); err != nil {
+		return err
+	}
+	if err := h.ungroupOrphans(ctx, tasks); err != nil {
+		return err
+	}
+	h.recoverIntegrations(ctx, tasks)
 	for _, t := range tasks {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
@@ -198,7 +264,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
-	return nil
+	return h.queueInterrupted(ctx, tasks)
 }
 
 // Spawn creates a task and starts its worker: in a Git project, in a new worktree on its own branch. procedure
@@ -207,6 +273,19 @@ func (h *Harness) Recover(ctx context.Context) error {
 // reason, and the scheduler starts it as soon as it can. What the worker may do is decided when it starts
 // (prepare).
 func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
+	return h.spawn(ctx, procedure, req, nil)
+}
+
+// spawn is Spawn, of a task Djinn spawns by itself when made is set, with what made says it is for: a correction
+// worker (Task.correction), whose worktree starts on the failed merge, a review worker (Task.review), which works in
+// the worktree and on the branch of the task it reviews (made's), or a question worker (Task.role and question), which
+// reads in its project's folder.
+func (h *Harness) spawn(
+	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, made *planv1.Task,
+) (*planv1.Task, error) {
+	if req.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
+		return h.spawnAzima(ctx, procedure, req)
+	}
 	scopes, err := cleanScopes(req.GetWriteScopes())
 	if err != nil {
 		return nil, err
@@ -214,7 +293,11 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	task := &planv1.Task{
 		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
 		CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
-		WriteScopes: scopes, Scheduled: true,
+		WriteScopes: scopes, Scheduled: true, Correction: made.GetCorrection(), Review: made.GetReview(), Role: made.GetRole(),
+		Question: made.GetQuestion(),
+	}
+	if made.GetReview() != nil {
+		task.Branch, task.Worktree = made.GetBranch(), made.GetWorktree()
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
 
@@ -225,54 +308,130 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	kind := cmp.Or(req.GetProvider(), plan.WishProvider(wish))
-	if src, err := forkSource(ctx, h.store, wish, req); err != nil {
+	project, err := pickProject(ctx, h.store, wish, req.GetProjectId())
+	if err != nil {
 		return nil, plan.Status(err)
-	} else if src.session != "" {
-		task.ForkSession, task.ForkOf, kind = src.session, src.of, src.provider
+	}
+	task.ProjectId = project.GetId()
+	// The project's settings fill what the request leaves out (docs/team-settings.md). A watcher runs a command:
+	// none applies to it.
+	var settings plan.Settings
+	if req.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+		if settings, err = plan.LoadSettings(h.home, project); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
+		}
+	}
+	src, err := forkSource(ctx, h.store, wish, req)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	// Provider precedence is task request, then the provider of a forked session, then the explicit wish or its
+	// recorded lead provider, then project settings. This keeps old wishes (with no provider field or lead) on their
+	// project/default behavior while a selected wish consistently drives its workers and question workers.
+	kind := req.GetProvider()
+	if kind == planv1.Provider_PROVIDER_UNSPECIFIED && src.session != "" {
+		kind = src.provider
+	}
+	if kind == planv1.Provider_PROVIDER_UNSPECIFIED {
+		kind = plan.ProviderFor(wish, settings.Provider)
+	}
+	if src.session != "" {
+		task.ForkSession, task.ForkOf = src.session, src.of
+	}
+	// A fork of a task cut short, failed or stopped continues it: the parent is closed with the fork, in its
+	// transaction. A fork of a task that runs or is done leaves it as it is.
+	var parent *planv1.Task
+	if src.task != nil && forkCloses(src.task) {
+		h.mu.Lock()
+		if h.runs[src.task.GetId()] == nil {
+			parent = src.task
+		}
+		h.mu.Unlock()
 	}
 	task.Provider = kind
 	provider, ok := h.providers[kind]
 	if !ok {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", kind))
 	}
-	project, err := pickProject(ctx, h.store, wish, req.GetProjectId())
-	if err != nil {
+	// A question worker's model and budget are the project's question workers', in its request.
+	if kind != planv1.Provider_PROVIDER_WATCH && !questionWorker(task) {
+		if task.Model == "" && kind == settings.Provider {
+			task.Model = settings.Model
+		}
+		if task.MaxBudgetUsd == 0 {
+			task.MaxBudgetUsd = settings.MaxBudgetUSD
+		}
+	}
+	if len(req.GetTilasm()) > 0 {
+		// The tilasms open the first prompt as they are now: a resumed worker reads the same.
+		if kind == planv1.Provider_PROVIDER_WATCH {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--tilasm is for an agent: a watcher runs a command"))
+		}
+		material, err := plan.TilasmContext(ctx, h.store, h.home, wish.GetId(), req.GetTilasm())
+		if err != nil {
+			return nil, plan.Status(err)
+		}
+		prompt += "\n\n" + material
+	}
+	if kind == planv1.Provider_PROVIDER_WATCH {
+		if project == nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a watcher runs its command in a project: the wish has none"))
+		}
+		task.Restart = req.GetRestart()
+	} else if req.GetRestart() {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--restart is for a watcher (--provider watch)"))
+	}
+	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
 	}
-	task.ProjectId = project.GetId()
-	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), req.GetDependsOn()); err != nil {
+	if task.PartOf, err = resolveAzima(ctx, h.store, wish.GetId(), req.GetPartOf()); err != nil {
+		return nil, plan.Status(err)
+	}
+	if ref := req.GetDecision(); ref != "" {
+		if task.Decision, err = plan.Decision(ctx, h.store, wish.GetId(), ref); err != nil {
+			return nil, plan.Status(err)
+		}
+	}
+	// What it blocks is checked now, the decision reads them waiting for it, and they are written with it.
+	blocked, err := h.insertBefore(ctx, h.store, task, req.GetBlocks())
+	if err != nil {
 		return nil, plan.Status(err)
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	sit, err := h.situation(ctx, tasks)
+	for _, b := range blocked {
+		tasks[slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == b.GetId() })] = b
+	}
+	// It takes its turn in the scheduler's pass: the planned tasks before it, the ones Djinn resumes first, take the
+	// free slots before it does.
+	sit, err := h.situation(ctx, append(tasks, task))
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	why, failed := sit.Held(task)
-	if why == "" && failed == "" {
-		why, _ = sit.Blocker(task)
-		task.MachineWait = why != ""
+	var why, failed string
+	var machine bool
+	for _, d := range sit.Pass() {
+		if d.Task == task {
+			why, failed, machine = d.Why, d.Failed, d.Machine
+		}
 	}
 	switch {
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))
 	case req.GetLater() && why == "":
 		why = "planned: it starts at the scheduler's next pass"
+		machine = false
 	}
 	if why != "" {
-		return h.plan(ctx, procedure, req, task, prompt, why)
+		return h.plan(ctx, procedure, req, task, parent, prompt, why, machine)
 	}
 
 	// A warm worker of the wish in the project, when the task asks for nothing it was not started with.
-	var wk *warm
-	if task.GetForkSession() == "" && task.GetModel() == "" && task.GetMaxBudgetUsd() == 0 {
-		if wk = h.claimWarm(ctx, wish, project, kind); wk != nil {
-			task.Id = wk.id
-		}
+	wk := h.claimWarm(ctx, wish, project, task)
+	if wk != nil {
+		task.Id = wk.id
 	}
 	r, err := h.newRun(task, 1)
 	if err != nil {
@@ -281,17 +440,26 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		}
 		return nil, err
 	}
-	r.warm = wk
+	r.warm, r.branch, r.from = wk, settings.Branch, plan.IntegrationBranchOf(wish, project.GetId())
+	r.checks = settings.ChecksBrief()
 	var prep prepared
 	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+		if err := tx.Journal(spawner(task), procedure, req); err != nil {
 			return err
 		}
 		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
 			return err
 		}
+		if parent != nil {
+			if err := closeParent(ctx, tx, parent, task.GetCode()); err != nil {
+				return err
+			}
+		}
 		if prep, err = prepare(ctx, tx, task, wish, project); err != nil {
+			return err
+		}
+		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
 			return err
 		}
 		if err := tx.Put(task); err != nil {
@@ -307,20 +475,47 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 		return nil, plan.Status(err)
 	}
 	h.publish(r, prompted)
+	if len(blocked) > 0 {
+		h.wake() // The tasks it blocks say what they wait for now.
+	}
 	return h.launch(ctx, r, provider, project, prep, prompt)
 }
 
-// plan creates a task that waits, with its prompt and why it waits; the scheduler starts it.
+// spawner is who spawns task, as the journal records it: Djinn for a correction, a review or a question worker, the
+// developer's side otherwise.
+func spawner(task *planv1.Task) string {
+	if task.GetCorrection() != nil || task.GetReview() != nil || questionWorker(task) {
+		return actorHarness
+	}
+	return actorLocal
+}
+
+// after is what a spawn says comes before its task: --after, and --depends-on, its former name.
+func after(req *planv1.TaskServiceSpawnRequest) []string {
+	return append(slices.Clip(req.GetDependsOn()), req.GetAfter()...)
+}
+
+// plan creates a task that waits, with its prompt and why it waits, closes the parent it continues, if any, and makes
+// the tasks it blocks (--blocks) wait for it; the scheduler starts it.
 func (h *Harness) plan(
-	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, task *planv1.Task, prompt, why string,
+	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, task, parent *planv1.Task, prompt, why string,
+	machine bool,
 ) (*planv1.Task, error) {
-	task.WaitReason = why
+	task.WaitReason, task.MachineWait = why, machine
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(actorLocal, procedure, req); err != nil {
+		if err := tx.Journal(spawner(task), procedure, req); err != nil {
 			return err
 		}
 		var err error
 		if task.Code, err = nextCode(ctx, tx, task.GetWishId()); err != nil {
+			return err
+		}
+		if parent != nil {
+			if err := closeParent(ctx, tx, parent, task.GetCode()); err != nil {
+				return err
+			}
+		}
+		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
 			return err
 		}
 		if err := tx.Put(task); err != nil {
@@ -352,8 +547,18 @@ type prepared struct {
 func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.Wish, project *planv1.Project) (prepared, error) {
 	var p prepared
 	var err error
+	if questionWorker(task) {
+		// It reads and runs djinn's commands, wherever it runs: no edit question to ask.
+		task.Access = planv1.TaskAccess_TASK_ACCESS_DJINN
+		return p, nil
+	}
 	if task.Access, p.declared, err = decideAccess(project, task.GetProvider(), plan.AllowanceOf(wish, project.GetId())); err != nil {
 		return p, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
+	}
+	if task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING && watching(task) {
+		return p, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"a watcher runs a command, and %s lets no worker run one: it is outside Git, without agent configuration; "+
+				"list the command in its %s", project.GetName(), filepath.ToSlash(PermissionsFile)))
 	}
 	if task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING {
 		p.question = editQuestion(task, project)
@@ -365,6 +570,16 @@ func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.
 	return p, nil
 }
 
+// briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
+// a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
+// ends.
+func briefed(r *run, prompt string, readOnly bool) string {
+	if r.checks != "" && r.task.GetBranch() != "" && !readOnly {
+		return prompt + "\n\n" + r.checks
+	}
+	return prompt
+}
+
 // launch starts the worker of the run's task, now written with its access: in its worktree, its project's folder,
 // or an empty folder of its own. A failure ends the task, and is returned.
 func (h *Harness) launch(
@@ -372,6 +587,7 @@ func (h *Harness) launch(
 ) (*planv1.Task, error) {
 	task := r.task
 	readOnly, perms := accessSpec(task.GetAccess(), prep.declared)
+	perms = withCommit(task, perms)
 	wk := r.warm
 	r.warm = nil
 	if wk != nil && !wk.fits(readOnly, perms) {
@@ -379,7 +595,11 @@ func (h *Harness) launch(
 		h.stopWarm(wk)
 		wk = nil
 	}
-	skills, skillsDir := h.summon(ctx, r, project)
+	var skills []Skill
+	var skillsDir string
+	if !r.watcher && !r.light { // A command reads no skill, nor does a question worker.
+		skills, skillsDir = h.summon(ctx, r, project)
+	}
 	if wk != nil && len(skills) > 0 {
 		// A warm worker started without the project's summoned skills: the task starts cold, with them.
 		h.stopWarm(wk)
@@ -394,14 +614,29 @@ func (h *Harness) launch(
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: create its folder: %w", task.GetCode(), err))
 		}
 	}
-	if project.GetGit() {
-		task.Branch = branchName(task.GetCode(), task.GetTitle(), task.GetId())
-		task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
+	// The integration branch the worktree starts from, and its commit then, for the start event.
+	fromText := ""
+	if project.GetGit() && !r.watcher && !r.light { // They write nothing: they run in the project's folder.
+		if task.GetReview() == nil { // A review worker works in the worktree, on the branch, of the task it reviews.
+			task.Branch = branchName(r.branch, task.GetCode(), task.GetTitle(), task.GetId())
+			task.Worktree = worktreeDir(h.home, project.GetId(), task.GetId())
+		}
 		var err error
-		if wk != nil {
-			dir = wk.spec.Dir
-		} else {
-			dir, err = addWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch())
+		var sha, from string
+		switch f := task.GetCorrection().GetFailure(); {
+		case task.GetReview() != nil:
+			dir, err = reviewWorktree(ctx, project.GetDirectory(), task.GetWorktree())
+		case f != nil:
+			dir, err = correctionWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), f)
+		case wk != nil:
+			dir, sha, from = wk.spec.Dir, wk.base, wk.from
+		default:
+			if sha, from, err = startPoint(ctx, project.GetDirectory(), r.from); err == nil {
+				dir, err = addWorktreeFrom(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), sha)
+			}
+		}
+		if from != "" {
+			fromText = ", from " + from + " at " + short8(sha)
 		}
 		if err != nil {
 			task.Branch, task.Worktree = "", ""
@@ -411,18 +646,26 @@ func (h *Harness) launch(
 	}
 	where := "in " + dir
 	if task.GetBranch() != "" {
-		where += ", on branch " + task.GetBranch()
+		where += ", on branch " + task.GetBranch() + fromText
 	}
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: task.GetModel(),
 		MaxBudgetUSD: task.GetMaxBudgetUsd(), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
-		Skills: skills, SkillsDir: skillsDir,
+		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(),
 	}
 	if task.GetForkOf() != "" {
 		where += ", forked from " + forkText(task.GetForkOf())
 	}
+	spec.Prompt = briefed(r, spec.Prompt, readOnly)
 	text := "started " + short(task.GetProvider()) + " " + where + ", " + accessText(task, prep.question) +
 		skillsText(spec.Skills)
+	if r.watcher {
+		text = "started watch " + where + watchText(task)
+	}
+	if r.light {
+		text = "started " + short(task.GetProvider()) + " " + where + ": " + questionStart(task) + "; " +
+			accessText(task, nil)
+	}
 	var err error
 	if wk != nil {
 		err = h.adoptWarm(ctx, r, provider, wk, spec, text)
@@ -451,19 +694,34 @@ func (h *Harness) launch(
 func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error {
 	t := r.task
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
-	r.failure = ""
+	r.failure, r.limit = "", nil
+	fresh(t)
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	// A worker that calls djinn knows its task.
 	spec.Env = []string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}
-	spec.Prefix = h.prefix
+	spec.Scope = h.scope(t.GetCode())
+	if len(h.prefix) > 0 {
+		prefix := slices.Clone(h.prefix)
+		previous := spec.Scope
+		spec.Scope = func() machine.Scope {
+			var scope machine.Scope
+			if previous != nil {
+				scope = previous()
+			}
+			if len(scope.Prefix) == 0 {
+				scope.Prefix = prefix
+			}
+			return scope
+		}
+	}
 	h.prepare()
 	w, err := provider.Start(h.ctx, spec)
 	if err != nil {
 		return err
 	}
 	h.mu.Lock()
-	r.worker = w
-	if r.stopping {
+	r.worker, r.use = w, nil
+	if r.stopping || r.shelved {
 		w.Stop()
 	}
 	h.mu.Unlock()
@@ -485,6 +743,8 @@ func accessText(t *planv1.Task, question *planv1.Question) string {
 		return "allowed to edit by the wish"
 	case planv1.TaskAccess_TASK_ACCESS_WISH_AUTO:
 		return "in auto mode by the wish"
+	case planv1.TaskAccess_TASK_ACCESS_DJINN:
+		return "reading, and running only djinn's commands: a question worker, it takes no slot"
 	}
 	return "with the agent's own configuration of the project"
 }
@@ -493,7 +753,7 @@ func accessText(t *planv1.Task, question *planv1.Question) string {
 // configuration: may its worker edit the project's files?
 func editQuestion(t *planv1.Task, project *planv1.Project) *planv1.Question {
 	return &planv1.Question{
-		Id: store.NewID(), WishId: t.GetWishId(), CreateTime: timestamppb.Now(),
+		Id: store.NewID(), WishId: t.GetWishId(), CreateTime: timestamppb.Now(), Icon: "🔓",
 		Text: fmt.Sprintf("May the worker of task %s change the files of %s? It reads only until you answer: %s is outside Git, "+
 			"and has no agent configuration (no %s, AGENTS.md nor configuration file of its agent).",
 			t.GetCode(), project.GetName(), project.GetDirectory(), filepath.ToSlash(PermissionsFile)),
@@ -529,21 +789,35 @@ func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id str
 	return project, nil
 }
 
-// nextCode is the code of a new task of the wish: W1, W2…, after the highest one. Tasks are never deleted, so a
-// code is never given twice; the unique index guards it anyway.
-func nextCode(ctx context.Context, tx *store.Tx, wishID string) (string, error) {
-	tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wishID})
+// nextCode is the code of a new task of the wish: W1, W2…, after the highest one ever given (nextNumber).
+func nextCode(ctx context.Context, r store.Reader, wishID string) (string, error) {
+	return nextNumber(ctx, r, wishID, "W")
+}
+
+// nextNumber is the code of a new task of the wish wishID lettered letter, W for work and T for an azima: the number
+// after the highest one its tasks have or its deleted tasks had (Wish.retired_codes), so that a code is never given
+// twice, deleted or not. The unique index guards the tasks' codes anyway.
+func nextNumber(ctx context.Context, r store.Reader, wishID, letter string) (string, error) {
+	wish, err := store.Get[*planv1.Wish](ctx, r, wishID)
 	if err != nil {
 		return "", err
 	}
-	last := 0
+	tasks, err := store.List[*planv1.Task](ctx, r, store.Where{"wish_id": wishID})
+	if err != nil {
+		return "", err
+	}
+	codes := wish.GetRetiredCodes()
 	for _, t := range tasks {
+		codes = append(codes, t.GetCode())
+	}
+	last := 0
+	for _, c := range codes {
 		var n int
-		if _, err := fmt.Sscanf(t.GetCode(), "W%d", &n); err == nil && n > last {
+		if _, err := fmt.Sscanf(strings.ToUpper(c), letter+"%d", &n); err == nil && n > last {
 			last = n
 		}
 	}
-	return fmt.Sprintf("W%d", last+1), nil
+	return fmt.Sprintf("%s%d", letter, last+1), nil
 }
 
 // pump records the worker's events until the task ends for good: a worker stopped to start again, allowed to
@@ -556,8 +830,17 @@ func (h *Harness) pump(r *run) {
 // drain records the worker's events, and applies the answers to the task's edit question, until the worker ends.
 func (h *Harness) drain(r *run) Result {
 	events := r.worker.Events()
+	var measuring <-chan time.Time
+	m := h.newMeter(r)
+	if m != nil {
+		tick := time.NewTicker(h.measureEvery)
+		defer tick.Stop()
+		measuring = tick.C
+	}
 	for {
 		select {
+		case <-measuring:
+			h.measure(r, m)
 		case ev, ok := <-events:
 			if !ok {
 				r.unread = nil // A worker started again never had them.
@@ -594,12 +877,24 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
 	}
+	if ev.Limit != nil {
+		r.limit = ev.Limit
+	}
+	if what, ok := strings.CutPrefix(ev.Text, permissionDenied); ok && ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS {
+		r.refused = what
+	}
+	if w := ev.Watched; w != nil && w.First != "" {
+		r.task.LastLine, changed = clipRunes(w.First, watchLineMax), true
+	}
 	var task proto.Message
 	if changed {
 		task = r.task
 	}
 	h.acknowledge(r, ev)
 	h.write(r, actorWorker, methodEvent, task, ev)
+	if ev.Watched != nil {
+		h.wakeLead(r, ev.Watched, ev.Text)
+	}
 }
 
 // takeAnswers takes the answers waiting for the run.
@@ -628,7 +923,7 @@ func (h *Harness) settle(r *run, res Result) bool {
 			}
 			continue
 		}
-		restart := r.restart && !r.stopping && h.ctx.Err() == nil
+		restart := r.restart && !r.stopping && !r.shelved && h.ctx.Err() == nil
 		r.restart, r.paused = false, false // A worker started again starts unpaused.
 		if !restart {
 			r.final = true
@@ -658,7 +953,8 @@ func (h *Harness) finish(r *run, res Result) {
 // end gives the task its final status, then lets its watchers go. A task whose worker read while it asks whether
 // it may edit waits for the answer. A task is done only when its worker ended without an error, whatever its
 // provider: an error it reported, an exit code other than 0, or an error it said on the way, even when its
-// process then exited 0, fails the task with the reason.
+// process then exited 0, fails the task with the reason. But a failure its provider's usage limit caused is no
+// failure: the task waits for the limit to reset, and resumes.
 func (h *Harness) end(r *run, res Result) {
 	for flushed := false; !flushed; {
 		select {
@@ -669,13 +965,19 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	h.mu.Lock()
-	stopping := r.stopping
+	stopping, shelved := r.stopping, r.shelved
 	h.mu.Unlock()
 	t := r.task
 	t.EndTime, t.ExitCode = timestamppb.Now(), int32(res.ExitCode)
 	switch {
 	case stopping:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request"
+	case shelved:
+		shelve(t)
+	case h.ctx.Err() != nil && t.GetScheduled() && t.GetStartTime() == nil:
+		// Stopped before its worker started (its worktree being made): nothing to interrupt, nothing to resume. It
+		// waits for a worker again, as planned; interrupted without a worktree, it would never resume.
+		t.Status, t.Error, t.EndTime, t.ExitCode, t.WaitReason = planv1.TaskStatus_TASK_STATUS_PENDING, "", nil, 0, whyStoppedFirst
 	case h.ctx.Err() != nil:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up stopped while the worker ran"
 	case res.Err != nil:
@@ -686,14 +988,35 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, r.failure
 	case t.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_WAITING, "waiting for the answer to its edit question"
+	case r.light && r.refused != "" && questionWorker(t) && !h.questionDid(t):
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, refusedError(r.refused)
 	default:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_DONE, ""
 	}
+	integrate := h.pendIntegration(t)
+	why := t.GetError()
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
+		h.limited(r, t)
+	}
 	text := short(t.GetStatus())
-	if t.GetError() != "" {
+	switch {
+	case shelved:
+		text = "resuming: " + whyWishPaused
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING:
+		text = "waiting: " + whyStoppedFirst
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
+		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
+	case t.GetError() != "":
 		text += ": " + t.GetError()
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+	if integrate {
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: pending, to be merged into the integration branch"})
+		h.kickIntegrate()
+	}
+	if r.light {
+		h.questionEnded(t) // The lead learns what it did, before the task's watchers let go, as a watcher's lead does.
+	}
 	// The links to the summoned skills go with the worker; a worker started again makes them anew.
 	_ = os.RemoveAll(skillsDir(h.home, r.id))
 	h.forget(r)
@@ -778,17 +1101,16 @@ func sum(base, run *planv1.Usage) *planv1.Usage {
 	}
 }
 
-// lastSeq is the position of the task's last event.
+// lastSeq is the position of the task's last event. A task's events are written in the order of their positions, each
+// one after the last (an import writes them in that order too): the last written holds it. It reads that one alone,
+// where a task may hold thousands, a tool's output in each.
 func lastSeq(ctx context.Context, r store.Reader, taskID string) (int64, error) {
-	events, err := store.List[*planv1.TaskEvent](ctx, r, store.Where{"task_id": taskID})
-	if err != nil {
-		return 0, err
-	}
 	var last int64
-	for _, e := range events {
-		last = max(last, e.GetSeq())
-	}
-	return last, nil
+	err := store.Latest(ctx, r, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
+		last = e.GetSeq()
+		return false
+	})
+	return last, err
 }
 
 // Stop asks the task's worker to stop, and waits until it has, or ctx ends.
@@ -836,7 +1158,11 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 		h.sched.Unlock()
 		return h.Stop(ctx, procedure, req)
 	}
-	task.Status, task.Error, task.WaitReason, task.MachineWait, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, "stopped on request before it started", "", false, timestamppb.Now()
+	why := "stopped on request before it started"
+	if dispatch.Resuming(task) {
+		why = "stopped on request while it waited to resume"
+	}
+	task.Status, task.Error, task.WaitReason, task.ResumeAfter, task.MachineWait, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", nil, false, timestamppb.Now()
 	h.writeAlone(ctx, actorLocal, procedure, req, task.GetId(), task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "stopped: " + task.GetError()})
 	h.sched.Unlock()
 	h.wake() // Its dependents fail in turn.
@@ -845,6 +1171,8 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 
 // Pause holds the task's worker where it is, without killing it, until Resume: the task is paused, and its slot
 // of the machine is free meanwhile. A worker whose provider cannot pause, or Windows, refuses.
+// A worker that holds a gate is not paused: the gate would stay held, frozen, for every other worker. Nor is one
+// that waits for a gate: it would get the gate in its turn, and hold it frozen.
 func (h *Harness) Pause(ctx context.Context, procedure string, req *planv1.TaskServicePauseRequest) (*planv1.Task, error) {
 	return h.hold(ctx, procedure, req, req.GetTaskId(), true)
 }
@@ -865,6 +1193,25 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 	if r == nil || r.worker == nil || r.stopping || r.final {
 		h.mu.Unlock()
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
+	}
+	if pause {
+		for _, g := range []struct {
+			names func(taskID string) []string
+			verb  string
+		}{{h.held, "holds"}, {h.waiting, "waits for"}} {
+			if g.names == nil {
+				continue
+			}
+			if names := g.names(id); len(names) > 0 {
+				h.mu.Unlock()
+				gate := "gate"
+				if len(names) > 1 {
+					gate = "gates"
+				}
+				return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s %s the %s %s: wait or stop it",
+					task.GetCode(), g.verb, gate, strings.Join(names, ", ")))
+			}
+		}
 	}
 	if r.paused == pause {
 		h.mu.Unlock()
@@ -976,9 +1323,19 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 		}
 		if ch == nil {
 			task, err := store.Get[*planv1.Task](ctx, h.store, taskID)
+			if s := task.GetStatus(); err == nil && (s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED) {
+				// Its worker started since it was subscribed to: its run is there, follow it.
+				select {
+				case <-changed:
+				case <-time.After(10 * time.Millisecond):
+				case <-ctx.Done():
+					return nil
+				}
+				continue
+			}
 			if err != nil || !planned(task) {
 				if ctx.Err() != nil {
-					return nil
+					return nil //nolint:nilerr // Watching ends with its context: not an error.
 				}
 				return plan.Status(err) // The task has ended: the store holds all its events.
 			}

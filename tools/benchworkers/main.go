@@ -184,7 +184,7 @@ func newBench(ctx context.Context, cfg config, out io.Writer) (*bench, error) {
 		}
 	}
 	b.rules = filepath.Join(dir, "lead-rules.md")
-	stable := plan.StableBrief([]*planv1.Project{{Name: "bench", Directory: b.repo, Git: true}})
+	stable := plan.StableBrief("", []*planv1.Project{{Name: "bench", Directory: b.repo, Git: true}})
 	if err := os.WriteFile(b.rules, []byte(stable), 0o600); err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func (b *bench) close() { _ = os.RemoveAll(filepath.Dir(b.repo)) }
 func git(ctx context.Context, dir string, args ...string) error {
 	out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git %s: %v: %s", args[0], err, out)
+		return fmt.Errorf("git %s: %w: %s", args[0], err, out)
 	}
 	return nil
 }

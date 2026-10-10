@@ -241,7 +241,10 @@ type claudeMessage struct {
 		ToolName  string          `json:"tool_name"`
 		ToolInput json.RawMessage `json:"tool_input"`
 	} `json:"permission_denials"`
-	Usage *struct {
+	// QueuedTurnCount is how many messages claude still holds for later turns: a message sent during a turn is
+	// folded into it, and gets no result of its own. Seen on a real run (W59); older versions may omit it.
+	QueuedTurnCount *int `json:"queued_turn_count"`
+	Usage           *struct {
 		InputTokens              int64 `json:"input_tokens"`
 		OutputTokens             int64 `json:"output_tokens"`
 		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
@@ -308,7 +311,14 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 		if info.ResetsAt > 0 {
 			text += ", resets at " + time.Unix(info.ResetsAt, 0).UTC().Format(time.RFC3339)
 		}
-		add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+		ev := add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+		if info.Status == "rejected" {
+			// The account's limit is reached: the turn fails next, and the task waits for the reset.
+			ev.Limit = &Limit{What: limitWhat(info.RateLimitType)}
+			if info.ResetsAt > 0 {
+				ev.Limit.Until = time.Unix(info.ResetsAt, 0)
+			}
+		}
 	case "assistant", "user":
 		bs := blocks(m.Message)
 		if len(bs) > 0 && !slices.ContainsFunc(bs, func(b claudeBlock) bool {
@@ -338,7 +348,7 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 			}
 		}
 	case "result":
-		res = &turnEnd{}
+		res = &turnEnd{queued: m.QueuedTurnCount}
 		// An error subtype (error_max_turns, error_during_execution…) fails the turn even when is_error is false.
 		if m.IsError || m.Subtype != "" && m.Subtype != "success" {
 			res.failure = strings.Join(m.Errors, "; ")
@@ -352,7 +362,7 @@ func parseClaude(raw string) ([]Event, *turnEnd) {
 		}
 		for _, d := range m.PermissionDenials {
 			// Refused because the worker's permission mode does not allow it: the agent went on without it.
-			add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, strings.TrimSpace("permission denied: "+d.ToolName+" "+compact(d.ToolInput)))
+			add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, strings.TrimSpace(permissionDenied+d.ToolName+" "+compact(d.ToolInput)))
 		}
 		usage := &planv1.Usage{CostUsd: m.TotalCostUSD}
 		for _, u := range m.ModelUsage {

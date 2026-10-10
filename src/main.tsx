@@ -10,6 +10,7 @@ import { DjinnProvider, createDjinn } from "./data/djinn";
 import { language } from "./i18n";
 import { LeadTerminalFrame } from "./lead-terminal";
 import { installNativeWindowDrag } from "./native-window";
+import "./theme.css";
 import "./styles.css";
 import { applyTheme, followSystem } from "./theme";
 import { UpdateBanner } from "./update-banner";
@@ -23,6 +24,7 @@ const nativeMac =
   ) &&
   (/wails\.io/i.test(userAgent) || window.location.protocol === "wails:");
 document.documentElement.classList.toggle("native-mac", nativeMac);
+
 document.documentElement.lang = language;
 const nativeWindowDragCleanup = nativeMac
   ? installNativeWindowDrag()

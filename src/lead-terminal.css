@@ -1,11 +1,35 @@
 /* The terminal occupies the bottom of the main view while the sidebar spans the full window height. */
 .lead-frame {
+  --lead-sidebar-width: 222px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: var(--lead-sidebar-width) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+}
+@media (min-width: 1750px) {
+  .lead-frame {
+    --lead-sidebar-width: 240px;
+  }
+}
+@media (max-width: 1300px) {
+  .lead-frame {
+    --lead-sidebar-width: 197px;
+  }
+}
+@media (max-width: 1080px) {
+  .lead-frame {
+    --lead-sidebar-width: 190px;
+  }
+}
+@media (max-width: 820px) {
+  .lead-frame {
+    --lead-sidebar-width: 67px;
+  }
+}
+.lead-frame:has(.app.sidebar-collapsed) {
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 .lead-frame-app {
   display: contents;
@@ -16,6 +40,7 @@
 .lead-frame-app > .app > .sidebar {
   grid-column: 1;
   grid-row: 1 / -1;
+  min-width: 0;
   min-height: 0;
 }
 .lead-frame-app > .app > .main-shell {
@@ -55,7 +80,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: 0 var(--space-3) 0 var(--space-2);
-  background: #131313;
+  background: var(--n-14);
   font: var(--font-size-body) var(--mono);
   color: var(--muted);
 }
@@ -82,10 +107,6 @@
 .lead-terminal-title > span {
   white-space: nowrap;
 }
-.lead-terminal-switch {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
 .lead-terminal-command {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -98,7 +119,7 @@
 .lead-terminal-state.error {
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #d78a7c;
+  color: var(--danger);
 }
 .lead-terminal-screen {
   flex: 1;
@@ -107,4 +128,70 @@
 }
 .lead-terminal.collapsed .lead-terminal-screen {
   display: none;
+}
+/* No project has a folder yet: the terminal does not open in the home folder, it asks for a project. */
+.lead-terminal-empty {
+  position: absolute;
+  inset: 28px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg);
+  color: var(--muted);
+  text-align: center;
+}
+.lead-terminal-empty p {
+  margin: 0;
+  max-width: 52ch;
+}
+
+/* The terminal's tabs: the window's own, the lead's, and those you opened, each of these with its ×. */
+.lead-terminal-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  flex: 1;
+}
+.lead-terminal-tab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lead-terminal-tab > button {
+  padding: 3px 8px;
+  font-size: var(--font-size-body);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lead-terminal-tab.selected {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+.lead-terminal-tab .lead-terminal-tab-close {
+  padding: 3px 5px 3px 0;
+  opacity: 0.6;
+}
+.lead-terminal-tab .lead-terminal-tab-close:hover {
+  opacity: 1;
+}
+.lead-terminal-tab-new {
+  padding: 3px 6px;
+  color: var(--muted);
+}
+.project-nav .project-terminal {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.project-nav:hover .project-terminal,
+.project-terminal:focus-visible {
+  opacity: 1;
 }

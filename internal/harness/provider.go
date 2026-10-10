@@ -9,6 +9,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/machine"
 )
 
 // Provider starts the workers of one kind of agent.
@@ -51,9 +52,13 @@ type Spec struct {
 	// SkillsDir is a folder of Djinn's own holding .claude/skills/<name> and .agents/skills/<name>, a link to each
 	// skill's folder in its source project; empty without skills, or when the links could not be made.
 	SkillsDir string
-	// Prefix is a command the worker's process runs under, its own command appended: a systemd scope that caps
-	// its CPU (djinn up --worker-cpu). Empty: the process runs as is.
+	// Scope, when set, gives each process the worker starts a systemd scope of its own (Harness.WithScopes): the
+	// process runs under its prefix, and stopping, pausing and measuring take its cgroup. Nil: it runs as is.
+	Scope func() machine.Scope
+	// Prefix is a compatibility process prefix supplied by Harness.WithPrefix when no scope prefix is present.
 	Prefix []string
+	// Restart starts a watcher's command again after each exit, until it is stopped. Agents ignore it.
+	Restart bool
 }
 
 // Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.
@@ -90,6 +95,15 @@ type Pauser interface {
 	Resume() error
 }
 
+// Process is a worker that runs a process of its own, which leads its process group: Djinn measures what it uses.
+// A worker that is not one (the fake agent, which runs in Djinn's process) is not measured.
+type Process interface {
+	// PID is the process of the agent, or of a watcher's command; 0 while none runs.
+	PID() int
+	// Cgroup is the cgroup of the scope it runs in (Spec.Scope); empty without one.
+	Cgroup() string
+}
+
 // ErrReadOnly is returned by Start when the provider cannot keep its agent from writing: it cannot run a
 // read-only worker.
 var ErrReadOnly = errors.New("it cannot be kept from writing")
@@ -108,6 +122,11 @@ type Event struct {
 	Usage *planv1.Usage
 	// SessionID is the agent's session, when the event tells it.
 	SessionID string
+	// Limit is the provider's usage limit, when the event says the worker hit it: the task waits for it to reset,
+	// should the worker then fail.
+	Limit *Limit
+	// Watched is set on a paragraph a watcher's command printed: the wish's lead is told its first line.
+	Watched *Watched
 }
 
 // Result is how a worker ended.

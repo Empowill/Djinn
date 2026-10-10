@@ -29,6 +29,8 @@ const (
 	ProjectServiceName = "plan.v1.ProjectService"
 	// SkillServiceName is the fully-qualified name of the SkillService service.
 	SkillServiceName = "plan.v1.SkillService"
+	// InboxServiceName is the fully-qualified name of the InboxService service.
+	InboxServiceName = "plan.v1.InboxService"
 	// WishServiceName is the fully-qualified name of the WishService service.
 	WishServiceName = "plan.v1.WishService"
 	// BlockServiceName is the fully-qualified name of the BlockService service.
@@ -39,6 +41,8 @@ const (
 	TaskServiceName = "plan.v1.TaskService"
 	// InstructionServiceName is the fully-qualified name of the InstructionService service.
 	InstructionServiceName = "plan.v1.InstructionService"
+	// PlanServiceName is the fully-qualified name of the PlanService service.
+	PlanServiceName = "plan.v1.PlanService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -64,12 +68,26 @@ const (
 	ProjectServiceAddProcedure = "/plan.v1.ProjectService/Add"
 	// ProjectServiceListProcedure is the fully-qualified name of the ProjectService's List RPC.
 	ProjectServiceListProcedure = "/plan.v1.ProjectService/List"
+	// ProjectServiceShowProcedure is the fully-qualified name of the ProjectService's Show RPC.
+	ProjectServiceShowProcedure = "/plan.v1.ProjectService/Show"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
 	SkillServiceListProcedure = "/plan.v1.SkillService/List"
 	// SkillServiceUnsummonProcedure is the fully-qualified name of the SkillService's Unsummon RPC.
 	SkillServiceUnsummonProcedure = "/plan.v1.SkillService/Unsummon"
+	// InboxServiceListProcedure is the fully-qualified name of the InboxService's List RPC.
+	InboxServiceListProcedure = "/plan.v1.InboxService/List"
+	// InboxServiceDismissProcedure is the fully-qualified name of the InboxService's Dismiss RPC.
+	InboxServiceDismissProcedure = "/plan.v1.InboxService/Dismiss"
+	// InboxServiceRouteProcedure is the fully-qualified name of the InboxService's Route RPC.
+	InboxServiceRouteProcedure = "/plan.v1.InboxService/Route"
+	// InboxServiceSourcesProcedure is the fully-qualified name of the InboxService's Sources RPC.
+	InboxServiceSourcesProcedure = "/plan.v1.InboxService/Sources"
+	// InboxServicePlugProcedure is the fully-qualified name of the InboxService's Plug RPC.
+	InboxServicePlugProcedure = "/plan.v1.InboxService/Plug"
+	// InboxServiceUnplugProcedure is the fully-qualified name of the InboxService's Unplug RPC.
+	InboxServiceUnplugProcedure = "/plan.v1.InboxService/Unplug"
 	// WishServiceMakeProcedure is the fully-qualified name of the WishService's Make RPC.
 	WishServiceMakeProcedure = "/plan.v1.WishService/Make"
 	// WishServiceRenameProcedure is the fully-qualified name of the WishService's Rename RPC.
@@ -88,6 +106,8 @@ const (
 	WishServiceResumeProcedure = "/plan.v1.WishService/Resume"
 	// WishServiceSetProviderProcedure is the fully-qualified name of the WishService's SetProvider RPC.
 	WishServiceSetProviderProcedure = "/plan.v1.WishService/SetProvider"
+	// WishServiceDescribeProcedure is the fully-qualified name of the WishService's Describe RPC.
+	WishServiceDescribeProcedure = "/plan.v1.WishService/Describe"
 	// WishServiceBriefProcedure is the fully-qualified name of the WishService's Brief RPC.
 	WishServiceBriefProcedure = "/plan.v1.WishService/Brief"
 	// WishServiceTellProcedure is the fully-qualified name of the WishService's Tell RPC.
@@ -98,18 +118,25 @@ const (
 	WishServiceSnapshotProcedure = "/plan.v1.WishService/Snapshot"
 	// WishServiceAllowProcedure is the fully-qualified name of the WishService's Allow RPC.
 	WishServiceAllowProcedure = "/plan.v1.WishService/Allow"
+	// WishServiceSetIntegrationProcedure is the fully-qualified name of the WishService's
+	// SetIntegration RPC.
+	WishServiceSetIntegrationProcedure = "/plan.v1.WishService/SetIntegration"
 	// WishServiceGrantProcedure is the fully-qualified name of the WishService's Grant RPC.
 	WishServiceGrantProcedure = "/plan.v1.WishService/Grant"
 	// WishServicePauseProcedure is the fully-qualified name of the WishService's Pause RPC.
 	WishServicePauseProcedure = "/plan.v1.WishService/Pause"
 	// WishServiceActivateProcedure is the fully-qualified name of the WishService's Activate RPC.
 	WishServiceActivateProcedure = "/plan.v1.WishService/Activate"
+	// WishServiceDeleteProcedure is the fully-qualified name of the WishService's Delete RPC.
+	WishServiceDeleteProcedure = "/plan.v1.WishService/Delete"
 	// WishServiceMoveProcedure is the fully-qualified name of the WishService's Move RPC.
 	WishServiceMoveProcedure = "/plan.v1.WishService/Move"
 	// WishServiceRenderProcedure is the fully-qualified name of the WishService's Render RPC.
 	WishServiceRenderProcedure = "/plan.v1.WishService/Render"
 	// WishServiceSyncProcedure is the fully-qualified name of the WishService's Sync RPC.
 	WishServiceSyncProcedure = "/plan.v1.WishService/Sync"
+	// WishServiceRouteProcedure is the fully-qualified name of the WishService's Route RPC.
+	WishServiceRouteProcedure = "/plan.v1.WishService/Route"
 	// WishServiceWatchProcedure is the fully-qualified name of the WishService's Watch RPC.
 	WishServiceWatchProcedure = "/plan.v1.WishService/Watch"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
@@ -140,8 +167,16 @@ const (
 	TaskServiceWatchProcedure = "/plan.v1.TaskService/Watch"
 	// TaskServiceCleanProcedure is the fully-qualified name of the TaskService's Clean RPC.
 	TaskServiceCleanProcedure = "/plan.v1.TaskService/Clean"
+	// TaskServiceDependProcedure is the fully-qualified name of the TaskService's Depend RPC.
+	TaskServiceDependProcedure = "/plan.v1.TaskService/Depend"
+	// TaskServiceGroupProcedure is the fully-qualified name of the TaskService's Group RPC.
+	TaskServiceGroupProcedure = "/plan.v1.TaskService/Group"
 	// TaskServiceDeleteProcedure is the fully-qualified name of the TaskService's Delete RPC.
 	TaskServiceDeleteProcedure = "/plan.v1.TaskService/Delete"
+	// TaskServiceDoneProcedure is the fully-qualified name of the TaskService's Done RPC.
+	TaskServiceDoneProcedure = "/plan.v1.TaskService/Done"
+	// TaskServiceContinueProcedure is the fully-qualified name of the TaskService's Continue RPC.
+	TaskServiceContinueProcedure = "/plan.v1.TaskService/Continue"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
 	TaskServiceSendProcedure = "/plan.v1.TaskService/Send"
 	// InstructionServiceSendProcedure is the fully-qualified name of the InstructionService's Send RPC.
@@ -157,6 +192,8 @@ const (
 	// InstructionServiceCompleteProcedure is the fully-qualified name of the InstructionService's
 	// Complete RPC.
 	InstructionServiceCompleteProcedure = "/plan.v1.InstructionService/Complete"
+	// PlanServiceSyncProcedure is the fully-qualified name of the PlanService's Sync RPC.
+	PlanServiceSyncProcedure = "/plan.v1.PlanService/Sync"
 )
 
 // QuestionServiceClient is a client for the plan.v1.QuestionService service.
@@ -201,6 +238,7 @@ func NewQuestionServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+QuestionServiceListProcedure,
 			connect.WithSchema(questionServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		enlighten: connect.NewClient[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse](
@@ -290,6 +328,7 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 		QuestionServiceListProcedure,
 		svc.List,
 		connect.WithSchema(questionServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	questionServiceEnlightenHandler := connect.NewUnaryHandler(
@@ -351,6 +390,9 @@ type ProjectServiceClient interface {
 	Add(context.Context, *connect.Request[v1.ProjectServiceAddRequest]) (*connect.Response[v1.ProjectServiceAddResponse], error)
 	// List the projects.
 	List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error)
+	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
+	// .agents/settings.txtpb or your own file.
+	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -374,6 +416,14 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+ProjectServiceListProcedure,
 			connect.WithSchema(projectServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		show: connect.NewClient[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse](
+			httpClient,
+			baseURL+ProjectServiceShowProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Show")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -383,6 +433,7 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type projectServiceClient struct {
 	add  *connect.Client[v1.ProjectServiceAddRequest, v1.ProjectServiceAddResponse]
 	list *connect.Client[v1.ProjectServiceListRequest, v1.ProjectServiceListResponse]
+	show *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -395,12 +446,20 @@ func (c *projectServiceClient) List(ctx context.Context, req *connect.Request[v1
 	return c.list.CallUnary(ctx, req)
 }
 
+// Show calls plan.v1.ProjectService.Show.
+func (c *projectServiceClient) Show(ctx context.Context, req *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error) {
+	return c.show.CallUnary(ctx, req)
+}
+
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
 	Add(context.Context, *connect.Request[v1.ProjectServiceAddRequest]) (*connect.Response[v1.ProjectServiceAddResponse], error)
 	// List the projects.
 	List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error)
+	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
+	// .agents/settings.txtpb or your own file.
+	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -420,6 +479,14 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		ProjectServiceListProcedure,
 		svc.List,
 		connect.WithSchema(projectServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectServiceShowHandler := connect.NewUnaryHandler(
+		ProjectServiceShowProcedure,
+		svc.Show,
+		connect.WithSchema(projectServiceMethods.ByName("Show")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -428,6 +495,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceAddHandler.ServeHTTP(w, r)
 		case ProjectServiceListProcedure:
 			projectServiceListHandler.ServeHTTP(w, r)
+		case ProjectServiceShowProcedure:
+			projectServiceShowHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -443,6 +512,10 @@ func (UnimplementedProjectServiceHandler) Add(context.Context, *connect.Request[
 
 func (UnimplementedProjectServiceHandler) List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.List is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Show is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.
@@ -477,6 +550,7 @@ func NewSkillServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+SkillServiceListProcedure,
 			connect.WithSchema(skillServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		unsummon: connect.NewClient[v1.SkillServiceUnsummonRequest, v1.SkillServiceUnsummonResponse](
@@ -538,6 +612,7 @@ func NewSkillServiceHandler(svc SkillServiceHandler, opts ...connect.HandlerOpti
 		SkillServiceListProcedure,
 		svc.List,
 		connect.WithSchema(skillServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	skillServiceUnsummonHandler := connect.NewUnaryHandler(
@@ -575,6 +650,224 @@ func (UnimplementedSkillServiceHandler) Unsummon(context.Context, *connect.Reque
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.SkillService.Unsummon is not implemented"))
 }
 
+// InboxServiceClient is a client for the plan.v1.InboxService service.
+type InboxServiceClient interface {
+	// List the inbox, the newest first: the items that wait for an answer, or every one with --all.
+	List(context.Context, *connect.Request[v1.InboxServiceListRequest]) (*connect.Response[v1.InboxServiceListResponse], error)
+	// Set an item aside: it is not proposed again. Nothing is sent to its source.
+	Dismiss(context.Context, *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error)
+	// Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
+	// one matched, and start its watcher and its lead. Nothing is sent to its source.
+	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
+	// List the sources the projects' skills declare, plugged in or not on this machine.
+	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
+	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+	Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error)
+	// Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+	Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error)
+}
+
+// NewInboxServiceClient constructs a client for the plan.v1.InboxService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewInboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) InboxServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	inboxServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("InboxService").Methods()
+	return &inboxServiceClient{
+		list: connect.NewClient[v1.InboxServiceListRequest, v1.InboxServiceListResponse](
+			httpClient,
+			baseURL+InboxServiceListProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		dismiss: connect.NewClient[v1.InboxServiceDismissRequest, v1.InboxServiceDismissResponse](
+			httpClient,
+			baseURL+InboxServiceDismissProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Dismiss")),
+			connect.WithClientOptions(opts...),
+		),
+		route: connect.NewClient[v1.InboxServiceRouteRequest, v1.InboxServiceRouteResponse](
+			httpClient,
+			baseURL+InboxServiceRouteProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Route")),
+			connect.WithClientOptions(opts...),
+		),
+		sources: connect.NewClient[v1.InboxServiceSourcesRequest, v1.InboxServiceSourcesResponse](
+			httpClient,
+			baseURL+InboxServiceSourcesProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Sources")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		plug: connect.NewClient[v1.InboxServicePlugRequest, v1.InboxServicePlugResponse](
+			httpClient,
+			baseURL+InboxServicePlugProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Plug")),
+			connect.WithClientOptions(opts...),
+		),
+		unplug: connect.NewClient[v1.InboxServiceUnplugRequest, v1.InboxServiceUnplugResponse](
+			httpClient,
+			baseURL+InboxServiceUnplugProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("Unplug")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// inboxServiceClient implements InboxServiceClient.
+type inboxServiceClient struct {
+	list    *connect.Client[v1.InboxServiceListRequest, v1.InboxServiceListResponse]
+	dismiss *connect.Client[v1.InboxServiceDismissRequest, v1.InboxServiceDismissResponse]
+	route   *connect.Client[v1.InboxServiceRouteRequest, v1.InboxServiceRouteResponse]
+	sources *connect.Client[v1.InboxServiceSourcesRequest, v1.InboxServiceSourcesResponse]
+	plug    *connect.Client[v1.InboxServicePlugRequest, v1.InboxServicePlugResponse]
+	unplug  *connect.Client[v1.InboxServiceUnplugRequest, v1.InboxServiceUnplugResponse]
+}
+
+// List calls plan.v1.InboxService.List.
+func (c *inboxServiceClient) List(ctx context.Context, req *connect.Request[v1.InboxServiceListRequest]) (*connect.Response[v1.InboxServiceListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
+// Dismiss calls plan.v1.InboxService.Dismiss.
+func (c *inboxServiceClient) Dismiss(ctx context.Context, req *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error) {
+	return c.dismiss.CallUnary(ctx, req)
+}
+
+// Route calls plan.v1.InboxService.Route.
+func (c *inboxServiceClient) Route(ctx context.Context, req *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error) {
+	return c.route.CallUnary(ctx, req)
+}
+
+// Sources calls plan.v1.InboxService.Sources.
+func (c *inboxServiceClient) Sources(ctx context.Context, req *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error) {
+	return c.sources.CallUnary(ctx, req)
+}
+
+// Plug calls plan.v1.InboxService.Plug.
+func (c *inboxServiceClient) Plug(ctx context.Context, req *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error) {
+	return c.plug.CallUnary(ctx, req)
+}
+
+// Unplug calls plan.v1.InboxService.Unplug.
+func (c *inboxServiceClient) Unplug(ctx context.Context, req *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error) {
+	return c.unplug.CallUnary(ctx, req)
+}
+
+// InboxServiceHandler is an implementation of the plan.v1.InboxService service.
+type InboxServiceHandler interface {
+	// List the inbox, the newest first: the items that wait for an answer, or every one with --all.
+	List(context.Context, *connect.Request[v1.InboxServiceListRequest]) (*connect.Response[v1.InboxServiceListResponse], error)
+	// Set an item aside: it is not proposed again. Nothing is sent to its source.
+	Dismiss(context.Context, *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error)
+	// Send an item where an option of its route says: file it in a wish, or make the new wish, from its template when
+	// one matched, and start its watcher and its lead. Nothing is sent to its source.
+	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
+	// List the sources the projects' skills declare, plugged in or not on this machine.
+	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
+	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+	Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error)
+	// Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+	Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error)
+}
+
+// NewInboxServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	inboxServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("InboxService").Methods()
+	inboxServiceListHandler := connect.NewUnaryHandler(
+		InboxServiceListProcedure,
+		svc.List,
+		connect.WithSchema(inboxServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceDismissHandler := connect.NewUnaryHandler(
+		InboxServiceDismissProcedure,
+		svc.Dismiss,
+		connect.WithSchema(inboxServiceMethods.ByName("Dismiss")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceRouteHandler := connect.NewUnaryHandler(
+		InboxServiceRouteProcedure,
+		svc.Route,
+		connect.WithSchema(inboxServiceMethods.ByName("Route")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceSourcesHandler := connect.NewUnaryHandler(
+		InboxServiceSourcesProcedure,
+		svc.Sources,
+		connect.WithSchema(inboxServiceMethods.ByName("Sources")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServicePlugHandler := connect.NewUnaryHandler(
+		InboxServicePlugProcedure,
+		svc.Plug,
+		connect.WithSchema(inboxServiceMethods.ByName("Plug")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceUnplugHandler := connect.NewUnaryHandler(
+		InboxServiceUnplugProcedure,
+		svc.Unplug,
+		connect.WithSchema(inboxServiceMethods.ByName("Unplug")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.InboxService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case InboxServiceListProcedure:
+			inboxServiceListHandler.ServeHTTP(w, r)
+		case InboxServiceDismissProcedure:
+			inboxServiceDismissHandler.ServeHTTP(w, r)
+		case InboxServiceRouteProcedure:
+			inboxServiceRouteHandler.ServeHTTP(w, r)
+		case InboxServiceSourcesProcedure:
+			inboxServiceSourcesHandler.ServeHTTP(w, r)
+		case InboxServicePlugProcedure:
+			inboxServicePlugHandler.ServeHTTP(w, r)
+		case InboxServiceUnplugProcedure:
+			inboxServiceUnplugHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedInboxServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedInboxServiceHandler struct{}
+
+func (UnimplementedInboxServiceHandler) List(context.Context, *connect.Request[v1.InboxServiceListRequest]) (*connect.Response[v1.InboxServiceListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.List is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Dismiss(context.Context, *connect.Request[v1.InboxServiceDismissRequest]) (*connect.Response[v1.InboxServiceDismissResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Dismiss is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Route is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Sources is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Plug is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InboxService.Unplug is not implemented"))
+}
+
 // WishServiceClient is a client for the plan.v1.WishService service.
 type WishServiceClient interface {
 	// Make a wish.
@@ -598,8 +891,13 @@ type WishServiceClient interface {
 	// djinn if it is not running.
 	SetLead(context.Context, *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error)
 	// Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-	// to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
-	// (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
+	// to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
+	// wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
+	// A provider other than the recorded lead's starts a new lead of that agent from the brief the same way: a claude
+	// one becomes the wish's lead, a codex one once djinn wish set-lead gives its session, and an antigravity one
+	// leaves the record as it is. While the lead's terminal runs a program, nothing starts, and the note says so. A
+	// lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
+	// project nothing starts, the error says to create one. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
 	// Change the wish's agent: its lead from now on, and every task to come that names no other; the tasks that run go
 	// on with theirs. The lead that runs is stopped, and a new one starts with the new agent from the wish's brief (djinn
@@ -609,6 +907,13 @@ type WishServiceClient interface {
 	// what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
 	// decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
 	// No local path, no secret.
+	// Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had.
+	// Empty text takes it back to the title.
+	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
+	// The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
+	// store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
+	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
+	// acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
 	// Write to the wish's lead in its terminal, as if you typed it there, then Enter. The text waits while something
 	// is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
@@ -624,15 +929,25 @@ type WishServiceClient interface {
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only. The lead
 	// starting in that project gets the same mode, at its next start.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
+	// Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
+	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
+	// itself or asks first. Only what is given changes.
+	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
-	// Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.
+	// Pause a wish: it keeps everything, its workers stop and wait to resume with it, and it leaves its place among the
+	// three active wishes to another one.
 	Pause(context.Context, *connect.Request[v1.WishServicePauseRequest]) (*connect.Response[v1.WishServicePauseResponse], error)
-	// Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one
-	// first.
+	// Make a paused or granted wish active again, last by rank; its stopped workers start again. Three wishes are
+	// active at most: when three are, it takes the third place, and the third wish is paused.
 	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
-	// Move an active wish to another rank: --to 1 gives it priority over the others.
+	// Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
+	// stop first, and its lead's terminal closes. A task's worktree goes when it holds no work: clean, and no commit
+	// beyond the project's current branch; the others stay, said with why. Branches all stay. It cannot be undone.
+	Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error)
+	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
+	// there, the third place at most, and the wish it pushes past the third place is paused.
 	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
@@ -642,9 +957,18 @@ type WishServiceClient interface {
 	// change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
 	// republish it where you put it last time. Delete the file to stop.
 	Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error)
-	// Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
-	// itself: the first message names everything, then each change follows; changes close together come as one. A
-	// task's events come from TaskService.Watch.
+	// Find the wish a request belongs to, without a model. Djinn ranks the wishes by the words of their titles, the
+	// projects the request names or links to (a GitLab or GitHub link whose repository is a project's remote), and
+	// their latest blocks. It proposes to file the request in the closest ones, or to open a new wish with a title
+	// and a project. A request that matches the wish template of a skill in those projects (metadata.djinn.wish in
+	// its SKILL.md) proposes the template's wish: its title, its watcher, its lead started with the skill. With
+	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
+	// and starts its watcher and its lead in its own terminal.
+	Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error)
+	// Follow what changes, as it changes: which wish, and what in it. The first message names everything, to read; then
+	// each change follows, with the tasks, questions and blocks that changed, whole, so that a reader replaces them
+	// without reading the others again; changes close together come as one. A task's events come from
+	// TaskService.Watch.
 	Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest]) (*connect.ServerStreamForClient[v1.WishServiceWatchResponse], error)
 }
 
@@ -675,6 +999,7 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+WishServiceListProcedure,
 			connect.WithSchema(wishServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		export: connect.NewClient[v1.WishServiceExportRequest, v1.WishServiceExportResponse](
@@ -713,10 +1038,17 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("SetProvider")),
 			connect.WithClientOptions(opts...),
 		),
+		describe: connect.NewClient[v1.WishServiceDescribeRequest, v1.WishServiceDescribeResponse](
+			httpClient,
+			baseURL+WishServiceDescribeProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Describe")),
+			connect.WithClientOptions(opts...),
+		),
 		brief: connect.NewClient[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse](
 			httpClient,
 			baseURL+WishServiceBriefProcedure,
 			connect.WithSchema(wishServiceMethods.ByName("Brief")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		tell: connect.NewClient[v1.WishServiceTellRequest, v1.WishServiceTellResponse](
@@ -743,6 +1075,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Allow")),
 			connect.WithClientOptions(opts...),
 		),
+		setIntegration: connect.NewClient[v1.WishServiceSetIntegrationRequest, v1.WishServiceSetIntegrationResponse](
+			httpClient,
+			baseURL+WishServiceSetIntegrationProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("SetIntegration")),
+			connect.WithClientOptions(opts...),
+		),
 		grant: connect.NewClient[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse](
 			httpClient,
 			baseURL+WishServiceGrantProcedure,
@@ -759,6 +1097,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+WishServiceActivateProcedure,
 			connect.WithSchema(wishServiceMethods.ByName("Activate")),
+			connect.WithClientOptions(opts...),
+		),
+		delete: connect.NewClient[v1.WishServiceDeleteRequest, v1.WishServiceDeleteResponse](
+			httpClient,
+			baseURL+WishServiceDeleteProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
 		move: connect.NewClient[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse](
@@ -779,6 +1123,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Sync")),
 			connect.WithClientOptions(opts...),
 		),
+		route: connect.NewClient[v1.WishServiceRouteRequest, v1.WishServiceRouteResponse](
+			httpClient,
+			baseURL+WishServiceRouteProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Route")),
+			connect.WithClientOptions(opts...),
+		),
 		watch: connect.NewClient[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse](
 			httpClient,
 			baseURL+WishServiceWatchProcedure,
@@ -790,27 +1140,31 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // wishServiceClient implements WishServiceClient.
 type wishServiceClient struct {
-	make        *connect.Client[v1.WishServiceMakeRequest, v1.WishServiceMakeResponse]
-	rename      *connect.Client[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse]
-	list        *connect.Client[v1.WishServiceListRequest, v1.WishServiceListResponse]
-	export      *connect.Client[v1.WishServiceExportRequest, v1.WishServiceExportResponse]
-	_import     *connect.Client[v1.WishServiceImportRequest, v1.WishServiceImportResponse]
-	importData  *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
-	setLead     *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
-	resume      *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
-	setProvider *connect.Client[v1.WishServiceSetProviderRequest, v1.WishServiceSetProviderResponse]
-	brief       *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
-	tell        *connect.Client[v1.WishServiceTellRequest, v1.WishServiceTellResponse]
-	choose      *connect.Client[v1.WishServiceChooseRequest, v1.WishServiceChooseResponse]
-	snapshot    *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
-	allow       *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
-	grant       *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
-	pause       *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
-	activate    *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
-	move        *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
-	render      *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
-	sync        *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
-	watch       *connect.Client[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse]
+	make           *connect.Client[v1.WishServiceMakeRequest, v1.WishServiceMakeResponse]
+	rename         *connect.Client[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse]
+	list           *connect.Client[v1.WishServiceListRequest, v1.WishServiceListResponse]
+	export         *connect.Client[v1.WishServiceExportRequest, v1.WishServiceExportResponse]
+	_import        *connect.Client[v1.WishServiceImportRequest, v1.WishServiceImportResponse]
+	importData     *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
+	setLead        *connect.Client[v1.WishServiceSetLeadRequest, v1.WishServiceSetLeadResponse]
+	resume         *connect.Client[v1.WishServiceResumeRequest, v1.WishServiceResumeResponse]
+	setProvider    *connect.Client[v1.WishServiceSetProviderRequest, v1.WishServiceSetProviderResponse]
+	describe       *connect.Client[v1.WishServiceDescribeRequest, v1.WishServiceDescribeResponse]
+	brief          *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
+	tell           *connect.Client[v1.WishServiceTellRequest, v1.WishServiceTellResponse]
+	choose         *connect.Client[v1.WishServiceChooseRequest, v1.WishServiceChooseResponse]
+	snapshot       *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
+	allow          *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
+	setIntegration *connect.Client[v1.WishServiceSetIntegrationRequest, v1.WishServiceSetIntegrationResponse]
+	grant          *connect.Client[v1.WishServiceGrantRequest, v1.WishServiceGrantResponse]
+	pause          *connect.Client[v1.WishServicePauseRequest, v1.WishServicePauseResponse]
+	activate       *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
+	delete         *connect.Client[v1.WishServiceDeleteRequest, v1.WishServiceDeleteResponse]
+	move           *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
+	render         *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
+	sync           *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
+	route          *connect.Client[v1.WishServiceRouteRequest, v1.WishServiceRouteResponse]
+	watch          *connect.Client[v1.WishServiceWatchRequest, v1.WishServiceWatchResponse]
 }
 
 // Make calls plan.v1.WishService.Make.
@@ -858,6 +1212,11 @@ func (c *wishServiceClient) SetProvider(ctx context.Context, req *connect.Reques
 	return c.setProvider.CallUnary(ctx, req)
 }
 
+// Describe calls plan.v1.WishService.Describe.
+func (c *wishServiceClient) Describe(ctx context.Context, req *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error) {
+	return c.describe.CallUnary(ctx, req)
+}
+
 // Brief calls plan.v1.WishService.Brief.
 func (c *wishServiceClient) Brief(ctx context.Context, req *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {
 	return c.brief.CallUnary(ctx, req)
@@ -883,6 +1242,11 @@ func (c *wishServiceClient) Allow(ctx context.Context, req *connect.Request[v1.W
 	return c.allow.CallUnary(ctx, req)
 }
 
+// SetIntegration calls plan.v1.WishService.SetIntegration.
+func (c *wishServiceClient) SetIntegration(ctx context.Context, req *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error) {
+	return c.setIntegration.CallUnary(ctx, req)
+}
+
 // Grant calls plan.v1.WishService.Grant.
 func (c *wishServiceClient) Grant(ctx context.Context, req *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error) {
 	return c.grant.CallUnary(ctx, req)
@@ -898,6 +1262,11 @@ func (c *wishServiceClient) Activate(ctx context.Context, req *connect.Request[v
 	return c.activate.CallUnary(ctx, req)
 }
 
+// Delete calls plan.v1.WishService.Delete.
+func (c *wishServiceClient) Delete(ctx context.Context, req *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error) {
+	return c.delete.CallUnary(ctx, req)
+}
+
 // Move calls plan.v1.WishService.Move.
 func (c *wishServiceClient) Move(ctx context.Context, req *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error) {
 	return c.move.CallUnary(ctx, req)
@@ -911,6 +1280,11 @@ func (c *wishServiceClient) Render(ctx context.Context, req *connect.Request[v1.
 // Sync calls plan.v1.WishService.Sync.
 func (c *wishServiceClient) Sync(ctx context.Context, req *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error) {
 	return c.sync.CallUnary(ctx, req)
+}
+
+// Route calls plan.v1.WishService.Route.
+func (c *wishServiceClient) Route(ctx context.Context, req *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error) {
+	return c.route.CallUnary(ctx, req)
 }
 
 // Watch calls plan.v1.WishService.Watch.
@@ -941,8 +1315,13 @@ type WishServiceHandler interface {
 	// djinn if it is not running.
 	SetLead(context.Context, *connect.Request[v1.WishServiceSetLeadRequest]) (*connect.Response[v1.WishServiceSetLeadResponse], error)
 	// Take a wish back where it stopped: show it in the window, and resume its lead in the lead's terminal, or attach
-	// to it if it runs. Without a lead session, a new lead starts in the wish's first project from the wish's brief
-	// (djinn wish brief), and claude's session is recorded as the wish's lead. Starts djinn if it is not running.
+	// to it if it runs. Without a lead session, a new lead starts from the wish's brief (djinn wish brief) in the
+	// wish's first project, else the first of Djinn's projects, and claude's session is recorded as the wish's lead.
+	// A provider other than the recorded lead's starts a new lead of that agent from the brief the same way: a claude
+	// one becomes the wish's lead, a codex one once djinn wish set-lead gives its session, and an antigravity one
+	// leaves the record as it is. While the lead's terminal runs a program, nothing starts, and the note says so. A
+	// lead never starts in the home folder: a session recorded there starts a new lead the same way, and with no
+	// project nothing starts, the error says to create one. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.WishServiceResumeRequest]) (*connect.Response[v1.WishServiceResumeResponse], error)
 	// Change the wish's agent: its lead from now on, and every task to come that names no other; the tasks that run go
 	// on with theirs. The lead that runs is stopped, and a new one starts with the new agent from the wish's brief (djinn
@@ -952,6 +1331,13 @@ type WishServiceHandler interface {
 	// what rarely changes (Djinn's rules, the rules of its projects), then where the wish stands (questions,
 	// decisions, tasks running and waiting, the latest blocks), so an agent reads the first part from its cache.
 	// No local path, no secret.
+	// Describe a wish: a few lines that say what it is for, its scope and where it goes, in place of what it had.
+	// Empty text takes it back to the title.
+	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
+	// The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
+	// store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
+	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
+	// acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
 	// Write to the wish's lead in its terminal, as if you typed it there, then Enter. The text waits while something
 	// is being typed there or a choice is on screen, then goes; texts arrive in the order written. The lead must run:
@@ -967,15 +1353,25 @@ type WishServiceHandler interface {
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only. The lead
 	// starting in that project gets the same mode, at its next start.
 	Allow(context.Context, *connect.Request[v1.WishServiceAllowRequest]) (*connect.Response[v1.WishServiceAllowResponse], error)
+	// Set where the wish's finished work is committed, and when it is pushed: the integration branch of one of its
+	// projects, how long and how many tasks committed a push waits for when no azima ends, and whether Djinn pushes by
+	// itself or asks first. Only what is given changes.
+	SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error)
 	// Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
 	// task finished, no question open), and you may grant it before.
 	Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error)
-	// Pause a wish: it keeps everything, and leaves its place among the three active wishes to another one.
+	// Pause a wish: it keeps everything, its workers stop and wait to resume with it, and it leaves its place among the
+	// three active wishes to another one.
 	Pause(context.Context, *connect.Request[v1.WishServicePauseRequest]) (*connect.Response[v1.WishServicePauseResponse], error)
-	// Make a paused or granted wish active again, last by rank. Three wishes are active at most: pause or grant one
-	// first.
+	// Make a paused or granted wish active again, last by rank; its stopped workers start again. Three wishes are
+	// active at most: when three are, it takes the third place, and the third wish is paused.
 	Activate(context.Context, *connect.Request[v1.WishServiceActivateRequest]) (*connect.Response[v1.WishServiceActivateResponse], error)
-	// Move an active wish to another rank: --to 1 gives it priority over the others.
+	// Delete a wish, and all that belongs to it: its tasks and their events, its questions, its blocks. Its workers
+	// stop first, and its lead's terminal closes. A task's worktree goes when it holds no work: clean, and no commit
+	// beyond the project's current branch; the others stay, said with why. Branches all stay. It cannot be undone.
+	Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error)
+	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
+	// there, the third place at most, and the wish it pushes past the third place is paused.
 	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
@@ -985,9 +1381,18 @@ type WishServiceHandler interface {
 	// change of the wish renders it again, at most once a second. Publishing it stays yours: share the file, or
 	// republish it where you put it last time. Delete the file to stop.
 	Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error)
-	// Follow what changes, as it changes: which wish, and what in it. It says what to read again, never the data
-	// itself: the first message names everything, then each change follows; changes close together come as one. A
-	// task's events come from TaskService.Watch.
+	// Find the wish a request belongs to, without a model. Djinn ranks the wishes by the words of their titles, the
+	// projects the request names or links to (a GitLab or GitHub link whose repository is a project's remote), and
+	// their latest blocks. It proposes to file the request in the closest ones, or to open a new wish with a title
+	// and a project. A request that matches the wish template of a skill in those projects (metadata.djinn.wish in
+	// its SKILL.md) proposes the template's wish: its title, its watcher, its lead started with the skill. With
+	// --ask, the proposal is a question on the wish --wish-id: answering it files the request, or makes the new wish
+	// and starts its watcher and its lead in its own terminal.
+	Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error)
+	// Follow what changes, as it changes: which wish, and what in it. The first message names everything, to read; then
+	// each change follows, with the tasks, questions and blocks that changed, whole, so that a reader replaces them
+	// without reading the others again; changes close together come as one. A task's events come from
+	// TaskService.Watch.
 	Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest], *connect.ServerStream[v1.WishServiceWatchResponse]) error
 }
 
@@ -1014,6 +1419,7 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		WishServiceListProcedure,
 		svc.List,
 		connect.WithSchema(wishServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceExportHandler := connect.NewUnaryHandler(
@@ -1052,10 +1458,17 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("SetProvider")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceDescribeHandler := connect.NewUnaryHandler(
+		WishServiceDescribeProcedure,
+		svc.Describe,
+		connect.WithSchema(wishServiceMethods.ByName("Describe")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceBriefHandler := connect.NewUnaryHandler(
 		WishServiceBriefProcedure,
 		svc.Brief,
 		connect.WithSchema(wishServiceMethods.ByName("Brief")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceTellHandler := connect.NewUnaryHandler(
@@ -1082,6 +1495,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Allow")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceSetIntegrationHandler := connect.NewUnaryHandler(
+		WishServiceSetIntegrationProcedure,
+		svc.SetIntegration,
+		connect.WithSchema(wishServiceMethods.ByName("SetIntegration")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceGrantHandler := connect.NewUnaryHandler(
 		WishServiceGrantProcedure,
 		svc.Grant,
@@ -1100,6 +1519,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Activate")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceDeleteHandler := connect.NewUnaryHandler(
+		WishServiceDeleteProcedure,
+		svc.Delete,
+		connect.WithSchema(wishServiceMethods.ByName("Delete")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceMoveHandler := connect.NewUnaryHandler(
 		WishServiceMoveProcedure,
 		svc.Move,
@@ -1116,6 +1541,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		WishServiceSyncProcedure,
 		svc.Sync,
 		connect.WithSchema(wishServiceMethods.ByName("Sync")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceRouteHandler := connect.NewUnaryHandler(
+		WishServiceRouteProcedure,
+		svc.Route,
+		connect.WithSchema(wishServiceMethods.ByName("Route")),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceWatchHandler := connect.NewServerStreamHandler(
@@ -1144,6 +1575,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceResumeHandler.ServeHTTP(w, r)
 		case WishServiceSetProviderProcedure:
 			wishServiceSetProviderHandler.ServeHTTP(w, r)
+		case WishServiceDescribeProcedure:
+			wishServiceDescribeHandler.ServeHTTP(w, r)
 		case WishServiceBriefProcedure:
 			wishServiceBriefHandler.ServeHTTP(w, r)
 		case WishServiceTellProcedure:
@@ -1154,18 +1587,24 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceSnapshotHandler.ServeHTTP(w, r)
 		case WishServiceAllowProcedure:
 			wishServiceAllowHandler.ServeHTTP(w, r)
+		case WishServiceSetIntegrationProcedure:
+			wishServiceSetIntegrationHandler.ServeHTTP(w, r)
 		case WishServiceGrantProcedure:
 			wishServiceGrantHandler.ServeHTTP(w, r)
 		case WishServicePauseProcedure:
 			wishServicePauseHandler.ServeHTTP(w, r)
 		case WishServiceActivateProcedure:
 			wishServiceActivateHandler.ServeHTTP(w, r)
+		case WishServiceDeleteProcedure:
+			wishServiceDeleteHandler.ServeHTTP(w, r)
 		case WishServiceMoveProcedure:
 			wishServiceMoveHandler.ServeHTTP(w, r)
 		case WishServiceRenderProcedure:
 			wishServiceRenderHandler.ServeHTTP(w, r)
 		case WishServiceSyncProcedure:
 			wishServiceSyncHandler.ServeHTTP(w, r)
+		case WishServiceRouteProcedure:
+			wishServiceRouteHandler.ServeHTTP(w, r)
 		case WishServiceWatchProcedure:
 			wishServiceWatchHandler.ServeHTTP(w, r)
 		default:
@@ -1213,6 +1652,10 @@ func (UnimplementedWishServiceHandler) SetProvider(context.Context, *connect.Req
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.SetProvider is not implemented"))
 }
 
+func (UnimplementedWishServiceHandler) Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Describe is not implemented"))
+}
+
 func (UnimplementedWishServiceHandler) Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Brief is not implemented"))
 }
@@ -1233,6 +1676,10 @@ func (UnimplementedWishServiceHandler) Allow(context.Context, *connect.Request[v
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Allow is not implemented"))
 }
 
+func (UnimplementedWishServiceHandler) SetIntegration(context.Context, *connect.Request[v1.WishServiceSetIntegrationRequest]) (*connect.Response[v1.WishServiceSetIntegrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.SetIntegration is not implemented"))
+}
+
 func (UnimplementedWishServiceHandler) Grant(context.Context, *connect.Request[v1.WishServiceGrantRequest]) (*connect.Response[v1.WishServiceGrantResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Grant is not implemented"))
 }
@@ -1245,6 +1692,10 @@ func (UnimplementedWishServiceHandler) Activate(context.Context, *connect.Reques
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Activate is not implemented"))
 }
 
+func (UnimplementedWishServiceHandler) Delete(context.Context, *connect.Request[v1.WishServiceDeleteRequest]) (*connect.Response[v1.WishServiceDeleteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Delete is not implemented"))
+}
+
 func (UnimplementedWishServiceHandler) Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Move is not implemented"))
 }
@@ -1255,6 +1706,10 @@ func (UnimplementedWishServiceHandler) Render(context.Context, *connect.Request[
 
 func (UnimplementedWishServiceHandler) Sync(context.Context, *connect.Request[v1.WishServiceSyncRequest]) (*connect.Response[v1.WishServiceSyncResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Sync is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Route(context.Context, *connect.Request[v1.WishServiceRouteRequest]) (*connect.Response[v1.WishServiceRouteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Route is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Watch(context.Context, *connect.Request[v1.WishServiceWatchRequest], *connect.ServerStream[v1.WishServiceWatchResponse]) error {
@@ -1292,6 +1747,7 @@ func NewBlockServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+BlockServiceListProcedure,
 			connect.WithSchema(blockServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		delete: connect.NewClient[v1.BlockServiceDeleteRequest, v1.BlockServiceDeleteResponse](
@@ -1352,6 +1808,7 @@ func NewBlockServiceHandler(svc BlockServiceHandler, opts ...connect.HandlerOpti
 		BlockServiceListProcedure,
 		svc.List,
 		connect.WithSchema(blockServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	blockServiceDeleteHandler := connect.NewUnaryHandler(
@@ -1391,10 +1848,10 @@ func (UnimplementedBlockServiceHandler) Delete(context.Context, *connect.Request
 
 // MarkServiceClient is a client for the plan.v1.MarkService service.
 type MarkServiceClient interface {
-	// Mark a question, a decision or a block: read, or approved as it is. Approving an open question answers it with
-	// the option its recommendation names, as djinn question answer does.
+	// Mark a question: read, or approved as it is. Approving an open question answers it with the option its
+	// recommendation names, as djinn question answer does. A block takes no mark: blocks are for agents.
 	Put(context.Context, *connect.Request[v1.MarkServicePutRequest]) (*connect.Response[v1.MarkServicePutResponse], error)
-	// List the marks of a wish, the latest last.
+	// List the marks on a wish's questions, the latest last.
 	List(context.Context, *connect.Request[v1.MarkServiceListRequest]) (*connect.Response[v1.MarkServiceListResponse], error)
 }
 
@@ -1419,6 +1876,7 @@ func NewMarkServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+MarkServiceListProcedure,
 			connect.WithSchema(markServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -1442,10 +1900,10 @@ func (c *markServiceClient) List(ctx context.Context, req *connect.Request[v1.Ma
 
 // MarkServiceHandler is an implementation of the plan.v1.MarkService service.
 type MarkServiceHandler interface {
-	// Mark a question, a decision or a block: read, or approved as it is. Approving an open question answers it with
-	// the option its recommendation names, as djinn question answer does.
+	// Mark a question: read, or approved as it is. Approving an open question answers it with the option its
+	// recommendation names, as djinn question answer does. A block takes no mark: blocks are for agents.
 	Put(context.Context, *connect.Request[v1.MarkServicePutRequest]) (*connect.Response[v1.MarkServicePutResponse], error)
-	// List the marks of a wish, the latest last.
+	// List the marks on a wish's questions, the latest last.
 	List(context.Context, *connect.Request[v1.MarkServiceListRequest]) (*connect.Response[v1.MarkServiceListResponse], error)
 }
 
@@ -1466,6 +1924,7 @@ func NewMarkServiceHandler(svc MarkServiceHandler, opts ...connect.HandlerOption
 		MarkServiceListProcedure,
 		svc.List,
 		connect.WithSchema(markServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/plan.v1.MarkService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1495,7 +1954,8 @@ func (UnimplementedMarkServiceHandler) List(context.Context, *connect.Request[v1
 type TaskServiceClient interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
 	// yet (a dependency not done, its write scope taken, no slot free, the machine under pressure) waits, and says
-	// why; djinn up starts it as soon as it can.
+	// why; djinn up starts it as soon as it can. --after gives it what comes before it; --blocks puts it before planned
+	// tasks, in the same step, so that none of them starts in between.
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
@@ -1505,7 +1965,8 @@ type TaskServiceClient interface {
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
 	// Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
-	// until it is resumed. Not possible on Windows yet.
+	// until it is resumed. A worker that holds or waits for a gate is not paused: wait, or stop it. Not possible on
+	// Windows yet.
 	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
@@ -1516,9 +1977,30 @@ type TaskServiceClient interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
+	// Set what a task waits for: the tasks of its wish that must be done first (--after), in place of those it had; with
+	// --also, several tasks at once, all or none. The tasks of a wish form a graph without cycle: a dependency that
+	// would close one is refused, naming it, and nothing changes. A task not started yet waits for its new
+	// dependencies; a finished one only records them; one whose worker runs is refused until it ends. To put a new
+	// task before a planned one, spawn it with --blocks instead: a pass of the scheduler could start the planned one
+	// between a spawn and a depend.
+	Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error)
+	// Set the azima a task is part of, in place of the one it had: an azima of its wish, by code (T07) or
+	// identifier; none takes it out of any. A grouping, never a wait: the task still waits only for what it depends on.
+	// One that would close a cycle with what the tasks depend on is refused, naming it; so is a task whose worker runs,
+	// until it ends.
+	Group(context.Context, *connect.Request[v1.TaskServiceGroupRequest]) (*connect.Response[v1.TaskServiceGroupResponse], error)
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
+	// Mark a task done that no worker runs now: planned, waiting, cut short, failed, stopped or imported. It records
+	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
+	// done already is refused.
+	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
+	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
+	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
+	// Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
+	// task from its context, fork it instead (djinn task spawn --fork).
+	Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
@@ -1545,12 +2027,14 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+TaskServiceListProcedure,
 			connect.WithSchema(taskServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse](
 			httpClient,
 			baseURL+TaskServiceGetProcedure,
 			connect.WithSchema(taskServiceMethods.ByName("Get")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		stop: connect.NewClient[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse](
@@ -1589,10 +2073,34 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Clean")),
 			connect.WithClientOptions(opts...),
 		),
+		depend: connect.NewClient[v1.TaskServiceDependRequest, v1.TaskServiceDependResponse](
+			httpClient,
+			baseURL+TaskServiceDependProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Depend")),
+			connect.WithClientOptions(opts...),
+		),
+		group: connect.NewClient[v1.TaskServiceGroupRequest, v1.TaskServiceGroupResponse](
+			httpClient,
+			baseURL+TaskServiceGroupProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Group")),
+			connect.WithClientOptions(opts...),
+		),
 		delete: connect.NewClient[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse](
 			httpClient,
 			baseURL+TaskServiceDeleteProcedure,
 			connect.WithSchema(taskServiceMethods.ByName("Delete")),
+			connect.WithClientOptions(opts...),
+		),
+		done: connect.NewClient[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse](
+			httpClient,
+			baseURL+TaskServiceDoneProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Done")),
+			connect.WithClientOptions(opts...),
+		),
+		_continue: connect.NewClient[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse](
+			httpClient,
+			baseURL+TaskServiceContinueProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Continue")),
 			connect.WithClientOptions(opts...),
 		),
 		send: connect.NewClient[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse](
@@ -1606,17 +2114,21 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // taskServiceClient implements TaskServiceClient.
 type taskServiceClient struct {
-	spawn  *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
-	list   *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
-	get    *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
-	stop   *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
-	pause  *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
-	resume *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
-	start  *connect.Client[v1.TaskServiceStartRequest, v1.TaskServiceStartResponse]
-	watch  *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
-	clean  *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
-	delete *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
-	send   *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
+	spawn     *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
+	list      *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
+	get       *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
+	stop      *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
+	pause     *connect.Client[v1.TaskServicePauseRequest, v1.TaskServicePauseResponse]
+	resume    *connect.Client[v1.TaskServiceResumeRequest, v1.TaskServiceResumeResponse]
+	start     *connect.Client[v1.TaskServiceStartRequest, v1.TaskServiceStartResponse]
+	watch     *connect.Client[v1.TaskServiceWatchRequest, v1.TaskServiceWatchResponse]
+	clean     *connect.Client[v1.TaskServiceCleanRequest, v1.TaskServiceCleanResponse]
+	depend    *connect.Client[v1.TaskServiceDependRequest, v1.TaskServiceDependResponse]
+	group     *connect.Client[v1.TaskServiceGroupRequest, v1.TaskServiceGroupResponse]
+	delete    *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
+	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
+	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
+	send      *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -1664,9 +2176,29 @@ func (c *taskServiceClient) Clean(ctx context.Context, req *connect.Request[v1.T
 	return c.clean.CallUnary(ctx, req)
 }
 
+// Depend calls plan.v1.TaskService.Depend.
+func (c *taskServiceClient) Depend(ctx context.Context, req *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error) {
+	return c.depend.CallUnary(ctx, req)
+}
+
+// Group calls plan.v1.TaskService.Group.
+func (c *taskServiceClient) Group(ctx context.Context, req *connect.Request[v1.TaskServiceGroupRequest]) (*connect.Response[v1.TaskServiceGroupResponse], error) {
+	return c.group.CallUnary(ctx, req)
+}
+
 // Delete calls plan.v1.TaskService.Delete.
 func (c *taskServiceClient) Delete(ctx context.Context, req *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {
 	return c.delete.CallUnary(ctx, req)
+}
+
+// Done calls plan.v1.TaskService.Done.
+func (c *taskServiceClient) Done(ctx context.Context, req *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error) {
+	return c.done.CallUnary(ctx, req)
+}
+
+// Continue calls plan.v1.TaskService.Continue.
+func (c *taskServiceClient) Continue(ctx context.Context, req *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error) {
+	return c._continue.CallUnary(ctx, req)
 }
 
 // Send calls plan.v1.TaskService.Send.
@@ -1678,7 +2210,8 @@ func (c *taskServiceClient) Send(ctx context.Context, req *connect.Request[v1.Ta
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
 	// yet (a dependency not done, its write scope taken, no slot free, the machine under pressure) waits, and says
-	// why; djinn up starts it as soon as it can.
+	// why; djinn up starts it as soon as it can. --after gives it what comes before it; --blocks puts it before planned
+	// tasks, in the same step, so that none of them starts in between.
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
@@ -1688,7 +2221,8 @@ type TaskServiceHandler interface {
 	// started is stopped at once.
 	Stop(context.Context, *connect.Request[v1.TaskServiceStopRequest]) (*connect.Response[v1.TaskServiceStopResponse], error)
 	// Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
-	// until it is resumed. Not possible on Windows yet.
+	// until it is resumed. A worker that holds or waits for a gate is not paused: wait, or stop it. Not possible on
+	// Windows yet.
 	Pause(context.Context, *connect.Request[v1.TaskServicePauseRequest]) (*connect.Response[v1.TaskServicePauseResponse], error)
 	// Let a paused worker go on where it was.
 	Resume(context.Context, *connect.Request[v1.TaskServiceResumeRequest]) (*connect.Response[v1.TaskServiceResumeResponse], error)
@@ -1699,9 +2233,30 @@ type TaskServiceHandler interface {
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
+	// Set what a task waits for: the tasks of its wish that must be done first (--after), in place of those it had; with
+	// --also, several tasks at once, all or none. The tasks of a wish form a graph without cycle: a dependency that
+	// would close one is refused, naming it, and nothing changes. A task not started yet waits for its new
+	// dependencies; a finished one only records them; one whose worker runs is refused until it ends. To put a new
+	// task before a planned one, spawn it with --blocks instead: a pass of the scheduler could start the planned one
+	// between a spawn and a depend.
+	Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error)
+	// Set the azima a task is part of, in place of the one it had: an azima of its wish, by code (T07) or
+	// identifier; none takes it out of any. A grouping, never a wait: the task still waits only for what it depends on.
+	// One that would close a cycle with what the tasks depend on is refused, naming it; so is a task whose worker runs,
+	// until it ends.
+	Group(context.Context, *connect.Request[v1.TaskServiceGroupRequest]) (*connect.Response[v1.TaskServiceGroupResponse], error)
 	// Delete a task no worker of this Djinn ran (a plan item, a task imported from another Djinn): it goes with its
 	// events. A task a worker of this Djinn ran stays, as the record of that work.
 	Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error)
+	// Mark a task done that no worker runs now: planned, waiting, cut short, failed, stopped or imported. It records
+	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
+	// done already is refused.
+	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
+	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
+	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
+	// Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
+	// task from its context, fork it instead (djinn task spawn --fork).
+	Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
@@ -1724,12 +2279,14 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		TaskServiceListProcedure,
 		svc.List,
 		connect.WithSchema(taskServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	taskServiceGetHandler := connect.NewUnaryHandler(
 		TaskServiceGetProcedure,
 		svc.Get,
 		connect.WithSchema(taskServiceMethods.ByName("Get")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	taskServiceStopHandler := connect.NewUnaryHandler(
@@ -1768,10 +2325,34 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Clean")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceDependHandler := connect.NewUnaryHandler(
+		TaskServiceDependProcedure,
+		svc.Depend,
+		connect.WithSchema(taskServiceMethods.ByName("Depend")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceGroupHandler := connect.NewUnaryHandler(
+		TaskServiceGroupProcedure,
+		svc.Group,
+		connect.WithSchema(taskServiceMethods.ByName("Group")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceDeleteHandler := connect.NewUnaryHandler(
 		TaskServiceDeleteProcedure,
 		svc.Delete,
 		connect.WithSchema(taskServiceMethods.ByName("Delete")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceDoneHandler := connect.NewUnaryHandler(
+		TaskServiceDoneProcedure,
+		svc.Done,
+		connect.WithSchema(taskServiceMethods.ByName("Done")),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceContinueHandler := connect.NewUnaryHandler(
+		TaskServiceContinueProcedure,
+		svc.Continue,
+		connect.WithSchema(taskServiceMethods.ByName("Continue")),
 		connect.WithHandlerOptions(opts...),
 	)
 	taskServiceSendHandler := connect.NewUnaryHandler(
@@ -1800,8 +2381,16 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceWatchHandler.ServeHTTP(w, r)
 		case TaskServiceCleanProcedure:
 			taskServiceCleanHandler.ServeHTTP(w, r)
+		case TaskServiceDependProcedure:
+			taskServiceDependHandler.ServeHTTP(w, r)
+		case TaskServiceGroupProcedure:
+			taskServiceGroupHandler.ServeHTTP(w, r)
 		case TaskServiceDeleteProcedure:
 			taskServiceDeleteHandler.ServeHTTP(w, r)
+		case TaskServiceDoneProcedure:
+			taskServiceDoneHandler.ServeHTTP(w, r)
+		case TaskServiceContinueProcedure:
+			taskServiceContinueHandler.ServeHTTP(w, r)
 		case TaskServiceSendProcedure:
 			taskServiceSendHandler.ServeHTTP(w, r)
 		default:
@@ -1849,8 +2438,24 @@ func (UnimplementedTaskServiceHandler) Clean(context.Context, *connect.Request[v
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Clean is not implemented"))
 }
 
+func (UnimplementedTaskServiceHandler) Depend(context.Context, *connect.Request[v1.TaskServiceDependRequest]) (*connect.Response[v1.TaskServiceDependResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Depend is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Group(context.Context, *connect.Request[v1.TaskServiceGroupRequest]) (*connect.Response[v1.TaskServiceGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Group is not implemented"))
+}
+
 func (UnimplementedTaskServiceHandler) Delete(context.Context, *connect.Request[v1.TaskServiceDeleteRequest]) (*connect.Response[v1.TaskServiceDeleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Delete is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Done is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Continue is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error) {
@@ -1892,6 +2497,7 @@ func NewInstructionServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			httpClient,
 			baseURL+InstructionServiceListProcedure,
 			connect.WithSchema(instructionServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		reflect: connect.NewClient[v1.InstructionServiceReflectRequest, v1.InstructionServiceReflectResponse](
@@ -1980,6 +2586,7 @@ func NewInstructionServiceHandler(svc InstructionServiceHandler, opts ...connect
 		InstructionServiceListProcedure,
 		svc.List,
 		connect.WithSchema(instructionServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	instructionServiceReflectHandler := connect.NewUnaryHandler(
@@ -2039,4 +2646,88 @@ func (UnimplementedInstructionServiceHandler) Assign(context.Context, *connect.R
 
 func (UnimplementedInstructionServiceHandler) Complete(context.Context, *connect.Request[v1.InstructionServiceCompleteRequest]) (*connect.Response[v1.InstructionServiceCompleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.Complete is not implemented"))
+}
+
+// PlanServiceClient is a client for the plan.v1.PlanService service.
+type PlanServiceClient interface {
+	// Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the
+	// title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on.
+	// A file whose status is done, or whose Done-when boxes are all checked (reported in all_checked), marks its azima
+	// done; read not done again, an azima it closed opens again. The unchecked boxes that wait for a proof no worker can
+	// give, "(needs: …)", are kept on the azima (Task.proof_needs) when no other box is left. Then
+	// write what each azima depends on back into its file's front matter, as "after: T02 T05", so that Git carries the
+	// graph. The store stays the source of truth: an azima made here takes its file's after line, once.
+	Sync(context.Context, *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error)
+}
+
+// NewPlanServiceClient constructs a client for the plan.v1.PlanService service. By default, it uses
+// the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewPlanServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) PlanServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	planServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("PlanService").Methods()
+	return &planServiceClient{
+		sync: connect.NewClient[v1.PlanServiceSyncRequest, v1.PlanServiceSyncResponse](
+			httpClient,
+			baseURL+PlanServiceSyncProcedure,
+			connect.WithSchema(planServiceMethods.ByName("Sync")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// planServiceClient implements PlanServiceClient.
+type planServiceClient struct {
+	sync *connect.Client[v1.PlanServiceSyncRequest, v1.PlanServiceSyncResponse]
+}
+
+// Sync calls plan.v1.PlanService.Sync.
+func (c *planServiceClient) Sync(ctx context.Context, req *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error) {
+	return c.sync.CallUnary(ctx, req)
+}
+
+// PlanServiceHandler is an implementation of the plan.v1.PlanService service.
+type PlanServiceHandler interface {
+	// Read the plan files of the wish's projects (plan/*.md: the front matter's id, code, phase and status, and the
+	// title) into the wish's azimas: make the missing ones, update the others, without touching what they depend on.
+	// A file whose status is done, or whose Done-when boxes are all checked (reported in all_checked), marks its azima
+	// done; read not done again, an azima it closed opens again. The unchecked boxes that wait for a proof no worker can
+	// give, "(needs: …)", are kept on the azima (Task.proof_needs) when no other box is left. Then
+	// write what each azima depends on back into its file's front matter, as "after: T02 T05", so that Git carries the
+	// graph. The store stays the source of truth: an azima made here takes its file's after line, once.
+	Sync(context.Context, *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error)
+}
+
+// NewPlanServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewPlanServiceHandler(svc PlanServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	planServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("PlanService").Methods()
+	planServiceSyncHandler := connect.NewUnaryHandler(
+		PlanServiceSyncProcedure,
+		svc.Sync,
+		connect.WithSchema(planServiceMethods.ByName("Sync")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.PlanService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case PlanServiceSyncProcedure:
+			planServiceSyncHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedPlanServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedPlanServiceHandler struct{}
+
+func (UnimplementedPlanServiceHandler) Sync(context.Context, *connect.Request[v1.PlanServiceSyncRequest]) (*connect.Response[v1.PlanServiceSyncResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.PlanService.Sync is not implemented"))
 }

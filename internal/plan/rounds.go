@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -32,6 +33,9 @@ func (q *Questions) Enlighten(
 	if err != nil {
 		return nil, err
 	}
+	for _, f := range q.Enlightened {
+		f(ctx, proto.CloneOf(question), req.Msg.GetNote())
+	}
 	return connect.NewResponse(&planv1.QuestionServiceEnlightenResponse{Question: question}), nil
 }
 
@@ -43,7 +47,7 @@ func (q *Questions) Revise(
 	m := req.Msg
 	question, err := q.round(ctx, req.Spec(), m, m.GetQuestion(), m.GetWishId(),
 		func(question *planv1.Question, round *planv1.Round) {
-			round.Kind = planv1.RoundKind_ROUND_KIND_REVISE
+			round.Kind, round.TaskId = planv1.RoundKind_ROUND_KIND_REVISE, m.GetTaskId()
 			round.Context, round.Options, round.Recommendation =
 				question.GetContext(), slices.Clone(question.GetOptions()), question.GetRecommendation()
 			if m.GetContext() != "" {
@@ -54,6 +58,9 @@ func (q *Questions) Revise(
 			}
 			if m.GetRecommendation() != "" {
 				question.Recommendation = m.GetRecommendation()
+			}
+			if m.Before != nil {
+				question.Before = strings.TrimSpace(m.GetBefore())
 			}
 			question.Revision++
 		})
@@ -80,6 +87,9 @@ func (q *Questions) round(
 		}
 		round := &planv1.Round{Actor: actor, CreateTime: timestamppb.Now()}
 		fn(question, round)
+		if err := taskOfWish(ctx, tx, question.GetWishId(), round.GetTaskId()); err != nil {
+			return err
+		}
 		question.Rounds = append(question.Rounds, round)
 		return tx.Put(question)
 	})

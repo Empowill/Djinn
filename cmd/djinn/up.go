@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -31,6 +33,7 @@ import (
 	"github.com/empowill/djinn/internal/demo"
 	"github.com/empowill/djinn/internal/gate"
 	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/link"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/render"
@@ -40,6 +43,10 @@ import (
 	"github.com/empowill/djinn/internal/ui"
 )
 
+// readMachine reads the machine for the scheduler and the gates; nil reads this machine, the disk of its data folder
+// and its GPUs. Tests replace it.
+var readMachine func() (machine.Snapshot, error)
+
 // runUp serves the interface and the API, then opens a native window on them, or with --browser prints the
 // URL to open. On macOS and Linux the window goes through the Wails asset server and the command line through a
 // Unix socket: no port is open. On Windows, and with --browser, everything goes through a loopback HTTP server
@@ -47,41 +54,60 @@ import (
 // returns restart true when it stopped to restart on a newer binary (see update.go): the caller starts it, once
 // everything here is closed.
 func runUp(args []string) (restart bool, err error) {
-	flags := flag.NewFlagSet("up", flag.ContinueOnError)
-	browser := flags.Bool("browser", false, "print the URL to open in a browser instead of opening a window")
-	port := flags.Int("port", 0, "port of the loopback HTTP server (with --browser, and on Windows); 0 picks a free one")
-	term := flags.String("terminal", "", "command the terminal of the window runs, through the user's shell, "+
-		"e.g. \"claude --resume <session>\"; empty runs the shell itself")
-	termDir := flags.String("terminal-dir", "", "working directory of the terminal; empty is the home directory")
-	maxWorkers := flags.Int("workers", 0, "most workers at once, 1 to 16; 0 decides from the machine "+
-		"(one per 2 cores and per 2 GiB of memory); default $DJINN_WORKERS")
-	warmWorkers := flags.Bool("warm-workers", false, "keep a claude loaded and waiting for the next task of each "+
-		"project of the active wishes, in the slots the running workers leave: it starts at once, and costs memory "+
-		"while it waits (about 300 MB each, supposed), no token")
-	workerCPU := flags.Int("worker-cpu", 0, "cap each worker's CPU at this percent of one core (150 is a core and a "+
-		"half), in a systemd user scope of its own; Linux with systemd only, and only where systemd gives your user the "+
-		"cpu controller, else workers run uncapped and djinn says why; 0 caps nothing; default $DJINN_WORKER_CPU")
+	var (
+		browser, warmWorkers, questionWorkers     bool
+		profiles                                  bool
+		port, maxWorkers, workerCPU, workerMemory int
+		term, termDir                             string
+	)
+	flags := cli.Up.FlagSet(map[string]any{
+		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
+		"warm-workers": &warmWorkers, "worker-cpu": &workerCPU, "worker-memory": &workerMemory,
+		"question-workers": &questionWorkers, "pprof": &profiles,
+	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
+	}
+	if v := os.Getenv("DJINN_QUESTION_WORKERS"); v != "" && !flagSet(flags, "question-workers") {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_QUESTION_WORKERS: %w", err)
+		}
+		questionWorkers = on
+	}
+	if v := os.Getenv("DJINN_PPROF"); v != "" && !flagSet(flags, "pprof") {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_PPROF: %w", err)
+		}
+		profiles = on
 	}
 	if flags.NArg() > 0 {
 		return false, fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
-	if *maxWorkers == 0 && os.Getenv("DJINN_WORKERS") != "" {
-		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKERS"), maxWorkers); err != nil {
+	if maxWorkers == 0 && os.Getenv("DJINN_WORKERS") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKERS"), &maxWorkers); err != nil {
 			return false, fmt.Errorf("DJINN_WORKERS: %w", err)
 		}
 	}
-	if *maxWorkers < 0 || *maxWorkers > 16 {
-		return false, fmt.Errorf("--workers %d: expected 1 to 16, or 0 to decide from the machine", *maxWorkers)
+	if maxWorkers < 0 || maxWorkers > 16 {
+		return false, fmt.Errorf("--workers %d: expected 1 to 16, or 0 to decide from the machine", maxWorkers)
 	}
-	if *workerCPU == 0 && os.Getenv("DJINN_WORKER_CPU") != "" {
-		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_CPU"), workerCPU); err != nil {
+	if workerCPU == 0 && os.Getenv("DJINN_WORKER_CPU") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_CPU"), &workerCPU); err != nil {
 			return false, fmt.Errorf("DJINN_WORKER_CPU: %w", err)
 		}
 	}
-	if most := 100 * runtime.NumCPU(); *workerCPU < 0 || *workerCPU > most {
-		return false, fmt.Errorf("--worker-cpu %d: expected 1 to %d (percent of one core), or 0 for no cap", *workerCPU, most)
+	if most := 100 * runtime.NumCPU(); workerCPU < 0 || workerCPU > most {
+		return false, fmt.Errorf("--worker-cpu %d: expected 1 to %d (percent of one core), or 0 for no cap", workerCPU, most)
+	}
+	if workerMemory == 0 && os.Getenv("DJINN_WORKER_MEMORY") != "" {
+		if _, err := fmt.Sscan(os.Getenv("DJINN_WORKER_MEMORY"), &workerMemory); err != nil {
+			return false, fmt.Errorf("DJINN_WORKER_MEMORY: %w", err)
+		}
+	}
+	if workerMemory < 0 {
+		return false, fmt.Errorf("--worker-memory %d: expected MiB, or 0 for no cap", workerMemory)
 	}
 	home, err := ui.Home()
 	if err != nil {
@@ -107,29 +133,55 @@ func runUp(args []string) (restart bool, err error) {
 	defer db.Close()
 	// The workers stop before the database closes: deferred calls run last first.
 	policy := machine.DefaultPolicy()
-	policy.Workers = *maxWorkers
-	monitor := machine.NewMonitor(policy, nil)
-	opts := []harness.Option{harness.WithCapacity(monitor.Capacity), harness.WithBeforeStart(machine.ExtendPath)}
-	if *warmWorkers {
+	policy.Workers = maxWorkers
+	policy.WorkerMemory = uint64(workerMemory) << 20
+	read := readMachine
+	if read == nil {
+		read = machine.Reader(home)
+	}
+	monitor := machine.NewMonitor(policy, read)
+	opts := []harness.Option{harness.WithCapacity(monitor.Capacity), harness.WithMemory(monitor.Available, policy), harness.WithBeforeStart(machine.ExtendPath)}
+	if machine.NotMeasured == "" {
+		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
+	}
+	if warmWorkers {
 		opts = append(opts, harness.WithWarm())
 	}
-	if *workerCPU > 0 {
-		if prefix, err := machine.CPULimit(ctx, *workerCPU); err != nil {
-			fmt.Fprintf(os.Stderr, "djinn: %v; workers run uncapped\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "djinn: each worker runs in a systemd scope, its CPU capped at %d%% of a core\n", *workerCPU)
-			opts = append(opts, harness.WithPrefix(prefix))
-		}
+	if questionWorkers {
+		opts = append(opts, harness.WithQuestionWorkers())
 	}
+	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory); scopes != nil {
+		opts = append(opts, harness.WithScopes(scopes))
+	}
+	// The integration of finished work runs its gen, setup and checks under the gates, as djinn gate run does.
+	var gates *gate.Gates
+	opts = append(opts, harness.WithGates(func(ctx context.Context, name, taskID, what, dir string, waiting func(string)) (func(), error) {
+		held, err := gates.Take(ctx, gate.Request{Name: name, TaskID: taskID, What: what, Dir: dir}, waiting)
+		if err != nil {
+			return nil, err
+		}
+		return held.Give, nil
+	}))
+	// A batch committed in a project that names an install command: the window proposes to install it. The
+	// integration starts once the window's service is there.
+	var uiSvc *ui.Service
+	opts = append(opts, harness.WithBuilt(func(b harness.Built) { uiSvc.SetBuild(buildOf(b)) }))
 	workers := harness.New(db, home, harness.Providers(), opts...)
 	defer workers.Close()
 	if err := workers.Recover(ctx); err != nil {
 		return false, err
 	}
 	workers.Schedule()
-	gates := gate.New(monitor.Pressure, workers)
-	if *termDir != "" {
-		if *termDir, err = filepath.Abs(*termDir); err != nil {
+	gates = gate.New(monitor, machine.NewPeaks(db), workers)
+	workers.HeldGates(gates.Held, gates.Waiting)
+	workers.GatesOutside(gates.Outside)
+	gates.Freed(workers.Wake)
+	if machine.NotMeasured == "" {
+		// A gate's holder is a process of its own, in no worker's scope: read from its processes.
+		gates.Measure(5*time.Second, func(pid int) (machine.Group, error) { return machine.ReadWorker(pid, "") })
+	}
+	if termDir != "" {
+		if termDir, err = filepath.Abs(termDir); err != nil {
 			return false, err
 		}
 	}
@@ -139,7 +191,7 @@ func runUp(args []string) (restart bool, err error) {
 	var leadsMoved atomic.Pointer[func()]                                      // what follows the leads that run (plan.Leads.Watch)
 	var leadPrompted atomic.Pointer[func(wishID string, p *planv1.LeadPrompt)] // the notices, once they run
 	terminals := terminal.NewManager(terminal.Config{
-		Command: terminal.ShellCommand(*term), Dir: *termDir, BeforeStart: machine.ExtendPath, Changed: func() {
+		Command: terminal.ShellCommand(term), Dir: termDir, Folder: func() (string, error) { return plan.FirstProjectFolder(ctx, db) }, BeforeStart: machine.ExtendPath, Changed: func() {
 			leadNotes.update()
 			if f := leadsMoved.Load(); f != nil {
 				(*f)()
@@ -162,18 +214,24 @@ func runUp(args []string) (restart bool, err error) {
 	leadNotes.terms = terminals
 	defer terminals.Close()
 	defer leadNotes.freeze()
-	if !hasWindow && !*browser {
+	if !hasWindow && !browser {
 		fmt.Fprintln(os.Stderr, "djinn: this build has no native window, serving the browser instead")
-		*browser = true
+		browser = true
 	}
 	transport := server.TransportFor(runtime.GOOS)
-	if *browser {
+	if browser {
 		transport = server.HTTP
 	}
-	uiSvc, err := ui.New(version)
-	if err != nil {
+	if uiSvc, err = ui.New(version); err != nil {
 		return false, err
 	}
+	// A djinn:// link shows the tilasm's wish, or the wish.
+	uiSvc.Linked = func(ctx context.Context, l link.Link) (string, error) { return plan.Linked(ctx, db, l) }
+	registerLinks(os.Stderr)
+	// After an update, the terminals that ran before it run again; after a crash, the leads.
+	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
+	// Then the lead of the first active wish, unless a lead came back already.
+	resumeFirstLead(ctx, db, terminals, uiSvc, os.Stderr)
 	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
@@ -181,16 +239,34 @@ func runUp(args []string) (restart bool, err error) {
 	defer func() { restart = err == nil && updates.Restarting() }()
 	if updates != nil {
 		uiSvc.Restart = updates.restart
+		if commit, dirty, ok := localBuild(version); ok {
+			updates.fit = func(ctx context.Context, tag string) (harness.ReleaseFit, error) {
+				return workers.Release(ctx, commit, dirty, tag)
+			}
+		}
 		go updates.run(ctx)
 	}
+	uiSvc.Install = func(ctx context.Context, b *uiv1.Build, progress func(uiv1.InstallStep, string)) (bool, error) {
+		steps := map[harness.InstallStep]uiv1.InstallStep{
+			harness.InstallWaiting:   uiv1.InstallStep_INSTALL_STEP_WAITING,
+			harness.InstallPreparing: uiv1.InstallStep_INSTALL_STEP_PREPARING,
+			harness.InstallBuilding:  uiv1.InstallStep_INSTALL_STEP_BUILDING,
+		}
+		report := func(step harness.InstallStep, waiting string) { progress(steps[step], waiting) }
+		if _, err := workers.Install(ctx, b.GetWishId(), b.GetProjectId(), b.GetSha(), report); err != nil {
+			return false, err
+		}
+		return updates != nil && updates.check(ctx) != "", nil
+	}
+	workers.Integrate()
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
-	uiSvc.Window = !*browser
-	if !*browser {
+	uiSvc.Window = !browser
+	if !browser {
 		uiSvc.ChooseFolder = chooseFolder
 	}
 	uiSvc.Raise = func() {
-		if *browser {
+		if browser {
 			fmt.Println("djinn: open", url)
 			return
 		}
@@ -198,6 +274,29 @@ func runUp(args []string) (restart bool, err error) {
 		case raise <- struct{}{}:
 		default: // Already asked.
 		}
+	}
+	// The window takes a global shortcut that brings it forward on what waits for you.
+	leadView := leads{terminals, uiSvc, &leadsMoved}
+	shortcuts := &ui.Shortcuts{
+		Home: home, Store: db, Show: func(wishID string) { leadView.Show(wishID, "") },
+	}
+	if !browser {
+		uiSvc.Shortcuts = shortcuts
+	}
+	// The HTTP server's origin and token, once it listens: a tilasm's local address, for a browser or an agent.
+	var httpOrigin, httpToken string
+	tilasmURL := func(id string) string {
+		if httpToken == "" {
+			return ""
+		}
+		return server.TilasmAddress(httpOrigin, httpToken, id)
+	}
+	showTilasm := func(wishID, tilasmID string) bool {
+		if uiSvc.Raise != nil {
+			uiSvc.Raise()
+		}
+		uiSvc.PresentTilasm(wishID, tilasmID)
+		return uiSvc.Window
 	}
 	// The window tells what waits for the developer in an active wish by system notifications: questions, tasks
 	// that wait or failed, wishes ready to review. An answer from one goes through the server, as the window's would.
@@ -217,7 +316,6 @@ func runUp(args []string) (restart bool, err error) {
 	prompted := notices.LeadPrompt
 	leadPrompted.Store(&prompted)
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
-	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, os.Stderr))
 	// The pages of the synced wishes follow every change, until djinn up stops.
 	pages := plan.NewPages(db, home, version)
 	go pages.Run(ctx)
@@ -243,8 +341,10 @@ func runUp(args []string) (restart bool, err error) {
 	if err := nudges.Follow(ctx, db); err != nil {
 		return false, err
 	}
-	svc := services(db, workers, leads{terminals, uiSvc, &leadsMoved}, uiSvc, pages, nudges)
-	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running)
+	svc := services(db, home, workers, leadView, uiSvc, pages, nudges,
+		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL))
+	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses)
+
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
 	svc[gatePrefix] = gateHandler
@@ -252,7 +352,10 @@ func runUp(args []string) (restart bool, err error) {
 	svc[costsPrefix] = costsHandler
 	backupPrefix, backupHandler := backup.Handler(db, home, version)
 	svc[backupPrefix] = backupHandler
-	h := server.Handler(djinn.UI(), svc)
+	if profiles {
+		svc[server.ProfilePath] = server.Profiles()
+	}
+	h := server.Handler(djinn.UI(), djinn.Docs(), svc)
 
 	var ln net.Listener
 	switch transport {
@@ -262,11 +365,12 @@ func runUp(args []string) (restart bool, err error) {
 		}
 		addr = "unix://" + ln.Addr().String()
 	case server.HTTP:
-		if ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port)); err != nil {
+		if ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)); err != nil {
 			return false, err
 		}
 		origin := "http://" + ln.Addr().String()
 		token := server.NewToken()
+		httpOrigin, httpToken = origin, token // Before the server serves: its handlers read them.
 		url = origin + "/?token=" + token
 		addr = url
 		h = server.Guard(h, token, origin)
@@ -280,15 +384,21 @@ func runUp(args []string) (restart bool, err error) {
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(ctx, ln, h) }()
 
+	// A link macOS gives the app, clicked anywhere: the window shows it, or says it does not know it.
+	openLinks := func(raw string) {
+		if _, err := uiSvc.OpenLink(ctx, connect.NewRequest(&uiv1.UiServiceOpenLinkRequest{Url: raw})); err != nil {
+			log.Printf("djinn: open %s: %v", raw, err)
+		}
+	}
 	switch {
-	case *browser:
+	case browser:
 		fmt.Println("djinn: open", url)
 		err = <-served
 	default:
 		if transport == server.Wails {
-			err = openWindow(ctx, "", server.WholeWrites(h), raise, notices)
+			err = openWindow(ctx, "", h, raise, notices, shortcuts, openLinks)
 		} else {
-			err = openWindow(ctx, url, nil, raise, notices)
+			err = openWindow(ctx, url, nil, raise, notices, shortcuts, openLinks)
 		}
 		stop() // The window is closed: stop the server too.
 		err = errors.Join(err, <-served)
@@ -298,19 +408,36 @@ func runUp(args []string) (restart bool, err error) {
 	return false, err
 }
 
-// services returns the Connect services, by path prefix: the window's, the plan's on the database, the tasks' on
-// the harness, and the terminals'. The leads hear of answers and approvals through nudges.
+// services returns the Connect services, by path prefix: the window's, the plan's on the database and data folder,
+// the tasks' on the harness, and the terminals'. Leads hear of answers, approvals, watcher updates and tasks.
 func services(
-	db *store.Store, h *harness.Harness, l leads, uiSvc *ui.Service, pages *plan.Pages, nudges *plan.Nudges,
+	db *store.Store, home string, h *harness.Harness, l leads, uiSvc *ui.Service, pages *plan.Pages, nudges *plan.Nudges,
+	more ...plan.Option,
 ) map[string]http.Handler {
 	demoPrefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
-	out := plan.Handlers(db, plan.WithAnswered(h.Answered), plan.WithNudges(nudges),
-		plan.WithLeads(l), plan.WithPages(pages))
+	language := render.SystemLanguage()
+	options := []plan.Option{plan.WithAnswered(h.Answered), plan.WithEnlightened(h.Enlightened), plan.WithNudges(nudges),
+		plan.WithLeads(l), plan.WithPages(pages), plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher),
+		plan.WithHome(home), plan.WithWorkers(h)}
+	options = append(options, more...)
+	out := plan.Handlers(db, options...)
+	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a
+	// template.
+	wishes := &plan.Wishes{Store: db, Leads: l, Language: language, Workers: h}
+	h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		_, err := wishes.Tell(ctx, connect.NewRequest(&planv1.WishServiceTellRequest{WishId: wishID, Text: line}))
+		return err
+	})
+	h.OnWatched(wishes.Watched)
+	// The inbox sources of the projects' skills run until djinn up stops; what they print waits for a click.
+	h.RunSources((&plan.Inbox{Wishes: wishes}).Receive)
 	out[demoPrefix] = demoHandler
 	out[uiPrefix] = uiHandler
 	taskPrefix, taskHandler := harness.Handler(h)
 	out[taskPrefix] = taskHandler
+	planPrefix, planHandler := harness.PlanHandler(h)
+	out[planPrefix] = planHandler
 	terminalPrefix, terminalHandler := terminal.Handler(l.terminals)
 	out[terminalPrefix] = terminalHandler
 	return out
@@ -422,7 +549,7 @@ func (l leads) Choose(name, title string, lines, options []string, index int) er
 	}
 	err = t.Choose(title, lines, options, index)
 	if errors.Is(err, terminal.ErrNoPrompt) || errors.Is(err, terminal.ErrExited) {
-		return fmt.Errorf("%w: %v", plan.ErrNoChoice, err)
+		return fmt.Errorf("%w: %w", plan.ErrNoChoice, err)
 	}
 	return err
 }
@@ -434,6 +561,10 @@ func leadPrompt(p *terminal.Prompt) *planv1.LeadPrompt {
 	}
 	return &planv1.LeadPrompt{Title: p.Title, Lines: p.Lines, Options: p.Options}
 }
+
+func (l leads) Say(name, line string) error { return l.terminals.Say(name, line) }
+
+func (l leads) Close(name string) { l.terminals.Hangup(name) }
 
 func (l leads) Show(wishID, name string) {
 	if l.ui.Raise != nil {
@@ -452,6 +583,28 @@ func answer(ctx context.Context, addr, questionID string, choice planv1.Choice) 
 		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: questionID}}, Choice: choice,
 	}))
 	return err
+}
+
+// flagSet tells whether the command line set the flag name.
+func flagSet(flags *flag.FlagSet, name string) bool {
+	set := false
+	flags.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
+}
+
+// onOff reads on or off, and the other words strconv.ParseBool reads.
+func onOff(v string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "on":
+		return true, nil
+	case "off":
+		return false, nil
+	}
+	on, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%q: expected on or off", v)
+	}
+	return on, nil
 }
 
 // showRunning asks the djinn that answers at addr to bring its window to the front, and says so.
@@ -477,4 +630,31 @@ func showRunning(addr string, flags *flag.FlagSet) error {
 	}
 	fmt.Println("djinn is already running: open " + addr + ignored)
 	return nil
+}
+
+// registerLinks makes this djinn the handler of djinn:// links for the user, on Windows, when there is none: a release
+// installed by hand has no installer to do it. A development build never does: it must not take the links of the
+// Djinn you use. Elsewhere the install registers them (tools/icons, tools/macapp).
+func registerLinks(w io.Writer) {
+	if ui.Develop {
+		return
+	}
+	if ok, err := link.Registered(); err != nil || ok {
+		return
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		err = link.Register(exe)
+	}
+	if err != nil {
+		fmt.Fprintf(w, "djinn: djinn:// links will not open Djinn: %v\n", err)
+	}
+}
+
+// buildOf is a build committed, as the window proposes it.
+func buildOf(b harness.Built) *uiv1.Build {
+	return &uiv1.Build{
+		WishId: b.WishID, WishTitle: b.WishTitle, ProjectId: b.ProjectID, Project: b.Project, Branch: b.Branch, Sha: b.Sha,
+		Tasks: b.Tasks, Changes: b.Changes, Checks: b.Checks, Install: b.Install,
+	}
 }

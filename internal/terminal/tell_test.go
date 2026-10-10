@@ -4,6 +4,7 @@ package terminal
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -150,7 +151,7 @@ func TestTellGivesUpWhenTheProgramEnds(t *testing.T) {
 	term.Hangup()
 	select {
 	case err := <-done:
-		if err != ErrExited {
+		if !errors.Is(err, ErrExited) {
 			t.Fatalf("Tell = %v, want ErrExited", err)
 		}
 	case <-time.After(5 * time.Second):
@@ -196,10 +197,13 @@ func TestLeadProcess(t *testing.T) {
 	}
 	state, err := rawterm.MakeRaw(0)
 	if err != nil {
-		fmt.Println("raw:", err)
-		os.Exit(1)
+		t.Fatal("raw:", err)
 	}
-	defer rawterm.Restore(0, state) //nolint:errcheck
+	defer func() {
+		if err := rawterm.Restore(0, state); err != nil {
+			t.Error("restore terminal:", err)
+		}
+	}()
 	fmt.Print(pasteOn + "ready\r\n")
 	var line []byte
 	pasted, inPaste, escaped := false, false, false
@@ -215,16 +219,17 @@ func TestLeadProcess(t *testing.T) {
 	for {
 		n, err := os.Stdin.Read(b)
 		if err != nil {
-			os.Exit(0)
+			return
 		}
 		in := b[:n]
 		if drawn, ok := map[string]string{"Est": "-est.out", "\x15": "-cleared.out"}[string(in)]; ok && agent != "" {
 			recorded, err := os.ReadFile(filepath.Join(os.Getenv(recordedEnv), agent+drawn))
 			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
+				t.Fatal(err)
 			}
-			os.Stdout.Write(recorded) //nolint:errcheck
+			if _, err := os.Stdout.Write(recorded); err != nil {
+				t.Fatal(err)
+			}
 		}
 		if erase != "" { // An approval moves with arrows, and only Enter confirms it.
 			if approval {
@@ -287,10 +292,11 @@ func TestLeadProcess(t *testing.T) {
 					}
 					recorded, err := os.ReadFile(filepath.Join(os.Getenv(recordedEnv), filepath.Base(file)))
 					if err != nil {
-						fmt.Println(err)
-						os.Exit(1)
+						t.Fatal(err)
 					}
-					os.Stdout.Write(recorded) //nolint:errcheck
+					if _, err := os.Stdout.Write(recorded); err != nil {
+						t.Fatal(err)
+					}
 					if !ok {
 						erase = "\x1b[2J\x1b[H"
 					}

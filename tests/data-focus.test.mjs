@@ -29,6 +29,8 @@ test("a request to show a wish, its lead and a question reaches every subscriber
     wishId,
     terminal: `lead-${wishId}`,
     target: "question-q1",
+    tilasmId: "",
+    unknownLink: "",
   });
   // A part of the page that subscribes later gets it too.
   const late = await new Promise((resolve) => focus.subscribe(resolve));
@@ -50,6 +52,50 @@ test("a broken stream is watched again", async () => {
   const got = await new Promise((resolve) =>
     createFocus(transport, 10).subscribe(resolve),
   );
-  assert.deepEqual(got, { wishId: "", terminal: "main", target: "" });
+  assert.deepEqual(got, {
+    wishId: "",
+    terminal: "main",
+    target: "",
+    tilasmId: "",
+    unknownLink: "",
+  });
   assert.equal(calls, 2);
+});
+
+test("a tilasm a link names, a link Djinn does not know, and a link clicked in the page reach every subscriber", async () => {
+  const tilasmId = "01a1223a-ae45-728f-8c37-c005eee91edb";
+  const transport = createRouterTransport(({ service }) => {
+    service(UiService, {
+      async *watchShow() {
+        yield { tilasmId }; // A tilasm-only focus must not be discarded.
+        yield { unknownLink: "djinn://moon/x" }; // No wish, still shown: the window says so.
+        await new Promise(() => {});
+      },
+    });
+  });
+  const focus = createFocus(transport, 10);
+  const got = [];
+  const two = new Promise((resolve) =>
+    focus.subscribe((f) => got.push(f) === 2 && resolve()),
+  );
+  await two;
+  assert.deepEqual(got, [
+    { wishId: "", terminal: "", target: "", tilasmId, unknownLink: "" },
+    {
+      wishId: "",
+      terminal: "",
+      target: "",
+      tilasmId: "",
+      unknownLink: "djinn://moon/x",
+    },
+  ]);
+  // A djinn:// link clicked in the page goes to the subscribers at once, without djinn.
+  focus.show({ wishId, tilasmId });
+  assert.deepEqual(got[2], {
+    wishId,
+    terminal: "",
+    target: "",
+    tilasmId,
+    unknownLink: "",
+  });
 });

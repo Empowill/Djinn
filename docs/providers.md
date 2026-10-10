@@ -2,7 +2,8 @@
 
 A provider is the agent a task's worker runs: Claude Code, Codex, Antigravity, or the fake one. Each lives in
 `internal/harness/` (`claude.go`, `codex.go`, `agy.go`, `fake.go`) and turns what its agent says into the same
-task events: `STATUS`, `TEXT`, `TOOL_CALL`, `TOOL_RESULT`, `USAGE`, `ERROR`, `LOG`, `OTHER`.
+task events: `STATUS`, `TEXT`, `TOOL_CALL`, `TOOL_RESULT`, `USAGE`, `ERROR`, `LOG`, `OTHER`. A
+[watcher](#watch-a-command-no-agent) (`watch.go`) runs a command instead of an agent.
 
 > **The rule of this file.** Every real case met while trying a provider with a real model becomes a fixture in
 > `internal/harness/testdata/<provider>/` and a row of that provider's table below, with the test that replays
@@ -66,6 +67,19 @@ Djinn decides when it spawns a task, and records the outcome in the task's `acce
    mode. Only the first answer counts; a task stopped on request stays stopped. An agent that cannot run
    read-only (Antigravity) does not start before the answer.
 
+**A question worker** (`Task.role`, the converter or the investigator Djinn starts on a question, see the [agent
+protocol](agent-protocol.md)) skips these rules: its access is `DJINN`, the same everywhere. It reads, in its
+project's folder without a worktree (or an empty folder of its own outside any project), and runs only djinn's
+commands to read the wish and plan from the question (`wish brief`, `task list`, `task get`, `question list`, `block
+list`, `mark list`, `tilasm list`, `tilasm get`, `task spawn`, `question ask`, `question revise`, `block put`) and
+Git's to read the history; no edit, no gate, no network, in the listed mode (Claude's `dontAsk`). Djinn translates
+this list as it does a project's file. Claude allows each command with its arguments (`Bash(djinn task spawn *)`, the
+same as `Bash(djinn task spawn:*)`), and `dontAsk` still runs file reads in the working folder, the project's, so
+Read, Grep and Glob read it (`code.claude.com/docs/en/permissions`, read 2026-10-10). But every part of a compound
+command must be allowed: `djinn task list … | grep …` is refused whole. Its prompt says so: each `djinn` command alone
+in its own Bash call, files read with Read, Grep and Glob, and a refusal is of that form, not of Bash. One that ends
+without doing anything after a refusal fails, and Djinn starts it again once (`internal/harness/question.go`).
+
 **What counts as agent configuration** (rule 4), at the root of the project's folder, file names compared without
 regard to case: for every agent, `AGENTS.md` and an `.agents` folder; for Claude, `CLAUDE.md`, `CLAUDE.local.md`,
 `.claude/CLAUDE.md`, `.claude/settings.json`, `.claude/settings.local.json`; for Codex, `AGENTS.override.md` and a
@@ -115,15 +129,18 @@ for skills. Djinn's own: [`.agents/permissions.txtpb`](../.agents/permissions.tx
 Reading is always allowed. A word holds no wildcard nor shell operator (the file is refused otherwise), so a
 prefix never widens into a pattern.
 
+Next to it, `.agents/settings.txtpb` gives the project's workers their default agent, model, budget and branch
+name, shared by the team, your own file winning: [team settings](team-settings.md).
+
 ### How each agent receives it
 
-| Field             | Claude (`--settings` inline, `--permission-mode`)                    | Codex (`thread/start`, `turn/start`, approvals)                                                   | Antigravity (command line)                          |
+| Field             | Claude (`--settings` inline, `--permission-mode`)                    | Codex (`thread/start`, `turn/start`, approvals)                                                   | Antigravity (command line, Djinn's agy project)     |
 | ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `edit`            | allow, or deny, `Edit`, `Write`, `NotebookEdit`                      | `sandbox: workspace-write` and turn `sandboxPolicy: workspaceWrite`, else `read-only`; file-change approvals accepted only with `edit`, inside the workspace | `--mode accept-edits`; without `edit`, refused      |
-| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | **lost**: none at launch                           |
-| `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | **lost**                                            |
+| `edit`            | allow, or deny, `Edit`, `Write`, `NotebookEdit`                      | `sandbox: workspace-write` and turn `sandboxPolicy: workspaceWrite`, else `read-only`; file-change approvals accepted only with `edit`, inside the workspace | `--mode accept-edits`, and `write_file` grants of the worker's folder and Git's folders; without `edit`, refused |
+| `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | LISTED: `command(<p>)` grants; AUTO: `command(*)`, every command, in the sandbox still |
+| `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | deny `command(<p>)` grants; AUTO adds `git push`   |
 | `network`         | allow, or deny, `WebFetch` and `WebSearch`                           | `networkAccess` of the sandbox policy; a command approval asking for the network is declined without it | off: `--sandbox`, which only restricts more      |
-| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: **lost**, runs as `accept-edits`              |
+| `mode`            | LISTED: `--permission-mode dontAsk`; AUTO: `--permission-mode auto`  | AUTO: `approvalPolicy: on-request`, `approvalsReviewer: auto_review`                              | AUTO: runs as `accept-edits`, with `command(*)` above |
 
 What is verified and what is supposed:
 
@@ -145,11 +162,26 @@ What is verified and what is supposed:
   `bash -lc` does not match a prefix, and is declined); that an accepted command may run outside the sandbox when
   codex asked for that. **Lost:** codex takes no list of commands at launch: in LISTED, Djinn answers its
   approvals; in AUTO, its reviewer decides every approval, denied commands included.
-- **Antigravity**, from `agy --help` (1.3.0) and the documentation in its binary: `--mode` takes `accept-edits` or
-  `plan`; `--sandbox` restricts the terminal. **Supposed:** that `--sandbox` blocks the network; that agy 1.3.0 has
-  no auto mode reachable from its command line (its binary mentions one, without a flag). **Lost:** commands (its
-  headless runs do not apply allow rules: "Settings allow-rules do not apply"; on real runs a denied command ends
-  the turn, and the task fails, see [Antigravity](#antigravity)), denied commands, AUTO.
+- **Antigravity**, from `agy --help` (1.3.1), the documentation in its binary, its public documentation (terminal
+  sandbox, permissions, headless mode, read 2026-10-08) and three real runs (2026-10-08): `--mode` takes only
+  `accept-edits` or `plan` (`--mode auto` is refused with a warning); `--sandbox` turns the sandbox on, off by
+  default in the CLI (`enableTerminalSandbox: false`). On Linux it is kernel namespaces, seccomp and a filtering
+  HTTP proxy. **Verified in the sandbox, with `--dangerously-skip-permissions`:** the home folder is read-only,
+  `~/.ssh` is hidden, `~/.gitconfig` is readable, `/tmp` is the host's and writable, host processes are hidden, DNS
+  and raw TCP are cut, but HTTPS through its proxy went out (`curl https://example.com` gave 200, `git ls-remote
+  https://github.com/...` worked); and a command run with `BypassSandbox: true` ran on the host without any prompt (a
+  file created in the home folder). So `--dangerously-skip-permissions` approves both the network asks and the way
+  out of the sandbox: with it, `--sandbox` is no limit. **Supposed:** that `toolPermission: proceed-in-sandbox` in
+  agy's settings runs sandboxed commands headless and soft-denies the way out (documented, not tried).
+  **Verified on real runs (agy 1.3.3, 2026-10-10, without `--dangerously-skip-permissions`):** agy takes no
+  permission at launch, but `--project <id>` runs it in one of its projects, a JSON file in
+  `~/.gemini/config/projects/`, whose `permissionGrants` it applies headless on top of the user's settings, untouched
+  (see [Antigravity](#antigravity)). So Djinn writes one project of its own per worktree. In AUTO it grants
+  `command(*)`: any command runs, in the sandbox, but the denied ones (real runs, agy 1.3.3, 2026-10-10). **Lost:**
+  a review of what runs (agy has no auto mode: `command(*)` approves every command, where Claude's classifier reviews
+  them); a deny grant is a prefix, so `sh -c "git push"` or `git -C . push` gets past it (as past Claude's rules);
+  in LISTED, a command neither listed nor granted by the user's settings is denied, and the denial ends the turn;
+  in both, a command that asks to leave the sandbox (`unsandboxed`) is denied, and the denial ends the turn.
 
 ### Instructions: every agent reads `AGENTS.md`
 
@@ -217,7 +249,7 @@ branch the source project has checked out. A skill can carry scripts: summoning 
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude      | `--restricted --tools Read,Glob,Grep --permission-mode plan --strict-mcp-config`: reading tools only, no settings files, no MCP server, no hook |
 | Codex       | `sandbox: read-only`, `approvalPolicy: never`, turn `sandboxPolicy: readOnly` without network; it reads with commands confined there (Q37)      |
-| Antigravity | refused: plan mode is not read-only and what `--sandbox` blocks is undocumented; allowed once a real capture proves it                          |
+| Antigravity | refused: plan mode is not read-only, and `--sandbox` lets HTTPS out and the agent leave it once permissions are skipped; allowed once proven    |
 
 The same applies to a worker of rule 5 before the answer. In a project without `.agents/permissions.txtpb` nor
 allowance, nothing above is passed: Claude gets `--permission-prompts none` (anything that would prompt is denied),
@@ -226,12 +258,76 @@ needing approval is soft-denied). Supposed, for Claude read-only: that `--restri
 able to write or run code. For agy: that plan mode writes nothing in headless mode, and the sandbox blocks every
 command, are to check on a real run.
 
+## When Djinn resumes a worker
+
+Djinn resumes a worker by itself, in the same task (status `resuming`), in two cases:
+
+- **djinn up stopped or crashed while it ran.** At the next start the task is interrupted, then resumed, unless a
+  person stopped it, it was imported, its worktree is gone, its wish is granted, or another task was forked from it
+  (it reads "resumed as W47").
+- **Its provider's usage limit stopped it.** The task waits for the reset (status "waiting for the limit", with
+  "the account's session limit, resets at 07:20"), then resumes. Without a reset time, it waits 15 minutes, then 30,
+  doubling up to 2 hours. While a limit holds, no new worker of that provider starts.
+
+The scheduler starts a resumed task like a planned one, first: slots, pressure and gates still apply. After 3
+resumes without finishing, the task fails, saying so. What each agent gets:
+
+| Agent  | Resumed with                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------ |
+| Claude | `--resume <session>`, and "Djinn restarted while you worked; your worktree is as you left it. Continue your task." |
+| Codex  | `thread/resume` on its thread, and the same line                                                                   |
+| agy    | its first prompt again, its checks with it, then that line, in the same worktree: its resume is not verified       |
+
+The limits Djinn recognizes, in the failure a worker ends with (`internal/harness/limit.go`): Claude's
+`rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your
+session limit · resets …" or "Claude AI usage limit reached|<time>"; Codex's `usageLimitExceeded`; agy's
+`RESOURCE_EXHAUSTED` (supposed); a rate limit or HTTP 429 from any of them.
+
+## Watch: a command, no agent
+
+`djinn task spawn <wish> --title "Watch !41" --provider watch --prompt "mrwatch -watch 41" --restart` runs the command
+in the project's folder: no agent, no model, no token. Each paragraph it prints (output, then a second of silence,
+or its exit; 200 lines at most) is a `TEXT` event, its raw line kept with its colours, and its first line wakes the
+wish's lead, typed in the lead's terminal as an answer is:
+
+```
+Djinn: W70's watcher says: New thread on !41. mrwatch -watch 41 is still watching.
+```
+
+- **Its loop.** With `--restart`, the command starts again after each exit, until the task is stopped: a command
+  that exits on each change (`mrwatch -watch`) becomes a lasting watcher. It starts again at once after exit 0 (a
+  second apart at least), after a failure one second later, doubling up to a minute. Without `--restart`, the task
+  ends with the command: done on exit 0, failed otherwise, and the lead reads "… has ended" (or "Djinn: W70's
+  watcher: <command> has ended.", when its last paragraph came before its exit).
+- **What the lead is told.** The first line of each paragraph, without colours nor control characters, 200
+  characters at most. A paragraph that says again what the last one said is recorded, and wakes no one; nor does
+  the last one of a watcher stopped on request. A wish without a lead keeps the paragraphs in the task's events.
+  The task keeps the last first line (`last_line`), which the window shows under the task.
+- **No slot.** A watcher sleeps until its command prints: it takes no worker slot, does not count as running for
+  the machine, starts under pressure, and holds no write scope. Its wish and its dependencies still hold it.
+- **No shell.** The command line is split into words: quotes group them, a backslash keeps a quote, a backslash or
+  a space; a pipe or a `&&` is only a word. Run `sh -c "…"` for a shell, where the project allows it.
+- **What it may run.** A watcher needs a project. Where the project lists its commands
+  (`.agents/permissions.txtpb`), the command must be one of them, and not denied: a watcher has no reviewer to
+  approve it. A folder outside Git without agent configuration runs no watcher.
+- **Resumed.** A watcher `djinn up` cut short starts again at the next start, on its command, in its project's
+  folder, however many times (the limit of 3 resumes is for agents). It reads no message (`djinn task send`
+  refuses); `djinn task pause` holds its command still, and the next run waits.
+
+A skill's [wish template](wish-templates.md) starts a watcher with the wish it makes; its done line ends a watcher
+that restarts, done, and asks whether to grant the wish.
+
+Tests: `TestWatchParagraphs`, `TestWatcher` (no slot, the restart loop, the line to the lead, pause),
+`TestWatcherEnds`, `TestWatcherResumes`, `TestWatcherPermissions` (`watch_test.go`, the test binary plays the
+command), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
+
 ## Claude
 
 **Command.** `claude -p --input-format stream-json --output-format stream-json --verbose
 --permission-prompts none`, then in a project `--settings <json>` (and `--permission-mode` with permissions; see
 above), then `--session-id <task id>` (or `--resume <session>`; a fork adds `--fork-session` and keeps
 `--session-id <task id>` for its new session), `--model`, `--max-budget-usd`. The prompt is a stream-json user
+
 message on the input; the input stays open for more messages and is closed once claude has answered them, which
 ends the process. A message sent during a turn may be taken into that turn: claude then gives a single result for
 both, and nothing in its output says so (real runs, claude 2.1.294, 2026-10-08). After a result that leaves
@@ -302,7 +398,12 @@ error subtype (`error_max_turns`, `error_during_execution`…) fails the turn ev
 | Process dies mid-turn                         | `claude/process-dies.jsonl`      | by hand                                     | error "claude ended before the end of its turn"; task failed                                                        |
 | Max turns reached, `is_error` false           | `claude/max-turns.jsonl`         | by hand                                     | error `error_max_turns` from the subtype; task failed, though claude exits 0                                        |
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
+
 | Message taken into the running turn           | `claude/message-in-turn.jsonl`   | by hand, from real runs (2.1.294, Opus 5.5) | one result for the prompt and the message; the input is closed once claude settled, and the task is done            |
+
+| Message sent during the turn                  | `claude/mid-turn-message.jsonl`  | by hand, from W59's real result             | one result with `queued_turn_count` 0 answers both messages: the input is closed and the worker ends               |
+| Session limit reached                         | `claude/session-limit.jsonl`     | **real**, claude 2.1.293                    | `rate_limit_event` `rejected` gives the limit and its `resetsAt`; error "You've hit your session limit · resets 7:20am (Europe/Paris)"; the task waits for the reset, then resumes |
+
 
 ## Codex
 
@@ -336,7 +437,7 @@ too. Nothing has been captured from a real codex yet: see "Codex: to check" belo
 | Simple success             | `codex/success.jsonl`           | by hand | session, text, usage, `turn completed`                                                 |
 | Tool calls                 | `codex/tool-call.jsonl`         | by hand | command and file change as tool calls and results, reasoning summary as other          |
 | Error after a retry        | `codex/error.jsonl`             | by hand | `retrying: …`, then the error once; task failed                                        |
-| Usage limit                | `codex/limit.jsonl`             | by hand | `usageLimitExceeded: …`; task failed                                                   |
+| Usage limit                | `codex/limit.jsonl`             | by hand | `usageLimitExceeded: …`; the task waits for the limit (a backoff), then resumes        |
 | Permission denied          | `codex/permission-denied.jsonl` | by hand | the approval declined, `permission denied: commandExecution …`, the command `declined` |
 | Listed command approved    | `codex/permission-denied.jsonl` | by hand | with `.agents` listing `go test`: `untrusted`, `workspace-write`, the approval accepted |
 | Thread resumed             | `codex/resume.jsonl`            | by hand | `thread/resume` with `excludeTurns`                                                    |
@@ -370,7 +471,8 @@ cheapest model>`, then `djinn task watch <task> --raw --json > turn.jsonl`. A se
 
 ## Antigravity
 
-**Command.** `agy --input-format stream-json --output-format stream-json`, then `--conversation <id>` to resume,
+**Command.** `agy --input-format stream-json --output-format stream-json`, then, with permissions, `--mode
+accept-edits`, `--sandbox` without the network and `--project <Djinn's agy project>`; `--conversation <id>` to resume,
 `--model`; outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
 input replaces it. Each message on the input is `{"event":"user","message":{"content":"…"}}` and runs one turn;
 the input is closed once every message has its result. agy cannot fork a conversation, and has no spending cap.
@@ -385,7 +487,9 @@ text deltas of a step and says them once the step is done (a response cut by the
 with `[cut]`), counts thinking tokens as written ones, reads `AGY_ERROR` as an error and the denial notice
 as `permission denied: …`. Tokens only, no cost. A turn with `denied_actions`, or a run whose error output gave the
 denial notice, fails: "agy stopped: it cannot run commands headless (<the command>). Run this task with claude or
-codex."
+codex." A tool step that ends in `ERROR` does not end the turn: refused by a deny grant (its `tool_info.error` says
+"… Matches user-configured deny rule."), it is a `permission denied: <the command>` status, as Claude's; else its
+error is the tool's result.
 
 **Real case, 2026-10-08, agy 1.3.0 headless.** Three workers (W35, W36, W38) ran in a project with
 `.agents/permissions.txtpb` (so `--mode accept-edits`). Each read a few files, then stopped at a shell command:
@@ -396,8 +500,66 @@ ended its turn at once: the denied step without output, a result with status `SU
 done with no change in their worktrees. Such a run now fails. In W36, `git status` and `cat .git` ran before
 `go tool task --list` was denied: which commands agy lets through is its own decision, listed in `.agents/` or not.
 
-**So today an agy worker can read and edit files, but cannot run a command:** it suits only edit-only tasks, with
-no test, build nor search by shell to run. Give any other task to claude or codex. Whether Djinn should pass
+**Real case, 2026-10-10, agy 1.3.2.** W198 and W207 (gemini-3.8-flash-high) failed at their first command, `git
+status`: "agy stopped: headless, it cannot ask for the "unsandboxed" permission (git status)". `git status` was
+allowed by the user's agy settings; the sandbox was the cause.
+
+**What agy's sandbox lets through (real runs, agy 1.3.3, 2026-10-10).** In a scratch repository under the home
+folder, with a linked worktree beside it as Djinn makes them, agy started as Djinn starts it (`--mode accept-edits
+--sandbox`, stream-json, never `--dangerously-skip-permissions`), each prompt one line ("Run git status, then git
+log -1, then stop."), the mount table read from inside the sandbox (`grep … /proc/self/mountinfo`):
+
+- The sandbox mounts the workspace **read-only** for commands (agy's own file tools still write), and every `.git`
+  read-only (its changelog: "read-only rather than writable access to a Git repository's `.git` directory"). The
+  repository of a linked worktree, outside the workspace, is not mounted at all: `git status` gives `fatal: not a
+  git repository: …/.git/worktrees/w1`, then agy asks for `unsandboxed`, which a headless run denies.
+- `--add-dir <repository>/.git` (or its `worktrees/<name>` and `objects`, or the repository's root) mounts it
+  **read-only**: `git status` and `git log` work, `git add` fails on `index.lock: Read-only file system`. A
+  workspace listed in `trustedWorkspaces` stays read-only. `GIT_DIR` and `GIT_COMMON_DIR` only tell git where to
+  look: what the mount table shows absent or read-only stays so (reasoned, not run). In a plain repository (no worktree), `git add` fails the same way on its own `.git`.
+- A `write_file(<folder>)` grant mounts the folder **writable** in the sandbox, `.git` included. A
+  `command(<prefix>)` grant lets a command starting with the prefix run without approval; a deny grant wins over
+  any allow, the user's settings' included, and its command fails (step `ERROR`) without ending the turn.
+- Grants are read from the user's `settings.json` (`permissions.allow`), or from an agy project:
+  `~/.gemini/config/projects/<id>.json` with `{"id", "name", "permissionGrants": {"permissionGrants": {"allow": [],
+  "deny": []}}}` (field names from the project descriptor in the binary), chosen with `--project <id>`; agy's log
+  says `ApplyProjectPermissionGrants: stored N allow, M deny grants`. A project's `settings` (`autoExecutionPolicy:
+  …PROCEED_IN_SANDBOX`) are not applied by the command line, and `ANTIGRAVITY_PERM_GRANTS` does nothing to it.
+
+**So Djinn writes an agy project per worktree** (`agyProject`, `internal/harness/agy.go`), for a worker with
+permissions: id `djinn-<16 hex digits of the folder's SHA-256>`, the same for every worker of the folder, as agy
+resumes a conversation in the project it began in; rewritten at each start, removed with the worktree. Its grants:
+`write_file` of the worker's folder and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
+the repository and the repository's common `.git`, read from the `.git` and `commondir` files, without running
+git), `command(<p>)` for each listed command in LISTED, `command(*)` in AUTO, and deny `command(<p>)` for each denied one,
+with `git push` always denied in AUTO, since pushing is the orchestrator's. Djinn writes nothing else of agy's,
+reads nothing of it, and leaves the user's settings alone. The run recorded in `testdata/antigravity/commit.jsonl`
+wrote a file, then ran `git status`, `git add`, `git commit`, `git diff` and `git log` in the worktree, all
+sandboxed, nothing denied, no network granted.
+
+**AUTO: every command but the denied ones (real runs, agy 1.3.3, 2026-10-10, W226).** Before, AUTO granted only Git's
+reading and commit commands, and replayed workers stopped on `git grep`, `which …; echo …` and `npm ci`. Same
+scratch setup as above, the project granting `write_file` on the worktree and the repository's `.git`, `command(*)`,
+and denying `command(git push)`, the user's settings untouched (`wc`, `echo`, `printenv`, `npm` are not in them):
+
+- Without `command(*)`, `wc -l a.txt` is denied headless and ends the turn; with it, it runs. `command(*)` is
+  accepted (agy's log: `stored 3 allow, 1 deny grants`); agy's own guidance for skills calls it overly generic, but
+  it is a valid grant.
+- Pipes, `;`, `&&` and env prefixes run: `echo hello | wc -c`, `echo one; echo two`, `true && echo ok`, `FOO=bar
+  printenv FOO`, `env FOO=baz printenv FOO`.
+- The deny grant wins: `git push origin w1`, `echo x && git push origin w1` and `GIT_TRACE=0 git push origin w1` end
+  in `ERROR`, "Permission denied for command(…). Matches user-configured deny rule.", and the turn goes on to the
+  next command (recorded in `testdata/antigravity/auto.jsonl`). It is a prefix: `sh -c "git push origin w1"` and
+  `git -C . push origin w1` ran, and failed only for want of a remote.
+- The network stays off under `--sandbox`: `curl https://example.com` and `git ls-remote https://github.com/…` gave
+  "Could not resolve host". `command(*)` does not let a command out of the sandbox: asked to run `touch` outside the
+  worktree with `BypassSandbox: true`, agy asked for `unsandboxed`, which headless denied (ending the turn), and no
+  file was made. `npm ci` ran in the sandbox from npm's cache (its package was there); a package missing from the
+  cache would need the network, so a project whose workers install must allow it.
+
+**So today an agy worker in AUTO runs any command in its sandbox but the denied ones, `git push` always;** in
+LISTED, a command neither listed nor allowed by the user's own agy settings is still denied, and ends its turn:
+list what its tasks run, `git add` and `git commit` among them. Whether Djinn should pass
 `--dangerously-skip-permissions` is an open question (Q43).
 
 **Verified:** the command line, from `agy --help` (1.3.0); the stream's shapes, from the official headless
@@ -443,7 +605,7 @@ use a personal or licensed account.
 | Simple success          | `antigravity/success.jsonl`                       | by hand, **supposed** | session, the deltas as one text, usage                             |
 | Tool calls              | `antigravity/tool-call.jsonl`                     | by hand, **supposed** | a call per tool step, its output as the result                     |
 | Model error             | `antigravity/error.jsonl` + `.stderr`             | by hand, **supposed** | the cut text, `AGY_ERROR`, the result's error; exit 3, task failed |
-| Quota exhausted         | `antigravity/limit.jsonl` + `.stderr`             | by hand, **supposed** | `… (HTTP 429), retryable`; task failed                             |
+| Quota exhausted         | `antigravity/limit.jsonl` + `.stderr`             | by hand, **supposed** | `… (HTTP 429), retryable`; the task waits (a backoff), then resumes |
 | Command denied          | `antigravity/permission-denied.jsonl` + `.stderr` | **real**, W36         | two commands run, the third denied: "agy stopped: … (go tool task --list) …"; task failed |
 | First command denied    | `antigravity/permission-denied-first.jsonl` + `.stderr` | **real**, W35   | the denied step never ends: "agy stopped: … (git grep …) …"; task failed |
 | Denial on stderr only   | `antigravity/permission-denied-notice.jsonl` + `.stderr` | by hand, from W35 | no `denied_actions`: the notice alone fails the task, even read after the result |
@@ -451,3 +613,5 @@ use a personal or licensed account.
 | Unknown lines           | `antigravity/unknown-line.jsonl`                  | by hand, **supposed** | each kept as `OTHER`, raw                                          |
 | Process dies mid-answer | `antigravity/process-dies.jsonl`                  | by hand, **supposed** | the cut text, error "agy ended before the end of its turn"         |
 | Second message          | `antigravity/two-turns.jsonl`                     | by hand, **supposed** | two turns in one process                                           |
+| Commit in a worktree    | `antigravity/commit.jsonl`                        | **real**, W208        | LISTED: a file written, Git run in the sandbox, nothing denied     |
+| AUTO, a command denied  | `antigravity/auto.jsonl`                          | **real**, W226        | compound commands run; `git push` is a `permission denied: …` status, the turn goes on, the task done |

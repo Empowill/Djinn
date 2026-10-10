@@ -15,6 +15,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // catalogCase is a row of the case catalog of docs/providers.md: a fixture replayed by the fake provider, and what
@@ -102,6 +103,21 @@ func catalog() []catalogCase {
 					t.Errorf("session = %q", ev.SessionID)
 				}
 			}},
+		{provider: "claude", fixture: "session-limit", want: []string{"STATUS", "STATUS", "STATUS", "TEXT", "ERROR", "USAGE"},
+			err: "You've hit your session limit · resets 7:20am (Europe/Paris)",
+			check: func(t *testing.T, events []Event, _, _ string) {
+				// The rejected rate limit says which limit, and when it resets; the warning before it says nothing.
+				var limits []Limit
+				for _, ev := range events {
+					if ev.Limit != nil {
+						limits = append(limits, *ev.Limit)
+					}
+				}
+				if want := (Limit{What: "the account's session limit", Until: time.Unix(1791436800, 0)}); len(limits) != 1 ||
+					limits[0].What != want.What || !limits[0].Until.Equal(want.Until) {
+					t.Errorf("limits = %+v, want %+v", limits, want)
+				}
+			}},
 		{provider: "claude", fixture: "unknown-line", want: []string{"STATUS", "OTHER", "OTHER", "OTHER", "TEXT", "USAGE"},
 			check: func(t *testing.T, events []Event, _, _ string) {
 				want := []string{"system compact_boundary", "prompt_suggestion", "Warning: a plain line on the output"}
@@ -123,6 +139,25 @@ func catalog() []catalogCase {
 			check: func(t *testing.T, _ []Event, _, input string) {
 				// One result for both messages: the worker ends once it settled, done.
 				if n := strings.Count(input, `"type":"user"`); n != 2 || !strings.Contains(input, "A hint from the lead.") {
+					t.Errorf("input = %q", input)
+				}
+			}},
+		// A question worker: its compound command refused, the djinn command alone runs; the refusal is said at the end.
+		{provider: "claude", fixture: "question-refused-then-spawned", send: []string{"go on"},
+			want: []string{"STATUS", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "STATUS", "USAGE"},
+			check: func(t *testing.T, events []Event, _, _ string) {
+				if got := texts(events, "STATUS")[1]; !strings.HasPrefix(got, `permission denied: Bash {"command":"djinn task list`) {
+					t.Errorf("denial = %q", got)
+				}
+			}},
+		// A question worker that takes its refused compound command for Bash refused, and ends its turn.
+		{provider: "claude", fixture: "question-gives-up",
+			want: []string{"STATUS", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "STATUS", "USAGE"}},
+		// A message sent during the turn is folded into it: one result, queued_turn_count 0, and the worker ends.
+		{provider: "claude", fixture: "mid-turn-message", send: []string{"Also check the docs."},
+			want: []string{"STATUS", "TEXT", "TEXT", "USAGE"},
+			check: func(t *testing.T, _ []Event, _, input string) {
+				if n := strings.Count(input, `"type":"user"`); n != 2 || !strings.Contains(input, "Also check the docs.") {
 					t.Errorf("input = %q", input)
 				}
 			}},
@@ -247,6 +282,61 @@ func catalog() []catalogCase {
 			check: func(t *testing.T, events []Event, _, _ string) {
 				if got := event(t, events, "TEXT").Text; got != "Running the tests [cut]" {
 					t.Errorf("cut text = %q", got)
+				}
+			}},
+		// A worker with permissions commits in a linked worktree, its repository outside agy's workspace: Djinn's agy
+		// project grants the folders and the commands (real run, agy 1.3.3).
+		{provider: "antigravity", fixture: "commit",
+			spec: Spec{Permissions: &djinnv1.Permissions{Edit: true, Commands: []string{"git add", "git commit"}, DeniedCommands: []string{"git push"}}},
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT",
+				"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, args, _ string) {
+				if got := texts(events, "TOOL_RESULT"); !slices.Contains(got, "[w1 fea0a4e] b\r\n 1 file changed, 1 insertion(+)\r\n create mode 100644 b.txt") {
+					t.Errorf("results = %q", got)
+				}
+				list := strings.Split(args, "\n")
+				i := slices.Index(list, "--project")
+				if i < 0 || !slices.Contains(list, "--sandbox") {
+					t.Fatalf("args = %q", args)
+				}
+				dir, _ := agyProjectsDir()
+				b, err := os.ReadFile(filepath.Join(dir, list[i+1]+".json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var f agyProjectFile
+				if err := json.Unmarshal(b, &f); err != nil || f.ID != list[i+1] {
+					t.Fatalf("project %s: %v", b, err)
+				}
+				g := f.PermissionGrants.PermissionGrants
+				if len(g.Allow) != 3 || !strings.HasPrefix(g.Allow[0], "write_file(") || g.Allow[2] != "command(git commit)" ||
+					!slices.Equal(g.Deny, []string{"command(git push)"}) {
+					t.Errorf("grants = %+v", g)
+				}
+			}},
+		// AUTO: agy runs any command, compound ones included, in its sandbox; a deny grant refuses git push, and the
+		// turn goes on (real run, agy 1.3.3).
+		{provider: "antigravity", fixture: "auto",
+			spec: Spec{Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL",
+				"TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "STATUS", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, args, _ string) {
+				if got := texts(events, "TOOL_RESULT"); !slices.Equal(got, []string{"6", "one\r\ntwo", "ok", "bar", "baz", "after-push"}) {
+					t.Errorf("results = %q", got)
+				}
+				if got := texts(events, "STATUS"); len(got) != 2 || got[1] != "permission denied: git push origin w1" {
+					t.Errorf("statuses = %q", got)
+				}
+				list := strings.Split(args, "\n")
+				i := slices.Index(list, "--project")
+				dir, _ := agyProjectsDir()
+				b, err := os.ReadFile(filepath.Join(dir, list[i+1]+".json"))
+				var f agyProjectFile
+				if err != nil || json.Unmarshal(b, &f) != nil {
+					t.Fatalf("project %s: %v", b, err)
+				}
+				if g := f.PermissionGrants.PermissionGrants; !slices.Contains(g.Allow, "command(*)") || !slices.Equal(g.Deny, []string{"command(git push)"}) {
+					t.Errorf("grants = %+v", g)
 				}
 			}},
 		{provider: "antigravity", fixture: "two-turns", send: []string{"And then?"},
@@ -398,6 +488,7 @@ func stderrEvents(name string, lines []string) []Event {
 // TestCatalog replays every case of the catalog through the real process path, the test binary playing the
 // provider, and checks the events Djinn records and how the worker ends.
 func TestCatalog(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for _, c := range catalog() {
 		name := c.provider + "/" + c.fixture
@@ -419,7 +510,13 @@ func TestCatalog(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			// A worker left waiting on its input would hang the test: it is stopped, and that fails the case.
+			hung := time.AfterFunc(10*time.Second, func() {
+				t.Errorf("the worker still runs after 10s")
+				w.Stop()
+			})
 			events := collect(w)
+			hung.Stop()
 			res := w.Wait()
 
 			// The error output is read apart from the output: its events come in any order among the others.
@@ -468,6 +565,7 @@ func TestCatalog(t *testing.T) {
 }
 
 func TestProviderArgs(t *testing.T) {
+	t.Parallel()
 	agy := []struct {
 		spec Spec
 		want []string
@@ -478,10 +576,11 @@ func TestProviderArgs(t *testing.T) {
 			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--conversation", "c1", "--model", "gemini-3.8-flash-medium"}, false},
 		{Spec{ReadOnly: true}, nil, true},
 		{Spec{Resume: "c1", Fork: true}, nil, true},
-		{Spec{Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
-			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--sandbox"}, false},
-		{Spec{Permissions: &djinnv1.Permissions{Edit: true, Network: true}},
-			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits"}, false},
+		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--sandbox",
+				"--project", agyProjectID("/w")}, false},
+		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Network: true}},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--project", agyProjectID("/w")}, false},
 		{Spec{Permissions: &djinnv1.Permissions{Commands: []string{"git status"}}}, nil, true},
 	}
 	for _, tt := range agy {
@@ -542,6 +641,7 @@ func TestProviderArgs(t *testing.T) {
 
 // TestProviderMissing: a provider whose program is not installed fails to start with a clear error.
 func TestProviderMissing(t *testing.T) {
+	t.Parallel()
 	for _, p := range []Provider{
 		Claude{Command: "djinn-no-such-claude"}, Codex{Command: "djinn-no-such-codex"}, Antigravity{Command: "djinn-no-such-agy"},
 	} {
@@ -555,6 +655,7 @@ func TestProviderMissing(t *testing.T) {
 // TestSpawnMissingProvider: djinn task spawn --provider codex, codex not installed, fails with an error that names
 // it, and the task records why.
 func TestSpawnMissingProvider(t *testing.T) {
+	t.Parallel()
 	e := up(t, t.TempDir())
 	e.h.providers[planv1.Provider_PROVIDER_CODEX] = Codex{Command: "codex-djinn-missing"}
 	wishID, _ := e.wish(t, t.TempDir())
@@ -587,6 +688,8 @@ func (r recorder) Start(ctx context.Context, spec Spec) (Worker, error) {
 // TestSpawnOutsideProject: a task of a wish without any project runs read-only, in an empty folder of its own
 // under Djinn's data folder.
 func TestSpawnOutsideProject(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	rec := recorder{specs: make(chan Spec, 1)}
@@ -655,5 +758,35 @@ func TestSpawnWishProvider(t *testing.T) {
 		default:
 			t.Errorf("wish %s, --provider %s: %s did not start", tc.chosen, tc.asked, tc.want)
 		}
+	}
+	active, err := e.wishes.List(t.Context(), connect.NewRequest(&planv1.WishServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active.Msg.GetWishes()) == 0 {
+		t.Fatal("provider cases made no wishes")
+	}
+	if _, err := e.wishes.Pause(t.Context(), connect.NewRequest(&planv1.WishServicePauseRequest{WishId: active.Msg.GetWishes()[0].GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	legacy, _ := e.wish(t, t.TempDir())
+	if _, err := e.wishes.SetLead(t.Context(), connect.NewRequest(&planv1.WishServiceSetLeadRequest{
+		WishId: legacy, SessionId: "legacy-codex-lead", Provider: planv1.Provider_PROVIDER_CODEX,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: legacy, Title: "Use the recorded lead",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Msg.GetTask().GetProvider(); got != planv1.Provider_PROVIDER_CODEX {
+		t.Fatalf("legacy lead task provider = %v; want CODEX", got)
+	}
+	select {
+	case <-specs[planv1.Provider_PROVIDER_CODEX]:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("legacy lead Codex worker did not start: task=%v", e.get(t, res.Msg.GetTask().GetId()))
 	}
 }

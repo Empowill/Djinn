@@ -3,8 +3,10 @@ package plan
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"os"
 	"slices"
 	"strings"
 
@@ -18,14 +20,15 @@ import (
 )
 
 // MaxActive is how many wishes are active at once, at most. A djinn grants three wishes: the limit guards the
-// user's attention, not the machine, and no option changes it.
+// user's attention, not the machine, and no option changes it. There may be as many wishes as you like: the three
+// first are active, the others wait paused, their workers stopped.
 const MaxActive = 3
 
 // creationKind is the original Markdown request, kept as free content rather than a field of the wish.
 const creationKind = "creation"
 
-// Rename journals a new title and changes the wish in the same transaction. The store's commit notification
-// reaches Watch and synced pages, just as any other change to the wish does.
+// Rename journals a new title and changes the wish in the same transaction. The original request block remains
+// untouched, so a later lead can still see the complete prompt.
 func (w *Wishes) Rename(
 	ctx context.Context, req *connect.Request[planv1.WishServiceRenameRequest],
 ) (*connect.Response[planv1.WishServiceRenameResponse], error) {
@@ -40,6 +43,27 @@ func (w *Wishes) Rename(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.WishServiceRenameResponse{Wish: wish}), nil
+}
+
+// WishWorkers reaches the workers of the wishes: djinn up gives the harness's. A paused wish's workers stop, and
+// wait to resume with it; a wish active again wakes the scheduler, which starts them.
+type WishWorkers interface {
+	Shelve(ctx context.Context, wishID string)
+	Wake()
+	// StopWish stops the wish's workers for good, and waits until they have ended.
+	StopWish(ctx context.Context, wishID string) error
+}
+
+// shelve stops the workers of the wishes paused, and wakes the scheduler for the active ones; without workers,
+// nothing.
+func (w *Wishes) shelve(ctx context.Context, paused ...*planv1.Wish) {
+	if w.Workers == nil {
+		return
+	}
+	for _, wish := range paused {
+		w.Workers.Shelve(ctx, wish.GetId())
+	}
+	w.Workers.Wake()
 }
 
 // Active tells whether wish is active. A wish made before Djinn recorded states is.
@@ -77,8 +101,8 @@ func Ranked(all []*planv1.Wish) []*planv1.Wish {
 }
 
 // Ready tells whether Djinn proposes to grant a wish that has these tasks and questions: it has tasks, every one
-// finished (done, or stopped by the user), no question is open, and every developer instruction is done. A task waiting for an answer, failed,
-// interrupted, planned or running keeps it from being ready. Djinn only proposes: the user grants.
+// finished (done, stopped by the user, or cut short for good), and no question is open. A task waiting for an
+// answer, failed, resuming, planned or running keeps it from being ready. Djinn only proposes: the user grants.
 func Ready(tasks []*planv1.Task, questions []*planv1.Question, instructions ...*planv1.Instruction) bool {
 	for _, instruction := range instructions {
 		if instruction.GetStatus() != planv1.InstructionStatus_INSTRUCTION_STATUS_DONE {
@@ -89,9 +113,8 @@ func Ready(tasks []*planv1.Task, questions []*planv1.Question, instructions ...*
 		return false
 	}
 	for _, t := range tasks {
-		switch t.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
-		default:
+		// Cut short for good counts as finished: see Finished.
+		if !Finished(t) {
 			return false
 		}
 	}
@@ -146,18 +169,6 @@ func renumber(tx *store.Tx, actives []*planv1.Wish) error {
 	return nil
 }
 
-// full is the refusal of a wish that would be active beyond the limit. how says what else the caller may do.
-func full(actives []*planv1.Wish, how string) error {
-	names := make([]string, len(actives))
-	for i, w := range actives {
-		names[i] = fmt.Sprintf("%d. %s (%s)", i+1, w.GetTitle(), w.GetId())
-	}
-	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-		"%d wishes are active already, and a djinn grants %d at a time: pause one (djinn wish pause <wish>) or "+
-			"grant one (djinn wish grant <wish>)%s. Active: %s",
-		len(actives), MaxActive, how, strings.Join(names, "; ")))
-}
-
 // wishRequest is a request that names one wish.
 type wishRequest interface {
 	proto.Message
@@ -191,14 +202,7 @@ func (w *Wishes) Grant(
 	ctx context.Context, req *connect.Request[planv1.WishServiceGrantRequest],
 ) (*connect.Response[planv1.WishServiceGrantResponse], error) {
 	wish, err := change(ctx, w, req.Spec(), req.Msg, func(tx *store.Tx, wish *planv1.Wish) error {
-		if wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
-			return nil
-		}
-		wish.State, wish.Rank, wish.GrantTime = planv1.WishState_WISH_STATE_GRANTED, 0, timestamppb.Now()
-		if err := tx.Put(wish); err != nil {
-			return err
-		}
-		return rerank(ctx, tx)
+		return grantWish(ctx, tx, wish)
 	})
 	if err != nil {
 		return nil, err
@@ -206,68 +210,256 @@ func (w *Wishes) Grant(
 	return connect.NewResponse(&planv1.WishServiceGrantResponse{Wish: wish}), nil
 }
 
-// Pause sets an active wish aside: it keeps everything, and leaves its place to another one.
+// grantWish grants wish in tx, and closes the gap it leaves in the ranks. A granted wish stays as it is.
+func grantWish(ctx context.Context, tx *store.Tx, wish *planv1.Wish) error {
+	if wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
+		return nil
+	}
+	wish.State, wish.Rank, wish.GrantTime = planv1.WishState_WISH_STATE_GRANTED, 0, timestamppb.Now()
+	if err := tx.Put(wish); err != nil {
+		return err
+	}
+	return rerank(ctx, tx)
+}
+
+// Pause sets an active wish aside: it keeps everything, its workers stop until it is active again, and it leaves
+// its place to another one.
 func (w *Wishes) Pause(
 	ctx context.Context, req *connect.Request[planv1.WishServicePauseRequest],
 ) (*connect.Response[planv1.WishServicePauseResponse], error) {
 	wish, err := change(ctx, w, req.Spec(), req.Msg, func(tx *store.Tx, wish *planv1.Wish) error {
-		switch wish.GetState() {
-		case planv1.WishState_WISH_STATE_PAUSED:
+		return pauseWish(ctx, tx, wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	w.shelve(ctx, wish)
+	return connect.NewResponse(&planv1.WishServicePauseResponse{Wish: wish}), nil
+}
+
+// pauseWish sets wish aside in tx, and closes the gap it leaves in the ranks. A paused wish stays as it is.
+func pauseWish(ctx context.Context, tx *store.Tx, wish *planv1.Wish) error {
+	switch wish.GetState() {
+	case planv1.WishState_WISH_STATE_PAUSED:
+		return nil
+	case planv1.WishState_WISH_STATE_GRANTED:
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"wish %q is granted, not active: there is nothing to pause", wish.GetTitle()))
+	}
+	wish.State, wish.Rank = planv1.WishState_WISH_STATE_PAUSED, 0
+	if err := tx.Put(wish); err != nil {
+		return err
+	}
+	return rerank(ctx, tx)
+}
+
+// Activate makes a paused or granted wish active again, last by rank. Three wishes being active, it takes the third
+// place, and the third wish is paused: only the three first wishes are active.
+func (w *Wishes) Activate(
+	ctx context.Context, req *connect.Request[planv1.WishServiceActivateRequest],
+) (*connect.Response[planv1.WishServiceActivateResponse], error) {
+	var paused []*planv1.Wish
+	wish, err := change(ctx, w, req.Spec(), req.Msg, func(tx *store.Tx, wish *planv1.Wish) error {
+		if Active(wish) {
 			return nil
-		case planv1.WishState_WISH_STATE_GRANTED:
-			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-				"wish %q is granted, not active: there is nothing to pause", wish.GetTitle()))
 		}
-		wish.State, wish.Rank = planv1.WishState_WISH_STATE_PAUSED, 0
-		if err := tx.Put(wish); err != nil {
+		var err error
+		paused, err = place(ctx, tx, wish, 0)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	w.shelve(ctx, paused...)
+	if err := fill(ctx, w.Store, paused...); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceActivateResponse{Wish: wish, Paused: paused}), nil
+}
+
+// place makes wish active at the rank to, from 1, among the active wishes; 0 or beyond the last, last. Never beyond
+// the third place: the wishes pushed past it are paused, and returned.
+func place(ctx context.Context, tx *store.Tx, wish *planv1.Wish, to int) ([]*planv1.Wish, error) {
+	actives, err := ActiveWishes(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	actives = slices.DeleteFunc(actives, func(a *planv1.Wish) bool { return a.GetId() == wish.GetId() })
+	at := len(actives)
+	if to > 0 {
+		at = min(to-1, at)
+	}
+	actives = slices.Insert(actives, min(at, MaxActive-1), wish)
+	var paused []*planv1.Wish
+	for len(actives) > MaxActive {
+		last := actives[len(actives)-1]
+		actives = actives[:len(actives)-1]
+		last.State, last.Rank = planv1.WishState_WISH_STATE_PAUSED, 0
+		if err := tx.Put(last); err != nil {
+			return nil, err
+		}
+		paused = append(paused, last)
+	}
+	wish.GrantTime = nil
+	return paused, renumber(tx, actives)
+}
+
+// Delete deletes a wish and everything that belongs to it: its tasks and their events, its questions, its blocks.
+// Its workers stop first: an active wish is paused, which the journal records, so that no task of it starts again.
+// Once it is gone, its lead's terminal closes, and each task's worktree that holds no work is removed (cleanWorktree);
+// the others stay, the response says why. Every branch stays. An inbox item routed to it forgets it.
+func (w *Wishes) Delete(
+	ctx context.Context, req *connect.Request[planv1.WishServiceDeleteRequest],
+) (*connect.Response[planv1.WishServiceDeleteResponse], error) {
+	id := req.Msg.GetWishId()
+	wish, err := store.Get[*planv1.Wish](ctx, w.Store, id)
+	if err != nil {
+		return nil, Status(err)
+	}
+	if Active(wish) {
+		pause := &planv1.WishServicePauseRequest{WishId: id}
+		if _, err := w.Pause(ctx, connect.NewRequest(pause)); err != nil {
+			return nil, err
+		}
+	}
+	if w.Workers != nil {
+		if err := w.Workers.StopWish(ctx, id); err != nil {
+			return nil, Status(err)
+		}
+	}
+	res := &planv1.WishServiceDeleteResponse{}
+	var tasks []*planv1.Task
+	var tilasms []*planv1.Tilasm
+	err = write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		where := store.Where{"wish_id": id}
+		var err error
+		if tasks, err = store.List[*planv1.Task](ctx, tx, where); err != nil {
 			return err
 		}
+		for _, t := range tasks {
+			events, err := store.List[*planv1.TaskEvent](ctx, tx, store.Where{"task_id": t.GetId()})
+			if err != nil {
+				return err
+			}
+			for _, ev := range events {
+				if err := tx.Delete(ev); err != nil {
+					return err
+				}
+			}
+			if err := tx.Delete(t); err != nil {
+				return err
+			}
+		}
+		questions, err := store.List[*planv1.Question](ctx, tx, where)
+		if err != nil {
+			return err
+		}
+		for _, q := range questions {
+			if err := tx.Delete(q); err != nil {
+				return err
+			}
+		}
+		blocks, err := store.List[*planv1.Block](ctx, tx, where)
+		if err != nil {
+			return err
+		}
+		for _, b := range blocks {
+			if err := tx.Delete(b); err != nil {
+				return err
+			}
+		}
+		instructions, err := store.List[*planv1.Instruction](ctx, tx, where)
+		if err != nil {
+			return err
+		}
+		for _, instruction := range instructions {
+			if err := tx.Delete(instruction); err != nil {
+				return err
+			}
+		}
+		if tilasms, err = store.List[*planv1.Tilasm](ctx, tx, where); err != nil {
+			return err
+		}
+		for _, t := range tilasms {
+			if err := tx.Delete(t); err != nil {
+				return err
+			}
+		}
+		items, err := store.List[*planv1.InboxItem](ctx, tx, where)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			item.WishId = ""
+			if err := tx.Put(item); err != nil {
+				return err
+			}
+		}
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, id); err != nil {
+			return err
+		}
+		if err := tx.Delete(wish); err != nil {
+			return err
+		}
+		res.Wish, res.Tasks, res.Questions, res.Blocks = wish, int32(len(tasks)), int32(len(questions)), int32(len(blocks))
 		return rerank(ctx, tx)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.WishServicePauseResponse{Wish: wish}), nil
-}
-
-// Activate makes a paused or granted wish active again, last by rank, within the limit of three.
-func (w *Wishes) Activate(
-	ctx context.Context, req *connect.Request[planv1.WishServiceActivateRequest],
-) (*connect.Response[planv1.WishServiceActivateResponse], error) {
-	wish, err := change(ctx, w, req.Spec(), req.Msg, func(tx *store.Tx, wish *planv1.Wish) error {
-		if Active(wish) {
-			return nil
-		}
-		actives, err := ActiveWishes(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if len(actives) >= MaxActive {
-			return full(actives, ", then activate this one")
-		}
-		if err := renumber(tx, actives); err != nil {
-			return err
-		}
-		wish.State, wish.Rank, wish.GrantTime = planv1.WishState_WISH_STATE_ACTIVE, int32(len(actives)+1), nil
-		return tx.Put(wish)
-	})
-	if err != nil {
-		return nil, err
+	if w.Leads != nil {
+		w.Leads.Close(LeadTerminal(id))
 	}
-	return connect.NewResponse(&planv1.WishServiceActivateResponse{Wish: wish}), nil
+	for _, t := range tilasms {
+		if w.Home != "" {
+			os.RemoveAll(TilasmDir(w.Home, t.GetId()))
+		}
+	}
+	res.Kept, res.WorktreesRemoved = cleanWorktrees(ctx, w.Store, tasks)
+	return connect.NewResponse(res), nil
 }
 
-// Move gives an active wish another rank, and shifts the others.
+// cleanWorktrees removes the worktrees of tasks that hold no work, each from its project's repository, and returns
+// those it keeps and how many it removed. The wish is gone already: what fails here keeps a worktree, and says so.
+func cleanWorktrees(ctx context.Context, r store.Reader, tasks []*planv1.Task) ([]*planv1.KeptWorktree, int32) {
+	var kept []*planv1.KeptWorktree
+	var removed int32
+	for _, t := range tasks {
+		if t.GetWorktree() == "" {
+			continue
+		}
+		project, err := store.Get[*planv1.Project](ctx, r, t.GetProjectId())
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			kept = append(kept, &planv1.KeptWorktree{TaskCode: t.GetCode(), Worktree: t.GetWorktree(),
+				Branch: t.GetBranch(), Error: err.Error()})
+			continue
+		}
+		gone, k := cleanWorktree(ctx, project.GetDirectory(), t)
+		if gone {
+			removed++
+		}
+		if k != nil {
+			kept = append(kept, k)
+		}
+	}
+	return kept, removed
+}
+
+// Move gives a wish another rank, and shifts the others. A wish that is not active becomes active at that rank, the
+// third at most; the wish it pushes past the third place is paused.
 func (w *Wishes) Move(
 	ctx context.Context, req *connect.Request[planv1.WishServiceMoveRequest],
 ) (*connect.Response[planv1.WishServiceMoveResponse], error) {
-	var actives []*planv1.Wish
+	var actives, paused []*planv1.Wish
 	_, err := change(ctx, w, req.Spec(), req.Msg, func(tx *store.Tx, wish *planv1.Wish) error {
-		if !Active(wish) {
-			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-				"wish %q is not active: activate it first (djinn wish activate %s)", wish.GetTitle(), wish.GetId()))
-		}
 		var err error
+		if !Active(wish) {
+			if paused, err = place(ctx, tx, wish, int(req.Msg.GetTo())); err != nil {
+				return err
+			}
+			actives, err = ActiveWishes(ctx, tx)
+			return err
+		}
 		if actives, err = ActiveWishes(ctx, tx); err != nil {
 			return err
 		}
@@ -279,10 +471,11 @@ func (w *Wishes) Move(
 	if err != nil {
 		return nil, err
 	}
-	if err := fill(ctx, w.Store, actives...); err != nil {
+	w.shelve(ctx, paused...)
+	if err := fill(ctx, w.Store, slices.Concat(actives, paused)...); err != nil {
 		return nil, Status(err)
 	}
-	return connect.NewResponse(&planv1.WishServiceMoveResponse{Wishes: actives}), nil
+	return connect.NewResponse(&planv1.WishServiceMoveResponse{Wishes: actives, Paused: paused}), nil
 }
 
 // rerank closes the gaps in the ranks of the active wishes, after one left them.

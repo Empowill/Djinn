@@ -77,6 +77,61 @@ func (Visibility) EnumDescriptor() ([]byte, []int) {
 	return file_djinn_v1_options_proto_rawDescGZIP(), []int{0}
 }
 
+// Writes says what a public method that answers once changes. A method that only reads says option
+// idempotency_level = NO_SIDE_EFFECTS instead: djinn mcp tells an agent's client it may run it without asking, and
+// Connect serves it as a GET too. Every public method that answers once says one or the other; a test checks it.
+type Writes int32
+
+const (
+	// Not set: the method must say option idempotency_level = NO_SIDE_EFFECTS.
+	Writes_WRITES_UNSPECIFIED Writes = 0
+	// It adds or changes something, in Djinn or on the machine.
+	Writes_WRITES_CHANGE Writes = 1
+	// It deletes something, or may overwrite a file it is given: what it removes does not come back by itself.
+	Writes_WRITES_DELETE Writes = 2
+)
+
+// Enum value maps for Writes.
+var (
+	Writes_name = map[int32]string{
+		0: "WRITES_UNSPECIFIED",
+		1: "WRITES_CHANGE",
+		2: "WRITES_DELETE",
+	}
+	Writes_value = map[string]int32{
+		"WRITES_UNSPECIFIED": 0,
+		"WRITES_CHANGE":      1,
+		"WRITES_DELETE":      2,
+	}
+)
+
+func (x Writes) Enum() *Writes {
+	p := new(Writes)
+	*p = x
+	return p
+}
+
+func (x Writes) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Writes) Descriptor() protoreflect.EnumDescriptor {
+	return file_djinn_v1_options_proto_enumTypes[1].Descriptor()
+}
+
+func (Writes) Type() protoreflect.EnumType {
+	return &file_djinn_v1_options_proto_enumTypes[1]
+}
+
+func (x Writes) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Writes.Descriptor instead.
+func (Writes) EnumDescriptor() ([]byte, []int) {
+	return file_djinn_v1_options_proto_rawDescGZIP(), []int{1}
+}
+
 // Unique is one group of fields whose values, taken together, identify a stored message.
 type Unique struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -141,6 +196,22 @@ var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Filename:      "djinn/v1/options.proto",
 	},
 	{
+		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtensionType: (*Writes)(nil),
+		Field:         51004,
+		Name:          "djinn.v1.writes",
+		Tag:           "varint,51004,opt,name=writes,enum=djinn.v1.Writes",
+		Filename:      "djinn/v1/options.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
+		ExtensionType: ([]string)(nil),
+		Field:         51005,
+		Name:          "djinn.v1.alias",
+		Tag:           "bytes,51005,rep,name=alias",
+		Filename:      "djinn/v1/options.proto",
+	},
+	{
 		ExtendedType:  (*descriptorpb.MessageOptions)(nil),
 		ExtensionType: ([]*Unique)(nil),
 		Field:         51002,
@@ -151,9 +222,17 @@ var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
 		ExtensionType: (*bool)(nil),
-		Field:         51004,
+		Field:         51007,
 		Name:          "djinn.v1.positional",
-		Tag:           "varint,51004,opt,name=positional",
+		Tag:           "varint,51007,opt,name=positional",
+		Filename:      "djinn/v1/options.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
+		ExtensionType: (*string)(nil),
+		Field:         51006,
+		Name:          "djinn.v1.env",
+		Tag:           "bytes,51006,opt,name=env",
 		Filename:      "djinn/v1/options.proto",
 	},
 }
@@ -169,6 +248,19 @@ var (
 	//
 	// optional bool autostart = 51003;
 	E_Autostart = &file_djinn_v1_options_proto_extTypes[1]
+	// What the method changes, when it does not only read.
+	//
+	// optional djinn.v1.Writes writes = 51004;
+	E_Writes = &file_djinn_v1_options_proto_extTypes[2]
+)
+
+// Extension fields to descriptorpb.ServiceOptions.
+var (
+	// Another name of the service's command: djinn talisman answers as djinn tilasm. Typed in full, or by a prefix no
+	// command's own name takes.
+	//
+	// repeated string alias = 51005;
+	E_Alias = &file_djinn_v1_options_proto_extTypes[3]
 )
 
 // Extension fields to descriptorpb.MessageOptions.
@@ -176,15 +268,20 @@ var (
 	// Groups of fields that must be unique among stored messages of this type.
 	//
 	// repeated djinn.v1.Unique unique = 51002;
-	E_Unique = &file_djinn_v1_options_proto_extTypes[2]
+	E_Unique = &file_djinn_v1_options_proto_extTypes[4]
 )
 
 // Extension fields to descriptorpb.FieldOptions.
 var (
 	// Keep a singular field positional when it becomes optional, preserving an existing command's arguments.
 	//
-	// optional bool positional = 51004;
-	E_Positional = &file_djinn_v1_options_proto_extTypes[3]
+	// optional bool positional = 51007;
+	E_Positional = &file_djinn_v1_options_proto_extTypes[5]
+	// The command line and djinn mcp fill the field from this environment variable when the caller leaves it empty:
+	// a worker's commands name its task by $DJINN_TASK_ID, which Djinn sets for every worker.
+	//
+	// optional string env = 51006;
+	E_Env = &file_djinn_v1_options_proto_extTypes[6]
 )
 
 var File_djinn_v1_options_proto protoreflect.FileDescriptor
@@ -198,15 +295,22 @@ const file_djinn_v1_options_proto_rawDesc = "" +
 	"Visibility\x12\x1a\n" +
 	"\x16VISIBILITY_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11VISIBILITY_PUBLIC\x10\x01\x12\x17\n" +
-	"\x13VISIBILITY_INTERNAL\x10\x02:V\n" +
+	"\x13VISIBILITY_INTERNAL\x10\x02*F\n" +
+	"\x06Writes\x12\x16\n" +
+	"\x12WRITES_UNSPECIFIED\x10\x00\x12\x11\n" +
+	"\rWRITES_CHANGE\x10\x01\x12\x11\n" +
+	"\rWRITES_DELETE\x10\x02:V\n" +
 	"\n" +
 	"visibility\x12\x1e.google.protobuf.MethodOptions\x18\xb9\x8e\x03 \x01(\x0e2\x14.djinn.v1.VisibilityR\n" +
 	"visibility:>\n" +
-	"\tautostart\x12\x1e.google.protobuf.MethodOptions\x18\xbb\x8e\x03 \x01(\bR\tautostart:K\n" +
+	"\tautostart\x12\x1e.google.protobuf.MethodOptions\x18\xbb\x8e\x03 \x01(\bR\tautostart:J\n" +
+	"\x06writes\x12\x1e.google.protobuf.MethodOptions\x18\xbc\x8e\x03 \x01(\x0e2\x10.djinn.v1.WritesR\x06writes:7\n" +
+	"\x05alias\x12\x1f.google.protobuf.ServiceOptions\x18\xbd\x8e\x03 \x03(\tR\x05alias:K\n" +
 	"\x06unique\x12\x1f.google.protobuf.MessageOptions\x18\xba\x8e\x03 \x03(\v2\x10.djinn.v1.UniqueR\x06unique:?\n" +
 	"\n" +
-	"positional\x12\x1d.google.protobuf.FieldOptions\x18\xbc\x8e\x03 \x01(\bR\n" +
-	"positionalB\x90\x01\n" +
+	"positional\x12\x1d.google.protobuf.FieldOptions\x18\xbf\x8e\x03 \x01(\bR\n" +
+	"positional:1\n" +
+	"\x03env\x12\x1d.google.protobuf.FieldOptions\x18\xbe\x8e\x03 \x01(\tR\x03envB\x90\x01\n" +
 	"\fcom.djinn.v1B\fOptionsProtoP\x01Z1github.com/empowill/djinn/gen/go/djinn/v1;djinnv1\xa2\x02\x03DXX\xaa\x02\bDjinn.V1\xca\x02\bDjinn\\V1\xe2\x02\x14Djinn\\V1\\GPBMetadata\xea\x02\tDjinn::V1b\x06proto3"
 
 var (
@@ -221,27 +325,33 @@ func file_djinn_v1_options_proto_rawDescGZIP() []byte {
 	return file_djinn_v1_options_proto_rawDescData
 }
 
-var file_djinn_v1_options_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_djinn_v1_options_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_djinn_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_djinn_v1_options_proto_goTypes = []any{
 	(Visibility)(0),                     // 0: djinn.v1.Visibility
-	(*Unique)(nil),                      // 1: djinn.v1.Unique
-	(*descriptorpb.MethodOptions)(nil),  // 2: google.protobuf.MethodOptions
-	(*descriptorpb.MessageOptions)(nil), // 3: google.protobuf.MessageOptions
-	(*descriptorpb.FieldOptions)(nil),   // 4: google.protobuf.FieldOptions
+	(Writes)(0),                         // 1: djinn.v1.Writes
+	(*Unique)(nil),                      // 2: djinn.v1.Unique
+	(*descriptorpb.MethodOptions)(nil),  // 3: google.protobuf.MethodOptions
+	(*descriptorpb.ServiceOptions)(nil), // 4: google.protobuf.ServiceOptions
+	(*descriptorpb.MessageOptions)(nil), // 5: google.protobuf.MessageOptions
+	(*descriptorpb.FieldOptions)(nil),   // 6: google.protobuf.FieldOptions
 }
 var file_djinn_v1_options_proto_depIdxs = []int32{
-	2, // 0: djinn.v1.visibility:extendee -> google.protobuf.MethodOptions
-	2, // 1: djinn.v1.autostart:extendee -> google.protobuf.MethodOptions
-	3, // 2: djinn.v1.unique:extendee -> google.protobuf.MessageOptions
-	4, // 3: djinn.v1.positional:extendee -> google.protobuf.FieldOptions
-	0, // 4: djinn.v1.visibility:type_name -> djinn.v1.Visibility
-	1, // 5: djinn.v1.unique:type_name -> djinn.v1.Unique
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	4, // [4:6] is the sub-list for extension type_name
-	0, // [0:4] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	3,  // 0: djinn.v1.visibility:extendee -> google.protobuf.MethodOptions
+	3,  // 1: djinn.v1.autostart:extendee -> google.protobuf.MethodOptions
+	3,  // 2: djinn.v1.writes:extendee -> google.protobuf.MethodOptions
+	4,  // 3: djinn.v1.alias:extendee -> google.protobuf.ServiceOptions
+	5,  // 4: djinn.v1.unique:extendee -> google.protobuf.MessageOptions
+	6,  // 5: djinn.v1.positional:extendee -> google.protobuf.FieldOptions
+	6,  // 6: djinn.v1.env:extendee -> google.protobuf.FieldOptions
+	0,  // 7: djinn.v1.visibility:type_name -> djinn.v1.Visibility
+	1,  // 8: djinn.v1.writes:type_name -> djinn.v1.Writes
+	2,  // 9: djinn.v1.unique:type_name -> djinn.v1.Unique
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	7,  // [7:10] is the sub-list for extension type_name
+	0,  // [0:7] is the sub-list for extension extendee
+	0,  // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_djinn_v1_options_proto_init() }
@@ -254,9 +364,9 @@ func file_djinn_v1_options_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_options_proto_rawDesc), len(file_djinn_v1_options_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   1,
-			NumExtensions: 4,
+			NumExtensions: 7,
 			NumServices:   0,
 		},
 		GoTypes:           file_djinn_v1_options_proto_goTypes,

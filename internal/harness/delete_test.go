@@ -7,10 +7,13 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // TestDelete: a task no worker ran goes, with its events; a task a worker ran stays.
 func TestDelete(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
 	planned := &planv1.Task{Id: "01a118d0-0000-7000-8000-0000000000d1", WishId: wishID, Code: "T01", Title: "a plan item",

@@ -101,7 +101,9 @@ export function LeadMessage({
     }
   };
   return (
-    <div className={`lead-message lead-message-${variant}`}>
+    <div
+      className={`lead-message lead-message-${variant}${variant === "card" ? " lead-message-card" : ""}`}
+    >
       <AnimatePresence>
         {open && (
           <motion.div

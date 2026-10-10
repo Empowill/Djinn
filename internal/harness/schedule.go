@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -18,6 +19,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -38,13 +40,31 @@ type Option func(*Harness)
 // WithCapacity limits the workers that run at once, and stops new ones while the machine is under pressure.
 func WithCapacity(c Capacity) Option { return func(h *Harness) { h.capacity = c } }
 
-// WithPrefix runs every worker under prefix, its own command appended: djinn up --worker-cpu gives a systemd scope
-// that caps the worker's CPU (machine.CPULimit).
-func WithPrefix(prefix []string) Option { return func(h *Harness) { h.prefix = prefix } }
+// WithMemory holds a new worker until the memory available (0 when unknown) holds the typical peak of a worker of
+// its provider, as p weighs it (machine.Policy.WorkerRoom). djinn up gives the machine's; without it, the memory
+// holds no worker back. It needs WithCapacity.
+func WithMemory(available func() uint64, p machine.Policy) Option {
+	return func(h *Harness) { h.available, h.policy = available, p }
+}
+
+// WithScopes runs each worker in a systemd scope of its own, which stopping, pausing and measuring it take whole, its
+// CPU and memory capped as scopes says (djinn up --worker-cpu, --worker-memory; machine.ProbeScopes).
+func WithScopes(scopes *machine.Scopes) Option { return func(h *Harness) { h.scopes = scopes } }
+
+// WithPrefix runs every worker under prefix when the scope provider does not already supply one.
+func WithPrefix(prefix []string) Option { return func(h *Harness) { h.prefix = slices.Clone(prefix) } }
 
 // WithBeforeStart runs f before each worker's process starts, warm ones included: djinn up brings its PATH up to
 // date there (machine.ExtendPath), so that a worker finds the agent the window's panel found.
 func WithBeforeStart(f func()) Option { return func(h *Harness) { h.beforeStart = f } }
+
+// scope gives each process of the worker name (a task's code) a scope of its own; nil without scopes.
+func (h *Harness) scope(name string) func() machine.Scope {
+	if h.scopes == nil {
+		return nil
+	}
+	return func() machine.Scope { return h.scopes.New(name) }
+}
 
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
 // machine falls without telling anyone.
@@ -102,17 +122,27 @@ func (h *Harness) generation() <-chan struct{} {
 	return h.changed
 }
 
-// Running is the number of workers that run now. A paused worker does not count: it takes no slot.
+// Running is the number of workers that run now. A paused worker does not count: it takes no slot; nor does a
+// watcher, which sleeps until its command prints, nor a question worker, which reads and runs djinn's commands.
 func (h *Harness) Running() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	n := 0
 	for _, r := range h.runs {
-		if !r.paused {
+		if !r.paused && !r.watcher && !r.light {
 			n++
 		}
 	}
 	return n
+}
+
+// Works tells whether a worker of the task runs now and takes a slot: what it runs, a gate's command included, is in
+// that slot. A paused worker, a watcher or a question worker takes none.
+func (h *Harness) Works(taskID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	r, ok := h.runs[taskID]
+	return ok && !r.paused && !r.watcher && !r.light
 }
 
 // planned tells whether Djinn starts the task by itself, once it is ready.
@@ -144,6 +174,9 @@ func (h *Harness) schedule(ctx context.Context) {
 	for _, d := range s.Pass() {
 		if h.ctx.Err() != nil {
 			return
+		}
+		if d.Commit {
+			h.kickIntegrate() // A task another waits for is committed at once.
 		}
 		switch t := d.Task; {
 		case d.Failed != "":
@@ -177,8 +210,17 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 	if h.capacity != nil {
 		m = &dispatch.Machine{Running: h.Running()}
 		m.Slots, m.Rule, m.Pressure = h.capacity()
+		h.mu.Lock()
+		outside := h.outside
+		h.mu.Unlock()
+		if outside != nil {
+			m.Gates = outside()
+		}
+		if h.available != nil {
+			m.Available, m.Policy = h.available(), h.policy
+		}
 	}
-	return dispatch.New(tasks, wishes, git, m), nil
+	return dispatch.New(tasks, wishes, git, m).At(h.now()), nil
 }
 
 // Ranks gives the position of each task's wish among the active wishes, the first served first; the task of a wish
@@ -210,9 +252,26 @@ func (h *Harness) Describe(ctx context.Context, taskID string) (string, error) {
 	return t.GetCode() + " (" + t.GetTitle() + ")", nil
 }
 
-// setWaiting records why a planned task waits, and whether for the machine alone, when the reason changed, with an
-// event.
+// HeldGates tells the harness which gates a task holds, and which it waits for, by name: a worker holding or
+// waiting for one is not paused. djinn up gives the gates' (gate.Gates.Held and Waiting), once they exist.
+func (h *Harness) HeldGates(held, waiting func(taskID string) []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.held, h.waiting = held, waiting
+}
+
+// GatesOutside tells the harness how many gates are held outside its running workers, by a person's terminal, a
+// lead or a script: each takes a slot, so no new worker starts on it while it is held. djinn up gives the gates'
+// (gate.Gates.Outside).
+func (h *Harness) GatesOutside(n func() int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.outside = n
+}
+
+// setWaiting records why a planned task waits, when the reason changed, with an event.
 func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine bool) {
+	why = grantedWhy(t, shelvedWhy(t, why))
 	if t.GetWaitReason() == why && t.GetMachineWait() == machine {
 		return
 	}
@@ -261,6 +320,9 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 // launchPlanned starts the worker of a planned task that is ready: its access is decided now, with the wish's
 // grants and the project's configuration as they are, and it may ask its edit question.
 func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
+	if dispatch.Resuming(t) {
+		return h.relaunch(ctx, t)
+	}
 	t = proto.CloneOf(t)
 	t.WaitReason, t.MachineWait = "", false
 	provider, ok := h.providers[t.GetProvider()]
@@ -282,10 +344,11 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 		return err
 	}
 	var project *planv1.Project
+	var wish *planv1.Wish
 	var prep prepared
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		wish, err := store.Get[*planv1.Wish](ctx, tx, t.GetWishId())
-		if err != nil {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, t.GetWishId()); err != nil {
 			return err
 		}
 		if t.GetProjectId() != "" {
@@ -305,12 +368,21 @@ func (h *Harness) launchPlanned(ctx context.Context, t *planv1.Task) error {
 		h.finish(r, Result{ExitCode: -1, Err: err})
 		return err
 	}
+	if project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+		// Its branch follows the project's settings as they are now, like its access.
+		settings, err := plan.LoadSettings(h.home, project)
+		if err != nil {
+			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("project %s: %w", project.GetName(), err)})
+			return nil
+		}
+		r.branch, r.from, r.checks = settings.Branch, plan.IntegrationBranchOf(wish, project.GetId()), settings.ChecksBrief()
+	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err
 }
 
 // Start starts a planned task that waits for the machine alone, now: the developer asked for it, whatever the slots
-// and the pressure. A task held by anything else (its wish, a dependency, a write scope) is refused, with why.
+// and the pressure. A task held by anything else (its wish, a dependency, a write scope) is refused.
 func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskServiceStartRequest) (*planv1.Task, error) {
 	h.sched.Lock()
 	defer h.sched.Unlock()
@@ -325,11 +397,11 @@ func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskS
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	s, err := h.situation(ctx, tasks)
+	situation, err := h.situation(ctx, tasks)
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	if why, failed := s.Held(task); why != "" || failed != "" {
+	if why, failed := situation.Held(task); why != "" || failed != "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s waits for more than the machine: %s", task.GetCode(), cmp.Or(failed, why)))
 	}
 	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
@@ -352,16 +424,25 @@ func resolveDeps(ctx context.Context, r store.Reader, wishID string, names []str
 	if err != nil {
 		return nil, err
 	}
+	return resolveIn(tasks, names, "dependency")
+}
+
+// resolveIn turns names, codes (W1, any case) or identifiers of tasks among tasks, repeated or separated by commas or
+// spaces (--after W1,W2; "after: T08 T17"), into task identifiers, without repeats. A name no task has is refused:
+// what says what it named ("dependency W9 is not a task of the wish").
+func resolveIn(tasks []*planv1.Task, names []string, what string) ([]string, error) {
 	var out []string
-	for _, name := range names {
-		i := slices.IndexFunc(tasks, func(t *planv1.Task) bool {
-			return t.GetId() == name || strings.EqualFold(t.GetCode(), name)
-		})
-		if i < 0 {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("dependency %s is not a task of the wish", name))
-		}
-		if id := tasks[i].GetId(); !slices.Contains(out, id) {
-			out = append(out, id)
+	for _, list := range names {
+		for _, name := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+			i := slices.IndexFunc(tasks, func(t *planv1.Task) bool {
+				return t.GetId() == name || strings.EqualFold(t.GetCode(), name)
+			})
+			if i < 0 {
+				return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s %s is not a task of the wish", what, name))
+			}
+			if id := tasks[i].GetId(); !slices.Contains(out, id) {
+				out = append(out, id)
+			}
 		}
 	}
 	return out, nil

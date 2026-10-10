@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -41,7 +42,7 @@ type Pages struct {
 	Version string
 	// Language of the pages' own texts.
 	Language string
-	// Interval is the least time between two renders of the synced pages.
+	// Interval is the least time between two renders of the synced pages: pageInterval by default.
 	Interval time.Duration
 
 	mu       sync.Mutex
@@ -54,10 +55,19 @@ type Pages struct {
 	write sync.Mutex // one render at a time: the last file written holds the last state
 }
 
+// pageInterval is the least time between two renders of a synced page. Its workers speak every second or so, and each
+// render reads the wish, its journal and its latest events again: a page a few seconds old costs a fifth of one kept
+// to the second, and its reader, who opens a file the lead publishes, does not see the difference.
+const pageInterval = 5 * time.Second
+
+// foreignEvents is how many events of other wishes pageEvents reads from the last back, at most, before it reads each
+// task's own instead.
+const foreignEvents = 2000
+
 // NewPages returns the pages of the wishes in s, and starts listening to its changes. Run keeps them up to date.
 func NewPages(s *store.Store, home, version string) *Pages {
 	p := &Pages{
-		store: s, Home: home, Version: version, Language: render.SystemLanguage(), Interval: time.Second,
+		store: s, Home: home, Version: version, Language: render.SystemLanguage(), Interval: pageInterval,
 		synced: map[string]bool{}, dirty: map[string]bool{}, tasks: map[string]bool{}, taskWish: map[string]string{},
 		kick: make(chan struct{}, 1),
 	}
@@ -75,7 +85,12 @@ func (p *Pages) File(wishID string) string {
 
 // Page renders the page of a wish, without secret nor local path.
 func (p *Pages) Page(ctx context.Context, wishID string) ([]byte, error) {
-	exp, projects, err := collect(ctx, p.store, wishID)
+	return p.page(ctx, wishID, pageEvents, time.Now())
+}
+
+// page renders the page of a wish at now, from the events that events reads.
+func (p *Pages) page(ctx context.Context, wishID string, events eventsOf, now time.Time) ([]byte, error) {
+	exp, projects, err := collect(ctx, p.store, wishID, events)
 	if err != nil {
 		return nil, err
 	}
@@ -97,8 +112,65 @@ func (p *Pages) Page(ctx context.Context, wishID string) ([]byte, error) {
 		}
 	}
 	return render.Page(render.Input{
-		Export: exp, Unattached: unattached, Version: p.Version, Language: p.Language, Now: time.Now(),
+		Export: exp, Unattached: unattached, Version: p.Version, Language: p.Language, Now: now,
 	})
+}
+
+// pageEvents are the events of tasks that a page shows (render.Shown): the render.MaxEvents last ones, and each task's
+// last one, its last word. A wish's events are most of the store and a page renders each time a worker speaks: they are
+// read from the last written back, no further than the page needs. When other wishes' events come first, past
+// foreignEvents of them, each task's are read apart instead, their render.MaxEvents last at most.
+func pageEvents(ctx context.Context, r store.Reader, tasks []*planv1.Task) ([]*planv1.TaskEvent, error) {
+	pos := make(map[string]int, len(tasks))
+	for i, t := range tasks {
+		pos[strings.ToLower(t.GetId())] = i
+	}
+	picked := map[string]*planv1.TaskEvent{}
+	spoke := map[string]bool{} // the tasks whose last word is picked
+	foreign := 0
+	err := store.Latest(ctx, r, nil, func(e *planv1.TaskEvent) bool {
+		task := strings.ToLower(e.GetTaskId())
+		if _, ok := pos[task]; !ok {
+			foreign++
+		} else if render.Shown(e) {
+			picked[e.GetId()], spoke[task] = e, true
+		}
+		return len(picked) < render.MaxEvents && foreign <= foreignEvents
+	})
+	if err != nil {
+		return nil, err
+	}
+	most := 1 // each task's last word
+	if foreign > foreignEvents && len(picked) < render.MaxEvents {
+		most, spoke = render.MaxEvents, nil
+	}
+	for _, t := range tasks {
+		if spoke[strings.ToLower(t.GetId())] {
+			continue
+		}
+		n := 0
+		err := store.Latest(ctx, r, store.Where{"task_id": t.GetId()}, func(e *planv1.TaskEvent) bool {
+			if render.Shown(e) {
+				picked[e.GetId()] = e
+				n++
+			}
+			return n < most
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	out := make([]*planv1.TaskEvent, 0, len(picked))
+	for _, e := range picked {
+		out = append(out, e)
+	}
+	slices.SortFunc(out, func(a, b *planv1.TaskEvent) int {
+		if d := pos[strings.ToLower(a.GetTaskId())] - pos[strings.ToLower(b.GetTaskId())]; d != 0 {
+			return d
+		}
+		return int(a.GetSeq() - b.GetSeq())
+	})
+	return out, nil
 }
 
 // Sync renders the page of a wish in its file, and keeps it up to date from now on.

@@ -19,7 +19,11 @@ func fixture(t *testing.T, binary string) (root, dir string) {
 	t.Helper()
 	root = t.TempDir()
 	for _, name := range notices {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(name+" text\n"), 0o644); err != nil {
+		file := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(name+" text\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

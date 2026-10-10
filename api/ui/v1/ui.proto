@@ -34,9 +34,21 @@ service UiService {
   rpc OpenExternal(UiServiceOpenExternalRequest) returns (UiServiceOpenExternalResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // Choose the global shortcut that brings the window forward from anywhere on the desktop; an empty chord turns it
+  // off. Kept in the data directory. Fails on a chord Djinn does not take; one the system refuses (another
+  // application holds it) is kept, and its problem said.
+  rpc SetShortcut(UiServiceSetShortcutRequest) returns (UiServiceSetShortcutResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
   // Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
   // window shows them too. In browser mode, djinn up prints the address of the page again.
   rpc Show(UiServiceShowRequest) returns (UiServiceShowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Open a djinn:// link in the window, as the system does when one is clicked anywhere (djinn open): djinn://tilasm/<id>
+  // shows its wish's Tilasms tab on that tilasm, djinn://wish/<id> the wish. A link Djinn does not know, or a tilasm or
+  // a wish not on this machine, is refused, saying so; the window says so too.
+  rpc OpenLink(UiServiceOpenLinkRequest) returns (UiServiceOpenLinkResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // What the window is asked to show, as it comes. A request of the last minute comes first, for a window that
@@ -45,13 +57,14 @@ service UiService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-  // change. With the leads that a restart could not resume, once.
+  // change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
   rpc WatchUpdate(UiServiceWatchUpdateRequest) returns (stream UiServiceWatchUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
   // Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
   // as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-  // sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
+  // sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
+  // newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
   rpc Update(UiServiceUpdateRequest) returns (UiServiceUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
@@ -94,41 +107,8 @@ message UiServiceGetEnvironmentResponse {
   repeated Provider providers = 3;
   // The window can open the system's folder dialog: ChooseDirectory works. False in the browser.
   bool folder_dialog = 4;
-}
-
-// An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
-// installers use, so that a window started from the Finder finds it too.
-message Provider {
-  // Identifier: claude, codex or agy.
-  string id = 1;
-  // Name shown in the window.
-  string name = 2;
-  // The command is found on this machine.
-  bool available = 3;
-  // The command, as resolved when available.
-  string command = 4;
-  // Where the agent stands.
-  ProviderState state = 5;
-  // The version the command reports; empty when it is not installed, or when Djinn does not know how to ask.
-  string version = 6;
-  // The command line that installs the agent, from its official documentation, for this platform.
-  string install_command = 7;
-  // The command line that signs the agent in, from its official documentation.
-  string login_command = 8;
-}
-
-// ProviderState is whether an agent command line is installed and signed in.
-enum ProviderState {
-  // Not set.
-  PROVIDER_STATE_UNSPECIFIED = 0;
-  // The command is not found.
-  PROVIDER_STATE_MISSING = 1;
-  // Installed, not signed in: its status command says so.
-  PROVIDER_STATE_SIGNED_OUT = 2;
-  // Installed and signed in: its status command says so.
-  PROVIDER_STATE_READY = 3;
-  // Installed; whether it is signed in is unknown: the agent has no status command, or it failed or took too long.
-  PROVIDER_STATE_UNKNOWN = 4;
+  // The global shortcut that brings the window forward.
+  Shortcut shortcut = 5;
 }
 
 message UiServiceLoadStateRequest {}
@@ -157,6 +137,62 @@ message UiServiceValidateProjectResponse {
   bool git = 2;
 }
 
+// The global shortcut that brings the window forward from anywhere on the desktop, on the wish with the newest open
+// question, else on the flight plan.
+message Shortcut {
+  // The chord in effect, such as Ctrl+Alt+Space; empty when off.
+  string chord = 1;
+  // The chord used until one is chosen.
+  string default_chord = 2;
+  // This Djinn can take a global shortcut: a native window on a system that has them. False in the browser.
+  bool available = 3;
+  // Why the chord does not work, as the system said, such as another application holding it; empty when it works or
+  // is off.
+  string problem = 4;
+}
+
+// The window's settings that Djinn acts on, in settings.json of the data directory. The page keeps its own (the
+// language, the theme).
+message Settings {
+  // The global shortcut's chord. Unset: the default one. Empty: off.
+  optional string shortcut = 1;
+}
+
+// An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
+// installers use, so that a window started from the Finder finds it too.
+message Provider {
+  // Identifier: codex, claude or antigravity (agy).
+  string id = 1;
+  // Name shown in the window.
+  string name = 2;
+  // The command is found on this machine.
+  bool available = 3;
+  // The command, as resolved on the PATH when available.
+  string command = 4;
+  // Where the agent stands.
+  ProviderState state = 5;
+  // The version the command reports; empty when it is not installed, or when Djinn does not know how to ask.
+  string version = 6;
+  // The command line that installs the agent, from its official documentation, for this platform.
+  string install_command = 7;
+  // The command line that signs the agent in, from its official documentation.
+  string login_command = 8;
+}
+
+// ProviderState is whether an agent command line is installed and signed in.
+enum ProviderState {
+  // Not set.
+  PROVIDER_STATE_UNSPECIFIED = 0;
+  // The command is not found.
+  PROVIDER_STATE_MISSING = 1;
+  // Installed, not signed in: its status command says so.
+  PROVIDER_STATE_SIGNED_OUT = 2;
+  // Installed and signed in: its status command says so.
+  PROVIDER_STATE_READY = 3;
+  // Installed; whether it is signed in is unknown: the agent has no status command, or it failed or took too long.
+  PROVIDER_STATE_UNKNOWN = 4;
+}
+
 message UiServiceChooseDirectoryRequest {
   // Title of the dialog.
   string title = 1 [(buf.validate.field).string.max_len = 200];
@@ -179,6 +215,16 @@ message UiServiceOpenExternalResponse {
   string url = 1;
 }
 
+message UiServiceSetShortcutRequest {
+  // The chord: modifiers then a key, joined by +, such as Ctrl+Alt+Space. Empty turns the shortcut off.
+  string chord = 1 [(buf.validate.field).string.max_len = 64];
+}
+
+message UiServiceSetShortcutResponse {
+  // The shortcut as it now is.
+  Shortcut shortcut = 1;
+}
+
 message UiServiceShowRequest {
   // A wish to show, if any.
   string wish_id = 1;
@@ -191,6 +237,20 @@ message UiServiceShowResponse {
   bool window = 1;
 }
 
+message UiServiceOpenLinkRequest {
+  // The link: djinn://tilasm/<id> or djinn://wish/<id>.
+  string url = 1 [(buf.validate.field).string.max_len = 4096];
+}
+
+message UiServiceOpenLinkResponse {
+  // The wish shown.
+  string wish_id = 1;
+  // The tilasm shown in its Tilasms tab; empty for a wish's link.
+  string tilasm_id = 2;
+  // A native window was brought to the front; false in browser mode.
+  bool window = 3;
+}
+
 message UiServiceWatchShowRequest {}
 
 message UiServiceWatchShowResponse {
@@ -198,9 +258,14 @@ message UiServiceWatchShowResponse {
   string wish_id = 1;
   // The terminal to show; empty for none.
   string terminal = 2;
+  // The tilasm to show, in the wish's Tilasms tab; empty for none.
+  string tilasm_id = 3;
+  // A link the window was asked to open and Djinn does not know, or whose tilasm or wish is not on this machine: the
+  // window says so. Empty for none.
+  string unknown_link = 4;
   // The element of the wish to bring into view, by its id in the page: question-<id>, task-<id>, grant-<wish id>;
   // empty for the top of the wish.
-  string target = 3;
+  string target = 5;
 }
 
 message UiServiceWatchUpdateRequest {}
@@ -212,32 +277,74 @@ message UiServiceWatchUpdateResponse {
   string ready = 2;
   // The terminals the last restart could not run again, one line each: name, command, folder and why.
   repeated string not_resumed = 3;
+  // Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
+  // local install, which has none.
+  string notes_url = 4;
+  // The last push of a wish's integration branch, in a project whose settings name an install command, and not
+  // installed since: the window proposes to install it and restart on it. Unset for none.
+  Build build = 5;
+  // The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
+  // of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
+  Installing installing = 6;
 }
 
-message UiServiceUpdateRequest {}
+// Installing is an install of a build that runs now, and where it stands.
+message Installing {
+  // The commit being installed.
+  string sha = 1;
+  InstallStep step = 2;
+  // What it waits for, while its step is waiting: another install, a gate and who holds it, the machine under
+  // pressure. Empty otherwise.
+  string waiting = 3;
+}
+
+// InstallStep is where an install stands.
+enum InstallStep {
+  INSTALL_STEP_UNSPECIFIED = 0;
+  // It waits for its turn: Installing.waiting says for what.
+  INSTALL_STEP_WAITING = 1;
+  // It checks the build out in a worktree of its own, and sets that worktree up when the project's lock files changed.
+  INSTALL_STEP_PREPARING = 2;
+  // It runs the project's install command.
+  INSTALL_STEP_BUILDING = 3;
+  // Installed: Djinn restarts on it.
+  INSTALL_STEP_RESTARTING = 4;
+}
+
+// Build is a wish's integration branch as Djinn pushed it (T07), to install.
+message Build {
+  // The wish, and its title.
+  string wish_id = 1;
+  string wish_title = 2;
+  // The project, by its identifier and its name.
+  string project_id = 3;
+  string project = 4;
+  // The integration branch, and the commit pushed.
+  string branch = 5;
+  string sha = 6;
+  // The tasks whose work the push brought, by code: W5.
+  repeated string tasks = 7;
+  // What changed: the titles of the commits the push brought, the latest first.
+  repeated string changes = 8;
+  // What to check, one line per task: its code and title, then what its worker said last.
+  repeated string checks = 9;
+  // The command that installs it: go tool task install.
+  string install = 10;
+}
+
+message UiServiceUpdateRequest {
+  // The commit of the build to install first, as WatchUpdate proposed it; empty to restart on the newer Djinn
+  // already installed. Refused when it is not the build proposed.
+  string build = 1 [(buf.validate.field).string.max_len = 64];
+}
 
 message UiServiceUpdateResponse {
-  // Version Djinn restarts on.
+  // Version Djinn restarts on; empty when the build installed no newer Djinn: nothing restarts.
   string version = 1;
   // How many terminals the new Djinn will run again.
   int32 terminals = 2;
-}
-
-message UiServiceWatchRequest {
-  // First sequence number to send; 0 sends everything still kept.
-  uint64 from_seq = 1;
-}
-
-message UiServiceWatchResponse {
-  // Sequence number of the change, strictly increasing.
-  uint64 seq = 1;
-  // The entity as it is after the change.
-  oneof entity {
-    // A project added or changed.
-    plan.v1.Project project = 2;
-    // A question asked or answered.
-    plan.v1.Question question = 3;
-  }
+  // The commit of the build installed, when one was.
+  string installed = 3;
 }
 
 // Whether the system lets Djinn show notifications.
@@ -279,3 +386,21 @@ message UiServiceViewRequest {
 }
 
 message UiServiceViewResponse {}
+
+// Every change, in order, from a sequence number on. Resume a broken stream from the last number received plus one.
+message UiServiceWatchRequest {
+  // First sequence number to send; 0 sends everything still kept.
+  uint64 from_seq = 1;
+}
+
+message UiServiceWatchResponse {
+  // Sequence number of the change, strictly increasing.
+  uint64 seq = 1;
+  // The entity as it is after the change.
+  oneof entity {
+    // A project added or changed.
+    plan.v1.Project project = 2;
+    // A question asked or answered.
+    plan.v1.Question question = 3;
+  }
+}

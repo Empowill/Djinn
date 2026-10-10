@@ -18,7 +18,7 @@ The data folder, nothing else:
 - `djinn.db`: the database. Wishes, tasks, questions, decisions, the journal.
 - `wishes/`: the pages of the wishes.
 - `projects/` and `tasks/`: the folders of the tasks.
-- `state.json`: the window's state.
+- `settings.json`: the window's settings (the global shortcut).
 
 Leave out the worktrees (`projects/*/worktrees`): Git holds them. Push the branches you care about.
 Leave out `djinn.sock`, `server.addr` and the logs: they belong to a running Djinn.

@@ -161,6 +161,22 @@ func TestInstallVersion(t *testing.T) {
 	}
 }
 
+// TestInstallFromAFolder: DJINN_RELEASES may name a local folder (file://), as when a release built by hand is tried
+// before it is published (plan/71f9c331-releases.md).
+func TestInstallFromAFolder(t *testing.T) {
+	skipOnWindows(t)
+	root := t.TempDir()
+	release(t, root, "download/v0.0.0-dryrun", map[string]string{"djinn_test": "echo djinn v0.0.0-dryrun"})
+	r := runInstall(t, root, true, "DJINN_ASSET=djinn_test", "DJINN_VERSION=v0.0.0-dryrun",
+		"DJINN_RELEASES=file://"+filepath.ToSlash(root))
+	if r.failed {
+		t.Fatalf("install failed:\n%s", r.out)
+	}
+	if got := r.version(t); got != "djinn v0.0.0-dryrun" {
+		t.Fatalf("installed %q, want djinn v0.0.0-dryrun", got)
+	}
+}
+
 // TestInstallRefusesATamperedArchive: a download that does not match its sum stops the install, with no fallback.
 func TestInstallRefusesATamperedArchive(t *testing.T) {
 	skipOnWindows(t)

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -17,13 +18,24 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
+// resolvedTempDir is a temporary folder named as djinn stores a project's once added: Windows names the temporary
+// folder with a short 8.3 name (RUNNER~1), which djinn resolves to the long one.
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 // gitRepo makes a Git repository in a new folder, with remote as its origin.
 func gitRepo(t *testing.T, name, remote string) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
-	dir := filepath.Join(t.TempDir(), name)
+	dir := filepath.Join(resolvedTempDir(t), name)
 	for _, args := range [][]string{{"init", "-q", dir}, {"-C", dir, "remote", "add", "origin", remote}} {
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -201,6 +213,90 @@ func export(t *testing.T, c clients, wishID, file string) []byte {
 		t.Fatalf("read the export: %v (%d bytes, %d said)", err, len(data), res.Msg.GetSize())
 	}
 	return data
+}
+
+func TestDecodeLegacyInstructionExport(t *testing.T) {
+	wishID := store.NewID()
+	instruction := &planv1.Instruction{
+		Id: store.NewID(), WishId: wishID, Code: "I01", Text: "Keep the compatibility note.",
+	}
+	instructionData, err := proto.Marshal(instruction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The wish itself is from the old store schema: provider was field 11.
+	wishData := protowire.AppendTag(nil, 1, protowire.BytesType)
+	wishData = protowire.AppendString(wishData, wishID)
+	wishData = protowire.AppendTag(wishData, 2, protowire.BytesType)
+	wishData = protowire.AppendString(wishData, "Legacy")
+	wishData = protowire.AppendTag(wishData, 11, protowire.VarintType)
+	wishData = protowire.AppendVarint(wishData, uint64(planv1.Provider_PROVIDER_CODEX))
+	data := protowire.AppendTag(nil, 1, protowire.VarintType)
+	data = protowire.AppendVarint(data, 1)
+	data = protowire.AppendTag(data, 3, protowire.BytesType)
+	data = protowire.AppendBytes(data, wishData)
+	// The harness-friendly branch wrote instructions at field 10, which main
+	// uses for TilasmExport. The decoder must move only recognized instructions.
+	data = protowire.AppendTag(data, 10, protowire.BytesType)
+	data = protowire.AppendBytes(data, instructionData)
+	tilasm := &planv1.TilasmExport{Tilasm: &planv1.Tilasm{
+		Id: store.NewID(), WishId: wishID, Code: "L01", Title: "Legacy material",
+	}}
+	tilasmData, err := proto.Marshal(tilasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = protowire.AppendTag(data, 10, protowire.BytesType)
+	data = protowire.AppendBytes(data, tilasmData)
+
+	exp, err := decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exp.GetInstructions()) != 1 || exp.GetInstructions()[0].GetId() != instruction.GetId() {
+		t.Fatalf("legacy instructions = %v", exp.GetInstructions())
+	}
+	if len(exp.GetTilasms()) != 1 || exp.GetTilasms()[0].GetTilasm().GetId() != tilasm.GetTilasm().GetId() {
+		t.Fatalf("tilasms = %v", exp.GetTilasms())
+	}
+	if got := exp.GetWish().GetProvider(); got != planv1.Provider_PROVIDER_CODEX {
+		t.Fatalf("legacy wish provider = %v, want codex", got)
+	}
+}
+
+func TestDecodeLegacyExportMigratesNestedStateWithoutInstructions(t *testing.T) {
+	wishID, taskID := store.NewID(), store.NewID()
+	wishData := protowire.AppendTag(nil, 1, protowire.BytesType)
+	wishData = protowire.AppendString(wishData, wishID)
+	wishData = protowire.AppendTag(wishData, 2, protowire.BytesType)
+	wishData = protowire.AppendString(wishData, "Legacy Codex wish")
+	// The old Wish wire layout stored provider at 11, which is the main layout's template field.
+	wishData = protowire.AppendTag(wishData, 11, protowire.VarintType)
+	wishData = protowire.AppendVarint(wishData, uint64(planv1.Provider_PROVIDER_CODEX))
+	taskData := protowire.AppendTag(nil, 1, protowire.BytesType)
+	taskData = protowire.AppendString(taskData, taskID)
+	taskData = protowire.AppendTag(taskData, 2, protowire.BytesType)
+	taskData = protowire.AppendString(taskData, wishID)
+	// The old Task wire layout stored the computed machine_wait at 27, which main uses for resume_after.
+	taskData = protowire.AppendTag(taskData, 27, protowire.VarintType)
+	taskData = protowire.AppendVarint(taskData, 1)
+	data := protowire.AppendTag(nil, 1, protowire.VarintType)
+	data = protowire.AppendVarint(data, 1)
+	data = protowire.AppendTag(data, 3, protowire.BytesType)
+	data = protowire.AppendBytes(data, wishData)
+	data = protowire.AppendTag(data, 5, protowire.BytesType)
+	data = protowire.AppendBytes(data, taskData)
+
+	exp, err := decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exp.GetWish().GetProvider() != planv1.Provider_PROVIDER_CODEX {
+		t.Fatalf("legacy wish provider = %v, want codex", exp.GetWish().GetProvider())
+	}
+	if len(exp.GetTasks()) != 1 || exp.GetTasks()[0].GetId() != taskID || !exp.GetTasks()[0].GetMachineWait() {
+		t.Fatalf("legacy task = %v; want machine_wait", exp.GetTasks())
+	}
 }
 
 func TestExportImport(t *testing.T) {
@@ -388,5 +484,44 @@ func TestImportRefusesBadFiles(t *testing.T) {
 	// Nothing was written, not even a journal entry.
 	if all, _ := store.Commands(ctx, c.store, nil); len(all) != 0 {
 		t.Errorf("journal after refused imports = %d entries", len(all))
+	}
+}
+
+// TestExportKeepsClosure: a task marked done by hand keeps who closed it, when and why, through an export and an
+// import.
+func TestExportKeepsClosure(t *testing.T) {
+	ctx := t.Context()
+	src := serve(t)
+	made, err := src.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Close tasks"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wish := made.Msg.GetWish()
+	closed := &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: timestamppb.Now(), Note: "merged by hand"}
+	task := &planv1.Task{
+		Id: store.NewID(), WishId: wish.GetId(), Code: "W1", Title: "Old work", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		CreateTime: timestamppb.Now(), EndTime: closed.GetCreateTime(), Closed: closed,
+	}
+	if err := src.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "wish.djinn")
+	export(t, src, wish.GetId(), file)
+	dst := serve(t)
+	if _, err := dst.wishes.Import(ctx, connect.NewRequest(&planv1.WishServiceImportRequest{File: file})); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := dst.wishes.Snapshot(ctx, connect.NewRequest(&planv1.WishServiceSnapshotRequest{WishId: wish.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tasks := snap.Msg.GetExport().GetTasks(); len(tasks) != 1 || !proto.Equal(tasks[0].GetClosed(), closed) ||
+		tasks[0].GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("tasks after import = %v, want W1 done with %v", tasks, closed)
 	}
 }

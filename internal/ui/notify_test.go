@@ -19,6 +19,7 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/locales"
 )
 
 // fakeNotifier records the notifications instead of showing them.
@@ -130,11 +131,11 @@ func TestNoticesShowTheQuestionsOfActiveWishes(t *testing.T) {
 
 func TestNoticesTranslateAndClip(t *testing.T) {
 	n, notes := newNotices(t, "fr")
-	w := makeWish(t, n.Store, "Livrer", planv1.WishState_WISH_STATE_UNSPECIFIED)
-	long := strings.Repeat("mot ", 200)
+	w := makeWish(t, n.Store, "Ship", planv1.WishState_WISH_STATE_UNSPECIFIED)
+	long := strings.Repeat("word ", 200)
 	ask(t, n.Store, &planv1.Question{WishId: w.GetId(), Text: long})
 	got := notes.next(t)
-	if got.Actions[0].Title != "Oui" || len([]rune(got.Body)) > maxBody {
+	if got.Actions[0].Title != locales.T("fr", "notify.yes", nil) || got.Actions[0].Title == "Yes" || len([]rune(got.Body)) > maxBody {
 		t.Errorf("notification = %+v (%d characters)", got, len([]rune(got.Body)))
 	}
 }
@@ -148,6 +149,49 @@ func TestNoticesWithoutNotifier(t *testing.T) {
 	ask(t, n.Store, &planv1.Question{WishId: w.GetId(), Text: "Now?"})
 	if got := notes.next(t); got.Body != "Now?" {
 		t.Errorf("first notification shown = %+v", got)
+	}
+}
+
+func TestNoticesShowNewInboxItems(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	db := n.Store
+	receive := func(item *planv1.InboxItem) *planv1.InboxItem {
+		t.Helper()
+		item.Id, item.Key = store.NewID(), store.NewID()
+		if item.CreateTime == nil {
+			item.CreateTime = timestamppb.Now()
+		}
+		if err := db.Tx(t.Context(), func(tx *store.Tx) error { return putJournaled(tx, item) }); err != nil {
+			t.Fatal(err)
+		}
+		return item
+	}
+
+	// Not news: an item dismissed, one routed, and one of an hour ago.
+	receive(&planv1.InboxItem{Source: "babysit-mr", Text: "Dismissed", State: planv1.InboxState_INBOX_STATE_DISMISSED})
+	receive(&planv1.InboxItem{Source: "babysit-mr", Text: "Routed", State: planv1.InboxState_INBOX_STATE_ROUTED})
+	receive(&planv1.InboxItem{Source: "babysit-mr", Text: "Old", State: planv1.InboxState_INBOX_STATE_NEW,
+		CreateTime: timestamppb.New(time.Now().Add(-time.Hour))})
+
+	item := receive(&planv1.InboxItem{
+		Source: "babysit-mr", State: planv1.InboxState_INBOX_STATE_NEW,
+		Text: "Babysit !12 · Fix the wick\nhttps://gitlab.example.com/acme/gong/-/merge_requests/12",
+	})
+	got := notes.next(t)
+	if got.Title != "Inbox · babysit-mr" || got.Body != item.GetText() || got.ID != item.GetId() ||
+		got.WishID != "" || got.QuestionID != "" || len(got.Actions) != 0 {
+		t.Errorf("notification = %+v", got)
+	}
+
+	// Dismissed, the item is stored again: no second notification.
+	item.State = planv1.InboxState_INBOX_STATE_DISMISSED
+	if err := db.Tx(t.Context(), func(tx *store.Tx) error { return putJournaled(tx, item) }); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case extra := <-notes:
+		t.Errorf("unexpected notification %+v", extra)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

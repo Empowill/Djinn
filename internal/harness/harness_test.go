@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // env is djinn up in a test: the plan and task services on a store, behind a real Connect server.
@@ -29,13 +31,37 @@ type env struct {
 	tasks   planv1connect.TaskServiceClient
 	project planv1connect.ProjectServiceClient
 	wishes  planv1connect.WishServiceClient
+	plans   planv1connect.PlanServiceClient
 	last    string // the wish e.wish made last
+
+	mu  sync.Mutex
+	did []string // what Djinn said it did with each answer, for the lead
 }
+
+// lastDid is what Djinn said it did with the last answer.
+func (e *env) lastDid() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.did) == 0 {
+		return ""
+	}
+	return e.did[len(e.did)-1]
+}
+
+// testProviders are the providers of a test: a watcher's waits are the test's, not a second.
+func testProviders() map[planv1.Provider]Provider {
+	providers := Providers()
+	providers[planv1.Provider_PROVIDER_WATCH] = fastWatch
+	return providers
+}
+
+// fastWatch is a watcher whose command makes a paragraph after 50 ms of silence, and starts again 50 ms after it ends.
+var fastWatch = Watch{Quiet: 50 * time.Millisecond, Backoff: 50 * time.Millisecond, Gap: 50 * time.Millisecond}
 
 // up starts the services on the database in home, as djinn up does: recover, schedule, then serve.
 func up(t *testing.T, home string, opts ...Option) *env {
 	t.Helper()
-	return upWith(t, home, Providers(), opts...)
+	return upWith(t, home, testProviders(), opts...)
 }
 
 // upWith is up with these providers.
@@ -50,18 +76,27 @@ func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, o
 		t.Fatal(err)
 	}
 	h.Schedule()
+	e := &env{home: home, db: db, h: h}
+	answered := func(ctx context.Context, q *planv1.Question) string {
+		did := h.Answered(ctx, q)
+		e.mu.Lock()
+		e.did = append(e.did, did)
+		e.mu.Unlock()
+		return did
+	}
 	mux := http.NewServeMux()
-	for prefix, handler := range plan.Handlers(db, plan.WithAnswered(h.Answered)) {
+	for prefix, handler := range plan.Handlers(db, plan.WithAnswered(answered), plan.WithEnlightened(h.Enlightened),
+		plan.WithWorkers(h)) {
 		mux.Handle(prefix, handler)
 	}
 	mux.Handle(Handler(h))
+	mux.Handle(PlanHandler(h))
 	srv := httptest.NewServer(mux)
-	e := &env{
-		home: home, db: db, h: h, srv: srv,
-		tasks:   planv1connect.NewTaskServiceClient(srv.Client(), srv.URL),
-		project: planv1connect.NewProjectServiceClient(srv.Client(), srv.URL),
-		wishes:  planv1connect.NewWishServiceClient(srv.Client(), srv.URL),
-	}
+	e.srv = srv
+	e.tasks = planv1connect.NewTaskServiceClient(srv.Client(), srv.URL)
+	e.project = planv1connect.NewProjectServiceClient(srv.Client(), srv.URL)
+	e.wishes = planv1connect.NewWishServiceClient(srv.Client(), srv.URL)
+	e.plans = planv1connect.NewPlanServiceClient(srv.Client(), srv.URL)
 	t.Cleanup(e.down)
 	return e
 }
@@ -158,6 +193,7 @@ func checkSeqs(t *testing.T, events []*planv1.TaskEvent, first int64) {
 }
 
 func TestSpawnInGit(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	e := up(t, t.TempDir())
 	wishID, projectID := e.wish(t, repo)
@@ -224,6 +260,8 @@ func TestSpawnInGit(t *testing.T) {
 }
 
 func TestSpawnOutsideGit(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -249,6 +287,8 @@ func TestSpawnOutsideGit(t *testing.T) {
 }
 
 func TestSpawnRefused(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, projectID := e.wish(t, t.TempDir())
 	other, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
@@ -278,6 +318,8 @@ func TestSpawnRefused(t *testing.T) {
 }
 
 func TestStopLongWorker(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
 	task := e.spawn(t, wishID, "text working\nsleep 1h")
@@ -306,8 +348,11 @@ func TestStopLongWorker(t *testing.T) {
 }
 
 // TestNothingLostOnShutdown: djinn up stops while a worker runs; its task is interrupted, keeps what resuming it
-// needs, and its events survive the restart. A task a crash left running is interrupted at the next start.
+// needs, and its events survive the restart. The next start resumes it, in the same task, worktree and session, and
+// it finishes. A task a crash left running is resumed the same way.
 func TestNothingLostOnShutdown(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	repo := gitRepo(t)
 	home := t.TempDir()
 	e := up(t, home)
@@ -325,59 +370,91 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	cancel()
 	s.Close()
 	e.down()
+	before := storedTask(t, home, task.GetId())
+	if before.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED || before.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
+		before.GetSessionId() != task.GetId() || before.GetWorktree() == "" || before.GetUsage().GetCostUsd() != 0.01 {
+		t.Errorf("after the stop: %v", before)
+	}
+	worktree := before.GetWorktree()
 
 	e = up(t, home)
+	events := e.watch(t.Context(), t, task.GetId(), 0)
 	got := e.get(t, task.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED || got.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
-		got.GetSessionId() != task.GetId() || got.GetWorktree() == "" || got.GetUsage().GetCostUsd() != 0.01 {
+	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetWorktree() != worktree || got.GetSessionId() != task.GetId() ||
+		got.GetUsage().GetCostUsd() != 0.01 || got.GetResumes() != 1 {
 		t.Errorf("after the restart: %v", got)
 	}
 	if _, err := os.Stat(got.GetWorktree()); err != nil {
 		t.Errorf("the worktree is gone: %v", err)
 	}
-	events := e.watch(t.Context(), t, task.GetId(), 0)
-	want := []string{"PROMPT", "STATUS", "STATUS", "TEXT", "USAGE", "STATUS"}
+	want := []string{"PROMPT", "STATUS", "STATUS", "TEXT", "USAGE", "STATUS", "STATUS", "STATUS", "STATUS", "TEXT", "STATUS"}
 	if got := eventKinds(events); !slices.Equal(got, want) {
 		t.Fatalf("events = %v, want %v", got, want)
 	}
 	checkSeqs(t, events, 1)
-	if !strings.HasPrefix(events[len(events)-1].GetText(), "interrupted") {
-		t.Errorf("last event %q", events[len(events)-1].GetText())
+	for i, prefix := range map[int]string{
+		5: "interrupted", 6: "resuming: djinn restarted while the worker ran", 7: "resumed after djinn restarted (1 of 3)",
+		9: restartedLine, 10: "done",
+	} {
+		if !strings.HasPrefix(events[i].GetText(), prefix) {
+			t.Errorf("event %d = %q, want %q", i+1, events[i].GetText(), prefix)
+		}
+	}
+	if list := e.list(t, wishID); len(list) != 1 {
+		t.Errorf("%d tasks in the wish, want the one resumed", len(list))
 	}
 
-	// A crash leaves a task running in the store: the next start marks it interrupted, and nothing restarts it.
+	// A crash leaves a task running in the store: the next start marks it interrupted, then resumes it.
 	crashed := proto.CloneOf(got)
 	crashed.Id, crashed.Code, crashed.Status = store.NewID(), "W9", planv1.TaskStatus_TASK_STATUS_RUNNING
-	crashed.EndTime, crashed.Error = nil, ""
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "crash", crashed); err != nil {
-			return err
-		}
-		if err := tx.Put(crashed); err != nil {
-			return err
-		}
-		return tx.Put(newEvent(crashed.GetId(), 1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: "x"}))
-	}); err != nil {
-		t.Fatal(err)
-	}
+	crashed.EndTime, crashed.Error, crashed.Resumes = nil, "", 0
+	putTask(t, e.db, crashed, "x")
 	e.down()
 	e = up(t, home)
+	events = e.watch(t.Context(), t, crashed.GetId(), 0)
 	after := e.get(t, crashed.GetId())
-	if after.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED || after.GetSessionId() != crashed.GetSessionId() {
+	if after.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || after.GetWorktree() != crashed.GetWorktree() || after.GetResumes() != 1 {
 		t.Errorf("crashed task after the restart: %v", after)
 	}
-	if events := e.watch(t.Context(), t, crashed.GetId(), 0); len(events) != 2 || events[1].GetSeq() != 2 {
-		t.Errorf("crashed task events: %v", eventKinds(events))
+	if got := eventKinds(events); !slices.Equal(got, []string{"PROMPT", "STATUS", "STATUS", "STATUS", "STATUS", "TEXT", "STATUS"}) {
+		t.Errorf("crashed task events: %v", got)
 	}
-	e.h.mu.Lock()
-	running := len(e.h.runs)
-	e.h.mu.Unlock()
-	if running != 0 {
-		t.Errorf("%d workers restarted by themselves", running)
+}
+
+// storedTask reads a task from the store of a djinn up that is down.
+func storedTask(t *testing.T, home, id string) *planv1.Task {
+	t.Helper()
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	got, err := store.Get[*planv1.Task](t.Context(), db, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// putTask writes a task as a previous djinn up left it, with its prompt as its first event.
+func putTask(t *testing.T, db *store.Store, task *planv1.Task, prompt string) {
+	t.Helper()
+	if err := db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "crash", task); err != nil {
+			return err
+		}
+		if err := tx.Put(task); err != nil {
+			return err
+		}
+		return tx.Put(newEvent(task.GetId(), 1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt}))
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestWatchUnknown(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir())
 	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: store.NewID()}))
 	if err == nil {
@@ -393,6 +470,8 @@ func TestWatchUnknown(t *testing.T) {
 // TestRecoverLeavesPlannedTasks: a task that no worker ever started, such as the plan of an imported wish, stays
 // pending across a restart; only a started one is interrupted.
 func TestRecoverLeavesPlannedTasks(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	planned := &planv1.Task{Id: "01a118d0-0000-7000-8000-000000000001", WishId: "01a118d0-0000-7000-8000-0000000000aa",

@@ -15,6 +15,7 @@ import {
 import {
   BlockService,
   InstructionService,
+  InboxService,
   MarkService,
   ProjectService,
   QuestionService,
@@ -22,6 +23,7 @@ import {
   TaskService,
   WishService,
 } from "../../gen/ts/plan/v1/plan_pb";
+import { TilasmService } from "../../gen/ts/plan/v1/tilasm_pb";
 import { UiService } from "../../gen/ts/ui/v1/ui_pb";
 
 // djinnTransport reaches the djinn server at baseUrl in the binary Protobuf format: against JSON, it encodes and
@@ -43,6 +45,8 @@ export function createClients(transport: Transport) {
     instructions: createClient(InstructionService, transport),
     marks: createClient(MarkService, transport),
     skills: createClient(SkillService, transport),
+    inbox: createClient(InboxService, transport),
+    tilasms: createClient(TilasmService, transport),
     machine: createClient(MachineService, transport),
     gates: createClient(GateService, transport),
     ui: createClient(UiService, transport),

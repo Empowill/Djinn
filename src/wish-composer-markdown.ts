@@ -16,8 +16,8 @@ function escapeText(text: string): string {
   return text
     .replace(/\u00a0/g, " ")
     .replace(/&/g, "&amp;")
-    .replace(/([\\`*_{}\[\]<>])/g, "\\$1")
-    .replace(/^(\s*)(#{1,6}|[+\-]|\d+[.)])(?=\s)/gm, "$1\\$2");
+    .replace(/([\\`*_{}[\]<>])/g, "\\$1")
+    .replace(/^(\s*)(#{1,6}|[+-]|\d+[.)])(?=\s)/gm, "$1\\$2");
 }
 
 function marked(text: string, marker: string): string {

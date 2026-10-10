@@ -1,8 +1,11 @@
-// Whether a newer Djinn waits at the path of the running one (UiService.WatchUpdate), and the
-// click that restarts on it (UiService.Update). Nothing restarts without that click.
+// Whether a newer Djinn waits at the path of the running one (UiService.WatchUpdate), or a build
+// committed waits to be installed, and the click that installs it and restarts on it
+// (UiService.Update). Nothing installs nor restarts without that click.
 import { type Transport, createClient } from "@connectrpc/connect";
 
-import { UiService } from "../../gen/ts/ui/v1/ui_pb";
+import { InstallStep, UiService } from "../../gen/ts/ui/v1/ui_pb";
+
+export { InstallStep };
 
 export interface UpdateState {
   // Version of the running Djinn.
@@ -11,13 +14,43 @@ export interface UpdateState {
   ready: string;
   // The terminals the last restart could not run again, one line each.
   notResumed: string[];
+  // Where the release notes of the newer Djinn are; empty for none.
+  notesUrl: string;
+  // The last batch committed into a wish's integration branch and not installed; undefined for none.
+  build?: BuildProposal;
+  // The install of a build that runs now, and where it stands; undefined for none.
+  installing?: Installing;
+}
+
+// An install that runs now: the commit, its step, and what it waits for while it waits.
+export interface Installing {
+  sha: string;
+  step: InstallStep;
+  waiting: string;
+}
+
+// A batch of finished work committed into a wish's integration branch, to install (T07).
+export interface BuildProposal {
+  wishTitle: string;
+  project: string;
+  branch: string;
+  sha: string;
+  // The tasks of the batch, by code.
+  tasks: string[];
+  // The titles of the commits it brought, the latest first.
+  changes: string[];
+  // What to check, one line per task.
+  checks: string[];
 }
 
 export interface DjinnUpdate {
   // Calls callback with the state at once when known, then at each change.
   subscribe(callback: (state: UpdateState) => void): () => void;
-  // Restarts Djinn on the newer one. The page loses its server for a moment, then the new one answers.
-  update(): Promise<{ version: string; terminals: number }>;
+  // Restarts Djinn on the newer one; with build, the commit of the build proposed, installs it first. The
+  // page loses its server for a moment, then the new one answers; version is empty when nothing restarts.
+  update(
+    build?: string,
+  ): Promise<{ version: string; terminals: number; installed: string }>;
 }
 
 export function createUpdate(transport: Transport, retry = 1000): DjinnUpdate {
@@ -34,6 +67,21 @@ export function createUpdate(transport: Transport, retry = 1000): DjinnUpdate {
             current: res.current,
             ready: res.ready,
             notResumed: [...res.notResumed],
+            notesUrl: res.notesUrl,
+            build: res.build && {
+              wishTitle: res.build.wishTitle,
+              project: res.build.project,
+              branch: res.build.branch,
+              sha: res.build.sha,
+              tasks: [...res.build.tasks],
+              changes: [...res.build.changes],
+              checks: [...res.build.checks],
+            },
+            installing: res.installing && {
+              sha: res.installing.sha,
+              step: res.installing.step,
+              waiting: res.installing.waiting,
+            },
           };
           listeners.forEach((listener) => listener(last!));
         }
@@ -54,9 +102,13 @@ export function createUpdate(transport: Transport, retry = 1000): DjinnUpdate {
       }
       return () => void listeners.delete(callback);
     },
-    update: async () => {
-      const res = await ui.update({});
-      return { version: res.version, terminals: res.terminals };
+    update: async (build?: string) => {
+      const res = await ui.update({ build: build ?? "" });
+      return {
+        version: res.version,
+        terminals: res.terminals,
+        installed: res.installed,
+      };
     },
   });
 }

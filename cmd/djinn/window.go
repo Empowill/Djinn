@@ -31,12 +31,24 @@ const hasWindow = true
 // Dock shows it again. Quitting is explicit: "Quit Djinn" in the tray menu, Ctrl+Q (Cmd+Q on macOS) in the window,
 // or stopping djinn up. Each value received on raise brings the window back to the front.
 //
-// While the window runs, notices show what waits for the developer as system notifications, except for the wish the
-// window shows while it is in front.
-func openWindow(ctx context.Context, url string, assets http.Handler, raise <-chan struct{}, notices *ui.Notices) error {
+// While the window runs, notices show the questions as system notifications, and shortcuts takes the global shortcut
+// that brings the window forward. A djinn:// link the system gives the app goes to links: macOS sends it to Djinn.app,
+// and starts the app for it when it does not run; Linux and Windows run djinn open instead.
+func openWindow(
+	ctx context.Context, url string, assets http.Handler, raise <-chan struct{}, notices *ui.Notices, shortcuts *ui.Shortcuts,
+	links func(string),
+) error {
 	opts := application.Options{
 		Name: "Djinn",
 		Icon: appIcon(),
+		// Wails reports here what goes wrong outside a call, such as a global shortcut that the portal of a Wayland
+		// desktop refuses, or cannot take, after it was asked.
+		ErrorHandler: func(err error) {
+			log.Printf("djinn: window: %v", err)
+			if shortcuts != nil && shortcutRefusal(err) {
+				shortcuts.Refused(err)
+			}
+		},
 		// The window never closes, it only goes out of sight: these keep the app running whatever happens to it.
 		Mac:     application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: false},
 		Linux:   application.LinuxOptions{DisableQuitOnLastWindowClosed: true, ProgramName: "djinn"},
@@ -87,6 +99,20 @@ func openWindow(ctx context.Context, url string, assets http.Handler, raise <-ch
 			window.Minimise()
 		}
 	})
+	// The global shortcut is taken once the app runs: Wails then answers whether the system took it.
+	if shortcuts != nil {
+		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+			shortcuts.Use(wailsShortcuts{app})
+		})
+		defer shortcuts.Use(nil)
+	}
+	app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(e *application.ApplicationEvent) {
+		if links != nil {
+			if raw := e.Context().URL(); raw != "" {
+				go links(raw)
+			}
+		}
+	})
 	if runtime.GOOS == "darwin" {
 		// A click on the Dock icon brings the hidden window back.
 		app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) { show() })
@@ -134,6 +160,22 @@ func chooseFolder(title, directory string) (string, error) {
 	}).PromptForSingleSelection()
 }
 
+// wailsShortcuts takes global shortcuts through Wails: Carbon hot keys on macOS, RegisterHotKey on Windows, XGrabKey
+// on X11, and on Wayland the GlobalShortcuts portal of the desktop, which asks the user and may bind other keys.
+type wailsShortcuts struct{ app *application.App }
+
+func (w wailsShortcuts) Register(chord string, pressed func()) error {
+	return w.app.GlobalShortcut.Register(chord, pressed)
+}
+
+func (w wailsShortcuts) Unregister(chord string) error { return w.app.GlobalShortcut.Unregister(chord) }
+
+// shortcutRefusal tells that an error Wails reports on its own is about the global shortcuts.
+func shortcutRefusal(err error) bool {
+	text := err.Error()
+	return strings.HasPrefix(text, "global shortcuts:") || strings.HasPrefix(text, "failed to register global shortcut")
+}
+
 // appIcon is the icon of the app, and on Linux of its window: there GTK 3 drops an icon of 512 px or more, so the
 // window gets the 256 px one.
 func appIcon() []byte {
@@ -174,6 +216,9 @@ func (n *noticeService) ServiceStartup(ctx context.Context, opts application.Ser
 		r.WishID, _ = res.Response.UserInfo["wish_id"].(string)
 		r.QuestionID, _ = res.Response.UserInfo["question_id"].(string)
 		r.Target, _ = res.Response.UserInfo["target"].(string)
+		if r.QuestionID == "" {
+			r.QuestionID = res.Response.ID
+		}
 		if action := res.Response.ActionIdentifier; action != notifications.DefaultActionIdentifier {
 			r.Action = action
 		}

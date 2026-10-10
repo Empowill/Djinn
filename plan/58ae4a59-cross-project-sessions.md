@@ -3,11 +3,14 @@ id: 01a11876-6480-7ec2-9833-abd058ae4a59
 code: T13
 phase: 2
 status: in-progress
+after: T07
 ---
 
-# T13 · Sessions across projects
+# T13 · Work across projects
 
-**Goal.** A piece of work often spans several projects: an application and its infrastructure,
+**Goal.** One wish spans several projects, and a project's skills serve in another.
+
+A piece of work often spans several projects: an application and its infrastructure,
 a library and its users. Monorepos are the exception. Djinn follows one session across all the
 projects it touches, and a project is not necessarily a Git repository.
 
@@ -22,7 +25,7 @@ projects it touches, and a project is not necessarily a Git repository.
 - **Opening a wish is a moment, not a command.** You say it ("open a new wish: …"); the lead
   recognizes it and opens the wish in Djinn (`djinn wish make`): a short title, the projects it
   touches, the first questions. The new wish shows at once in the flight plan, below the others
-  by rank. A fourth active wish is refused (three at most): pause or grant one, or make it paused.
+  by rank. With three active, a new wish is made paused: it waits, set aside, until you resume it.
 - **Djinn is an orchestration layer, kept apart from the projects it works on.** One central
   store for the machine (missions, tasks, questions, journal) and one folder per project for its
   configuration and index, both in Djinn's data folder. Djinn writes nothing into a project and
@@ -52,8 +55,8 @@ projects it touches, and a project is not necessarily a Git repository.
   it, so that an answer, a task or a block goes back to the right wish. The machine and the
   gates are shared by all wishes; the rank decides who goes first.
 - **Three active wishes at most.** It protects the user's attention, not the machine: granting
-  every wish at once means the framework was misunderstood. A fourth is refused until one is
-  granted or paused. How many workers run is a separate limit, set by the machine (T17), with one
+  every wish at once means the framework was misunderstood. There may be as many wishes as you like:
+  the three first are active, the others wait paused, their workers stopped. How many workers run is a separate limit, set by the machine (T17), with one
   orchestrator for all wishes.
 
 ## What we want
@@ -76,7 +79,17 @@ projects it touches, and a project is not necessarily a Git repository.
   does not run, and attaches to it if it already runs.
 - [x] Without a lead session, `djinn wish resume` starts a new lead from a brief built out of the store (plan, open
   questions, decisions, journal): `djinn wish brief`, T22.
-- [x] Three active wishes at most: a fourth is refused by the lamp, with the ways out (pause, grant, `--paused`).
+- [x] Three active wishes at most, as many paused as you like: a new wish beyond three is made paused; resuming one
+  when three are active takes the third place and pauses the third wish; moving a paused wish among the three first
+  makes it active there. (`TestThreeWishes`, `TestRank`)
+- [x] Pausing a wish stops its workers; they resume on their sessions, without spending a resume, once the wish is
+  active again. (`TestWishPauseStopsItsWorkers`)
+- [x] The window: Pause or Resume at the top of a wish (Reopen once granted), a trash that deletes the wish with its
+  tasks, their events, its questions and its blocks after a confirmation, closes its lead's terminal and removes the
+  worktrees of its tasks that hold no work (clean, no commit beyond the project's current branch), its toast naming
+  each one kept and why, every branch kept; the side panel shows three rows and scrolls under the pointer, a paused
+  wish goes first with its button or by dragging it onto an active one. (`TestDeleteWish`,
+  `TestDeleteWishWorktrees`, `TestHangupByName`, `e2e/wish-lifecycle.spec.ts`)
 - [x] The active wishes are ranked by hand (`djinn wish move <wish> --to 1`); `plan.ActiveWishes` gives them in
   order, for the scheduler (T07).
 - [x] Djinn proposes a ready wish and never grants it: only `djinn wish grant`, or "My wish is granted" in the
@@ -86,7 +99,11 @@ projects it touches, and a project is not necessarily a Git repository.
   marked with its wish; a question answered there goes to its wish. (branch `w30-ui`: `src/flight-plan.tsx`,
   `tests/data-flight.test.mjs`, the flight plan tests of `tests/screens.test.mjs`, `e2e/flight-plan.spec.ts`: two
   wishes, a question each, one answered from the merged view and read answered by `djinn question list`)
-- [ ] Clément has reviewed the flight plan of several wishes: it changes `src/`. (needs: Clément's review)
+- [x] Each wish shows its own lead: the wish shown brings its lead's terminal (`lead-<wish id>`) while it runs, else
+  the window's terminal; the flight plan shows the window's. Switching back finds the same lead, its output kept.
+  (`TestServiceList`, `tests/data-terminal.test.mjs`, e2e `lead-switch.spec.ts`: two wishes with a lead each and one
+  without, switched from the side panel)
+- [x] ~~Clément has reviewed the flight plan of several wishes: it changes `src/`.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
 - [x] Adding a project in the native window, "Choose a folder…" opens the system's folder dialog and fills the field;
   in the browser the button is hidden and the path is typed. (`UiService.ChooseDirectory` on the Wails dialog:
   `TestChooseDirectory`, `TestChooseDirectoryWithoutADialog`, `TestChooseDirectoryOneAtATime` in `internal/ui`; the
@@ -94,6 +111,12 @@ projects it touches, and a project is not necessarily a Git repository.
   folder". The native dialog itself is not opened by a test.)
 
 ## Decided along the way
+- **A wish's plan is a graph of azimas** (10/10, [T07](8e8d3d76-orchestrator.md)): the parts of the plan (T01…) are
+  tasks of kind `AZIMA` in the wish, which no worker runs, and work is part of one (`Task.part_of`). They travel with
+  the wish like any task, their dependencies and parts included, and each project keeps its own in `plan/*.md`, which
+  `djinn plan sync <wish>` reads from every project of the wish (`--project-id` for one) and writes `after:` back into.
+  An azima found in no project of this machine keeps what the store holds. The same plan synced into two wishes gives
+  the second one new ids: a task id is the machine's.
 - **The export format is a proto**, `WishExport` in `api/plan/v1`, version 1: the wish, its project
   references (name, remote URL, Git or not), its tasks, their events, its questions, its blocks and
   the commands of the journal that changed it. A `.djinn` file is the binary protobuf; a `.json`
@@ -116,7 +139,7 @@ projects it touches, and a project is not necessarily a Git repository.
 
 - **The lead is in the lamp**: `Wish.lead` (`Lead`: provider, session ID, folder), set by
   `djinn wish set-lead <wish> <session> [--provider codex] [--directory <folder>]` (the folder defaults to the
-  wish's first project). Only Claude (`claude --resume <id>`) and Codex (`codex resume <id>`) can be resumed in a
+  wish's first project; never the home folder, nor a folder above it). Only Claude (`claude --resume <id>`) and Codex (`codex resume <id>`) can be resumed in a
   terminal; the session ID is a word (`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`), so the line goes through the user's
   shell as it is. Never a secret.
 - **The lead travels with the wish**: its provider and session ID go in the export; its folder only as a project's
@@ -138,8 +161,13 @@ projects it touches, and a project is not necessarily a Git repository.
 
 - **A wish has a state, in the lamp**: `Wish.state`, active, paused or granted; a wish stored before states is
   active. `djinn wish pause`, `djinn wish activate` (it also reopens a granted wish), `djinn wish make --paused`. A
-  fourth active wish is refused (`FailedPrecondition`), with the active ones and the ways out. An import that would
-  be a fourth comes in paused, with a note. The limit of workers is another one, the machine's (T17).
+  wish made or imported beyond three active comes in paused. `djinn wish activate` and `djinn wish move` on a paused
+  wish make it active within the three first, pausing the wish pushed past the third place. A paused wish's workers
+  stop (`harness.Shelve`): each task waits RESUMING and starts again on its session once the wish is active.
+  `djinn wish delete` deletes a wish with its tasks, their events, its questions and its blocks; its workers stop
+  first, then its lead's terminal closes; a task's worktree that is clean, with no commit beyond the project's current
+  branch, goes (`git worktree remove`, never `--force`), the others stay, the response saying why; every branch
+  stays. The limit of workers is another one, the machine's (T17).
 - **The rank**: `Wish.rank`, from 1, without gaps; 0 for a paused or granted wish. A new or activated wish goes
   last; `djinn wish move <wish> --to n` moves one, and beyond the last means last. An import that replaces a wish
   keeps its place. `djinn wish list` gives the active wishes by rank, then the paused ones, then the granted ones.
@@ -161,8 +189,10 @@ projects it touches, and a project is not necessarily a Git repository.
 
 - **A new lead from the brief**: `djinn wish brief <wish>` prints it (Djinn's rules and the projects' rules, then
   where the wish stands; no model, no local path). `djinn wish resume <wish> [--provider codex|antigravity]` without a
-  lead session starts the agent on it in the wish's first project (the wish's own data folder without one): claude
-  with the stable part appended to its system prompt and the rest as its first message, its session chosen by Djinn
+  lead session starts the agent on it in the wish's first project, else the first of Djinn's projects, never in the
+  home folder; with no project nothing starts, and the error says to create one. A session recorded in the home
+  folder is not resumed there (claude finds a session only from its folder): a new lead starts the same way. It runs
+  claude with the stable part appended to its system prompt and the rest as its first message, its session chosen by Djinn
   and recorded as the lead once the terminal runs; codex and agy with the whole brief as their first message. The
   details, and what is verified or supposed, are in T22.
 
@@ -176,6 +206,11 @@ projects it touches, and a project is not necessarily a Git repository.
   "Latest decisions" (eight, the latest first). Every line carries its wish's rank and title; an answer, a stop or a
   grant goes to that wish. A question blocks when a task waits for its answer (`edit_question_id`), as on the wish's
   page.
+- **Each wish shows its own lead, in the one terminal.** The window keeps one terminal at the bottom; the wish it
+  shows switches it to that wish's lead (`lead-<wish id>`) when it runs, else to the window's own (`main`), and so
+  does the flight plan. The window asks `TerminalService.List` (internal: the terminals whose program runs) and
+  never opens a lead itself: only `djinn wish resume` and the routing start one. `UiService.WatchShow` still
+  switches it, with the wish it shows. A lead that ends while shown stays, with its restart button.
 - **The journal stays per wish.** The merged plan has no merged journal: a wish's journal (its commands, from
   `WishService.Snapshot`, and its log blocks) shows in its own view, the commands on a click, since Snapshot reads
   the whole wish.
@@ -184,9 +219,50 @@ projects it touches, and a project is not necessarily a Git repository.
 - A journal of every active wish in the flight plan, merged by time? *Recommendation: not before someone asks;
   Snapshot reads a whole wish, events included, and three of them on every change is heavy. A light read of the
   journal (`WishService.Journal`, the entries only) would come first.*
-- The window shows one terminal at a time: `wish resume` switches it to the lead's, and a reload goes back to the
-  main one. *Recommendation: a terminal per wish, shown with the wish, once the interface reads the wishes itself
-  (T03).*
 - `Harness.Recover` marks every pending task interrupted at start-up, so the planned items of an
   imported wish (never started) turn interrupted after a restart. *Recommendation: recover only the
   tasks whose worker started (a start time), in the harness task.*
+
+## From T23 · Summon a skill from another project
+
+**Goal.** Use a project's skill in another project without copying it. Djinn knows every
+project of a wish, and the skills each one holds: it can bring one where it is missing.
+
+### Decided
+- **A summoned skill follows its source as it is** (Q42). Pinning a commit with a diff to accept can
+  come later, if a need shows.
+- **The word is "summon"** (« invoquer »). `djinn summon app/babysit-mr --into infra`.
+  Easy to say aloud. The skill keeps its standard name: *skill*.
+- **Nothing is copied.** A summoned skill stays bound to its source project and follows its
+  updates.
+- **A skill tied to a tool is its own project.** A MR babysitter depends on its forge (GitLab,
+  GitHub): formalizing it well is a project in itself.
+- **Each agent gets the skill by its own path**, without writing into the target project
+  (cross-agent: see `CONTRIBUTING.md`).
+
+### Done when
+- [ ] A skill of one project is summoned into another, and an agent there uses it. Djinn hands
+  it to each agent (tested with fake agents); a real agent using it is still to see. (needs: a real run of each
+  agent, paid)
+- [x] A change to the source skill reaches the target without a copy: a link to its folder.
+- [x] Unsummoning leaves the target project as it was: nothing was ever written there.
+
+### Decided along the way
+- **The command is `djinn skill summon app/babysit-mr --into infra`**, with `djinn skill list`
+  and `djinn skill unsummon app/babysit-mr --from infra`. Every command comes from a service
+  (`SkillService`), by the command line convention: no code per command.
+- **A summon lives on the project** (`Project.summons`): the source's project id and the skill's
+  folder name. Any wish working in infra gets it.
+- **A project's own skill wins.** Summoning a name the project already holds is refused, as is a
+  second skill of the same name from another project.
+- **Each agent by its own path, nothing in the project nor in the user's folders**
+  ([providers](../docs/providers.md#skills-summoned-from-another-project)): Claude and
+  Antigravity add a folder of Djinn's own, `<data>/skills/<task>`, of links to the sources;
+  codex has no per-session skill folder, so it is told each `SKILL.md`'s path in its thread's
+  developer instructions. Claude may read the sources and edit neither them nor the links.
+- **A missing source never blocks a worker.** It starts without the skill, and the task says why.
+- **The skill follows its source as it is** for now: the simplest, and what was decided first.
+
+### Open questions
+- A real run of each agent with a summoned skill, to turn the supposed rows of
+  `docs/providers.md` into verified ones (Antigravity's `--add-dir` above all).

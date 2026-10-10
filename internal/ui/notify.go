@@ -19,7 +19,7 @@ import (
 	"github.com/empowill/djinn/locales"
 )
 
-// Notification is a system notification: a question to answer, a task that waits or failed, a wish ready to review.
+// Notification is a system notification: a question to answer, a task or wish that waits, or a new inbox item.
 type Notification struct {
 	// ID names the notification: one with the same ID replaces it.
 	ID    string
@@ -80,10 +80,10 @@ var choices = map[string]planv1.Choice{
 }
 
 // Notices tells the user, by a system notification, of what waits for them in an active wish: a question asked
-// (the edit question of a task included), a task that waits for an answer or failed, a wish that became ready to
-// review. A click brings the window forward on the wish, there; a button answers the question. Each event shows
-// once, and none while the window is in front on its wish. Without a notifier (a headless build, the browser) it
-// shows nothing.
+// (the edit question of a task included), a task that waits for an answer or failed, or a wish that became ready to
+// review. It also tells of new inbox items, whose click brings the window forward on the flight plan. A click on a
+// wish brings the window forward there; a button answers the question. Each event shows once, and none while the
+// window is in front on its wish. Without a notifier (a headless build, the browser) it shows nothing.
 type Notices struct {
 	Store *store.Store
 	// Language of the notifications' texts.
@@ -174,7 +174,7 @@ func (n *Notices) access(ask func(Permission) (bool, error)) uiv1.NotificationAc
 	return uiv1.NotificationAccess_NOTIFICATION_ACCESS_DENIED
 }
 
-// Run follows the questions and tasks stored, and notifies what is new, until ctx ends.
+// Run follows the questions, tasks and inbox items stored, and notifies what is new, until ctx ends.
 func (n *Notices) Run(ctx context.Context) {
 	changes := make(chan proto.Message, 256)
 	n.mu.Lock()
@@ -193,8 +193,8 @@ func (n *Notices) Run(ctx context.Context) {
 	}
 }
 
-// committed passes on the questions and tasks just written, while a notifier shows them; it runs in the writer's
-// goroutine, so it never waits.
+// committed passes on the questions, tasks and inbox items just written, while a notifier shows them; it runs in the
+// writer's goroutine, so it never waits.
 func (n *Notices) committed(changes []proto.Message) {
 	n.mu.Lock()
 	off := n.notifier == nil
@@ -203,8 +203,17 @@ func (n *Notices) committed(changes []proto.Message) {
 		return
 	}
 	for _, m := range changes {
-		switch m.(type) {
-		case *planv1.Question, *planv1.Task, *planv1.Instruction:
+		switch m := m.(type) {
+		case *planv1.Question:
+			if m.GetAnswer() != nil || !recent(m.GetCreateTime()) {
+				continue
+			}
+		case *planv1.Task, *planv1.Instruction:
+			// These are filtered by follow, which needs the task's status and the wish's state.
+		case *planv1.InboxItem:
+			if m.GetState() != planv1.InboxState_INBOX_STATE_NEW || !recent(m.GetCreateTime()) {
+				continue
+			}
 		default:
 			continue
 		}
@@ -242,6 +251,8 @@ func (n *Notices) follow(ctx context.Context, m proto.Message) error {
 				err = n.task(ctx, m)
 			}
 		}
+	case *planv1.InboxItem:
+		err = n.notifyItem(m)
 	}
 	return errors.Join(err, n.readiness(ctx, wishID))
 }
@@ -511,8 +522,18 @@ func (n *Notices) text(key string, vars map[string]string) string {
 	return locales.T(n.Language, key, vars)
 }
 
+// notifyItem shows a new inbox item once. Inbox items have no wish or question: clicking one brings the window to
+// the flight plan, so the notification only carries its text and source.
+func (n *Notices) notifyItem(item *planv1.InboxItem) error {
+	return n.show("inbox:"+item.GetId(), Notification{
+		ID:    item.GetId(),
+		Title: n.text("notify.inbox_title", map[string]string{"source": item.GetSource()}),
+		Body:  clipText(item.GetText(), maxBody),
+	})
+}
+
 // Respond follows what the user did with a notification: a button answers its question; a click, or an answer
-// that fails, brings the window forward on the wish, there.
+// that fails, brings the window forward on the wish, there; an inbox item has no wish and opens the flight plan.
 func (n *Notices) Respond(ctx context.Context, r Response) {
 	choice, ok := choices[r.Action]
 	if ok && n.Answer != nil {

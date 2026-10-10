@@ -25,7 +25,11 @@ test("every language translates every key of en.json, and nothing else", () => {
     const missing = Object.keys(source).filter((key) => !(key in texts));
     const extra = Object.keys(texts).filter((key) => !(key in source));
     assert.deepEqual(missing, [], `locales/${language}.json lacks keys`);
-    assert.deepEqual(extra, [], `locales/${language}.json has keys en.json lacks`);
+    assert.deepEqual(
+      extra,
+      [],
+      `locales/${language}.json has keys en.json lacks`,
+    );
   }
 });
 
@@ -36,7 +40,8 @@ test("the interface only uses keys of en.json", () => {
     if (!/\.tsx?$/.test(name)) continue;
     const code = fs.readFileSync(path.join(src, name), "utf8");
     for (const [, key] of code.matchAll(uses)) {
-      if (!(key in source) && !(`${key}.other` in source)) unknown.push(`${name}: ${key}`);
+      if (!(key in source) && !(`${key}.other` in source))
+        unknown.push(`${name}: ${key}`);
     }
   }
   assert.deepEqual(unknown, []);

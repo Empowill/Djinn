@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -21,6 +22,7 @@ type fork struct {
 	session  string
 	of       string // the source task's code, or forkLead
 	provider planv1.Provider
+	task     *planv1.Task // the source task; nil for the lead
 }
 
 // forkSource is the session a spawn forks: a task of the wish (--fork), or the wish's lead (--from-lead); none
@@ -54,12 +56,12 @@ func forkSource(ctx context.Context, r store.Reader, wish *planv1.Wish, req *pla
 			return src, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"%s has no session to fork yet: its worker has not started", t.GetCode()))
 		}
-		src = fork{session: t.GetSessionId(), of: t.GetCode(), provider: t.GetProvider()}
+		src = fork{session: t.GetSessionId(), of: t.GetCode(), provider: t.GetProvider(), task: t}
 	default:
 		return src, nil
 	}
 	if src.provider == planv1.Provider_PROVIDER_UNSPECIFIED {
-		src.provider = planv1.Provider_PROVIDER_CLAUDE
+		src.provider = plan.WishProvider(wish)
 	}
 	if src.provider == planv1.Provider_PROVIDER_ANTIGRAVITY {
 		return src, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(

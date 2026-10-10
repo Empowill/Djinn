@@ -29,7 +29,7 @@ var ui = fstest.MapFS{
 
 func handler() http.Handler {
 	prefix, h := demov1connect.NewDemoServiceHandler(demo.Service{})
-	return server.Handler(ui, map[string]http.Handler{prefix: h})
+	return server.Handler(ui, nil, map[string]http.Handler{prefix: h})
 }
 
 // get serves a GET on h and returns the status and the body.
@@ -71,6 +71,66 @@ func TestAssets(t *testing.T) {
 	}
 }
 
+// TestDocs checks that the documentation site is served at /docs/, beside the interface.
+func TestDocs(t *testing.T) {
+	docs := fstest.MapFS{
+		"index.html": {Data: []byte("<title>docs</title>")},
+		"site.css":   {Data: []byte("main{}")},
+		"site.js":    {Data: []byte("window.site = {};")},
+	}
+	prefix, demoHandler := demov1connect.NewDemoServiceHandler(demo.Service{})
+	h := server.Handler(ui, docs, map[string]http.Handler{prefix: demoHandler})
+	for _, tc := range []struct {
+		path              string
+		status            int
+		body, contentType string
+	}{
+		{"/docs/", http.StatusOK, "<title>docs</title>", "text/html"},
+		{"/docs/site.css", http.StatusOK, "main{}", "text/css"},
+		{"/docs/site.js", http.StatusOK, "window.site = {};", "text/javascript"},
+		{"/docs/missing.js", http.StatusNotFound, "", ""},
+		{"/docs", http.StatusTemporaryRedirect, "", ""},
+		{"/", http.StatusOK, "<title>index</title>", "text/html"},
+	} {
+		rec, body := get(t, h, tc.path, nil)
+		if rec.Code != tc.status {
+			t.Errorf("%s: status %d, want %d", tc.path, rec.Code, tc.status)
+		}
+		if tc.body != "" && body != tc.body {
+			t.Errorf("%s: body %q, want %q", tc.path, body, tc.body)
+		}
+		if !strings.HasPrefix(rec.Header().Get("Content-Type"), tc.contentType) {
+			t.Errorf("%s: content type %q, want %q", tc.path, rec.Header().Get("Content-Type"), tc.contentType)
+		}
+	}
+}
+
+// TestAssetsCached checks that the browser keeps a file and gets it again only when it changed: an embedded file
+// has no date, and the Mermaid frame, 3.6 MB, loads once per diagram.
+func TestAssetsCached(t *testing.T) {
+	h := handler()
+	rec, _ := get(t, h, "/assets/app.js", nil)
+	tag := rec.Header().Get("Etag")
+	if !strings.HasPrefix(tag, `"`) || len(tag) < 10 {
+		t.Fatalf("ETag %q, want a quoted hash", tag)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("Cache-Control %q, want no-cache", got)
+	}
+	rec, body := get(t, h, "/assets/app.js", http.Header{"If-None-Match": {tag}})
+	if rec.Code != http.StatusNotModified || body != "" {
+		t.Errorf("with its ETag: status %d, body %q, want 304 and no body", rec.Code, body)
+	}
+	if other, _ := get(t, h, "/assets/style.css", nil); other.Header().Get("Etag") == tag {
+		t.Error("two files share an ETag")
+	}
+	if page, _ := get(t, h, "/missions/42", http.Header{"If-None-Match": {tag}}); page.Code != http.StatusOK ||
+		page.Header().Get("Etag") == "" {
+		t.Errorf("a route of the interface: status %d, ETag %q, want 200 and index.html's own ETag",
+			page.Code, page.Header().Get("Etag"))
+	}
+}
+
 // TestUnknownService checks that a call to a service the server does not serve reads as unimplemented.
 func TestUnknownService(t *testing.T) {
 	srv := httptest.NewServer(handler())
@@ -105,11 +165,11 @@ func (w *strictWriter) Write(b []byte) (int, error) {
 	return w.body.Write(b)
 }
 
-// TestEmptyResponseIsAnswered checks that a unary method whose response is empty in binary Protobuf (LoadState
-// with nothing saved, SaveState) still gets its 200: connect-go writes nothing for it.
+// TestEmptyResponseIsAnswered checks that a unary method whose response is empty in binary Protobuf
+// (TerminalService.Write, Resize) still gets its 200: connect-go writes nothing for it.
 func TestEmptyResponseIsAnswered(t *testing.T) {
 	const procedure = "/test.v1.EmptyService/Call"
-	h := server.Handler(ui, map[string]http.Handler{
+	h := server.Handler(ui, nil, map[string]http.Handler{
 		"/test.v1.EmptyService/": connect.NewUnaryHandler(procedure,
 			func(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[emptypb.Empty], error) {
 				return connect.NewResponse(&emptypb.Empty{}), nil
@@ -146,6 +206,10 @@ func TestGuardToken(t *testing.T) {
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/missions?tab=plan" {
 		t.Fatalf("URL token: status %d, location %q", rec.Code, rec.Header().Get("Location"))
 	}
+	// A path that starts with two slashes stays on this site.
+	if rec, _ := get(t, h, "//example.com/x?token="+token, nil); rec.Header().Get("Location") != "/example.com/x" {
+		t.Fatalf("URL token on //example.com/x: location %q, want /example.com/x", rec.Header().Get("Location"))
+	}
 	cookies := rec.Result().Cookies()
 	if len(cookies) != 1 || cookies[0].Name != "djinn_token_4000" || !cookies[0].HttpOnly ||
 		cookies[0].SameSite != http.SameSiteStrictMode {
@@ -179,6 +243,66 @@ func TestGuardOrigin(t *testing.T) {
 	header := http.Header{"Origin": {origin}, "Authorization": auth["Authorization"]}
 	if rec, _ := get(t, h, "/", header); rec.Code != http.StatusOK {
 		t.Errorf("own origin: status %d, want 200", rec.Code)
+	}
+}
+
+// TestGuardTilasmFrame: a tilasm's frame has an opaque origin, so the browser sends the cookie for its page only. That
+// page goes to an address with the tilasm's key, from which its files load, with no cookie and Origin null.
+func TestGuardTilasmFrame(t *testing.T) {
+	const origin = "http://127.0.0.1:4000"
+	const id = "01a1223a-ae45-728f-8c37-c005eee91edb"
+	var served []string
+	files := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { served = append(served, r.URL.Path) })
+	h := server.Guard(files, token, origin)
+	key := server.FrameKey(token, id)
+	cookie := "djinn_token_4000=" + token
+
+	// The page, opened in the frame with the cookie: sent to the address with the key.
+	rec, _ := get(t, h, "/tilasm/"+id+"/docs/?x=1", http.Header{"Cookie": {cookie}, "Sec-Fetch-Mode": {"navigate"}})
+	if want := "/tilasm/" + id + "/@" + key + "/docs/?x=1"; rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != want {
+		t.Fatalf("page: %d to %q, want %q", rec.Code, rec.Header().Get("Location"), want)
+	}
+	// Its files, with the key: no cookie, Origin null for a module script; served at their own path.
+	rec, _ = get(t, h, "/tilasm/"+id+"/@"+key+"/js/app.mjs", http.Header{"Origin": {"null"}})
+	if rec.Code != http.StatusOK || len(served) != 1 || served[0] != "/tilasm/"+id+"/js/app.mjs" {
+		t.Fatalf("file with the key: %d, served %v", rec.Code, served)
+	}
+	// The address djinn tilasm get gives a browser or an agent is that one, its page at the root of the key.
+	if want := origin + "/tilasm/" + id + "/@" + key + "/"; server.TilasmAddress(origin, token, strings.ToUpper(id)) != want {
+		t.Errorf("TilasmAddress = %q, want %q", server.TilasmAddress(origin, token, id), want)
+	}
+	rec, _ = get(t, h, strings.TrimPrefix(server.TilasmAddress(origin, token, id), origin), nil)
+	if rec.Code != http.StatusOK || served[len(served)-1] != "/tilasm/"+id+"/" {
+		t.Fatalf("the address given: %d, served %v", rec.Code, served)
+	}
+	// Another tilasm's key, a wrong key, or a write: refused.
+	for _, target := range []string{
+		"/tilasm/01a1223a-ae45-728f-8c37-c005eee91ede/@" + key + "/index.html",
+		"/tilasm/" + id + "/@" + strings.Repeat("0", 32) + "/index.html",
+		"/tilasm/" + id + "/@/index.html",
+	} {
+		if rec, _ := get(t, h, target, nil); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s: %d, want 401", target, rec.Code)
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/tilasm/"+id+"/@"+key+"/index.html", nil)
+	rec = httptest.NewRecorder()
+	if h.ServeHTTP(rec, req); rec.Code != http.StatusUnauthorized {
+		t.Errorf("POST with the key: %d, want 401", rec.Code)
+	}
+	// Without the key nor a credential, nothing; a program with its bearer token reads the files where they are.
+	if rec, _ := get(t, h, "/tilasm/"+id+"/index.html", http.Header{"Origin": {"null"}}); rec.Code != http.StatusForbidden {
+		t.Errorf("no key, Origin null: %d, want 403", rec.Code)
+	}
+	if rec, _ := get(t, h, "/tilasm/"+id+"/index.html", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("no key, no credential: %d, want 401", rec.Code)
+	}
+	if rec, _ := get(t, h, "/tilasm/"+id+"/index.html", http.Header{"Authorization": {"Bearer " + token}}); rec.Code != http.StatusOK ||
+		served[len(served)-1] != "/tilasm/"+id+"/index.html" {
+		t.Errorf("bearer: %d, served %v", rec.Code, served)
+	}
+	if server.FrameKey(token, id) != server.FrameKey(token, strings.ToUpper(id)) || server.FrameKey("other", id) == key {
+		t.Error("the key follows the token and the tilasm, case ignored")
 	}
 }
 

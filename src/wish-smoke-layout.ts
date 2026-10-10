@@ -225,7 +225,13 @@ export function computeWishSmokeLayout(
     let high = low * 2;
     while (
       !fitsGrid(
-        gridAtFont(surfaceWidth, surfaceHeight, baseCharWidthAt10, high, nativeMac),
+        gridAtFont(
+          surfaceWidth,
+          surfaceHeight,
+          baseCharWidthAt10,
+          high,
+          nativeMac,
+        ),
       )
     ) {
       high *= 2;
@@ -285,10 +291,7 @@ export function computeWishSmokeLayout(
     gridWidth: grid.width,
     gridHeight: grid.height,
     coverage: [
-      Math.min(
-        1,
-        (grid.width * baseCharWidthAt10 * scale) / surfaceWidth,
-      ),
+      Math.min(1, (grid.width * baseCharWidthAt10 * scale) / surfaceWidth),
       Math.min(1, textHeight / surfaceHeight),
     ],
     offsetY: Math.max(0, surfaceHeight - textHeight),

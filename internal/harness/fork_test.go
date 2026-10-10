@@ -11,6 +11,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 func connectCode(err error) connect.Code {
@@ -23,6 +24,7 @@ func connectCode(err error) connect.Code {
 
 // TestForkArguments: each agent is asked for a fork its own way, or refuses it.
 func TestForkArguments(t *testing.T) {
+	t.Parallel()
 	spec := Spec{TaskID: "t2", Dir: "/w", Resume: "s1", Fork: true}
 	args := strings.Join(Claude{}.args(spec), " ")
 	if !strings.HasSuffix(args, "--resume s1 --fork-session --session-id t2") {
@@ -40,6 +42,8 @@ func TestForkArguments(t *testing.T) {
 // TestSpawnFork: a task starts from a copy of another task's session, or of the lead's, with a session of its own;
 // the default stays a worker that starts from its prompt alone.
 func TestSpawnFork(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	ctx := t.Context()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, nativeFolder(t))
@@ -138,5 +142,51 @@ func TestSpawnFork(t *testing.T) {
 	}))
 	if connectCode(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "set-lead") {
 		t.Errorf("no lead: %v", err)
+	}
+}
+
+func TestForkUsesWishProviderForLegacySource(t *testing.T) {
+	t.Parallel()
+	e := up(t, t.TempDir())
+	rec := recorder{specs: make(chan Spec, 1)}
+	e.h.providers[planv1.Provider_PROVIDER_CODEX] = rec
+	dir := t.TempDir()
+	p, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Fork with Codex", ProjectIds: []string{p.Msg.GetProject().GetId()}, Provider: planv1.Provider_PROVIDER_CODEX,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := w.Msg.GetWish().GetId()
+	// A lead recorded before provider selection has no provider of its own. The wish still selects Codex.
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		wish, err := store.Get[*planv1.Wish](t.Context(), tx, wishID)
+		if err != nil {
+			return err
+		}
+		wish.Lead = &planv1.Lead{SessionId: "legacy-lead-session"}
+		if err := tx.Journal("test", "test/lead", wish); err != nil {
+			return err
+		}
+		return tx.Put(wish)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Continue the lead", FromLead: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := res.Msg.GetTask()
+	if task.GetProvider() != planv1.Provider_PROVIDER_CODEX || task.GetForkSession() != "legacy-lead-session" {
+		t.Fatalf("fork = %v; want Codex and the legacy lead session", task)
+	}
+	if spec := <-rec.specs; spec.Resume != "legacy-lead-session" || !spec.Fork {
+		t.Errorf("Codex fork spec = %+v", spec)
 	}
 }

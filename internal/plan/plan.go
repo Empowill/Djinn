@@ -22,6 +22,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
 )
@@ -29,8 +30,8 @@ import (
 // Entities are the messages the store keeps: those of plan.v1, and what each command of a project costs.
 func Entities() []proto.Message {
 	return []proto.Message{
-		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{}, &planv1.Instruction{},
-		&machinev1.CommandCost{},
+		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
+		&planv1.Instruction{}, &planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{},
 	}
 }
 
@@ -44,31 +45,63 @@ type Option func(*options)
 type options struct {
 	leads    Leads
 	pages    *Pages
-	answered []func(context.Context, *planv1.Question)
+	language string
+	home     string
+	watchers SpawnWatcher
+	workers  WishWorkers
+	answered []AnswerHook
 	approved []func(context.Context, *planv1.Marked)
+	show     func(wishID, tilasmID string) bool
+	url      func(id string) string
+	enlight  []func(context.Context, *planv1.Question, string)
 }
 
-// WithLeads gives the wishes the terminals of their leads, for WishService.Resume and Tell.
+// WithShowTilasm gives TilasmService.Open the window: show shows a tilasm in its wish's Tilasms tab, and tells whether
+// a native window came to the front.
+func WithShowTilasm(show func(wishID, tilasmID string) bool) Option {
+	return func(o *options) { o.show = show }
+}
+
+// WithTilasmURL gives TilasmService.Get the local http address of a tilasm's files, by its identifier; empty while
+// Djinn serves no http.
+func WithTilasmURL(url func(id string) string) Option { return func(o *options) { o.url = url } }
+
+// WithWorkers gives the wishes their workers: a paused wish stops them (Wishes.Workers).
+func WithWorkers(w WishWorkers) Option { return func(o *options) { o.workers = w } }
+
+// WithLanguage writes the texts Djinn puts in the plan for the developer, such as the question that routes a
+// request, in language; English by default.
+func WithLanguage(language string) Option { return func(o *options) { o.language = language } }
+
+// WithHome gives the services Djinn's data folder: each developer's own settings of a project, and the tilasms' files.
+func WithHome(home string) Option { return func(o *options) { o.home = home } }
+
+// WithLeads gives the wishes the terminals of their leads, for WishService.Resume.
 func WithLeads(l Leads) Option { return func(o *options) { o.leads = l } }
 
 // WithAnswered calls f with a question once its answer is stored: the harness starts again the worker a yes
-// allows to edit.
-func WithAnswered(f func(context.Context, *planv1.Question)) Option {
+// allows to edit. With WithLeads, the wish's lead is told next (Wishes.Answered), with what f did.
+func WithAnswered(f AnswerHook) Option {
 	return func(o *options) { o.answered = append(o.answered, f) }
 }
 
-// WithApproved calls f with what an approval marked once it is stored, when it answered no question: a block, or a
-// question already answered.
+// WithApproved calls f with what an approval marked once it is stored, when it answered no question.
 func WithApproved(f func(context.Context, *planv1.Marked)) Option {
 	return func(o *options) { o.approved = append(o.approved, f) }
 }
 
-// WithNudges tells the leads, through n, of the answers and approvals.
+// WithNudges tells the wish's lead about answers and approvals.
 func WithNudges(n *Nudges) Option {
 	return func(o *options) {
-		WithAnswered(n.Answered)(o)
+		WithAnswered(func(ctx context.Context, q *planv1.Question) string { n.Answered(ctx, q); return "" })(o)
 		WithApproved(n.Approved)(o)
 	}
+}
+
+// WithEnlightened calls f with a question and the developer's note once a request to investigate it is stored: the
+// harness starts its investigator. With WithLeads, the wish's lead is told next (Wishes.Enlightened).
+func WithEnlightened(f func(context.Context, *planv1.Question, string)) Option {
+	return func(o *options) { o.enlight = append(o.enlight, f) }
 }
 
 // Handlers returns the Connect handlers of the plan services, by path prefix.
@@ -79,26 +112,39 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	}
 	out := map[string]http.Handler{}
 	opt := connect.WithInterceptors(Validate)
-	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s}, opt)
+	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home}, opt)
 	out[p] = h
-	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages}
+	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
+		Workers: o.workers, Home: o.home}
+	var told Told
 	if o.leads != nil {
-		// Whether a lead runs, and the choice it shows, are part of each wish read: a terminal that starts or ends,
-		// or a lead's choice that comes or goes, changes the wishes.
-		o.leads.Watch(func() { wishes.watch.notify([]watched{{"", planv1.Change_CHANGE_WISH}}) })
+		told = wishes.Answered // The lead learns each answer, after the harness, and what it did.
+	}
+	if o.leads != nil {
+		o.leads.Watch(func() { wishes.watch.notify([]watched{{kind: planv1.Change_CHANGE_WISH}}) })
 	}
 	p, h = planv1connect.NewWishServiceHandler(wishes, opt)
 	out[p] = h
-	p, h = planv1connect.NewQuestionServiceHandler(&Questions{Store: s, Answered: o.answered}, opt)
-	out[p] = h
-	p, h = planv1connect.NewInstructionServiceHandler(&Instructions{Store: s, Leads: o.leads}, opt)
+	if o.leads != nil {
+		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
+	}
+	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle}
+	p, h = planv1connect.NewQuestionServiceHandler(questions, opt)
 	out[p] = h
 	p, h = planv1connect.NewBlockServiceHandler(&Blocks{Store: s}, opt)
 	out[p] = h
-	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Approved: o.approved}, opt)
+	p, h = planv1connect.NewInstructionServiceHandler(&Instructions{Store: s, Leads: o.leads}, opt)
+	out[p] = h
+	p, h = planv1connect.NewMarkServiceHandler(&Marks{Store: s, Answered: o.answered, Approved: o.approved, Told: told, Settle: wishes.settle}, opt)
 	out[p] = h
 	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
 	out[p] = h
+	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
+	out[p] = h
+	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url}
+	p, h = planv1connect.NewTilasmServiceHandler(tilasms, opt)
+	out[p] = h
+	out[server.TilasmPrefix] = tilasms.Files()
 	return out
 }
 
@@ -134,6 +180,8 @@ func Status(err error) error {
 		return connect.NewError(connect.CodeNotFound, err)
 	case errors.Is(err, store.ErrDuplicate):
 		return connect.NewError(connect.CodeAlreadyExists, err)
+	case errors.Is(err, ErrNoProject):
+		return connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewError(connect.CodeInternal, err)
 }
@@ -142,6 +190,8 @@ func Status(err error) error {
 type Projects struct {
 	planv1connect.UnimplementedProjectServiceHandler
 	Store *store.Store
+	// Home is Djinn's data folder, which holds the developer's own settings of each project; empty: none are read.
+	Home string
 }
 
 func (p *Projects) Add(
@@ -204,6 +254,25 @@ func (p *Projects) List(
 		return nil, Status(err)
 	}
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: projects}), nil
+}
+
+func (p *Projects) Show(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceShowRequest],
+) (*connect.Response[planv1.ProjectServiceShowResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	repo, dev, problems := loadSettings(p.Home, project)
+	settings := ResolveSettings(repo, dev)
+	out := &planv1.ProjectServiceShowResponse{
+		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
+	}
+	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
+	for _, err := range problems {
+		out.Problems = append(out.Problems, err.Error())
+	}
+	return connect.NewResponse(out), nil
 }
 
 // unattached returns the project without a folder that has this remote, or else this name, case ignored; nil
@@ -269,9 +338,20 @@ type Wishes struct {
 	// Pages renders the wishes' pages and keeps the synced ones up to date; nil where djinn up does not run them,
 	// and Sync is then unavailable.
 	Pages *Pages
+	// Language of the texts Djinn writes in the plan for the developer; English when empty.
+	Language string
+	// Watchers starts the watcher of a wish made from a template; nil where djinn up does not run tasks, and the
+	// lead is then told to start it.
+	Watchers SpawnWatcher
+	// Workers stops the workers of a paused wish, and wakes the scheduler for an active one; nil where djinn up does
+	// not run tasks.
+	Workers WishWorkers
+	// Home is Djinn's data folder, which holds the tilasms' files; empty: a wish with tilasms neither exports nor
+	// imports.
+	Home string
 
 	watch      watchers // the open Watch streams
-	leadErrors sync.Map // wish ID -> last start error, transient like the terminal state
+	leadErrors sync.Map
 }
 
 func (w *Wishes) Make(
@@ -285,63 +365,84 @@ func (w *Wishes) Make(
 	if title == "" {
 		title = locales.T(language, "wish.provisionalTitle", nil)
 	}
-	wish := &planv1.Wish{
-		Title: title, Provider: req.Msg.GetProvider(),
-	}
+	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-		// Reuse the creation command's UUID to identify it exactly after a rename or export, with no extra field.
-		wish.Id = tx.JournalID()
-		wish.CreateTime = timestamppb.Now()
-		put := func() error {
-			if err := tx.Put(wish); err != nil {
-				return err
-			}
-			if prompt := req.Msg.GetPrompt(); prompt != "" {
-				return tx.Put(&planv1.Block{
-					Id: store.NewID(), WishId: wish.GetId(), Kind: creationKind,
-					Title: locales.T(language, "wish.originalPrompt", nil), Content: prompt,
-					MediaType: "text/markdown", Position: gap,
-					CreateTime: wish.GetCreateTime(), UpdateTime: wish.GetCreateTime(),
-				})
-			}
-			return nil
-		}
-		for _, id := range req.Msg.GetProjectIds() {
-			project, err := store.Get[*planv1.Project](ctx, tx, id)
-			if err != nil {
-				return err
-			}
-			if !slices.Contains(wish.GetProjectIds(), project.GetId()) {
-				wish.ProjectIds = append(wish.ProjectIds, project.GetId())
-			}
-		}
-		// The right chosen with the wish, in each of its projects, as djinn wish allow gives it.
-		if mode := req.Msg.GetAllowance(); mode == planv1.Allowance_ALLOWANCE_EDIT || mode == planv1.Allowance_ALLOWANCE_AUTO {
-			for _, id := range wish.GetProjectIds() {
-				wish.Allowances = append(wish.Allowances, &planv1.ProjectAllowance{ProjectId: id, Allowance: mode})
-			}
-		}
-		if req.Msg.GetPaused() {
-			wish.State = planv1.WishState_WISH_STATE_PAUSED
-			return put()
-		}
-		actives, err := ActiveWishes(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if len(actives) >= MaxActive {
-			return full(actives, ", or make this one paused (djinn wish make --paused)")
-		}
-		if err := renumber(tx, actives); err != nil {
-			return err
-		}
-		wish.State, wish.Rank = planv1.WishState_WISH_STATE_ACTIVE, int32(len(actives)+1)
-		return put()
+		var err error
+		wish, err = makeWish(ctx, tx, req.Msg, title, language)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.WishServiceMakeResponse{Wish: wish}), nil
+}
+
+// makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused. The caller journals
+// the command.
+func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, extras ...string) (*planv1.Wish, error) {
+	title := req.GetTitle()
+	language := "en"
+	if len(extras) > 0 {
+		title = extras[0]
+	}
+	if len(extras) > 1 {
+		language = extras[1]
+	}
+	wish := &planv1.Wish{Id: tx.JournalID(), Title: title, Provider: req.GetProvider(), CreateTime: timestamppb.Now()}
+	if wish.GetId() == "" {
+		wish.Id = store.NewID()
+	}
+	for _, id := range req.GetProjectIds() {
+		project, err := store.Get[*planv1.Project](ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(wish.GetProjectIds(), project.GetId()) {
+			wish.ProjectIds = append(wish.ProjectIds, project.GetId())
+		}
+	}
+	if err := integrationBranches(ctx, tx, wish); err != nil {
+		return nil, err
+	}
+	if mode := req.GetAllowance(); mode == planv1.Allowance_ALLOWANCE_EDIT || mode == planv1.Allowance_ALLOWANCE_AUTO {
+		for _, id := range wish.GetProjectIds() {
+			wish.Allowances = append(wish.Allowances, &planv1.ProjectAllowance{ProjectId: id, Allowance: mode})
+		}
+	}
+	put := func() (*planv1.Wish, error) {
+		if err := tx.Put(wish); err != nil {
+			return nil, err
+		}
+		if prompt := req.GetPrompt(); prompt != "" {
+			if err := tx.Put(&planv1.Block{
+				Id: store.NewID(), WishId: wish.GetId(), Kind: creationKind,
+				Title: locales.T(language, "wish.originalPrompt", nil), Content: prompt,
+				MediaType: "text/markdown", Position: gap,
+				CreateTime: wish.GetCreateTime(), UpdateTime: wish.GetCreateTime(),
+			}); err != nil {
+				return nil, err
+			}
+		}
+		return wish, nil
+	}
+	if req.GetPaused() {
+		wish.State = planv1.WishState_WISH_STATE_PAUSED
+		return put()
+	}
+	actives, err := ActiveWishes(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if len(actives) >= MaxActive {
+		// Three wishes are active: the new one waits, paused, until you make it active.
+		wish.State = planv1.WishState_WISH_STATE_PAUSED
+		return put()
+	}
+	if err := renumber(tx, actives); err != nil {
+		return nil, err
+	}
+	wish.State, wish.Rank = planv1.WishState_WISH_STATE_ACTIVE, int32(len(actives)+1)
+	return put()
 }
 
 func (w *Wishes) List(
@@ -362,7 +463,7 @@ func (w *Wishes) List(
 			if text, ok := w.leadErrors.Load(strings.ToLower(wish.GetId())); ok {
 				wish.LeadError = text.(string)
 			}
-			if wish.LeadRunning {
+			if wish.GetLeadRunning() {
 				wish.LeadPrompt = w.Leads.Prompt(LeadTerminal(wish.GetId()))
 			}
 		}
@@ -409,6 +510,31 @@ func (w *Wishes) Allow(
 	return connect.NewResponse(&planv1.WishServiceAllowResponse{Wish: wish}), nil
 }
 
+// Describe sets the wish's description, in place of what it had; empty takes it back to the title.
+func (w *Wishes) Describe(
+	ctx context.Context, req *connect.Request[planv1.WishServiceDescribeRequest],
+) (*connect.Response[planv1.WishServiceDescribeResponse], error) {
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		wish.Description = strings.TrimSpace(req.Msg.GetText())
+		if wish.Description == strings.TrimSpace(wish.GetTitle()) {
+			wish.Description = "" // The title stands for it already.
+		}
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceDescribeResponse{Wish: wish}), nil
+}
+
 // AllowanceOf is the right wish allows its workers in the project projectID: ALLOWANCE_NONE when it allows none.
 func AllowanceOf(wish *planv1.Wish, projectID string) planv1.Allowance {
 	for _, a := range wish.GetAllowances() {
@@ -424,7 +550,46 @@ type Questions struct {
 	planv1connect.UnimplementedQuestionServiceHandler
 	Store *store.Store
 	// Answered are called with a question once its answer is stored.
-	Answered []func(context.Context, *planv1.Question)
+	Answered []AnswerHook
+	// Told, when set, is called next, with what they did.
+	Told Told
+	// Enlightened are called with a question once a request to investigate it is stored, with its note.
+	Enlightened []func(ctx context.Context, q *planv1.Question, note string)
+	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
+	// stored, if anything: a question that routes a request files it, or makes its wish.
+	Settle Settle
+}
+
+// AnswerHook is called with a question once its answer is stored. It says what it did with the answer, for the
+// wish's lead: "Djinn started W12: …"; "" when the answer is the lead's to act on.
+type AnswerHook func(ctx context.Context, q *planv1.Question) string
+
+// Told tells the wish's lead that q was answered, did saying what the hooks did with the answer.
+type Told func(ctx context.Context, q *planv1.Question, did string)
+
+// afterAnswer calls hooks with q, its answer stored, then told, when set, with what they did.
+func afterAnswer(ctx context.Context, hooks []AnswerHook, told Told, q *planv1.Question) {
+	var did []string
+	for _, f := range hooks {
+		if d := f(ctx, proto.CloneOf(q)); d != "" {
+			did = append(did, d)
+		}
+	}
+	if told != nil {
+		told(ctx, proto.CloneOf(q), strings.Join(did, "; "))
+	}
+}
+
+// Settle acts on the answer of q in tx, the transaction that stores it, and may change q before it is stored. It
+// returns what follows once the answer is stored, if anything.
+type Settle func(ctx context.Context, tx *store.Tx, q *planv1.Question) (func(context.Context), error)
+
+// settled runs settle on q when there is one.
+func settled(ctx context.Context, settle Settle, tx *store.Tx, q *planv1.Question) (func(context.Context), error) {
+	if settle == nil {
+		return nil, nil
+	}
+	return settle(ctx, tx, q)
 }
 
 // maxCode is the last code a wish can give: the codes follow ^Q[0-9]{2,3}$.
@@ -436,9 +601,16 @@ func (q *Questions) Ask(
 	question := &planv1.Question{
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
 		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
+		Icon: req.Msg.GetIcon(), TaskId: req.Msg.GetTaskId(), Before: strings.TrimSpace(req.Msg.GetBefore()),
+	}
+	if err := checkIcon(question.GetIcon()); err != nil {
+		return nil, err
 	}
 	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		if _, err := store.Get[*planv1.Wish](ctx, tx, question.GetWishId()); err != nil {
+			return err
+		}
+		if err := taskOfWish(ctx, tx, question.GetWishId(), question.GetTaskId()); err != nil {
 			return err
 		}
 		return Ask(ctx, tx, question)
@@ -475,24 +647,34 @@ func (q *Questions) Answer(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceAnswerRequest],
 ) (*connect.Response[planv1.QuestionServiceAnswerResponse], error) {
 	var question *planv1.Question
+	var then func(context.Context)
 	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
 		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
 			return err
+		}
+		if question.GetRoute() != nil && question.GetAnswer() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"question %s has routed its request already: route it again (djinn wish route) to send it elsewhere",
+				question.GetCode()))
 		}
 		choice, err := resolve(question, req.Msg.GetChoice())
 		if err != nil {
 			return connect.NewError(connect.CodeInvalidArgument, err)
 		}
 		question.Answer = &planv1.Answer{Choice: choice, Note: req.Msg.GetNote(), CreateTime: timestamppb.Now()}
+		if then, err = settled(ctx, q.Settle, tx, question); err != nil {
+			return err
+		}
 		return tx.Put(question)
 	})
 	if err != nil {
 		return nil, err
 	}
-	for _, f := range q.Answered {
-		f(ctx, proto.CloneOf(question))
+	if then != nil {
+		then(ctx)
 	}
+	afterAnswer(ctx, q.Answered, q.Told, question)
 	return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 }
 

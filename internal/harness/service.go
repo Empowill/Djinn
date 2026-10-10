@@ -49,6 +49,12 @@ func (s *Tasks) List(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	if tasks, err = s.h.withAzimas(ctx, tasks); err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := plan.FillTilasms(ctx, s.h.store, tasks); err != nil {
+		return nil, plan.Status(err)
+	}
 	return connect.NewResponse(&planv1.TaskServiceListResponse{Tasks: tasks}), nil
 }
 
@@ -59,7 +65,14 @@ func (s *Tasks) Get(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: task}), nil
+	filled, err := s.h.withAzimas(ctx, []*planv1.Task{task})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := plan.FillTilasms(ctx, s.h.store, filled); err != nil {
+		return nil, plan.Status(err)
+	}
+	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: filled[0]}), nil
 }
 
 func (s *Tasks) Stop(
@@ -129,6 +142,26 @@ func (s *Tasks) Clean(
 	return connect.NewResponse(&planv1.TaskServiceCleanResponse{Task: task}), nil
 }
 
+func (s *Tasks) Depend(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDependRequest],
+) (*connect.Response[planv1.TaskServiceDependResponse], error) {
+	tasks, err := s.h.Depend(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceDependResponse{Task: tasks[0], Also: tasks[1:]}), nil
+}
+
+func (s *Tasks) Group(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceGroupRequest],
+) (*connect.Response[planv1.TaskServiceGroupResponse], error) {
+	task, err := s.h.Group(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceGroupResponse{Task: task}), nil
+}
+
 func (s *Tasks) Delete(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceDeleteRequest],
 ) (*connect.Response[planv1.TaskServiceDeleteResponse], error) {
@@ -137,6 +170,26 @@ func (s *Tasks) Delete(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TaskServiceDeleteResponse{Task: task}), nil
+}
+
+func (s *Tasks) Done(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceDoneRequest],
+) (*connect.Response[planv1.TaskServiceDoneResponse], error) {
+	task, err := s.h.Done(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceDoneResponse{Task: task}), nil
+}
+
+func (s *Tasks) Continue(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceContinueRequest],
+) (*connect.Response[planv1.TaskServiceContinueResponse], error) {
+	task, err := s.h.Continue(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceContinueResponse{Task: task}), nil
 }
 
 func (s *Tasks) Send(

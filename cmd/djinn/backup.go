@@ -21,23 +21,9 @@ import (
 	"github.com/empowill/djinn/internal/ui"
 )
 
-const backupUsage = `Usage: djinn backup [--file <archive>]
-       djinn backup restore <archive>
-
-Write the data folder into one archive: a consistent copy of the database, taken while Djinn runs, and the
-files beside it. Worktrees (Git holds them), the socket, the server's address, the logs and environment files
-stay out. Sending the archive elsewhere is left to a tool that does it well: see docs/backup.md.
-
-  --file <archive>   Archive to write, ending in .tar.gz, .tgz or .zip; replaced if it exists. Default: a new
-                     file in the Downloads folder.
-
-restore puts an archive back as the data folder, while Djinn is stopped. The previous folder is kept aside,
-next to it.
-`
-
 // runBackup is djinn backup and djinn backup restore. Restoring runs while no djinn does, so neither is generated
 // from the protos; a backup asks the running djinn, which holds the database, and copies it itself otherwise.
-// It returns the exit code.
+// Their help is cli.Backup and cli.Restore. It returns the exit code.
 func runBackup(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -51,7 +37,7 @@ func runBackup(args []string, stdout, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "-h" || a == "--help":
-			fmt.Fprint(stdout, backupUsage)
+			backupHelp(restore).WriteHelp(stdout)
 			return 0
 		case i == 0 && a == "restore":
 			restore = true
@@ -63,13 +49,15 @@ func runBackup(args []string, stdout, stderr io.Writer) int {
 		case restore && file == "" && !strings.HasPrefix(a, "-"):
 			file = a
 		default:
-			fmt.Fprintf(stderr, "error: unexpected argument %q\n%s", a, backupUsage)
+			fmt.Fprintf(stderr, "error: unexpected argument %q\n", a)
+			backupHelp(restore).WriteHelp(stderr)
 			return 2
 		}
 	}
 	if restore {
 		if file == "" {
-			fmt.Fprint(stderr, "error: <archive> is required\n"+backupUsage)
+			fmt.Fprintln(stderr, "error: <archive> is required")
+			cli.Restore.WriteHelp(stderr)
 			return 2
 		}
 		return runRestore(ctx, home, file, stdout, stderr)
@@ -87,6 +75,14 @@ func runBackup(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "djinn backup: wrote %s (%s, %s)\n", res.GetFile(), files(int(res.GetFiles())), size(res.GetSize()))
 	return 0
+}
+
+// backupHelp is the help of djinn backup, or of djinn backup restore.
+func backupHelp(restore bool) cli.Command {
+	if restore {
+		return cli.Restore
+	}
+	return cli.Backup
 }
 
 // createBackup asks the djinn running on home to write the backup; without one, or with a djinn older than

@@ -5,7 +5,8 @@
 // is not rendered, and the contents at the top name only the sections present.
 //
 // One colour language runs through the page, always with an icon and a word: done, running, waiting for you,
-// planned, failed, interrupted, paused, stopped; and for what waits, blocking, waiting for you, can wait.
+// planned, failed, interrupted, paused, stopped; and for what waits, blocking, waiting for you, can wait. A decision
+// the developer took has a colour of its own, human.
 //
 // The page shows what it is given: the caller strips secrets and local paths first, as an export does.
 package render
@@ -50,8 +51,19 @@ const maxJournal = 200
 // shownJournal is the most journal entries shown before the others are folded.
 const shownJournal = 10
 
-// maxEvents is the most worker events a page shows, the latest ones; shownEvents are in sight, the others folded.
-const maxEvents, shownEvents = 200, 10
+// MaxEvents is the most worker events a page shows, the latest ones; shownEvents are in sight, the others folded.
+const MaxEvents, shownEvents = 200, 10
+
+// Shown tells whether a page shows a worker's event: what it said, a change of status, an error, when it has a text.
+// Tool calls stay out. Of the others, a page needs only each task's last one and the MaxEvents latest.
+func Shown(e *planv1.TaskEvent) bool {
+	switch e.GetKind() {
+	case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+		planv1.TaskEventKind_TASK_EVENT_KIND_ERROR:
+		return strings.TrimSpace(e.GetText()) != ""
+	}
+	return false
+}
 
 // barQuestions is the most questions the bar at the top shows a line each, beside the blocking ones: more share
 // one line.
@@ -80,6 +92,7 @@ const maxLastWord, maxEvent = 600, 280
 // shows a live dot, drawn by the style sheet.
 var icons = map[string]string{
 	"ok": "✓", "run": "", "wait": "?", "idle": "○", "bad": "!", "fail": "✕", "amber": "↺", "pause": "‖", "stop": "■", "dig": "⌕",
+	"human": "✋\ufe0e",
 	"later": "◷",
 }
 
@@ -90,7 +103,7 @@ var pageTemplate string
 var pageCSS string
 
 var tmpl = template.Must(template.New("page").Funcs(template.FuncMap{
-	"css": func() template.CSS { return template.CSS(pageCSS) },
+	"css": func() template.CSS { return template.CSS(pageCSS) }, //nolint:gosec // Our own stylesheet, embedded.
 	// pair hands a nested template two values: {{template "task" (pair . $.T)}}.
 	"pair": func(a, b any) []any { return []any{a, b} },
 	"icon": func(class string) string { return icons[class] },
@@ -177,7 +190,8 @@ type question struct {
 	Options   []option
 	// Blocking names the tasks that wait for the answer: such a question is open, and comes first.
 	Blocking string
-	// Class and Level say how urgent it is: blocking, or waiting for the user.
+	// Urgency orders it: blocking, then before X, then can wait. Class and Level say it in a colour and words.
+	Urgency      Urgency
 	Class, Level string
 	// Open questions are unfolded: a blocking one, or the only one.
 	Open bool
@@ -195,7 +209,12 @@ type option struct{ Letter, Text string }
 
 type decision struct {
 	Code, Text, Choice, At string
-	Note                   template.HTML
+	// Icon is the subject's emoji; Who says who took it, Human when the developer did; Tasks are the codes of the tasks
+	// it led to.
+	Icon, Who string
+	Human     bool
+	Tasks     []string
+	Note      template.HTML
 	// A long note is folded under its first line, to keep the table compact.
 	LongNote bool
 	NoteLine string
@@ -207,6 +226,11 @@ type task struct {
 	LastWord, LastAt string
 	// After names the tasks this one waits to be done; Wait says why a planned task has not started yet.
 	After, Wait string
+	// Closed says who marked the task done by hand, and why.
+	Closed string
+	// Work says where its finished work stands on its way into the wish's integration branch, WorkClass its colour.
+	Work, WorkClass string
+	src             *planv1.Task
 }
 
 type block struct {
@@ -255,13 +279,7 @@ func build(in Input) (*view, error) {
 	}
 	loc := now.Location()
 	at := func(t interface{ AsTime() time.Time }) string { return t.AsTime().In(loc).Format("2006-01-02 15:04") }
-	tr := func(key string, params ...string) string {
-		m := map[string]string{}
-		for i := 0; i+1 < len(params); i += 2 {
-			m[params[i]] = params[i+1]
-		}
-		return locales.T(lang, key, m)
-	}
+	tr := Translator(lang)
 	v := &view{Lang: lang, Title: exp.GetWish().GetTitle(), T: map[string]string{}}
 	for _, key := range []string{
 		"page.actions", "page.actions_sub", "page.after_col", "page.bar", "page.contents", "page.context",
@@ -271,7 +289,7 @@ func build(in Input) (*view, error) {
 		"page.planned", "page.projects", "page.questions", "page.questions_sub", "page.recommendation",
 		"page.running", "page.running_sub", "page.spent", "page.status", "page.task", "page.tasks", "page.tasks_sub",
 		"page.took", "page.wait_col", "page.what", "page.when", "page.why", "page.yes_only",
-		"page.rounds", "instructionBackend.heading", "instructionBackend.sub",
+		"page.rounds", "page.led_to", "instructionBackend.heading", "instructionBackend.sub",
 	} {
 		v.T[key] = tr(key)
 	}
@@ -320,30 +338,29 @@ func build(in Input) (*view, error) {
 	}
 
 	// A question a waiting task needs answered blocks it: it comes first, open.
-	blocking := map[string][]string{}
-	for _, t := range exp.GetTasks() {
-		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING && t.GetEditQuestionId() != "" {
-			blocking[t.GetEditQuestionId()] = append(blocking[t.GetEditQuestionId()], t.GetCode())
-		}
-	}
+	blocking := Blocked(exp.GetTasks())
 
-	// Open questions, the blocking ones first, then in the order they were asked. Decisions, the latest first.
-	var answered []*planv1.Question
+	// Open questions, the blocking ones first, then those needed before something, then those that can wait; each in
+	// the order they were asked. Decisions, the latest first.
 	for _, q := range exp.GetQuestions() {
 		if q.GetAnswer() != nil {
-			answered = append(answered, q)
 			continue
 		}
 		cq := question{
 			Code: q.GetCode(), Text: q.GetText(), Context: md(q.GetContext()), Recom: md(q.GetRecommendation()),
-			Class: "wait", Level: tr("page.status_waiting"),
+			Urgency: UrgencyOf(q, blocking),
 		}
 		if line := firstLine(q.GetRecommendation(), 160); line != "" {
 			cq.RecomLine = tr("page.recommended", "text", line)
 		}
-		if codes := blocking[q.GetId()]; len(codes) > 0 {
-			cq.Blocking = tr("page.blocking", "tasks", strings.Join(codes, ", "))
+		switch cq.Urgency {
+		case Blocking:
+			cq.Blocking = tr("page.blocking", "tasks", strings.Join(blocking[q.GetId()], ", "))
 			cq.Class, cq.Level, cq.Open = "bad", cq.Blocking, true
+		case Before:
+			cq.Class, cq.Level = "wait", q.GetBefore()
+		default:
+			cq.Class, cq.Level = "later", tr("page.level_later")
 		}
 		for i, o := range q.GetOptions() {
 			cq.Options = append(cq.Options, option{Letter: string(rune('A' + i)), Text: o})
@@ -356,7 +373,11 @@ func build(in Input) (*view, error) {
 			if r.GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
 				label = "page.round_enlighten"
 			}
-			cq.Rounds = append(cq.Rounds, round{At: at(r.GetCreateTime()), Label: tr(label), Note: r.GetNote()})
+			text := tr(label)
+			if by := tasks[r.GetTaskId()]; by != nil && r.GetKind() == planv1.RoundKind_ROUND_KIND_REVISE {
+				text = tr("page.round_revise_by", "task", by.GetCode())
+			}
+			cq.Rounds = append(cq.Rounds, round{At: at(r.GetCreateTime()), Label: text, Note: r.GetNote()})
 		}
 		if rounds := q.GetRounds(); len(rounds) > 0 && rounds[len(rounds)-1].GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
 			cq.Investigating = true
@@ -364,82 +385,101 @@ func build(in Input) (*view, error) {
 		}
 		v.Questions = append(v.Questions, cq)
 	}
-	slices.SortStableFunc(v.Questions, func(a, b question) int {
-		return cmp.Compare(b2i(a.Blocking == ""), b2i(b.Blocking == ""))
-	})
+	slices.SortStableFunc(v.Questions, func(a, b question) int { return cmp.Compare(a.Urgency, b.Urgency) })
 	if len(v.Questions) == 1 {
 		v.Questions[0].Open = true
 	}
-	slices.SortStableFunc(answered, func(a, b *planv1.Question) int {
-		return b.GetAnswer().GetCreateTime().AsTime().Compare(a.GetAnswer().GetCreateTime().AsTime())
-	})
-	for i, q := range answered {
-		d := decision{
-			Code: q.GetCode(), Text: q.GetText(), Choice: choice(q, tr), At: at(q.GetAnswer().GetCreateTime()),
-			Note: md(q.GetAnswer().GetNote()), LongNote: utf8.RuneCountInString(q.GetAnswer().GetNote()) > longNote,
-			NoteLine: cmp.Or(firstLine(q.GetAnswer().GetNote(), 140), tr("page.details")),
+	for i, d := range Decisions(exp) {
+		cd := decision{At: d.At.In(loc).Format("2006-01-02 15:04"), Icon: d.Icon, Human: d.Human, Tasks: d.Tasks}
+		var note string
+		if q := d.Question; q != nil {
+			cd.Code, cd.Text, cd.Choice, note = q.GetCode(), q.GetText(), choice(q, tr), q.GetAnswer().GetNote()
+		} else {
+			cd.Text, note = cmp.Or(d.Block.GetTitle(), firstLine(d.Block.GetContent(), 140)), d.Block.GetContent()
+		}
+		cd.Note, cd.LongNote = md(note), utf8.RuneCountInString(note) > longNote
+		cd.NoteLine = cmp.Or(firstLine(note, 140), tr("page.details"))
+		switch {
+		case d.Approved:
+			cd.Who = tr("page.by_you_approved")
+		case d.Human:
+			cd.Who = tr("page.by_you")
+		case d.By == ByLead:
+			cd.Who = tr("page.by_lead")
+		default:
+			cd.Who = tr("page.by_task", "task", d.By)
 		}
 		if i < shownDecisions {
-			v.Decisions = append(v.Decisions, d)
+			v.Decisions = append(v.Decisions, cd)
 		} else {
-			v.Older = append(v.Older, d)
+			v.Older = append(v.Older, cd)
 		}
 	}
 
-	// The bar: each blocking question a line; the other questions too while they are few, else one line for them all.
+	// The bar: each blocking question a line; the other questions too while they are few, else one line for those
+	// needed before something and one for those that can wait.
 	waiting, blocked, later := tr("page.status_waiting"), tr("page.level_blocking"), tr("page.level_later")
-	var others []string
-	var asked []question
+	var others []question
 	for _, q := range v.Questions {
-		if !q.Investigating {
-			asked = append(asked, q)
-		}
-	}
-	for _, q := range asked {
-		if q.Blocking != "" {
+		switch {
+		case q.Investigating:
+		case q.Urgency == Blocking:
 			v.Bar = append(v.Bar, barLine{
 				Class: q.Class, Level: blocked, Text: q.Code + " · " + cut(q.Text, 140) + " · " + q.Blocking, Href: "#q-" + q.Code,
 			})
-		} else {
-			others = append(others, q.Code)
+		default:
+			others = append(others, q)
 		}
 	}
-	if len(others) > barQuestions {
-		v.Bar = append(v.Bar, barLine{Class: "wait", Level: waiting, Href: "#questions",
-			Text: tr("page.bar_questions", "count", fmt.Sprint(len(others)), "codes", strings.Join(others, ", "))})
+	line := func(q question) barLine {
+		return barLine{Class: q.Class, Level: q.Level, Text: q.Code + " · " + cut(q.Text, 140), Href: "#q-" + q.Code}
+	}
+	if len(others) <= barQuestions {
+		for _, q := range others {
+			v.Bar = append(v.Bar, line(q))
+		}
 	} else {
-		for _, q := range asked[len(asked)-len(others):] {
-			v.Bar = append(v.Bar, barLine{Class: q.Class, Level: waiting, Text: q.Code + " · " + cut(q.Text, 140), Href: "#q-" + q.Code})
+		for _, level := range []struct {
+			urgency            Urgency
+			class, level, text string
+		}{{Before, "wait", waiting, "page.bar_questions"}, {Later, "later", later, "page.bar_later"}} {
+			var group []question
+			var codes []string
+			for _, q := range others {
+				if q.Urgency == level.urgency {
+					group, codes = append(group, q), append(codes, q.Code)
+				}
+			}
+			switch {
+			case len(group) == 1:
+				v.Bar = append(v.Bar, line(group[0]))
+			case len(group) > 1:
+				v.Bar = append(v.Bar, barLine{Class: level.class, Level: level.level, Href: "#questions",
+					Text: tr(level.text, "count", fmt.Sprint(len(group)), "codes", strings.Join(codes, ", "))})
+			}
 		}
 	}
 
 	// What waits for the user, as the lamp knows it: a worker that asks to edit, one that Djinn's stop cut
-	// short, a project to bring to this machine. A worker that waits on an open question is in the bar by its
-	// question already.
+	// short and will not resume by itself, a project to bring to this machine. A worker that waits on an open
+	// question is in the bar by its question already. A task Djinn resumes, or one resumed as another task, is not
+	// the user's move: its status says so.
 	addAction := func(class, level, text, bar string) {
 		v.Actions = append(v.Actions, action{Class: class, Level: level, Text: text})
 		if bar != "" {
 			v.Bar = append(v.Bar, barLine{Class: class, Level: level, Text: bar, Href: "#actions"})
 		}
 	}
-	var cutShort []string
 	for _, t := range exp.GetTasks() {
-		switch t.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_WAITING:
-			if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil {
-				addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
-			} else {
-				addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
-					tr("page.bar_waiting", "task", t.GetCode()))
-			}
-		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
-			addAction("wait", waiting, tr("page.action_interrupted", "task", t.GetCode()), "")
-			cutShort = append(cutShort, t.GetCode())
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
+			continue
 		}
-	}
-	if len(cutShort) > 0 {
-		v.Bar = append(v.Bar, barLine{Class: "wait", Level: waiting, Href: "#actions",
-			Text: tr("page.bar_interrupted", "tasks", strings.Join(cutShort, ", "))})
+		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil {
+			addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
+		} else {
+			addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
+				tr("page.bar_waiting", "task", t.GetCode()))
+		}
 	}
 	for _, name := range in.Unattached {
 		addAction("wait", waiting, tr("page.action_attach", "project", name), tr("page.bar_attach", "project", name))
@@ -457,18 +497,16 @@ func build(in Input) (*view, error) {
 	type last struct{ text, at string }
 	lastWord := map[string]last{}
 	for _, e := range exp.GetEvents() {
+		if !Shown(e) {
+			continue
+		}
 		text := strings.TrimSpace(e.GetText())
-		kind, class := "", ""
+		kind, class := tr("page.event_text"), "idle"
 		switch e.GetKind() {
-		case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT:
-			kind, class = tr("page.event_text"), "idle"
 		case planv1.TaskEventKind_TASK_EVENT_KIND_STATUS:
 			kind, class = tr("page.event_status"), "run"
 		case planv1.TaskEventKind_TASK_EVENT_KIND_ERROR:
 			kind, class = tr("page.event_error"), "fail"
-		}
-		if kind == "" || text == "" {
-			continue
 		}
 		when := ""
 		if e.GetCreateTime() != nil {
@@ -480,16 +518,41 @@ func build(in Input) (*view, error) {
 	// The latest first; events of one time keep the order they came in.
 	slices.Reverse(events)
 	slices.SortStableFunc(events, func(a, b event) int { return b.at.Compare(a.at) })
-	events = events[:min(len(events), maxEvents)]
+	events = events[:min(len(events), MaxEvents)]
 	v.Events, v.EarlierEv = events[:min(len(events), shownEvents)], events[min(len(events), shownEvents):]
 
 	byStatus := map[planv1.TaskStatus]int{}
+	forkedCount := 0
 	for _, t := range exp.GetTasks() {
+		if t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
+			continue // An azima is the plan, not work: no worker runs it, and it never waits for the person.
+		}
 		ct := task{
 			Code: t.GetCode(), Title: t.GetTitle(), Project: projects[t.GetProjectId()], Error: t.GetError(),
-			LastWord: cut(lastWord[t.GetId()].text, maxLastWord), LastAt: lastWord[t.GetId()].at,
+			LastWord: cut(lastWord[t.GetId()].text, maxLastWord), LastAt: lastWord[t.GetId()].at, src: t,
+		}
+		if c := t.GetClosed(); c != nil {
+			key := "page.closed_by_lead"
+			if c.GetActor() == planv1.Closer_CLOSER_DEVELOPER {
+				key = "page.closed_by_you"
+			}
+			ct.Closed = tr(key)
+			if n := strings.TrimSpace(c.GetNote()); n != "" {
+				ct.Closed += ": " + n
+			}
 		}
 		ct.Status, ct.StatusClass = status(t.GetStatus(), tr)
+		forked := ""
+		switch t.GetStatus() {
+		case planv1.TaskStatus_TASK_STATUS_RESUMING:
+			if t.GetResumeAfter() != nil {
+				ct.Status, ct.StatusClass = tr("page.status_limit"), "pause"
+			}
+		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			if forked = ForkedAs(t, exp.GetTasks()); forked != "" {
+				ct.Status, ct.StatusClass, ct.Error = tr("page.status_forked", "task", forked), "stop", ""
+			}
+		}
 		var after []string
 		for _, id := range t.GetDependsOn() {
 			if d := tasks[id]; d != nil {
@@ -500,6 +563,7 @@ func build(in Input) (*view, error) {
 			ct.After = tr("page.after", "tasks", strings.Join(after, ", "))
 		}
 		ct.Wait = t.GetWaitReason()
+		ct.Work, ct.WorkClass = Work(t, func(id string) string { return tasks[id].GetCode() }, tr)
 		ct.Agent = strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 		if t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED {
 			ct.Agent = "claude"
@@ -517,13 +581,21 @@ func build(in Input) (*view, error) {
 		} else if s != nil {
 			ct.Time = tr("page.started", "time", at(s))
 		}
+		if forked != "" {
+			// Resumed as another task: finished, as far as the user is concerned.
+			forkedCount++
+			v.Finished = append(v.Finished, ct)
+			continue
+		}
 		byStatus[t.GetStatus()]++
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING:
 			v.Planned = append(v.Planned, ct)
-		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED:
+		case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
+			planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			// Cut short and not resumed: Djinn resumes every task it can by itself, so this one is history.
 			v.Finished = append(v.Finished, ct)
-		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
+		case planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_RESUMING:
 			v.Running = append(v.Running, ct)
 		case planv1.TaskStatus_TASK_STATUS_WAITING:
 			// Its error only says it waits: the status and the actions say it better.
@@ -534,22 +606,31 @@ func build(in Input) (*view, error) {
 			v.Tasks = append(v.Tasks, ct)
 		}
 	}
+	// The work finished, the latest first.
+	slices.SortStableFunc(v.Finished, func(a, b task) int { return NewestEnded(a.src, b.src) })
+	// What moves or waits, by status, as in the window.
+	slices.SortStableFunc(v.Running, func(a, b task) int { return ByMotion(a.src, b.src) })
+	slices.SortStableFunc(v.Tasks, func(a, b task) int { return ByMotion(a.src, b.src) })
 	// The tasks by status, what needs an eye first, each pointing to the section that shows it.
 	for _, s := range []planv1.TaskStatus{
 		planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_FAILED,
 		planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_RUNNING,
-		planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED,
+		planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE,
+		planv1.TaskStatus_TASK_STATUS_STOPPED,
 	} {
 		if n := byStatus[s]; n > 0 {
 			delete(byStatus, s)
 			label, class := status(s, tr)
 			href := "#tasks"
 			if s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_DONE ||
-				s == planv1.TaskStatus_TASK_STATUS_STOPPED {
+				s == planv1.TaskStatus_TASK_STATUS_STOPPED || s == planv1.TaskStatus_TASK_STATUS_RESUMING {
 				href = "#running"
 			}
 			v.Counts = append(v.Counts, count{Class: class, Label: label, Href: href, Count: n})
 		}
+	}
+	if forkedCount > 0 {
+		v.Counts = append(v.Counts, count{Class: "stop", Label: tr("page.count_forked"), Href: "#running", Count: forkedCount})
 	}
 	// A status this Djinn does not name yet, last.
 	for _, s := range slices.Sorted(maps.Keys(byStatus)) {
@@ -570,6 +651,10 @@ func build(in Input) (*view, error) {
 			if e.Summary != "" || e.Note != "" {
 				journal = append(journal, e)
 			}
+			continue
+		}
+		if IsDecision(b) {
+			// In the decisions, with who took it.
 			continue
 		}
 		cb := block{Kind: b.GetKind(), Title: b.GetTitle(), Updated: at(b.GetUpdateTime())}
@@ -677,13 +762,6 @@ func firstLine(source string, n int) string {
 	return ""
 }
 
-func b2i(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
 // md renders Markdown, without raw HTML.
 func md(source string) template.HTML {
 	if strings.TrimSpace(source) == "" {
@@ -691,7 +769,7 @@ func md(source string) template.HTML {
 	}
 	var b bytes.Buffer
 	if err := markdown.Convert([]byte(source), &b); err != nil {
-		return template.HTML("<pre>" + template.HTMLEscapeString(source) + "</pre>")
+		return template.HTML("<pre>" + template.HTMLEscapeString(source) + "</pre>") //nolint:gosec // The source is escaped.
 	}
 	return template.HTML(b.String()) //nolint:gosec // goldmark leaves raw HTML and dangerous links out.
 }
@@ -731,6 +809,105 @@ func state(w *planv1.Wish, at func(interface{ AsTime() time.Time }) string, tr f
 	return tr("page.state_active"), "run"
 }
 
+// ForkedAs is the code of the task that took over t once it was cut short: a task of its wish forked from its
+// session (Task.fork_of); "" when none did.
+func ForkedAs(t *planv1.Task, tasks []*planv1.Task) string {
+	for _, o := range tasks {
+		if o.GetId() != t.GetId() && o.GetWishId() == t.GetWishId() && o.GetForkOf() != "" && o.GetForkOf() == t.GetCode() {
+			return o.GetCode()
+		}
+	}
+	return ""
+}
+
+// NewestEnded orders finished tasks the latest ended first, then the latest created: the window, the page and the
+// brief show them so.
+func NewestEnded(a, b *planv1.Task) int {
+	return cmp.Or(b.GetEndTime().AsTime().Compare(a.GetEndTime().AsTime()),
+		b.GetCreateTime().AsTime().Compare(a.GetCreateTime().AsTime()))
+}
+
+// motion is the order of the tasks that move or wait: what runs or broke first (running, cut short, failed,
+// resuming), then what waits (waiting, paused, a watcher that watches). A status not named comes after them, and the
+// planned ones last.
+var motion = []planv1.TaskStatus{
+	planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
+	planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_RESUMING,
+	planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_PAUSED,
+}
+
+// motionRank is where a task that moves or waits comes, by status; a running watcher waits with the paused ones.
+func motionRank(t *planv1.Task) int {
+	s := t.GetStatus()
+	switch {
+	case s == planv1.TaskStatus_TASK_STATUS_PENDING || s == planv1.TaskStatus_TASK_STATUS_UNSPECIFIED:
+		return len(motion) + 2
+	case s == planv1.TaskStatus_TASK_STATUS_RUNNING && t.GetProvider() == planv1.Provider_PROVIDER_WATCH:
+		return len(motion)
+	}
+	if i := slices.Index(motion, s); i >= 0 {
+		return i
+	}
+	return len(motion) + 1
+}
+
+// ByMotion orders the tasks that move or wait by status, as the window does; a stable sort keeps the order within a
+// status.
+func ByMotion(a, b *planv1.Task) int {
+	return cmp.Compare(motionRank(a), motionRank(b))
+}
+
+// Translator is the texts of the language lang: a key of locales, then its parameters as name and value pairs.
+func Translator(lang string) func(key string, params ...string) string {
+	return func(key string, params ...string) string {
+		m := map[string]string{}
+		for i := 0; i+1 < len(params); i += 2 {
+			m[params[i]] = params[i+1]
+		}
+		return locales.T(lang, key, m)
+	}
+}
+
+// Work says where the finished work of t stands on its way into its wish's integration branch (T07), with tr, and
+// the class that colours it: "" for work Djinn does not integrate. code names a task of the wish by its identifier,
+// for the correction and the review worker; "": the identifier itself.
+func Work(t *planv1.Task, code func(id string) string, tr func(string, ...string) string) (text, class string) {
+	in := t.GetIntegration()
+	switch in.GetState() {
+	case planv1.IntegrationState_INTEGRATION_STATE_PENDING:
+		text, class = tr("work.pending"), "pause"
+		if why := in.GetReason(); why != "" {
+			text = tr("work.pending_why", "reason", why)
+		}
+	case planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
+		text, class = tr("work.integrating", "branch", in.GetBranch()), "run"
+	case planv1.IntegrationState_INTEGRATION_STATE_COMMITTED:
+		text, class = tr("work.committed", "branch", in.GetBranch(), "sha", ShortSha(in.GetSha())), "ok"
+	case planv1.IntegrationState_INTEGRATION_STATE_CONFLICT:
+		text, class = tr("work.conflict", "reason", in.GetReason()), "fail"
+	case planv1.IntegrationState_INTEGRATION_STATE_RED:
+		text, class = tr("work.red", "reason", in.GetReason()), "fail"
+	case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+		text, class = tr("work.uncommitted"), "pause"
+	default:
+		return "", ""
+	}
+	for _, by := range [][2]string{{"work.corrected_by", in.GetCorrectedBy()}, {"work.reviewed_by", in.GetReviewedBy()}} {
+		id := by[1]
+		if id == "" {
+			continue
+		}
+		if code != nil && code(id) != "" {
+			id = code(id)
+		}
+		text += ", " + tr(by[0], "task", id)
+	}
+	return text, class
+}
+
+// ShortSha is a commit's first eight characters, as Djinn shows it.
+func ShortSha(sha string) string { return sha[:min(8, len(sha))] }
+
 // status names a task's status, with the class that colours it and gives its icon.
 func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, string) {
 	keys := map[planv1.TaskStatus][2]string{
@@ -742,6 +919,7 @@ func status(s planv1.TaskStatus, tr func(string, ...string) string) (string, str
 		planv1.TaskStatus_TASK_STATUS_INTERRUPTED: {"page.status_interrupted", "amber"},
 		planv1.TaskStatus_TASK_STATUS_WAITING:     {"page.status_waiting", "wait"},
 		planv1.TaskStatus_TASK_STATUS_PAUSED:      {"page.status_paused", "pause"},
+		planv1.TaskStatus_TASK_STATUS_RESUMING:    {"page.status_resuming", "run"},
 	}
 	if k, ok := keys[s]; ok {
 		return tr(k[0]), k[1]

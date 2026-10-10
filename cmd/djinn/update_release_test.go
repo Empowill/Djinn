@@ -1,5 +1,7 @@
 //go:build !windows
 
+// Not on Windows: the fake go command is a shell script, and the old djinn is stopped with SIGINT.
+
 package main
 
 import (
@@ -22,19 +24,23 @@ import (
 )
 
 // releaseCheckForTests is releaseCheck in a djinn of the tests that serves a fake release (TestMain).
-const releaseCheckForTests = 150 * time.Millisecond
+const releaseCheckForTests = 30 * time.Millisecond
 
 // trailerMark ends a copy of the test binary with the version it plays: two copies of one binary, two versions.
 const trailerMark = "\ndjinn-test-version="
 
-// withVersion is the test binary, playing version.
-func withVersion(t *testing.T, version string) []byte {
+// withVersions are copies of the test binary, each playing one of versions.
+func withVersions(t *testing.T, versions ...string) [][]byte {
 	t.Helper()
 	b, err := os.ReadFile(os.Args[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	return append(b, trailerMark+version+"\n"...)
+	out := make([][]byte, len(versions))
+	for i, v := range versions {
+		out[i] = append(b[:len(b):len(b)], trailerMark+v+"\n"...)
+	}
+	return out
 }
 
 // trailerVersion is the version a copy of the test binary plays; empty for the test binary itself.
@@ -60,13 +66,14 @@ func trailerVersion(exe string) string {
 }
 
 // TestUpdateFromRelease runs a Djinn installed from a release while a fake release is served: it offers nothing while
-// the release is its own version, offers a newer one without downloading it, refuses it on a click while its sum is
-// wrong, then on djinn update downloads it, swaps it in and restarts on it.
+// the release is its own version, offers a newer one with a link to its notes without downloading it, refuses it on a
+// click while its sum is wrong, then on djinn update downloads it, swaps it in and restarts on it.
 func TestUpdateFromRelease(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
 	fake := newFakeRelease(t)
-	v1, v2 := withVersion(t, "v1.0.0"), withVersion(t, "v2.0.0")
+	vs := withVersions(t, "v1.0.0", "v2.0.0")
+	v1, v2 := vs[0], vs[1]
 	dir := t.TempDir()
 	djinnPath := filepath.Join(dir, "djinn")
 	if err := os.WriteFile(djinnPath, v1, 0o755); err != nil {
@@ -128,8 +135,8 @@ func TestUpdateFromRelease(t *testing.T) {
 		t.Fatalf("at start: %v, %v", updates.Msg(), updates.Err())
 	}
 	waitChecks(2)
-	if r := updates.Msg().GetReady(); r != "" {
-		t.Fatalf("the release of its own version is offered: %q", r)
+	if r, n := updates.Msg().GetReady(), updates.Msg().GetNotesUrl(); r != "" || n != "" {
+		t.Fatalf("the release of its own version is offered: %q, notes %q", r, n)
 	}
 
 	// A newer release, whose sum is wrong: offered, and nothing downloads without the click.
@@ -138,6 +145,10 @@ func TestUpdateFromRelease(t *testing.T) {
 		if !updates.Receive() {
 			t.Fatalf("v2.0.0 never offered: %v\n%s", updates.Err(), oldErrs.String())
 		}
+	}
+	// The window links its release notes.
+	if n := updates.Msg().GetNotesUrl(); n != fake.srv.URL+"/notes/v2.0.0" {
+		t.Fatalf("the notes of v2.0.0: %q", n)
 	}
 	waitChecks(3)
 	if _, downloads := fake.counts(); downloads != 0 {
@@ -153,7 +164,7 @@ func TestUpdateFromRelease(t *testing.T) {
 	if _, downloads := fake.counts(); downloads != 1 {
 		t.Fatalf("downloads after the click: %d, want 1", downloads)
 	}
-	time.Sleep(2 * restartDelay)
+	time.Sleep(2 * restartDelayForTests)
 	alive("wrong sum")
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Fatalf("a refused release left files beside djinn: %v", entries)
@@ -187,7 +198,7 @@ func TestUpdateFromRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer now.Close()
-	if !now.Receive() || now.Msg().GetCurrent() != "v2.0.0" || now.Msg().GetReady() != "" {
+	if !now.Receive() || now.Msg().GetCurrent() != "v2.0.0" || now.Msg().GetReady() != "" || now.Msg().GetNotesUrl() != "" {
 		t.Fatalf("after the update: %v, %v", now.Msg(), now.Err())
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 // TestSkillArgs: each provider gets the summoned skills by its agent's own path. Claude and agy add Djinn's folder
 // of links; Claude may read the skills' folders and edit neither; codex is told where each SKILL.md is.
 func TestSkillArgs(t *testing.T) {
+	t.Parallel()
 	skills := []Skill{{Name: "babysit-mr", Source: "app/babysit-mr", Dir: "/src/app/.agents/skills/babysit-mr", Description: "Watch a MR."}}
 	spec := Spec{TaskID: "t1", Skills: skills, SkillsDir: "/home/djinn/skills/t1"}
 
@@ -75,8 +77,12 @@ func TestSkillArgs(t *testing.T) {
 }
 
 func TestClaudeAbsolute(t *testing.T) {
+	t.Parallel()
 	if got := claudeAbsolute("/home/a/skills"); got != "//home/a/skills" {
 		t.Errorf("claudeAbsolute = %q", got)
+	}
+	if got := claudeAbsolute(`C:\Users\a\skills`); runtime.GOOS == "windows" && got != "//c/Users/a/skills" {
+		t.Errorf("claudeAbsolute on Windows = %q", got)
 	}
 }
 
@@ -104,6 +110,7 @@ func (p linkProbe) Start(ctx context.Context, spec Spec) (Worker, error) {
 // TestSummonAtLaunch: a skill summoned into a project reaches every worker there by its agent's path, from the
 // source as it is; the project and the worker's worktree stay clean; a missing source is said; unsummoning stops it.
 func TestSummonAtLaunch(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	skills := planv1connect.NewSkillServiceClient(e.srv.Client(), e.srv.URL)
@@ -176,18 +183,14 @@ func TestSummonAtLaunch(t *testing.T) {
 		{planv1.Provider_PROVIDER_CODEX, Codex{Command: os.Args[0]}, "codex"},
 	} {
 		env, argsFile, inputFile := fake{provider: c.name, fixture: "success", end: "eof"}.env(t)
-		for _, kv := range env {
-			k, v, _ := strings.Cut(kv, "=")
-			t.Setenv(k, v)
-		}
-		e.h.providers[c.kind] = c.provider
+		e.h.providers[c.kind] = withEnv{c.provider, env}
 		task, _ := spawn(c.kind)
 		args, _ := os.ReadFile(argsFile)
 		input, _ := os.ReadFile(inputFile)
 		dir := skillsDir(home, task.GetId())
 		switch c.name {
 		case "claude":
-			if !strings.Contains(string(args), "--add-dir\n"+dir+"\n") || !strings.Contains(string(args), "Read(/"+filepath.ToSlash(src)+"/**)") {
+			if !strings.Contains(string(args), "--add-dir\n"+dir+"\n") || !strings.Contains(string(args), "Read("+claudeAbsolute(src)+"/**)") {
 				t.Errorf("claude args = %s", args)
 			}
 		case "antigravity":
@@ -195,7 +198,9 @@ func TestSummonAtLaunch(t *testing.T) {
 				t.Errorf("agy args = %s", args)
 			}
 		case "codex":
-			if !strings.Contains(string(input), `"developerInstructions":"Skills summoned`) || !strings.Contains(string(input), filepath.Join(src, "SKILL.md")) {
+			// As JSON writes it: Windows' backslashes come doubled.
+			skill, _ := json.Marshal(filepath.Join(src, "SKILL.md"))
+			if !strings.Contains(string(input), `"developerInstructions":"Skills summoned`) || !strings.Contains(string(input), strings.Trim(string(skill), `"`)) {
 				t.Errorf("codex input = %s", input)
 			}
 		}
@@ -232,4 +237,15 @@ func TestSummonAtLaunch(t *testing.T) {
 		t.Errorf("spec after unsummon = %+v", got.spec)
 	}
 	clean(task)
+}
+
+// withEnv is a provider whose workers get env too: the test binary plays them, the test's environment unchanged.
+type withEnv struct {
+	Provider
+	env []string
+}
+
+func (p withEnv) Start(ctx context.Context, spec Spec) (Worker, error) {
+	spec.Env = append(spec.Env, p.env...)
+	return p.Provider.Start(ctx, spec)
 }

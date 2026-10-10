@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -130,10 +131,10 @@ func TestChoose(t *testing.T) {
 		t.Fatal("no word of the choice")
 	}
 	from = size(term)
-	if err := term.Choose("Do you want to continue?", p.Lines, p.Options, 1); err != ErrNoPrompt {
+	if err := term.Choose("Do you want to continue?", p.Lines, p.Options, 1); !errors.Is(err, ErrNoPrompt) {
 		t.Fatalf("Choose on another choice = %v, want ErrNoPrompt", err)
 	}
-	if err := term.Choose(p.Title, p.Lines, p.Options, 3); err != ErrNoPrompt {
+	if err := term.Choose(p.Title, p.Lines, p.Options, 3); !errors.Is(err, ErrNoPrompt) {
 		t.Fatalf("Choose past the options = %v, want ErrNoPrompt", err)
 	}
 	none(t, term, from, "nothing was chosen")
@@ -141,7 +142,7 @@ func TestChoose(t *testing.T) {
 		t.Fatal(err)
 	}
 	output(t, term, from, contains(`chose "\x1b[B\r"`))
-	if err := term.Choose(p.Title, p.Lines, p.Options, 1); err != ErrNoPrompt {
+	if err := term.Choose(p.Title, p.Lines, p.Options, 1); !errors.Is(err, ErrNoPrompt) {
 		t.Fatalf("Choose once answered = %v, want ErrNoPrompt", err)
 	}
 	deadline := time.After(5 * time.Second)
@@ -166,7 +167,7 @@ func TestChooseRejectsChangedCommand(t *testing.T) {
 		t.Fatal("no prompt")
 	}
 	term.screen.write([]byte("\x1b[2J\x1b[H" + strings.ReplaceAll(codexCommand, "djinn wish brief 01a11f56", "delete another file")))
-	if err := term.Choose(p.Title, p.Lines, p.Options, 0); err != ErrNoPrompt {
+	if err := term.Choose(p.Title, p.Lines, p.Options, 0); !errors.Is(err, ErrNoPrompt) {
 		t.Fatalf("stale command: %v", err)
 	}
 	if promptKey(term.Prompt()) == promptKey(p) {

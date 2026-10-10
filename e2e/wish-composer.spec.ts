@@ -385,7 +385,7 @@ test("French empty creation keeps the title, caret and smoke visible", async ({
   previousLayout = await waitForSmokeLayoutCommit(previousLayout);
 
   await page.setViewportSize({ width: 1440, height: 1000 });
-  previousLayout = await waitForSmokeLayoutCommit(previousLayout);
+  await waitForSmokeLayoutCommit(previousLayout);
   await expect.poll(hasAscii, { timeout: 10_000 }).toBe(true);
   const sawBlank = await page.evaluate(
     () =>

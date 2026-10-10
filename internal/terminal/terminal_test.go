@@ -1,7 +1,7 @@
 //go:build !windows
 
-// The pseudo-terminal tests drive /bin/sh, so they run on macOS and Linux; on Windows the terminal is checked by hand
-// in the window (see the T21 task file).
+// The pseudo-terminal tests drive /bin/sh, so they run on macOS and Linux; Windows has its own in
+// pty_windows_test.go.
 package terminal
 
 import (
@@ -36,51 +36,6 @@ func sh(t *testing.T, m *Manager, name string, args ...string) *Terminal {
 	return term
 }
 
-// output follows the output of term from offset from, and returns all of it once match finds what it looks for.
-func output(t *testing.T, term *Terminal, from uint64, match func(string) bool) string {
-	t.Helper()
-	var out bytes.Buffer
-	stop := make(chan struct{})
-	read := make(chan bool)
-	go func() {
-		found := false
-		_ = term.Read(from, stop, func(o Output) error {
-			out.Write(o.Data)
-			if found = match(out.String()); found {
-				return errors.New("found")
-			}
-			return nil
-		})
-		read <- found
-	}()
-	timeout := time.AfterFunc(5*time.Second, func() { close(stop) })
-	found := <-read
-	timeout.Stop()
-	if !found {
-		t.Fatalf("not found in the output of the terminal:\n%q", out.String())
-	}
-	return out.String()
-}
-
-func contains(s string) func(string) bool {
-	return func(out string) bool { return strings.Contains(out, s) }
-}
-
-// end waits for the program of term to end and returns its exit code.
-func end(t *testing.T, term *Terminal) int {
-	t.Helper()
-	select {
-	case <-term.Done():
-	case <-time.After(5 * time.Second):
-		t.Fatal("the program did not end")
-	}
-	_, _, exited, code := term.State()
-	if !exited {
-		t.Fatal("ended but not exited")
-	}
-	return code
-}
-
 func TestWriteThenRead(t *testing.T) {
 	m := NewManager(Config{})
 	term := sh(t, m, "main")
@@ -100,7 +55,7 @@ func TestWriteThenRead(t *testing.T) {
 	if !last.Exited || last.Code != 3 {
 		t.Fatalf("last piece %+v, want the end with code 3", last)
 	}
-	if err := term.Write([]byte("x")); err != ErrExited {
+	if err := term.Write([]byte("x")); !errors.Is(err, ErrExited) {
 		t.Fatalf("write after the end: %v, want ErrExited", err)
 	}
 }
@@ -134,8 +89,33 @@ func TestOpenAttachesToTheRunningTerminal(t *testing.T) {
 	if err != nil || attached || next.ID == first.ID {
 		t.Fatalf("open after the end: attached %v, new %v, %v", attached, next.ID != first.ID, err)
 	}
-	if _, err := m.Get(first.ID); err != ErrNotFound {
+	if _, err := m.Get(first.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("get the ended terminal: %v, want ErrNotFound", err)
+	}
+}
+
+// TestOpenStartsInAFolderGiven: without a folder from the window nor Dir, a terminal starts in the one Folder gives,
+// asked at each start; with none, it does not start, never in the home folder.
+func TestOpenStartsInAFolderGiven(t *testing.T) {
+	if _, _, err := NewManager(Config{Command: []string{"/bin/sh"}}).Open("main", nil, "", 0, 0); !errors.Is(err, ErrNoFolder) {
+		t.Fatalf("no folder at all: %v, want ErrNoFolder", err)
+	}
+	none := errors.New("no project yet")
+	folder := ""
+	m := NewManager(Config{Command: []string{"/bin/sh"}, Folder: func() (string, error) {
+		if folder == "" {
+			return "", none
+		}
+		return folder, nil
+	}})
+	t.Cleanup(m.Close)
+	if _, _, err := m.Open("main", nil, "", 0, 0); !errors.Is(err, ErrNoFolder) || !errors.Is(err, none) {
+		t.Fatalf("no folder yet: %v, want ErrNoFolder and why", err)
+	}
+	folder = t.TempDir()
+	term, _, err := m.Open("main", nil, "", 0, 0)
+	if err != nil || term.Dir != folder {
+		t.Fatalf("open once a folder is given: %v in %q, want %q", err, term.Dir, folder)
 	}
 }
 
@@ -295,8 +275,29 @@ func TestCloseHangsUp(t *testing.T) {
 	if took := time.Since(start); took < grace || took > grace+2*time.Second {
 		t.Fatalf("closing took %v, want the grace delay %v and a little", took, grace)
 	}
-	if _, _, err := m.Open("again", nil, "", 0, 0); err != ErrClosed {
+	if _, _, err := m.Open("again", nil, "", 0, 0); !errors.Is(err, ErrClosed) {
 		t.Fatalf("open after close: %v, want ErrClosed", err)
+	}
+}
+
+// TestHangupByName: a wish deleted hangs up its lead's terminal by name, and leaves the others running.
+func TestHangupByName(t *testing.T) {
+	m := NewManager(Config{})
+	lead := sh(t, m, "lead-w", "-c", `trap 'exit 7' HUP; echo ready; while :; do sleep 0.05; done`)
+	other := sh(t, m, "other", "-c", `echo ready; while :; do sleep 0.05; done`)
+	output(t, lead, 0, contains("ready"))
+	output(t, other, 0, contains("ready"))
+	if !m.Hangup("lead-w") {
+		t.Fatal("hangup of a running terminal: false")
+	}
+	if code := end(t, lead); code != 7 {
+		t.Fatalf("the lead ended with %d, want 7", code)
+	}
+	if m.Hangup("lead-w") || m.Hangup("none") {
+		t.Fatal("hangup of an ended or unknown terminal: true")
+	}
+	if other.Exited() {
+		t.Fatal("the other terminal ended")
 	}
 }
 
@@ -340,8 +341,6 @@ func TestHeldSpaceArrivesAsRepeats(t *testing.T) {
 	t.Logf("%d spaces in %d ms, one read each", repeats, prev)
 }
 
-const helperEnv = "DJINN_TERMINAL_HELPER"
-
 // TestHelperProcess is the program the tests run in a terminal, not a test: with spaces, it puts its terminal in raw
 // mode, as Claude Code does, and reports each read until it has read 20 spaces.
 func TestHelperProcess(t *testing.T) {
@@ -353,14 +352,14 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Println("raw:", err)
 		os.Exit(1)
 	}
-	defer rawterm.Restore(0, state) //nolint:errcheck
+	defer rawterm.Restore(0, state) //nolint:errcheck // Restored by hand before the exit below.
 	fmt.Print("ready\r\n")
 	var first time.Time
 	b := make([]byte, 64)
 	for count := 0; count < 20; {
 		n, err := os.Stdin.Read(b)
 		if err != nil {
-			os.Exit(1)
+			os.Exit(1) //nolint:gocritic // The pseudo-terminal goes with this process.
 		}
 		if first.IsZero() {
 			first = time.Now()
@@ -369,7 +368,7 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Printf("read %d at %d\r\n", n, time.Since(first).Milliseconds())
 	}
 	fmt.Print("done\r\n")
-	rawterm.Restore(0, state) //nolint:errcheck
+	rawterm.Restore(0, state) //nolint:errcheck // Exits next: nothing to report it to.
 	os.Exit(0)
 }
 
@@ -414,6 +413,14 @@ func TestService(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "hello") {
 		t.Fatalf("no hello in %q: %v", out.String(), stream.Err())
+	}
+	// Attached again, it says how far its output has come: the window answers no query below.
+	again, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "main"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Msg.GetAttached() || again.Msg.GetEndOffset() < uint64(out.Len()) {
+		t.Fatalf("open again: %v, read %d bytes", again.Msg, out.Len())
 	}
 	if _, err := c.Close(ctx, connect.NewRequest(&terminalv1.TerminalServiceCloseRequest{Id: id})); err != nil {
 		t.Fatal(err)
@@ -574,5 +581,45 @@ func TestServiceAttachesToExitedLeadTerminal(t *testing.T) {
 	}
 	if _, err := c.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: "lead-missing"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("open missing lead: %v, want failed precondition", err)
+	}
+}
+
+// TestServiceList gives the terminals whose program runs, by name, without starting any: the window shows a wish's
+// lead only while it runs.
+func TestServiceList(t *testing.T) {
+	m := NewManager(Config{Command: []string{"/bin/sh"}, Dir: t.TempDir()})
+	t.Cleanup(m.Close)
+	srv := httptest.NewServer(func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.Handle(Handler(m))
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	c := terminalv1connect.NewTerminalServiceClient(srv.Client(), srv.URL)
+	ctx := t.Context()
+	names := func() []string {
+		t.Helper()
+		res, err := c.List(ctx, connect.NewRequest(&terminalv1.TerminalServiceListRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, term := range res.Msg.GetTerminals() {
+			out = append(out, term.GetName())
+		}
+		return out
+	}
+	if got := names(); len(got) != 0 || len(m.Running()) != 0 {
+		t.Fatalf("listed %v before any terminal, or started one", got)
+	}
+	sh(t, m, "main")
+	lead := sh(t, m, "lead-w1", "-c", "exit 3")
+	end(t, lead)
+	if got := names(); len(got) != 1 || got[0] != "main" {
+		t.Fatalf("listed %v, want only main: an ended lead is not running", got)
+	}
+	sh(t, m, "lead-w2")
+	if got := strings.Join(names(), " "); got != "lead-w2 main" {
+		t.Fatalf("listed %q, want lead-w2 main", got)
 	}
 }

@@ -11,9 +11,12 @@ import "./instruction.css";
 export function InstructionList({
   instructions,
   tasks,
+  onTask,
 }: {
   instructions: Instruction[];
   tasks: Task[];
+  // Open the task's own view when the task is rendered outside this list.
+  onTask?: (taskId: string) => void;
 }) {
   if (!instructions.length) return null;
   const workers = new Map(tasks.map((task) => [task.id, task]));
@@ -57,6 +60,11 @@ export function InstructionList({
                           className="instruction-worker"
                           href={`#task-${worker.id}`}
                           onClick={(event) => {
+                            if (onTask) {
+                              event.preventDefault();
+                              onTask(worker.id);
+                              return;
+                            }
                             const target = document.getElementById(
                               `task-${worker.id}`,
                             );

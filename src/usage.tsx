@@ -1,6 +1,6 @@
 // What workers spent: tokens (input, output, cache read and written) and the cost when their agent gives one.
 // Codex and Antigravity give tokens only: the page shows what exists, and says what it cannot add up.
-import type { Usage } from "../gen/ts/plan/v1/plan_pb";
+import type { Resources, Usage } from "../gen/ts/plan/v1/plan_pb";
 import { type Spent, tokensOf } from "./data/flight";
 import { usd } from "./data/format";
 import { language, t } from "./i18n";
@@ -71,4 +71,57 @@ export function SpentLine({ spent }: { spent: Spent }) {
       )}
     </span>
   );
+}
+
+// What a worker uses of the machine (Resources): its CPU, its memory, its processes.
+const byteUnits = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"];
+
+// memory says a size in bytes in a few characters: 512 MB, 1.2 GB.
+export function memory(bytes: bigint): string {
+  let value = Number(bytes);
+  let unit = 0;
+  while (value >= 1024 && unit < byteUnits.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return new Intl.NumberFormat(language, {
+    style: "unit",
+    unit: byteUnits[unit],
+    unitDisplay: "short",
+    maximumFractionDigits: value < 10 ? 1 : 0,
+  }).format(value);
+}
+
+const percent = new Intl.NumberFormat(language, { maximumFractionDigits: 0 });
+
+// resourcesNow is what the worker uses at the last reading: its CPU and memory, short.
+export function resourcesNow(r: Resources): string {
+  return [
+    t("resources.cpu", { percent: percent.format(r.cpuPercent) }),
+    memory(r.memoryBytes),
+  ].join(" · ");
+}
+
+// resourcesDetail is what the worker uses in full, one line: now while it runs, and the peaks.
+export function resourcesDetail(r: Resources, running: boolean): string {
+  const out: string[] = [];
+  if (running && r.readTime)
+    out.push(
+      t("resources.now", {
+        detail: [
+          resourcesNow(r),
+          t("resources.processes", { count: r.processes }),
+        ].join(" · "),
+      }),
+    );
+  if (r.peakMemoryBytes > 0n)
+    out.push(
+      t("resources.peak", {
+        detail: [
+          t("resources.cpu", { percent: percent.format(r.peakCpuPercent) }),
+          memory(r.peakMemoryBytes),
+        ].join(" · "),
+      }),
+    );
+  return out.join(" · ");
 }

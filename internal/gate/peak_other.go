@@ -1,9 +1,8 @@
-//go:build !linux && !darwin
+//go:build !linux && !darwin && !windows
 
 package gate
 
 import "os"
 
-// peakMemory is unknown here. Windows gives a process's peak memory only while its handle is open, and the
-// command's children only through a Job Object: neither is held yet.
+// peakMemory is unknown here.
 func peakMemory(*os.ProcessState) uint64 { return 0 }

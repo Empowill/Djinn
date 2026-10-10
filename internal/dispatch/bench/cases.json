@@ -62,11 +62,50 @@
     "expect": { "W2": "fail" }
   },
   {
-    "name": "a dependency interrupted when djinn stopped",
+    "name": "a dependency interrupted when djinn stopped: Djinn resumes it",
     "wishes": [{ "id": "A" }],
     "tasks": [
       { "code": "W1", "wish": "A", "status": "interrupted" },
       { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W2": "wait" }
+  },
+  {
+    "name": "a dependency Djinn resumes",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "resuming" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] }
+    ],
+    "expect": { "W1": "start", "W2": "wait" }
+  },
+  {
+    "name": "a dependency resumed as a fork that runs",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "interrupted" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] },
+      { "code": "W3", "wish": "A", "status": "running", "fork_of": "W1" }
+    ],
+    "expect": { "W2": "wait" }
+  },
+  {
+    "name": "a dependency resumed as a fork that is done",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "interrupted" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] },
+      { "code": "W3", "wish": "A", "status": "done", "fork_of": "W1" }
+    ],
+    "expect": { "W2": "start" }
+  },
+  {
+    "name": "a dependency resumed as a fork that failed",
+    "wishes": [{ "id": "A" }],
+    "tasks": [
+      { "code": "W1", "wish": "A", "status": "interrupted" },
+      { "code": "W2", "wish": "A", "status": "planned", "depends_on": ["W1"] },
+      { "code": "W3", "wish": "A", "status": "failed", "fork_of": "W1" }
     ],
     "expect": { "W2": "fail" }
   },

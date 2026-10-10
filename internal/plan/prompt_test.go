@@ -182,21 +182,24 @@ func TestMakePromptValidationAndRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range []*planv1.WishServiceMakeRequest{
-		{Prompt: "Refused by the active limit"},
-		{Prompt: "Unknown project", ProjectIds: []string{store.NewID()}, Paused: true},
-	} {
-		if _, err := c.wishes.Make(t.Context(), connect.NewRequest(m)); err == nil {
-			t.Fatal("refused creation succeeded")
-		}
+	paused, err := c.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Prompt: "Wait behind the active wishes",
+	}))
+	if err != nil || Active(paused.Msg.GetWish()) {
+		t.Fatalf("creation beyond the active limit: %v, %v; want a paused wish", paused, err)
+	}
+	if _, err := c.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Prompt: "Unknown project", ProjectIds: []string{store.NewID()}, Paused: true,
+	})); err == nil {
+		t.Fatal("creation with an unknown project succeeded")
 	}
 	blocks, err := store.List[*planv1.Block](t.Context(), c.store, nil)
-	if err != nil || len(blocks) != 0 || len(c.list(t)) != MaxActive {
-		t.Fatalf("failed creation left entities: %v, %v", blocks, err)
+	if err != nil || len(blocks) != 1 || len(c.list(t)) != MaxActive+1 {
+		t.Fatalf("creation rollback or active limit: %v, %v", blocks, err)
 	}
 	after, err := store.Commands(t.Context(), c.store, nil)
-	if err != nil || len(before) != len(after) {
-		t.Fatalf("failed creation left a journal entry: %d → %d, %v", len(before), len(after), err)
+	if err != nil || len(after) != len(before)+1 {
+		t.Fatalf("failed creation left an unexpected journal entry: %d → %d, %v", len(before), len(after), err)
 	}
 }
 

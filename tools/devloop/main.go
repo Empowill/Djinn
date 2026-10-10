@@ -38,7 +38,7 @@ func main() {
 	defer stop()
 	if err := run(ctx, *home, *port, *poll); err != nil {
 		fmt.Fprintln(os.Stderr, "devloop:", err)
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // stop only releases the signal, which goes with the process.
 	}
 }
 
@@ -134,8 +134,11 @@ func relay(home, origin string) http.Handler {
 	})
 }
 
-// watched are the Go sources of the djinn binary, and what it embeds besides the interface.
-var watched = []string{"cmd/djinn", "internal", "gen/go", "locales", "go.mod", "go.sum", "assets.go"}
+// watched are the Go sources of the djinn binary, and what it embeds besides the interface: the locales and the
+// documentation site.
+var watched = []string{
+	"cmd/djinn", "internal", "gen/go", "locales", "go.mod", "go.sum", "assets.go", "docs/site",
+}
 
 // snapshot is the modification time and size of every watched file.
 func snapshot() map[string]string {
@@ -143,9 +146,11 @@ func snapshot() map[string]string {
 	for _, root := range watched {
 		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || strings.HasSuffix(p, "_test.go") {
-				return nil
+				return nil //nolint:nilerr // An entry it cannot read is not watched.
 			}
-			if ext := filepath.Ext(p); ext != ".go" && ext != ".json" && ext != ".mod" && ext != ".sum" {
+			// Every file of the documentation site counts: djinn embeds it as it is.
+			site := strings.HasPrefix(filepath.ToSlash(p), "docs/site/")
+			if ext := filepath.Ext(p); !site && ext != ".go" && ext != ".json" && ext != ".mod" && ext != ".sum" {
 				return nil
 			}
 			if info, err := d.Info(); err == nil {

@@ -2,6 +2,12 @@
 version: "3"
 
 vars:
+  # What Prettier formats: the interface, its tests, and the root configs. Not docs/ nor plan/: their prose is
+  # wrapped by hand, and Prettier would rewrite the tables and list markers of files every worker edits.
+  PRETTIER_FILES: '"src/**/*.{ts,tsx,css}" "e2e/**/*.ts" "tests/*.{mjs,cjs}" "*.{ts,mjs}"'
+  # golangci-lint is pinned in a module of its own (tools/golangci/go.mod): its few hundred dependencies stay out of
+  # Djinn's go.mod, and nothing needs installing.
+  GOLANGCI: go tool -modfile=tools/golangci/go.mod golangci-lint
   # The native window is in every build by default. Tests and CI build headless: no CGO, no webview.
   # Ubuntu 22.04 only ships WebKitGTK 4.1, which Wails v3 reaches through its gtk3 tag.
   WINDOW_TAGS:
@@ -9,12 +15,15 @@ vars:
 
 tasks:
   gen:
-    desc: Generate Go code, the descriptors the command line embeds, and docs/openapi.json, from the protos in api/
+    desc: Generate Go code, TypeScript and the descriptors the command line embeds, from the protos in api/
     cmds:
       - go tool buf generate
       - go tool buf build --exclude-imports --as-file-descriptor-set -o gen/djinn.binpb
-      # Compiled after the line above: it reads the descriptors just written.
-      - go run ./tools/openapi docs/openapi.json
+
+  docs:
+    desc: "Build the documentation site into bin/docs, to open offline (bin/docs/index.html): docs/site, its concepts and its Command line tab, filled in from djinn's command tree. djinn up serves the same at /docs/"
+    cmds:
+      - go run ./tools/docsite bin/docs
 
   ui:
     desc: Build the interface into dist/, only when its sources changed (the djinn binary embeds it)
@@ -76,10 +85,11 @@ tasks:
       - node --test tests/*.test.mjs
 
   test-go:
-    desc: Run the Go unit tests (builds the interface first if it changed)
+    desc: "Run the Go unit tests (builds the interface first if it changed); fails on any test over 2 s on Linux, over 15 s elsewhere (tools/slowtests)"
     deps: [ui]
+    set: [pipefail]
     cmds:
-      - go test -tags headless ./...
+      - go test -tags headless -json ./... | go run ./tools/slowtests
 
   test-race:
     desc: "Run the Go unit tests under the race detector (builds the interface first if it changed); pass go test arguments after --, e.g. -- -run TestCloseHangsUp ./internal/terminal"
@@ -99,12 +109,12 @@ tasks:
       - go test -tags headless -run '^$' -bench . -benchmem {{.CLI_ARGS}} ./internal/server
 
   bench-workers:
-    desc: "PAID: compare five ways Djinn starts a worker (cold, --bare, fork, warm, brief) on one small task with a real model. Prints its quote; runs only with BENCH_PAID=yes and BENCH_MAX_USD (see plan/1689571a-fast-workers.md)"
+    desc: "PAID: compare five ways Djinn starts a worker (cold, --bare, fork, warm, brief) on one small task with a real model. Prints its quote; runs only with BENCH_PAID=yes and BENCH_MAX_USD (see plan/8ce817da-cost.md)"
     cmds:
       - go run ./tools/benchworkers
 
   bench-dispatch:
-    desc: "Run the dispatch bench: the plain Go scheduler on hand-written dispatch cases (internal/dispatch/bench/cases.json), as a table of its decisions and the time per pass. No model (see plan/263f074f-dispatch-bench.md)"
+    desc: "Run the dispatch bench: the plain Go scheduler on hand-written dispatch cases (internal/dispatch/bench/cases.json), as a table of its decisions and the time per pass. No model (see plan/8e8d3d76-orchestrator.md)"
     cmds:
       - go run -tags headless ./tools/benchdispatch
 
@@ -115,6 +125,13 @@ tasks:
       - npx vite build --config e2e/vite.config.ts --logLevel warn
       - go build -tags headless -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
       - npx playwright test --config e2e/playwright.config.ts {{.CLI_ARGS}}
+
+  screenshots:
+    desc: "Retake the README's screenshots (docs/screenshots/readme/), dark and light: a demonstration wish in English on the browser build, in a djinn of its own (e2e/readme.shot.ts)"
+    deps: [ui]
+    cmds:
+      - go build -tags headless -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
+      - npx playwright test --config e2e/screenshots.config.ts
 
   e2e-native:
     desc: "Drive the real native window end to end through the MCP server of Wails (e2e/native/): builds a test variant, bin/djinn-e2e-native, opens its window a few seconds. Not part of test; -- -v shows each step, DJINN_E2E_NATIVE_HOLD=5s keeps the window up to look at it"
@@ -133,21 +150,28 @@ tasks:
       - go run -tags '{{.WINDOW_TAGS}}' ./tools/windowcheck {{.CLI_ARGS}}
 
   lint:
-    desc: "Check everything: protos, Go (gofmt, vet), TypeScript types, formatting"
+    desc: "Check everything: protos, Go (golangci-lint: gofmt, vet and the linters of .golangci.yml), TypeScript types, ESLint, formatting"
     deps: [ui]
     cmds:
       - go tool buf lint
-      - go run ./tools/gofmtcheck cmd internal tools locales e2e
-      - go vet -tags headless ./...
-      - go vet -tags 'headless mcp' ./cmd/djinn
+      # fmt reads every Go file, whatever its build tags; run type-checks the headless build (.golangci.yml), then
+      # cmd/djinn with the mcp tag too, the build of the native end-to-end tests.
+      - "{{.GOLANGCI}} fmt --diff"
+      - "{{.GOLANGCI}} run ./..."
+      - "{{.GOLANGCI}} run --build-tags headless,mcp ./cmd/djinn"
       - npx tsc -b --noEmit
-      - npx prettier --check --log-level warn "src/**/*.{ts,tsx,css}" "e2e/**/*.ts"
+      - npx eslint --max-warnings 0 .
+      - npx prettier --check --log-level warn {{.PRETTIER_FILES}}
 
   format:
-    desc: Format the Go and TypeScript code in place
+    desc: Format the Go and TypeScript code in place, and apply the fixes golangci-lint and ESLint know
+    deps: [ui]
     cmds:
-      - gofmt -w cmd internal tools locales e2e
-      - npx prettier --write --log-level warn "src/**/*.{ts,tsx,css}" "e2e/**/*.ts"
+      - "{{.GOLANGCI}} fmt"
+      - "{{.GOLANGCI}} run --fix --issues-exit-code 0 ./..."
+      - "{{.GOLANGCI}} run --fix --issues-exit-code 0 --build-tags headless,mcp ./cmd/djinn"
+      - npx eslint --fix .
+      - npx prettier --write --log-level warn {{.PRETTIER_FILES}}
 
   release:
     desc: "Tag a release that carries the built interface: task release VERSION=v0.1.0 (pushing the tag stays a separate step)"
@@ -187,7 +211,7 @@ tasks:
       - go run ./tools/releasepack pack bin/release/{{.NAME}}
 
   release-build-macos:
-    desc: "Build the universal macOS release archive (arm64 and amd64 joined by lipo) into bin/release/, from the interface in dist/: task release-build-macos VERSION=v0.1.0. macOS only"
+    desc: "Build the universal macOS release archive (arm64 and amd64 joined by lipo) and Djinn.app around it into bin/release/, from the interface in dist/: task release-build-macos VERSION=v0.1.0. macOS only"
     platforms: [darwin]
     requires:
       vars: [VERSION]
@@ -209,6 +233,25 @@ tasks:
       #   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" {{.DIR}}/djinn
       #   then the archive goes through `xcrun notarytool submit --wait`; a bare binary cannot be stapled.
       - go run ./tools/releasepack pack {{.DIR}}
+      - task: release-macos-app
+        vars: { VERSION: "{{.VERSION}}" }
+
+  release-macos-app:
+    desc: "Lay out Djinn.app, the macOS app bundle, around a macOS djinn and zip it into bin/release/djinn_darwin_universal_app.zip: task release-macos-app VERSION=v0.1.0 [BINARY=bin/release/djinn_darwin_universal/djinn]. Runs anywhere: on Linux, try it on a GOOS=darwin build"
+    requires:
+      vars: [VERSION]
+    vars:
+      BINARY: '{{.BINARY | default "bin/release/djinn_darwin_universal/djinn"}}'
+      DIR: bin/release/.app
+    cmds:
+      - go run ./tools/macapp bundle --binary "{{.BINARY}}" --version {{.VERSION}} {{.DIR}}
+      # Signing comes here, once an Apple Developer ID exists (plan/71f9c331-releases.md). The binary, the bundle's
+      # executable, is signed already (release-build-macos); this seals it with Info.plist and the resources. A signed
+      # bundle keeps part of its signature in extended attributes, which only ditto zips, in place of the line after:
+      #   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" {{.DIR}}/Djinn.app
+      #   ditto -c -k --keepParent {{.DIR}}/Djinn.app bin/release/djinn_darwin_universal_app.zip
+      # The release workflow then notarizes the zip and staples the app.
+      - go run ./tools/macapp zip {{.DIR}}/Djinn.app bin/release/djinn_darwin_universal_app.zip
 
   release-sums:
     desc: Write bin/release/SHA256SUMS over the release archives

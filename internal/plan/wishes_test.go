@@ -1,8 +1,11 @@
 package plan
 
 import (
+	"context"
+	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -56,17 +59,46 @@ func order(wishes []*planv1.Wish) string {
 	for i, w := range wishes {
 		parts[i] = w.GetTitle() + ":" + strings.TrimPrefix(w.GetState().String(), "WISH_STATE_")
 		if w.GetRank() > 0 {
-			parts[i] += string(rune('0' + w.GetRank()))
+			parts[i] += string(rune('0' + w.GetRank())) //nolint:unconvert // rune says a character is meant.
 		}
 	}
 	return strings.Join(parts, " ")
 }
 
-// TestThreeWishes: three wishes are active at most; a fourth is refused with a way out, and paused or granted
-// wishes leave their place.
+// workers records what the wishes ask of their workers.
+type workers struct {
+	mu      sync.Mutex
+	shelved []string
+	stopped []string
+	wakes   int
+}
+
+func (w *workers) Shelve(_ context.Context, wishID string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.shelved = append(w.shelved, wishID)
+}
+
+func (w *workers) Wake() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.wakes++
+}
+
+func (w *workers) StopWish(_ context.Context, wishID string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.stopped = append(w.stopped, wishID)
+	return nil
+}
+
+// TestThreeWishes: there may be as many wishes as you like, and the three first are active. A fourth is made paused;
+// activating one when three are active takes the third place, and pauses the third wish. A paused wish's workers
+// stop.
 func TestThreeWishes(t *testing.T) {
 	ctx := t.Context()
-	c := serve(t)
+	fake := &workers{}
+	c := serve(t, WithWorkers(fake))
 	var ids []string
 	for _, title := range []string{"A", "B", "C"} {
 		w, err := c.make(t, title, false)
@@ -75,32 +107,41 @@ func TestThreeWishes(t *testing.T) {
 		}
 		ids = append(ids, w.GetId())
 	}
-	_, err := c.make(t, "D", false)
-	if code(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "djinn wish pause") ||
-		!strings.Contains(err.Error(), "--paused") || !strings.Contains(err.Error(), "1. A (") {
-		t.Fatalf("a fourth active wish: %v", err)
-	}
-	d, err := c.make(t, "D", true)
+	d, err := c.make(t, "D", false)
 	if err != nil || d.GetState() != planv1.WishState_WISH_STATE_PAUSED || d.GetRank() != 0 {
-		t.Fatalf("a paused fourth wish: %v, %v", d, err)
-	}
-	if _, err := c.wishes.Activate(ctx, connect.NewRequest(&planv1.WishServiceActivateRequest{WishId: d.GetId()})); code(err) != connect.CodeFailedPrecondition {
-		t.Errorf("activate a fourth: %v", err)
+		t.Fatalf("a fourth wish, made paused: %v, %v", d, err)
 	}
 	if got := order(c.list(t)); got != "A:ACTIVE1 B:ACTIVE2 C:ACTIVE3 D:PAUSED" {
 		t.Errorf("list = %s", got)
 	}
 
-	// Pausing B leaves its place, and closes the gap in the ranks.
+	// Activating D when three are active: D takes the third place, C is paused and its workers stop.
+	res, err := c.wishes.Activate(ctx, connect.NewRequest(&planv1.WishServiceActivateRequest{WishId: d.GetId()}))
+	if err != nil || res.Msg.GetWish().GetRank() != 3 || len(res.Msg.GetPaused()) != 1 ||
+		res.Msg.GetPaused()[0].GetId() != ids[2] {
+		t.Fatalf("activate D: %v, %v", res, err)
+	}
+	if got := order(c.list(t)); got != "A:ACTIVE1 B:ACTIVE2 D:ACTIVE3 C:PAUSED" {
+		t.Errorf("list = %s", got)
+	}
+	if !slices.Equal(fake.shelved, []string{ids[2]}) || fake.wakes == 0 {
+		t.Errorf("shelved %v, %d wakes", fake.shelved, fake.wakes)
+	}
+
+	// Pausing B leaves its place, closes the gap in the ranks, and stops its workers.
 	if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: ids[1]})); err != nil {
 		t.Fatal(err)
 	}
-	res, err := c.wishes.Activate(ctx, connect.NewRequest(&planv1.WishServiceActivateRequest{WishId: d.GetId()}))
-	if err != nil || res.Msg.GetWish().GetRank() != 3 {
-		t.Fatalf("activate D: %v, %v", res, err)
-	}
-	if got := order(c.list(t)); got != "A:ACTIVE1 C:ACTIVE2 D:ACTIVE3 B:PAUSED" {
+	if got := order(c.list(t)); got != "A:ACTIVE1 D:ACTIVE2 B:PAUSED C:PAUSED" {
 		t.Errorf("list = %s", got)
+	}
+	if !slices.Equal(fake.shelved, []string{ids[2], ids[1]}) {
+		t.Errorf("shelved %v", fake.shelved)
+	}
+	// With a free place, an activated wish comes last, and nobody is paused.
+	res, err = c.wishes.Activate(ctx, connect.NewRequest(&planv1.WishServiceActivateRequest{WishId: ids[2]}))
+	if err != nil || res.Msg.GetWish().GetRank() != 3 || len(res.Msg.GetPaused()) != 0 {
+		t.Fatalf("activate C: %v, %v", res, err)
 	}
 	// Granting A leaves its place too; a granted wish comes back with Activate.
 	if _, err := c.wishes.Grant(ctx, connect.NewRequest(&planv1.WishServiceGrantRequest{WishId: ids[0]})); err != nil {
@@ -109,18 +150,93 @@ func TestThreeWishes(t *testing.T) {
 	if _, err := c.make(t, "E", false); err != nil {
 		t.Fatal(err)
 	}
-	if got := order(c.list(t)); got != "C:ACTIVE1 D:ACTIVE2 E:ACTIVE3 B:PAUSED A:GRANTED" {
+	if got := order(c.list(t)); got != "D:ACTIVE1 C:ACTIVE2 E:ACTIVE3 B:PAUSED A:GRANTED" {
 		t.Errorf("list = %s", got)
 	}
 	if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: ids[0]})); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("pause a granted wish: %v", err)
 	}
-	if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: ids[2]})); err != nil {
-		t.Fatal(err)
-	}
 	a, err := c.wishes.Activate(ctx, connect.NewRequest(&planv1.WishServiceActivateRequest{WishId: ids[0]}))
 	if err != nil || a.Msg.GetWish().GetGrantTime() != nil || a.Msg.GetWish().GetRank() != 3 {
 		t.Errorf("activate a granted wish: %v, %v", a, err)
+	}
+	if got := order(c.list(t)); got != "D:ACTIVE1 C:ACTIVE2 A:ACTIVE3 B:PAUSED E:PAUSED" {
+		t.Errorf("list = %s", got)
+	}
+}
+
+// TestDeleteWish: deleting a wish stops its workers, closes its lead's terminal, and takes its tasks, their events,
+// its questions and its blocks with it; the other wishes keep theirs and their leads, and close the gap in the ranks.
+func TestDeleteWish(t *testing.T) {
+	ctx := t.Context()
+	fake := &workers{}
+	leads := &fakeLeads{}
+	c := serve(t, WithWorkers(fake), WithLeads(leads))
+	a, err := c.make(t, "A", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := c.make(t, "B", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	of := func(wishID string) (*planv1.Task, *planv1.TaskEvent, *planv1.Question, *planv1.Block) {
+		task := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W1", Title: "work", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			Worktree: "/somewhere", SessionId: "s"}
+		return task, &planv1.TaskEvent{Id: store.NewID(), TaskId: task.GetId(), Seq: 1, Text: "hi"},
+			&planv1.Question{Id: store.NewID(), WishId: wishID, Code: "Q01", Text: "why?"},
+			&planv1.Block{Id: store.NewID(), WishId: wishID, Kind: "report", Content: "done"}
+	}
+	at, ae, aq, ab := of(a.GetId())
+	bt, be, bq, bb := of(b.GetId())
+	item := &planv1.InboxItem{Id: store.NewID(), WishId: a.GetId(), Text: "x", State: planv1.InboxState_INBOX_STATE_ROUTED}
+	c.put(t, at, ae, aq, ab, bt, be, bq, bb, item)
+	for _, w := range []*planv1.Wish{a, b} {
+		if _, _, _, err := leads.Open(LeadTerminal(w.GetId()), "claude --resume "+session, t.TempDir(), session); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	res, err := c.wishes.Delete(ctx, connect.NewRequest(&planv1.WishServiceDeleteRequest{WishId: a.GetId()}))
+	if err != nil || res.Msg.GetTasks() != 1 || res.Msg.GetQuestions() != 1 || res.Msg.GetBlocks() != 1 {
+		t.Fatalf("delete: %v, %v", res, err)
+	}
+	if !slices.Equal(fake.stopped, []string{a.GetId()}) || !slices.Equal(fake.shelved, []string{a.GetId()}) {
+		t.Errorf("stopped %v, shelved %v", fake.stopped, fake.shelved)
+	}
+	if _, runs := leads.running[LeadTerminal(b.GetId())]; !slices.Equal(leads.closed, []string{LeadTerminal(a.GetId())}) || !runs {
+		t.Errorf("closed %v, running %v", leads.closed, leads.running)
+	}
+	if res.Msg.GetWorktreesRemoved() != 0 || len(res.Msg.GetKept()) != 0 {
+		t.Errorf("a worktree no longer on disk: removed %d, kept %v", res.Msg.GetWorktreesRemoved(), res.Msg.GetKept())
+	}
+	gone := func(name string, get func() error) {
+		t.Helper()
+		if err := get(); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("%s still there: %v", name, err)
+		}
+	}
+	gone("wish", func() error { _, err := store.Get[*planv1.Wish](ctx, c.store, a.GetId()); return err })
+	gone("task", func() error { _, err := store.Get[*planv1.Task](ctx, c.store, at.GetId()); return err })
+	gone("event", func() error { _, err := store.Get[*planv1.TaskEvent](ctx, c.store, ae.GetId()); return err })
+	gone("question", func() error { _, err := store.Get[*planv1.Question](ctx, c.store, aq.GetId()); return err })
+	gone("block", func() error { _, err := store.Get[*planv1.Block](ctx, c.store, ab.GetId()); return err })
+	for _, m := range []string{bt.GetId(), be.GetId()} {
+		if _, err := store.Get[*planv1.Task](ctx, c.store, m); m == bt.GetId() && err != nil {
+			t.Errorf("B's task: %v", err)
+		}
+	}
+	if _, err := store.Get[*planv1.TaskEvent](ctx, c.store, be.GetId()); err != nil {
+		t.Errorf("B's event: %v", err)
+	}
+	if got, _ := store.Get[*planv1.InboxItem](ctx, c.store, item.GetId()); got.GetWishId() != "" {
+		t.Errorf("the inbox item still names the wish: %v", got)
+	}
+	if got := order(c.list(t)); got != "B:ACTIVE1" {
+		t.Errorf("list = %s", got)
+	}
+	if _, err := c.wishes.Delete(ctx, connect.NewRequest(&planv1.WishServiceDeleteRequest{WishId: a.GetId()})); code(err) != connect.CodeNotFound {
+		t.Errorf("delete again: %v", err)
 	}
 }
 
@@ -163,8 +279,12 @@ func TestRank(t *testing.T) {
 	if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: ids[0]})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := move(ids[0], 1); code(err) != connect.CodeFailedPrecondition {
-		t.Errorf("move a paused wish: %v", err)
+	// A paused wish moved among the three first becomes active there; the third is paused.
+	if got, err := move(ids[0], 1); err != nil || got != "A:ACTIVE1 B:ACTIVE2 C:ACTIVE3" {
+		t.Errorf("move a paused wish to 1: %s, %v", got, err)
+	}
+	if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: ids[0]})); err != nil {
+		t.Fatal(err)
 	}
 
 	// A wish stored before states and ranks is active, after the ranked ones; it counts in the three.
@@ -173,11 +293,18 @@ func TestRank(t *testing.T) {
 	if active, _ := ActiveWishes(ctx, c.store); order(active) != "B:ACTIVE1 C:ACTIVE2 Old:UNSPECIFIED" {
 		t.Errorf("with an old wish: %s", order(active))
 	}
-	if _, err := c.make(t, "D", false); code(err) != connect.CodeFailedPrecondition {
-		t.Errorf("a fourth beside an old wish: %v", err)
+	if d, err := c.make(t, "D", false); err != nil || d.GetState() != planv1.WishState_WISH_STATE_PAUSED {
+		t.Errorf("a fourth beside an old wish: %v, %v", d, err)
 	}
 	if got, err := move(legacy.GetId(), 1); err != nil || got != "Old:ACTIVE1 B:ACTIVE2 C:ACTIVE3" {
 		t.Errorf("move the old wish: %s, %v", got, err)
+	}
+	// D, paused, moved to the first place: active first, and C, pushed past the third place, paused.
+	d := wishTitled(t, c, "D")
+	res, err := c.wishes.Move(ctx, connect.NewRequest(&planv1.WishServiceMoveRequest{WishId: d.GetId(), To: 1}))
+	if err != nil || order(res.Msg.GetWishes()) != "D:ACTIVE1 Old:ACTIVE2 B:ACTIVE3" || len(res.Msg.GetPaused()) != 1 ||
+		res.Msg.GetPaused()[0].GetId() != ids[2] {
+		t.Errorf("move D to 1: %v, %v", res, err)
 	}
 }
 
@@ -197,9 +324,23 @@ func TestReady(t *testing.T) {
 		{"an open question", []*planv1.Task{done}, []*planv1.Question{answered, open}, false},
 		{"a task waiting for an answer", []*planv1.Task{done, task(planv1.TaskStatus_TASK_STATUS_WAITING)}, nil, false},
 		{"a failed task", []*planv1.Task{done, task(planv1.TaskStatus_TASK_STATUS_FAILED)}, nil, false},
-		{"an interrupted task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_INTERRUPTED)}, nil, false},
+		// Cut short and left so: Djinn resumes every task it can, so this one is history.
+		{"an interrupted task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_INTERRUPTED)}, nil, true},
 		{"a running task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_RUNNING)}, nil, false},
 		{"a planned task", []*planv1.Task{task(planv1.TaskStatus_TASK_STATUS_PENDING)}, nil, false},
+		{"a task Djinn resumes", []*planv1.Task{done, task(planv1.TaskStatus_TASK_STATUS_RESUMING)}, nil, false},
+		{"an interrupted task resumed as a fork, done", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
+			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_DONE},
+		}, nil, true},
+		{"an interrupted task resumed as a fork that runs", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
+			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING},
+		}, nil, false},
+		{"an interrupted task and a fork of another", []*planv1.Task{
+			{Id: "1", WishId: "w", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED},
+			{Id: "5", WishId: "w", Code: "W5", ForkOf: "W2", Status: planv1.TaskStatus_TASK_STATUS_DONE},
+		}, nil, true},
 	} {
 		if got := Ready(tt.tasks, tt.questions); got != tt.want {
 			t.Errorf("%s: Ready = %v", tt.name, got)

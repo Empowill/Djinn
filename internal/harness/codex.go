@@ -122,7 +122,7 @@ func (c Codex) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
-	p, err := startProcess(spec.Dir, command, c.args(), spec.Env, spec.Prefix, grace)
+	p, err := startProcessWithPrefix(spec.Dir, command, c.args(), spec.Env, spec.Scope, spec.Prefix, grace)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
@@ -177,6 +177,12 @@ type codexWorker struct {
 }
 
 func (w *codexWorker) Events() <-chan Event { return w.events }
+
+// PID is the process of the agent.
+func (w *codexWorker) PID() int { return w.p.cmd.Process.Pid }
+
+// Cgroup is the cgroup of the agent's scope.
+func (w *codexWorker) Cgroup() string { return w.p.cgroup }
 
 func (w *codexWorker) Pause() error  { return w.p.Pause() }
 func (w *codexWorker) Resume() error { return w.p.Resume() }
@@ -453,7 +459,7 @@ func (w *codexWorker) request(events *lineEvents, m *codexMessage) {
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
 			return
 		}
-		text := "permission denied: " + strings.TrimSuffix(strings.TrimPrefix(m.Method, "item/"), "/requestApproval")
+		text := permissionDenied + strings.TrimSuffix(strings.TrimPrefix(m.Method, "item/"), "/requestApproval")
 		if p.Command != "" {
 			text += " " + p.Command
 		}

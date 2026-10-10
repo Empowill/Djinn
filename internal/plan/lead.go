@@ -47,6 +47,10 @@ type Leads interface {
 	// Watch calls f each time a terminal starts or ends, and each time the choice a lead shows comes, changes or
 	// goes; f never waits.
 	Watch(f func())
+	// Say types line into a running terminal. It is retained for terminal integrations that predate Tell.
+	Say(name, line string) error
+	// Close hangs up a running terminal. It is retained for terminal integrations that predate Stop.
+	Close(name string)
 }
 
 // Errors of Leads.Tell.
@@ -66,13 +70,31 @@ func LeadTerminal(wishID string) string { return "lead-" + strings.ToLower(wishI
 // WishProvider is the kind of agent of a wish: its lead runs it, and every task that names no other. A wish made
 // before the choice runs Claude.
 func WishProvider(wish *planv1.Wish) planv1.Provider {
-	return cmp.Or(wish.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
+	return ProviderFor(wish, planv1.Provider_PROVIDER_UNSPECIFIED)
+}
+
+// ProviderFor chooses a wish's provider with the project's provider as its fallback. An explicit wish provider wins;
+// a recorded lead provider is the compatibility value for wishes made before Wish.Provider existed.
+func ProviderFor(wish *planv1.Wish, project planv1.Provider) planv1.Provider {
+	return cmp.Or(wish.GetProvider(), wish.GetLead().GetProvider(), project, planv1.Provider_PROVIDER_CLAUDE)
+}
+
+// leadProvider is the effective provider of a recorded lead. Older wishes left it unset and therefore mean Claude.
+func leadProvider(lead *planv1.Lead) planv1.Provider {
+	if p := lead.GetProvider(); p != planv1.Provider_PROVIDER_UNSPECIFIED {
+		return p
+	}
+	return planv1.Provider_PROVIDER_CLAUDE
 }
 
 // resumeLine is the command line that resumes the lead's session, as its agent's command line takes it, with the
 // options of mode (leadFlags) for the shell of goos. The session identifier was checked against a pattern without
 // spaces or quotes: the line goes through the user's shell as it is.
+
 func resumeLine(goos string, lead *planv1.Lead, mode planv1.Allowance) (string, error) {
+	if lead == nil {
+		return "", errors.New("lead session is missing")
+	}
 	switch lead.GetProvider() {
 	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_UNSPECIFIED:
 		return "claude " + leadFlags(goos, planv1.Provider_PROVIDER_CLAUDE, mode) + "--resume " + lead.GetSessionId(), nil
@@ -169,6 +191,34 @@ func LeadLine(line string) bool {
 	return program == "claude" || program == "codex" || program == "agy"
 }
 
+// commandHasSession tells whether command is a Claude invocation for session. A rich brief can quote an older
+// session identifier in its first message, so searching the whole shell command for the identifier would mistake an
+// Antigravity or Codex terminal for the recorded Claude lead.
+func commandHasSession(command []string, provider planv1.Provider, session string) bool {
+	if provider != planv1.Provider_PROVIDER_CLAUDE || session == "" {
+		return false
+	}
+	for i, arg := range command {
+		text := strings.TrimSpace(arg)
+		if text == "claude" {
+			text = strings.Join(command[i:], " ")
+		} else if !strings.HasPrefix(text, "claude ") {
+			continue
+		}
+		for _, flag := range []string{"--session-id ", "--resume "} {
+			if value, ok := strings.CutPrefix(text, "claude "); ok {
+				text = value
+			}
+			if rest, ok := strings.CutPrefix(text, flag); ok && strings.HasPrefix(rest, session) {
+				if len(rest) == len(session) || rest[len(session)] == ' ' {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (w *Wishes) SetLead(
 	ctx context.Context, req *connect.Request[planv1.WishServiceSetLeadRequest],
 ) (*connect.Response[planv1.WishServiceSetLeadResponse], error) {
@@ -182,6 +232,10 @@ func (w *Wishes) SetLead(
 		var err error
 		if lead.Directory, err = canonical(dir); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("directory: %w", err))
+		}
+		if HoldsHome(lead.Directory) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"directory %s holds your home folder: Djinn never runs a lead there", lead.Directory))
 		}
 	}
 	var wish *planv1.Wish
@@ -300,7 +354,7 @@ func (w *Wishes) resume(
 		} else {
 			w.leadErrors.Delete(key)
 		}
-		w.watch.notify([]watched{{wishID, planv1.Change_CHANGE_WISH}})
+		w.watch.notify([]watched{{wish: wishID, kind: planv1.Change_CHANGE_WISH}})
 	}()
 	wish, err := store.Get[*planv1.Wish](ctx, w.Store, wishID)
 	if err != nil {
@@ -312,27 +366,38 @@ func (w *Wishes) resume(
 	res := &planv1.WishServiceResumeResponse{Wish: wish, Terminal: LeadTerminal(wish.GetId())}
 	var line, dir, exclusive string
 	var started *planv1.Lead // the lead a brief starts, recorded once its terminal runs
-	if lead := wish.GetLead(); lead.GetSessionId() != "" {
+	lead := wish.GetLead()
+	atHome := lead.GetSessionId() != "" && HoldsHome(lead.GetDirectory())
+	other := provider != planv1.Provider_PROVIDER_UNSPECIFIED && provider != leadProvider(lead)
+	if lead.GetSessionId() != "" && !atHome && !other {
 		dir, exclusive = lead.GetDirectory(), lead.GetSessionId()
-		mode, err := leadMode(ctx, w.Store, wish, dir)
-		if err != nil {
-			return nil, Status(err)
+		mode, modeErr := leadMode(ctx, w.Store, wish, dir)
+		if modeErr != nil {
+			return nil, Status(modeErr)
 		}
 		if line, err = resumeLine(runtime.GOOS, lead, mode); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
-		if info, err := os.Stat(dir); dir == "" || !filepath.IsAbs(dir) || err != nil || !info.IsDir() {
+		if !isFolder(dir) || HoldsHome(dir) {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"the lead's folder %q is not on this machine: djinn wish set-lead %s %s --directory <folder> gives it",
 				dir, wish.GetId(), lead.GetSessionId()))
 		}
 	} else {
-		if dir, err = firstFolder(ctx, w.Store, wish); err != nil {
+		if dir, err = startFolder(ctx, w.Store, wish); err != nil {
 			return nil, Status(err)
 		}
+		startProvider := provider
+		if atHome && startProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+			startProvider = leadProvider(lead)
+		}
 		var note string
-		if line, dir, started, note, err = w.newLead(ctx, wish, provider, dir); err != nil {
+		if line, dir, started, note, err = w.newLead(ctx, wish, startProvider, dir); err != nil {
 			return nil, err
+		}
+		if atHome {
+			note = fmt.Sprintf("The lead's session %s was recorded in %s, the home folder, where Djinn never runs a lead. ",
+				lead.GetSessionId(), lead.GetDirectory()) + note
 		}
 		res.Note, exclusive = note, started.GetSessionId()
 	}
@@ -345,7 +410,8 @@ func (w *Wishes) resume(
 	case res.GetAttached() && started != nil:
 		res.Note = fmt.Sprintf("The lead's terminal already runs %s: exit it there, then resume again to start a lead "+
 			"from the wish's brief.", running)
-	case res.GetAttached() && line != "" && !strings.Contains(running, line) && !strings.Contains(running, exclusive):
+	case res.GetAttached() && line != "" && !strings.Contains(running, line) &&
+		!commandHasSession(res.GetCommand(), leadProvider(lead), exclusive):
 		res.Note = fmt.Sprintf("The lead's terminal already runs %s, not %s: exit it there, then resume again.",
 			running, line)
 	case !res.GetAttached() && started.GetSessionId() != "":
@@ -430,6 +496,82 @@ func (w *Wishes) SetProvider(
 	return connect.NewResponse(res), nil
 }
 
+// sessionLine is the command and folder used to resume a recorded lead after checking that the folder is local and
+// outside the home folder. It is kept separate so routed starts can choose a new provider without touching a saved
+// session.
+func sessionLine(wish *planv1.Wish) (line, dir string, err error) {
+	lead := wish.GetLead()
+	if line, err = resumeLine(runtime.GOOS, lead, planv1.Allowance_ALLOWANCE_NONE); err != nil {
+		return "", "", connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	dir = lead.GetDirectory()
+	if !isFolder(dir) {
+		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"the lead's folder %q is not on this machine: djinn wish set-lead %s %s --directory <folder> gives it",
+			dir, wish.GetId(), lead.GetSessionId()))
+	}
+	if HoldsHome(dir) {
+		return "", "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"the lead's folder %s holds your home folder, where Djinn never runs a lead: djinn wish resume %s starts a new one in a project",
+			dir, wish.GetId()))
+	}
+	return line, dir, nil
+}
+
+// ErrNoProject says that no project has a local folder from which a lead may start.
+var ErrNoProject = errors.New("no project has a folder on this machine, and Djinn never starts a lead in your home folder: create a project first (djinn project add <folder>, or + beside Projects in the window)")
+
+// startFolder prefers a wish project and then the first local project, while excluding the home folder and its parents.
+func startFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string, error) {
+	dir, err := firstFolder(ctx, r, wish)
+	if dir != "" || err != nil {
+		return dir, err
+	}
+	return FirstProjectFolder(ctx, r)
+}
+
+// FirstProjectFolder returns the first local project outside the home folder.
+func FirstProjectFolder(ctx context.Context, r store.Reader) (string, error) {
+	projects, err := store.List[*planv1.Project](ctx, r, nil)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range projects {
+		if dir := p.GetDirectory(); isFolder(dir) && !HoldsHome(dir) {
+			return dir, nil
+		}
+	}
+	return "", ErrNoProject
+}
+
+func isFolder(dir string) bool {
+	info, err := os.Stat(dir)
+	return dir != "" && filepath.IsAbs(dir) && err == nil && info.IsDir()
+}
+
+// HoldsHome reports whether dir is the home folder, a parent of it, or a filesystem root.
+func HoldsHome(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	dir = filepath.Clean(dir)
+	if filepath.Dir(dir) == dir {
+		return true
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	resolve := func(path string) string {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			return resolved
+		}
+		return filepath.Clean(path)
+	}
+	rel, err := filepath.Rel(resolve(dir), resolve(home))
+	return err == nil && (rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
 // firstFolder is the folder of the first project of the wish that has one on this machine; empty when none has.
 func firstFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string, error) {
 	for _, id := range wish.GetProjectIds() {
@@ -440,8 +582,8 @@ func firstFolder(ctx context.Context, r store.Reader, wish *planv1.Wish) (string
 		if err != nil {
 			return "", err
 		}
-		if p.GetDirectory() != "" {
-			return p.GetDirectory(), nil
+		if dir := p.GetDirectory(); isFolder(dir) && !HoldsHome(dir) {
+			return dir, nil
 		}
 	}
 	return "", nil
@@ -453,7 +595,7 @@ func portableFolder(dir string) string {
 	if filepath.IsAbs(dir) || strings.HasPrefix(dir, "/") || strings.HasPrefix(dir, `\`) {
 		return ""
 	}
-	return dir
+	return strings.ReplaceAll(dir, `\`, "/")
 }
 
 // localFolder puts back this machine's folder in a lead's folder from an export: ~ is the home folder, and a path
@@ -464,11 +606,9 @@ func localFolder(dir string, folders map[string]string) string {
 		return dir
 	}
 	first, rest, _ := strings.Cut(strings.ReplaceAll(dir, `\`, "/"), "/")
-	base := ""
+	base := folders[strings.ToLower(first)]
 	if first == "~" {
 		base, _ = os.UserHomeDir()
-	} else {
-		base = folders[strings.ToLower(first)]
 	}
 	if base == "" {
 		return ""

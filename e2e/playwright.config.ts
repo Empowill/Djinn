@@ -2,6 +2,11 @@
 // `go tool task e2e`, which builds what they need first.
 import { defineConfig, devices } from "@playwright/test";
 
+// A spec's djinn is not the one a Djinn worker running it reports to: the commands the specs run must not name that
+// worker's task ((djinn.v1.env) fills --task-id from it).
+delete process.env.DJINN_TASK_ID;
+delete process.env.DJINN_WISH_ID;
+
 export default defineConfig({
   testDir: ".",
   testMatch: /.*\.spec\.ts/,

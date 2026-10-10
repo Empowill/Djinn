@@ -46,7 +46,9 @@ func (s *Service) Open(
 		if msg.GetCols() > 0 && msg.GetRows() > 0 {
 			_ = t.Resize(int(msg.GetCols()), int(msg.GetRows())) // Ended meanwhile: the window reads it.
 		}
-		return connect.NewResponse(&terminalv1.TerminalServiceOpenResponse{Terminal: describe(t), Attached: true}), nil
+		return connect.NewResponse(&terminalv1.TerminalServiceOpenResponse{
+			Terminal: describe(t), Attached: true, EndOffset: t.End(),
+		}), nil
 	}
 	t, attached, err := s.m.Open(msg.GetName(), command, msg.GetDirectory(), int(msg.GetCols()), int(msg.GetRows()))
 	if err != nil {
@@ -55,7 +57,9 @@ func (s *Service) Open(
 	if attached && msg.GetCols() > 0 && msg.GetRows() > 0 {
 		_ = t.Resize(int(msg.GetCols()), int(msg.GetRows())) // Ended meanwhile: the window reads it.
 	}
-	return connect.NewResponse(&terminalv1.TerminalServiceOpenResponse{Terminal: describe(t), Attached: attached}), nil
+	return connect.NewResponse(&terminalv1.TerminalServiceOpenResponse{
+		Terminal: describe(t), Attached: attached, EndOffset: t.End(),
+	}), nil
 }
 
 func (s *Service) Write(
@@ -99,6 +103,16 @@ func (s *Service) Read(
 	})
 }
 
+func (s *Service) List(
+	_ context.Context, _ *connect.Request[terminalv1.TerminalServiceListRequest],
+) (*connect.Response[terminalv1.TerminalServiceListResponse], error) {
+	res := &terminalv1.TerminalServiceListResponse{}
+	for _, t := range s.m.Running() {
+		res.Terminals = append(res.Terminals, describe(t))
+	}
+	return connect.NewResponse(res), nil
+}
+
 func (s *Service) Close(
 	_ context.Context, req *connect.Request[terminalv1.TerminalServiceCloseRequest],
 ) (*connect.Response[terminalv1.TerminalServiceCloseResponse], error) {
@@ -123,7 +137,7 @@ func status(err error, code connect.Code) error {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, err)
-	case errors.Is(err, ErrExited), errors.Is(err, ErrClosed), errors.Is(err, ErrBusy):
+	case errors.Is(err, ErrExited), errors.Is(err, ErrClosed), errors.Is(err, ErrBusy), errors.Is(err, ErrNoFolder):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewError(code, err)

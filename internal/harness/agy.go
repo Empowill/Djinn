@@ -2,9 +2,12 @@ package harness
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -12,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 )
 
@@ -20,7 +24,8 @@ import (
 // process stays open between turns, and ends once every message has its result.
 //
 // Djinn passes its environment on and sets nothing about signing in: agy signs in by itself (decision Q20). Djinn
-// never reads agy's configuration, its tokens, nor the Application Default Credentials file.
+// never reads agy's configuration, its tokens, nor the Application Default Credentials file. It writes one thing of
+// agy's: a project of its own per worktree, for a worker with permissions (agyProject).
 type Antigravity struct {
 	// Command is the agy program; "agy", found on the PATH, by default.
 	Command string
@@ -38,11 +43,10 @@ type Antigravity struct {
 // not documented. agy runs outside a project once a real capture proves that nothing is written or run. For the
 // same reason, permissions without edit are refused.
 //
-// With permissions, edit becomes --mode accept-edits, and network off --sandbox, which only restricts more. agy
-// takes no list of commands at launch, and its headless runs do not apply its allow rules: a command that needs
-// an approval is denied, listed or not, and the denial ends agy's turn (real runs, agy 1.3.0, 2026-10-08): the
-// task fails. agy 1.3.0 has no auto mode on its command line (--mode takes accept-edits or plan): AUTO runs as
-// accept-edits.
+// With permissions, edit becomes --mode accept-edits, and network off --sandbox, which only restricts more. The rest
+// goes in an agy project of Djinn's own, given with --project (agyProject): agy takes no list of commands nor of
+// writable folders at launch. agy 1.3.3 has no auto mode on its command line (--mode takes accept-edits or plan):
+// AUTO runs as accept-edits, its project allowing every command but the denied ones.
 func (a Antigravity) args(spec Spec) ([]string, error) {
 	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 	if spec.ReadOnly {
@@ -57,6 +61,7 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 		if !p.GetNetwork() {
 			args = append(args, "--sandbox")
 		}
+		args = append(args, "--project", agyProjectID(spec.Dir))
 	}
 	if spec.SkillsDir != "" {
 		// A workspace folder's .agents/skills is a customization root (the documentation in the agy 1.3.0 binary).
@@ -87,12 +92,170 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if err != nil {
 		return nil, err
 	}
+	if spec.Permissions != nil {
+		if err := writeAgyProject(spec); err != nil {
+			return nil, err
+		}
+	}
 	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: &agyParser{}, encode: agyMessageLine})
 }
 
 // agyMessageLine is a user message as agy reads it in stream-json.
 func agyMessageLine(text string) ([]byte, error) {
 	return json.Marshal(map[string]any{"event": "user", "message": map[string]any{"content": text}})
+}
+
+// agyProjectsDir is the folder of agy's projects, ~/.gemini/config/projects; a test points it elsewhere.
+var agyProjectsDir = func() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".gemini", "config", "projects"), nil
+}
+
+// agyProjectID is the id of the agy project of a worker in dir: the same for every worker of the folder, as agy
+// resumes a conversation in the project it began in.
+func agyProjectID(dir string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(dir)))
+	return "djinn-" + hex.EncodeToString(sum[:8])
+}
+
+// agyProjectFile is an agy project, as agy reads it in its projects folder (the descriptor of its project_pb, agy
+// 1.3.3). Its other fields, settings among them, are left out: the command line does not apply a project's settings.
+type agyProjectFile struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	PermissionGrants struct {
+		PermissionGrants agyGrants `json:"permissionGrants"`
+	} `json:"permissionGrants"`
+}
+
+type agyGrants struct {
+	Allow []string `json:"allow"`
+	Deny  []string `json:"deny,omitempty"`
+}
+
+// agyEveryCommand is the grant of every command: in AUTO, agy runs any command but the denied ones, as Claude does,
+// agy having no auto mode of its own.
+const agyEveryCommand = "command(*)"
+
+// agyAlwaysDenied are denied to an agy worker in AUTO whatever the project denies: pushing is the orchestrator's.
+var agyAlwaysDenied = []string{"git push"}
+
+// agyProject is the agy project of a worker with permissions: what its permissions give, as agy's grants (real
+// runs, agy 1.3.3, 2026-10-10, docs/providers.md).
+//
+// agy's sandbox (--sandbox) shows the workspace read-only to commands, and every .git folder read-only, whatever
+// the workspace's trust or --add-dir; it hides the rest of the home folder, the repository of a linked worktree
+// among them, so that git fails and agy asks to run it unsandboxed, which a headless run cannot. A write_file grant
+// mounts its folder writable in the sandbox: edit grants the worker's folder and Git's folders for it (agyGitDirs).
+// A command(<p>) grant lets a command starting with p run without approval, command(*) any command, in the sandbox
+// still; a deny grant wins over any allow one, the user's settings' and command(*) included, in every part of a
+// compound command (`a && git push`) and after an env prefix, and its command fails without ending the turn.
+func agyProject(spec Spec) agyProjectFile {
+	p := spec.Permissions
+	f := agyProjectFile{ID: agyProjectID(spec.Dir), Name: "Djinn " + filepath.Base(spec.Dir)}
+	g := agyGrants{Allow: []string{}}
+	gitDirs := agyGitDirs(spec.Dir)
+	if p.GetEdit() {
+		for _, d := range append([]string{spec.Dir}, gitDirs...) {
+			g.Allow = append(g.Allow, "write_file("+d+")")
+		}
+	}
+	denied := slices.Clone(p.GetDeniedCommands())
+	if effectiveMode(p) == djinnv1.Mode_MODE_AUTO {
+		g.Allow = append(g.Allow, agyEveryCommand)
+		for _, c := range agyAlwaysDenied {
+			if !slices.Contains(denied, c) {
+				denied = append(denied, c)
+			}
+		}
+	} else {
+		for _, c := range p.GetCommands() {
+			g.Allow = append(g.Allow, "command("+c+")")
+		}
+	}
+	for _, c := range denied {
+		g.Deny = append(g.Deny, "command("+c+")")
+	}
+	f.PermissionGrants.PermissionGrants = g
+	return f
+}
+
+// agyGitDirs are Git's folders for the work tree holding dir: its .git folder; in a linked worktree, the folder
+// its .git file names and the repository's common folder (the commondir file there), when not inside it. None
+// outside Git.
+func agyGitDirs(dir string) []string {
+	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
+		dotGit := filepath.Join(d, ".git")
+		info, err := os.Stat(dotGit)
+		switch {
+		case err == nil && info.IsDir():
+			return []string{dotGit}
+		case err == nil:
+			b, err := os.ReadFile(dotGit)
+			gitDir, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
+			if err != nil || !ok {
+				return nil
+			}
+			gitDir = absFrom(d, strings.TrimSpace(gitDir))
+			b, err = os.ReadFile(filepath.Join(gitDir, "commondir"))
+			if err != nil {
+				return []string{gitDir}
+			}
+			common := absFrom(gitDir, strings.TrimSpace(string(b)))
+			if rel, err := filepath.Rel(common, gitDir); err == nil && filepath.IsLocal(rel) {
+				return []string{common}
+			}
+			return []string{common, gitDir}
+		}
+		if filepath.Dir(d) == d {
+			return nil
+		}
+	}
+}
+
+// absFrom is path, absolute, relative to dir when it is not.
+func absFrom(dir, path string) string {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	return filepath.Clean(path)
+}
+
+// writeAgyProject writes the agy project of spec's worker in agy's projects folder, over the one an earlier worker
+// of its folder wrote. Djinn writes nothing else of agy's, and reads nothing of it.
+func writeAgyProject(spec Spec) error {
+	dir, err := agyProjectsDir()
+	if err != nil {
+		return fmt.Errorf("agy's projects folder: %w", err)
+	}
+	f := agyProject(spec)
+	b, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("agy's projects folder: %w", err)
+	}
+	path := filepath.Join(dir, f.ID+".json")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write agy's project: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write agy's project: %w", err)
+	}
+	return nil
+}
+
+// forgetAgyProject removes the agy project of the workers in dir, when there is one: its folder is gone.
+func forgetAgyProject(dir string) {
+	if projects, err := agyProjectsDir(); err == nil {
+		_ = os.Remove(filepath.Join(projects, agyProjectID(dir)+".json"))
+	}
 }
 
 // agyLine is a line of agy's stream-json output; only the fields Djinn reads.
@@ -109,7 +272,7 @@ type agyLine struct {
 type agyStep struct {
 	ConversationID string `json:"conversation_id"`
 	StepIndex      int    `json:"step_index"`
-	State          string `json:"state"` // ACTIVE, DONE
+	State          string `json:"state"` // ACTIVE, DONE, ERROR
 	StepType       string `json:"step_type"`
 	ToolName       string `json:"tool_name"`
 	TextDelta      string `json:"text_delta"`
@@ -117,6 +280,10 @@ type agyStep struct {
 		Name       string          `json:"name"`
 		Parameters json.RawMessage `json:"parameters"`
 		Output     *string         `json:"output"`
+		// Error is why a tool step ended in ERROR: a command refused by a deny grant, for one (real runs, agy 1.3.3).
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
 	} `json:"tool_info"`
 }
 
@@ -208,12 +375,15 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
 			p.forget(s.StepIndex)
 		}
 	case "tool":
-		name, params, output := s.ToolName, json.RawMessage(nil), (*string)(nil)
+		name, params, output, failure := s.ToolName, json.RawMessage(nil), (*string)(nil), ""
 		if ti := s.ToolInfo; ti != nil {
 			if ti.Name != "" {
 				name = ti.Name
 			}
 			params, output = ti.Parameters, ti.Output
+			if ti.Error != nil {
+				failure = ti.Error.Message
+			}
 		}
 		if !p.toolsIn[s.StepIndex] {
 			if p.toolsIn == nil {
@@ -230,6 +400,18 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) bool {
 				p.lastAnswered = p.lastAnswered || s.StepIndex == p.lastStep
 			}
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
+			delete(p.toolsIn, s.StepIndex)
+		}
+		if s.State == "ERROR" {
+			// The step failed and the turn goes on: a deny grant refused the command, or the tool failed.
+			if s.StepIndex == p.lastStep {
+				p.lastAnswered = true
+			}
+			if strings.Contains(failure, agyDenyRule) {
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+agyCall(name, params))
+			} else {
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, strings.TrimSpace(failure))
+			}
 			delete(p.toolsIn, s.StepIndex)
 		}
 	default:
@@ -327,6 +509,11 @@ const agyErrorPrefix = "AGY_ERROR:"
 // (real runs, agy 1.3.0).
 const agyDenied = "headless mode cannot prompt for"
 
+// agyDenyRule is in the error of a tool step a deny grant refused: `permission check failed for command "git push
+// origin w1": Permission denied for command(git push origin w1). Matches user-configured deny rule.` (real runs, agy
+// 1.3.3), a project's deny grant included.
+const agyDenyRule = "deny rule"
+
 // agyDeniedPermission finds the permission in the denial notice.
 var agyDeniedPermission = regexp.MustCompile(`required the "([^"]+)" permission`)
 
@@ -354,7 +541,7 @@ func (p *agyParser) stderr(raw string) []Event {
 		if m := agyDeniedPermission.FindStringSubmatch(raw); m != nil {
 			p.denied = m[1]
 		}
-		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "permission denied: " + raw, Raw: raw}}
+		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: permissionDenied + raw, Raw: raw}}
 	}
 	return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: raw, Raw: raw}}
 }

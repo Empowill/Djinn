@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -10,14 +9,17 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // TestSendToRunningWorker: a message sent while the worker works is an event of the task, journaled as the
 // command that sent it, and the worker's next words come after a "received" event.
 func TestSendToRunningWorker(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
-	task := e.spawn(t, wishID, "text working\nsleep 500ms\ntext after")
+	task := e.spawn(t, wishID, "text working\nwait\ntext after")
 
 	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: task.GetId()}))
 	if err != nil {
@@ -74,11 +76,23 @@ func TestSendToRunningWorker(t *testing.T) {
 
 // TestSendUnacknowledged: a worker that says nothing after a message never acknowledges it.
 func TestSendUnacknowledged(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
 	task := e.spawn(t, wishID, "text working\nsleep 1h")
-	watched := make(chan []*planv1.TaskEvent)
-	go func() { watched <- e.watch(context.Background(), t, task.GetId(), 0) }()
+	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: task.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var events []*planv1.TaskEvent
+	for s.Receive() {
+		events = append(events, s.Msg().GetEvent())
+		if s.Msg().GetEvent().GetText() == "working" {
+			break
+		}
+	}
 	if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{
 		TaskId: task.GetId(), Text: "stop soon",
 	})); err != nil {
@@ -87,7 +101,12 @@ func TestSendUnacknowledged(t *testing.T) {
 	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
 		t.Fatal(err)
 	}
-	events := <-watched
+	for s.Receive() {
+		events = append(events, s.Msg().GetEvent())
+	}
+	if err := s.Err(); err != nil {
+		t.Fatal(err)
+	}
 	kinds := eventKinds(events)
 	if !slices.Contains(kinds, "MESSAGE") || slices.Contains(kinds, "RECEIVED") {
 		t.Errorf("events = %v: want a message, never received", kinds)
@@ -96,6 +115,8 @@ func TestSendUnacknowledged(t *testing.T) {
 }
 
 func TestSendRefused(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, t.TempDir())
 	task := e.spawn(t, wishID, "text quick")

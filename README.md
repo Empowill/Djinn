@@ -13,10 +13,12 @@ limits, and they are the project's first rule:
   claim comes with its evidence.
 - **No wishing for more wishes.** It never grants itself more than it was given: no extra budget,
   no wider access, and no secret it stores or reads.
-- **Three wishes at a time.** Never more: one Djinn holds three active wishes at most.
+- **Three wishes at a time.** Never more: one Djinn holds three active wishes at most, and as many set aside as
+  you like.
 
-**Workers never commit.** They edit their worktree; the lead reviews each diff, commits in batches and pushes
-once. Fewer, clearer commits, and one CI run instead of one per worker: the Git runners breathe.
+**Workers never commit.** They edit their worktree; Djinn commits each one's work as it ends, tested, and pushes on
+a cadence: at an azima's end, or after three tasks and an hour. One CI run per push instead of one per worker: the Git
+runners breathe.
 
 > **ALPHA — NOT USABLE AS IS.** Djinn is an experimental project under development. It is not ready to be used, neither for real work nor in production. The features described below show the project's goal and its state of development; they are no guarantee that it works.
 
@@ -24,7 +26,10 @@ once. Fewer, clearer commits, and one CI run instead of one per worker: the Git 
 
 Djinn is a local desktop app to work with **Codex** and **Claude Code**: a readable timeline, agents followed live, explicit decisions, and results you can open, annotate and validate.
 
-![A wish in Djinn: steps, team and decisions](docs/screenshots/readme/mission.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/readme/questions-light.png">
+  <img alt="A wish in Djinn: what waits for you, and a question with the lead's recommendation" src="docs/screenshots/readme/questions-dark.png">
+</picture>
 
 ## Install
 
@@ -53,54 +58,52 @@ Djinn is tracked here, with no other tool: one box per task, one file per task i
 
 **Phase 1 · Native app**
 
-- [ ] [T01 · The native window: Wails, the embedded interface, dev and browser modes](plan/fe63ed30-native-window.md) (in progress)
-- [x] [T02 · Protos, API and command line: everything generated, a CLI by convention](plan/c30479be-api-and-cli.md)
-- [ ] [T03 · Keep the interface working: the `window.djinn` shim](plan/aef418cb-interface-shim.md) (in progress)
-- [ ] [T04 · Getting started: install in one line, or ask your agent](plan/929d6a88-getting-started.md) (in progress)
-- [x] [T05 · Testing: unit tests in seconds, `task e2e` an agent can run](plan/b6a680bf-testing.md)
-- [ ] [T06 · End-to-end tests on the native window](plan/b81b5d99-native-e2e.md) (in progress)
-- [ ] [T10 · English everywhere](plan/4527d734-english-everywhere.md) (in progress)
-- [ ] [T11 · Windows](plan/a586b68b-windows.md)
-- [ ] [T12 · Updates from inside the app](plan/1aa20487-auto-update.md) (in progress)
+- [ ] [T01 · The native window: the same interface as in the browser, where you talk to the lead, by voice too](plan/fe63ed30-native-window.md) (in progress)
+- [x] [T02 · The foundation: the protos, minimal data, a generated command line, in English, clean code](plan/c30479be-api-and-cli.md)
+- [ ] [T04 · Install and stay up to date: in a few minutes, updates from inside the app](plan/929d6a88-getting-started.md) (in progress)
+- [ ] [T05 · Tested end to end: fast tests, and an agent that checks its work up to the real window](plan/b6a680bf-testing.md) (in progress)
+- [ ] [T11 · Windows](plan/a586b68b-windows.md) (in progress)
 
 **Phase 2 · Orchestration and data**, after which Djinn runs on itself
 
-- [ ] [T07 · The orchestrator: workers, worktrees, scheduling, the machine](plan/8e8d3d76-orchestrator.md) (in progress)
-- [ ] [T17 · Know the machine, spend it wisely](plan/3da7b334-machine-discovery.md) (in progress)
+- [ ] [T07 · The orchestrator: Djinn decides, starts, resumes, integrates and pushes the work by itself](plan/8e8d3d76-orchestrator.md) (in progress)
+- [ ] [T13 · Work across projects: a wish spanning several projects, a project's skills in another](plan/58ae4a59-cross-project-sessions.md) (in progress)
+- [ ] [T14 · Fast, economical workers: the right context and model, sized to the machine](plan/8ce817da-cost.md) (in progress)
 - [ ] [T18 · Antigravity as a worker provider](plan/a72eb1f8-antigravity-provider.md) (in progress)
-- [ ] [T21 · The lead's terminal, inside the app, by voice](plan/17ed4dcd-lead-terminal.md) (in progress)
-- [ ] [T22 · Workers that start fast, with the right context, and are measured](plan/1689571a-fast-workers.md) (in progress)
-- [x] [T08 · Data: what we store, and why](plan/716b9f97-data.md)
-- [ ] [T13 · Sessions across projects](plan/58ae4a59-cross-project-sessions.md) (in progress)
+- [ ] [T25 · Understand and decide at a glance: what waits for you first, clear questions, tilasms](plan/4a699d0f-review-at-a-glance.md) (in progress)
+- [ ] [T26 · Every request finds its wish: routing, wish templates, an inbox](plan/e1210c5e-request-routing.md) (in progress)
 
 **Phase 3 · Comfort**
 
-- [x] [T14 · Spend big models only where they matter](plan/8ce817da-cost.md)
-- [ ] [T16 · Dispatch: plain Go code or a local model?](plan/263f074f-dispatch-bench.md) (in progress)
-- [ ] [T09 · Quality of life and clean-up](plan/3792046b-quality-of-life.md) (in progress)
-- [ ] [T19 · Releases: binaries for every target](plan/71f9c331-releases.md)
-- [x] [T20 · Backups, on a server of your choice](plan/9b71f059-backup.md)
-- [ ] [T23 · Summon a skill from another project](plan/a5c284be-summon-skills.md) (in progress)
-- [ ] [T24 · A wish online: sync now, collaborate later](plan/7dc376e9-wish-online.md) (in progress)
-- [ ] [T25 · Review and decide at a glance](plan/4a699d0f-review-at-a-glance.md) (in progress)
-
-**After v1**
-
-- [ ] [T15 · Work spread over trusted machines](plan/9c8f55df-distributed-work.md)
+- [ ] [T19 · Releases: binaries for every target](plan/71f9c331-releases.md) (in progress)
+- [ ] [T20 · Your wishes follow you: backups, a wish online, later your other machines](plan/9b71f059-backup.md) (in progress)
 
 ## From brief to result
 
-- **One wish, one journey.** Exploration, thinking, specification, prototype, implementation, review and delivery, with a free or a prepared workflow.
-- **A visible team.** Follow the lead and its workers, their scopes, dependencies, conversations and real activity.
-- **Usable results.** Markdown documents, diagrams, wireframes and interactive visualizations stay in the wish.
-- **You decide.** Answer the questions, give guidance, annotate the artifacts and validate the results.
-- **Resume without starting over.** The provider tag unfolds: choose Codex or Claude Code, then **Change and resume** after a stop or an exhausted quota. Files, decisions, artifacts and history are kept.
-- **A notification for each successful step.** Click it to find the result. Projects and wishes list the most recent first.
-- **Your language.** The interface follows the system language (English or French); change it in **Connections & preferences**.
+- **One wish, one lead.** Say what you wish. Its lead, Claude Code or Codex, splits it into tasks, each one a worker in
+  its own worktree. Three wishes are active at most; the flight plan shows them together.
+- **A visible team.** Each task shows its worker, its status, its live events and what it cost. Send it an instruction
+  while it works, or stop it. Talk to the lead in a terminal inside the window.
+- **You decide.** A question comes with its options and the lead's recommendation: **Rub the lamp** takes it, and a
+  small worker turns your decision into tasks; **Enlighten me** sends one to dig first, then revise the question. The
+  lead hears what each did. A system notification answers it from anywhere.
+- **What needs you is a question; the rest stays in the wish.** What the lead and the workers write down for one
+  another, Markdown and Mermaid diagrams, waits in a tab of its own. One HTML page shares the wish; `djinn wish
+  export` hands it over whole, in one file.
+- **Nothing is lost.** Stopping Djinn interrupts the workers, never loses them: the next start resumes each one in
+  its own worktree and session. A worker stopped by its usage limit waits for the reset, then goes on.
+- **Every request finds its wish.** Something unrelated comes up: the lead offers to open a new wish, to file it in
+  an existing one, or to keep it where it is. A skill's [wish template](docs/wish-templates.md) makes a wish that already knows how to work, with
+  a watcher that wakes its lead on each change.
+- **Your language.** The interface follows the system language (English or French); change it in **Connections &
+  preferences**.
 
-![Djinn's interactive artifacts](docs/screenshots/readme/supports.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/readme/tasks-light.png">
+  <img alt="The same wish: its tasks, by status, and what they cost" src="docs/screenshots/readme/tasks-dark.png">
+</picture>
 
-_Screenshots of the built-in demonstration, with fictional data._
+_Screenshots of a demonstration wish, with fictional data. `go tool task screenshots` takes them again._
 
 ## Local development
 
@@ -110,9 +113,13 @@ djinn it runs in: the store stays on your machine, in Djinn's data folder.
 
 [User guide](docs/user-guide.md) · [Agent protocol](docs/agent-protocol.md) · [Adaptable wishes](docs/adaptable-wishes.md)
 
+The concepts and every command of the command line, in one site: **Documentation** in the window's settings, or
+`go tool task docs`, then `bin/docs/index.html` ([`docs/site`](docs/site), its Command line tab filled in from
+djinn's own commands).
+
 ## Credits
 
-The engine and some adapters are studied from [T3 Code](https://github.com/pingdotgg/t3code). The avatars use [Thinking Orbs](https://libraries.dev/orbs). Djinn's diagrams and illustrations are original. See [the notices](THIRD_PARTY_NOTICES.md) and [the license](LICENSE).
+The engine and some adapters are studied from [T3 Code](https://github.com/pingdotgg/t3code). The avatars use [Thinking Orbs](https://libraries.dev/orbs). Djinn's diagrams and illustrations are original. See [the notices](docs/THIRD_PARTY_NOTICES.md) and [the license](LICENSE).
 
 ## Contributing
 

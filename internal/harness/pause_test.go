@@ -3,8 +3,10 @@ package harness
 import (
 	"cmp"
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // ticks is a long script: a tick every 30 ms, for about 6 s.
@@ -67,6 +70,8 @@ func (e *env) resume(t *testing.T, id string) *planv1.Task {
 
 // TestPauseResume: a paused worker says nothing and frees its slot, goes on when resumed, and stops while paused.
 func TestPauseResume(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(20*time.Millisecond))
 	wishID, _ := e.wish(t, gitRepo(t))
 	long := e.mustSpawn(t, wishID, "Long", ticks(), nil)
@@ -82,7 +87,7 @@ func TestPauseResume(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond) // A tick already on its way may still land.
 	before := e.tickCount(t, id)
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond) // Several ticks, were it not paused.
 	if after := e.tickCount(t, id); after != before {
 		t.Errorf("%d ticks while paused", after-before)
 	}
@@ -146,9 +151,69 @@ func TestPauseResume(t *testing.T) {
 	}
 }
 
-// TestPausedInterrupted: a task paused when djinn up stops is interrupted, its worker stopped; one left paused in the
-// store by a crash is interrupted at the next start, as a running one.
+// TestPauseHoldingGate: a worker that holds a gate is not paused, which would freeze the gate for every other
+// worker, nor one that waits for a gate, which would hold it frozen once its turn comes; it is once it has given the
+// gate back.
+func TestPauseHoldingGate(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, gitRepo(t))
+	long := e.mustSpawn(t, wishID, "Long", ticks(), nil)
+	id := long.GetId()
+	var mu sync.Mutex
+	held, waiting := map[string][]string{}, map[string][]string{id: {"test"}}
+	of := func(gates map[string][]string) func(string) []string {
+		return func(taskID string) []string {
+			mu.Lock()
+			defer mu.Unlock()
+			return gates[taskID]
+		}
+	}
+	e.h.HeldGates(of(held), of(waiting))
+	_, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), long.GetCode()+" waits for the gate test: wait or stop it") {
+		t.Fatalf("pause while waiting for a gate: %v", err)
+	}
+
+	// Granted, it holds the gate.
+	mu.Lock()
+	delete(waiting, id)
+	held[id] = []string{"test"}
+	mu.Unlock()
+	_, err = e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), long.GetCode()+" holds the gate test: wait or stop it") {
+		t.Fatalf("pause while holding a gate: %v", err)
+	}
+	if got, err := store.Get[*planv1.Task](t.Context(), e.db, id); err != nil || got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Errorf("after a refused pause: %v, %v", got.GetStatus(), err)
+	}
+	mu.Lock()
+	held[id] = []string{"e2e", "test"}
+	mu.Unlock()
+	if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id})); err == nil ||
+		!strings.Contains(err.Error(), "holds the gates e2e, test") {
+		t.Errorf("pause while holding two gates: %v", err)
+	}
+
+	// Given back: the pause goes through, wherever the worker can pause.
+	mu.Lock()
+	delete(held, id)
+	mu.Unlock()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if got := e.pause(t, id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED {
+		t.Errorf("paused once the gate is given back = %v", got)
+	}
+}
+
+// TestPausedInterrupted: a task paused when djinn up stops is interrupted, its worker stopped, and the next start
+// resumes it; one left paused in the store by a crash is interrupted at the next start, as a running one, then
+// resumed.
 func TestPausedInterrupted(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 	wishID, _ := e.wish(t, gitRepo(t))
@@ -159,26 +224,20 @@ func TestPausedInterrupted(t *testing.T) {
 	if d := time.Since(start); d > 2*time.Second {
 		t.Errorf("stopping djinn up with a paused worker took %v", d)
 	}
-	e = up(t, home)
-	got := e.get(t, long.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+	if got := storedTask(t, home, long.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
 		t.Errorf("paused task after djinn up stopped = %v", got)
 	}
+	e = up(t, home)
+	got := e.until(t, long.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 
 	crashed := proto.CloneOf(got)
 	crashed.Id, crashed.Code, crashed.Status = store.NewID(), "W9", planv1.TaskStatus_TASK_STATUS_PAUSED
-	crashed.EndTime, crashed.Error = nil, ""
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "crash", crashed); err != nil {
-			return err
-		}
-		return tx.Put(crashed)
-	}); err != nil {
-		t.Fatal(err)
-	}
+	crashed.EndTime, crashed.Error, crashed.Resumes = nil, "", 0
+	putTask(t, e.db, crashed, "x")
 	e.down()
 	e = up(t, home)
-	if after := e.get(t, crashed.GetId()); after.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
-		t.Errorf("task left paused by a crash, after the restart: %v", after)
+	e.until(t, crashed.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if !hasText(e.watch(t.Context(), t, crashed.GetId(), 0), "interrupted: djinn up ended while the worker ran") {
+		t.Errorf("the task left paused by a crash was not interrupted first")
 	}
 }

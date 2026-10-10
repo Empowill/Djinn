@@ -28,6 +28,228 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
+type MergeMain int32
+
+const (
+	// Not set: at each release.
+	MergeMain_MERGE_MAIN_UNSPECIFIED MergeMain = 0
+	// Once main holds a release, a tag v1.2.3, that the integration branch lacks.
+	MergeMain_MERGE_MAIN_RELEASE MergeMain = 1
+	// Once main holds any commit the integration branch lacks.
+	MergeMain_MERGE_MAIN_COMMIT MergeMain = 2
+	// Never: the person keeps the branch up with main.
+	MergeMain_MERGE_MAIN_OFF MergeMain = 3
+)
+
+// Enum value maps for MergeMain.
+var (
+	MergeMain_name = map[int32]string{
+		0: "MERGE_MAIN_UNSPECIFIED",
+		1: "MERGE_MAIN_RELEASE",
+		2: "MERGE_MAIN_COMMIT",
+		3: "MERGE_MAIN_OFF",
+	}
+	MergeMain_value = map[string]int32{
+		"MERGE_MAIN_UNSPECIFIED": 0,
+		"MERGE_MAIN_RELEASE":     1,
+		"MERGE_MAIN_COMMIT":      2,
+		"MERGE_MAIN_OFF":         3,
+	}
+)
+
+func (x MergeMain) Enum() *MergeMain {
+	p := new(MergeMain)
+	*p = x
+	return p
+}
+
+func (x MergeMain) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MergeMain) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[0].Descriptor()
+}
+
+func (MergeMain) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[0]
+}
+
+func (x MergeMain) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MergeMain.Descriptor instead.
+func (MergeMain) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{0}
+}
+
+// CheckWhen is when Djinn runs a project's check.
+type CheckWhen int32
+
+const (
+	// Not set.
+	CheckWhen_CHECK_WHEN_UNSPECIFIED CheckWhen = 0
+	// Before a task's work is committed into its wish's integration branch, on the merge: red, a correction worker
+	// starts, as for a conflict.
+	CheckWhen_CHECK_WHEN_COMMIT CheckWhen = 1
+	// Before Djinn pushes the integration branch, on its tip: red, the push is held, and Djinn says why; a question when
+	// it stays red.
+	CheckWhen_CHECK_WHEN_PUSH CheckWhen = 2
+)
+
+// Enum value maps for CheckWhen.
+var (
+	CheckWhen_name = map[int32]string{
+		0: "CHECK_WHEN_UNSPECIFIED",
+		1: "CHECK_WHEN_COMMIT",
+		2: "CHECK_WHEN_PUSH",
+	}
+	CheckWhen_value = map[string]int32{
+		"CHECK_WHEN_UNSPECIFIED": 0,
+		"CHECK_WHEN_COMMIT":      1,
+		"CHECK_WHEN_PUSH":        2,
+	}
+)
+
+func (x CheckWhen) Enum() *CheckWhen {
+	p := new(CheckWhen)
+	*p = x
+	return p
+}
+
+func (x CheckWhen) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CheckWhen) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[1].Descriptor()
+}
+
+func (CheckWhen) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[1]
+}
+
+func (x CheckWhen) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CheckWhen.Descriptor instead.
+func (CheckWhen) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{1}
+}
+
+// SettingSource is where a project setting comes from.
+type SettingSource int32
+
+const (
+	// Not set.
+	SettingSource_SETTING_SOURCE_UNSPECIFIED SettingSource = 0
+	// Djinn's own default: neither file sets it.
+	SettingSource_SETTING_SOURCE_DEFAULT SettingSource = 1
+	// The repository's .agents/settings.txtpb, shared by the team.
+	SettingSource_SETTING_SOURCE_REPOSITORY SettingSource = 2
+	// The developer's own file, in Djinn's data folder.
+	SettingSource_SETTING_SOURCE_DEVELOPER SettingSource = 3
+)
+
+// Enum value maps for SettingSource.
+var (
+	SettingSource_name = map[int32]string{
+		0: "SETTING_SOURCE_UNSPECIFIED",
+		1: "SETTING_SOURCE_DEFAULT",
+		2: "SETTING_SOURCE_REPOSITORY",
+		3: "SETTING_SOURCE_DEVELOPER",
+	}
+	SettingSource_value = map[string]int32{
+		"SETTING_SOURCE_UNSPECIFIED": 0,
+		"SETTING_SOURCE_DEFAULT":     1,
+		"SETTING_SOURCE_REPOSITORY":  2,
+		"SETTING_SOURCE_DEVELOPER":   3,
+	}
+)
+
+func (x SettingSource) Enum() *SettingSource {
+	p := new(SettingSource)
+	*p = x
+	return p
+}
+
+func (x SettingSource) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SettingSource) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[2].Descriptor()
+}
+
+func (SettingSource) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[2]
+}
+
+func (x SettingSource) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SettingSource.Descriptor instead.
+func (SettingSource) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{2}
+}
+
+// PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
+type PushMode int32
+
+const (
+	// Not set: auto.
+	PushMode_PUSH_MODE_UNSPECIFIED PushMode = 0
+	// Djinn pushes by itself, never forcing.
+	PushMode_PUSH_MODE_AUTO PushMode = 1
+	// Djinn asks first: "Push feat/x to origin?", pushed in one click.
+	PushMode_PUSH_MODE_ASK PushMode = 2
+)
+
+// Enum value maps for PushMode.
+var (
+	PushMode_name = map[int32]string{
+		0: "PUSH_MODE_UNSPECIFIED",
+		1: "PUSH_MODE_AUTO",
+		2: "PUSH_MODE_ASK",
+	}
+	PushMode_value = map[string]int32{
+		"PUSH_MODE_UNSPECIFIED": 0,
+		"PUSH_MODE_AUTO":        1,
+		"PUSH_MODE_ASK":         2,
+	}
+)
+
+func (x PushMode) Enum() *PushMode {
+	p := new(PushMode)
+	*p = x
+	return p
+}
+
+func (x PushMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PushMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[3].Descriptor()
+}
+
+func (PushMode) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[3]
+}
+
+func (x PushMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PushMode.Descriptor instead.
+func (PushMode) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{3}
+}
+
 // WishState is where a wish stands. A djinn grants three wishes at a time, never more: three are active at most.
 type WishState int32
 
@@ -69,11 +291,11 @@ func (x WishState) String() string {
 }
 
 func (WishState) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[0].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[4].Descriptor()
 }
 
 func (WishState) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[0]
+	return &file_plan_v1_plan_proto_enumTypes[4]
 }
 
 func (x WishState) Number() protoreflect.EnumNumber {
@@ -82,7 +304,7 @@ func (x WishState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use WishState.Descriptor instead.
 func (WishState) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{0}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{4}
 }
 
 // Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that
@@ -127,11 +349,11 @@ func (x Allowance) String() string {
 }
 
 func (Allowance) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[1].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[5].Descriptor()
 }
 
 func (Allowance) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[1]
+	return &file_plan_v1_plan_proto_enumTypes[5]
 }
 
 func (x Allowance) Number() protoreflect.EnumNumber {
@@ -140,7 +362,7 @@ func (x Allowance) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Allowance.Descriptor instead.
 func (Allowance) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{1}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{5}
 }
 
 // TaskStatus is where a task stands.
@@ -160,7 +382,8 @@ const (
 	// Stopped on request.
 	TaskStatus_TASK_STATUS_STOPPED TaskStatus = 5
 	// Cut short because djinn up stopped or crashed while its worker ran. The task keeps its provider, session and
-	// worktree, to be resumed; nothing restarts it by itself.
+	// worktree; the next djinn up resumes it (RESUMING) unless it cannot: imported, its worktree gone, its wish
+	// granted, or already resumed as another task (Task.fork_of).
 	TaskStatus_TASK_STATUS_INTERRUPTED TaskStatus = 6
 	// Its worker ended read-only, and the task waits for the developer's answer to its edit question
 	// (Task.edit_question_id): a yes starts the worker again, allowed to edit the project's files.
@@ -168,6 +391,10 @@ const (
 	// Its worker holds still on request, without losing anything, until it is resumed. It takes no slot of the
 	// machine meanwhile.
 	TaskStatus_TASK_STATUS_PAUSED TaskStatus = 8
+	// Djinn resumes its worker by itself, in the same task, worktree and session: djinn up restarted while it ran, or
+	// its provider's usage limit stopped it. The scheduler starts it again like a planned task, first, once
+	// Task.resume_after has passed. Not the person's move.
+	TaskStatus_TASK_STATUS_RESUMING TaskStatus = 9
 )
 
 // Enum value maps for TaskStatus.
@@ -182,6 +409,7 @@ var (
 		6: "TASK_STATUS_INTERRUPTED",
 		7: "TASK_STATUS_WAITING",
 		8: "TASK_STATUS_PAUSED",
+		9: "TASK_STATUS_RESUMING",
 	}
 	TaskStatus_value = map[string]int32{
 		"TASK_STATUS_UNSPECIFIED": 0,
@@ -193,6 +421,7 @@ var (
 		"TASK_STATUS_INTERRUPTED": 6,
 		"TASK_STATUS_WAITING":     7,
 		"TASK_STATUS_PAUSED":      8,
+		"TASK_STATUS_RESUMING":    9,
 	}
 )
 
@@ -207,11 +436,11 @@ func (x TaskStatus) String() string {
 }
 
 func (TaskStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[2].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[6].Descriptor()
 }
 
 func (TaskStatus) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[2]
+	return &file_plan_v1_plan_proto_enumTypes[6]
 }
 
 func (x TaskStatus) Number() protoreflect.EnumNumber {
@@ -220,7 +449,7 @@ func (x TaskStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskStatus.Descriptor instead.
 func (TaskStatus) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{2}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{6}
 }
 
 // TaskAccess says where the rights of a task's worker come from (docs/providers.md, "What a worker may do").
@@ -247,6 +476,9 @@ const (
 	TaskAccess_TASK_ACCESS_WISH_EDIT TaskAccess = 7
 	// The wish allows the auto mode in the project: the worker may edit, in its agent's auto mode.
 	TaskAccess_TASK_ACCESS_WISH_AUTO TaskAccess = 8
+	// A question worker (Task.role): it reads, and runs only the djinn commands its job needs; it edits nothing and
+	// runs no gate.
+	TaskAccess_TASK_ACCESS_DJINN TaskAccess = 9
 )
 
 // Enum value maps for TaskAccess.
@@ -261,6 +493,7 @@ var (
 		6: "TASK_ACCESS_EDIT_REFUSED",
 		7: "TASK_ACCESS_WISH_EDIT",
 		8: "TASK_ACCESS_WISH_AUTO",
+		9: "TASK_ACCESS_DJINN",
 	}
 	TaskAccess_value = map[string]int32{
 		"TASK_ACCESS_UNSPECIFIED":  0,
@@ -272,6 +505,7 @@ var (
 		"TASK_ACCESS_EDIT_REFUSED": 6,
 		"TASK_ACCESS_WISH_EDIT":    7,
 		"TASK_ACCESS_WISH_AUTO":    8,
+		"TASK_ACCESS_DJINN":        9,
 	}
 )
 
@@ -286,11 +520,11 @@ func (x TaskAccess) String() string {
 }
 
 func (TaskAccess) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[3].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[7].Descriptor()
 }
 
 func (TaskAccess) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[3]
+	return &file_plan_v1_plan_proto_enumTypes[7]
 }
 
 func (x TaskAccess) Number() protoreflect.EnumNumber {
@@ -299,7 +533,63 @@ func (x TaskAccess) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskAccess.Descriptor instead.
 func (TaskAccess) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{3}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{7}
+}
+
+// TaskRole says what a task Djinn started by itself on a question does. A task the lead or the developer spawned has
+// none.
+type TaskRole int32
+
+const (
+	// A worker spawned by the lead or the developer.
+	TaskRole_TASK_ROLE_UNSPECIFIED TaskRole = 0
+	// Djinn started it once the developer answered Task.question ("Rub the lamp"): it turns the decision into tasks
+	// (djinn task spawn --decision), or asks what the answer leaves open.
+	TaskRole_TASK_ROLE_CONVERTER TaskRole = 1
+	// Djinn started it once the developer asked to know more about Task.question ("Enlighten me"): it reads, then
+	// revises the question so that it waits for the developer again.
+	TaskRole_TASK_ROLE_INVESTIGATOR TaskRole = 2
+)
+
+// Enum value maps for TaskRole.
+var (
+	TaskRole_name = map[int32]string{
+		0: "TASK_ROLE_UNSPECIFIED",
+		1: "TASK_ROLE_CONVERTER",
+		2: "TASK_ROLE_INVESTIGATOR",
+	}
+	TaskRole_value = map[string]int32{
+		"TASK_ROLE_UNSPECIFIED":  0,
+		"TASK_ROLE_CONVERTER":    1,
+		"TASK_ROLE_INVESTIGATOR": 2,
+	}
+)
+
+func (x TaskRole) Enum() *TaskRole {
+	p := new(TaskRole)
+	*p = x
+	return p
+}
+
+func (x TaskRole) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TaskRole) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[8].Descriptor()
+}
+
+func (TaskRole) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[8]
+}
+
+func (x TaskRole) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TaskRole.Descriptor instead.
+func (TaskRole) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{8}
 }
 
 // Provider is the kind of agent a worker runs.
@@ -312,13 +602,17 @@ const (
 	Provider_PROVIDER_CLAUDE Provider = 1
 	// A fake agent that plays a script, to try Djinn without a paid model: each line of the prompt is a step,
 	// like "text Hello", "tool Bash ls", "result ok", "usage 1200 300 0.02", "write notes.md Hi" (when it may edit),
-	// "sleep 5s", "fail why" or "exit 2";
+	// "sleep 5s", "fail why", "exit 2", or "djinn task list" (it runs Djinn's command line, as an agent does);
 	// any other line is said back as text.
 	Provider_PROVIDER_FAKE Provider = 2
 	// Codex, the codex command, driven through its app-server (JSON-RPC on stdio).
 	Provider_PROVIDER_CODEX Provider = 3
 	// Antigravity, Google's agy command, in headless stream-json mode.
 	Provider_PROVIDER_ANTIGRAVITY Provider = 4
+	// A watcher: no agent and no model, the prompt is a command line Djinn runs in the project's folder. Each
+	// paragraph it prints (output, then a pause or its exit) is an event, and its first line is told to the wish's
+	// lead. It takes no slot of the machine.
+	Provider_PROVIDER_WATCH Provider = 5
 )
 
 // Enum value maps for Provider.
@@ -329,6 +623,7 @@ var (
 		2: "PROVIDER_FAKE",
 		3: "PROVIDER_CODEX",
 		4: "PROVIDER_ANTIGRAVITY",
+		5: "PROVIDER_WATCH",
 	}
 	Provider_value = map[string]int32{
 		"PROVIDER_UNSPECIFIED": 0,
@@ -336,6 +631,7 @@ var (
 		"PROVIDER_FAKE":        2,
 		"PROVIDER_CODEX":       3,
 		"PROVIDER_ANTIGRAVITY": 4,
+		"PROVIDER_WATCH":       5,
 	}
 )
 
@@ -350,11 +646,11 @@ func (x Provider) String() string {
 }
 
 func (Provider) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[4].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[9].Descriptor()
 }
 
 func (Provider) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[4]
+	return &file_plan_v1_plan_proto_enumTypes[9]
 }
 
 func (x Provider) Number() protoreflect.EnumNumber {
@@ -363,7 +659,327 @@ func (x Provider) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Provider.Descriptor instead.
 func (Provider) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{4}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{9}
+}
+
+// IntegrationState is where a task's finished work stands on its way into its wish's integration branch.
+type IntegrationState int32
+
+const (
+	// Not set: Djinn does not integrate the task's work.
+	IntegrationState_INTEGRATION_STATE_UNSPECIFIED IntegrationState = 0
+	// Done, waiting to be merged: at once, unless something else holds it (its reason says what).
+	IntegrationState_INTEGRATION_STATE_PENDING IntegrationState = 1
+	// Its batch is being merged and tested.
+	IntegrationState_INTEGRATION_STATE_INTEGRATING IntegrationState = 2
+	// In the integration branch, tested.
+	IntegrationState_INTEGRATION_STATE_COMMITTED IntegrationState = 3
+	// Its batch met a conflict in code, or a merge Djinn could not settle: the branch stayed as it was.
+	IntegrationState_INTEGRATION_STATE_CONFLICT IntegrationState = 4
+	// Its batch's tests failed: the branch stayed as it was.
+	IntegrationState_INTEGRATION_STATE_RED IntegrationState = 5
+	// Its worktree held changes not committed: it is not merged, and a review worker commits what belongs to the task
+	// and drops the rest, or the person decides.
+	IntegrationState_INTEGRATION_STATE_UNCOMMITTED IntegrationState = 6
+)
+
+// Enum value maps for IntegrationState.
+var (
+	IntegrationState_name = map[int32]string{
+		0: "INTEGRATION_STATE_UNSPECIFIED",
+		1: "INTEGRATION_STATE_PENDING",
+		2: "INTEGRATION_STATE_INTEGRATING",
+		3: "INTEGRATION_STATE_COMMITTED",
+		4: "INTEGRATION_STATE_CONFLICT",
+		5: "INTEGRATION_STATE_RED",
+		6: "INTEGRATION_STATE_UNCOMMITTED",
+	}
+	IntegrationState_value = map[string]int32{
+		"INTEGRATION_STATE_UNSPECIFIED": 0,
+		"INTEGRATION_STATE_PENDING":     1,
+		"INTEGRATION_STATE_INTEGRATING": 2,
+		"INTEGRATION_STATE_COMMITTED":   3,
+		"INTEGRATION_STATE_CONFLICT":    4,
+		"INTEGRATION_STATE_RED":         5,
+		"INTEGRATION_STATE_UNCOMMITTED": 6,
+	}
+)
+
+func (x IntegrationState) Enum() *IntegrationState {
+	p := new(IntegrationState)
+	*p = x
+	return p
+}
+
+func (x IntegrationState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (IntegrationState) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[10].Descriptor()
+}
+
+func (IntegrationState) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[10]
+}
+
+func (x IntegrationState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use IntegrationState.Descriptor instead.
+func (IntegrationState) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{10}
+}
+
+// Prover says who or what gives a proof that no worker can, as the words of a box's needs name it.
+type Prover int32
+
+const (
+	// Not set.
+	Prover_PROVER_UNSPECIFIED Prover = 0
+	// A Mac: macOS by hand, or a command run there.
+	Prover_PROVER_MAC Prover = 1
+	// A Windows machine.
+	Prover_PROVER_WINDOWS Prover = 2
+	// A review by a named person (ProofNeed.reviewer).
+	Prover_PROVER_REVIEW Prover = 3
+	// A published release, or a tag pushed.
+	Prover_PROVER_RELEASE Prover = 4
+	// A real model: a real run, a real lead, a paid bench.
+	Prover_PROVER_REAL_MODEL Prover = 5
+	// A person: by hand, by voice, a maintainer, a decision.
+	Prover_PROVER_PERSON Prover = 6
+	// None of these: the needs say what, in their own words.
+	Prover_PROVER_OTHER Prover = 7
+)
+
+// Enum value maps for Prover.
+var (
+	Prover_name = map[int32]string{
+		0: "PROVER_UNSPECIFIED",
+		1: "PROVER_MAC",
+		2: "PROVER_WINDOWS",
+		3: "PROVER_REVIEW",
+		4: "PROVER_RELEASE",
+		5: "PROVER_REAL_MODEL",
+		6: "PROVER_PERSON",
+		7: "PROVER_OTHER",
+	}
+	Prover_value = map[string]int32{
+		"PROVER_UNSPECIFIED": 0,
+		"PROVER_MAC":         1,
+		"PROVER_WINDOWS":     2,
+		"PROVER_REVIEW":      3,
+		"PROVER_RELEASE":     4,
+		"PROVER_REAL_MODEL":  5,
+		"PROVER_PERSON":      6,
+		"PROVER_OTHER":       7,
+	}
+)
+
+func (x Prover) Enum() *Prover {
+	p := new(Prover)
+	*p = x
+	return p
+}
+
+func (x Prover) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Prover) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[11].Descriptor()
+}
+
+func (Prover) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[11]
+}
+
+func (x Prover) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Prover.Descriptor instead.
+func (Prover) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{11}
+}
+
+// TaskKind says what a task is.
+type TaskKind int32
+
+const (
+	// Not set: work, as every task was before kinds.
+	TaskKind_TASK_KIND_UNSPECIFIED TaskKind = 0
+	// Work: a worker runs it, once every task it depends on is done.
+	TaskKind_TASK_KIND_WORK TaskKind = 1
+	// An azima (Arabic ʿazīma, the incantation that binds and commands a djinn; resolve): a part of the plan (T07).
+	// No worker ever runs it, and the scheduler never starts it. Work is part of it
+	// (Task.part_of); it depends on other tasks like work does. It is done when marked done (djinn task done) or when
+	// its plan file says so (djinn plan sync); it never waits for the person.
+	TaskKind_TASK_KIND_AZIMA TaskKind = 2
+)
+
+// Enum value maps for TaskKind.
+var (
+	TaskKind_name = map[int32]string{
+		0: "TASK_KIND_UNSPECIFIED",
+		1: "TASK_KIND_WORK",
+		2: "TASK_KIND_AZIMA",
+	}
+	TaskKind_value = map[string]int32{
+		"TASK_KIND_UNSPECIFIED": 0,
+		"TASK_KIND_WORK":        1,
+		"TASK_KIND_AZIMA":       2,
+	}
+)
+
+func (x TaskKind) Enum() *TaskKind {
+	p := new(TaskKind)
+	*p = x
+	return p
+}
+
+func (x TaskKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TaskKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[12].Descriptor()
+}
+
+func (TaskKind) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[12]
+}
+
+func (x TaskKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TaskKind.Descriptor instead.
+func (TaskKind) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{12}
+}
+
+// AzimaState is where an azima stands.
+type AzimaState int32
+
+const (
+	// Not set: the task is not an azima.
+	AzimaState_AZIMA_STATE_UNSPECIFIED AzimaState = 0
+	// None of its parts runs nor is done.
+	AzimaState_AZIMA_STATE_OPEN AzimaState = 1
+	// One of its parts runs or is done, or an azima part of it is under way.
+	AzimaState_AZIMA_STATE_IN_PROGRESS AzimaState = 2
+	// Marked done, or its plan file says done, or every Done-when box of its plan file is checked.
+	AzimaState_AZIMA_STATE_DONE AzimaState = 3
+	// Under way, its work finished, and nothing left for Djinn to do: every work task part of it is finished (done,
+	// stopped, or cut short for good), every azima part of it done or awaiting its proof too, and every unchecked
+	// Done-when box of its plan file waits for a proof no worker can give (Task.proof_needs). It waits for a person, a
+	// machine, a release or a real model, never for work.
+	AzimaState_AZIMA_STATE_AWAITING_PROOF AzimaState = 4
+)
+
+// Enum value maps for AzimaState.
+var (
+	AzimaState_name = map[int32]string{
+		0: "AZIMA_STATE_UNSPECIFIED",
+		1: "AZIMA_STATE_OPEN",
+		2: "AZIMA_STATE_IN_PROGRESS",
+		3: "AZIMA_STATE_DONE",
+		4: "AZIMA_STATE_AWAITING_PROOF",
+	}
+	AzimaState_value = map[string]int32{
+		"AZIMA_STATE_UNSPECIFIED":    0,
+		"AZIMA_STATE_OPEN":           1,
+		"AZIMA_STATE_IN_PROGRESS":    2,
+		"AZIMA_STATE_DONE":           3,
+		"AZIMA_STATE_AWAITING_PROOF": 4,
+	}
+)
+
+func (x AzimaState) Enum() *AzimaState {
+	p := new(AzimaState)
+	*p = x
+	return p
+}
+
+func (x AzimaState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AzimaState) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[13].Descriptor()
+}
+
+func (AzimaState) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[13]
+}
+
+func (x AzimaState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AzimaState.Descriptor instead.
+func (AzimaState) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{13}
+}
+
+// Closer says who marked a task done by hand, or continued it.
+type Closer int32
+
+const (
+	// Not set.
+	Closer_CLOSER_UNSPECIFIED Closer = 0
+	// The wish's lead, through the command line or MCP.
+	Closer_CLOSER_LEAD Closer = 1
+	// The developer, in the window.
+	Closer_CLOSER_DEVELOPER Closer = 2
+	// djinn plan sync: the azima's plan file says done. A sync that reads it not done any more opens it again.
+	Closer_CLOSER_PLAN_FILE Closer = 3
+)
+
+// Enum value maps for Closer.
+var (
+	Closer_name = map[int32]string{
+		0: "CLOSER_UNSPECIFIED",
+		1: "CLOSER_LEAD",
+		2: "CLOSER_DEVELOPER",
+		3: "CLOSER_PLAN_FILE",
+	}
+	Closer_value = map[string]int32{
+		"CLOSER_UNSPECIFIED": 0,
+		"CLOSER_LEAD":        1,
+		"CLOSER_DEVELOPER":   2,
+		"CLOSER_PLAN_FILE":   3,
+	}
+)
+
+func (x Closer) Enum() *Closer {
+	p := new(Closer)
+	*p = x
+	return p
+}
+
+func (x Closer) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Closer) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[14].Descriptor()
+}
+
+func (Closer) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[14]
+}
+
+func (x Closer) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Closer.Descriptor instead.
+func (Closer) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{14}
 }
 
 // TaskEventKind says what a worker event is. Its content stays free text.
@@ -443,11 +1059,11 @@ func (x TaskEventKind) String() string {
 }
 
 func (TaskEventKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[5].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[15].Descriptor()
 }
 
 func (TaskEventKind) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[5]
+	return &file_plan_v1_plan_proto_enumTypes[15]
 }
 
 func (x TaskEventKind) Number() protoreflect.EnumNumber {
@@ -456,7 +1072,7 @@ func (x TaskEventKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskEventKind.Descriptor instead.
 func (TaskEventKind) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{5}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{15}
 }
 
 // Choice is an answer to a question: YES for a question without options, or the letter of an option.
@@ -513,11 +1129,11 @@ func (x Choice) String() string {
 }
 
 func (Choice) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[6].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[16].Descriptor()
 }
 
 func (Choice) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[6]
+	return &file_plan_v1_plan_proto_enumTypes[16]
 }
 
 func (x Choice) Number() protoreflect.EnumNumber {
@@ -526,7 +1142,68 @@ func (x Choice) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Choice.Descriptor instead.
 func (Choice) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{6}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{16}
+}
+
+// RouteKind is what a destination of a request does.
+type RouteKind int32
+
+const (
+	// Not set.
+	RouteKind_ROUTE_KIND_UNSPECIFIED RouteKind = 0
+	// File the request in an existing wish, as a block, and tell its lead.
+	RouteKind_ROUTE_KIND_FILE RouteKind = 1
+	// Make a new wish, active, and start its lead on the request.
+	RouteKind_ROUTE_KIND_NEW RouteKind = 2
+	// Make a new wish paused: it waits for a place, three wishes being active.
+	RouteKind_ROUTE_KIND_QUEUE RouteKind = 3
+	// Pause an active wish to make room, then make the new wish and start its lead on the request.
+	RouteKind_ROUTE_KIND_SWAP RouteKind = 4
+)
+
+// Enum value maps for RouteKind.
+var (
+	RouteKind_name = map[int32]string{
+		0: "ROUTE_KIND_UNSPECIFIED",
+		1: "ROUTE_KIND_FILE",
+		2: "ROUTE_KIND_NEW",
+		3: "ROUTE_KIND_QUEUE",
+		4: "ROUTE_KIND_SWAP",
+	}
+	RouteKind_value = map[string]int32{
+		"ROUTE_KIND_UNSPECIFIED": 0,
+		"ROUTE_KIND_FILE":        1,
+		"ROUTE_KIND_NEW":         2,
+		"ROUTE_KIND_QUEUE":       3,
+		"ROUTE_KIND_SWAP":        4,
+	}
+)
+
+func (x RouteKind) Enum() *RouteKind {
+	p := new(RouteKind)
+	*p = x
+	return p
+}
+
+func (x RouteKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RouteKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[17].Descriptor()
+}
+
+func (RouteKind) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[17]
+}
+
+func (x RouteKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RouteKind.Descriptor instead.
+func (RouteKind) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{17}
 }
 
 // What a round is.
@@ -566,11 +1243,11 @@ func (x RoundKind) String() string {
 }
 
 func (RoundKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[7].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[18].Descriptor()
 }
 
 func (RoundKind) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[7]
+	return &file_plan_v1_plan_proto_enumTypes[18]
 }
 
 func (x RoundKind) Number() protoreflect.EnumNumber {
@@ -579,7 +1256,7 @@ func (x RoundKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RoundKind.Descriptor instead.
 func (RoundKind) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{7}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{18}
 }
 
 // What a mark says.
@@ -619,11 +1296,11 @@ func (x MarkKind) String() string {
 }
 
 func (MarkKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[8].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[19].Descriptor()
 }
 
 func (MarkKind) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[8]
+	return &file_plan_v1_plan_proto_enumTypes[19]
 }
 
 func (x MarkKind) Number() protoreflect.EnumNumber {
@@ -632,7 +1309,64 @@ func (x MarkKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MarkKind.Descriptor instead.
 func (MarkKind) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{8}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{19}
+}
+
+// InboxState is where an inbox item stands.
+type InboxState int32
+
+const (
+	// Not set.
+	InboxState_INBOX_STATE_UNSPECIFIED InboxState = 0
+	// It waits for your answer.
+	InboxState_INBOX_STATE_NEW InboxState = 1
+	// You sent it to a wish: filed, or made into a new one.
+	InboxState_INBOX_STATE_ROUTED InboxState = 2
+	// You set it aside: it is not proposed again.
+	InboxState_INBOX_STATE_DISMISSED InboxState = 3
+)
+
+// Enum value maps for InboxState.
+var (
+	InboxState_name = map[int32]string{
+		0: "INBOX_STATE_UNSPECIFIED",
+		1: "INBOX_STATE_NEW",
+		2: "INBOX_STATE_ROUTED",
+		3: "INBOX_STATE_DISMISSED",
+	}
+	InboxState_value = map[string]int32{
+		"INBOX_STATE_UNSPECIFIED": 0,
+		"INBOX_STATE_NEW":         1,
+		"INBOX_STATE_ROUTED":      2,
+		"INBOX_STATE_DISMISSED":   3,
+	}
+)
+
+func (x InboxState) Enum() *InboxState {
+	p := new(InboxState)
+	*p = x
+	return p
+}
+
+func (x InboxState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (InboxState) Descriptor() protoreflect.EnumDescriptor {
+	return file_plan_v1_plan_proto_enumTypes[20].Descriptor()
+}
+
+func (InboxState) Type() protoreflect.EnumType {
+	return &file_plan_v1_plan_proto_enumTypes[20]
+}
+
+func (x InboxState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use InboxState.Descriptor instead.
+func (InboxState) EnumDescriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{20}
 }
 
 // Change is a kind of entity that changed, for a reader to read it again.
@@ -642,7 +1376,8 @@ const (
 	// Not set.
 	Change_CHANGE_UNSPECIFIED Change = 0
 	// The wish itself: its title, state, rank, rights, lead, or whether Djinn proposes to grant it. A change of its
-	// tasks or questions comes with it, as they decide that.
+	// questions comes with it, as they decide that; so does one of its tasks that changes their states, kinds or
+	// links, not a task's progress.
 	Change_CHANGE_WISH Change = 1
 	// Its tasks: one added, or one that changed state or spent.
 	Change_CHANGE_TASK Change = 2
@@ -652,8 +1387,12 @@ const (
 	Change_CHANGE_BLOCK Change = 4
 	// The projects: one added or changed.
 	Change_CHANGE_PROJECT Change = 5
+	// The inbox: an item came, or was routed or dismissed; a source was plugged in or unplugged, or a project added.
+	Change_CHANGE_INBOX Change = 6
+	// Its tilasms: one put, restored or imported.
+	Change_CHANGE_TILASM Change = 7
 	// Durable developer instructions and their lifecycle; also changes wish readiness.
-	Change_CHANGE_INSTRUCTION Change = 6
+	Change_CHANGE_INSTRUCTION Change = 8
 )
 
 // Enum value maps for Change.
@@ -665,7 +1404,9 @@ var (
 		3: "CHANGE_QUESTION",
 		4: "CHANGE_BLOCK",
 		5: "CHANGE_PROJECT",
-		6: "CHANGE_INSTRUCTION",
+		6: "CHANGE_INBOX",
+		7: "CHANGE_TILASM",
+		8: "CHANGE_INSTRUCTION",
 	}
 	Change_value = map[string]int32{
 		"CHANGE_UNSPECIFIED": 0,
@@ -674,7 +1415,9 @@ var (
 		"CHANGE_QUESTION":    3,
 		"CHANGE_BLOCK":       4,
 		"CHANGE_PROJECT":     5,
-		"CHANGE_INSTRUCTION": 6,
+		"CHANGE_INBOX":       6,
+		"CHANGE_TILASM":      7,
+		"CHANGE_INSTRUCTION": 8,
 	}
 )
 
@@ -689,11 +1432,11 @@ func (x Change) String() string {
 }
 
 func (Change) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[9].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[21].Descriptor()
 }
 
 func (Change) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[9]
+	return &file_plan_v1_plan_proto_enumTypes[21]
 }
 
 func (x Change) Number() protoreflect.EnumNumber {
@@ -702,7 +1445,7 @@ func (x Change) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Change.Descriptor instead.
 func (Change) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{9}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{21}
 }
 
 // Why a text told to a lead waits in its terminal before it is typed.
@@ -743,11 +1486,11 @@ func (x TellWait) String() string {
 }
 
 func (TellWait) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[10].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[22].Descriptor()
 }
 
 func (TellWait) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[10]
+	return &file_plan_v1_plan_proto_enumTypes[22]
 }
 
 func (x TellWait) Number() protoreflect.EnumNumber {
@@ -756,7 +1499,7 @@ func (x TellWait) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TellWait.Descriptor instead.
 func (TellWait) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{10}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{22}
 }
 
 // ProjectMatchKind says how an imported project was found on this machine.
@@ -800,11 +1543,11 @@ func (x ProjectMatchKind) String() string {
 }
 
 func (ProjectMatchKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[11].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[23].Descriptor()
 }
 
 func (ProjectMatchKind) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[11]
+	return &file_plan_v1_plan_proto_enumTypes[23]
 }
 
 func (x ProjectMatchKind) Number() protoreflect.EnumNumber {
@@ -813,7 +1556,7 @@ func (x ProjectMatchKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProjectMatchKind.Descriptor instead.
 func (ProjectMatchKind) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{11}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{23}
 }
 
 // InstructionStatus follows the lead's handling of a developer instruction, independently of the worker status.
@@ -861,11 +1604,11 @@ func (x InstructionStatus) String() string {
 }
 
 func (InstructionStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_plan_v1_plan_proto_enumTypes[12].Descriptor()
+	return file_plan_v1_plan_proto_enumTypes[24].Descriptor()
 }
 
 func (InstructionStatus) Type() protoreflect.EnumType {
-	return &file_plan_v1_plan_proto_enumTypes[12]
+	return &file_plan_v1_plan_proto_enumTypes[24]
 }
 
 func (x InstructionStatus) Number() protoreflect.EnumNumber {
@@ -874,7 +1617,7 @@ func (x InstructionStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use InstructionStatus.Descriptor instead.
 func (InstructionStatus) EnumDescriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{12}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{24}
 }
 
 // A project is a folder Djinn works in, a Git repository or not.
@@ -895,7 +1638,9 @@ type Project struct {
 	// machine finds the project by it, case ignored.
 	Remote string `protobuf:"bytes,6,opt,name=remote,proto3" json:"remote,omitempty"`
 	// Skills of other projects this project summons: its workers get them at launch, nothing is copied.
-	Summons       []*Summon `protobuf:"bytes,7,rep,name=summons,proto3" json:"summons,omitempty"`
+	Summons []*Summon `protobuf:"bytes,7,rep,name=summons,proto3" json:"summons,omitempty"`
+	// The last run of each of its checks, and of its setup, as Djinn integrated and pushed its wishes' work.
+	CheckRuns     []*CheckRun `protobuf:"bytes,8,rep,name=check_runs,json=checkRuns,proto3" json:"check_runs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -979,6 +1724,164 @@ func (x *Project) GetSummons() []*Summon {
 	return nil
 }
 
+func (x *Project) GetCheckRuns() []*CheckRun {
+	if x != nil {
+		return x.CheckRuns
+	}
+	return nil
+}
+
+// CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
+type CheckRun struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The check's name: lint, test. "setup" for the setup command.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// It is the setup command, not a check.
+	Setup bool `protobuf:"varint,2,opt,name=setup,proto3" json:"setup,omitempty"`
+	// The command, as the settings named it then.
+	Command string `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
+	// When it ran: before a commit or before a push; unspecified for the setup.
+	When CheckWhen `protobuf:"varint,4,opt,name=when,proto3,enum=plan.v1.CheckWhen" json:"when,omitempty"`
+	// The wish whose integration ran it, and the task whose work it checked before a commit.
+	WishId string `protobuf:"bytes,5,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	TaskId string `protobuf:"bytes,6,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// The commit it checked, in the wish's integration worktree.
+	Sha string `protobuf:"bytes,7,opt,name=sha,proto3" json:"sha,omitempty"`
+	// It passed: it ran and exited 0.
+	Passed bool `protobuf:"varint,8,opt,name=passed,proto3" json:"passed,omitempty"`
+	// Its exit code; -1 when it could not run.
+	ExitCode int32 `protobuf:"varint,9,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	// When it failed, why, and the end of its output.
+	Reason string `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
+	Output string `protobuf:"bytes,11,opt,name=output,proto3" json:"output,omitempty"`
+	// When it ended, and how long it took, in milliseconds.
+	EndTime       *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	DurationMs    int64                  `protobuf:"varint,13,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckRun) Reset() {
+	*x = CheckRun{}
+	mi := &file_plan_v1_plan_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckRun) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckRun) ProtoMessage() {}
+
+func (x *CheckRun) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckRun.ProtoReflect.Descriptor instead.
+func (*CheckRun) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *CheckRun) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CheckRun) GetSetup() bool {
+	if x != nil {
+		return x.Setup
+	}
+	return false
+}
+
+func (x *CheckRun) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *CheckRun) GetWhen() CheckWhen {
+	if x != nil {
+		return x.When
+	}
+	return CheckWhen_CHECK_WHEN_UNSPECIFIED
+}
+
+func (x *CheckRun) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *CheckRun) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *CheckRun) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *CheckRun) GetPassed() bool {
+	if x != nil {
+		return x.Passed
+	}
+	return false
+}
+
+func (x *CheckRun) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *CheckRun) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *CheckRun) GetOutput() string {
+	if x != nil {
+		return x.Output
+	}
+	return ""
+}
+
+func (x *CheckRun) GetEndTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndTime
+	}
+	return nil
+}
+
+func (x *CheckRun) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
 // A skill a project summons from another project. It stays in its source, and the summoning project follows it:
 // Djinn shows each worker the source's folder as it is, by its agent's own path, and writes nothing in the project.
 type Summon struct {
@@ -995,7 +1898,7 @@ type Summon struct {
 
 func (x *Summon) Reset() {
 	*x = Summon{}
-	mi := &file_plan_v1_plan_proto_msgTypes[1]
+	mi := &file_plan_v1_plan_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1007,7 +1910,7 @@ func (x *Summon) String() string {
 func (*Summon) ProtoMessage() {}
 
 func (x *Summon) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[1]
+	mi := &file_plan_v1_plan_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1020,7 +1923,7 @@ func (x *Summon) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Summon.ProtoReflect.Descriptor instead.
 func (*Summon) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{1}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Summon) GetProjectId() string {
@@ -1042,6 +1945,369 @@ func (x *Summon) GetCreateTime() *timestamppb.Timestamp {
 		return x.CreateTime
 	}
 	return nil
+}
+
+// ProjectSettings are the defaults of a project's workers, the few a team shares. The team writes them in the
+// repository, in .agents/settings.txtpb; a developer may write their own in Djinn's data folder, in
+// projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
+// own flags win over both. Djinn reads both files each time a task is spawned; djinn project show says where each
+// setting comes from. A file that cannot be read stops the project's tasks from spawning, with why, until it is
+// fixed; Djinn itself still starts. The files hold no secret: a value or a field name that looks like one is
+// refused. Docs: docs/team-settings.md.
+type ProjectSettings struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Kind of agent of the workers, when a task names none. Not set: claude. A watcher is never a default.
+	Provider *Provider `protobuf:"varint,1,opt,name=provider,proto3,enum=plan.v1.Provider,oneof" json:"provider,omitempty"`
+	// Model of the workers, when a task names none: a model of the provider above. A file that sets the provider sets
+	// its model with it: without a model there, the provider's own default, whatever the other file says. Empty: the
+	// provider's own default. It applies only to a task that runs this provider.
+	Model *string `protobuf:"bytes,2,opt,name=model,proto3,oneof" json:"model,omitempty"`
+	// Most a worker may spend, in US dollars, when a task gives none and its provider can enforce it. 0: no limit.
+	MaxBudgetUsd *float64 `protobuf:"fixed64,3,opt,name=max_budget_usd,json=maxBudgetUsd,proto3,oneof" json:"max_budget_usd,omitempty"`
+	// Branch of a worker's worktree, a template: {code} is the task's code (w1), {slug} its title in lower case
+	// ("fix-the-login-page"), {uuid8} the last 8 characters of its UUIDv7, the random part; a placeholder that comes
+	// out empty takes a separator next to it away. Letters, digits and placeholders, joined by at most one of . _ / -
+	// in a row. {uuid8} is required: two tasks never share a branch. Not set: {code}-{slug}-{uuid8}.
+	Branch *string `protobuf:"bytes,4,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
+	// The files code generation makes, as globs in the project's folder: "gen/**", "docs/schema.json". "**" stands
+	// for any number of folders, "*" for any name in one. When merging a task's work into its wish's integration
+	// branch meets a conflict only in these files, Djinn takes one side and makes them again with generate. A file that
+	// sets some sets them all.
+	Generated []string `protobuf:"bytes,5,rep,name=generated,proto3" json:"generated,omitempty"`
+	// The command that makes the generated files, run in the project's folder: "go tool task gen". Its words are
+	// split on spaces, without a shell. Not set: a conflict in generated files is a conflict like any other.
+	Generate *string `protobuf:"bytes,6,opt,name=generate,proto3,oneof" json:"generate,omitempty"`
+	// The former name of a check run before each commit: test: "go tool task test" is the check test at commit. A file
+	// that names a check test too keeps that one.
+	Test *string `protobuf:"bytes,7,opt,name=test,proto3,oneof" json:"test,omitempty"`
+	// How many correction workers Djinn starts, one after the other, for a batch whose merge conflicts in code or whose
+	// tests fail, before it asks the person. Not set: 2. 0: it asks at once.
+	CorrectionAttempts *int32 `protobuf:"varint,8,opt,name=correction_attempts,json=correctionAttempts,proto3,oneof" json:"correction_attempts,omitempty"`
+	// The command that installs the project's new build, run in the project's folder of the integration worktree at
+	// the commit: "go tool task install". Once Djinn has pushed the integration branch, the window proposes it, with
+	// what changed and what to check, and restarts Djinn on the build when it installed a newer Djinn. Its words are
+	// split on spaces, without a shell. Not set: nothing is proposed.
+	Install *string `protobuf:"bytes,9,opt,name=install,proto3,oneof" json:"install,omitempty"`
+	// Djinn starts a small worker on each question of a wish's lead: after an answer, one that turns the decision into
+	// tasks; after "Enlighten me", one that investigates and revises the question. Not set: on. false: the lead is told
+	// to act on the answer itself, as before.
+	QuestionWorkers *bool `protobuf:"varint,10,opt,name=question_workers,json=questionWorkers,proto3,oneof" json:"question_workers,omitempty"`
+	// Model of those question workers, a model of the workers' provider. Not set: sonnet for claude, the provider's own
+	// default for another; empty: the provider's own default.
+	QuestionModel *string `protobuf:"bytes,11,opt,name=question_model,json=questionModel,proto3,oneof" json:"question_model,omitempty"`
+	// Most a question worker may spend, in US dollars, when its provider can enforce it. Not set: 2. 0: no limit.
+	QuestionBudgetUsd *float64 `protobuf:"fixed64,12,opt,name=question_budget_usd,json=questionBudgetUsd,proto3,oneof" json:"question_budget_usd,omitempty"`
+	// The command that makes a fresh worktree of the project ready, run in the project's folder: "npm ci". Djinn runs it
+	// once in each integration worktree, before the first command there, and again when its lock files change. Its
+	// words are split on spaces, without a shell.
+	Setup *string `protobuf:"bytes,13,opt,name=setup,proto3,oneof" json:"setup,omitempty"`
+	// The commands Djinn runs on the project's work, each through a gate of its name, before it commits a task's work
+	// into its wish's integration branch, before it pushes that branch, or both. Djinn integrates the project's finished
+	// work only once one is set. A file that sets some sets them all; names ignore case and are unique.
+	Checks []*ProjectCheck `protobuf:"bytes,14,rep,name=checks,proto3" json:"checks,omitempty"`
+	// The project's main branch, which Djinn merges into each wish's integration branch to keep it up with it: "main".
+	// Not set: the default branch of the remote (its HEAD), else main, else master.
+	MainBranch *string `protobuf:"bytes,15,opt,name=main_branch,json=mainBranch,proto3,oneof" json:"main_branch,omitempty"`
+	// When Djinn merges main into a wish's integration branch: once main holds a release the branch lacks, or once it
+	// holds any commit the branch lacks, or never. Not set: at each release.
+	MergeMain *MergeMain `protobuf:"varint,16,opt,name=merge_main,json=mergeMain,proto3,enum=plan.v1.MergeMain,oneof" json:"merge_main,omitempty"`
+	// How often, in minutes, Djinn fetches main to look at it, at most: a release the running Djinn finds makes it look
+	// at once. Not set: 60.
+	MergeMainMinutes *int32 `protobuf:"varint,17,opt,name=merge_main_minutes,json=mergeMainMinutes,proto3,oneof" json:"merge_main_minutes,omitempty"`
+	// For the project a Djinn built from a checkout (go tool task install) comes from: a newer release of Djinn, found
+	// while that checkout is on the main branch and holds no work the release lacks, installs by itself, the restart
+	// left to the person's click. On a branch, a release never installs over the branch's build: main's merge brings it.
+	// Not set: on.
+	InstallReleases *bool `protobuf:"varint,18,opt,name=install_releases,json=installReleases,proto3,oneof" json:"install_releases,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ProjectSettings) Reset() {
+	*x = ProjectSettings{}
+	mi := &file_plan_v1_plan_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectSettings) ProtoMessage() {}
+
+func (x *ProjectSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectSettings.ProtoReflect.Descriptor instead.
+func (*ProjectSettings) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ProjectSettings) GetProvider() Provider {
+	if x != nil && x.Provider != nil {
+		return *x.Provider
+	}
+	return Provider_PROVIDER_UNSPECIFIED
+}
+
+func (x *ProjectSettings) GetModel() string {
+	if x != nil && x.Model != nil {
+		return *x.Model
+	}
+	return ""
+}
+
+func (x *ProjectSettings) GetMaxBudgetUsd() float64 {
+	if x != nil && x.MaxBudgetUsd != nil {
+		return *x.MaxBudgetUsd
+	}
+	return 0
+}
+
+func (x *ProjectSettings) GetBranch() string {
+	if x != nil && x.Branch != nil {
+		return *x.Branch
+	}
+	return ""
+}
+
+func (x *ProjectSettings) GetGenerated() []string {
+	if x != nil {
+		return x.Generated
+	}
+	return nil
+}
+
+func (x *ProjectSettings) GetGenerate() string {
+	if x != nil && x.Generate != nil {
+		return *x.Generate
+	}
+	return ""
+}
+
+func (x *ProjectSettings) GetTest() string {
+	if x != nil && x.Test != nil {
+		return *x.Test
+	}
+	return ""
+}
+
+func (x *ProjectSettings) GetCorrectionAttempts() int32 {
+	if x != nil && x.CorrectionAttempts != nil {
+		return *x.CorrectionAttempts
+	}
+	return 0
+}
+
+func (x *ProjectSettings) GetInstall() string {
+	if x != nil && x.Install != nil {
+		return *x.Install
+	}
+	return ""
+}
+
+func (x *ProjectSettings) GetQuestionWorkers() bool {
+	if x != nil && x.QuestionWorkers != nil {
+		return *x.QuestionWorkers
+	}
+	return false
+}
+
+func (x *ProjectSettings) GetQuestionModel() string {
+	if x != nil && x.QuestionModel != nil {
+		return *x.QuestionModel
+	}
+	return ""
+}
+
+func (x *ProjectSettings) GetQuestionBudgetUsd() float64 {
+	if x != nil && x.QuestionBudgetUsd != nil {
+		return *x.QuestionBudgetUsd
+	}
+	return 0
+}
+
+func (x *ProjectSettings) GetSetup() string {
+	if x != nil && x.Setup != nil {
+		return *x.Setup
+	}
+	return ""
+}
+
+func (x *ProjectSettings) GetChecks() []*ProjectCheck {
+	if x != nil {
+		return x.Checks
+	}
+	return nil
+}
+
+func (x *ProjectSettings) GetMainBranch() string {
+	if x != nil && x.MainBranch != nil {
+		return *x.MainBranch
+	}
+	return ""
+}
+
+func (x *ProjectSettings) GetMergeMain() MergeMain {
+	if x != nil && x.MergeMain != nil {
+		return *x.MergeMain
+	}
+	return MergeMain_MERGE_MAIN_UNSPECIFIED
+}
+
+func (x *ProjectSettings) GetMergeMainMinutes() int32 {
+	if x != nil && x.MergeMainMinutes != nil {
+		return *x.MergeMainMinutes
+	}
+	return 0
+}
+
+func (x *ProjectSettings) GetInstallReleases() bool {
+	if x != nil && x.InstallReleases != nil {
+		return *x.InstallReleases
+	}
+	return false
+}
+
+// ProjectCheck is a command Djinn runs on a project's work: checks { name: "lint" command: "go tool task lint" when:
+// CHECK_WHEN_COMMIT }.
+type ProjectCheck struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Its name, and the gate it runs through: lint, test.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The command, run in the project's folder: "go tool task lint". Its words are split on spaces, without a shell.
+	Command string `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
+	// When it runs: before a commit, before a push, or both.
+	When          []CheckWhen `protobuf:"varint,3,rep,packed,name=when,proto3,enum=plan.v1.CheckWhen" json:"when,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectCheck) Reset() {
+	*x = ProjectCheck{}
+	mi := &file_plan_v1_plan_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectCheck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectCheck) ProtoMessage() {}
+
+func (x *ProjectCheck) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectCheck.ProtoReflect.Descriptor instead.
+func (*ProjectCheck) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ProjectCheck) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ProjectCheck) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *ProjectCheck) GetWhen() []CheckWhen {
+	if x != nil {
+		return x.When
+	}
+	return nil
+}
+
+// ProjectSetting is one setting of a project, as its workers get it.
+type ProjectSetting struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Its name, as the files write it: provider, model, max_budget_usd, branch, generated, generate, setup, checks,
+	// correction_attempts, install.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Its value, as text; empty for the provider's own default model, no budget limit, or a command not set. The
+	// generated globs are joined by commas; the checks by "; ", each "lint: go tool task lint (commit, push)".
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	// Where it comes from.
+	Source        SettingSource `protobuf:"varint,3,opt,name=source,proto3,enum=plan.v1.SettingSource" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectSetting) Reset() {
+	*x = ProjectSetting{}
+	mi := &file_plan_v1_plan_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectSetting) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectSetting) ProtoMessage() {}
+
+func (x *ProjectSetting) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectSetting.ProtoReflect.Descriptor instead.
+func (*ProjectSetting) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ProjectSetting) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ProjectSetting) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *ProjectSetting) GetSource() SettingSource {
+	if x != nil {
+		return x.Source
+	}
+	return SettingSource_SETTING_SOURCE_UNSPECIFIED
 }
 
 // A wish is what you ask Djinn for, and what it works to grant. It may span several projects.
@@ -1068,26 +2334,53 @@ type Wish struct {
 	// Djinn proposes to grant the wish: it has tasks, all finished, no question is open, and no task waits for an
 	// answer or failed, and every developer instruction is done. Computed on every read, never stored. Only the user grants a wish.
 	Ready bool `protobuf:"varint,10,opt,name=ready,proto3" json:"ready,omitempty"`
+	// The skill the wish was made from, when a request matched its wish template; unset otherwise.
+	Template *WishTemplate `protobuf:"bytes,11,opt,name=template,proto3" json:"template,omitempty"`
+	// The branch each Git project of the wish integrates its tasks' finished work into: by default the branch the
+	// project's checkout was on when the wish was made, or, for a wish made before Djinn recorded it, when its first
+	// task's work was to integrate (djinn wish set-integration).
+	IntegrationBranches []*IntegrationBranch `protobuf:"bytes,12,rep,name=integration_branches,json=integrationBranches,proto3" json:"integration_branches,omitempty"`
+	// Each task's finished work is committed into the integration branch as soon as it ends, alone. Djinn pushes the
+	// branch to its remote, checked each time a task's merge ends: when an azima ends (its last part committed), or once
+	// push_after_tasks tasks are committed since the last push and more than this many minutes have passed since it.
+	// 0: 60 minutes, 3 tasks.
+	PushAfterMinutes int32 `protobuf:"varint,13,opt,name=push_after_minutes,json=pushAfterMinutes,proto3" json:"push_after_minutes,omitempty"`
+	PushAfterTasks   int32 `protobuf:"varint,14,opt,name=push_after_tasks,json=pushAfterTasks,proto3" json:"push_after_tasks,omitempty"`
+	// A few lines that say what the wish is for, its scope and where it goes: djinn wish describe sets it, the person
+	// edits it in the wish's head, and the brief opens with it. Empty until someone writes one: the title stands for
+	// it.
+	Description string `protobuf:"bytes,15,opt,name=description,proto3" json:"description,omitempty"`
+	// Whether Djinn pushes the integration branch by itself when a push is due, or asks first. Unset: auto.
+	PushMode PushMode `protobuf:"varint,16,opt,name=push_mode,json=pushMode,proto3,enum=plan.v1.PushMode" json:"push_mode,omitempty"`
+	// Where the push of each Git project's integration branch stands: its last push, and the question Djinn asks about
+	// the next one.
+	Pushes []*WishPush `protobuf:"bytes,17,rep,name=pushes,proto3" json:"pushes,omitempty"`
+	// Where each Git project's integration branch stands against the project's main branch, which Djinn merges into it
+	// by itself: its last merge of main, and why the next one waits.
+	Mains []*WishMain `protobuf:"bytes,18,rep,name=mains,proto3" json:"mains,omitempty"`
+	// The codes of the wish's tasks and azimas that were deleted (djinn task delete), W12 or T27: never given again,
+	// so that a commit, a plan file or a decision that names one names one task only.
+	RetiredCodes []string `protobuf:"bytes,19,rep,name=retired_codes,json=retiredCodes,proto3" json:"retired_codes,omitempty"`
 	// Kind of agent of the wish, chosen when it was made and changed by djinn wish set-provider: its lead runs it, and so
 	// does every task that names no other. Not set on a wish made before the choice: Claude.
-	Provider Provider `protobuf:"varint,11,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
+	Provider Provider `protobuf:"varint,20,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
 	// The lead's terminal runs a program in this djinn up, which djinn wish tell writes to. Set by the list of the
 	// wishes, never stored.
-	LeadRunning bool `protobuf:"varint,12,opt,name=lead_running,json=leadRunning,proto3" json:"lead_running,omitempty"`
+	LeadRunning bool `protobuf:"varint,21,opt,name=lead_running,json=leadRunning,proto3" json:"lead_running,omitempty"`
 	// The choice the lead's agent shows in its terminal now, waiting for the developer: an approval (a command, an
 	// edit, the network), a folder to trust. Read from its screen by the list of the wishes, never stored.
-	LeadPrompt *LeadPrompt `protobuf:"bytes,13,opt,name=lead_prompt,json=leadPrompt,proto3" json:"lead_prompt,omitempty"`
+	LeadPrompt *LeadPrompt `protobuf:"bytes,22,opt,name=lead_prompt,json=leadPrompt,proto3" json:"lead_prompt,omitempty"`
 	// The last lead terminal ended in this Djinn. Computed from the retained terminal, never stored.
-	LeadExit *LeadExit `protobuf:"bytes,14,opt,name=lead_exit,json=leadExit,proto3" json:"lead_exit,omitempty"`
+	LeadExit *LeadExit `protobuf:"bytes,23,opt,name=lead_exit,json=leadExit,proto3" json:"lead_exit,omitempty"`
 	// A lead could not be started. Kept until the next successful start in this Djinn, never stored.
-	LeadError     string `protobuf:"bytes,15,opt,name=lead_error,json=leadError,proto3" json:"lead_error,omitempty"`
+	LeadError     string `protobuf:"bytes,24,opt,name=lead_error,json=leadError,proto3" json:"lead_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Wish) Reset() {
 	*x = Wish{}
-	mi := &file_plan_v1_plan_proto_msgTypes[2]
+	mi := &file_plan_v1_plan_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1099,7 +2392,7 @@ func (x *Wish) String() string {
 func (*Wish) ProtoMessage() {}
 
 func (x *Wish) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[2]
+	mi := &file_plan_v1_plan_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1112,7 +2405,7 @@ func (x *Wish) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Wish.ProtoReflect.Descriptor instead.
 func (*Wish) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{2}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Wish) GetId() string {
@@ -1185,6 +2478,69 @@ func (x *Wish) GetReady() bool {
 	return false
 }
 
+func (x *Wish) GetTemplate() *WishTemplate {
+	if x != nil {
+		return x.Template
+	}
+	return nil
+}
+
+func (x *Wish) GetIntegrationBranches() []*IntegrationBranch {
+	if x != nil {
+		return x.IntegrationBranches
+	}
+	return nil
+}
+
+func (x *Wish) GetPushAfterMinutes() int32 {
+	if x != nil {
+		return x.PushAfterMinutes
+	}
+	return 0
+}
+
+func (x *Wish) GetPushAfterTasks() int32 {
+	if x != nil {
+		return x.PushAfterTasks
+	}
+	return 0
+}
+
+func (x *Wish) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Wish) GetPushMode() PushMode {
+	if x != nil {
+		return x.PushMode
+	}
+	return PushMode_PUSH_MODE_UNSPECIFIED
+}
+
+func (x *Wish) GetPushes() []*WishPush {
+	if x != nil {
+		return x.Pushes
+	}
+	return nil
+}
+
+func (x *Wish) GetMains() []*WishMain {
+	if x != nil {
+		return x.Mains
+	}
+	return nil
+}
+
+func (x *Wish) GetRetiredCodes() []string {
+	if x != nil {
+		return x.RetiredCodes
+	}
+	return nil
+}
+
 func (x *Wish) GetProvider() Provider {
 	if x != nil {
 		return x.Provider
@@ -1220,6 +2576,626 @@ func (x *Wish) GetLeadError() string {
 	return ""
 }
 
+// WishPush is where the push of a wish's integration branch to its remote stands, in one of its projects. Only Djinn
+// pushes it, through git with the person's own credentials, never forcing; agents never push.
+type WishPush struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The project.
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The last push; unset before the first.
+	Last *IntegrationPush `protobuf:"bytes,2,opt,name=last,proto3" json:"last,omitempty"`
+	// The question Djinn asked about the next push, while it is open: in ask mode, or once the remote refused one.
+	// No push is due meanwhile.
+	QuestionId string `protobuf:"bytes,3,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
+	// Why the remote refused the last push Djinn tried, in git's words; empty once one passes.
+	Refused string `protobuf:"bytes,4,opt,name=refused,proto3" json:"refused,omitempty"`
+	// The person said to push (an answer to the question): Djinn pushes at its next pass, whatever the cadence.
+	Approved bool `protobuf:"varint,5,opt,name=approved,proto3" json:"approved,omitempty"`
+	// Why the project's push checks hold the push, at the branch's tip then; empty once they pass.
+	Held string `protobuf:"bytes,6,opt,name=held,proto3" json:"held,omitempty"`
+	// How many times in a row they held it: at the second, or once no work is left to commit, Djinn asks.
+	HeldRuns int32 `protobuf:"varint,7,opt,name=held_runs,json=heldRuns,proto3" json:"held_runs,omitempty"`
+	// The person said to push without the push checks: the next push skips them, once.
+	Unchecked     bool `protobuf:"varint,8,opt,name=unchecked,proto3" json:"unchecked,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishPush) Reset() {
+	*x = WishPush{}
+	mi := &file_plan_v1_plan_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishPush) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishPush) ProtoMessage() {}
+
+func (x *WishPush) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishPush.ProtoReflect.Descriptor instead.
+func (*WishPush) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *WishPush) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *WishPush) GetLast() *IntegrationPush {
+	if x != nil {
+		return x.Last
+	}
+	return nil
+}
+
+func (x *WishPush) GetQuestionId() string {
+	if x != nil {
+		return x.QuestionId
+	}
+	return ""
+}
+
+func (x *WishPush) GetRefused() string {
+	if x != nil {
+		return x.Refused
+	}
+	return ""
+}
+
+func (x *WishPush) GetApproved() bool {
+	if x != nil {
+		return x.Approved
+	}
+	return false
+}
+
+func (x *WishPush) GetHeld() string {
+	if x != nil {
+		return x.Held
+	}
+	return ""
+}
+
+func (x *WishPush) GetHeldRuns() int32 {
+	if x != nil {
+		return x.HeldRuns
+	}
+	return 0
+}
+
+func (x *WishPush) GetUnchecked() bool {
+	if x != nil {
+		return x.Unchecked
+	}
+	return false
+}
+
+// IntegrationPush is a push of a wish's integration branch to its remote, as the journal records it and the wish shows
+// the last one.
+type IntegrationPush struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish, and the project whose branch was pushed.
+	WishId    string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The branch, and the remote it went to: origin.
+	Branch string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	Remote string `protobuf:"bytes,4,opt,name=remote,proto3" json:"remote,omitempty"`
+	// Where the remote's branch was before (empty when it had none), and the commit pushed.
+	OldSha string `protobuf:"bytes,5,opt,name=old_sha,json=oldSha,proto3" json:"old_sha,omitempty"`
+	NewSha string `protobuf:"bytes,6,opt,name=new_sha,json=newSha,proto3" json:"new_sha,omitempty"`
+	// How many commits the push brought, and the titles of the latest of them, the latest first.
+	Count   int32    `protobuf:"varint,7,opt,name=count,proto3" json:"count,omitempty"`
+	Commits []string `protobuf:"bytes,8,rep,name=commits,proto3" json:"commits,omitempty"`
+	// The tasks whose work it brought, by identifier.
+	TaskIds []string `protobuf:"bytes,9,rep,name=task_ids,json=taskIds,proto3" json:"task_ids,omitempty"`
+	// When it was pushed.
+	PushTime      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=push_time,json=pushTime,proto3" json:"push_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IntegrationPush) Reset() {
+	*x = IntegrationPush{}
+	mi := &file_plan_v1_plan_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IntegrationPush) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IntegrationPush) ProtoMessage() {}
+
+func (x *IntegrationPush) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IntegrationPush.ProtoReflect.Descriptor instead.
+func (*IntegrationPush) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *IntegrationPush) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *IntegrationPush) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *IntegrationPush) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *IntegrationPush) GetRemote() string {
+	if x != nil {
+		return x.Remote
+	}
+	return ""
+}
+
+func (x *IntegrationPush) GetOldSha() string {
+	if x != nil {
+		return x.OldSha
+	}
+	return ""
+}
+
+func (x *IntegrationPush) GetNewSha() string {
+	if x != nil {
+		return x.NewSha
+	}
+	return ""
+}
+
+func (x *IntegrationPush) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *IntegrationPush) GetCommits() []string {
+	if x != nil {
+		return x.Commits
+	}
+	return nil
+}
+
+func (x *IntegrationPush) GetTaskIds() []string {
+	if x != nil {
+		return x.TaskIds
+	}
+	return nil
+}
+
+func (x *IntegrationPush) GetPushTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PushTime
+	}
+	return nil
+}
+
+// WishMain is where a wish's integration branch stands against its project's main branch, in one of its projects.
+// Djinn merges main into it by itself, as it merges a task's work, never rebasing: a merge needs no model and keeps the
+// history pushed.
+type WishMain struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The project.
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The last merge of main; unset before the first.
+	Last *MainMerge `protobuf:"bytes,2,opt,name=last,proto3" json:"last,omitempty"`
+	// When Djinn last fetched main to look at it: the cadence counts from then.
+	CheckTime *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=check_time,json=checkTime,proto3" json:"check_time,omitempty"`
+	// The correction worker that settles main's merge, while it works: Djinn merges main again once it has ended.
+	CorrectedBy string `protobuf:"bytes,4,opt,name=corrected_by,json=correctedBy,proto3" json:"corrected_by,omitempty"`
+	// How many correction workers settled main's merge in vain, for main at failed_sha.
+	Attempts int32 `protobuf:"varint,5,opt,name=attempts,proto3" json:"attempts,omitempty"`
+	// main's commit whose merge Djinn gave up on once the correction attempts were spent: it merges main again once
+	// main moves.
+	FailedSha string `protobuf:"bytes,6,opt,name=failed_sha,json=failedSha,proto3" json:"failed_sha,omitempty"`
+	// Why main is not merged now, in a sentence; empty once it is, or when nothing waits.
+	Held          string `protobuf:"bytes,7,opt,name=held,proto3" json:"held,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishMain) Reset() {
+	*x = WishMain{}
+	mi := &file_plan_v1_plan_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishMain) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishMain) ProtoMessage() {}
+
+func (x *WishMain) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishMain.ProtoReflect.Descriptor instead.
+func (*WishMain) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *WishMain) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *WishMain) GetLast() *MainMerge {
+	if x != nil {
+		return x.Last
+	}
+	return nil
+}
+
+func (x *WishMain) GetCheckTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CheckTime
+	}
+	return nil
+}
+
+func (x *WishMain) GetCorrectedBy() string {
+	if x != nil {
+		return x.CorrectedBy
+	}
+	return ""
+}
+
+func (x *WishMain) GetAttempts() int32 {
+	if x != nil {
+		return x.Attempts
+	}
+	return 0
+}
+
+func (x *WishMain) GetFailedSha() string {
+	if x != nil {
+		return x.FailedSha
+	}
+	return ""
+}
+
+func (x *WishMain) GetHeld() string {
+	if x != nil {
+		return x.Held
+	}
+	return ""
+}
+
+// MainMerge is a merge of a project's main branch into a wish's integration branch, as the journal records it and the
+// wish's head shows the last one.
+type MainMerge struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish, and the project whose branch moved.
+	WishId    string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The integration branch, and the main branch as Djinn merged it: origin/main, or main without a remote.
+	Branch string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	Main   string `protobuf:"bytes,4,opt,name=main,proto3" json:"main,omitempty"`
+	// main's commit merged, and the commits the integration branch moved from and to.
+	MainSha string `protobuf:"bytes,5,opt,name=main_sha,json=mainSha,proto3" json:"main_sha,omitempty"`
+	OldSha  string `protobuf:"bytes,6,opt,name=old_sha,json=oldSha,proto3" json:"old_sha,omitempty"`
+	NewSha  string `protobuf:"bytes,7,opt,name=new_sha,json=newSha,proto3" json:"new_sha,omitempty"`
+	// How many commits main brought, merges aside, and the titles of the latest of them, the latest first.
+	Count   int32    `protobuf:"varint,8,opt,name=count,proto3" json:"count,omitempty"`
+	Commits []string `protobuf:"bytes,9,rep,name=commits,proto3" json:"commits,omitempty"`
+	// The newest release main brought, its tag: v0.2.0; empty for none.
+	Release string `protobuf:"bytes,10,opt,name=release,proto3" json:"release,omitempty"`
+	// When the branch moved.
+	MergeTime *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=merge_time,json=mergeTime,proto3" json:"merge_time,omitempty"`
+	// The correction worker whose work settled the merge, if one did.
+	CorrectedBy   string `protobuf:"bytes,12,opt,name=corrected_by,json=correctedBy,proto3" json:"corrected_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MainMerge) Reset() {
+	*x = MainMerge{}
+	mi := &file_plan_v1_plan_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MainMerge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MainMerge) ProtoMessage() {}
+
+func (x *MainMerge) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MainMerge.ProtoReflect.Descriptor instead.
+func (*MainMerge) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *MainMerge) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *MainMerge) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *MainMerge) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *MainMerge) GetMain() string {
+	if x != nil {
+		return x.Main
+	}
+	return ""
+}
+
+func (x *MainMerge) GetMainSha() string {
+	if x != nil {
+		return x.MainSha
+	}
+	return ""
+}
+
+func (x *MainMerge) GetOldSha() string {
+	if x != nil {
+		return x.OldSha
+	}
+	return ""
+}
+
+func (x *MainMerge) GetNewSha() string {
+	if x != nil {
+		return x.NewSha
+	}
+	return ""
+}
+
+func (x *MainMerge) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *MainMerge) GetCommits() []string {
+	if x != nil {
+		return x.Commits
+	}
+	return nil
+}
+
+func (x *MainMerge) GetRelease() string {
+	if x != nil {
+		return x.Release
+	}
+	return ""
+}
+
+func (x *MainMerge) GetMergeTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.MergeTime
+	}
+	return nil
+}
+
+func (x *MainMerge) GetCorrectedBy() string {
+	if x != nil {
+		return x.CorrectedBy
+	}
+	return ""
+}
+
+// IntegrationBranch is the branch a wish integrates its finished work into, in one of its projects.
+type IntegrationBranch struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The project.
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The branch, without refs/heads/.
+	Branch        string `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IntegrationBranch) Reset() {
+	*x = IntegrationBranch{}
+	mi := &file_plan_v1_plan_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IntegrationBranch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IntegrationBranch) ProtoMessage() {}
+
+func (x *IntegrationBranch) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IntegrationBranch.ProtoReflect.Descriptor instead.
+func (*IntegrationBranch) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *IntegrationBranch) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *IntegrationBranch) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+// WishTemplate is the skill a wish was made from: a request matched the wish template its SKILL.md declares, under
+// metadata.djinn.wish. Djinn started the template's watcher, and the wish's lead starts with the skill. When the
+// watcher prints its done line, Djinn asks whether to grant the wish; only the answer grants it.
+type WishTemplate struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The skill's name: its folder's name.
+	Skill string `protobuf:"bytes,1,opt,name=skill,proto3" json:"skill,omitempty"`
+	// The project that holds the skill, or summons it; the watcher runs in its folder.
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The watcher's command line, its placeholders filled from the request; empty without a watcher.
+	Watch string `protobuf:"bytes,3,opt,name=watch,proto3" json:"watch,omitempty"`
+	// A line of the watcher that means the work is done ("MERGED"): a line that is it, or starts with it before a
+	// space or a sign. Empty: no line offers to grant the wish.
+	DoneWhen string `protobuf:"bytes,4,opt,name=done_when,json=doneWhen,proto3" json:"done_when,omitempty"`
+	// The watcher's command starts again after each exit, for a command that exits on each change; its done line
+	// ends it.
+	Restart       bool `protobuf:"varint,5,opt,name=restart,proto3" json:"restart,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishTemplate) Reset() {
+	*x = WishTemplate{}
+	mi := &file_plan_v1_plan_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishTemplate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishTemplate) ProtoMessage() {}
+
+func (x *WishTemplate) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishTemplate.ProtoReflect.Descriptor instead.
+func (*WishTemplate) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *WishTemplate) GetSkill() string {
+	if x != nil {
+		return x.Skill
+	}
+	return ""
+}
+
+func (x *WishTemplate) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *WishTemplate) GetWatch() string {
+	if x != nil {
+		return x.Watch
+	}
+	return ""
+}
+
+func (x *WishTemplate) GetDoneWhen() string {
+	if x != nil {
+		return x.DoneWhen
+	}
+	return ""
+}
+
+func (x *WishTemplate) GetRestart() bool {
+	if x != nil {
+		return x.Restart
+	}
+	return false
+}
+
 // LeadExit records a terminal's exit, including success (code 0).
 type LeadExit struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1230,7 +3206,7 @@ type LeadExit struct {
 
 func (x *LeadExit) Reset() {
 	*x = LeadExit{}
-	mi := &file_plan_v1_plan_proto_msgTypes[3]
+	mi := &file_plan_v1_plan_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1242,7 +3218,7 @@ func (x *LeadExit) String() string {
 func (*LeadExit) ProtoMessage() {}
 
 func (x *LeadExit) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[3]
+	mi := &file_plan_v1_plan_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1255,7 +3231,7 @@ func (x *LeadExit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeadExit.ProtoReflect.Descriptor instead.
 func (*LeadExit) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{3}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *LeadExit) GetCode() int32 {
@@ -1281,7 +3257,7 @@ type LeadPrompt struct {
 
 func (x *LeadPrompt) Reset() {
 	*x = LeadPrompt{}
-	mi := &file_plan_v1_plan_proto_msgTypes[4]
+	mi := &file_plan_v1_plan_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1293,7 +3269,7 @@ func (x *LeadPrompt) String() string {
 func (*LeadPrompt) ProtoMessage() {}
 
 func (x *LeadPrompt) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[4]
+	mi := &file_plan_v1_plan_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1306,7 +3282,7 @@ func (x *LeadPrompt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeadPrompt.ProtoReflect.Descriptor instead.
 func (*LeadPrompt) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{4}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *LeadPrompt) GetTitle() string {
@@ -1347,7 +3323,7 @@ type Lead struct {
 
 func (x *Lead) Reset() {
 	*x = Lead{}
-	mi := &file_plan_v1_plan_proto_msgTypes[5]
+	mi := &file_plan_v1_plan_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1359,7 +3335,7 @@ func (x *Lead) String() string {
 func (*Lead) ProtoMessage() {}
 
 func (x *Lead) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[5]
+	mi := &file_plan_v1_plan_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1372,7 +3348,7 @@ func (x *Lead) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Lead.ProtoReflect.Descriptor instead.
 func (*Lead) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{5}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Lead) GetProvider() Provider {
@@ -1409,7 +3385,7 @@ type ProjectAllowance struct {
 
 func (x *ProjectAllowance) Reset() {
 	*x = ProjectAllowance{}
-	mi := &file_plan_v1_plan_proto_msgTypes[6]
+	mi := &file_plan_v1_plan_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1421,7 +3397,7 @@ func (x *ProjectAllowance) String() string {
 func (*ProjectAllowance) ProtoMessage() {}
 
 func (x *ProjectAllowance) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[6]
+	mi := &file_plan_v1_plan_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1434,7 +3410,7 @@ func (x *ProjectAllowance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectAllowance.ProtoReflect.Descriptor instead.
 func (*ProjectAllowance) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{6}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ProjectAllowance) GetProjectId() string {
@@ -1470,7 +3446,7 @@ type Usage struct {
 
 func (x *Usage) Reset() {
 	*x = Usage{}
-	mi := &file_plan_v1_plan_proto_msgTypes[7]
+	mi := &file_plan_v1_plan_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1482,7 +3458,7 @@ func (x *Usage) String() string {
 func (*Usage) ProtoMessage() {}
 
 func (x *Usage) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[7]
+	mi := &file_plan_v1_plan_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1495,7 +3471,7 @@ func (x *Usage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Usage.ProtoReflect.Descriptor instead.
 func (*Usage) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{7}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Usage) GetInputTokens() int64 {
@@ -1596,16 +3572,72 @@ type Task struct {
 	ForkSession string `protobuf:"bytes,25,opt,name=fork_session,json=forkSession,proto3" json:"fork_session,omitempty"`
 	// Where the fork comes from, for a reader: the code of the task (W1), or "lead".
 	ForkOf string `protobuf:"bytes,26,opt,name=fork_of,json=forkOf,proto3" json:"fork_of,omitempty"`
+	// When a RESUMING task may start again: after its provider's usage limit resets. While it is ahead, no new worker
+	// of that provider starts. Unset: as soon as the scheduler can.
+	ResumeAfter *timestamppb.Timestamp `protobuf:"bytes,27,opt,name=resume_after,json=resumeAfter,proto3" json:"resume_after,omitempty"`
+	// How many times Djinn resumed the task by itself. At 3, a task cut short again fails instead.
+	Resumes int32 `protobuf:"varint,28,opt,name=resumes,proto3" json:"resumes,omitempty"`
+	// A watcher's command starts again after each exit, until the task is stopped (djinn task spawn --restart).
+	Restart bool `protobuf:"varint,29,opt,name=restart,proto3" json:"restart,omitempty"`
+	// The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an
+	// agent.
+	LastLine string `protobuf:"bytes,30,opt,name=last_line,json=lastLine,proto3" json:"last_line,omitempty"`
+	// Who marked the task done by hand, when and why (TaskService.Done), or which fork continues it. Empty for a task
+	// its worker finished.
+	Closed *Closure `protobuf:"bytes,31,opt,name=closed,proto3" json:"closed,omitempty"`
+	// The task was continued (TaskService.Continue): its next worker resumes its own session on the last prompt of its
+	// events, instead of being told Djinn restarted. Cleared as that worker starts.
+	Continuing bool `protobuf:"varint,32,opt,name=continuing,proto3" json:"continuing,omitempty"`
+	// The decision the task comes from (djinn task spawn --decision): a question's code (Q43), or the id of a block of
+	// kind decision. Empty for a task no decision led to.
+	Decision string `protobuf:"bytes,33,opt,name=decision,proto3" json:"decision,omitempty"`
+	// What its worker uses of the machine, read every few seconds while it runs: the latest reading and the peaks over
+	// all its workers. Absent until a reading, and where Djinn does not measure workers (Windows, the fake agent).
+	Resources *Resources `protobuf:"bytes,34,opt,name=resources,proto3" json:"resources,omitempty"`
+	// What the task is: work a worker does, the default, or an azima of the plan, which no worker ever runs.
+	Kind TaskKind `protobuf:"varint,35,opt,name=kind,proto3,enum=plan.v1.TaskKind" json:"kind,omitempty"`
+	// The azima the task is part of (an azima of its wish), by identifier; empty for none. A grouping, never a
+	// wait: only depends_on makes a task wait. The tasks of a wish, through depends_on and part_of together, form a
+	// graph without cycle.
+	PartOf string `protobuf:"bytes,36,opt,name=part_of,json=partOf,proto3" json:"part_of,omitempty"`
+	// For an azima read from a plan file (djinn plan sync): the file, as its project names it
+	// ("plan/8e8d3d76-orchestrator.md"), and its phase there ("2", "later"). Empty for an azima of no file.
+	PlanFile string `protobuf:"bytes,37,opt,name=plan_file,json=planFile,proto3" json:"plan_file,omitempty"`
+	Phase    string `protobuf:"bytes,38,opt,name=phase,proto3" json:"phase,omitempty"`
+	// For an azima: where it stands, computed on every read from its parts and what it depends on, never stored.
+	Azima *Azima `protobuf:"bytes,39,opt,name=azima,proto3" json:"azima,omitempty"`
+	// Where the task's finished work stands on its way into its wish's integration branch: unset for a task whose work
+	// Djinn does not integrate (outside Git, an azima, a project that names no check, not done).
+	Integration *TaskIntegration `protobuf:"bytes,40,opt,name=integration,proto3" json:"integration,omitempty"`
+	// The tilasms of the wish that cite it (djinn tilasm put --cites), by code (L01): computed on every read, never
+	// stored.
+	Tilasms []string `protobuf:"bytes,41,rep,name=tilasms,proto3" json:"tilasms,omitempty"`
+	// For a correction worker, which Djinn starts by itself when a batch's merge conflicts in code or its tests fail:
+	// what it corrects. Its worktree starts on the failed merge, and its branch integrates like any task's.
+	Correction *TaskCorrection `protobuf:"bytes,42,opt,name=correction,proto3" json:"correction,omitempty"`
+	// For an azima read from a plan file (djinn plan sync): its Done-when boxes left unchecked for a proof no worker can
+	// give, box by box, when nothing else is left in them: every unchecked box says "(needs: …)", or holds boxes that
+	// do. Empty while a box without needs is unchecked (work is left), when every box is checked, and for a file
+	// without a Done-when section.
+	ProofNeeds []*ProofNeed `protobuf:"bytes,43,rep,name=proof_needs,json=proofNeeds,proto3" json:"proof_needs,omitempty"`
+	// What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
+	// question worker takes no slot of the machine and runs in its project's folder, reading.
+	Role TaskRole `protobuf:"varint,44,opt,name=role,proto3,enum=plan.v1.TaskRole" json:"role,omitempty"`
+	// The code of the question a question worker works on (Q52); empty for any other task.
+	Question string `protobuf:"bytes,45,opt,name=question,proto3" json:"question,omitempty"`
+	// For a review worker, which Djinn starts by itself when a task's worktree holds changes not committed: what it
+	// reviews. It works in that task's worktree, on its branch, and its branch integrates like any task's.
+	Review *TaskReview `protobuf:"bytes,46,opt,name=review,proto3" json:"review,omitempty"`
 	// The planned task waits for the machine alone: no slot is free, or the machine is under pressure. djinn task
 	// start starts it anyway.
-	MachineWait   bool `protobuf:"varint,27,opt,name=machine_wait,json=machineWait,proto3" json:"machine_wait,omitempty"`
+	MachineWait   bool `protobuf:"varint,47,opt,name=machine_wait,json=machineWait,proto3" json:"machine_wait,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
 	*x = Task{}
-	mi := &file_plan_v1_plan_proto_msgTypes[8]
+	mi := &file_plan_v1_plan_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1617,7 +3649,7 @@ func (x *Task) String() string {
 func (*Task) ProtoMessage() {}
 
 func (x *Task) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[8]
+	mi := &file_plan_v1_plan_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1630,7 +3662,7 @@ func (x *Task) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Task.ProtoReflect.Descriptor instead.
 func (*Task) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{8}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Task) GetId() string {
@@ -1815,11 +3847,926 @@ func (x *Task) GetForkOf() string {
 	return ""
 }
 
+func (x *Task) GetResumeAfter() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ResumeAfter
+	}
+	return nil
+}
+
+func (x *Task) GetResumes() int32 {
+	if x != nil {
+		return x.Resumes
+	}
+	return 0
+}
+
+func (x *Task) GetRestart() bool {
+	if x != nil {
+		return x.Restart
+	}
+	return false
+}
+
+func (x *Task) GetLastLine() string {
+	if x != nil {
+		return x.LastLine
+	}
+	return ""
+}
+
+func (x *Task) GetClosed() *Closure {
+	if x != nil {
+		return x.Closed
+	}
+	return nil
+}
+
+func (x *Task) GetContinuing() bool {
+	if x != nil {
+		return x.Continuing
+	}
+	return false
+}
+
+func (x *Task) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *Task) GetResources() *Resources {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
+func (x *Task) GetKind() TaskKind {
+	if x != nil {
+		return x.Kind
+	}
+	return TaskKind_TASK_KIND_UNSPECIFIED
+}
+
+func (x *Task) GetPartOf() string {
+	if x != nil {
+		return x.PartOf
+	}
+	return ""
+}
+
+func (x *Task) GetPlanFile() string {
+	if x != nil {
+		return x.PlanFile
+	}
+	return ""
+}
+
+func (x *Task) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *Task) GetAzima() *Azima {
+	if x != nil {
+		return x.Azima
+	}
+	return nil
+}
+
+func (x *Task) GetIntegration() *TaskIntegration {
+	if x != nil {
+		return x.Integration
+	}
+	return nil
+}
+
+func (x *Task) GetTilasms() []string {
+	if x != nil {
+		return x.Tilasms
+	}
+	return nil
+}
+
+func (x *Task) GetCorrection() *TaskCorrection {
+	if x != nil {
+		return x.Correction
+	}
+	return nil
+}
+
+func (x *Task) GetProofNeeds() []*ProofNeed {
+	if x != nil {
+		return x.ProofNeeds
+	}
+	return nil
+}
+
+func (x *Task) GetRole() TaskRole {
+	if x != nil {
+		return x.Role
+	}
+	return TaskRole_TASK_ROLE_UNSPECIFIED
+}
+
+func (x *Task) GetQuestion() string {
+	if x != nil {
+		return x.Question
+	}
+	return ""
+}
+
+func (x *Task) GetReview() *TaskReview {
+	if x != nil {
+		return x.Review
+	}
+	return nil
+}
+
 func (x *Task) GetMachineWait() bool {
 	if x != nil {
 		return x.MachineWait
 	}
 	return false
+}
+
+// TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
+type TaskReview struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tasks whose work it commits: the task whose worktree it works in first, then the reviews before it.
+	TaskIds []string `protobuf:"bytes,1,rep,name=task_ids,json=taskIds,proto3" json:"task_ids,omitempty"`
+	// Which attempt it is, from 1: past the project's correction_attempts, Djinn asks the person.
+	Attempt       int32 `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskReview) Reset() {
+	*x = TaskReview{}
+	mi := &file_plan_v1_plan_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskReview) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskReview) ProtoMessage() {}
+
+func (x *TaskReview) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskReview.ProtoReflect.Descriptor instead.
+func (*TaskReview) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *TaskReview) GetTaskIds() []string {
+	if x != nil {
+		return x.TaskIds
+	}
+	return nil
+}
+
+func (x *TaskReview) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+// TaskCorrection is what a correction worker corrects.
+type TaskCorrection struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The failure, as its worktree starts from it.
+	Failure *IntegrationFailure `protobuf:"bytes,1,opt,name=failure,proto3" json:"failure,omitempty"`
+	// Which attempt it is, from 1, for this failure: past the project's correction_attempts, Djinn asks the person.
+	Attempt       int32 `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskCorrection) Reset() {
+	*x = TaskCorrection{}
+	mi := &file_plan_v1_plan_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskCorrection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskCorrection) ProtoMessage() {}
+
+func (x *TaskCorrection) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskCorrection.ProtoReflect.Descriptor instead.
+func (*TaskCorrection) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *TaskCorrection) GetFailure() *IntegrationFailure {
+	if x != nil {
+		return x.Failure
+	}
+	return nil
+}
+
+func (x *TaskCorrection) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+// IntegrationFailure is a batch's merge or tests that failed, as a correction worker starts from it.
+type IntegrationFailure struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// CONFLICT or RED.
+	State IntegrationState `protobuf:"varint,1,opt,name=state,proto3,enum=plan.v1.IntegrationState" json:"state,omitempty"`
+	// The commit the correction's branch starts from: the batch's merges before the one that conflicted, or all of
+	// them when the tests failed.
+	Base string `protobuf:"bytes,2,opt,name=base,proto3" json:"base,omitempty"`
+	// For a conflict, the branch whose merge conflicted: merged again in the correction's worktree, its conflicts left
+	// there.
+	MergeBranch string `protobuf:"bytes,3,opt,name=merge_branch,json=mergeBranch,proto3" json:"merge_branch,omitempty"`
+	// For a conflict, the files in conflict, as the repository names them.
+	Files []string `protobuf:"bytes,4,rep,name=files,proto3" json:"files,omitempty"`
+	// For a red check, or a setup that failed, its command, and the end of its output.
+	Command string `protobuf:"bytes,5,opt,name=command,proto3" json:"command,omitempty"`
+	Output  string `protobuf:"bytes,6,opt,name=output,proto3" json:"output,omitempty"`
+	// The tasks whose work is in base and merge_branch: what the correction corrects, and what its success commits.
+	TaskIds []string `protobuf:"bytes,7,rep,name=task_ids,json=taskIds,proto3" json:"task_ids,omitempty"`
+	// What failed, in a sentence.
+	Reason string `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	// For a merge of the project's main branch into the integration branch, main's commit merged: no task's work is in
+	// it, and the correction's success records main as merged.
+	MainSha       string `protobuf:"bytes,9,opt,name=main_sha,json=mainSha,proto3" json:"main_sha,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IntegrationFailure) Reset() {
+	*x = IntegrationFailure{}
+	mi := &file_plan_v1_plan_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IntegrationFailure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IntegrationFailure) ProtoMessage() {}
+
+func (x *IntegrationFailure) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IntegrationFailure.ProtoReflect.Descriptor instead.
+func (*IntegrationFailure) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *IntegrationFailure) GetState() IntegrationState {
+	if x != nil {
+		return x.State
+	}
+	return IntegrationState_INTEGRATION_STATE_UNSPECIFIED
+}
+
+func (x *IntegrationFailure) GetBase() string {
+	if x != nil {
+		return x.Base
+	}
+	return ""
+}
+
+func (x *IntegrationFailure) GetMergeBranch() string {
+	if x != nil {
+		return x.MergeBranch
+	}
+	return ""
+}
+
+func (x *IntegrationFailure) GetFiles() []string {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *IntegrationFailure) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *IntegrationFailure) GetOutput() string {
+	if x != nil {
+		return x.Output
+	}
+	return ""
+}
+
+func (x *IntegrationFailure) GetTaskIds() []string {
+	if x != nil {
+		return x.TaskIds
+	}
+	return nil
+}
+
+func (x *IntegrationFailure) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *IntegrationFailure) GetMainSha() string {
+	if x != nil {
+		return x.MainSha
+	}
+	return ""
+}
+
+// TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T07). When a
+// worker ends done, Djinn checks that its worktree holds nothing not committed, merges its branch alone into the
+// integration branch in a worktree of its own, makes the generated files again on a conflict only in them, tests the
+// result through a gate, and moves the branch when it passes; its worktree is then removed when clean.
+type TaskIntegration struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Where it stands.
+	State IntegrationState `protobuf:"varint,1,opt,name=state,proto3,enum=plan.v1.IntegrationState" json:"state,omitempty"`
+	// The integration branch, in the task's project.
+	Branch string `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
+	// For COMMITTED, the commit the branch moved to, with the task's work.
+	Sha string `protobuf:"bytes,3,opt,name=sha,proto3" json:"sha,omitempty"`
+	// For CONFLICT and RED, what failed; for PENDING, why it waits, when it waits for something else than its batch; for
+	// COMMITTED with a correction worker's work, "corrected by W5".
+	Reason string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	// When it last changed.
+	UpdateTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
+	// For CONFLICT and RED, what failed, as a correction worker starts from it; unset when no worker can correct it
+	// (a command that could not run, a merge that failed without conflicts).
+	Failure *IntegrationFailure `protobuf:"bytes,6,opt,name=failure,proto3" json:"failure,omitempty"`
+	// The correction worker that corrects the work, or did: for COMMITTED, the work went in with it ("corrected by W5").
+	CorrectedBy string `protobuf:"bytes,7,opt,name=corrected_by,json=correctedBy,proto3" json:"corrected_by,omitempty"`
+	// How many correction workers were started for it in a row.
+	Attempts int32 `protobuf:"varint,8,opt,name=attempts,proto3" json:"attempts,omitempty"`
+	// The question Djinn asked once the attempts were spent: try again, leave it, or the person takes it.
+	QuestionId string `protobuf:"bytes,9,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
+	// For UNCOMMITTED, the review worker that commits the work left in its worktree, or did: for COMMITTED, the work
+	// went in with it ("uncommitted: reviewed by W5").
+	ReviewedBy    string `protobuf:"bytes,10,opt,name=reviewed_by,json=reviewedBy,proto3" json:"reviewed_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskIntegration) Reset() {
+	*x = TaskIntegration{}
+	mi := &file_plan_v1_plan_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskIntegration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskIntegration) ProtoMessage() {}
+
+func (x *TaskIntegration) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskIntegration.ProtoReflect.Descriptor instead.
+func (*TaskIntegration) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *TaskIntegration) GetState() IntegrationState {
+	if x != nil {
+		return x.State
+	}
+	return IntegrationState_INTEGRATION_STATE_UNSPECIFIED
+}
+
+func (x *TaskIntegration) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *TaskIntegration) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *TaskIntegration) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *TaskIntegration) GetUpdateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdateTime
+	}
+	return nil
+}
+
+func (x *TaskIntegration) GetFailure() *IntegrationFailure {
+	if x != nil {
+		return x.Failure
+	}
+	return nil
+}
+
+func (x *TaskIntegration) GetCorrectedBy() string {
+	if x != nil {
+		return x.CorrectedBy
+	}
+	return ""
+}
+
+func (x *TaskIntegration) GetAttempts() int32 {
+	if x != nil {
+		return x.Attempts
+	}
+	return 0
+}
+
+func (x *TaskIntegration) GetQuestionId() string {
+	if x != nil {
+		return x.QuestionId
+	}
+	return ""
+}
+
+func (x *TaskIntegration) GetReviewedBy() string {
+	if x != nil {
+		return x.ReviewedBy
+	}
+	return ""
+}
+
+// IntegrationCommit is a batch of finished work committed into a wish's integration branch, as the journal records
+// it.
+type IntegrationCommit struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish, and the project whose branch moved.
+	WishId    string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The branch, and the commits it moved from and to.
+	Branch string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	OldSha string `protobuf:"bytes,4,opt,name=old_sha,json=oldSha,proto3" json:"old_sha,omitempty"`
+	NewSha string `protobuf:"bytes,5,opt,name=new_sha,json=newSha,proto3" json:"new_sha,omitempty"`
+	// The tasks of the batch, in the order they were merged.
+	TaskIds       []string `protobuf:"bytes,6,rep,name=task_ids,json=taskIds,proto3" json:"task_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IntegrationCommit) Reset() {
+	*x = IntegrationCommit{}
+	mi := &file_plan_v1_plan_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IntegrationCommit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IntegrationCommit) ProtoMessage() {}
+
+func (x *IntegrationCommit) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IntegrationCommit.ProtoReflect.Descriptor instead.
+func (*IntegrationCommit) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *IntegrationCommit) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *IntegrationCommit) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *IntegrationCommit) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *IntegrationCommit) GetOldSha() string {
+	if x != nil {
+		return x.OldSha
+	}
+	return ""
+}
+
+func (x *IntegrationCommit) GetNewSha() string {
+	if x != nil {
+		return x.NewSha
+	}
+	return ""
+}
+
+func (x *IntegrationCommit) GetTaskIds() []string {
+	if x != nil {
+		return x.TaskIds
+	}
+	return nil
+}
+
+// ProofNeed is a Done-when box of a plan file left unchecked for a proof no worker can give: a person, a machine, a
+// release or a real model gives it.
+type ProofNeed struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The box's text, without its needs.
+	Box string `protobuf:"bytes,1,opt,name=box,proto3" json:"box,omitempty"`
+	// What it needs, as the file says: "a Mac, and a person to compare the rendering with Linux".
+	Needs string `protobuf:"bytes,2,opt,name=needs,proto3" json:"needs,omitempty"`
+	// Who or what gives the proof, read from the words of its needs, no model; at least one.
+	Provers []Prover `protobuf:"varint,3,rep,packed,name=provers,proto3,enum=plan.v1.Prover" json:"provers,omitempty"`
+	// The person whose review it needs ("Clément's review"); empty for none.
+	Reviewer      string `protobuf:"bytes,4,opt,name=reviewer,proto3" json:"reviewer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProofNeed) Reset() {
+	*x = ProofNeed{}
+	mi := &file_plan_v1_plan_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProofNeed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProofNeed) ProtoMessage() {}
+
+func (x *ProofNeed) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProofNeed.ProtoReflect.Descriptor instead.
+func (*ProofNeed) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ProofNeed) GetBox() string {
+	if x != nil {
+		return x.Box
+	}
+	return ""
+}
+
+func (x *ProofNeed) GetNeeds() string {
+	if x != nil {
+		return x.Needs
+	}
+	return ""
+}
+
+func (x *ProofNeed) GetProvers() []Prover {
+	if x != nil {
+		return x.Provers
+	}
+	return nil
+}
+
+func (x *ProofNeed) GetReviewer() string {
+	if x != nil {
+		return x.Reviewer
+	}
+	return ""
+}
+
+// Azima is where an azima stands, computed on every read from the tasks of its wish; never stored.
+type Azima struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Open, in progress, awaiting its proof, or done.
+	State AzimaState `protobuf:"varint,1,opt,name=state,proto3,enum=plan.v1.AzimaState" json:"state,omitempty"`
+	// Every task it depends on is done: its work may go.
+	Ready bool `protobuf:"varint,2,opt,name=ready,proto3" json:"ready,omitempty"`
+	// The tasks part of it, how many of them are done, and how many have a worker on them now (running, paused, or
+	// resuming).
+	Parts         int32 `protobuf:"varint,3,opt,name=parts,proto3" json:"parts,omitempty"`
+	PartsDone     int32 `protobuf:"varint,4,opt,name=parts_done,json=partsDone,proto3" json:"parts_done,omitempty"`
+	PartsRunning  int32 `protobuf:"varint,5,opt,name=parts_running,json=partsRunning,proto3" json:"parts_running,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Azima) Reset() {
+	*x = Azima{}
+	mi := &file_plan_v1_plan_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Azima) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Azima) ProtoMessage() {}
+
+func (x *Azima) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Azima.ProtoReflect.Descriptor instead.
+func (*Azima) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *Azima) GetState() AzimaState {
+	if x != nil {
+		return x.State
+	}
+	return AzimaState_AZIMA_STATE_UNSPECIFIED
+}
+
+func (x *Azima) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *Azima) GetParts() int32 {
+	if x != nil {
+		return x.Parts
+	}
+	return 0
+}
+
+func (x *Azima) GetPartsDone() int32 {
+	if x != nil {
+		return x.PartsDone
+	}
+	return 0
+}
+
+func (x *Azima) GetPartsRunning() int32 {
+	if x != nil {
+		return x.PartsRunning
+	}
+	return 0
+}
+
+// Resources is what a task's worker uses of the machine: its process group and every process it started, even one
+// that left the group. Linux reads the cgroup of the worker's systemd scope when it runs in one, else /proc; macOS,
+// ps.
+type Resources struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// CPU used since the reading before, in percent of one core: 200 is two cores busy.
+	CpuPercent float64 `protobuf:"fixed64,1,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
+	// Resident memory, in bytes: the sum over its processes, a page they share counted once per process. From a
+	// cgroup, what the kernel charges it (memory.current): its processes' memory once, and the page cache they filled.
+	MemoryBytes uint64 `protobuf:"varint,2,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	// Processes running.
+	Processes int32 `protobuf:"varint,3,opt,name=processes,proto3" json:"processes,omitempty"`
+	// Highest cpu_percent read, over all the task's workers.
+	PeakCpuPercent float64 `protobuf:"fixed64,4,opt,name=peak_cpu_percent,json=peakCpuPercent,proto3" json:"peak_cpu_percent,omitempty"`
+	// Highest memory_bytes read, or held between two readings (a cgroup's memory.peak), over all the task's workers.
+	PeakMemoryBytes uint64 `protobuf:"varint,5,opt,name=peak_memory_bytes,json=peakMemoryBytes,proto3" json:"peak_memory_bytes,omitempty"`
+	// When it was last read.
+	ReadTime      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=read_time,json=readTime,proto3" json:"read_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Resources) Reset() {
+	*x = Resources{}
+	mi := &file_plan_v1_plan_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Resources) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Resources) ProtoMessage() {}
+
+func (x *Resources) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Resources.ProtoReflect.Descriptor instead.
+func (*Resources) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *Resources) GetCpuPercent() float64 {
+	if x != nil {
+		return x.CpuPercent
+	}
+	return 0
+}
+
+func (x *Resources) GetMemoryBytes() uint64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *Resources) GetProcesses() int32 {
+	if x != nil {
+		return x.Processes
+	}
+	return 0
+}
+
+func (x *Resources) GetPeakCpuPercent() float64 {
+	if x != nil {
+		return x.PeakCpuPercent
+	}
+	return 0
+}
+
+func (x *Resources) GetPeakMemoryBytes() uint64 {
+	if x != nil {
+		return x.PeakMemoryBytes
+	}
+	return 0
+}
+
+func (x *Resources) GetReadTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ReadTime
+	}
+	return nil
+}
+
+// Closure records a task marked done by hand: its worker's own done records none.
+type Closure struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Who closed it.
+	Actor Closer `protobuf:"varint,1,opt,name=actor,proto3,enum=plan.v1.Closer" json:"actor,omitempty"`
+	// When.
+	CreateTime *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	// Why, in a few words; may be empty.
+	Note string `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	// The task that continues this one, by code (W57): a fork of its session, spawned once it was cut short, failed or
+	// stopped. The scheduler follows it: a task that depends on this one waits for the fork.
+	ContinuedIn   string `protobuf:"bytes,4,opt,name=continued_in,json=continuedIn,proto3" json:"continued_in,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Closure) Reset() {
+	*x = Closure{}
+	mi := &file_plan_v1_plan_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Closure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Closure) ProtoMessage() {}
+
+func (x *Closure) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Closure.ProtoReflect.Descriptor instead.
+func (*Closure) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *Closure) GetActor() Closer {
+	if x != nil {
+		return x.Actor
+	}
+	return Closer_CLOSER_UNSPECIFIED
+}
+
+func (x *Closure) GetCreateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateTime
+	}
+	return nil
+}
+
+func (x *Closure) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *Closure) GetContinuedIn() string {
+	if x != nil {
+		return x.ContinuedIn
+	}
+	return ""
 }
 
 // An event of a task's worker: what it said, the tools it called, what it spent.
@@ -1847,7 +4794,7 @@ type TaskEvent struct {
 
 func (x *TaskEvent) Reset() {
 	*x = TaskEvent{}
-	mi := &file_plan_v1_plan_proto_msgTypes[9]
+	mi := &file_plan_v1_plan_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1859,7 +4806,7 @@ func (x *TaskEvent) String() string {
 func (*TaskEvent) ProtoMessage() {}
 
 func (x *TaskEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[9]
+	mi := &file_plan_v1_plan_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1872,7 +4819,7 @@ func (x *TaskEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskEvent.ProtoReflect.Descriptor instead.
 func (*TaskEvent) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{9}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *TaskEvent) GetId() string {
@@ -1959,14 +4906,29 @@ type Question struct {
 	// has is a request: it is being investigated, and waits for the lead, not for the developer.
 	Rounds []*Round `protobuf:"bytes,11,rep,name=rounds,proto3" json:"rounds,omitempty"`
 	// How many times the lead revised it.
-	Revision      int32 `protobuf:"varint,12,opt,name=revision,proto3" json:"revision,omitempty"`
+	Revision int32 `protobuf:"varint,12,opt,name=revision,proto3" json:"revision,omitempty"`
+	// Where a request may go, when djinn wish route --ask asked this question: each option is a destination, in the
+	// same order. Answering it files the request, or makes the new wish and starts its lead.
+	Route *Route `protobuf:"bytes,13,opt,name=route,proto3" json:"route,omitempty"`
+	// Djinn asked it when the watcher of the wish's template printed its done line: answering A grants the wish, B
+	// keeps it open. Djinn never grants a wish itself.
+	Grant bool `protobuf:"varint,14,opt,name=grant,proto3" json:"grant,omitempty"`
+	// One emoji for its subject, set by the asker (djinn question ask --icon 🔒): the decision log shows it first.
+	// Empty: a default by kind.
+	Icon string `protobuf:"bytes,15,opt,name=icon,proto3" json:"icon,omitempty"`
+	// The task whose worker asked it; empty when the lead did.
+	TaskId string `protobuf:"bytes,16,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// What the answer is needed before, in a few words, set by the asker (djinn question ask --before "before the
+	// merge"): the question waits for the developer, orange, under those words. Empty: it can wait. A question a waiting
+	// task needs is blocking whatever this says: Djinn computes that from the tasks.
+	Before        string `protobuf:"bytes,17,opt,name=before,proto3" json:"before,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Question) Reset() {
 	*x = Question{}
-	mi := &file_plan_v1_plan_proto_msgTypes[10]
+	mi := &file_plan_v1_plan_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1978,7 +4940,7 @@ func (x *Question) String() string {
 func (*Question) ProtoMessage() {}
 
 func (x *Question) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[10]
+	mi := &file_plan_v1_plan_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1991,7 +4953,7 @@ func (x *Question) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Question.ProtoReflect.Descriptor instead.
 func (*Question) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{10}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *Question) GetId() string {
@@ -2078,6 +5040,217 @@ func (x *Question) GetRevision() int32 {
 	return 0
 }
 
+func (x *Question) GetRoute() *Route {
+	if x != nil {
+		return x.Route
+	}
+	return nil
+}
+
+func (x *Question) GetGrant() bool {
+	if x != nil {
+		return x.Grant
+	}
+	return false
+}
+
+func (x *Question) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
+func (x *Question) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *Question) GetBefore() string {
+	if x != nil {
+		return x.Before
+	}
+	return ""
+}
+
+// Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
+// into a new one. Djinn computes it without a model, from the wishes' titles, their projects and their latest
+// blocks.
+type Route struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The request, as it was said.
+	Request string `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	// The wish the request came to; it is proposed last, to keep the request there.
+	FromWishId string `protobuf:"bytes,2,opt,name=from_wish_id,json=fromWishId,proto3" json:"from_wish_id,omitempty"`
+	// The destinations, the recommended one first.
+	Options       []*RouteOption `protobuf:"bytes,3,rep,name=options,proto3" json:"options,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Route) Reset() {
+	*x = Route{}
+	mi := &file_plan_v1_plan_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Route) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Route) ProtoMessage() {}
+
+func (x *Route) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Route.ProtoReflect.Descriptor instead.
+func (*Route) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *Route) GetRequest() string {
+	if x != nil {
+		return x.Request
+	}
+	return ""
+}
+
+func (x *Route) GetFromWishId() string {
+	if x != nil {
+		return x.FromWishId
+	}
+	return ""
+}
+
+func (x *Route) GetOptions() []*RouteOption {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+// RouteOption is one destination of a request.
+type RouteOption struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What it does.
+	Kind RouteKind `protobuf:"varint,1,opt,name=kind,proto3,enum=plan.v1.RouteKind" json:"kind,omitempty"`
+	// The wish to file the request in; empty for a new wish.
+	WishId string `protobuf:"bytes,2,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// The title of that wish, or the title proposed for the new one.
+	Title string `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	// The projects of the new wish.
+	ProjectIds []string `protobuf:"bytes,4,rep,name=project_ids,json=projectIds,proto3" json:"project_ids,omitempty"`
+	// The active wish paused to make room, for a swap.
+	PauseWishId string `protobuf:"bytes,5,opt,name=pause_wish_id,json=pauseWishId,proto3" json:"pause_wish_id,omitempty"`
+	// How close the wish is to the request: higher is closer. 0 for a new wish.
+	Score int32 `protobuf:"varint,6,opt,name=score,proto3" json:"score,omitempty"`
+	// Why, in a few words.
+	Reason string `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
+	// The skill whose wish template the request matched, for a new wish: its title comes from it, its watcher starts
+	// with it, and its lead starts with the skill.
+	Template      *WishTemplate `protobuf:"bytes,8,opt,name=template,proto3" json:"template,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RouteOption) Reset() {
+	*x = RouteOption{}
+	mi := &file_plan_v1_plan_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RouteOption) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RouteOption) ProtoMessage() {}
+
+func (x *RouteOption) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RouteOption.ProtoReflect.Descriptor instead.
+func (*RouteOption) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *RouteOption) GetKind() RouteKind {
+	if x != nil {
+		return x.Kind
+	}
+	return RouteKind_ROUTE_KIND_UNSPECIFIED
+}
+
+func (x *RouteOption) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *RouteOption) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *RouteOption) GetProjectIds() []string {
+	if x != nil {
+		return x.ProjectIds
+	}
+	return nil
+}
+
+func (x *RouteOption) GetPauseWishId() string {
+	if x != nil {
+		return x.PauseWishId
+	}
+	return ""
+}
+
+func (x *RouteOption) GetScore() int32 {
+	if x != nil {
+		return x.Score
+	}
+	return 0
+}
+
+func (x *RouteOption) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *RouteOption) GetTemplate() *WishTemplate {
+	if x != nil {
+		return x.Template
+	}
+	return nil
+}
+
 // A round of a question before it is decided: a request to investigate, or the lead's revision.
 type Round struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2095,13 +5268,15 @@ type Round struct {
 	Options []string `protobuf:"bytes,6,rep,name=options,proto3" json:"options,omitempty"`
 	// For a revision, the recommendation before it.
 	Recommendation string `protobuf:"bytes,7,opt,name=recommendation,proto3" json:"recommendation,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// For a revision, the task whose worker revised it; empty when the lead did.
+	TaskId        string `protobuf:"bytes,8,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Round) Reset() {
 	*x = Round{}
-	mi := &file_plan_v1_plan_proto_msgTypes[11]
+	mi := &file_plan_v1_plan_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2113,7 +5288,7 @@ func (x *Round) String() string {
 func (*Round) ProtoMessage() {}
 
 func (x *Round) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[11]
+	mi := &file_plan_v1_plan_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2126,7 +5301,7 @@ func (x *Round) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Round.ProtoReflect.Descriptor instead.
 func (*Round) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{11}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *Round) GetKind() RoundKind {
@@ -2178,8 +5353,15 @@ func (x *Round) GetRecommendation() string {
 	return ""
 }
 
-// A mark the developer puts on a question, a decision or a block: read, or approved as it is. The lead reads the marks
-// in the wish's brief and with djinn mark list.
+func (x *Round) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+// A mark the developer puts on a question: read, or approved as it is. The lead reads the marks in the wish's brief
+// and with djinn mark list. A block takes none: blocks are for agents.
 type Mark struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Which mark.
@@ -2194,7 +5376,7 @@ type Mark struct {
 
 func (x *Mark) Reset() {
 	*x = Mark{}
-	mi := &file_plan_v1_plan_proto_msgTypes[12]
+	mi := &file_plan_v1_plan_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2206,7 +5388,7 @@ func (x *Mark) String() string {
 func (*Mark) ProtoMessage() {}
 
 func (x *Mark) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[12]
+	mi := &file_plan_v1_plan_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2219,7 +5401,7 @@ func (x *Mark) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mark.ProtoReflect.Descriptor instead.
 func (*Mark) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{12}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *Mark) GetKind() MarkKind {
@@ -2258,7 +5440,7 @@ type Answer struct {
 
 func (x *Answer) Reset() {
 	*x = Answer{}
-	mi := &file_plan_v1_plan_proto_msgTypes[13]
+	mi := &file_plan_v1_plan_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2270,7 +5452,7 @@ func (x *Answer) String() string {
 func (*Answer) ProtoMessage() {}
 
 func (x *Answer) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[13]
+	mi := &file_plan_v1_plan_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2283,7 +5465,7 @@ func (x *Answer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Answer.ProtoReflect.Descriptor instead.
 func (*Answer) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{13}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *Answer) GetChoice() Choice {
@@ -2321,7 +5503,7 @@ type QuestionRef struct {
 
 func (x *QuestionRef) Reset() {
 	*x = QuestionRef{}
-	mi := &file_plan_v1_plan_proto_msgTypes[14]
+	mi := &file_plan_v1_plan_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2333,7 +5515,7 @@ func (x *QuestionRef) String() string {
 func (*QuestionRef) ProtoMessage() {}
 
 func (x *QuestionRef) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[14]
+	mi := &file_plan_v1_plan_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2346,7 +5528,7 @@ func (x *QuestionRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionRef.ProtoReflect.Descriptor instead.
 func (*QuestionRef) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{14}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *QuestionRef) GetRef() isQuestionRef_Ref {
@@ -2406,7 +5588,7 @@ type QuestionServiceEnlightenRequest struct {
 
 func (x *QuestionServiceEnlightenRequest) Reset() {
 	*x = QuestionServiceEnlightenRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[15]
+	mi := &file_plan_v1_plan_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2418,7 +5600,7 @@ func (x *QuestionServiceEnlightenRequest) String() string {
 func (*QuestionServiceEnlightenRequest) ProtoMessage() {}
 
 func (x *QuestionServiceEnlightenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[15]
+	mi := &file_plan_v1_plan_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2431,7 +5613,7 @@ func (x *QuestionServiceEnlightenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceEnlightenRequest.ProtoReflect.Descriptor instead.
 func (*QuestionServiceEnlightenRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{15}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *QuestionServiceEnlightenRequest) GetQuestion() *QuestionRef {
@@ -2465,7 +5647,7 @@ type QuestionServiceEnlightenResponse struct {
 
 func (x *QuestionServiceEnlightenResponse) Reset() {
 	*x = QuestionServiceEnlightenResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[16]
+	mi := &file_plan_v1_plan_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2477,7 +5659,7 @@ func (x *QuestionServiceEnlightenResponse) String() string {
 func (*QuestionServiceEnlightenResponse) ProtoMessage() {}
 
 func (x *QuestionServiceEnlightenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[16]
+	mi := &file_plan_v1_plan_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2490,7 +5672,7 @@ func (x *QuestionServiceEnlightenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceEnlightenResponse.ProtoReflect.Descriptor instead.
 func (*QuestionServiceEnlightenResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{16}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *QuestionServiceEnlightenResponse) GetQuestion() *Question {
@@ -2511,14 +5693,19 @@ type QuestionServiceReviseRequest struct {
 	// The option you recommend now, and why; the former recommendation when empty.
 	Recommendation string `protobuf:"bytes,4,opt,name=recommendation,proto3" json:"recommendation,omitempty"`
 	// Wish of the question, needed only when its code exists in several wishes.
-	WishId        string `protobuf:"bytes,5,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	WishId string `protobuf:"bytes,5,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// The task whose worker revises; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+	TaskId string `protobuf:"bytes,6,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// What the answer is needed before now, like "before the merge"; the former words when not given, none when given
+	// empty (--before ""): the question can wait.
+	Before        *string `protobuf:"bytes,7,opt,name=before,proto3,oneof" json:"before,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *QuestionServiceReviseRequest) Reset() {
 	*x = QuestionServiceReviseRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[17]
+	mi := &file_plan_v1_plan_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2530,7 +5717,7 @@ func (x *QuestionServiceReviseRequest) String() string {
 func (*QuestionServiceReviseRequest) ProtoMessage() {}
 
 func (x *QuestionServiceReviseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[17]
+	mi := &file_plan_v1_plan_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2543,7 +5730,7 @@ func (x *QuestionServiceReviseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceReviseRequest.ProtoReflect.Descriptor instead.
 func (*QuestionServiceReviseRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{17}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *QuestionServiceReviseRequest) GetQuestion() *QuestionRef {
@@ -2581,6 +5768,20 @@ func (x *QuestionServiceReviseRequest) GetWishId() string {
 	return ""
 }
 
+func (x *QuestionServiceReviseRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *QuestionServiceReviseRequest) GetBefore() string {
+	if x != nil && x.Before != nil {
+		return *x.Before
+	}
+	return ""
+}
+
 type QuestionServiceReviseResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question, revised.
@@ -2591,7 +5792,7 @@ type QuestionServiceReviseResponse struct {
 
 func (x *QuestionServiceReviseResponse) Reset() {
 	*x = QuestionServiceReviseResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[18]
+	mi := &file_plan_v1_plan_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2603,7 +5804,7 @@ func (x *QuestionServiceReviseResponse) String() string {
 func (*QuestionServiceReviseResponse) ProtoMessage() {}
 
 func (x *QuestionServiceReviseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[18]
+	mi := &file_plan_v1_plan_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2616,7 +5817,7 @@ func (x *QuestionServiceReviseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceReviseResponse.ProtoReflect.Descriptor instead.
 func (*QuestionServiceReviseResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{18}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *QuestionServiceReviseResponse) GetQuestion() *Question {
@@ -2638,13 +5839,20 @@ type QuestionServiceAskRequest struct {
 	Context string `protobuf:"bytes,4,opt,name=context,proto3" json:"context,omitempty"`
 	// The option you recommend, and why, in Markdown.
 	Recommendation string `protobuf:"bytes,5,opt,name=recommendation,proto3" json:"recommendation,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// One emoji for the subject, like 🔒: the decision log shows it once the question is answered.
+	Icon string `protobuf:"bytes,6,opt,name=icon,proto3" json:"icon,omitempty"`
+	// The task whose worker asks; by default $DJINN_TASK_ID, which Djinn sets for every worker. Empty: the lead.
+	TaskId string `protobuf:"bytes,7,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// What the answer is needed before, in a few words, like "before the merge": the question waits for the developer
+	// under those words. Empty: it can wait.
+	Before        string `protobuf:"bytes,8,opt,name=before,proto3" json:"before,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *QuestionServiceAskRequest) Reset() {
 	*x = QuestionServiceAskRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[19]
+	mi := &file_plan_v1_plan_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2656,7 +5864,7 @@ func (x *QuestionServiceAskRequest) String() string {
 func (*QuestionServiceAskRequest) ProtoMessage() {}
 
 func (x *QuestionServiceAskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[19]
+	mi := &file_plan_v1_plan_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2669,7 +5877,7 @@ func (x *QuestionServiceAskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceAskRequest.ProtoReflect.Descriptor instead.
 func (*QuestionServiceAskRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{19}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *QuestionServiceAskRequest) GetText() string {
@@ -2707,6 +5915,27 @@ func (x *QuestionServiceAskRequest) GetRecommendation() string {
 	return ""
 }
 
+func (x *QuestionServiceAskRequest) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
+func (x *QuestionServiceAskRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *QuestionServiceAskRequest) GetBefore() string {
+	if x != nil {
+		return x.Before
+	}
+	return ""
+}
+
 type QuestionServiceAskResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question, with its code.
@@ -2717,7 +5946,7 @@ type QuestionServiceAskResponse struct {
 
 func (x *QuestionServiceAskResponse) Reset() {
 	*x = QuestionServiceAskResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[20]
+	mi := &file_plan_v1_plan_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2729,7 +5958,7 @@ func (x *QuestionServiceAskResponse) String() string {
 func (*QuestionServiceAskResponse) ProtoMessage() {}
 
 func (x *QuestionServiceAskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[20]
+	mi := &file_plan_v1_plan_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2742,7 +5971,7 @@ func (x *QuestionServiceAskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceAskResponse.ProtoReflect.Descriptor instead.
 func (*QuestionServiceAskResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{20}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *QuestionServiceAskResponse) GetQuestion() *Question {
@@ -2769,7 +5998,7 @@ type QuestionServiceAnswerRequest struct {
 
 func (x *QuestionServiceAnswerRequest) Reset() {
 	*x = QuestionServiceAnswerRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[21]
+	mi := &file_plan_v1_plan_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2781,7 +6010,7 @@ func (x *QuestionServiceAnswerRequest) String() string {
 func (*QuestionServiceAnswerRequest) ProtoMessage() {}
 
 func (x *QuestionServiceAnswerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[21]
+	mi := &file_plan_v1_plan_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2794,7 +6023,7 @@ func (x *QuestionServiceAnswerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceAnswerRequest.ProtoReflect.Descriptor instead.
 func (*QuestionServiceAnswerRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{21}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *QuestionServiceAnswerRequest) GetQuestion() *QuestionRef {
@@ -2835,7 +6064,7 @@ type QuestionServiceAnswerResponse struct {
 
 func (x *QuestionServiceAnswerResponse) Reset() {
 	*x = QuestionServiceAnswerResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[22]
+	mi := &file_plan_v1_plan_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2847,7 +6076,7 @@ func (x *QuestionServiceAnswerResponse) String() string {
 func (*QuestionServiceAnswerResponse) ProtoMessage() {}
 
 func (x *QuestionServiceAnswerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[22]
+	mi := &file_plan_v1_plan_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2860,7 +6089,7 @@ func (x *QuestionServiceAnswerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceAnswerResponse.ProtoReflect.Descriptor instead.
 func (*QuestionServiceAnswerResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{22}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *QuestionServiceAnswerResponse) GetQuestion() *Question {
@@ -2884,7 +6113,7 @@ type QuestionServiceListRequest struct {
 
 func (x *QuestionServiceListRequest) Reset() {
 	*x = QuestionServiceListRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[23]
+	mi := &file_plan_v1_plan_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2896,7 +6125,7 @@ func (x *QuestionServiceListRequest) String() string {
 func (*QuestionServiceListRequest) ProtoMessage() {}
 
 func (x *QuestionServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[23]
+	mi := &file_plan_v1_plan_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2909,7 +6138,7 @@ func (x *QuestionServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceListRequest.ProtoReflect.Descriptor instead.
 func (*QuestionServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{23}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *QuestionServiceListRequest) GetOpen() bool {
@@ -2943,7 +6172,7 @@ type QuestionServiceListResponse struct {
 
 func (x *QuestionServiceListResponse) Reset() {
 	*x = QuestionServiceListResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[24]
+	mi := &file_plan_v1_plan_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2955,7 +6184,7 @@ func (x *QuestionServiceListResponse) String() string {
 func (*QuestionServiceListResponse) ProtoMessage() {}
 
 func (x *QuestionServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[24]
+	mi := &file_plan_v1_plan_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2968,7 +6197,7 @@ func (x *QuestionServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionServiceListResponse.ProtoReflect.Descriptor instead.
 func (*QuestionServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{24}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *QuestionServiceListResponse) GetQuestions() []*Question {
@@ -2990,7 +6219,7 @@ type ProjectServiceAddRequest struct {
 
 func (x *ProjectServiceAddRequest) Reset() {
 	*x = ProjectServiceAddRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[25]
+	mi := &file_plan_v1_plan_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3002,7 +6231,7 @@ func (x *ProjectServiceAddRequest) String() string {
 func (*ProjectServiceAddRequest) ProtoMessage() {}
 
 func (x *ProjectServiceAddRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[25]
+	mi := &file_plan_v1_plan_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3015,7 +6244,7 @@ func (x *ProjectServiceAddRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectServiceAddRequest.ProtoReflect.Descriptor instead.
 func (*ProjectServiceAddRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{25}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ProjectServiceAddRequest) GetDirectory() string {
@@ -3042,7 +6271,7 @@ type ProjectServiceAddResponse struct {
 
 func (x *ProjectServiceAddResponse) Reset() {
 	*x = ProjectServiceAddResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[26]
+	mi := &file_plan_v1_plan_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3054,7 +6283,7 @@ func (x *ProjectServiceAddResponse) String() string {
 func (*ProjectServiceAddResponse) ProtoMessage() {}
 
 func (x *ProjectServiceAddResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[26]
+	mi := &file_plan_v1_plan_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3067,7 +6296,7 @@ func (x *ProjectServiceAddResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectServiceAddResponse.ProtoReflect.Descriptor instead.
 func (*ProjectServiceAddResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{26}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ProjectServiceAddResponse) GetProject() *Project {
@@ -3085,7 +6314,7 @@ type ProjectServiceListRequest struct {
 
 func (x *ProjectServiceListRequest) Reset() {
 	*x = ProjectServiceListRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[27]
+	mi := &file_plan_v1_plan_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3097,7 +6326,7 @@ func (x *ProjectServiceListRequest) String() string {
 func (*ProjectServiceListRequest) ProtoMessage() {}
 
 func (x *ProjectServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[27]
+	mi := &file_plan_v1_plan_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3110,7 +6339,7 @@ func (x *ProjectServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectServiceListRequest.ProtoReflect.Descriptor instead.
 func (*ProjectServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{27}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{48}
 }
 
 type ProjectServiceListResponse struct {
@@ -3123,7 +6352,7 @@ type ProjectServiceListResponse struct {
 
 func (x *ProjectServiceListResponse) Reset() {
 	*x = ProjectServiceListResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[28]
+	mi := &file_plan_v1_plan_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3135,7 +6364,7 @@ func (x *ProjectServiceListResponse) String() string {
 func (*ProjectServiceListResponse) ProtoMessage() {}
 
 func (x *ProjectServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[28]
+	mi := &file_plan_v1_plan_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3148,12 +6377,157 @@ func (x *ProjectServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectServiceListResponse.ProtoReflect.Descriptor instead.
 func (*ProjectServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{28}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ProjectServiceListResponse) GetProjects() []*Project {
 	if x != nil {
 		return x.Projects
+	}
+	return nil
+}
+
+type ProjectServiceShowRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The project, by name (case ignored) or identifier.
+	Project       string `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectServiceShowRequest) Reset() {
+	*x = ProjectServiceShowRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectServiceShowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectServiceShowRequest) ProtoMessage() {}
+
+func (x *ProjectServiceShowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectServiceShowRequest.ProtoReflect.Descriptor instead.
+func (*ProjectServiceShowRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *ProjectServiceShowRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+type ProjectServiceShowResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The project.
+	Project *Project `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	// The settings its workers get, when a task names none, and where each comes from.
+	Settings []*ProjectSetting `protobuf:"bytes,2,rep,name=settings,proto3" json:"settings,omitempty"`
+	// The team's file, in the project's folder; empty for a project without one on this machine.
+	RepositoryFile string `protobuf:"bytes,3,opt,name=repository_file,json=repositoryFile,proto3" json:"repository_file,omitempty"`
+	// Your own file, in Djinn's data folder. It wins over the team's, setting by setting.
+	DeveloperFile string `protobuf:"bytes,4,opt,name=developer_file,json=developerFile,proto3" json:"developer_file,omitempty"`
+	// Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is
+	// fixed.
+	Problems []string `protobuf:"bytes,5,rep,name=problems,proto3" json:"problems,omitempty"`
+	// The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
+	// files resolve them. Their last runs are the project's check_runs.
+	Setup         string          `protobuf:"bytes,6,opt,name=setup,proto3" json:"setup,omitempty"`
+	Checks        []*ProjectCheck `protobuf:"bytes,7,rep,name=checks,proto3" json:"checks,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectServiceShowResponse) Reset() {
+	*x = ProjectServiceShowResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectServiceShowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectServiceShowResponse) ProtoMessage() {}
+
+func (x *ProjectServiceShowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectServiceShowResponse.ProtoReflect.Descriptor instead.
+func (*ProjectServiceShowResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *ProjectServiceShowResponse) GetProject() *Project {
+	if x != nil {
+		return x.Project
+	}
+	return nil
+}
+
+func (x *ProjectServiceShowResponse) GetSettings() []*ProjectSetting {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+func (x *ProjectServiceShowResponse) GetRepositoryFile() string {
+	if x != nil {
+		return x.RepositoryFile
+	}
+	return ""
+}
+
+func (x *ProjectServiceShowResponse) GetDeveloperFile() string {
+	if x != nil {
+		return x.DeveloperFile
+	}
+	return ""
+}
+
+func (x *ProjectServiceShowResponse) GetProblems() []string {
+	if x != nil {
+		return x.Problems
+	}
+	return nil
+}
+
+func (x *ProjectServiceShowResponse) GetSetup() string {
+	if x != nil {
+		return x.Setup
+	}
+	return ""
+}
+
+func (x *ProjectServiceShowResponse) GetChecks() []*ProjectCheck {
+	if x != nil {
+		return x.Checks
 	}
 	return nil
 }
@@ -3172,14 +6546,23 @@ type Skill struct {
 	// What it does, from its SKILL.md.
 	Description string `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
 	// Why a summoned skill cannot be found; empty when it is.
-	Missing       string `protobuf:"bytes,6,opt,name=missing,proto3" json:"missing,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Missing string `protobuf:"bytes,6,opt,name=missing,proto3" json:"missing,omitempty"`
+	// The title of the wish template its SKILL.md declares (metadata.djinn.wish), placeholders and all; empty without
+	// one.
+	Template string `protobuf:"bytes,7,opt,name=template,proto3" json:"template,omitempty"`
+	// Why its wish template cannot be used; empty when it can, or without one.
+	TemplateError string `protobuf:"bytes,8,opt,name=template_error,json=templateError,proto3" json:"template_error,omitempty"`
+	// The command line of the inbox source its SKILL.md declares (metadata.djinn.source); empty without one.
+	InboxSource string `protobuf:"bytes,9,opt,name=inbox_source,json=inboxSource,proto3" json:"inbox_source,omitempty"`
+	// Why its inbox source cannot be used; empty when it can, or without one.
+	InboxSourceError string `protobuf:"bytes,10,opt,name=inbox_source_error,json=inboxSourceError,proto3" json:"inbox_source_error,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Skill) Reset() {
 	*x = Skill{}
-	mi := &file_plan_v1_plan_proto_msgTypes[29]
+	mi := &file_plan_v1_plan_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3191,7 +6574,7 @@ func (x *Skill) String() string {
 func (*Skill) ProtoMessage() {}
 
 func (x *Skill) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[29]
+	mi := &file_plan_v1_plan_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3204,7 +6587,7 @@ func (x *Skill) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Skill.ProtoReflect.Descriptor instead.
 func (*Skill) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{29}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *Skill) GetProject() string {
@@ -3249,6 +6632,34 @@ func (x *Skill) GetMissing() string {
 	return ""
 }
 
+func (x *Skill) GetTemplate() string {
+	if x != nil {
+		return x.Template
+	}
+	return ""
+}
+
+func (x *Skill) GetTemplateError() string {
+	if x != nil {
+		return x.TemplateError
+	}
+	return ""
+}
+
+func (x *Skill) GetInboxSource() string {
+	if x != nil {
+		return x.InboxSource
+	}
+	return ""
+}
+
+func (x *Skill) GetInboxSourceError() string {
+	if x != nil {
+		return x.InboxSourceError
+	}
+	return ""
+}
+
 type SkillServiceSummonRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The skill, as <project>/<skill>: the project that holds it, then its folder name. Case ignored.
@@ -3261,7 +6672,7 @@ type SkillServiceSummonRequest struct {
 
 func (x *SkillServiceSummonRequest) Reset() {
 	*x = SkillServiceSummonRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[30]
+	mi := &file_plan_v1_plan_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3273,7 +6684,7 @@ func (x *SkillServiceSummonRequest) String() string {
 func (*SkillServiceSummonRequest) ProtoMessage() {}
 
 func (x *SkillServiceSummonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[30]
+	mi := &file_plan_v1_plan_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3286,7 +6697,7 @@ func (x *SkillServiceSummonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillServiceSummonRequest.ProtoReflect.Descriptor instead.
 func (*SkillServiceSummonRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{30}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *SkillServiceSummonRequest) GetSkill() string {
@@ -3313,7 +6724,7 @@ type SkillServiceSummonResponse struct {
 
 func (x *SkillServiceSummonResponse) Reset() {
 	*x = SkillServiceSummonResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[31]
+	mi := &file_plan_v1_plan_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3325,7 +6736,7 @@ func (x *SkillServiceSummonResponse) String() string {
 func (*SkillServiceSummonResponse) ProtoMessage() {}
 
 func (x *SkillServiceSummonResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[31]
+	mi := &file_plan_v1_plan_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3338,7 +6749,7 @@ func (x *SkillServiceSummonResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillServiceSummonResponse.ProtoReflect.Descriptor instead.
 func (*SkillServiceSummonResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{31}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *SkillServiceSummonResponse) GetSkill() *Skill {
@@ -3358,7 +6769,7 @@ type SkillServiceListRequest struct {
 
 func (x *SkillServiceListRequest) Reset() {
 	*x = SkillServiceListRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[32]
+	mi := &file_plan_v1_plan_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3370,7 +6781,7 @@ func (x *SkillServiceListRequest) String() string {
 func (*SkillServiceListRequest) ProtoMessage() {}
 
 func (x *SkillServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[32]
+	mi := &file_plan_v1_plan_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3383,7 +6794,7 @@ func (x *SkillServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillServiceListRequest.ProtoReflect.Descriptor instead.
 func (*SkillServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{32}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *SkillServiceListRequest) GetProject() string {
@@ -3403,7 +6814,7 @@ type SkillServiceListResponse struct {
 
 func (x *SkillServiceListResponse) Reset() {
 	*x = SkillServiceListResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[33]
+	mi := &file_plan_v1_plan_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3415,7 +6826,7 @@ func (x *SkillServiceListResponse) String() string {
 func (*SkillServiceListResponse) ProtoMessage() {}
 
 func (x *SkillServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[33]
+	mi := &file_plan_v1_plan_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3428,7 +6839,7 @@ func (x *SkillServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillServiceListResponse.ProtoReflect.Descriptor instead.
 func (*SkillServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{33}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *SkillServiceListResponse) GetSkills() []*Skill {
@@ -3450,7 +6861,7 @@ type SkillServiceUnsummonRequest struct {
 
 func (x *SkillServiceUnsummonRequest) Reset() {
 	*x = SkillServiceUnsummonRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[34]
+	mi := &file_plan_v1_plan_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3462,7 +6873,7 @@ func (x *SkillServiceUnsummonRequest) String() string {
 func (*SkillServiceUnsummonRequest) ProtoMessage() {}
 
 func (x *SkillServiceUnsummonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[34]
+	mi := &file_plan_v1_plan_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3475,7 +6886,7 @@ func (x *SkillServiceUnsummonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillServiceUnsummonRequest.ProtoReflect.Descriptor instead.
 func (*SkillServiceUnsummonRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{34}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *SkillServiceUnsummonRequest) GetSkill() string {
@@ -3502,7 +6913,7 @@ type SkillServiceUnsummonResponse struct {
 
 func (x *SkillServiceUnsummonResponse) Reset() {
 	*x = SkillServiceUnsummonResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[35]
+	mi := &file_plan_v1_plan_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3514,7 +6925,7 @@ func (x *SkillServiceUnsummonResponse) String() string {
 func (*SkillServiceUnsummonResponse) ProtoMessage() {}
 
 func (x *SkillServiceUnsummonResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[35]
+	mi := &file_plan_v1_plan_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3527,12 +6938,992 @@ func (x *SkillServiceUnsummonResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillServiceUnsummonResponse.ProtoReflect.Descriptor instead.
 func (*SkillServiceUnsummonResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{35}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *SkillServiceUnsummonResponse) GetProject() *Project {
 	if x != nil {
 		return x.Project
+	}
+	return nil
+}
+
+// An item of the inbox: a paragraph a source printed, such as a merge request assigned to you or a mention, proposed
+// as a request. Only your answer files it or makes its wish. Djinn reads the source; it never sends anything back.
+type InboxItem struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Identifier, a UUIDv7.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The skill whose source printed it.
+	Source string `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	// The project the source ran in: a new wish works there when the item points to no project.
+	ProjectId string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// What makes it the same item when a source prints it again: its first link, else its first line. An item is
+	// never proposed twice, nor one whose link a wish holds already.
+	Key string `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
+	// What the source printed, as it printed it.
+	Text string `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	// Where it stands: new, routed or dismissed.
+	State InboxState `protobuf:"varint,6,opt,name=state,proto3,enum=plan.v1.InboxState" json:"state,omitempty"`
+	// When it came.
+	CreateTime *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	// Where Djinn proposes it goes, computed without a model when it came: the recommended destination first.
+	Route *Route `protobuf:"bytes,8,opt,name=route,proto3" json:"route,omitempty"`
+	// The wish it went to, once routed.
+	WishId string `protobuf:"bytes,9,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// When it was routed or dismissed.
+	SettleTime    *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=settle_time,json=settleTime,proto3" json:"settle_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxItem) Reset() {
+	*x = InboxItem{}
+	mi := &file_plan_v1_plan_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxItem) ProtoMessage() {}
+
+func (x *InboxItem) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxItem.ProtoReflect.Descriptor instead.
+func (*InboxItem) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *InboxItem) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *InboxItem) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *InboxItem) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *InboxItem) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *InboxItem) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *InboxItem) GetState() InboxState {
+	if x != nil {
+		return x.State
+	}
+	return InboxState_INBOX_STATE_UNSPECIFIED
+}
+
+func (x *InboxItem) GetCreateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateTime
+	}
+	return nil
+}
+
+func (x *InboxItem) GetRoute() *Route {
+	if x != nil {
+		return x.Route
+	}
+	return nil
+}
+
+func (x *InboxItem) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *InboxItem) GetSettleTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SettleTime
+	}
+	return nil
+}
+
+// An inbox source a project's skill declares (metadata.djinn.source), as this machine sees it.
+type InboxSource struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The source, as <project>/<skill>: the project that holds the skill, then its folder name.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The skill's folder name.
+	Skill string `protobuf:"bytes,2,opt,name=skill,proto3" json:"skill,omitempty"`
+	// The project that holds the skill, by name.
+	Project string `protobuf:"bytes,3,opt,name=project,proto3" json:"project,omitempty"`
+	// The command line it runs, without a shell, in the folder of the project that uses it.
+	Watch string `protobuf:"bytes,4,opt,name=watch,proto3" json:"watch,omitempty"`
+	// The least time between two starts of its command, as 5m0s.
+	Every string `protobuf:"bytes,5,opt,name=every,proto3" json:"every,omitempty"`
+	// Whether it is plugged in on this machine: only then does its command run.
+	Plugged bool `protobuf:"varint,6,opt,name=plugged,proto3" json:"plugged,omitempty"`
+	// Why it cannot be used; empty when it can.
+	Error         string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxSource) Reset() {
+	*x = InboxSource{}
+	mi := &file_plan_v1_plan_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxSource) ProtoMessage() {}
+
+func (x *InboxSource) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxSource.ProtoReflect.Descriptor instead.
+func (*InboxSource) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *InboxSource) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *InboxSource) GetSkill() string {
+	if x != nil {
+		return x.Skill
+	}
+	return ""
+}
+
+func (x *InboxSource) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *InboxSource) GetWatch() string {
+	if x != nil {
+		return x.Watch
+	}
+	return ""
+}
+
+func (x *InboxSource) GetEvery() string {
+	if x != nil {
+		return x.Every
+	}
+	return ""
+}
+
+func (x *InboxSource) GetPlugged() bool {
+	if x != nil {
+		return x.Plugged
+	}
+	return false
+}
+
+func (x *InboxSource) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// A source plugged in on this machine. It lives in Djinn's data, never in a repository: a clone of a project whose
+// skill declares a source runs nothing until you plug it in.
+type PluggedSource struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Identifier, a UUIDv7.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The project that holds the skill.
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The skill's folder name.
+	Skill string `protobuf:"bytes,3,opt,name=skill,proto3" json:"skill,omitempty"`
+	// When it was plugged in.
+	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PluggedSource) Reset() {
+	*x = PluggedSource{}
+	mi := &file_plan_v1_plan_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PluggedSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PluggedSource) ProtoMessage() {}
+
+func (x *PluggedSource) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PluggedSource.ProtoReflect.Descriptor instead.
+func (*PluggedSource) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *PluggedSource) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PluggedSource) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *PluggedSource) GetSkill() string {
+	if x != nil {
+		return x.Skill
+	}
+	return ""
+}
+
+func (x *PluggedSource) GetCreateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateTime
+	}
+	return nil
+}
+
+type InboxServiceSourcesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceSourcesRequest) Reset() {
+	*x = InboxServiceSourcesRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceSourcesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceSourcesRequest) ProtoMessage() {}
+
+func (x *InboxServiceSourcesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceSourcesRequest.ProtoReflect.Descriptor instead.
+func (*InboxServiceSourcesRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{62}
+}
+
+type InboxServiceSourcesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The sources, by project then skill.
+	Sources       []*InboxSource `protobuf:"bytes,1,rep,name=sources,proto3" json:"sources,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceSourcesResponse) Reset() {
+	*x = InboxServiceSourcesResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceSourcesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceSourcesResponse) ProtoMessage() {}
+
+func (x *InboxServiceSourcesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceSourcesResponse.ProtoReflect.Descriptor instead.
+func (*InboxServiceSourcesResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *InboxServiceSourcesResponse) GetSources() []*InboxSource {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+type InboxServicePlugRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The source, as <project>/<skill>, or the skill alone when one project holds it. Case ignored.
+	Source        string `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServicePlugRequest) Reset() {
+	*x = InboxServicePlugRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServicePlugRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServicePlugRequest) ProtoMessage() {}
+
+func (x *InboxServicePlugRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServicePlugRequest.ProtoReflect.Descriptor instead.
+func (*InboxServicePlugRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *InboxServicePlugRequest) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+type InboxServicePlugResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The source, plugged in.
+	Source        *InboxSource `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServicePlugResponse) Reset() {
+	*x = InboxServicePlugResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServicePlugResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServicePlugResponse) ProtoMessage() {}
+
+func (x *InboxServicePlugResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServicePlugResponse.ProtoReflect.Descriptor instead.
+func (*InboxServicePlugResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *InboxServicePlugResponse) GetSource() *InboxSource {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+type InboxServiceUnplugRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The source, as <project>/<skill>, or the skill alone when one project holds it. Case ignored.
+	Source        string `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceUnplugRequest) Reset() {
+	*x = InboxServiceUnplugRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceUnplugRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceUnplugRequest) ProtoMessage() {}
+
+func (x *InboxServiceUnplugRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceUnplugRequest.ProtoReflect.Descriptor instead.
+func (*InboxServiceUnplugRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *InboxServiceUnplugRequest) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+type InboxServiceUnplugResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The source, unplugged.
+	Source        *InboxSource `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceUnplugResponse) Reset() {
+	*x = InboxServiceUnplugResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceUnplugResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceUnplugResponse) ProtoMessage() {}
+
+func (x *InboxServiceUnplugResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceUnplugResponse.ProtoReflect.Descriptor instead.
+func (*InboxServiceUnplugResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *InboxServiceUnplugResponse) GetSource() *InboxSource {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+type InboxServiceListRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Every item: routed and dismissed ones too.
+	All           bool `protobuf:"varint,1,opt,name=all,proto3" json:"all,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceListRequest) Reset() {
+	*x = InboxServiceListRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceListRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceListRequest) ProtoMessage() {}
+
+func (x *InboxServiceListRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceListRequest.ProtoReflect.Descriptor instead.
+func (*InboxServiceListRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *InboxServiceListRequest) GetAll() bool {
+	if x != nil {
+		return x.All
+	}
+	return false
+}
+
+type InboxServiceListResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The items, the newest first.
+	Items         []*InboxItem `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceListResponse) Reset() {
+	*x = InboxServiceListResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceListResponse) ProtoMessage() {}
+
+func (x *InboxServiceListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceListResponse.ProtoReflect.Descriptor instead.
+func (*InboxServiceListResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *InboxServiceListResponse) GetItems() []*InboxItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+type InboxServiceDismissRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The item.
+	ItemId        string `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceDismissRequest) Reset() {
+	*x = InboxServiceDismissRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceDismissRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceDismissRequest) ProtoMessage() {}
+
+func (x *InboxServiceDismissRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceDismissRequest.ProtoReflect.Descriptor instead.
+func (*InboxServiceDismissRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *InboxServiceDismissRequest) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+type InboxServiceDismissResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The item, dismissed.
+	Item          *InboxItem `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceDismissResponse) Reset() {
+	*x = InboxServiceDismissResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceDismissResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceDismissResponse) ProtoMessage() {}
+
+func (x *InboxServiceDismissResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceDismissResponse.ProtoReflect.Descriptor instead.
+func (*InboxServiceDismissResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *InboxServiceDismissResponse) GetItem() *InboxItem {
+	if x != nil {
+		return x.Item
+	}
+	return nil
+}
+
+type InboxServiceRouteRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The item.
+	ItemId string `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	// The letter of the destination, in its route's order: A is the recommended one.
+	Choice        Choice `protobuf:"varint,2,opt,name=choice,proto3,enum=plan.v1.Choice" json:"choice,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceRouteRequest) Reset() {
+	*x = InboxServiceRouteRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceRouteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceRouteRequest) ProtoMessage() {}
+
+func (x *InboxServiceRouteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceRouteRequest.ProtoReflect.Descriptor instead.
+func (*InboxServiceRouteRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *InboxServiceRouteRequest) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *InboxServiceRouteRequest) GetChoice() Choice {
+	if x != nil {
+		return x.Choice
+	}
+	return Choice_CHOICE_UNSPECIFIED
+}
+
+type InboxServiceRouteResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The item, routed: its wish_id is where it went.
+	Item          *InboxItem `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboxServiceRouteResponse) Reset() {
+	*x = InboxServiceRouteResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboxServiceRouteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboxServiceRouteResponse) ProtoMessage() {}
+
+func (x *InboxServiceRouteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboxServiceRouteResponse.ProtoReflect.Descriptor instead.
+func (*InboxServiceRouteResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *InboxServiceRouteResponse) GetItem() *InboxItem {
+	if x != nil {
+		return x.Item
+	}
+	return nil
+}
+
+type WishServiceRouteRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The request, as it was said.
+	Request string `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	// The wish the request came to: the lead's own. It is proposed last, to keep the request there, and --ask asks
+	// there.
+	WishId string `protobuf:"bytes,2,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// Ask the proposal as a question on the wish --wish-id, the recommended destination first.
+	Ask bool `protobuf:"varint,3,opt,name=ask,proto3" json:"ask,omitempty"`
+	// The title of a new wish; by default Djinn makes one from the request.
+	Title string `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
+	// The project of a new wish; repeat for each one. By default the projects the request names or links to, else
+	// those of the wish --wish-id.
+	ProjectIds    []string `protobuf:"bytes,5,rep,name=project_ids,json=projectIds,proto3" json:"project_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishServiceRouteRequest) Reset() {
+	*x = WishServiceRouteRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[74]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishServiceRouteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishServiceRouteRequest) ProtoMessage() {}
+
+func (x *WishServiceRouteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[74]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishServiceRouteRequest.ProtoReflect.Descriptor instead.
+func (*WishServiceRouteRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{74}
+}
+
+func (x *WishServiceRouteRequest) GetRequest() string {
+	if x != nil {
+		return x.Request
+	}
+	return ""
+}
+
+func (x *WishServiceRouteRequest) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *WishServiceRouteRequest) GetAsk() bool {
+	if x != nil {
+		return x.Ask
+	}
+	return false
+}
+
+func (x *WishServiceRouteRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *WishServiceRouteRequest) GetProjectIds() []string {
+	if x != nil {
+		return x.ProjectIds
+	}
+	return nil
+}
+
+type WishServiceRouteResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The proposal.
+	Route *Route `protobuf:"bytes,1,opt,name=route,proto3" json:"route,omitempty"`
+	// With --ask, the question asked.
+	Question      *Question `protobuf:"bytes,2,opt,name=question,proto3" json:"question,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishServiceRouteResponse) Reset() {
+	*x = WishServiceRouteResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[75]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishServiceRouteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishServiceRouteResponse) ProtoMessage() {}
+
+func (x *WishServiceRouteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[75]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishServiceRouteResponse.ProtoReflect.Descriptor instead.
+func (*WishServiceRouteResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{75}
+}
+
+func (x *WishServiceRouteResponse) GetRoute() *Route {
+	if x != nil {
+		return x.Route
+	}
+	return nil
+}
+
+func (x *WishServiceRouteResponse) GetQuestion() *Question {
+	if x != nil {
+		return x.Question
 	}
 	return nil
 }
@@ -3547,7 +7938,7 @@ type WishServiceWatchRequest struct {
 
 func (x *WishServiceWatchRequest) Reset() {
 	*x = WishServiceWatchRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[36]
+	mi := &file_plan_v1_plan_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3559,7 +7950,7 @@ func (x *WishServiceWatchRequest) String() string {
 func (*WishServiceWatchRequest) ProtoMessage() {}
 
 func (x *WishServiceWatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[36]
+	mi := &file_plan_v1_plan_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3572,7 +7963,7 @@ func (x *WishServiceWatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceWatchRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceWatchRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{36}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *WishServiceWatchRequest) GetWishId() string {
@@ -3586,15 +7977,19 @@ type WishServiceWatchResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The wish that changed; empty for a change of no single wish: the projects, or everything at first.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// What changed, to read again.
-	Changes       []Change `protobuf:"varint,2,rep,packed,name=changes,proto3,enum=plan.v1.Change" json:"changes,omitempty"`
+	// What changed, to read again; with changed, its tasks, questions and blocks are there instead.
+	Changes []Change `protobuf:"varint,2,rep,packed,name=changes,proto3,enum=plan.v1.Change" json:"changes,omitempty"`
+	// The wish's tasks, questions and blocks that changed, as their services list them, and those deleted: replace
+	// them and keep the others. Unset in the first message, or when too many changed at once to send: then read again
+	// what changes names.
+	Changed       *WishChanges `protobuf:"bytes,3,opt,name=changed,proto3" json:"changed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WishServiceWatchResponse) Reset() {
 	*x = WishServiceWatchResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[37]
+	mi := &file_plan_v1_plan_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3606,7 +8001,7 @@ func (x *WishServiceWatchResponse) String() string {
 func (*WishServiceWatchResponse) ProtoMessage() {}
 
 func (x *WishServiceWatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[37]
+	mi := &file_plan_v1_plan_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3619,7 +8014,7 @@ func (x *WishServiceWatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceWatchResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceWatchResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{37}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *WishServiceWatchResponse) GetWishId() string {
@@ -3632,6 +8027,83 @@ func (x *WishServiceWatchResponse) GetWishId() string {
 func (x *WishServiceWatchResponse) GetChanges() []Change {
 	if x != nil {
 		return x.Changes
+	}
+	return nil
+}
+
+func (x *WishServiceWatchResponse) GetChanged() *WishChanges {
+	if x != nil {
+		return x.Changed
+	}
+	return nil
+}
+
+// WishChanges are the tasks, questions and blocks of a wish that changed, whole.
+type WishChanges struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Tasks     []*Task                `protobuf:"bytes,1,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	Questions []*Question            `protobuf:"bytes,2,rep,name=questions,proto3" json:"questions,omitempty"`
+	Blocks    []*Block               `protobuf:"bytes,3,rep,name=blocks,proto3" json:"blocks,omitempty"`
+	// The ids of those deleted, tasks, questions or blocks.
+	Deleted       []string `protobuf:"bytes,4,rep,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishChanges) Reset() {
+	*x = WishChanges{}
+	mi := &file_plan_v1_plan_proto_msgTypes[78]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishChanges) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishChanges) ProtoMessage() {}
+
+func (x *WishChanges) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[78]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishChanges.ProtoReflect.Descriptor instead.
+func (*WishChanges) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{78}
+}
+
+func (x *WishChanges) GetTasks() []*Task {
+	if x != nil {
+		return x.Tasks
+	}
+	return nil
+}
+
+func (x *WishChanges) GetQuestions() []*Question {
+	if x != nil {
+		return x.Questions
+	}
+	return nil
+}
+
+func (x *WishChanges) GetBlocks() []*Block {
+	if x != nil {
+		return x.Blocks
+	}
+	return nil
+}
+
+func (x *WishChanges) GetDeleted() []string {
+	if x != nil {
+		return x.Deleted
 	}
 	return nil
 }
@@ -3649,7 +8121,7 @@ type WishServiceRenderRequest struct {
 
 func (x *WishServiceRenderRequest) Reset() {
 	*x = WishServiceRenderRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[38]
+	mi := &file_plan_v1_plan_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3661,7 +8133,7 @@ func (x *WishServiceRenderRequest) String() string {
 func (*WishServiceRenderRequest) ProtoMessage() {}
 
 func (x *WishServiceRenderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[38]
+	mi := &file_plan_v1_plan_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3674,7 +8146,7 @@ func (x *WishServiceRenderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceRenderRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceRenderRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{38}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *WishServiceRenderRequest) GetWishId() string {
@@ -3703,7 +8175,7 @@ type WishServiceRenderResponse struct {
 
 func (x *WishServiceRenderResponse) Reset() {
 	*x = WishServiceRenderResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[39]
+	mi := &file_plan_v1_plan_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3715,7 +8187,7 @@ func (x *WishServiceRenderResponse) String() string {
 func (*WishServiceRenderResponse) ProtoMessage() {}
 
 func (x *WishServiceRenderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[39]
+	mi := &file_plan_v1_plan_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3728,7 +8200,7 @@ func (x *WishServiceRenderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceRenderResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceRenderResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{39}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *WishServiceRenderResponse) GetFile() string {
@@ -3755,7 +8227,7 @@ type WishServiceSyncRequest struct {
 
 func (x *WishServiceSyncRequest) Reset() {
 	*x = WishServiceSyncRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[40]
+	mi := &file_plan_v1_plan_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3767,7 +8239,7 @@ func (x *WishServiceSyncRequest) String() string {
 func (*WishServiceSyncRequest) ProtoMessage() {}
 
 func (x *WishServiceSyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[40]
+	mi := &file_plan_v1_plan_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3780,7 +8252,7 @@ func (x *WishServiceSyncRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceSyncRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceSyncRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{40}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *WishServiceSyncRequest) GetWishId() string {
@@ -3800,7 +8272,7 @@ type WishServiceSyncResponse struct {
 
 func (x *WishServiceSyncResponse) Reset() {
 	*x = WishServiceSyncResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[41]
+	mi := &file_plan_v1_plan_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3812,7 +8284,7 @@ func (x *WishServiceSyncResponse) String() string {
 func (*WishServiceSyncResponse) ProtoMessage() {}
 
 func (x *WishServiceSyncResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[41]
+	mi := &file_plan_v1_plan_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3825,7 +8297,7 @@ func (x *WishServiceSyncResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceSyncResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceSyncResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{41}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *WishServiceSyncResponse) GetFile() string {
@@ -3849,7 +8321,7 @@ type WishServiceAllowRequest struct {
 
 func (x *WishServiceAllowRequest) Reset() {
 	*x = WishServiceAllowRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[42]
+	mi := &file_plan_v1_plan_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3861,7 +8333,7 @@ func (x *WishServiceAllowRequest) String() string {
 func (*WishServiceAllowRequest) ProtoMessage() {}
 
 func (x *WishServiceAllowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[42]
+	mi := &file_plan_v1_plan_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3874,7 +8346,7 @@ func (x *WishServiceAllowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceAllowRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceAllowRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{42}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *WishServiceAllowRequest) GetWishId() string {
@@ -3908,7 +8380,7 @@ type WishServiceAllowResponse struct {
 
 func (x *WishServiceAllowResponse) Reset() {
 	*x = WishServiceAllowResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[43]
+	mi := &file_plan_v1_plan_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3920,7 +8392,7 @@ func (x *WishServiceAllowResponse) String() string {
 func (*WishServiceAllowResponse) ProtoMessage() {}
 
 func (x *WishServiceAllowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[43]
+	mi := &file_plan_v1_plan_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3933,10 +8405,145 @@ func (x *WishServiceAllowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceAllowResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceAllowResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{43}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *WishServiceAllowResponse) GetWish() *Wish {
+	if x != nil {
+		return x.Wish
+	}
+	return nil
+}
+
+type WishServiceSetIntegrationRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish.
+	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// The project of the branch; by default the wish's project, when it has only one.
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// The branch the project's finished work goes to, without refs/heads/: feat/wails-go.
+	Branch string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	// Push once more than this many minutes have passed since the last push, with push_after_tasks tasks committed.
+	PushAfterMinutes int32 `protobuf:"varint,4,opt,name=push_after_minutes,json=pushAfterMinutes,proto3" json:"push_after_minutes,omitempty"`
+	// Push once this many tasks are committed since the last push, the minutes having passed.
+	PushAfterTasks int32 `protobuf:"varint,5,opt,name=push_after_tasks,json=pushAfterTasks,proto3" json:"push_after_tasks,omitempty"`
+	// auto: Djinn pushes by itself; ask: it asks first. Unset: unchanged.
+	PushMode      PushMode `protobuf:"varint,6,opt,name=push_mode,json=pushMode,proto3,enum=plan.v1.PushMode" json:"push_mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishServiceSetIntegrationRequest) Reset() {
+	*x = WishServiceSetIntegrationRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[85]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishServiceSetIntegrationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishServiceSetIntegrationRequest) ProtoMessage() {}
+
+func (x *WishServiceSetIntegrationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[85]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishServiceSetIntegrationRequest.ProtoReflect.Descriptor instead.
+func (*WishServiceSetIntegrationRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{85}
+}
+
+func (x *WishServiceSetIntegrationRequest) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *WishServiceSetIntegrationRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *WishServiceSetIntegrationRequest) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *WishServiceSetIntegrationRequest) GetPushAfterMinutes() int32 {
+	if x != nil {
+		return x.PushAfterMinutes
+	}
+	return 0
+}
+
+func (x *WishServiceSetIntegrationRequest) GetPushAfterTasks() int32 {
+	if x != nil {
+		return x.PushAfterTasks
+	}
+	return 0
+}
+
+func (x *WishServiceSetIntegrationRequest) GetPushMode() PushMode {
+	if x != nil {
+		return x.PushMode
+	}
+	return PushMode_PUSH_MODE_UNSPECIFIED
+}
+
+type WishServiceSetIntegrationResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish, with its integration settings.
+	Wish          *Wish `protobuf:"bytes,1,opt,name=wish,proto3" json:"wish,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishServiceSetIntegrationResponse) Reset() {
+	*x = WishServiceSetIntegrationResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[86]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishServiceSetIntegrationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishServiceSetIntegrationResponse) ProtoMessage() {}
+
+func (x *WishServiceSetIntegrationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[86]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishServiceSetIntegrationResponse.ProtoReflect.Descriptor instead.
+func (*WishServiceSetIntegrationResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{86}
+}
+
+func (x *WishServiceSetIntegrationResponse) GetWish() *Wish {
 	if x != nil {
 		return x.Wish
 	}
@@ -3953,7 +8560,7 @@ type WishServiceGrantRequest struct {
 
 func (x *WishServiceGrantRequest) Reset() {
 	*x = WishServiceGrantRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[44]
+	mi := &file_plan_v1_plan_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3965,7 +8572,7 @@ func (x *WishServiceGrantRequest) String() string {
 func (*WishServiceGrantRequest) ProtoMessage() {}
 
 func (x *WishServiceGrantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[44]
+	mi := &file_plan_v1_plan_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3978,7 +8585,7 @@ func (x *WishServiceGrantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceGrantRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceGrantRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{44}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *WishServiceGrantRequest) GetWishId() string {
@@ -3998,7 +8605,7 @@ type WishServiceGrantResponse struct {
 
 func (x *WishServiceGrantResponse) Reset() {
 	*x = WishServiceGrantResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[45]
+	mi := &file_plan_v1_plan_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4010,7 +8617,7 @@ func (x *WishServiceGrantResponse) String() string {
 func (*WishServiceGrantResponse) ProtoMessage() {}
 
 func (x *WishServiceGrantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[45]
+	mi := &file_plan_v1_plan_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4023,7 +8630,7 @@ func (x *WishServiceGrantResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceGrantResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceGrantResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{45}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *WishServiceGrantResponse) GetWish() *Wish {
@@ -4043,7 +8650,7 @@ type WishServicePauseRequest struct {
 
 func (x *WishServicePauseRequest) Reset() {
 	*x = WishServicePauseRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[46]
+	mi := &file_plan_v1_plan_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4055,7 +8662,7 @@ func (x *WishServicePauseRequest) String() string {
 func (*WishServicePauseRequest) ProtoMessage() {}
 
 func (x *WishServicePauseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[46]
+	mi := &file_plan_v1_plan_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4068,7 +8675,7 @@ func (x *WishServicePauseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServicePauseRequest.ProtoReflect.Descriptor instead.
 func (*WishServicePauseRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{46}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *WishServicePauseRequest) GetWishId() string {
@@ -4088,7 +8695,7 @@ type WishServicePauseResponse struct {
 
 func (x *WishServicePauseResponse) Reset() {
 	*x = WishServicePauseResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[47]
+	mi := &file_plan_v1_plan_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4100,7 +8707,7 @@ func (x *WishServicePauseResponse) String() string {
 func (*WishServicePauseResponse) ProtoMessage() {}
 
 func (x *WishServicePauseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[47]
+	mi := &file_plan_v1_plan_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4113,7 +8720,7 @@ func (x *WishServicePauseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServicePauseResponse.ProtoReflect.Descriptor instead.
 func (*WishServicePauseResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{47}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *WishServicePauseResponse) GetWish() *Wish {
@@ -4133,7 +8740,7 @@ type WishServiceActivateRequest struct {
 
 func (x *WishServiceActivateRequest) Reset() {
 	*x = WishServiceActivateRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[48]
+	mi := &file_plan_v1_plan_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4145,7 +8752,7 @@ func (x *WishServiceActivateRequest) String() string {
 func (*WishServiceActivateRequest) ProtoMessage() {}
 
 func (x *WishServiceActivateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[48]
+	mi := &file_plan_v1_plan_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4158,7 +8765,7 @@ func (x *WishServiceActivateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceActivateRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceActivateRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{48}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *WishServiceActivateRequest) GetWishId() string {
@@ -4171,14 +8778,16 @@ func (x *WishServiceActivateRequest) GetWishId() string {
 type WishServiceActivateResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The wish, active.
-	Wish          *Wish `protobuf:"bytes,1,opt,name=wish,proto3" json:"wish,omitempty"`
+	Wish *Wish `protobuf:"bytes,1,opt,name=wish,proto3" json:"wish,omitempty"`
+	// The wish that left its place to it, paused: three were active.
+	Paused        []*Wish `protobuf:"bytes,2,rep,name=paused,proto3" json:"paused,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WishServiceActivateResponse) Reset() {
 	*x = WishServiceActivateResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[49]
+	mi := &file_plan_v1_plan_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4190,7 +8799,7 @@ func (x *WishServiceActivateResponse) String() string {
 func (*WishServiceActivateResponse) ProtoMessage() {}
 
 func (x *WishServiceActivateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[49]
+	mi := &file_plan_v1_plan_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4203,7 +8812,7 @@ func (x *WishServiceActivateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceActivateResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceActivateResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{49}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *WishServiceActivateResponse) GetWish() *Wish {
@@ -4213,11 +8822,253 @@ func (x *WishServiceActivateResponse) GetWish() *Wish {
 	return nil
 }
 
+func (x *WishServiceActivateResponse) GetPaused() []*Wish {
+	if x != nil {
+		return x.Paused
+	}
+	return nil
+}
+
+type WishServiceDeleteRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish.
+	WishId        string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishServiceDeleteRequest) Reset() {
+	*x = WishServiceDeleteRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[93]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishServiceDeleteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishServiceDeleteRequest) ProtoMessage() {}
+
+func (x *WishServiceDeleteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[93]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishServiceDeleteRequest.ProtoReflect.Descriptor instead.
+func (*WishServiceDeleteRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{93}
+}
+
+func (x *WishServiceDeleteRequest) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+type WishServiceDeleteResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish, as it was.
+	Wish *Wish `protobuf:"bytes,1,opt,name=wish,proto3" json:"wish,omitempty"`
+	// How many tasks went with it.
+	Tasks int32 `protobuf:"varint,2,opt,name=tasks,proto3" json:"tasks,omitempty"`
+	// How many questions went with it.
+	Questions int32 `protobuf:"varint,3,opt,name=questions,proto3" json:"questions,omitempty"`
+	// How many blocks went with it.
+	Blocks int32 `protobuf:"varint,4,opt,name=blocks,proto3" json:"blocks,omitempty"`
+	// How many worktrees of its tasks were removed: clean, with no commit beyond the project's current branch.
+	WorktreesRemoved int32 `protobuf:"varint,5,opt,name=worktrees_removed,json=worktreesRemoved,proto3" json:"worktrees_removed,omitempty"`
+	// The worktrees of its tasks that stay on disk, and why.
+	Kept          []*KeptWorktree `protobuf:"bytes,6,rep,name=kept,proto3" json:"kept,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishServiceDeleteResponse) Reset() {
+	*x = WishServiceDeleteResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[94]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishServiceDeleteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishServiceDeleteResponse) ProtoMessage() {}
+
+func (x *WishServiceDeleteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[94]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishServiceDeleteResponse.ProtoReflect.Descriptor instead.
+func (*WishServiceDeleteResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{94}
+}
+
+func (x *WishServiceDeleteResponse) GetWish() *Wish {
+	if x != nil {
+		return x.Wish
+	}
+	return nil
+}
+
+func (x *WishServiceDeleteResponse) GetTasks() int32 {
+	if x != nil {
+		return x.Tasks
+	}
+	return 0
+}
+
+func (x *WishServiceDeleteResponse) GetQuestions() int32 {
+	if x != nil {
+		return x.Questions
+	}
+	return 0
+}
+
+func (x *WishServiceDeleteResponse) GetBlocks() int32 {
+	if x != nil {
+		return x.Blocks
+	}
+	return 0
+}
+
+func (x *WishServiceDeleteResponse) GetWorktreesRemoved() int32 {
+	if x != nil {
+		return x.WorktreesRemoved
+	}
+	return 0
+}
+
+func (x *WishServiceDeleteResponse) GetKept() []*KeptWorktree {
+	if x != nil {
+		return x.Kept
+	}
+	return nil
+}
+
+// A worktree of a deleted wish's task that stays on disk, and why: it holds work, or Git could not remove it.
+type KeptWorktree struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task's code: W1.
+	TaskCode string `protobuf:"bytes,1,opt,name=task_code,json=taskCode,proto3" json:"task_code,omitempty"`
+	// Root of the worktree.
+	Worktree string `protobuf:"bytes,2,opt,name=worktree,proto3" json:"worktree,omitempty"`
+	// Its branch, which stays.
+	Branch string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	// The project's current branch, where its commits are looked for.
+	Base string `protobuf:"bytes,4,opt,name=base,proto3" json:"base,omitempty"`
+	// How many commits of the worktree the current branch does not have.
+	Commits int32 `protobuf:"varint,5,opt,name=commits,proto3" json:"commits,omitempty"`
+	// The worktree holds changes not committed, or files Git does not track.
+	Changed bool `protobuf:"varint,6,opt,name=changed,proto3" json:"changed,omitempty"`
+	// What Git said when it could not look at the worktree or remove it.
+	Error         string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeptWorktree) Reset() {
+	*x = KeptWorktree{}
+	mi := &file_plan_v1_plan_proto_msgTypes[95]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeptWorktree) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeptWorktree) ProtoMessage() {}
+
+func (x *KeptWorktree) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[95]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeptWorktree.ProtoReflect.Descriptor instead.
+func (*KeptWorktree) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{95}
+}
+
+func (x *KeptWorktree) GetTaskCode() string {
+	if x != nil {
+		return x.TaskCode
+	}
+	return ""
+}
+
+func (x *KeptWorktree) GetWorktree() string {
+	if x != nil {
+		return x.Worktree
+	}
+	return ""
+}
+
+func (x *KeptWorktree) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *KeptWorktree) GetBase() string {
+	if x != nil {
+		return x.Base
+	}
+	return ""
+}
+
+func (x *KeptWorktree) GetCommits() int32 {
+	if x != nil {
+		return x.Commits
+	}
+	return 0
+}
+
+func (x *KeptWorktree) GetChanged() bool {
+	if x != nil {
+		return x.Changed
+	}
+	return false
+}
+
+func (x *KeptWorktree) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 type WishServiceMoveRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The wish, active.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// Its new rank, from 1 for the first; beyond the last, it goes last.
+	// Its new rank, from 1 for the first; beyond the last, it goes last, the third place at most.
 	To            int32 `protobuf:"varint,2,opt,name=to,proto3" json:"to,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4225,7 +9076,7 @@ type WishServiceMoveRequest struct {
 
 func (x *WishServiceMoveRequest) Reset() {
 	*x = WishServiceMoveRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[50]
+	mi := &file_plan_v1_plan_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4237,7 +9088,7 @@ func (x *WishServiceMoveRequest) String() string {
 func (*WishServiceMoveRequest) ProtoMessage() {}
 
 func (x *WishServiceMoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[50]
+	mi := &file_plan_v1_plan_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4250,7 +9101,7 @@ func (x *WishServiceMoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceMoveRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceMoveRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{50}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *WishServiceMoveRequest) GetWishId() string {
@@ -4270,14 +9121,16 @@ func (x *WishServiceMoveRequest) GetTo() int32 {
 type WishServiceMoveResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The active wishes, by rank.
-	Wishes        []*Wish `protobuf:"bytes,1,rep,name=wishes,proto3" json:"wishes,omitempty"`
+	Wishes []*Wish `protobuf:"bytes,1,rep,name=wishes,proto3" json:"wishes,omitempty"`
+	// The wish pushed past the third place, paused.
+	Paused        []*Wish `protobuf:"bytes,2,rep,name=paused,proto3" json:"paused,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WishServiceMoveResponse) Reset() {
 	*x = WishServiceMoveResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[51]
+	mi := &file_plan_v1_plan_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4289,7 +9142,7 @@ func (x *WishServiceMoveResponse) String() string {
 func (*WishServiceMoveResponse) ProtoMessage() {}
 
 func (x *WishServiceMoveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[51]
+	mi := &file_plan_v1_plan_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4302,12 +9155,19 @@ func (x *WishServiceMoveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceMoveResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceMoveResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{51}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *WishServiceMoveResponse) GetWishes() []*Wish {
 	if x != nil {
 		return x.Wishes
+	}
+	return nil
+}
+
+func (x *WishServiceMoveResponse) GetPaused() []*Wish {
+	if x != nil {
+		return x.Paused
 	}
 	return nil
 }
@@ -4318,7 +9178,7 @@ type WishServiceMakeRequest struct {
 	Title string `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
 	// A project the wish works on; repeat for each one.
 	ProjectIds []string `protobuf:"bytes,2,rep,name=project_ids,json=projectIds,proto3" json:"project_ids,omitempty"`
-	// Make it paused: it waits, out of the three active wishes.
+	// Make it paused: it waits, out of the three active wishes. Three being active, it is made paused anyway.
 	Paused bool `protobuf:"varint,3,opt,name=paused,proto3" json:"paused,omitempty"`
 	// Kind of agent for the wish's lead and, unless a task names another, its tasks: claude (the default), codex or
 	// antigravity.
@@ -4335,7 +9195,7 @@ type WishServiceMakeRequest struct {
 
 func (x *WishServiceMakeRequest) Reset() {
 	*x = WishServiceMakeRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[52]
+	mi := &file_plan_v1_plan_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4347,7 +9207,7 @@ func (x *WishServiceMakeRequest) String() string {
 func (*WishServiceMakeRequest) ProtoMessage() {}
 
 func (x *WishServiceMakeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[52]
+	mi := &file_plan_v1_plan_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4360,7 +9220,7 @@ func (x *WishServiceMakeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceMakeRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceMakeRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{52}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *WishServiceMakeRequest) GetTitle() string {
@@ -4417,7 +9277,7 @@ type WishServiceRenameRequest struct {
 
 func (x *WishServiceRenameRequest) Reset() {
 	*x = WishServiceRenameRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[53]
+	mi := &file_plan_v1_plan_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4429,7 +9289,7 @@ func (x *WishServiceRenameRequest) String() string {
 func (*WishServiceRenameRequest) ProtoMessage() {}
 
 func (x *WishServiceRenameRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[53]
+	mi := &file_plan_v1_plan_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4442,7 +9302,7 @@ func (x *WishServiceRenameRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceRenameRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceRenameRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{53}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *WishServiceRenameRequest) GetWishId() string {
@@ -4469,7 +9329,7 @@ type WishServiceRenameResponse struct {
 
 func (x *WishServiceRenameResponse) Reset() {
 	*x = WishServiceRenameResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[54]
+	mi := &file_plan_v1_plan_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4481,7 +9341,7 @@ func (x *WishServiceRenameResponse) String() string {
 func (*WishServiceRenameResponse) ProtoMessage() {}
 
 func (x *WishServiceRenameResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[54]
+	mi := &file_plan_v1_plan_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4494,7 +9354,7 @@ func (x *WishServiceRenameResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceRenameResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceRenameResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{54}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *WishServiceRenameResponse) GetWish() *Wish {
@@ -4514,7 +9374,7 @@ type WishServiceMakeResponse struct {
 
 func (x *WishServiceMakeResponse) Reset() {
 	*x = WishServiceMakeResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[55]
+	mi := &file_plan_v1_plan_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4526,7 +9386,7 @@ func (x *WishServiceMakeResponse) String() string {
 func (*WishServiceMakeResponse) ProtoMessage() {}
 
 func (x *WishServiceMakeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[55]
+	mi := &file_plan_v1_plan_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4539,7 +9399,7 @@ func (x *WishServiceMakeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceMakeResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceMakeResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{55}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *WishServiceMakeResponse) GetWish() *Wish {
@@ -4557,7 +9417,7 @@ type WishServiceListRequest struct {
 
 func (x *WishServiceListRequest) Reset() {
 	*x = WishServiceListRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[56]
+	mi := &file_plan_v1_plan_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4569,7 +9429,7 @@ func (x *WishServiceListRequest) String() string {
 func (*WishServiceListRequest) ProtoMessage() {}
 
 func (x *WishServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[56]
+	mi := &file_plan_v1_plan_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4582,7 +9442,7 @@ func (x *WishServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceListRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{56}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{102}
 }
 
 type WishServiceListResponse struct {
@@ -4595,7 +9455,7 @@ type WishServiceListResponse struct {
 
 func (x *WishServiceListResponse) Reset() {
 	*x = WishServiceListResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[57]
+	mi := &file_plan_v1_plan_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4607,7 +9467,7 @@ func (x *WishServiceListResponse) String() string {
 func (*WishServiceListResponse) ProtoMessage() {}
 
 func (x *WishServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[57]
+	mi := &file_plan_v1_plan_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4620,7 +9480,7 @@ func (x *WishServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceListResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{57}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *WishServiceListResponse) GetWishes() []*Wish {
@@ -4643,7 +9503,7 @@ type WishServiceExportRequest struct {
 
 func (x *WishServiceExportRequest) Reset() {
 	*x = WishServiceExportRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[58]
+	mi := &file_plan_v1_plan_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4655,7 +9515,7 @@ func (x *WishServiceExportRequest) String() string {
 func (*WishServiceExportRequest) ProtoMessage() {}
 
 func (x *WishServiceExportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[58]
+	mi := &file_plan_v1_plan_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4668,7 +9528,7 @@ func (x *WishServiceExportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceExportRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceExportRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{58}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *WishServiceExportRequest) GetWishId() string {
@@ -4697,7 +9557,7 @@ type WishServiceExportResponse struct {
 
 func (x *WishServiceExportResponse) Reset() {
 	*x = WishServiceExportResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[59]
+	mi := &file_plan_v1_plan_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4709,7 +9569,7 @@ func (x *WishServiceExportResponse) String() string {
 func (*WishServiceExportResponse) ProtoMessage() {}
 
 func (x *WishServiceExportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[59]
+	mi := &file_plan_v1_plan_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4722,7 +9582,7 @@ func (x *WishServiceExportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceExportResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceExportResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{59}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *WishServiceExportResponse) GetFile() string {
@@ -4751,7 +9611,7 @@ type WishServiceImportRequest struct {
 
 func (x *WishServiceImportRequest) Reset() {
 	*x = WishServiceImportRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[60]
+	mi := &file_plan_v1_plan_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4763,7 +9623,7 @@ func (x *WishServiceImportRequest) String() string {
 func (*WishServiceImportRequest) ProtoMessage() {}
 
 func (x *WishServiceImportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[60]
+	mi := &file_plan_v1_plan_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4776,7 +9636,7 @@ func (x *WishServiceImportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceImportRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceImportRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{60}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *WishServiceImportRequest) GetFile() string {
@@ -4807,7 +9667,7 @@ type WishServiceImportResponse struct {
 
 func (x *WishServiceImportResponse) Reset() {
 	*x = WishServiceImportResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[61]
+	mi := &file_plan_v1_plan_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4819,7 +9679,7 @@ func (x *WishServiceImportResponse) String() string {
 func (*WishServiceImportResponse) ProtoMessage() {}
 
 func (x *WishServiceImportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[61]
+	mi := &file_plan_v1_plan_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4832,7 +9692,7 @@ func (x *WishServiceImportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceImportResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceImportResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{61}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *WishServiceImportResponse) GetWish() *Wish {
@@ -4868,7 +9728,7 @@ type WishServiceImportDataRequest struct {
 
 func (x *WishServiceImportDataRequest) Reset() {
 	*x = WishServiceImportDataRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[62]
+	mi := &file_plan_v1_plan_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4880,7 +9740,7 @@ func (x *WishServiceImportDataRequest) String() string {
 func (*WishServiceImportDataRequest) ProtoMessage() {}
 
 func (x *WishServiceImportDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[62]
+	mi := &file_plan_v1_plan_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4893,7 +9753,7 @@ func (x *WishServiceImportDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceImportDataRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceImportDataRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{62}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *WishServiceImportDataRequest) GetData() []byte {
@@ -4924,7 +9784,7 @@ type WishServiceImportDataResponse struct {
 
 func (x *WishServiceImportDataResponse) Reset() {
 	*x = WishServiceImportDataResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[63]
+	mi := &file_plan_v1_plan_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4936,7 +9796,7 @@ func (x *WishServiceImportDataResponse) String() string {
 func (*WishServiceImportDataResponse) ProtoMessage() {}
 
 func (x *WishServiceImportDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[63]
+	mi := &file_plan_v1_plan_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4949,7 +9809,7 @@ func (x *WishServiceImportDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceImportDataResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceImportDataResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{63}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *WishServiceImportDataResponse) GetWish() *Wish {
@@ -4981,7 +9841,8 @@ type WishServiceSetLeadRequest struct {
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// Kind of agent: claude or codex; by default the wish's, else claude.
 	Provider Provider `protobuf:"varint,3,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
-	// Folder the session runs in. By default, the folder of the wish's first project.
+	// Folder the session runs in. By default, the folder of the wish's first project. Never the home folder, nor
+	// a folder above it.
 	Directory     string `protobuf:"bytes,4,opt,name=directory,proto3" json:"directory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4989,7 +9850,7 @@ type WishServiceSetLeadRequest struct {
 
 func (x *WishServiceSetLeadRequest) Reset() {
 	*x = WishServiceSetLeadRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[64]
+	mi := &file_plan_v1_plan_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5001,7 +9862,7 @@ func (x *WishServiceSetLeadRequest) String() string {
 func (*WishServiceSetLeadRequest) ProtoMessage() {}
 
 func (x *WishServiceSetLeadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[64]
+	mi := &file_plan_v1_plan_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5014,7 +9875,7 @@ func (x *WishServiceSetLeadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceSetLeadRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceSetLeadRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{64}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *WishServiceSetLeadRequest) GetWishId() string {
@@ -5055,7 +9916,7 @@ type WishServiceSetLeadResponse struct {
 
 func (x *WishServiceSetLeadResponse) Reset() {
 	*x = WishServiceSetLeadResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[65]
+	mi := &file_plan_v1_plan_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5067,7 +9928,7 @@ func (x *WishServiceSetLeadResponse) String() string {
 func (*WishServiceSetLeadResponse) ProtoMessage() {}
 
 func (x *WishServiceSetLeadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[65]
+	mi := &file_plan_v1_plan_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5080,10 +9941,109 @@ func (x *WishServiceSetLeadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceSetLeadResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceSetLeadResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{65}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *WishServiceSetLeadResponse) GetWish() *Wish {
+	if x != nil {
+		return x.Wish
+	}
+	return nil
+}
+
+type WishServiceDescribeRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish.
+	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// The description: a few lines. Empty takes the wish back to its title.
+	Text          string `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishServiceDescribeRequest) Reset() {
+	*x = WishServiceDescribeRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[112]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishServiceDescribeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishServiceDescribeRequest) ProtoMessage() {}
+
+func (x *WishServiceDescribeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[112]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishServiceDescribeRequest.ProtoReflect.Descriptor instead.
+func (*WishServiceDescribeRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{112}
+}
+
+func (x *WishServiceDescribeRequest) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *WishServiceDescribeRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type WishServiceDescribeResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish, with its description.
+	Wish          *Wish `protobuf:"bytes,1,opt,name=wish,proto3" json:"wish,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WishServiceDescribeResponse) Reset() {
+	*x = WishServiceDescribeResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[113]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WishServiceDescribeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WishServiceDescribeResponse) ProtoMessage() {}
+
+func (x *WishServiceDescribeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[113]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WishServiceDescribeResponse.ProtoReflect.Descriptor instead.
+func (*WishServiceDescribeResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{113}
+}
+
+func (x *WishServiceDescribeResponse) GetWish() *Wish {
 	if x != nil {
 		return x.Wish
 	}
@@ -5094,8 +10054,8 @@ type WishServiceResumeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The wish.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// Kind of agent for a new lead, when the wish has none to resume: claude, codex or antigravity; by default the
-	// wish's, else claude.
+	// Kind of agent for the lead: unset or the recorded lead's resumes it; another starts a new lead of that agent
+	// from the brief. A wish with no lead to resume starts one of this kind: claude (the default), codex or antigravity.
 	Provider      Provider `protobuf:"varint,2,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5103,7 +10063,7 @@ type WishServiceResumeRequest struct {
 
 func (x *WishServiceResumeRequest) Reset() {
 	*x = WishServiceResumeRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[66]
+	mi := &file_plan_v1_plan_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5115,7 +10075,7 @@ func (x *WishServiceResumeRequest) String() string {
 func (*WishServiceResumeRequest) ProtoMessage() {}
 
 func (x *WishServiceResumeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[66]
+	mi := &file_plan_v1_plan_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5128,7 +10088,7 @@ func (x *WishServiceResumeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceResumeRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceResumeRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{66}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *WishServiceResumeRequest) GetWishId() string {
@@ -5165,7 +10125,7 @@ type WishServiceResumeResponse struct {
 
 func (x *WishServiceResumeResponse) Reset() {
 	*x = WishServiceResumeResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[67]
+	mi := &file_plan_v1_plan_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5177,7 +10137,7 @@ func (x *WishServiceResumeResponse) String() string {
 func (*WishServiceResumeResponse) ProtoMessage() {}
 
 func (x *WishServiceResumeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[67]
+	mi := &file_plan_v1_plan_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5190,7 +10150,7 @@ func (x *WishServiceResumeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceResumeResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceResumeResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{67}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *WishServiceResumeResponse) GetWish() *Wish {
@@ -5247,7 +10207,7 @@ type WishServiceSetProviderRequest struct {
 
 func (x *WishServiceSetProviderRequest) Reset() {
 	*x = WishServiceSetProviderRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[68]
+	mi := &file_plan_v1_plan_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5259,7 +10219,7 @@ func (x *WishServiceSetProviderRequest) String() string {
 func (*WishServiceSetProviderRequest) ProtoMessage() {}
 
 func (x *WishServiceSetProviderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[68]
+	mi := &file_plan_v1_plan_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5272,7 +10232,7 @@ func (x *WishServiceSetProviderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceSetProviderRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceSetProviderRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{68}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *WishServiceSetProviderRequest) GetWishId() string {
@@ -5305,7 +10265,7 @@ type WishServiceSetProviderResponse struct {
 
 func (x *WishServiceSetProviderResponse) Reset() {
 	*x = WishServiceSetProviderResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[69]
+	mi := &file_plan_v1_plan_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5317,7 +10277,7 @@ func (x *WishServiceSetProviderResponse) String() string {
 func (*WishServiceSetProviderResponse) ProtoMessage() {}
 
 func (x *WishServiceSetProviderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[69]
+	mi := &file_plan_v1_plan_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5330,7 +10290,7 @@ func (x *WishServiceSetProviderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceSetProviderResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceSetProviderResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{69}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *WishServiceSetProviderResponse) GetWish() *Wish {
@@ -5371,7 +10331,7 @@ type WishServiceBriefRequest struct {
 
 func (x *WishServiceBriefRequest) Reset() {
 	*x = WishServiceBriefRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[70]
+	mi := &file_plan_v1_plan_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5383,7 +10343,7 @@ func (x *WishServiceBriefRequest) String() string {
 func (*WishServiceBriefRequest) ProtoMessage() {}
 
 func (x *WishServiceBriefRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[70]
+	mi := &file_plan_v1_plan_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5396,7 +10356,7 @@ func (x *WishServiceBriefRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceBriefRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceBriefRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{70}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *WishServiceBriefRequest) GetWishId() string {
@@ -5416,7 +10376,7 @@ type WishServiceBriefResponse struct {
 
 func (x *WishServiceBriefResponse) Reset() {
 	*x = WishServiceBriefResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[71]
+	mi := &file_plan_v1_plan_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5428,7 +10388,7 @@ func (x *WishServiceBriefResponse) String() string {
 func (*WishServiceBriefResponse) ProtoMessage() {}
 
 func (x *WishServiceBriefResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[71]
+	mi := &file_plan_v1_plan_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5441,7 +10401,7 @@ func (x *WishServiceBriefResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceBriefResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceBriefResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{71}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{119}
 }
 
 func (x *WishServiceBriefResponse) GetText() string {
@@ -5463,7 +10423,7 @@ type WishServiceTellRequest struct {
 
 func (x *WishServiceTellRequest) Reset() {
 	*x = WishServiceTellRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[72]
+	mi := &file_plan_v1_plan_proto_msgTypes[120]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5475,7 +10435,7 @@ func (x *WishServiceTellRequest) String() string {
 func (*WishServiceTellRequest) ProtoMessage() {}
 
 func (x *WishServiceTellRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[72]
+	mi := &file_plan_v1_plan_proto_msgTypes[120]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5488,7 +10448,7 @@ func (x *WishServiceTellRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceTellRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceTellRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{72}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{120}
 }
 
 func (x *WishServiceTellRequest) GetWishId() string {
@@ -5518,7 +10478,7 @@ type WishServiceTellResponse struct {
 
 func (x *WishServiceTellResponse) Reset() {
 	*x = WishServiceTellResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[73]
+	mi := &file_plan_v1_plan_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5530,7 +10490,7 @@ func (x *WishServiceTellResponse) String() string {
 func (*WishServiceTellResponse) ProtoMessage() {}
 
 func (x *WishServiceTellResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[73]
+	mi := &file_plan_v1_plan_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5543,7 +10503,7 @@ func (x *WishServiceTellResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceTellResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceTellResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{73}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *WishServiceTellResponse) GetWaiting() bool {
@@ -5577,7 +10537,7 @@ type WishServiceChooseRequest struct {
 
 func (x *WishServiceChooseRequest) Reset() {
 	*x = WishServiceChooseRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[74]
+	mi := &file_plan_v1_plan_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5589,7 +10549,7 @@ func (x *WishServiceChooseRequest) String() string {
 func (*WishServiceChooseRequest) ProtoMessage() {}
 
 func (x *WishServiceChooseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[74]
+	mi := &file_plan_v1_plan_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5602,7 +10562,7 @@ func (x *WishServiceChooseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceChooseRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceChooseRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{74}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *WishServiceChooseRequest) GetWishId() string {
@@ -5648,7 +10608,7 @@ type WishServiceChooseResponse struct {
 
 func (x *WishServiceChooseResponse) Reset() {
 	*x = WishServiceChooseResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[75]
+	mi := &file_plan_v1_plan_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5660,7 +10620,7 @@ func (x *WishServiceChooseResponse) String() string {
 func (*WishServiceChooseResponse) ProtoMessage() {}
 
 func (x *WishServiceChooseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[75]
+	mi := &file_plan_v1_plan_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5673,7 +10633,7 @@ func (x *WishServiceChooseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceChooseResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceChooseResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{75}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{123}
 }
 
 type WishServiceSnapshotRequest struct {
@@ -5686,7 +10646,7 @@ type WishServiceSnapshotRequest struct {
 
 func (x *WishServiceSnapshotRequest) Reset() {
 	*x = WishServiceSnapshotRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[76]
+	mi := &file_plan_v1_plan_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5698,7 +10658,7 @@ func (x *WishServiceSnapshotRequest) String() string {
 func (*WishServiceSnapshotRequest) ProtoMessage() {}
 
 func (x *WishServiceSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[76]
+	mi := &file_plan_v1_plan_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5711,7 +10671,7 @@ func (x *WishServiceSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*WishServiceSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{76}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *WishServiceSnapshotRequest) GetWishId() string {
@@ -5733,7 +10693,7 @@ type WishServiceSnapshotResponse struct {
 
 func (x *WishServiceSnapshotResponse) Reset() {
 	*x = WishServiceSnapshotResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[77]
+	mi := &file_plan_v1_plan_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5745,7 +10705,7 @@ func (x *WishServiceSnapshotResponse) String() string {
 func (*WishServiceSnapshotResponse) ProtoMessage() {}
 
 func (x *WishServiceSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[77]
+	mi := &file_plan_v1_plan_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5758,7 +10718,7 @@ func (x *WishServiceSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishServiceSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*WishServiceSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{77}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *WishServiceSnapshotResponse) GetExport() *WishExport {
@@ -5790,7 +10750,7 @@ type ProjectMatch struct {
 
 func (x *ProjectMatch) Reset() {
 	*x = ProjectMatch{}
-	mi := &file_plan_v1_plan_proto_msgTypes[78]
+	mi := &file_plan_v1_plan_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5802,7 +10762,7 @@ func (x *ProjectMatch) String() string {
 func (*ProjectMatch) ProtoMessage() {}
 
 func (x *ProjectMatch) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[78]
+	mi := &file_plan_v1_plan_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5815,7 +10775,7 @@ func (x *ProjectMatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectMatch.ProtoReflect.Descriptor instead.
 func (*ProjectMatch) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{78}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *ProjectMatch) GetProject() *Project {
@@ -5863,14 +10823,16 @@ type WishExport struct {
 	// The commands of the journal that changed the wish, oldest first.
 	Commands []*Command `protobuf:"bytes,9,rep,name=commands,proto3" json:"commands,omitempty"`
 	// Durable developer instructions and their worker associations.
-	Instructions  []*Instruction `protobuf:"bytes,10,rep,name=instructions,proto3" json:"instructions,omitempty"`
+	Instructions []*Instruction `protobuf:"bytes,11,rep,name=instructions,proto3" json:"instructions,omitempty"`
+	// The tilasms of the wish. An export to a file carries the files of every version; a snapshot, only the manifests.
+	Tilasms       []*TilasmExport `protobuf:"bytes,10,rep,name=tilasms,proto3" json:"tilasms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WishExport) Reset() {
 	*x = WishExport{}
-	mi := &file_plan_v1_plan_proto_msgTypes[79]
+	mi := &file_plan_v1_plan_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5882,7 +10844,7 @@ func (x *WishExport) String() string {
 func (*WishExport) ProtoMessage() {}
 
 func (x *WishExport) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[79]
+	mi := &file_plan_v1_plan_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5895,7 +10857,7 @@ func (x *WishExport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WishExport.ProtoReflect.Descriptor instead.
 func (*WishExport) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{79}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *WishExport) GetVersion() int32 {
@@ -5968,6 +10930,13 @@ func (x *WishExport) GetInstructions() []*Instruction {
 	return nil
 }
 
+func (x *WishExport) GetTilasms() []*TilasmExport {
+	if x != nil {
+		return x.Tilasms
+	}
+	return nil
+}
+
 // ProjectRef names a project without its folder, so that another machine finds its own copy.
 type ProjectRef struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -5985,7 +10954,7 @@ type ProjectRef struct {
 
 func (x *ProjectRef) Reset() {
 	*x = ProjectRef{}
-	mi := &file_plan_v1_plan_proto_msgTypes[80]
+	mi := &file_plan_v1_plan_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5997,7 +10966,7 @@ func (x *ProjectRef) String() string {
 func (*ProjectRef) ProtoMessage() {}
 
 func (x *ProjectRef) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[80]
+	mi := &file_plan_v1_plan_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6010,7 +10979,7 @@ func (x *ProjectRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRef.ProtoReflect.Descriptor instead.
 func (*ProjectRef) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{80}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *ProjectRef) GetId() string {
@@ -6060,7 +11029,7 @@ type Command struct {
 
 func (x *Command) Reset() {
 	*x = Command{}
-	mi := &file_plan_v1_plan_proto_msgTypes[81]
+	mi := &file_plan_v1_plan_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6072,7 +11041,7 @@ func (x *Command) String() string {
 func (*Command) ProtoMessage() {}
 
 func (x *Command) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[81]
+	mi := &file_plan_v1_plan_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6085,7 +11054,7 @@ func (x *Command) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Command.ProtoReflect.Descriptor instead.
 func (*Command) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{81}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *Command) GetId() string {
@@ -6149,15 +11118,18 @@ type Block struct {
 	CreateTime *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
 	// When it last changed.
 	UpdateTime *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
-	// What the developer marked on it from the window: read, approved.
-	Marks         []*Mark `protobuf:"bytes,11,rep,name=marks,proto3" json:"marks,omitempty"`
+	// Marks a block took before blocks were for agents only: none is put any more, and none is listed.
+	Marks []*Mark `protobuf:"bytes,11,rep,name=marks,proto3" json:"marks,omitempty"`
+	// One emoji for its subject, set by its writer (djinn block put --icon 🧱): the decision log shows it first. Empty:
+	// a default by kind.
+	Icon          string `protobuf:"bytes,12,opt,name=icon,proto3" json:"icon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Block) Reset() {
 	*x = Block{}
-	mi := &file_plan_v1_plan_proto_msgTypes[82]
+	mi := &file_plan_v1_plan_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6169,7 +11141,7 @@ func (x *Block) String() string {
 func (*Block) ProtoMessage() {}
 
 func (x *Block) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[82]
+	mi := &file_plan_v1_plan_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6182,7 +11154,7 @@ func (x *Block) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Block.ProtoReflect.Descriptor instead.
 func (*Block) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{82}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *Block) GetId() string {
@@ -6262,6 +11234,13 @@ func (x *Block) GetMarks() []*Mark {
 	return nil
 }
 
+func (x *Block) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
 type BlockServicePutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Wish the block belongs to.
@@ -6276,17 +11255,20 @@ type BlockServicePutRequest struct {
 	Content string `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
 	// Media type of the content, like application/json; text/markdown by default.
 	MediaType string `protobuf:"bytes,6,opt,name=media_type,json=mediaType,proto3" json:"media_type,omitempty"`
-	// Task the block is about.
+	// Task the block is about, whose worker wrote it: the decision log says "by W12". By default $DJINN_TASK_ID,
+	// which Djinn sets for every worker; empty for the lead.
 	TaskId string `protobuf:"bytes,7,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// Order within the wish; by default 1000 after the last block, for a new one.
-	Position      int64 `protobuf:"varint,8,opt,name=position,proto3" json:"position,omitempty"`
+	Position int64 `protobuf:"varint,8,opt,name=position,proto3" json:"position,omitempty"`
+	// One emoji for the subject, like 🧱: the decision log shows it before a decision.
+	Icon          string `protobuf:"bytes,9,opt,name=icon,proto3" json:"icon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BlockServicePutRequest) Reset() {
 	*x = BlockServicePutRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[83]
+	mi := &file_plan_v1_plan_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6298,7 +11280,7 @@ func (x *BlockServicePutRequest) String() string {
 func (*BlockServicePutRequest) ProtoMessage() {}
 
 func (x *BlockServicePutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[83]
+	mi := &file_plan_v1_plan_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6311,7 +11293,7 @@ func (x *BlockServicePutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockServicePutRequest.ProtoReflect.Descriptor instead.
 func (*BlockServicePutRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{83}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *BlockServicePutRequest) GetWishId() string {
@@ -6370,6 +11352,13 @@ func (x *BlockServicePutRequest) GetPosition() int64 {
 	return 0
 }
 
+func (x *BlockServicePutRequest) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
 type BlockServicePutResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The block.
@@ -6380,7 +11369,7 @@ type BlockServicePutResponse struct {
 
 func (x *BlockServicePutResponse) Reset() {
 	*x = BlockServicePutResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[84]
+	mi := &file_plan_v1_plan_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6392,7 +11381,7 @@ func (x *BlockServicePutResponse) String() string {
 func (*BlockServicePutResponse) ProtoMessage() {}
 
 func (x *BlockServicePutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[84]
+	mi := &file_plan_v1_plan_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6405,7 +11394,7 @@ func (x *BlockServicePutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockServicePutResponse.ProtoReflect.Descriptor instead.
 func (*BlockServicePutResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{84}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *BlockServicePutResponse) GetBlock() *Block {
@@ -6429,7 +11418,7 @@ type BlockServiceListRequest struct {
 
 func (x *BlockServiceListRequest) Reset() {
 	*x = BlockServiceListRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[85]
+	mi := &file_plan_v1_plan_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6441,7 +11430,7 @@ func (x *BlockServiceListRequest) String() string {
 func (*BlockServiceListRequest) ProtoMessage() {}
 
 func (x *BlockServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[85]
+	mi := &file_plan_v1_plan_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6454,7 +11443,7 @@ func (x *BlockServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockServiceListRequest.ProtoReflect.Descriptor instead.
 func (*BlockServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{85}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *BlockServiceListRequest) GetWishId() string {
@@ -6488,7 +11477,7 @@ type BlockServiceListResponse struct {
 
 func (x *BlockServiceListResponse) Reset() {
 	*x = BlockServiceListResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[86]
+	mi := &file_plan_v1_plan_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6500,7 +11489,7 @@ func (x *BlockServiceListResponse) String() string {
 func (*BlockServiceListResponse) ProtoMessage() {}
 
 func (x *BlockServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[86]
+	mi := &file_plan_v1_plan_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6513,7 +11502,7 @@ func (x *BlockServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockServiceListResponse.ProtoReflect.Descriptor instead.
 func (*BlockServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{86}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *BlockServiceListResponse) GetBlocks() []*Block {
@@ -6533,7 +11522,7 @@ type BlockServiceDeleteRequest struct {
 
 func (x *BlockServiceDeleteRequest) Reset() {
 	*x = BlockServiceDeleteRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[87]
+	mi := &file_plan_v1_plan_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6545,7 +11534,7 @@ func (x *BlockServiceDeleteRequest) String() string {
 func (*BlockServiceDeleteRequest) ProtoMessage() {}
 
 func (x *BlockServiceDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[87]
+	mi := &file_plan_v1_plan_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6558,7 +11547,7 @@ func (x *BlockServiceDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockServiceDeleteRequest.ProtoReflect.Descriptor instead.
 func (*BlockServiceDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{87}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *BlockServiceDeleteRequest) GetId() string {
@@ -6576,7 +11565,7 @@ type BlockServiceDeleteResponse struct {
 
 func (x *BlockServiceDeleteResponse) Reset() {
 	*x = BlockServiceDeleteResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[88]
+	mi := &file_plan_v1_plan_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6588,7 +11577,7 @@ func (x *BlockServiceDeleteResponse) String() string {
 func (*BlockServiceDeleteResponse) ProtoMessage() {}
 
 func (x *BlockServiceDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[88]
+	mi := &file_plan_v1_plan_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6601,10 +11590,10 @@ func (x *BlockServiceDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockServiceDeleteResponse.ProtoReflect.Descriptor instead.
 func (*BlockServiceDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{88}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{136}
 }
 
-// MarkTarget points to what a mark is on: a question by its code, or a question or a block by its identifier.
+// MarkTarget points to the question a mark is on, by its code or its identifier. A block's identifier is refused.
 type MarkTarget struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Ref:
@@ -6618,7 +11607,7 @@ type MarkTarget struct {
 
 func (x *MarkTarget) Reset() {
 	*x = MarkTarget{}
-	mi := &file_plan_v1_plan_proto_msgTypes[89]
+	mi := &file_plan_v1_plan_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6630,7 +11619,7 @@ func (x *MarkTarget) String() string {
 func (*MarkTarget) ProtoMessage() {}
 
 func (x *MarkTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[89]
+	mi := &file_plan_v1_plan_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6643,7 +11632,7 @@ func (x *MarkTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkTarget.ProtoReflect.Descriptor instead.
 func (*MarkTarget) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{89}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *MarkTarget) GetRef() isMarkTarget_Ref {
@@ -6681,7 +11670,7 @@ type MarkTarget_Code struct {
 }
 
 type MarkTarget_Id struct {
-	// The identifier of a question or of a block.
+	// The identifier of a question.
 	Id string `protobuf:"bytes,2,opt,name=id,proto3,oneof"`
 }
 
@@ -6689,18 +11678,18 @@ func (*MarkTarget_Code) isMarkTarget_Ref() {}
 
 func (*MarkTarget_Id) isMarkTarget_Ref() {}
 
-// Marked is a mark with what it is on.
+// Marked is a mark with the question it is on.
 type Marked struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Wish of the question or block.
+	// Wish of the question.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// The question marked, if it is one.
+	// The question marked.
 	QuestionId string `protobuf:"bytes,2,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
-	// The block marked, if it is one.
+	// Unused: a block takes no mark any more.
 	BlockId string `protobuf:"bytes,3,opt,name=block_id,json=blockId,proto3" json:"block_id,omitempty"`
-	// The question's code, or the block's kind.
+	// The question's code.
 	Label string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
-	// The question's text, or the block's title, in a line.
+	// The question's text, in a line.
 	Title string `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
 	// The mark.
 	Mark          *Mark `protobuf:"bytes,6,opt,name=mark,proto3" json:"mark,omitempty"`
@@ -6710,7 +11699,7 @@ type Marked struct {
 
 func (x *Marked) Reset() {
 	*x = Marked{}
-	mi := &file_plan_v1_plan_proto_msgTypes[90]
+	mi := &file_plan_v1_plan_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6722,7 +11711,7 @@ func (x *Marked) String() string {
 func (*Marked) ProtoMessage() {}
 
 func (x *Marked) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[90]
+	mi := &file_plan_v1_plan_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6735,7 +11724,7 @@ func (x *Marked) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Marked.ProtoReflect.Descriptor instead.
 func (*Marked) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{90}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *Marked) GetWishId() string {
@@ -6782,7 +11771,7 @@ func (x *Marked) GetMark() *Mark {
 
 type MarkServicePutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// What to mark: a question's code, like Q03, or the identifier of a question or of a block.
+	// What to mark: a question's code, like Q03, or its identifier.
 	Target *MarkTarget `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
 	// The mark: read, or approved.
 	Kind MarkKind `protobuf:"varint,2,opt,name=kind,proto3,enum=plan.v1.MarkKind" json:"kind,omitempty"`
@@ -6796,7 +11785,7 @@ type MarkServicePutRequest struct {
 
 func (x *MarkServicePutRequest) Reset() {
 	*x = MarkServicePutRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[91]
+	mi := &file_plan_v1_plan_proto_msgTypes[139]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6808,7 +11797,7 @@ func (x *MarkServicePutRequest) String() string {
 func (*MarkServicePutRequest) ProtoMessage() {}
 
 func (x *MarkServicePutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[91]
+	mi := &file_plan_v1_plan_proto_msgTypes[139]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6821,7 +11810,7 @@ func (x *MarkServicePutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkServicePutRequest.ProtoReflect.Descriptor instead.
 func (*MarkServicePutRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{91}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{139}
 }
 
 func (x *MarkServicePutRequest) GetTarget() *MarkTarget {
@@ -6862,7 +11851,7 @@ type MarkServicePutResponse struct {
 
 func (x *MarkServicePutResponse) Reset() {
 	*x = MarkServicePutResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[92]
+	mi := &file_plan_v1_plan_proto_msgTypes[140]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6874,7 +11863,7 @@ func (x *MarkServicePutResponse) String() string {
 func (*MarkServicePutResponse) ProtoMessage() {}
 
 func (x *MarkServicePutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[92]
+	mi := &file_plan_v1_plan_proto_msgTypes[140]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6887,7 +11876,7 @@ func (x *MarkServicePutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkServicePutResponse.ProtoReflect.Descriptor instead.
 func (*MarkServicePutResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{92}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{140}
 }
 
 func (x *MarkServicePutResponse) GetMarked() *Marked {
@@ -6907,7 +11896,7 @@ type MarkServiceListRequest struct {
 
 func (x *MarkServiceListRequest) Reset() {
 	*x = MarkServiceListRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[93]
+	mi := &file_plan_v1_plan_proto_msgTypes[141]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6919,7 +11908,7 @@ func (x *MarkServiceListRequest) String() string {
 func (*MarkServiceListRequest) ProtoMessage() {}
 
 func (x *MarkServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[93]
+	mi := &file_plan_v1_plan_proto_msgTypes[141]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6932,7 +11921,7 @@ func (x *MarkServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkServiceListRequest.ProtoReflect.Descriptor instead.
 func (*MarkServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{93}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{141}
 }
 
 func (x *MarkServiceListRequest) GetWishId() string {
@@ -6952,7 +11941,7 @@ type MarkServiceListResponse struct {
 
 func (x *MarkServiceListResponse) Reset() {
 	*x = MarkServiceListResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[94]
+	mi := &file_plan_v1_plan_proto_msgTypes[142]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6964,7 +11953,7 @@ func (x *MarkServiceListResponse) String() string {
 func (*MarkServiceListResponse) ProtoMessage() {}
 
 func (x *MarkServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[94]
+	mi := &file_plan_v1_plan_proto_msgTypes[142]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6977,7 +11966,7 @@ func (x *MarkServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkServiceListResponse.ProtoReflect.Descriptor instead.
 func (*MarkServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{94}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{142}
 }
 
 func (x *MarkServiceListResponse) GetMarks() []*Marked {
@@ -7004,7 +11993,7 @@ type TaskServiceSpawnRequest struct {
 	Model string `protobuf:"bytes,6,opt,name=model,proto3" json:"model,omitempty"`
 	// Most the worker may spend, in US dollars, when the provider can enforce it.
 	MaxBudgetUsd float64 `protobuf:"fixed64,7,opt,name=max_budget_usd,json=maxBudgetUsd,proto3" json:"max_budget_usd,omitempty"`
-	// A task of the same wish that must be done first: its code (W1) or its identifier.
+	// Same as after, the name it had: kept so that what spawns with --depends-on still works.
 	DependsOn []string `protobuf:"bytes,8,rep,name=depends_on,json=dependsOn,proto3" json:"depends_on,omitempty"`
 	// A path the task writes, in the project's folder; none for the whole folder. Outside Git, tasks whose scopes
 	// overlap never run together.
@@ -7016,14 +12005,36 @@ type TaskServiceSpawnRequest struct {
 	// prompt, the default. Claude and Codex fork; Antigravity cannot.
 	Fork string `protobuf:"bytes,11,opt,name=fork,proto3" json:"fork,omitempty"`
 	// Start the worker from a copy of the lead's conversation, as --fork does from a task.
-	FromLead      bool `protobuf:"varint,12,opt,name=from_lead,json=fromLead,proto3" json:"from_lead,omitempty"`
+	FromLead bool `protobuf:"varint,12,opt,name=from_lead,json=fromLead,proto3" json:"from_lead,omitempty"`
+	// For a watcher (--provider watch): start its command again after each exit, until the task is stopped.
+	Restart bool `protobuf:"varint,13,opt,name=restart,proto3" json:"restart,omitempty"`
+	// The decision the task comes from: an answered question's code (Q43), or the id of a block of kind decision. The
+	// decision log links to the task, and the task to its decision.
+	Decision string `protobuf:"bytes,14,opt,name=decision,proto3" json:"decision,omitempty"`
+	// The azima the task belongs to: its code (T07) or its identifier. A grouping, never a wait: say what the task
+	// waits for with after.
+	PartOf string `protobuf:"bytes,15,opt,name=part_of,json=partOf,proto3" json:"part_of,omitempty"`
+	// What the task is; by default work, for a worker. azima makes an azima (T1, T2…): no worker, no prompt, never
+	// scheduled; work is spawned part of it.
+	Kind TaskKind `protobuf:"varint,16,opt,name=kind,proto3,enum=plan.v1.TaskKind" json:"kind,omitempty"`
+	// What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
+	// Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
+	After []string `protobuf:"bytes,17,rep,name=after,proto3" json:"after,omitempty"`
+	// What comes after the task: planned tasks of the same wish, by code or identifier, that wait for it from now on.
+	// Each one gets the new task as one more dependency, in the same step as the spawn, so that no scheduler pass
+	// starts it in between. Refused for a task that has started (running, paused, done…) and for one that would close
+	// a cycle. Repeat it, or separate them with commas: --blocks W5,W6.
+	Blocks []string `protobuf:"bytes,18,rep,name=blocks,proto3" json:"blocks,omitempty"`
+	// A tilasm of the wish given to the worker as context, by code (L01) or identifier: the worker's first prompt holds
+	// its text and the folder of its files. Repeat it, or separate them with commas: --tilasm L01,L02.
+	Tilasm        []string `protobuf:"bytes,19,rep,name=tilasm,proto3" json:"tilasm,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TaskServiceSpawnRequest) Reset() {
 	*x = TaskServiceSpawnRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[95]
+	mi := &file_plan_v1_plan_proto_msgTypes[143]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7035,7 +12046,7 @@ func (x *TaskServiceSpawnRequest) String() string {
 func (*TaskServiceSpawnRequest) ProtoMessage() {}
 
 func (x *TaskServiceSpawnRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[95]
+	mi := &file_plan_v1_plan_proto_msgTypes[143]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7048,7 +12059,7 @@ func (x *TaskServiceSpawnRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceSpawnRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceSpawnRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{95}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{143}
 }
 
 func (x *TaskServiceSpawnRequest) GetWishId() string {
@@ -7135,6 +12146,55 @@ func (x *TaskServiceSpawnRequest) GetFromLead() bool {
 	return false
 }
 
+func (x *TaskServiceSpawnRequest) GetRestart() bool {
+	if x != nil {
+		return x.Restart
+	}
+	return false
+}
+
+func (x *TaskServiceSpawnRequest) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *TaskServiceSpawnRequest) GetPartOf() string {
+	if x != nil {
+		return x.PartOf
+	}
+	return ""
+}
+
+func (x *TaskServiceSpawnRequest) GetKind() TaskKind {
+	if x != nil {
+		return x.Kind
+	}
+	return TaskKind_TASK_KIND_UNSPECIFIED
+}
+
+func (x *TaskServiceSpawnRequest) GetAfter() []string {
+	if x != nil {
+		return x.After
+	}
+	return nil
+}
+
+func (x *TaskServiceSpawnRequest) GetBlocks() []string {
+	if x != nil {
+		return x.Blocks
+	}
+	return nil
+}
+
+func (x *TaskServiceSpawnRequest) GetTilasm() []string {
+	if x != nil {
+		return x.Tilasm
+	}
+	return nil
+}
+
 type TaskServiceSpawnResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The task: running, or waiting with its reason.
@@ -7145,7 +12205,7 @@ type TaskServiceSpawnResponse struct {
 
 func (x *TaskServiceSpawnResponse) Reset() {
 	*x = TaskServiceSpawnResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[96]
+	mi := &file_plan_v1_plan_proto_msgTypes[144]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7157,7 +12217,7 @@ func (x *TaskServiceSpawnResponse) String() string {
 func (*TaskServiceSpawnResponse) ProtoMessage() {}
 
 func (x *TaskServiceSpawnResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[96]
+	mi := &file_plan_v1_plan_proto_msgTypes[144]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7170,7 +12230,7 @@ func (x *TaskServiceSpawnResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceSpawnResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceSpawnResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{96}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{144}
 }
 
 func (x *TaskServiceSpawnResponse) GetTask() *Task {
@@ -7192,7 +12252,7 @@ type TaskServiceListRequest struct {
 
 func (x *TaskServiceListRequest) Reset() {
 	*x = TaskServiceListRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[97]
+	mi := &file_plan_v1_plan_proto_msgTypes[145]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7204,7 +12264,7 @@ func (x *TaskServiceListRequest) String() string {
 func (*TaskServiceListRequest) ProtoMessage() {}
 
 func (x *TaskServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[97]
+	mi := &file_plan_v1_plan_proto_msgTypes[145]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7217,7 +12277,7 @@ func (x *TaskServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceListRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{97}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{145}
 }
 
 func (x *TaskServiceListRequest) GetWishId() string {
@@ -7244,7 +12304,7 @@ type TaskServiceListResponse struct {
 
 func (x *TaskServiceListResponse) Reset() {
 	*x = TaskServiceListResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[98]
+	mi := &file_plan_v1_plan_proto_msgTypes[146]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7256,7 +12316,7 @@ func (x *TaskServiceListResponse) String() string {
 func (*TaskServiceListResponse) ProtoMessage() {}
 
 func (x *TaskServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[98]
+	mi := &file_plan_v1_plan_proto_msgTypes[146]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7269,7 +12329,7 @@ func (x *TaskServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceListResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{98}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{146}
 }
 
 func (x *TaskServiceListResponse) GetTasks() []*Task {
@@ -7289,7 +12349,7 @@ type TaskServiceGetRequest struct {
 
 func (x *TaskServiceGetRequest) Reset() {
 	*x = TaskServiceGetRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[99]
+	mi := &file_plan_v1_plan_proto_msgTypes[147]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7301,7 +12361,7 @@ func (x *TaskServiceGetRequest) String() string {
 func (*TaskServiceGetRequest) ProtoMessage() {}
 
 func (x *TaskServiceGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[99]
+	mi := &file_plan_v1_plan_proto_msgTypes[147]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7314,7 +12374,7 @@ func (x *TaskServiceGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceGetRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceGetRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{99}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{147}
 }
 
 func (x *TaskServiceGetRequest) GetTaskId() string {
@@ -7334,7 +12394,7 @@ type TaskServiceGetResponse struct {
 
 func (x *TaskServiceGetResponse) Reset() {
 	*x = TaskServiceGetResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[100]
+	mi := &file_plan_v1_plan_proto_msgTypes[148]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7346,7 +12406,7 @@ func (x *TaskServiceGetResponse) String() string {
 func (*TaskServiceGetResponse) ProtoMessage() {}
 
 func (x *TaskServiceGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[100]
+	mi := &file_plan_v1_plan_proto_msgTypes[148]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7359,7 +12419,7 @@ func (x *TaskServiceGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceGetResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceGetResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{100}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{148}
 }
 
 func (x *TaskServiceGetResponse) GetTask() *Task {
@@ -7379,7 +12439,7 @@ type TaskServiceStopRequest struct {
 
 func (x *TaskServiceStopRequest) Reset() {
 	*x = TaskServiceStopRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[101]
+	mi := &file_plan_v1_plan_proto_msgTypes[149]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7391,7 +12451,7 @@ func (x *TaskServiceStopRequest) String() string {
 func (*TaskServiceStopRequest) ProtoMessage() {}
 
 func (x *TaskServiceStopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[101]
+	mi := &file_plan_v1_plan_proto_msgTypes[149]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7404,7 +12464,7 @@ func (x *TaskServiceStopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceStopRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceStopRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{101}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{149}
 }
 
 func (x *TaskServiceStopRequest) GetTaskId() string {
@@ -7424,7 +12484,7 @@ type TaskServiceStopResponse struct {
 
 func (x *TaskServiceStopResponse) Reset() {
 	*x = TaskServiceStopResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[102]
+	mi := &file_plan_v1_plan_proto_msgTypes[150]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7436,7 +12496,7 @@ func (x *TaskServiceStopResponse) String() string {
 func (*TaskServiceStopResponse) ProtoMessage() {}
 
 func (x *TaskServiceStopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[102]
+	mi := &file_plan_v1_plan_proto_msgTypes[150]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7449,7 +12509,7 @@ func (x *TaskServiceStopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceStopResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceStopResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{102}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{150}
 }
 
 func (x *TaskServiceStopResponse) GetTask() *Task {
@@ -7471,7 +12531,7 @@ type TaskServiceSendRequest struct {
 
 func (x *TaskServiceSendRequest) Reset() {
 	*x = TaskServiceSendRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[103]
+	mi := &file_plan_v1_plan_proto_msgTypes[151]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7483,7 +12543,7 @@ func (x *TaskServiceSendRequest) String() string {
 func (*TaskServiceSendRequest) ProtoMessage() {}
 
 func (x *TaskServiceSendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[103]
+	mi := &file_plan_v1_plan_proto_msgTypes[151]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7496,7 +12556,7 @@ func (x *TaskServiceSendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceSendRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceSendRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{103}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{151}
 }
 
 func (x *TaskServiceSendRequest) GetTaskId() string {
@@ -7523,7 +12583,7 @@ type TaskServiceSendResponse struct {
 
 func (x *TaskServiceSendResponse) Reset() {
 	*x = TaskServiceSendResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[104]
+	mi := &file_plan_v1_plan_proto_msgTypes[152]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7535,7 +12595,7 @@ func (x *TaskServiceSendResponse) String() string {
 func (*TaskServiceSendResponse) ProtoMessage() {}
 
 func (x *TaskServiceSendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[104]
+	mi := &file_plan_v1_plan_proto_msgTypes[152]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7548,7 +12608,7 @@ func (x *TaskServiceSendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceSendResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceSendResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{104}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{152}
 }
 
 func (x *TaskServiceSendResponse) GetEvent() *TaskEvent {
@@ -7568,7 +12628,7 @@ type TaskServicePauseRequest struct {
 
 func (x *TaskServicePauseRequest) Reset() {
 	*x = TaskServicePauseRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[105]
+	mi := &file_plan_v1_plan_proto_msgTypes[153]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7580,7 +12640,7 @@ func (x *TaskServicePauseRequest) String() string {
 func (*TaskServicePauseRequest) ProtoMessage() {}
 
 func (x *TaskServicePauseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[105]
+	mi := &file_plan_v1_plan_proto_msgTypes[153]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7593,7 +12653,7 @@ func (x *TaskServicePauseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServicePauseRequest.ProtoReflect.Descriptor instead.
 func (*TaskServicePauseRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{105}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{153}
 }
 
 func (x *TaskServicePauseRequest) GetTaskId() string {
@@ -7613,7 +12673,7 @@ type TaskServicePauseResponse struct {
 
 func (x *TaskServicePauseResponse) Reset() {
 	*x = TaskServicePauseResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[106]
+	mi := &file_plan_v1_plan_proto_msgTypes[154]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7625,7 +12685,7 @@ func (x *TaskServicePauseResponse) String() string {
 func (*TaskServicePauseResponse) ProtoMessage() {}
 
 func (x *TaskServicePauseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[106]
+	mi := &file_plan_v1_plan_proto_msgTypes[154]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7638,7 +12698,7 @@ func (x *TaskServicePauseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServicePauseResponse.ProtoReflect.Descriptor instead.
 func (*TaskServicePauseResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{106}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{154}
 }
 
 func (x *TaskServicePauseResponse) GetTask() *Task {
@@ -7658,7 +12718,7 @@ type TaskServiceResumeRequest struct {
 
 func (x *TaskServiceResumeRequest) Reset() {
 	*x = TaskServiceResumeRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[107]
+	mi := &file_plan_v1_plan_proto_msgTypes[155]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7670,7 +12730,7 @@ func (x *TaskServiceResumeRequest) String() string {
 func (*TaskServiceResumeRequest) ProtoMessage() {}
 
 func (x *TaskServiceResumeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[107]
+	mi := &file_plan_v1_plan_proto_msgTypes[155]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7683,7 +12743,7 @@ func (x *TaskServiceResumeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceResumeRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceResumeRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{107}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{155}
 }
 
 func (x *TaskServiceResumeRequest) GetTaskId() string {
@@ -7703,7 +12763,7 @@ type TaskServiceResumeResponse struct {
 
 func (x *TaskServiceResumeResponse) Reset() {
 	*x = TaskServiceResumeResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[108]
+	mi := &file_plan_v1_plan_proto_msgTypes[156]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7715,7 +12775,7 @@ func (x *TaskServiceResumeResponse) String() string {
 func (*TaskServiceResumeResponse) ProtoMessage() {}
 
 func (x *TaskServiceResumeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[108]
+	mi := &file_plan_v1_plan_proto_msgTypes[156]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7728,7 +12788,7 @@ func (x *TaskServiceResumeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceResumeResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceResumeResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{108}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{156}
 }
 
 func (x *TaskServiceResumeResponse) GetTask() *Task {
@@ -7748,7 +12808,7 @@ type TaskServiceStartRequest struct {
 
 func (x *TaskServiceStartRequest) Reset() {
 	*x = TaskServiceStartRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[109]
+	mi := &file_plan_v1_plan_proto_msgTypes[157]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7760,7 +12820,7 @@ func (x *TaskServiceStartRequest) String() string {
 func (*TaskServiceStartRequest) ProtoMessage() {}
 
 func (x *TaskServiceStartRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[109]
+	mi := &file_plan_v1_plan_proto_msgTypes[157]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7773,7 +12833,7 @@ func (x *TaskServiceStartRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceStartRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceStartRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{109}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{157}
 }
 
 func (x *TaskServiceStartRequest) GetTaskId() string {
@@ -7793,7 +12853,7 @@ type TaskServiceStartResponse struct {
 
 func (x *TaskServiceStartResponse) Reset() {
 	*x = TaskServiceStartResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[110]
+	mi := &file_plan_v1_plan_proto_msgTypes[158]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7805,7 +12865,7 @@ func (x *TaskServiceStartResponse) String() string {
 func (*TaskServiceStartResponse) ProtoMessage() {}
 
 func (x *TaskServiceStartResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[110]
+	mi := &file_plan_v1_plan_proto_msgTypes[158]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7818,7 +12878,7 @@ func (x *TaskServiceStartResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceStartResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceStartResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{110}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{158}
 }
 
 func (x *TaskServiceStartResponse) GetTask() *Task {
@@ -7842,7 +12902,7 @@ type TaskServiceWatchRequest struct {
 
 func (x *TaskServiceWatchRequest) Reset() {
 	*x = TaskServiceWatchRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[111]
+	mi := &file_plan_v1_plan_proto_msgTypes[159]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7854,7 +12914,7 @@ func (x *TaskServiceWatchRequest) String() string {
 func (*TaskServiceWatchRequest) ProtoMessage() {}
 
 func (x *TaskServiceWatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[111]
+	mi := &file_plan_v1_plan_proto_msgTypes[159]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7867,7 +12927,7 @@ func (x *TaskServiceWatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceWatchRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceWatchRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{111}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{159}
 }
 
 func (x *TaskServiceWatchRequest) GetTaskId() string {
@@ -7901,7 +12961,7 @@ type TaskServiceWatchResponse struct {
 
 func (x *TaskServiceWatchResponse) Reset() {
 	*x = TaskServiceWatchResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[112]
+	mi := &file_plan_v1_plan_proto_msgTypes[160]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7913,7 +12973,7 @@ func (x *TaskServiceWatchResponse) String() string {
 func (*TaskServiceWatchResponse) ProtoMessage() {}
 
 func (x *TaskServiceWatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[112]
+	mi := &file_plan_v1_plan_proto_msgTypes[160]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7926,7 +12986,7 @@ func (x *TaskServiceWatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceWatchResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceWatchResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{112}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{160}
 }
 
 func (x *TaskServiceWatchResponse) GetEvent() *TaskEvent {
@@ -7948,7 +13008,7 @@ type TaskServiceCleanRequest struct {
 
 func (x *TaskServiceCleanRequest) Reset() {
 	*x = TaskServiceCleanRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[113]
+	mi := &file_plan_v1_plan_proto_msgTypes[161]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7960,7 +13020,7 @@ func (x *TaskServiceCleanRequest) String() string {
 func (*TaskServiceCleanRequest) ProtoMessage() {}
 
 func (x *TaskServiceCleanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[113]
+	mi := &file_plan_v1_plan_proto_msgTypes[161]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7973,7 +13033,7 @@ func (x *TaskServiceCleanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceCleanRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceCleanRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{113}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{161}
 }
 
 func (x *TaskServiceCleanRequest) GetTaskId() string {
@@ -8000,7 +13060,7 @@ type TaskServiceCleanResponse struct {
 
 func (x *TaskServiceCleanResponse) Reset() {
 	*x = TaskServiceCleanResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[114]
+	mi := &file_plan_v1_plan_proto_msgTypes[162]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8012,7 +13072,7 @@ func (x *TaskServiceCleanResponse) String() string {
 func (*TaskServiceCleanResponse) ProtoMessage() {}
 
 func (x *TaskServiceCleanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[114]
+	mi := &file_plan_v1_plan_proto_msgTypes[162]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8025,10 +13085,292 @@ func (x *TaskServiceCleanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceCleanResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceCleanResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{114}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{162}
 }
 
 func (x *TaskServiceCleanResponse) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+type TaskServiceDependRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task.
+	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// Same as after, the name it had: kept so that what depends with --depends-on still works.
+	DependsOn []string `protobuf:"bytes,2,rep,name=depends_on,json=dependsOn,proto3" json:"depends_on,omitempty"`
+	// What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
+	// Repeat it, or separate them with commas: --after W1,W2. None leaves the task waiting for nothing.
+	After []string `protobuf:"bytes,3,rep,name=after,proto3" json:"after,omitempty"`
+	// Other tasks of the wish whose dependencies are set in the same step, all or none: --also W6=W5,W3 sets what W6
+	// waits for, --also W7= clears it. The graph they make together has no cycle, or nothing changes.
+	Also          []*TaskAfter `protobuf:"bytes,4,rep,name=also,proto3" json:"also,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceDependRequest) Reset() {
+	*x = TaskServiceDependRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[163]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceDependRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceDependRequest) ProtoMessage() {}
+
+func (x *TaskServiceDependRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[163]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceDependRequest.ProtoReflect.Descriptor instead.
+func (*TaskServiceDependRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{163}
+}
+
+func (x *TaskServiceDependRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *TaskServiceDependRequest) GetDependsOn() []string {
+	if x != nil {
+		return x.DependsOn
+	}
+	return nil
+}
+
+func (x *TaskServiceDependRequest) GetAfter() []string {
+	if x != nil {
+		return x.After
+	}
+	return nil
+}
+
+func (x *TaskServiceDependRequest) GetAlso() []*TaskAfter {
+	if x != nil {
+		return x.Also
+	}
+	return nil
+}
+
+// What one task waits for, in place of what it had.
+type TaskAfter struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task: its code (W6) or its identifier.
+	Task string `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	// What comes before it: tasks of the same wish, by code or identifier; none for nothing.
+	After         []string `protobuf:"bytes,2,rep,name=after,proto3" json:"after,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskAfter) Reset() {
+	*x = TaskAfter{}
+	mi := &file_plan_v1_plan_proto_msgTypes[164]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskAfter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskAfter) ProtoMessage() {}
+
+func (x *TaskAfter) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[164]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskAfter.ProtoReflect.Descriptor instead.
+func (*TaskAfter) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{164}
+}
+
+func (x *TaskAfter) GetTask() string {
+	if x != nil {
+		return x.Task
+	}
+	return ""
+}
+
+func (x *TaskAfter) GetAfter() []string {
+	if x != nil {
+		return x.After
+	}
+	return nil
+}
+
+type TaskServiceDependResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task, with its dependencies.
+	Task *Task `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	// The other tasks set (--also), in the order asked.
+	Also          []*Task `protobuf:"bytes,2,rep,name=also,proto3" json:"also,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceDependResponse) Reset() {
+	*x = TaskServiceDependResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[165]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceDependResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceDependResponse) ProtoMessage() {}
+
+func (x *TaskServiceDependResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[165]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceDependResponse.ProtoReflect.Descriptor instead.
+func (*TaskServiceDependResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{165}
+}
+
+func (x *TaskServiceDependResponse) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+func (x *TaskServiceDependResponse) GetAlso() []*Task {
+	if x != nil {
+		return x.Also
+	}
+	return nil
+}
+
+type TaskServiceGroupRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task.
+	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// The azima: its code (T07) or its identifier. Empty: the task is part of no azima.
+	PartOf        string `protobuf:"bytes,2,opt,name=part_of,json=partOf,proto3" json:"part_of,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceGroupRequest) Reset() {
+	*x = TaskServiceGroupRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[166]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceGroupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceGroupRequest) ProtoMessage() {}
+
+func (x *TaskServiceGroupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[166]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceGroupRequest.ProtoReflect.Descriptor instead.
+func (*TaskServiceGroupRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{166}
+}
+
+func (x *TaskServiceGroupRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *TaskServiceGroupRequest) GetPartOf() string {
+	if x != nil {
+		return x.PartOf
+	}
+	return ""
+}
+
+type TaskServiceGroupResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task, with its azima.
+	Task          *Task `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceGroupResponse) Reset() {
+	*x = TaskServiceGroupResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[167]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceGroupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceGroupResponse) ProtoMessage() {}
+
+func (x *TaskServiceGroupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[167]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceGroupResponse.ProtoReflect.Descriptor instead.
+func (*TaskServiceGroupResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{167}
+}
+
+func (x *TaskServiceGroupResponse) GetTask() *Task {
 	if x != nil {
 		return x.Task
 	}
@@ -8045,7 +13387,7 @@ type TaskServiceDeleteRequest struct {
 
 func (x *TaskServiceDeleteRequest) Reset() {
 	*x = TaskServiceDeleteRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[115]
+	mi := &file_plan_v1_plan_proto_msgTypes[168]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8057,7 +13399,7 @@ func (x *TaskServiceDeleteRequest) String() string {
 func (*TaskServiceDeleteRequest) ProtoMessage() {}
 
 func (x *TaskServiceDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[115]
+	mi := &file_plan_v1_plan_proto_msgTypes[168]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8070,7 +13412,7 @@ func (x *TaskServiceDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDeleteRequest.ProtoReflect.Descriptor instead.
 func (*TaskServiceDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{115}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{168}
 }
 
 func (x *TaskServiceDeleteRequest) GetTaskId() string {
@@ -8090,7 +13432,7 @@ type TaskServiceDeleteResponse struct {
 
 func (x *TaskServiceDeleteResponse) Reset() {
 	*x = TaskServiceDeleteResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[116]
+	mi := &file_plan_v1_plan_proto_msgTypes[169]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8102,7 +13444,7 @@ func (x *TaskServiceDeleteResponse) String() string {
 func (*TaskServiceDeleteResponse) ProtoMessage() {}
 
 func (x *TaskServiceDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[116]
+	mi := &file_plan_v1_plan_proto_msgTypes[169]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8115,7 +13457,7 @@ func (x *TaskServiceDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskServiceDeleteResponse.ProtoReflect.Descriptor instead.
 func (*TaskServiceDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{116}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{169}
 }
 
 func (x *TaskServiceDeleteResponse) GetTask() *Task {
@@ -8153,7 +13495,7 @@ type Instruction struct {
 
 func (x *Instruction) Reset() {
 	*x = Instruction{}
-	mi := &file_plan_v1_plan_proto_msgTypes[117]
+	mi := &file_plan_v1_plan_proto_msgTypes[170]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8165,7 +13507,7 @@ func (x *Instruction) String() string {
 func (*Instruction) ProtoMessage() {}
 
 func (x *Instruction) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[117]
+	mi := &file_plan_v1_plan_proto_msgTypes[170]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8178,7 +13520,7 @@ func (x *Instruction) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Instruction.ProtoReflect.Descriptor instead.
 func (*Instruction) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{117}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{170}
 }
 
 func (x *Instruction) GetId() string {
@@ -8258,7 +13600,7 @@ type InstructionServiceSendRequest struct {
 
 func (x *InstructionServiceSendRequest) Reset() {
 	*x = InstructionServiceSendRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[118]
+	mi := &file_plan_v1_plan_proto_msgTypes[171]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8270,7 +13612,7 @@ func (x *InstructionServiceSendRequest) String() string {
 func (*InstructionServiceSendRequest) ProtoMessage() {}
 
 func (x *InstructionServiceSendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[118]
+	mi := &file_plan_v1_plan_proto_msgTypes[171]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8283,7 +13625,7 @@ func (x *InstructionServiceSendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstructionServiceSendRequest.ProtoReflect.Descriptor instead.
 func (*InstructionServiceSendRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{118}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{171}
 }
 
 func (x *InstructionServiceSendRequest) GetWishId() string {
@@ -8317,7 +13659,7 @@ type InstructionServiceSendResponse struct {
 
 func (x *InstructionServiceSendResponse) Reset() {
 	*x = InstructionServiceSendResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[119]
+	mi := &file_plan_v1_plan_proto_msgTypes[172]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8329,7 +13671,7 @@ func (x *InstructionServiceSendResponse) String() string {
 func (*InstructionServiceSendResponse) ProtoMessage() {}
 
 func (x *InstructionServiceSendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[119]
+	mi := &file_plan_v1_plan_proto_msgTypes[172]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8342,7 +13684,7 @@ func (x *InstructionServiceSendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstructionServiceSendResponse.ProtoReflect.Descriptor instead.
 func (*InstructionServiceSendResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{119}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{172}
 }
 
 func (x *InstructionServiceSendResponse) GetInstruction() *Instruction {
@@ -8362,7 +13704,7 @@ type InstructionServiceListRequest struct {
 
 func (x *InstructionServiceListRequest) Reset() {
 	*x = InstructionServiceListRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[120]
+	mi := &file_plan_v1_plan_proto_msgTypes[173]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8374,7 +13716,7 @@ func (x *InstructionServiceListRequest) String() string {
 func (*InstructionServiceListRequest) ProtoMessage() {}
 
 func (x *InstructionServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[120]
+	mi := &file_plan_v1_plan_proto_msgTypes[173]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8387,7 +13729,7 @@ func (x *InstructionServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstructionServiceListRequest.ProtoReflect.Descriptor instead.
 func (*InstructionServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{120}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{173}
 }
 
 func (x *InstructionServiceListRequest) GetWishId() string {
@@ -8407,7 +13749,7 @@ type InstructionServiceListResponse struct {
 
 func (x *InstructionServiceListResponse) Reset() {
 	*x = InstructionServiceListResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[121]
+	mi := &file_plan_v1_plan_proto_msgTypes[174]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8419,7 +13761,7 @@ func (x *InstructionServiceListResponse) String() string {
 func (*InstructionServiceListResponse) ProtoMessage() {}
 
 func (x *InstructionServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[121]
+	mi := &file_plan_v1_plan_proto_msgTypes[174]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8432,7 +13774,7 @@ func (x *InstructionServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstructionServiceListResponse.ProtoReflect.Descriptor instead.
 func (*InstructionServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{121}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{174}
 }
 
 func (x *InstructionServiceListResponse) GetInstructions() []*Instruction {
@@ -8454,7 +13796,7 @@ type InstructionServiceReflectRequest struct {
 
 func (x *InstructionServiceReflectRequest) Reset() {
 	*x = InstructionServiceReflectRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[122]
+	mi := &file_plan_v1_plan_proto_msgTypes[175]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8466,7 +13808,7 @@ func (x *InstructionServiceReflectRequest) String() string {
 func (*InstructionServiceReflectRequest) ProtoMessage() {}
 
 func (x *InstructionServiceReflectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[122]
+	mi := &file_plan_v1_plan_proto_msgTypes[175]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8479,7 +13821,7 @@ func (x *InstructionServiceReflectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstructionServiceReflectRequest.ProtoReflect.Descriptor instead.
 func (*InstructionServiceReflectRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{122}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{175}
 }
 
 func (x *InstructionServiceReflectRequest) GetInstruction() string {
@@ -8506,7 +13848,7 @@ type InstructionServiceReflectResponse struct {
 
 func (x *InstructionServiceReflectResponse) Reset() {
 	*x = InstructionServiceReflectResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[123]
+	mi := &file_plan_v1_plan_proto_msgTypes[176]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8518,7 +13860,7 @@ func (x *InstructionServiceReflectResponse) String() string {
 func (*InstructionServiceReflectResponse) ProtoMessage() {}
 
 func (x *InstructionServiceReflectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[123]
+	mi := &file_plan_v1_plan_proto_msgTypes[176]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8531,7 +13873,7 @@ func (x *InstructionServiceReflectResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use InstructionServiceReflectResponse.ProtoReflect.Descriptor instead.
 func (*InstructionServiceReflectResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{123}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{176}
 }
 
 func (x *InstructionServiceReflectResponse) GetInstruction() *Instruction {
@@ -8555,7 +13897,7 @@ type InstructionServiceAssignRequest struct {
 
 func (x *InstructionServiceAssignRequest) Reset() {
 	*x = InstructionServiceAssignRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[124]
+	mi := &file_plan_v1_plan_proto_msgTypes[177]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8567,7 +13909,7 @@ func (x *InstructionServiceAssignRequest) String() string {
 func (*InstructionServiceAssignRequest) ProtoMessage() {}
 
 func (x *InstructionServiceAssignRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[124]
+	mi := &file_plan_v1_plan_proto_msgTypes[177]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8580,7 +13922,7 @@ func (x *InstructionServiceAssignRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstructionServiceAssignRequest.ProtoReflect.Descriptor instead.
 func (*InstructionServiceAssignRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{124}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{177}
 }
 
 func (x *InstructionServiceAssignRequest) GetInstruction() string {
@@ -8614,7 +13956,7 @@ type InstructionServiceAssignResponse struct {
 
 func (x *InstructionServiceAssignResponse) Reset() {
 	*x = InstructionServiceAssignResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[125]
+	mi := &file_plan_v1_plan_proto_msgTypes[178]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8626,7 +13968,7 @@ func (x *InstructionServiceAssignResponse) String() string {
 func (*InstructionServiceAssignResponse) ProtoMessage() {}
 
 func (x *InstructionServiceAssignResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[125]
+	mi := &file_plan_v1_plan_proto_msgTypes[178]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8639,7 +13981,7 @@ func (x *InstructionServiceAssignResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstructionServiceAssignResponse.ProtoReflect.Descriptor instead.
 func (*InstructionServiceAssignResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{125}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{178}
 }
 
 func (x *InstructionServiceAssignResponse) GetInstruction() *Instruction {
@@ -8661,7 +14003,7 @@ type InstructionServiceCompleteRequest struct {
 
 func (x *InstructionServiceCompleteRequest) Reset() {
 	*x = InstructionServiceCompleteRequest{}
-	mi := &file_plan_v1_plan_proto_msgTypes[126]
+	mi := &file_plan_v1_plan_proto_msgTypes[179]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8673,7 +14015,7 @@ func (x *InstructionServiceCompleteRequest) String() string {
 func (*InstructionServiceCompleteRequest) ProtoMessage() {}
 
 func (x *InstructionServiceCompleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[126]
+	mi := &file_plan_v1_plan_proto_msgTypes[179]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8686,7 +14028,7 @@ func (x *InstructionServiceCompleteRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use InstructionServiceCompleteRequest.ProtoReflect.Descriptor instead.
 func (*InstructionServiceCompleteRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{126}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{179}
 }
 
 func (x *InstructionServiceCompleteRequest) GetInstruction() string {
@@ -8713,7 +14055,7 @@ type InstructionServiceCompleteResponse struct {
 
 func (x *InstructionServiceCompleteResponse) Reset() {
 	*x = InstructionServiceCompleteResponse{}
-	mi := &file_plan_v1_plan_proto_msgTypes[127]
+	mi := &file_plan_v1_plan_proto_msgTypes[180]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8725,7 +14067,7 @@ func (x *InstructionServiceCompleteResponse) String() string {
 func (*InstructionServiceCompleteResponse) ProtoMessage() {}
 
 func (x *InstructionServiceCompleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_plan_proto_msgTypes[127]
+	mi := &file_plan_v1_plan_proto_msgTypes[180]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8738,7 +14080,7 @@ func (x *InstructionServiceCompleteResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use InstructionServiceCompleteResponse.ProtoReflect.Descriptor instead.
 func (*InstructionServiceCompleteResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_plan_proto_rawDescGZIP(), []int{127}
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{180}
 }
 
 func (x *InstructionServiceCompleteResponse) GetInstruction() *Instruction {
@@ -8748,11 +14090,362 @@ func (x *InstructionServiceCompleteResponse) GetInstruction() *Instruction {
 	return nil
 }
 
+type TaskServiceDoneRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task.
+	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// Why it is done, in a few words.
+	Note string `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
+	// Who closes it; by default the lead. The window says developer.
+	By            Closer `protobuf:"varint,3,opt,name=by,proto3,enum=plan.v1.Closer" json:"by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceDoneRequest) Reset() {
+	*x = TaskServiceDoneRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[181]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceDoneRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceDoneRequest) ProtoMessage() {}
+
+func (x *TaskServiceDoneRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[181]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceDoneRequest.ProtoReflect.Descriptor instead.
+func (*TaskServiceDoneRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{181}
+}
+
+func (x *TaskServiceDoneRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *TaskServiceDoneRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *TaskServiceDoneRequest) GetBy() Closer {
+	if x != nil {
+		return x.By
+	}
+	return Closer_CLOSER_UNSPECIFIED
+}
+
+type TaskServiceDoneResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task, done.
+	Task          *Task `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceDoneResponse) Reset() {
+	*x = TaskServiceDoneResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[182]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceDoneResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceDoneResponse) ProtoMessage() {}
+
+func (x *TaskServiceDoneResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[182]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceDoneResponse.ProtoReflect.Descriptor instead.
+func (*TaskServiceDoneResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{182}
+}
+
+func (x *TaskServiceDoneResponse) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+type TaskServiceContinueRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task.
+	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// What to ask its worker now, on its session.
+	Prompt string `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	// Who continues it; by default the lead. The window says developer.
+	By            Closer `protobuf:"varint,3,opt,name=by,proto3,enum=plan.v1.Closer" json:"by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceContinueRequest) Reset() {
+	*x = TaskServiceContinueRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[183]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceContinueRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceContinueRequest) ProtoMessage() {}
+
+func (x *TaskServiceContinueRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[183]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceContinueRequest.ProtoReflect.Descriptor instead.
+func (*TaskServiceContinueRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{183}
+}
+
+func (x *TaskServiceContinueRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *TaskServiceContinueRequest) GetPrompt() string {
+	if x != nil {
+		return x.Prompt
+	}
+	return ""
+}
+
+func (x *TaskServiceContinueRequest) GetBy() Closer {
+	if x != nil {
+		return x.By
+	}
+	return Closer_CLOSER_UNSPECIFIED
+}
+
+type TaskServiceContinueResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task, planned again: running, or waiting with its reason.
+	Task          *Task `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskServiceContinueResponse) Reset() {
+	*x = TaskServiceContinueResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[184]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskServiceContinueResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskServiceContinueResponse) ProtoMessage() {}
+
+func (x *TaskServiceContinueResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[184]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskServiceContinueResponse.ProtoReflect.Descriptor instead.
+func (*TaskServiceContinueResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{184}
+}
+
+func (x *TaskServiceContinueResponse) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+type PlanServiceSyncRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The wish.
+	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// Only this project's plan folder; by default every project of the wish that has one.
+	ProjectId     string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanServiceSyncRequest) Reset() {
+	*x = PlanServiceSyncRequest{}
+	mi := &file_plan_v1_plan_proto_msgTypes[185]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanServiceSyncRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanServiceSyncRequest) ProtoMessage() {}
+
+func (x *PlanServiceSyncRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[185]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanServiceSyncRequest.ProtoReflect.Descriptor instead.
+func (*PlanServiceSyncRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{185}
+}
+
+func (x *PlanServiceSyncRequest) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *PlanServiceSyncRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+type PlanServiceSyncResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The azimas of the files read, as the store holds them now, by code.
+	Azimas []*Task `protobuf:"bytes,1,rep,name=azimas,proto3" json:"azimas,omitempty"`
+	// The codes of the azimas made, and of those changed.
+	Made    []string `protobuf:"bytes,2,rep,name=made,proto3" json:"made,omitempty"`
+	Changed []string `protobuf:"bytes,3,rep,name=changed,proto3" json:"changed,omitempty"`
+	// The files whose after line was written, as their project names them.
+	Written []string `protobuf:"bytes,4,rep,name=written,proto3" json:"written,omitempty"`
+	// The files whose status says not done while every box of their Done-when section is checked: their azimas count
+	// as done. Set their status to done.
+	AllChecked    []string `protobuf:"bytes,5,rep,name=all_checked,json=allChecked,proto3" json:"all_checked,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanServiceSyncResponse) Reset() {
+	*x = PlanServiceSyncResponse{}
+	mi := &file_plan_v1_plan_proto_msgTypes[186]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanServiceSyncResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanServiceSyncResponse) ProtoMessage() {}
+
+func (x *PlanServiceSyncResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_plan_proto_msgTypes[186]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanServiceSyncResponse.ProtoReflect.Descriptor instead.
+func (*PlanServiceSyncResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_plan_proto_rawDescGZIP(), []int{186}
+}
+
+func (x *PlanServiceSyncResponse) GetAzimas() []*Task {
+	if x != nil {
+		return x.Azimas
+	}
+	return nil
+}
+
+func (x *PlanServiceSyncResponse) GetMade() []string {
+	if x != nil {
+		return x.Made
+	}
+	return nil
+}
+
+func (x *PlanServiceSyncResponse) GetChanged() []string {
+	if x != nil {
+		return x.Changed
+	}
+	return nil
+}
+
+func (x *PlanServiceSyncResponse) GetWritten() []string {
+	if x != nil {
+		return x.Written
+	}
+	return nil
+}
+
+func (x *PlanServiceSyncResponse) GetAllChecked() []string {
+	if x != nil {
+		return x.AllChecked
+	}
+	return nil
+}
+
 var File_plan_v1_plan_proto protoreflect.FileDescriptor
 
 const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x12plan/v1/plan.proto\x12\aplan.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\x1a\x19google/protobuf/any.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x82\x02\n" +
+	"\x12plan/v1/plan.proto\x12\aplan.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\x1a\x19google/protobuf/any.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14plan/v1/tilasm.proto\"\xb4\x02\n" +
 	"\aProject\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -8761,15 +14454,86 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vcreate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12\x16\n" +
 	"\x06remote\x18\x06 \x01(\tR\x06remote\x12)\n" +
-	"\asummons\x18\a \x03(\v2\x0f.plan.v1.SummonR\asummons:\x19\xd2\xf3\x18\x06\n" +
+	"\asummons\x18\a \x03(\v2\x0f.plan.v1.SummonR\asummons\x120\n" +
+	"\n" +
+	"check_runs\x18\b \x03(\v2\x11.plan.v1.CheckRunR\tcheckRuns:\x19\xd2\xf3\x18\x06\n" +
 	"\x04name\xd2\xf3\x18\v\n" +
-	"\tdirectory\"z\n" +
+	"\tdirectory\"\xf7\x02\n" +
+	"\bCheckRun\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05setup\x18\x02 \x01(\bR\x05setup\x12\x18\n" +
+	"\acommand\x18\x03 \x01(\tR\acommand\x12&\n" +
+	"\x04when\x18\x04 \x01(\x0e2\x12.plan.v1.CheckWhenR\x04when\x12\x17\n" +
+	"\awish_id\x18\x05 \x01(\tR\x06wishId\x12\x17\n" +
+	"\atask_id\x18\x06 \x01(\tR\x06taskId\x12\x10\n" +
+	"\x03sha\x18\a \x01(\tR\x03sha\x12\x16\n" +
+	"\x06passed\x18\b \x01(\bR\x06passed\x12\x1b\n" +
+	"\texit_code\x18\t \x01(\x05R\bexitCode\x12\x16\n" +
+	"\x06reason\x18\n" +
+	" \x01(\tR\x06reason\x12\x16\n" +
+	"\x06output\x18\v \x01(\tR\x06output\x125\n" +
+	"\bend_time\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x12\x1f\n" +
+	"\vduration_ms\x18\r \x01(\x03R\n" +
+	"durationMs\"z\n" +
 	"\x06Summon\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\xd8\x04\n" +
+	"createTime\"\xec\n" +
+	"\n" +
+	"\x0fProjectSettings\x12@\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
+	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
+	"\x0emax_budget_usd\x18\x03 \x01(\x01B\x17\xbaH\x14\x12\x12\x19\x00\x00\x00\x00\x00\x88\xc3@)\x00\x00\x00\x00\x00\x00\x00\x00H\x02R\fmaxBudgetUsd\x88\x01\x01\x12\x83\x01\n" +
+	"\x06branch\x18\x04 \x01(\tBf\xbaHcra\x18d2T^([A-Za-z0-9]+|\\{(code|slug|uuid8)\\})([._/-]?([A-Za-z0-9]+|\\{(code|slug|uuid8)\\}))*$J\a{uuid8}H\x03R\x06branch\x88\x01\x01\x12/\n" +
+	"\tgenerated\x18\x05 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xc8\x01R\tgenerated\x12)\n" +
+	"\bgenerate\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x04R\bgenerate\x88\x01\x01\x12!\n" +
+	"\x04test\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x05R\x04test\x88\x01\x01\x12?\n" +
+	"\x13correction_attempts\x18\b \x01(\x05B\t\xbaH\x06\x1a\x04\x18\n" +
+	"(\x00H\x06R\x12correctionAttempts\x88\x01\x01\x12'\n" +
+	"\ainstall\x18\t \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\aR\ainstall\x88\x01\x01\x12.\n" +
+	"\x10question_workers\x18\n" +
+	" \x01(\bH\bR\x0fquestionWorkers\x88\x01\x01\x12N\n" +
+	"\x0equestion_model\x18\v \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\tR\rquestionModel\x88\x01\x01\x12L\n" +
+	"\x13question_budget_usd\x18\f \x01(\x01B\x17\xbaH\x14\x12\x12\x19\x00\x00\x00\x00\x00\x88\xc3@)\x00\x00\x00\x00\x00\x00\x00\x00H\n" +
+	"R\x11questionBudgetUsd\x88\x01\x01\x12#\n" +
+	"\x05setup\x18\r \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\vR\x05setup\x88\x01\x01\x127\n" +
+	"\x06checks\x18\x0e \x03(\v2\x15.plan.v1.ProjectCheckB\b\xbaH\x05\x92\x01\x02\x10\x14R\x06checks\x12B\n" +
+	"\vmain_branch\x18\x0f \x01(\tB\x1c\xbaH\x19r\x17\x18\xc8\x012\x12^[A-Za-z0-9._/-]*$H\fR\n" +
+	"mainBranch\x88\x01\x01\x12B\n" +
+	"\n" +
+	"merge_main\x18\x10 \x01(\x0e2\x12.plan.v1.MergeMainB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\rR\tmergeMain\x88\x01\x01\x12=\n" +
+	"\x12merge_main_minutes\x18\x11 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe0N(\x01H\x0eR\x10mergeMainMinutes\x88\x01\x01\x12.\n" +
+	"\x10install_releases\x18\x12 \x01(\bH\x0fR\x0finstallReleases\x88\x01\x01B\v\n" +
+	"\t_providerB\b\n" +
+	"\x06_modelB\x11\n" +
+	"\x0f_max_budget_usdB\t\n" +
+	"\a_branchB\v\n" +
+	"\t_generateB\a\n" +
+	"\x05_testB\x16\n" +
+	"\x14_correction_attemptsB\n" +
+	"\n" +
+	"\b_installB\x13\n" +
+	"\x11_question_workersB\x11\n" +
+	"\x0f_question_modelB\x16\n" +
+	"\x14_question_budget_usdB\b\n" +
+	"\x06_setupB\x0e\n" +
+	"\f_main_branchB\r\n" +
+	"\v_merge_mainB\x15\n" +
+	"\x13_merge_main_minutesB\x13\n" +
+	"\x11_install_releases\"\xad\x01\n" +
+	"\fProjectCheck\x12:\n" +
+	"\x04name\x18\x01 \x01(\tB&\xbaH#r!\x10\x01\x18(2\x1b^[A-Za-z0-9][A-Za-z0-9_-]*$R\x04name\x12$\n" +
+	"\acommand\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xf4\x03R\acommand\x12;\n" +
+	"\x04when\x18\x03 \x03(\x0e2\x12.plan.v1.CheckWhenB\x13\xbaH\x10\x92\x01\r\b\x01\x18\x01\"\a\x82\x01\x04\x10\x01 \x00R\x04when\"j\n" +
+	"\x0eProjectSetting\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12.\n" +
+	"\x06source\x18\x03 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\"\x94\b\n" +
 	"\x04Wish\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1f\n" +
@@ -8786,14 +14550,86 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
 	"grant_time\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tgrantTime\x12\x14\n" +
 	"\x05ready\x18\n" +
-	" \x01(\bR\x05ready\x12-\n" +
-	"\bprovider\x18\v \x01(\x0e2\x11.plan.v1.ProviderR\bprovider\x12!\n" +
-	"\flead_running\x18\f \x01(\bR\vleadRunning\x124\n" +
-	"\vlead_prompt\x18\r \x01(\v2\x13.plan.v1.LeadPromptR\n" +
+	" \x01(\bR\x05ready\x121\n" +
+	"\btemplate\x18\v \x01(\v2\x15.plan.v1.WishTemplateR\btemplate\x12M\n" +
+	"\x14integration_branches\x18\f \x03(\v2\x1a.plan.v1.IntegrationBranchR\x13integrationBranches\x128\n" +
+	"\x12push_after_minutes\x18\r \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe0N(\x00R\x10pushAfterMinutes\x123\n" +
+	"\x10push_after_tasks\x18\x0e \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x0epushAfterTasks\x12 \n" +
+	"\vdescription\x18\x0f \x01(\tR\vdescription\x12.\n" +
+	"\tpush_mode\x18\x10 \x01(\x0e2\x11.plan.v1.PushModeR\bpushMode\x12)\n" +
+	"\x06pushes\x18\x11 \x03(\v2\x11.plan.v1.WishPushR\x06pushes\x12'\n" +
+	"\x05mains\x18\x12 \x03(\v2\x11.plan.v1.WishMainR\x05mains\x12#\n" +
+	"\rretired_codes\x18\x13 \x03(\tR\fretiredCodes\x12-\n" +
+	"\bprovider\x18\x14 \x01(\x0e2\x11.plan.v1.ProviderR\bprovider\x12!\n" +
+	"\flead_running\x18\x15 \x01(\bR\vleadRunning\x124\n" +
+	"\vlead_prompt\x18\x16 \x01(\v2\x13.plan.v1.LeadPromptR\n" +
 	"leadPrompt\x12.\n" +
-	"\tlead_exit\x18\x0e \x01(\v2\x11.plan.v1.LeadExitR\bleadExit\x12\x1d\n" +
+	"\tlead_exit\x18\x17 \x01(\v2\x11.plan.v1.LeadExitR\bleadExit\x12\x1d\n" +
 	"\n" +
-	"lead_error\x18\x0f \x01(\tR\tleadError\"\x1e\n" +
+	"lead_error\x18\x18 \x01(\tR\tleadError\"\xfd\x01\n" +
+	"\bWishPush\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12,\n" +
+	"\x04last\x18\x02 \x01(\v2\x18.plan.v1.IntegrationPushR\x04last\x12\x1f\n" +
+	"\vquestion_id\x18\x03 \x01(\tR\n" +
+	"questionId\x12\x18\n" +
+	"\arefused\x18\x04 \x01(\tR\arefused\x12\x1a\n" +
+	"\bapproved\x18\x05 \x01(\bR\bapproved\x12\x12\n" +
+	"\x04held\x18\x06 \x01(\tR\x04held\x12\x1b\n" +
+	"\theld_runs\x18\a \x01(\x05R\bheldRuns\x12\x1c\n" +
+	"\tunchecked\x18\b \x01(\bR\tunchecked\"\xaf\x02\n" +
+	"\x0fIntegrationPush\x12\x17\n" +
+	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x16\n" +
+	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x16\n" +
+	"\x06remote\x18\x04 \x01(\tR\x06remote\x12\x17\n" +
+	"\aold_sha\x18\x05 \x01(\tR\x06oldSha\x12\x17\n" +
+	"\anew_sha\x18\x06 \x01(\tR\x06newSha\x12\x14\n" +
+	"\x05count\x18\a \x01(\x05R\x05count\x12\x18\n" +
+	"\acommits\x18\b \x03(\tR\acommits\x12\x19\n" +
+	"\btask_ids\x18\t \x03(\tR\ataskIds\x127\n" +
+	"\tpush_time\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\bpushTime\"\xfe\x01\n" +
+	"\bWishMain\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12&\n" +
+	"\x04last\x18\x02 \x01(\v2\x12.plan.v1.MainMergeR\x04last\x129\n" +
+	"\n" +
+	"check_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcheckTime\x12!\n" +
+	"\fcorrected_by\x18\x04 \x01(\tR\vcorrectedBy\x12\x1a\n" +
+	"\battempts\x18\x05 \x01(\x05R\battempts\x12\x1d\n" +
+	"\n" +
+	"failed_sha\x18\x06 \x01(\tR\tfailedSha\x12\x12\n" +
+	"\x04held\x18\a \x01(\tR\x04held\"\xe4\x02\n" +
+	"\tMainMerge\x12\x17\n" +
+	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x16\n" +
+	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x12\n" +
+	"\x04main\x18\x04 \x01(\tR\x04main\x12\x19\n" +
+	"\bmain_sha\x18\x05 \x01(\tR\amainSha\x12\x17\n" +
+	"\aold_sha\x18\x06 \x01(\tR\x06oldSha\x12\x17\n" +
+	"\anew_sha\x18\a \x01(\tR\x06newSha\x12\x14\n" +
+	"\x05count\x18\b \x01(\x05R\x05count\x12\x18\n" +
+	"\acommits\x18\t \x03(\tR\acommits\x12\x18\n" +
+	"\arelease\x18\n" +
+	" \x01(\tR\arelease\x129\n" +
+	"\n" +
+	"merge_time\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tmergeTime\x12!\n" +
+	"\fcorrected_by\x18\f \x01(\tR\vcorrectedBy\"J\n" +
+	"\x11IntegrationBranch\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x16\n" +
+	"\x06branch\x18\x02 \x01(\tR\x06branch\"\x90\x01\n" +
+	"\fWishTemplate\x12\x14\n" +
+	"\x05skill\x18\x01 \x01(\tR\x05skill\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x14\n" +
+	"\x05watch\x18\x03 \x01(\tR\x05watch\x12\x1b\n" +
+	"\tdone_when\x18\x04 \x01(\tR\bdoneWhen\x12\x18\n" +
+	"\arestart\x18\x05 \x01(\bR\arestart\"\x1e\n" +
 	"\bLeadExit\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\"R\n" +
 	"\n" +
@@ -8815,7 +14651,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\routput_tokens\x18\x02 \x01(\x03R\foutputTokens\x12*\n" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
-	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xc1\a\n" +
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xc8\r\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -8849,10 +14685,101 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vwait_reason\x18\x18 \x01(\tR\n" +
 	"waitReason\x12!\n" +
 	"\ffork_session\x18\x19 \x01(\tR\vforkSession\x12\x17\n" +
-	"\afork_of\x18\x1a \x01(\tR\x06forkOf\x12!\n" +
-	"\fmachine_wait\x18\x1b \x01(\bR\vmachineWait:\x13\xd2\xf3\x18\x0f\n" +
+	"\afork_of\x18\x1a \x01(\tR\x06forkOf\x12=\n" +
+	"\fresume_after\x18\x1b \x01(\v2\x1a.google.protobuf.TimestampR\vresumeAfter\x12\x18\n" +
+	"\aresumes\x18\x1c \x01(\x05R\aresumes\x12\x18\n" +
+	"\arestart\x18\x1d \x01(\bR\arestart\x12\x1b\n" +
+	"\tlast_line\x18\x1e \x01(\tR\blastLine\x12(\n" +
+	"\x06closed\x18\x1f \x01(\v2\x10.plan.v1.ClosureR\x06closed\x12\x1e\n" +
+	"\n" +
+	"continuing\x18  \x01(\bR\n" +
+	"continuing\x12#\n" +
+	"\bdecision\x18! \x01(\tB\a\xbaH\x04r\x02\x18@R\bdecision\x120\n" +
+	"\tresources\x18\" \x01(\v2\x12.plan.v1.ResourcesR\tresources\x12%\n" +
+	"\x04kind\x18# \x01(\x0e2\x11.plan.v1.TaskKindR\x04kind\x12\x17\n" +
+	"\apart_of\x18$ \x01(\tR\x06partOf\x12\x1b\n" +
+	"\tplan_file\x18% \x01(\tR\bplanFile\x12\x14\n" +
+	"\x05phase\x18& \x01(\tR\x05phase\x12$\n" +
+	"\x05azima\x18' \x01(\v2\x0e.plan.v1.AzimaR\x05azima\x12:\n" +
+	"\vintegration\x18( \x01(\v2\x18.plan.v1.TaskIntegrationR\vintegration\x12\x18\n" +
+	"\atilasms\x18) \x03(\tR\atilasms\x127\n" +
+	"\n" +
+	"correction\x18* \x01(\v2\x17.plan.v1.TaskCorrectionR\n" +
+	"correction\x123\n" +
+	"\vproof_needs\x18+ \x03(\v2\x12.plan.v1.ProofNeedR\n" +
+	"proofNeeds\x12%\n" +
+	"\x04role\x18, \x01(\x0e2\x11.plan.v1.TaskRoleR\x04role\x12#\n" +
+	"\bquestion\x18- \x01(\tB\a\xbaH\x04r\x02\x18@R\bquestion\x12+\n" +
+	"\x06review\x18. \x01(\v2\x13.plan.v1.TaskReviewR\x06review\x12!\n" +
+	"\fmachine_wait\x18/ \x01(\bR\vmachineWait:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
-	"\x04code\"\x99\x02\n" +
+	"\x04code\"A\n" +
+	"\n" +
+	"TaskReview\x12\x19\n" +
+	"\btask_ids\x18\x01 \x03(\tR\ataskIds\x12\x18\n" +
+	"\aattempt\x18\x02 \x01(\x05R\aattempt\"a\n" +
+	"\x0eTaskCorrection\x125\n" +
+	"\afailure\x18\x01 \x01(\v2\x1b.plan.v1.IntegrationFailureR\afailure\x12\x18\n" +
+	"\aattempt\x18\x02 \x01(\x05R\aattempt\"\x92\x02\n" +
+	"\x12IntegrationFailure\x12/\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x19.plan.v1.IntegrationStateR\x05state\x12\x12\n" +
+	"\x04base\x18\x02 \x01(\tR\x04base\x12!\n" +
+	"\fmerge_branch\x18\x03 \x01(\tR\vmergeBranch\x12\x14\n" +
+	"\x05files\x18\x04 \x03(\tR\x05files\x12\x18\n" +
+	"\acommand\x18\x05 \x01(\tR\acommand\x12\x16\n" +
+	"\x06output\x18\x06 \x01(\tR\x06output\x12\x19\n" +
+	"\btask_ids\x18\a \x03(\tR\ataskIds\x12\x16\n" +
+	"\x06reason\x18\b \x01(\tR\x06reason\x12\x19\n" +
+	"\bmain_sha\x18\t \x01(\tR\amainSha\"\xf9\x02\n" +
+	"\x0fTaskIntegration\x12/\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x19.plan.v1.IntegrationStateR\x05state\x12\x16\n" +
+	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x10\n" +
+	"\x03sha\x18\x03 \x01(\tR\x03sha\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12;\n" +
+	"\vupdate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"updateTime\x125\n" +
+	"\afailure\x18\x06 \x01(\v2\x1b.plan.v1.IntegrationFailureR\afailure\x12!\n" +
+	"\fcorrected_by\x18\a \x01(\tR\vcorrectedBy\x12\x1a\n" +
+	"\battempts\x18\b \x01(\x05R\battempts\x12\x1f\n" +
+	"\vquestion_id\x18\t \x01(\tR\n" +
+	"questionId\x12\x1f\n" +
+	"\vreviewed_by\x18\n" +
+	" \x01(\tR\n" +
+	"reviewedBy\"\xb0\x01\n" +
+	"\x11IntegrationCommit\x12\x17\n" +
+	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x16\n" +
+	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x17\n" +
+	"\aold_sha\x18\x04 \x01(\tR\x06oldSha\x12\x17\n" +
+	"\anew_sha\x18\x05 \x01(\tR\x06newSha\x12\x19\n" +
+	"\btask_ids\x18\x06 \x03(\tR\ataskIds\"z\n" +
+	"\tProofNeed\x12\x10\n" +
+	"\x03box\x18\x01 \x01(\tR\x03box\x12\x14\n" +
+	"\x05needs\x18\x02 \x01(\tR\x05needs\x12)\n" +
+	"\aprovers\x18\x03 \x03(\x0e2\x0f.plan.v1.ProverR\aprovers\x12\x1a\n" +
+	"\breviewer\x18\x04 \x01(\tR\breviewer\"\xa2\x01\n" +
+	"\x05Azima\x12)\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x13.plan.v1.AzimaStateR\x05state\x12\x14\n" +
+	"\x05ready\x18\x02 \x01(\bR\x05ready\x12\x14\n" +
+	"\x05parts\x18\x03 \x01(\x05R\x05parts\x12\x1d\n" +
+	"\n" +
+	"parts_done\x18\x04 \x01(\x05R\tpartsDone\x12#\n" +
+	"\rparts_running\x18\x05 \x01(\x05R\fpartsRunning\"\xfc\x01\n" +
+	"\tResources\x12\x1f\n" +
+	"\vcpu_percent\x18\x01 \x01(\x01R\n" +
+	"cpuPercent\x12!\n" +
+	"\fmemory_bytes\x18\x02 \x01(\x04R\vmemoryBytes\x12\x1c\n" +
+	"\tprocesses\x18\x03 \x01(\x05R\tprocesses\x12(\n" +
+	"\x10peak_cpu_percent\x18\x04 \x01(\x01R\x0epeakCpuPercent\x12*\n" +
+	"\x11peak_memory_bytes\x18\x05 \x01(\x04R\x0fpeakMemoryBytes\x127\n" +
+	"\tread_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\breadTime\"\xa4\x01\n" +
+	"\aClosure\x12%\n" +
+	"\x05actor\x18\x01 \x01(\x0e2\x0f.plan.v1.CloserR\x05actor\x12;\n" +
+	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"createTime\x12\x12\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\x12!\n" +
+	"\fcontinued_in\x18\x04 \x01(\tR\vcontinuedIn\"\x99\x02\n" +
 	"\tTaskEvent\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x10\n" +
@@ -8864,7 +14791,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vcreate_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime:\x12\xd2\xf3\x18\x0e\n" +
 	"\atask_id\n" +
-	"\x03seq\"\xa5\x03\n" +
+	"\x03seq\"\xb8\x04\n" +
 	"\bQuestion\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x17\n" +
@@ -8879,9 +14806,29 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05marks\x18\n" +
 	" \x03(\v2\r.plan.v1.MarkR\x05marks\x12&\n" +
 	"\x06rounds\x18\v \x03(\v2\x0e.plan.v1.RoundR\x06rounds\x12\x1a\n" +
-	"\brevision\x18\f \x01(\x05R\brevision:\x13\xd2\xf3\x18\x0f\n" +
+	"\brevision\x18\f \x01(\x05R\brevision\x12$\n" +
+	"\x05route\x18\r \x01(\v2\x0e.plan.v1.RouteR\x05route\x12\x14\n" +
+	"\x05grant\x18\x0e \x01(\bR\x05grant\x12\x1b\n" +
+	"\x04icon\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\x12\x17\n" +
+	"\atask_id\x18\x10 \x01(\tR\x06taskId\x12\x1f\n" +
+	"\x06before\x18\x11 \x01(\tB\a\xbaH\x04r\x02\x18dR\x06before:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
-	"\x04code\"\xf2\x01\n" +
+	"\x04code\"s\n" +
+	"\x05Route\x12\x18\n" +
+	"\arequest\x18\x01 \x01(\tR\arequest\x12 \n" +
+	"\ffrom_wish_id\x18\x02 \x01(\tR\n" +
+	"fromWishId\x12.\n" +
+	"\aoptions\x18\x03 \x03(\v2\x14.plan.v1.RouteOptionR\aoptions\"\x8a\x02\n" +
+	"\vRouteOption\x12&\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x12.plan.v1.RouteKindR\x04kind\x12\x17\n" +
+	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x14\n" +
+	"\x05title\x18\x03 \x01(\tR\x05title\x12\x1f\n" +
+	"\vproject_ids\x18\x04 \x03(\tR\n" +
+	"projectIds\x12\"\n" +
+	"\rpause_wish_id\x18\x05 \x01(\tR\vpauseWishId\x12\x14\n" +
+	"\x05score\x18\x06 \x01(\x05R\x05score\x12\x16\n" +
+	"\x06reason\x18\a \x01(\tR\x06reason\x121\n" +
+	"\btemplate\x18\b \x01(\v2\x15.plan.v1.WishTemplateR\btemplate\"\x8b\x02\n" +
 	"\x05Round\x12&\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x12.plan.v1.RoundKindR\x04kind\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12;\n" +
@@ -8890,7 +14837,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x04 \x01(\tR\x04note\x12\x18\n" +
 	"\acontext\x18\x05 \x01(\tR\acontext\x12\x18\n" +
 	"\aoptions\x18\x06 \x03(\tR\aoptions\x12&\n" +
-	"\x0erecommendation\x18\a \x01(\tR\x0erecommendation\"\x80\x01\n" +
+	"\x0erecommendation\x18\a \x01(\tR\x0erecommendation\x12\x17\n" +
+	"\atask_id\x18\b \x01(\tR\x06taskId\"\x80\x01\n" +
 	"\x04Mark\x12%\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x11.plan.v1.MarkKindR\x04kind\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12;\n" +
@@ -8910,21 +14858,27 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"Q\n" +
 	" QuestionServiceEnlightenResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x80\x02\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xe8\x02\n" +
 	"\x1cQuestionServiceReviseRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12#\n" +
 	"\acontext\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x12(\n" +
 	"\aoptions\x18\x03 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x121\n" +
 	"\x0erecommendation\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\x12$\n" +
-	"\awish_id\x18\x05 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"N\n" +
+	"\awish_id\x18\x05 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x125\n" +
+	"\atask_id\x18\x06 \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12$\n" +
+	"\x06before\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x06before\x88\x01\x01B\t\n" +
+	"\a_before\"N\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xe4\x01\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xd9\x02\n" +
 	"\x19QuestionServiceAskRequest\x12\x1f\n" +
 	"\x04text\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xd0\x0fR\x04text\x12(\n" +
 	"\aoptions\x18\x02 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12#\n" +
 	"\acontext\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x121\n" +
-	"\x0erecommendation\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\"K\n" +
+	"\x0erecommendation\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\x12\x1b\n" +
+	"\x04icon\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\x125\n" +
+	"\atask_id\x18\a \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12\x1f\n" +
+	"\x06before\x18\b \x01(\tB\a\xbaH\x04r\x02\x18dR\x06before\"K\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xd2\x01\n" +
 	"\x1cQuestionServiceAnswerRequest\x128\n" +
@@ -8947,14 +14901,30 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\aproject\x18\x01 \x01(\v2\x10.plan.v1.ProjectR\aproject\"\x1b\n" +
 	"\x19ProjectServiceListRequest\"J\n" +
 	"\x1aProjectServiceListResponse\x12,\n" +
-	"\bprojects\x18\x01 \x03(\v2\x10.plan.v1.ProjectR\bprojects\"\xa7\x01\n" +
+	"\bprojects\x18\x01 \x03(\v2\x10.plan.v1.ProjectR\bprojects\"A\n" +
+	"\x19ProjectServiceShowRequest\x12$\n" +
+	"\aproject\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\"\xae\x02\n" +
+	"\x1aProjectServiceShowResponse\x12*\n" +
+	"\aproject\x18\x01 \x01(\v2\x10.plan.v1.ProjectR\aproject\x123\n" +
+	"\bsettings\x18\x02 \x03(\v2\x17.plan.v1.ProjectSettingR\bsettings\x12'\n" +
+	"\x0frepository_file\x18\x03 \x01(\tR\x0erepositoryFile\x12%\n" +
+	"\x0edeveloper_file\x18\x04 \x01(\tR\rdeveloperFile\x12\x1a\n" +
+	"\bproblems\x18\x05 \x03(\tR\bproblems\x12\x14\n" +
+	"\x05setup\x18\x06 \x01(\tR\x05setup\x12-\n" +
+	"\x06checks\x18\a \x03(\v2\x15.plan.v1.ProjectCheckR\x06checks\"\xbb\x02\n" +
 	"\x05Skill\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
 	"\x06source\x18\x03 \x01(\tR\x06source\x12\x1c\n" +
 	"\tdirectory\x18\x04 \x01(\tR\tdirectory\x12 \n" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x18\n" +
-	"\amissing\x18\x06 \x01(\tR\amissing\"\x81\x01\n" +
+	"\amissing\x18\x06 \x01(\tR\amissing\x12\x1a\n" +
+	"\btemplate\x18\a \x01(\tR\btemplate\x12%\n" +
+	"\x0etemplate_error\x18\b \x01(\tR\rtemplateError\x12!\n" +
+	"\finbox_source\x18\t \x01(\tR\vinboxSource\x12,\n" +
+	"\x12inbox_source_error\x18\n" +
+	" \x01(\tR\x10inboxSourceError\"\x81\x01\n" +
 	"\x19SkillServiceSummonRequest\x12E\n" +
 	"\x05skill\x18\x01 \x01(\tB/\xbaH,\xc8\x01\x01r'\x18\xac\x022\"^[^/]+/[A-Za-z0-9][A-Za-z0-9._-]*$R\x05skill\x12\x1d\n" +
 	"\x04into\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18dR\x04into\"B\n" +
@@ -8968,12 +14938,87 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05skill\x18\x01 \x01(\tB/\xbaH,\xc8\x01\x01r'\x18\xac\x022\"^[^/]+/[A-Za-z0-9][A-Za-z0-9._-]*$R\x05skill\x12\x1d\n" +
 	"\x04from\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18dR\x04from\"J\n" +
 	"\x1cSkillServiceUnsummonResponse\x12*\n" +
-	"\aproject\x18\x01 \x01(\v2\x10.plan.v1.ProjectR\aproject\"?\n" +
+	"\aproject\x18\x01 \x01(\v2\x10.plan.v1.ProjectR\aproject\"\xf1\x02\n" +
+	"\tInboxItem\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x16\n" +
+	"\x06source\x18\x02 \x01(\tR\x06source\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId\x12\x10\n" +
+	"\x03key\x18\x04 \x01(\tR\x03key\x12\x12\n" +
+	"\x04text\x18\x05 \x01(\tR\x04text\x12)\n" +
+	"\x05state\x18\x06 \x01(\x0e2\x13.plan.v1.InboxStateR\x05state\x12;\n" +
+	"\vcreate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"createTime\x12$\n" +
+	"\x05route\x18\b \x01(\v2\x0e.plan.v1.RouteR\x05route\x12\x17\n" +
+	"\awish_id\x18\t \x01(\tR\x06wishId\x12;\n" +
+	"\vsettle_time\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"settleTime:\t\xd2\xf3\x18\x05\n" +
+	"\x03key\"\xad\x01\n" +
+	"\vInboxSource\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05skill\x18\x02 \x01(\tR\x05skill\x12\x18\n" +
+	"\aproject\x18\x03 \x01(\tR\aproject\x12\x14\n" +
+	"\x05watch\x18\x04 \x01(\tR\x05watch\x12\x14\n" +
+	"\x05every\x18\x05 \x01(\tR\x05every\x12\x18\n" +
+	"\aplugged\x18\x06 \x01(\bR\aplugged\x12\x14\n" +
+	"\x05error\x18\a \x01(\tR\x05error\"\xb4\x01\n" +
+	"\rPluggedSource\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x14\n" +
+	"\x05skill\x18\x03 \x01(\tR\x05skill\x12;\n" +
+	"\vcreate_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"createTime:\x17\xd2\xf3\x18\x13\n" +
+	"\n" +
+	"project_id\n" +
+	"\x05skill\"\x1c\n" +
+	"\x1aInboxServiceSourcesRequest\"M\n" +
+	"\x1bInboxServiceSourcesResponse\x12.\n" +
+	"\asources\x18\x01 \x03(\v2\x14.plan.v1.InboxSourceR\asources\"e\n" +
+	"\x17InboxServicePlugRequest\x12J\n" +
+	"\x06source\x18\x01 \x01(\tB2\xbaH/\xc8\x01\x01r*\x18\xac\x022%^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$R\x06source\"H\n" +
+	"\x18InboxServicePlugResponse\x12,\n" +
+	"\x06source\x18\x01 \x01(\v2\x14.plan.v1.InboxSourceR\x06source\"g\n" +
+	"\x19InboxServiceUnplugRequest\x12J\n" +
+	"\x06source\x18\x01 \x01(\tB2\xbaH/\xc8\x01\x01r*\x18\xac\x022%^([^/]+/)?[A-Za-z0-9][A-Za-z0-9._-]*$R\x06source\"J\n" +
+	"\x1aInboxServiceUnplugResponse\x12,\n" +
+	"\x06source\x18\x01 \x01(\v2\x14.plan.v1.InboxSourceR\x06source\"+\n" +
+	"\x17InboxServiceListRequest\x12\x10\n" +
+	"\x03all\x18\x01 \x01(\bR\x03all\"D\n" +
+	"\x18InboxServiceListResponse\x12(\n" +
+	"\x05items\x18\x01 \x03(\v2\x12.plan.v1.InboxItemR\x05items\"B\n" +
+	"\x1aInboxServiceDismissRequest\x12$\n" +
+	"\aitem_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06itemId\"E\n" +
+	"\x1bInboxServiceDismissResponse\x12&\n" +
+	"\x04item\x18\x01 \x01(\v2\x12.plan.v1.InboxItemR\x04item\"|\n" +
+	"\x18InboxServiceRouteRequest\x12$\n" +
+	"\aitem_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06itemId\x12:\n" +
+	"\x06choice\x18\x02 \x01(\x0e2\x0f.plan.v1.ChoiceB\x11\xbaH\x0e\xc8\x01\x01\x82\x01\b\x18\x02\x18\x03\x18\x04\x18\x05R\x06choice\"C\n" +
+	"\x19InboxServiceRouteResponse\x12&\n" +
+	"\x04item\x18\x01 \x01(\v2\x12.plan.v1.InboxItemR\x04item\"\xc8\x01\n" +
+	"\x17WishServiceRouteRequest\x12%\n" +
+	"\arequest\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xa0\x1fR\arequest\x12$\n" +
+	"\awish_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x10\n" +
+	"\x03ask\x18\x03 \x01(\bR\x03ask\x12\x1e\n" +
+	"\x05title\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03R\x05title\x12.\n" +
+	"\vproject_ids\x18\x05 \x03(\tB\r\xbaH\n" +
+	"\x92\x01\a\"\x05r\x03\xb0\x01\x01R\n" +
+	"projectIds\"o\n" +
+	"\x18WishServiceRouteResponse\x12$\n" +
+	"\x05route\x18\x01 \x01(\v2\x0e.plan.v1.RouteR\x05route\x12-\n" +
+	"\bquestion\x18\x02 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"?\n" +
 	"\x17WishServiceWatchRequest\x12$\n" +
-	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"^\n" +
+	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"\x8e\x01\n" +
 	"\x18WishServiceWatchResponse\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12)\n" +
-	"\achanges\x18\x02 \x03(\x0e2\x0f.plan.v1.ChangeR\achanges\"^\n" +
+	"\achanges\x18\x02 \x03(\x0e2\x0f.plan.v1.ChangeR\achanges\x12.\n" +
+	"\achanged\x18\x03 \x01(\v2\x14.plan.v1.WishChangesR\achanged\"\xa5\x01\n" +
+	"\vWishChanges\x12#\n" +
+	"\x05tasks\x18\x01 \x03(\v2\r.plan.v1.TaskR\x05tasks\x12/\n" +
+	"\tquestions\x18\x02 \x03(\v2\x11.plan.v1.QuestionR\tquestions\x12&\n" +
+	"\x06blocks\x18\x03 \x03(\v2\x0e.plan.v1.BlockR\x06blocks\x12\x18\n" +
+	"\adeleted\x18\x04 \x03(\tR\adeleted\"^\n" +
 	"\x18WishServiceRenderRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x1c\n" +
 	"\x04file\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\x04file\"C\n" +
@@ -8991,6 +15036,17 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04mode\x18\x03 \x01(\x0e2\x12.plan.v1.AllowanceB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x04mode\"=\n" +
 	"\x18WishServiceAllowResponse\x12!\n" +
+	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\"\xe8\x02\n" +
+	" WishServiceSetIntegrationRequest\x12$\n" +
+	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12*\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\tprojectId\x12I\n" +
+	"\x06branch\x18\x03 \x01(\tB1\xbaH.r,\x18\xc8\x012'^([A-Za-z0-9_]+([./-][A-Za-z0-9_]+)*)?$R\x06branch\x128\n" +
+	"\x12push_after_minutes\x18\x04 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe0N(\x00R\x10pushAfterMinutes\x123\n" +
+	"\x10push_after_tasks\x18\x05 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x0epushAfterTasks\x128\n" +
+	"\tpush_mode\x18\x06 \x01(\x0e2\x11.plan.v1.PushModeB\b\xbaH\x05\x82\x01\x02\x10\x01R\bpushMode\"F\n" +
+	"!WishServiceSetIntegrationResponse\x12!\n" +
 	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\"]\n" +
 	"\x17WishServiceGrantRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishIdJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\n" +
@@ -9002,16 +15058,35 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x18WishServicePauseResponse\x12!\n" +
 	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\"B\n" +
 	"\x1aWishServiceActivateRequest\x12$\n" +
-	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"@\n" +
+	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"g\n" +
 	"\x1bWishServiceActivateResponse\x12!\n" +
-	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\"W\n" +
+	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\x12%\n" +
+	"\x06paused\x18\x02 \x03(\v2\r.plan.v1.WishR\x06paused\"@\n" +
+	"\x18WishServiceDeleteRequest\x12$\n" +
+	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"\xe2\x01\n" +
+	"\x19WishServiceDeleteResponse\x12!\n" +
+	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\x12\x14\n" +
+	"\x05tasks\x18\x02 \x01(\x05R\x05tasks\x12\x1c\n" +
+	"\tquestions\x18\x03 \x01(\x05R\tquestions\x12\x16\n" +
+	"\x06blocks\x18\x04 \x01(\x05R\x06blocks\x12+\n" +
+	"\x11worktrees_removed\x18\x05 \x01(\x05R\x10worktreesRemoved\x12)\n" +
+	"\x04kept\x18\x06 \x03(\v2\x15.plan.v1.KeptWorktreeR\x04kept\"\xbd\x01\n" +
+	"\fKeptWorktree\x12\x1b\n" +
+	"\ttask_code\x18\x01 \x01(\tR\btaskCode\x12\x1a\n" +
+	"\bworktree\x18\x02 \x01(\tR\bworktree\x12\x16\n" +
+	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x12\n" +
+	"\x04base\x18\x04 \x01(\tR\x04base\x12\x18\n" +
+	"\acommits\x18\x05 \x01(\x05R\acommits\x12\x18\n" +
+	"\achanged\x18\x06 \x01(\bR\achanged\x12\x14\n" +
+	"\x05error\x18\a \x01(\tR\x05error\"W\n" +
 	"\x16WishServiceMoveRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x17\n" +
-	"\x02to\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x01R\x02to\"@\n" +
+	"\x02to\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x01R\x02to\"g\n" +
 	"\x17WishServiceMoveResponse\x12%\n" +
-	"\x06wishes\x18\x01 \x03(\v2\r.plan.v1.WishR\x06wishes\"\xb9\x03\n" +
+	"\x06wishes\x18\x01 \x03(\v2\r.plan.v1.WishR\x06wishes\x12%\n" +
+	"\x06paused\x18\x02 \x03(\v2\r.plan.v1.WishR\x06paused\"\xb9\x03\n" +
 	"\x16WishServiceMakeRequest\x12\"\n" +
-	"\x05title\x18\x01 \x01(\tB\f\xbaH\x05r\x03\x18\xf4\x03\xe0\xf3\x18\x01R\x05title\x12.\n" +
+	"\x05title\x18\x01 \x01(\tB\f\xbaH\x05r\x03\x18\xf4\x03\xf8\xf3\x18\x01R\x05title\x12.\n" +
 	"\vproject_ids\x18\x02 \x03(\tB\r\xbaH\n" +
 	"\x92\x01\a\"\x05r\x03\xb0\x01\x01R\n" +
 	"projectIds\x12\x16\n" +
@@ -9058,6 +15133,11 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bprovider\x18\x03 \x01(\x0e2\x11.plan.v1.ProviderR\bprovider\x12&\n" +
 	"\tdirectory\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\tdirectory\"?\n" +
 	"\x1aWishServiceSetLeadResponse\x12!\n" +
+	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\"`\n" +
+	"\x1aWishServiceDescribeRequest\x12$\n" +
+	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x1c\n" +
+	"\x04text\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04text\"@\n" +
+	"\x1bWishServiceDescribeResponse\x12!\n" +
 	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\"y\n" +
 	"\x18WishServiceResumeRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x127\n" +
@@ -9102,7 +15182,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\fProjectMatch\x12*\n" +
 	"\aproject\x18\x01 \x01(\v2\x10.plan.v1.ProjectR\aproject\x12/\n" +
 	"\x05match\x18\x02 \x01(\x0e2\x19.plan.v1.ProjectMatchKindR\x05match\x12\x12\n" +
-	"\x04note\x18\x03 \x01(\tR\x04note\"\xc9\x03\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"\xfa\x03\n" +
 	"\n" +
 	"WishExport\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x05R\aversion\x12;\n" +
@@ -9115,8 +15195,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\tquestions\x18\a \x03(\v2\x11.plan.v1.QuestionR\tquestions\x12&\n" +
 	"\x06blocks\x18\b \x03(\v2\x0e.plan.v1.BlockR\x06blocks\x12,\n" +
 	"\bcommands\x18\t \x03(\v2\x10.plan.v1.CommandR\bcommands\x128\n" +
-	"\finstructions\x18\n" +
-	" \x03(\v2\x14.plan.v1.InstructionR\finstructions\"Z\n" +
+	"\finstructions\x18\v \x03(\v2\x14.plan.v1.InstructionR\finstructions\x12/\n" +
+	"\atilasms\x18\n" +
+	" \x03(\v2\x15.plan.v1.TilasmExportR\atilasms\"Z\n" +
 	"\n" +
 	"ProjectRef\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -9128,7 +15209,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12*\n" +
 	"\x02at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
 	"\x06method\x18\x04 \x01(\tR\x06method\x12.\n" +
-	"\arequest\x18\x05 \x01(\v2\x14.google.protobuf.AnyR\arequest\"\xf1\x02\n" +
+	"\arequest\x18\x05 \x01(\v2\x14.google.protobuf.AnyR\arequest\"\x8e\x03\n" +
 	"\x05Block\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x17\n" +
@@ -9144,7 +15225,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vupdate_time\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"updateTime\x12#\n" +
-	"\x05marks\x18\v \x03(\v2\r.plan.v1.MarkR\x05marks\"\xa8\x02\n" +
+	"\x05marks\x18\v \x03(\v2\r.plan.v1.MarkR\x05marks\x12\x1b\n" +
+	"\x04icon\x18\f \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\"\xd6\x02\n" +
 	"\x16BlockServicePutRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x1b\n" +
 	"\x02id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x02id\x12\x1b\n" +
@@ -9152,9 +15234,10 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05title\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xe8\aR\x05title\x12#\n" +
 	"\acontent\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\xc0\x84=R\acontent\x12'\n" +
 	"\n" +
-	"media_type\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\tmediaType\x12$\n" +
-	"\atask_id\x18\a \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1a\n" +
-	"\bposition\x18\b \x01(\x03R\bposition\"?\n" +
+	"media_type\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\tmediaType\x125\n" +
+	"\atask_id\x18\a \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12\x1a\n" +
+	"\bposition\x18\b \x01(\x03R\bposition\x12\x1b\n" +
+	"\x04icon\x18\t \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\"?\n" +
 	"\x17BlockServicePutResponse\x12$\n" +
 	"\x05block\x18\x01 \x01(\v2\x0e.plan.v1.BlockR\x05block\"\x82\x01\n" +
 	"\x17BlockServiceListRequest\x12$\n" +
@@ -9189,7 +15272,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16MarkServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"@\n" +
 	"\x17MarkServiceListResponse\x12%\n" +
-	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xf6\x03\n" +
+	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xea\x06\n" +
 	"\x17TaskServiceSpawnRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12 \n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -9199,15 +15282,21 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06prompt\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xc0\x9a\fR\x06prompt\x127\n" +
 	"\bprovider\x18\x05 \x01(\x0e2\x11.plan.v1.ProviderB\b\xbaH\x05\x82\x01\x02\x10\x01R\bprovider\x12\x1e\n" +
 	"\x05model\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x05model\x124\n" +
-	"\x0emax_budget_usd\x18\a \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00R\fmaxBudgetUsd\x12/\n" +
+	"\x0emax_budget_usd\x18\a \x01(\x01B\x0e\xbaH\v\x12\t)\x00\x00\x00\x00\x00\x00\x00\x00R\fmaxBudgetUsd\x120\n" +
 	"\n" +
-	"depends_on\x18\b \x03(\tB\x10\xbaH\r\x92\x01\n" +
-	"\x10d\"\x06r\x04\x10\x01\x18@R\tdependsOn\x124\n" +
+	"depends_on\x18\b \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\tdependsOn\x124\n" +
 	"\fwrite_scopes\x18\t \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\vwriteScopes\x12\x14\n" +
 	"\x05later\x18\n" +
 	" \x01(\bR\x05later\x12\x1b\n" +
 	"\x04fork\x18\v \x01(\tB\a\xbaH\x04r\x02\x18@R\x04fork\x12\x1b\n" +
-	"\tfrom_lead\x18\f \x01(\bR\bfromLead\"=\n" +
+	"\tfrom_lead\x18\f \x01(\bR\bfromLead\x12\x18\n" +
+	"\arestart\x18\r \x01(\bR\arestart\x12\x84\x01\n" +
+	"\bdecision\x18\x0e \x01(\tBh\xbaHe\xd8\x01\x01r`2^^([Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$R\bdecision\x12 \n" +
+	"\apart_of\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18@R\x06partOf\x12/\n" +
+	"\x04kind\x18\x10 \x01(\x0e2\x11.plan.v1.TaskKindB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04kind\x12'\n" +
+	"\x05after\x18\x11 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x05after\x12)\n" +
+	"\x06blocks\x18\x12 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x06blocks\x12)\n" +
+	"\x06tilasm\x18\x13 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x14\"\ar\x05\x10\x01\x18\xe8\aR\x06tilasm\"=\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"j\n" +
 	"\x16TaskServiceListRequest\x12$\n" +
@@ -9251,6 +15340,24 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x14\n" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"=\n" +
 	"\x18TaskServiceCleanResponse\x12!\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xc8\x01\n" +
+	"\x18TaskServiceDependRequest\x12$\n" +
+	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12+\n" +
+	"\n" +
+	"depends_on\x18\x02 \x03(\tB\f\xbaH\t\x92\x01\x06\"\x04r\x02\x10\x01R\tdependsOn\x12'\n" +
+	"\x05after\x18\x03 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x05after\x120\n" +
+	"\x04also\x18\x04 \x03(\v2\x12.plan.v1.TaskAfterB\b\xbaH\x05\x92\x01\x02\x10dR\x04also\"T\n" +
+	"\tTaskAfter\x12\x1e\n" +
+	"\x04task\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18@R\x04task\x12'\n" +
+	"\x05after\x18\x02 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x05after\"a\n" +
+	"\x19TaskServiceDependResponse\x12!\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\x12!\n" +
+	"\x04also\x18\x02 \x03(\v2\r.plan.v1.TaskR\x04also\"a\n" +
+	"\x17TaskServiceGroupRequest\x12$\n" +
+	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12 \n" +
+	"\apart_of\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18@R\x06partOf\"=\n" +
+	"\x18TaskServiceGroupResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"@\n" +
 	"\x18TaskServiceDeleteRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\">\n" +
@@ -9301,7 +15408,48 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vinstruction\x18\x01 \x01(\tB\f\xbaH\t\xc8\x01\x01r\x04\x10\x01\x18@R\vinstruction\x12$\n" +
 	"\awish_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"\\\n" +
 	"\"InstructionServiceCompleteResponse\x126\n" +
-	"\vinstruction\x18\x01 \x01(\v2\x14.plan.v1.InstructionR\vinstruction*m\n" +
+	"\vinstruction\x18\x01 \x01(\v2\x14.plan.v1.InstructionR\vinstruction\"\x87\x01\n" +
+	"\x16TaskServiceDoneRequest\x12$\n" +
+	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1c\n" +
+	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x04note\x12)\n" +
+	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\"<\n" +
+	"\x17TaskServiceDoneResponse\x12!\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\x92\x01\n" +
+	"\x1aTaskServiceContinueRequest\x12$\n" +
+	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12#\n" +
+	"\x06prompt\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\xc0\x9a\fR\x06prompt\x12)\n" +
+	"\x02by\x18\x03 \x01(\x0e2\x0f.plan.v1.CloserB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02by\"@\n" +
+	"\x1bTaskServiceContinueResponse\x12!\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"j\n" +
+	"\x16PlanServiceSyncRequest\x12$\n" +
+	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12*\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\tprojectId\"\xa9\x01\n" +
+	"\x17PlanServiceSyncResponse\x12%\n" +
+	"\x06azimas\x18\x01 \x03(\v2\r.plan.v1.TaskR\x06azimas\x12\x12\n" +
+	"\x04made\x18\x02 \x03(\tR\x04made\x12\x18\n" +
+	"\achanged\x18\x03 \x03(\tR\achanged\x12\x18\n" +
+	"\awritten\x18\x04 \x03(\tR\awritten\x12\x1f\n" +
+	"\vall_checked\x18\x05 \x03(\tR\n" +
+	"allChecked*j\n" +
+	"\tMergeMain\x12\x1a\n" +
+	"\x16MERGE_MAIN_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12MERGE_MAIN_RELEASE\x10\x01\x12\x15\n" +
+	"\x11MERGE_MAIN_COMMIT\x10\x02\x12\x12\n" +
+	"\x0eMERGE_MAIN_OFF\x10\x03*S\n" +
+	"\tCheckWhen\x12\x1a\n" +
+	"\x16CHECK_WHEN_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11CHECK_WHEN_COMMIT\x10\x01\x12\x13\n" +
+	"\x0fCHECK_WHEN_PUSH\x10\x02*\x88\x01\n" +
+	"\rSettingSource\x12\x1e\n" +
+	"\x1aSETTING_SOURCE_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16SETTING_SOURCE_DEFAULT\x10\x01\x12\x1d\n" +
+	"\x19SETTING_SOURCE_REPOSITORY\x10\x02\x12\x1c\n" +
+	"\x18SETTING_SOURCE_DEVELOPER\x10\x03*L\n" +
+	"\bPushMode\x12\x19\n" +
+	"\x15PUSH_MODE_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0ePUSH_MODE_AUTO\x10\x01\x12\x11\n" +
+	"\rPUSH_MODE_ASK\x10\x02*m\n" +
 	"\tWishState\x12\x1a\n" +
 	"\x16WISH_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WISH_STATE_ACTIVE\x10\x01\x12\x15\n" +
@@ -9311,7 +15459,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x15ALLOWANCE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eALLOWANCE_NONE\x10\x01\x12\x12\n" +
 	"\x0eALLOWANCE_EDIT\x10\x02\x12\x12\n" +
-	"\x0eALLOWANCE_AUTO\x10\x03*\xf0\x01\n" +
+	"\x0eALLOWANCE_AUTO\x10\x03*\x8a\x02\n" +
 	"\n" +
 	"TaskStatus\x12\x1b\n" +
 	"\x17TASK_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -9322,7 +15470,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x13TASK_STATUS_STOPPED\x10\x05\x12\x1b\n" +
 	"\x17TASK_STATUS_INTERRUPTED\x10\x06\x12\x17\n" +
 	"\x13TASK_STATUS_WAITING\x10\a\x12\x16\n" +
-	"\x12TASK_STATUS_PAUSED\x10\b*\xfe\x01\n" +
+	"\x12TASK_STATUS_PAUSED\x10\b\x12\x18\n" +
+	"\x14TASK_STATUS_RESUMING\x10\t*\x95\x02\n" +
 	"\n" +
 	"TaskAccess\x12\x1b\n" +
 	"\x17TASK_ACCESS_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -9333,13 +15482,53 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x18TASK_ACCESS_EDIT_GRANTED\x10\x05\x12\x1c\n" +
 	"\x18TASK_ACCESS_EDIT_REFUSED\x10\x06\x12\x19\n" +
 	"\x15TASK_ACCESS_WISH_EDIT\x10\a\x12\x19\n" +
-	"\x15TASK_ACCESS_WISH_AUTO\x10\b*z\n" +
+	"\x15TASK_ACCESS_WISH_AUTO\x10\b\x12\x15\n" +
+	"\x11TASK_ACCESS_DJINN\x10\t*Z\n" +
+	"\bTaskRole\x12\x19\n" +
+	"\x15TASK_ROLE_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13TASK_ROLE_CONVERTER\x10\x01\x12\x1a\n" +
+	"\x16TASK_ROLE_INVESTIGATOR\x10\x02*\x8e\x01\n" +
 	"\bProvider\x12\x18\n" +
 	"\x14PROVIDER_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fPROVIDER_CLAUDE\x10\x01\x12\x11\n" +
 	"\rPROVIDER_FAKE\x10\x02\x12\x12\n" +
 	"\x0ePROVIDER_CODEX\x10\x03\x12\x18\n" +
-	"\x14PROVIDER_ANTIGRAVITY\x10\x04*\x81\x03\n" +
+	"\x14PROVIDER_ANTIGRAVITY\x10\x04\x12\x12\n" +
+	"\x0ePROVIDER_WATCH\x10\x05*\xf6\x01\n" +
+	"\x10IntegrationState\x12!\n" +
+	"\x1dINTEGRATION_STATE_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19INTEGRATION_STATE_PENDING\x10\x01\x12!\n" +
+	"\x1dINTEGRATION_STATE_INTEGRATING\x10\x02\x12\x1f\n" +
+	"\x1bINTEGRATION_STATE_COMMITTED\x10\x03\x12\x1e\n" +
+	"\x1aINTEGRATION_STATE_CONFLICT\x10\x04\x12\x19\n" +
+	"\x15INTEGRATION_STATE_RED\x10\x05\x12!\n" +
+	"\x1dINTEGRATION_STATE_UNCOMMITTED\x10\x06*\xa7\x01\n" +
+	"\x06Prover\x12\x16\n" +
+	"\x12PROVER_UNSPECIFIED\x10\x00\x12\x0e\n" +
+	"\n" +
+	"PROVER_MAC\x10\x01\x12\x12\n" +
+	"\x0ePROVER_WINDOWS\x10\x02\x12\x11\n" +
+	"\rPROVER_REVIEW\x10\x03\x12\x12\n" +
+	"\x0ePROVER_RELEASE\x10\x04\x12\x15\n" +
+	"\x11PROVER_REAL_MODEL\x10\x05\x12\x11\n" +
+	"\rPROVER_PERSON\x10\x06\x12\x10\n" +
+	"\fPROVER_OTHER\x10\a*N\n" +
+	"\bTaskKind\x12\x19\n" +
+	"\x15TASK_KIND_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eTASK_KIND_WORK\x10\x01\x12\x13\n" +
+	"\x0fTASK_KIND_AZIMA\x10\x02*\x92\x01\n" +
+	"\n" +
+	"AzimaState\x12\x1b\n" +
+	"\x17AZIMA_STATE_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10AZIMA_STATE_OPEN\x10\x01\x12\x1b\n" +
+	"\x17AZIMA_STATE_IN_PROGRESS\x10\x02\x12\x14\n" +
+	"\x10AZIMA_STATE_DONE\x10\x03\x12\x1e\n" +
+	"\x1aAZIMA_STATE_AWAITING_PROOF\x10\x04*]\n" +
+	"\x06Closer\x12\x16\n" +
+	"\x12CLOSER_UNSPECIFIED\x10\x00\x12\x0f\n" +
+	"\vCLOSER_LEAD\x10\x01\x12\x14\n" +
+	"\x10CLOSER_DEVELOPER\x10\x02\x12\x14\n" +
+	"\x10CLOSER_PLAN_FILE\x10\x03*\x81\x03\n" +
 	"\rTaskEventKind\x12\x1f\n" +
 	"\x1bTASK_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16TASK_EVENT_KIND_PROMPT\x10\x01\x12\x18\n" +
@@ -9363,7 +15552,13 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bCHOICE_A\x10\x02\x12\f\n" +
 	"\bCHOICE_B\x10\x03\x12\f\n" +
 	"\bCHOICE_C\x10\x04\x12\f\n" +
-	"\bCHOICE_D\x10\x05*X\n" +
+	"\bCHOICE_D\x10\x05*{\n" +
+	"\tRouteKind\x12\x1a\n" +
+	"\x16ROUTE_KIND_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fROUTE_KIND_FILE\x10\x01\x12\x12\n" +
+	"\x0eROUTE_KIND_NEW\x10\x02\x12\x14\n" +
+	"\x10ROUTE_KIND_QUEUE\x10\x03\x12\x13\n" +
+	"\x0fROUTE_KIND_SWAP\x10\x04*X\n" +
 	"\tRoundKind\x12\x1a\n" +
 	"\x16ROUND_KIND_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14ROUND_KIND_ENLIGHTEN\x10\x01\x12\x15\n" +
@@ -9371,15 +15566,23 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bMarkKind\x12\x19\n" +
 	"\x15MARK_KIND_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eMARK_KIND_READ\x10\x01\x12\x16\n" +
-	"\x12MARK_KIND_APPROVED\x10\x02*\x95\x01\n" +
+	"\x12MARK_KIND_APPROVED\x10\x02*q\n" +
+	"\n" +
+	"InboxState\x12\x1b\n" +
+	"\x17INBOX_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fINBOX_STATE_NEW\x10\x01\x12\x16\n" +
+	"\x12INBOX_STATE_ROUTED\x10\x02\x12\x19\n" +
+	"\x15INBOX_STATE_DISMISSED\x10\x03*\xba\x01\n" +
 	"\x06Change\x12\x16\n" +
 	"\x12CHANGE_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vCHANGE_WISH\x10\x01\x12\x0f\n" +
 	"\vCHANGE_TASK\x10\x02\x12\x13\n" +
 	"\x0fCHANGE_QUESTION\x10\x03\x12\x10\n" +
 	"\fCHANGE_BLOCK\x10\x04\x12\x12\n" +
-	"\x0eCHANGE_PROJECT\x10\x05\x12\x16\n" +
-	"\x12CHANGE_INSTRUCTION\x10\x06*Q\n" +
+	"\x0eCHANGE_PROJECT\x10\x05\x12\x10\n" +
+	"\fCHANGE_INBOX\x10\x06\x12\x11\n" +
+	"\rCHANGE_TILASM\x10\a\x12\x16\n" +
+	"\x12CHANGE_INSTRUCTION\x10\b*Q\n" +
 	"\bTellWait\x12\x19\n" +
 	"\x15TELL_WAIT_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10TELL_WAIT_TYPING\x10\x01\x12\x14\n" +
@@ -9394,68 +15597,87 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x1aINSTRUCTION_STATUS_PENDING\x10\x01\x12!\n" +
 	"\x1dINSTRUCTION_STATUS_REFLECTING\x10\x02\x12!\n" +
 	"\x1dINSTRUCTION_STATUS_PROCESSING\x10\x03\x12\x1b\n" +
-	"\x17INSTRUCTION_STATUS_DONE\x10\x042\xe6\x03\n" +
-	"\x0fQuestionService\x12T\n" +
-	"\x03Ask\x12\".plan.v1.QuestionServiceAskRequest\x1a#.plan.v1.QuestionServiceAskResponse\"\x04\xc8\xf3\x18\x01\x12]\n" +
-	"\x06Answer\x12%.plan.v1.QuestionServiceAnswerRequest\x1a&.plan.v1.QuestionServiceAnswerResponse\"\x04\xc8\xf3\x18\x01\x12W\n" +
-	"\x04List\x12#.plan.v1.QuestionServiceListRequest\x1a$.plan.v1.QuestionServiceListResponse\"\x04\xc8\xf3\x18\x01\x12f\n" +
-	"\tEnlighten\x12(.plan.v1.QuestionServiceEnlightenRequest\x1a).plan.v1.QuestionServiceEnlightenResponse\"\x04\xc8\xf3\x18\x01\x12]\n" +
-	"\x06Revise\x12%.plan.v1.QuestionServiceReviseRequest\x1a&.plan.v1.QuestionServiceReviseResponse\"\x04\xc8\xf3\x18\x012\xbb\x01\n" +
-	"\x0eProjectService\x12R\n" +
-	"\x03Add\x12!.plan.v1.ProjectServiceAddRequest\x1a\".plan.v1.ProjectServiceAddResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x04List\x12\".plan.v1.ProjectServiceListRequest\x1a#.plan.v1.ProjectServiceListResponse\"\x04\xc8\xf3\x18\x012\x99\x02\n" +
-	"\fSkillService\x12W\n" +
-	"\x06Summon\x12\".plan.v1.SkillServiceSummonRequest\x1a#.plan.v1.SkillServiceSummonResponse\"\x04\xc8\xf3\x18\x01\x12Q\n" +
-	"\x04List\x12 .plan.v1.SkillServiceListRequest\x1a!.plan.v1.SkillServiceListResponse\"\x04\xc8\xf3\x18\x01\x12]\n" +
-	"\bUnsummon\x12$.plan.v1.SkillServiceUnsummonRequest\x1a%.plan.v1.SkillServiceUnsummonResponse\"\x04\xc8\xf3\x18\x012\xb7\x0e\n" +
-	"\vWishService\x12O\n" +
-	"\x04Make\x12\x1f.plan.v1.WishServiceMakeRequest\x1a .plan.v1.WishServiceMakeResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Rename\x12!.plan.v1.WishServiceRenameRequest\x1a\".plan.v1.WishServiceRenameResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04List\x12\x1f.plan.v1.WishServiceListRequest\x1a .plan.v1.WishServiceListResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Export\x12!.plan.v1.WishServiceExportRequest\x1a\".plan.v1.WishServiceExportResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Import\x12!.plan.v1.WishServiceImportRequest\x1a\".plan.v1.WishServiceImportResponse\"\x04\xc8\xf3\x18\x01\x12a\n" +
+	"\x17INSTRUCTION_STATUS_DONE\x10\x042\xf9\x03\n" +
+	"\x0fQuestionService\x12X\n" +
+	"\x03Ask\x12\".plan.v1.QuestionServiceAskRequest\x1a#.plan.v1.QuestionServiceAskResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12a\n" +
+	"\x06Answer\x12%.plan.v1.QuestionServiceAnswerRequest\x1a&.plan.v1.QuestionServiceAnswerResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Z\n" +
+	"\x04List\x12#.plan.v1.QuestionServiceListRequest\x1a$.plan.v1.QuestionServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12j\n" +
+	"\tEnlighten\x12(.plan.v1.QuestionServiceEnlightenRequest\x1a).plan.v1.QuestionServiceEnlightenResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12a\n" +
+	"\x06Revise\x12%.plan.v1.QuestionServiceReviseRequest\x1a&.plan.v1.QuestionServiceReviseResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x012\x9c\x02\n" +
+	"\x0eProjectService\x12V\n" +
+	"\x03Add\x12!.plan.v1.ProjectServiceAddRequest\x1a\".plan.v1.ProjectServiceAddResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12X\n" +
+	"\x04List\x12\".plan.v1.ProjectServiceListRequest\x1a#.plan.v1.ProjectServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12X\n" +
+	"\x04Show\x12\".plan.v1.ProjectServiceShowRequest\x1a#.plan.v1.ProjectServiceShowResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\xa4\x02\n" +
+	"\fSkillService\x12[\n" +
+	"\x06Summon\x12\".plan.v1.SkillServiceSummonRequest\x1a#.plan.v1.SkillServiceSummonResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
+	"\x04List\x12 .plan.v1.SkillServiceListRequest\x1a!.plan.v1.SkillServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12a\n" +
+	"\bUnsummon\x12$.plan.v1.SkillServiceUnsummonRequest\x1a%.plan.v1.SkillServiceUnsummonResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x022\xb1\x04\n" +
+	"\fInboxService\x12T\n" +
+	"\x04List\x12 .plan.v1.InboxServiceListRequest\x1a!.plan.v1.InboxServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12^\n" +
+	"\aDismiss\x12#.plan.v1.InboxServiceDismissRequest\x1a$.plan.v1.InboxServiceDismissResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12X\n" +
+	"\x05Route\x12!.plan.v1.InboxServiceRouteRequest\x1a\".plan.v1.InboxServiceRouteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12]\n" +
+	"\aSources\x12#.plan.v1.InboxServiceSourcesRequest\x1a$.plan.v1.InboxServiceSourcesResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12U\n" +
+	"\x04Plug\x12 .plan.v1.InboxServicePlugRequest\x1a!.plan.v1.InboxServicePlugResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12[\n" +
+	"\x06Unplug\x12\".plan.v1.InboxServiceUnplugRequest\x1a#.plan.v1.InboxServiceUnplugResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x022\x80\x12\n" +
+	"\vWishService\x12S\n" +
+	"\x04Make\x12\x1f.plan.v1.WishServiceMakeRequest\x1a .plan.v1.WishServiceMakeResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Y\n" +
+	"\x06Rename\x12!.plan.v1.WishServiceRenameRequest\x1a\".plan.v1.WishServiceRenameResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
+	"\x04List\x12\x1f.plan.v1.WishServiceListRequest\x1a .plan.v1.WishServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12Y\n" +
+	"\x06Export\x12!.plan.v1.WishServiceExportRequest\x1a\".plan.v1.WishServiceExportResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12Y\n" +
+	"\x06Import\x12!.plan.v1.WishServiceImportRequest\x1a\".plan.v1.WishServiceImportResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12a\n" +
 	"\n" +
-	"ImportData\x12%.plan.v1.WishServiceImportDataRequest\x1a&.plan.v1.WishServiceImportDataResponse\"\x04\xc8\xf3\x18\x02\x12\\\n" +
-	"\aSetLead\x12\".plan.v1.WishServiceSetLeadRequest\x1a#.plan.v1.WishServiceSetLeadResponse\"\b\xc8\xf3\x18\x01\xd8\xf3\x18\x01\x12Y\n" +
-	"\x06Resume\x12!.plan.v1.WishServiceResumeRequest\x1a\".plan.v1.WishServiceResumeResponse\"\b\xc8\xf3\x18\x01\xd8\xf3\x18\x01\x12d\n" +
-	"\vSetProvider\x12&.plan.v1.WishServiceSetProviderRequest\x1a'.plan.v1.WishServiceSetProviderResponse\"\x04\xc8\xf3\x18\x01\x12R\n" +
-	"\x05Brief\x12 .plan.v1.WishServiceBriefRequest\x1a!.plan.v1.WishServiceBriefResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04Tell\x12\x1f.plan.v1.WishServiceTellRequest\x1a .plan.v1.WishServiceTellResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
+	"ImportData\x12%.plan.v1.WishServiceImportDataRequest\x1a&.plan.v1.WishServiceImportDataResponse\"\x04\xc8\xf3\x18\x02\x12`\n" +
+	"\aSetLead\x12\".plan.v1.WishServiceSetLeadRequest\x1a#.plan.v1.WishServiceSetLeadResponse\"\f\xc8\xf3\x18\x01\xd8\xf3\x18\x01\xe0\xf3\x18\x01\x12]\n" +
+	"\x06Resume\x12!.plan.v1.WishServiceResumeRequest\x1a\".plan.v1.WishServiceResumeResponse\"\f\xc8\xf3\x18\x01\xd8\xf3\x18\x01\xe0\xf3\x18\x01\x12h\n" +
+	"\vSetProvider\x12&.plan.v1.WishServiceSetProviderRequest\x1a'.plan.v1.WishServiceSetProviderResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12_\n" +
+	"\bDescribe\x12#.plan.v1.WishServiceDescribeRequest\x1a$.plan.v1.WishServiceDescribeResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12U\n" +
+	"\x05Brief\x12 .plan.v1.WishServiceBriefRequest\x1a!.plan.v1.WishServiceBriefResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12S\n" +
+	"\x04Tell\x12\x1f.plan.v1.WishServiceTellRequest\x1a .plan.v1.WishServiceTellResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12U\n" +
 	"\x06Choose\x12!.plan.v1.WishServiceChooseRequest\x1a\".plan.v1.WishServiceChooseResponse\"\x04\xc8\xf3\x18\x02\x12[\n" +
-	"\bSnapshot\x12#.plan.v1.WishServiceSnapshotRequest\x1a$.plan.v1.WishServiceSnapshotResponse\"\x04\xc8\xf3\x18\x02\x12R\n" +
-	"\x05Allow\x12 .plan.v1.WishServiceAllowRequest\x1a!.plan.v1.WishServiceAllowResponse\"\x04\xc8\xf3\x18\x01\x12R\n" +
-	"\x05Grant\x12 .plan.v1.WishServiceGrantRequest\x1a!.plan.v1.WishServiceGrantResponse\"\x04\xc8\xf3\x18\x01\x12R\n" +
-	"\x05Pause\x12 .plan.v1.WishServicePauseRequest\x1a!.plan.v1.WishServicePauseResponse\"\x04\xc8\xf3\x18\x01\x12[\n" +
-	"\bActivate\x12#.plan.v1.WishServiceActivateRequest\x1a$.plan.v1.WishServiceActivateResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04Move\x12\x1f.plan.v1.WishServiceMoveRequest\x1a .plan.v1.WishServiceMoveResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Render\x12!.plan.v1.WishServiceRenderRequest\x1a\".plan.v1.WishServiceRenderResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04Sync\x12\x1f.plan.v1.WishServiceSyncRequest\x1a .plan.v1.WishServiceSyncResponse\"\x04\xc8\xf3\x18\x01\x12T\n" +
-	"\x05Watch\x12 .plan.v1.WishServiceWatchRequest\x1a!.plan.v1.WishServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x012\x8a\x02\n" +
-	"\fBlockService\x12N\n" +
-	"\x03Put\x12\x1f.plan.v1.BlockServicePutRequest\x1a .plan.v1.BlockServicePutResponse\"\x04\xc8\xf3\x18\x01\x12Q\n" +
-	"\x04List\x12 .plan.v1.BlockServiceListRequest\x1a!.plan.v1.BlockServiceListResponse\"\x04\xc8\xf3\x18\x01\x12W\n" +
-	"\x06Delete\x12\".plan.v1.BlockServiceDeleteRequest\x1a#.plan.v1.BlockServiceDeleteResponse\"\x04\xc8\xf3\x18\x012\xac\x01\n" +
-	"\vMarkService\x12L\n" +
-	"\x03Put\x12\x1e.plan.v1.MarkServicePutRequest\x1a\x1f.plan.v1.MarkServicePutResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04List\x12\x1f.plan.v1.MarkServiceListRequest\x1a .plan.v1.MarkServiceListResponse\"\x04\xc8\xf3\x18\x012\xa2\a\n" +
-	"\vTaskService\x12R\n" +
-	"\x05Spawn\x12 .plan.v1.TaskServiceSpawnRequest\x1a!.plan.v1.TaskServiceSpawnResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04List\x12\x1f.plan.v1.TaskServiceListRequest\x1a .plan.v1.TaskServiceListResponse\"\x04\xc8\xf3\x18\x01\x12L\n" +
-	"\x03Get\x12\x1e.plan.v1.TaskServiceGetRequest\x1a\x1f.plan.v1.TaskServiceGetResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04Stop\x12\x1f.plan.v1.TaskServiceStopRequest\x1a .plan.v1.TaskServiceStopResponse\"\x04\xc8\xf3\x18\x01\x12R\n" +
-	"\x05Pause\x12 .plan.v1.TaskServicePauseRequest\x1a!.plan.v1.TaskServicePauseResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Resume\x12!.plan.v1.TaskServiceResumeRequest\x1a\".plan.v1.TaskServiceResumeResponse\"\x04\xc8\xf3\x18\x01\x12R\n" +
-	"\x05Start\x12 .plan.v1.TaskServiceStartRequest\x1a!.plan.v1.TaskServiceStartResponse\"\x04\xc8\xf3\x18\x01\x12T\n" +
-	"\x05Watch\x12 .plan.v1.TaskServiceWatchRequest\x1a!.plan.v1.TaskServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x01\x12R\n" +
-	"\x05Clean\x12 .plan.v1.TaskServiceCleanRequest\x1a!.plan.v1.TaskServiceCleanResponse\"\x04\xc8\xf3\x18\x01\x12U\n" +
-	"\x06Delete\x12!.plan.v1.TaskServiceDeleteRequest\x1a\".plan.v1.TaskServiceDeleteResponse\"\x04\xc8\xf3\x18\x01\x12O\n" +
-	"\x04Send\x12\x1f.plan.v1.TaskServiceSendRequest\x1a .plan.v1.TaskServiceSendResponse\"\x04\xc8\xf3\x18\x012\x8a\x04\n" +
-	"\x12InstructionService\x12]\n" +
-	"\x04Send\x12&.plan.v1.InstructionServiceSendRequest\x1a'.plan.v1.InstructionServiceSendResponse\"\x04\xc8\xf3\x18\x01\x12]\n" +
-	"\x04List\x12&.plan.v1.InstructionServiceListRequest\x1a'.plan.v1.InstructionServiceListResponse\"\x04\xc8\xf3\x18\x01\x12f\n" +
-	"\aReflect\x12).plan.v1.InstructionServiceReflectRequest\x1a*.plan.v1.InstructionServiceReflectResponse\"\x04\xc8\xf3\x18\x01\x12c\n" +
-	"\x06Assign\x12(.plan.v1.InstructionServiceAssignRequest\x1a).plan.v1.InstructionServiceAssignResponse\"\x04\xc8\xf3\x18\x01\x12i\n" +
-	"\bComplete\x12*.plan.v1.InstructionServiceCompleteRequest\x1a+.plan.v1.InstructionServiceCompleteResponse\"\x04\xc8\xf3\x18\x01B\x86\x01\n" +
+	"\bSnapshot\x12#.plan.v1.WishServiceSnapshotRequest\x1a$.plan.v1.WishServiceSnapshotResponse\"\x04\xc8\xf3\x18\x02\x12V\n" +
+	"\x05Allow\x12 .plan.v1.WishServiceAllowRequest\x1a!.plan.v1.WishServiceAllowResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12q\n" +
+	"\x0eSetIntegration\x12).plan.v1.WishServiceSetIntegrationRequest\x1a*.plan.v1.WishServiceSetIntegrationResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Grant\x12 .plan.v1.WishServiceGrantRequest\x1a!.plan.v1.WishServiceGrantResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Pause\x12 .plan.v1.WishServicePauseRequest\x1a!.plan.v1.WishServicePauseResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12_\n" +
+	"\bActivate\x12#.plan.v1.WishServiceActivateRequest\x1a$.plan.v1.WishServiceActivateResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Y\n" +
+	"\x06Delete\x12!.plan.v1.WishServiceDeleteRequest\x1a\".plan.v1.WishServiceDeleteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12S\n" +
+	"\x04Move\x12\x1f.plan.v1.WishServiceMoveRequest\x1a .plan.v1.WishServiceMoveResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Y\n" +
+	"\x06Render\x12!.plan.v1.WishServiceRenderRequest\x1a\".plan.v1.WishServiceRenderResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12S\n" +
+	"\x04Sync\x12\x1f.plan.v1.WishServiceSyncRequest\x1a .plan.v1.WishServiceSyncResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Route\x12 .plan.v1.WishServiceRouteRequest\x1a!.plan.v1.WishServiceRouteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
+	"\x05Watch\x12 .plan.v1.WishServiceWatchRequest\x1a!.plan.v1.WishServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x012\x95\x02\n" +
+	"\fBlockService\x12R\n" +
+	"\x03Put\x12\x1f.plan.v1.BlockServicePutRequest\x1a .plan.v1.BlockServicePutResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
+	"\x04List\x12 .plan.v1.BlockServiceListRequest\x1a!.plan.v1.BlockServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12[\n" +
+	"\x06Delete\x12\".plan.v1.BlockServiceDeleteRequest\x1a#.plan.v1.BlockServiceDeleteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x022\xb3\x01\n" +
+	"\vMarkService\x12P\n" +
+	"\x03Put\x12\x1e.plan.v1.MarkServicePutRequest\x1a\x1f.plan.v1.MarkServicePutResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
+	"\x04List\x12\x1f.plan.v1.MarkServiceListRequest\x1a .plan.v1.MarkServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\xb1\n" +
+	"\n" +
+	"\vTaskService\x12V\n" +
+	"\x05Spawn\x12 .plan.v1.TaskServiceSpawnRequest\x1a!.plan.v1.TaskServiceSpawnResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12R\n" +
+	"\x04List\x12\x1f.plan.v1.TaskServiceListRequest\x1a .plan.v1.TaskServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12O\n" +
+	"\x03Get\x12\x1e.plan.v1.TaskServiceGetRequest\x1a\x1f.plan.v1.TaskServiceGetResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12S\n" +
+	"\x04Stop\x12\x1f.plan.v1.TaskServiceStopRequest\x1a .plan.v1.TaskServiceStopResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Pause\x12 .plan.v1.TaskServicePauseRequest\x1a!.plan.v1.TaskServicePauseResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Y\n" +
+	"\x06Resume\x12!.plan.v1.TaskServiceResumeRequest\x1a\".plan.v1.TaskServiceResumeResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Start\x12 .plan.v1.TaskServiceStartRequest\x1a!.plan.v1.TaskServiceStartResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12T\n" +
+	"\x05Watch\x12 .plan.v1.TaskServiceWatchRequest\x1a!.plan.v1.TaskServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x01\x12V\n" +
+	"\x05Clean\x12 .plan.v1.TaskServiceCleanRequest\x1a!.plan.v1.TaskServiceCleanResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12Y\n" +
+	"\x06Depend\x12!.plan.v1.TaskServiceDependRequest\x1a\".plan.v1.TaskServiceDependResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x05Group\x12 .plan.v1.TaskServiceGroupRequest\x1a!.plan.v1.TaskServiceGroupResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12Y\n" +
+	"\x06Delete\x12!.plan.v1.TaskServiceDeleteRequest\x1a\".plan.v1.TaskServiceDeleteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02\x12S\n" +
+	"\x04Done\x12\x1f.plan.v1.TaskServiceDoneRequest\x1a .plan.v1.TaskServiceDoneResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12_\n" +
+	"\bContinue\x12#.plan.v1.TaskServiceContinueRequest\x1a$.plan.v1.TaskServiceContinueResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12S\n" +
+	"\x04Send\x12\x1f.plan.v1.TaskServiceSendRequest\x1a .plan.v1.TaskServiceSendResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x012\x9d\x04\n" +
+	"\x12InstructionService\x12a\n" +
+	"\x04Send\x12&.plan.v1.InstructionServiceSendRequest\x1a'.plan.v1.InstructionServiceSendResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12`\n" +
+	"\x04List\x12&.plan.v1.InstructionServiceListRequest\x1a'.plan.v1.InstructionServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12j\n" +
+	"\aReflect\x12).plan.v1.InstructionServiceReflectRequest\x1a*.plan.v1.InstructionServiceReflectResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12g\n" +
+	"\x06Assign\x12(.plan.v1.InstructionServiceAssignRequest\x1a).plan.v1.InstructionServiceAssignResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12m\n" +
+	"\bComplete\x12*.plan.v1.InstructionServiceCompleteRequest\x1a+.plan.v1.InstructionServiceCompleteResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x012b\n" +
+	"\vPlanService\x12S\n" +
+	"\x04Sync\x12\x1f.plan.v1.PlanServiceSyncRequest\x1a .plan.v1.PlanServiceSyncResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01B\x86\x01\n" +
 	"\vcom.plan.v1B\tPlanProtoP\x01Z/github.com/empowill/djinn/gen/go/plan/v1;planv1\xa2\x02\x03PXX\xaa\x02\aPlan.V1\xca\x02\aPlan\\V1\xe2\x02\x13Plan\\V1\\GPBMetadata\xea\x02\bPlan::V1b\x06proto3"
 
 var (
@@ -9470,379 +15692,564 @@ func file_plan_v1_plan_proto_rawDescGZIP() []byte {
 	return file_plan_v1_plan_proto_rawDescData
 }
 
-var file_plan_v1_plan_proto_enumTypes = make([]protoimpl.EnumInfo, 13)
-var file_plan_v1_plan_proto_msgTypes = make([]protoimpl.MessageInfo, 128)
+var file_plan_v1_plan_proto_enumTypes = make([]protoimpl.EnumInfo, 25)
+var file_plan_v1_plan_proto_msgTypes = make([]protoimpl.MessageInfo, 187)
 var file_plan_v1_plan_proto_goTypes = []any{
-	(WishState)(0),                             // 0: plan.v1.WishState
-	(Allowance)(0),                             // 1: plan.v1.Allowance
-	(TaskStatus)(0),                            // 2: plan.v1.TaskStatus
-	(TaskAccess)(0),                            // 3: plan.v1.TaskAccess
-	(Provider)(0),                              // 4: plan.v1.Provider
-	(TaskEventKind)(0),                         // 5: plan.v1.TaskEventKind
-	(Choice)(0),                                // 6: plan.v1.Choice
-	(RoundKind)(0),                             // 7: plan.v1.RoundKind
-	(MarkKind)(0),                              // 8: plan.v1.MarkKind
-	(Change)(0),                                // 9: plan.v1.Change
-	(TellWait)(0),                              // 10: plan.v1.TellWait
-	(ProjectMatchKind)(0),                      // 11: plan.v1.ProjectMatchKind
-	(InstructionStatus)(0),                     // 12: plan.v1.InstructionStatus
-	(*Project)(nil),                            // 13: plan.v1.Project
-	(*Summon)(nil),                             // 14: plan.v1.Summon
-	(*Wish)(nil),                               // 15: plan.v1.Wish
-	(*LeadExit)(nil),                           // 16: plan.v1.LeadExit
-	(*LeadPrompt)(nil),                         // 17: plan.v1.LeadPrompt
-	(*Lead)(nil),                               // 18: plan.v1.Lead
-	(*ProjectAllowance)(nil),                   // 19: plan.v1.ProjectAllowance
-	(*Usage)(nil),                              // 20: plan.v1.Usage
-	(*Task)(nil),                               // 21: plan.v1.Task
-	(*TaskEvent)(nil),                          // 22: plan.v1.TaskEvent
-	(*Question)(nil),                           // 23: plan.v1.Question
-	(*Round)(nil),                              // 24: plan.v1.Round
-	(*Mark)(nil),                               // 25: plan.v1.Mark
-	(*Answer)(nil),                             // 26: plan.v1.Answer
-	(*QuestionRef)(nil),                        // 27: plan.v1.QuestionRef
-	(*QuestionServiceEnlightenRequest)(nil),    // 28: plan.v1.QuestionServiceEnlightenRequest
-	(*QuestionServiceEnlightenResponse)(nil),   // 29: plan.v1.QuestionServiceEnlightenResponse
-	(*QuestionServiceReviseRequest)(nil),       // 30: plan.v1.QuestionServiceReviseRequest
-	(*QuestionServiceReviseResponse)(nil),      // 31: plan.v1.QuestionServiceReviseResponse
-	(*QuestionServiceAskRequest)(nil),          // 32: plan.v1.QuestionServiceAskRequest
-	(*QuestionServiceAskResponse)(nil),         // 33: plan.v1.QuestionServiceAskResponse
-	(*QuestionServiceAnswerRequest)(nil),       // 34: plan.v1.QuestionServiceAnswerRequest
-	(*QuestionServiceAnswerResponse)(nil),      // 35: plan.v1.QuestionServiceAnswerResponse
-	(*QuestionServiceListRequest)(nil),         // 36: plan.v1.QuestionServiceListRequest
-	(*QuestionServiceListResponse)(nil),        // 37: plan.v1.QuestionServiceListResponse
-	(*ProjectServiceAddRequest)(nil),           // 38: plan.v1.ProjectServiceAddRequest
-	(*ProjectServiceAddResponse)(nil),          // 39: plan.v1.ProjectServiceAddResponse
-	(*ProjectServiceListRequest)(nil),          // 40: plan.v1.ProjectServiceListRequest
-	(*ProjectServiceListResponse)(nil),         // 41: plan.v1.ProjectServiceListResponse
-	(*Skill)(nil),                              // 42: plan.v1.Skill
-	(*SkillServiceSummonRequest)(nil),          // 43: plan.v1.SkillServiceSummonRequest
-	(*SkillServiceSummonResponse)(nil),         // 44: plan.v1.SkillServiceSummonResponse
-	(*SkillServiceListRequest)(nil),            // 45: plan.v1.SkillServiceListRequest
-	(*SkillServiceListResponse)(nil),           // 46: plan.v1.SkillServiceListResponse
-	(*SkillServiceUnsummonRequest)(nil),        // 47: plan.v1.SkillServiceUnsummonRequest
-	(*SkillServiceUnsummonResponse)(nil),       // 48: plan.v1.SkillServiceUnsummonResponse
-	(*WishServiceWatchRequest)(nil),            // 49: plan.v1.WishServiceWatchRequest
-	(*WishServiceWatchResponse)(nil),           // 50: plan.v1.WishServiceWatchResponse
-	(*WishServiceRenderRequest)(nil),           // 51: plan.v1.WishServiceRenderRequest
-	(*WishServiceRenderResponse)(nil),          // 52: plan.v1.WishServiceRenderResponse
-	(*WishServiceSyncRequest)(nil),             // 53: plan.v1.WishServiceSyncRequest
-	(*WishServiceSyncResponse)(nil),            // 54: plan.v1.WishServiceSyncResponse
-	(*WishServiceAllowRequest)(nil),            // 55: plan.v1.WishServiceAllowRequest
-	(*WishServiceAllowResponse)(nil),           // 56: plan.v1.WishServiceAllowResponse
-	(*WishServiceGrantRequest)(nil),            // 57: plan.v1.WishServiceGrantRequest
-	(*WishServiceGrantResponse)(nil),           // 58: plan.v1.WishServiceGrantResponse
-	(*WishServicePauseRequest)(nil),            // 59: plan.v1.WishServicePauseRequest
-	(*WishServicePauseResponse)(nil),           // 60: plan.v1.WishServicePauseResponse
-	(*WishServiceActivateRequest)(nil),         // 61: plan.v1.WishServiceActivateRequest
-	(*WishServiceActivateResponse)(nil),        // 62: plan.v1.WishServiceActivateResponse
-	(*WishServiceMoveRequest)(nil),             // 63: plan.v1.WishServiceMoveRequest
-	(*WishServiceMoveResponse)(nil),            // 64: plan.v1.WishServiceMoveResponse
-	(*WishServiceMakeRequest)(nil),             // 65: plan.v1.WishServiceMakeRequest
-	(*WishServiceRenameRequest)(nil),           // 66: plan.v1.WishServiceRenameRequest
-	(*WishServiceRenameResponse)(nil),          // 67: plan.v1.WishServiceRenameResponse
-	(*WishServiceMakeResponse)(nil),            // 68: plan.v1.WishServiceMakeResponse
-	(*WishServiceListRequest)(nil),             // 69: plan.v1.WishServiceListRequest
-	(*WishServiceListResponse)(nil),            // 70: plan.v1.WishServiceListResponse
-	(*WishServiceExportRequest)(nil),           // 71: plan.v1.WishServiceExportRequest
-	(*WishServiceExportResponse)(nil),          // 72: plan.v1.WishServiceExportResponse
-	(*WishServiceImportRequest)(nil),           // 73: plan.v1.WishServiceImportRequest
-	(*WishServiceImportResponse)(nil),          // 74: plan.v1.WishServiceImportResponse
-	(*WishServiceImportDataRequest)(nil),       // 75: plan.v1.WishServiceImportDataRequest
-	(*WishServiceImportDataResponse)(nil),      // 76: plan.v1.WishServiceImportDataResponse
-	(*WishServiceSetLeadRequest)(nil),          // 77: plan.v1.WishServiceSetLeadRequest
-	(*WishServiceSetLeadResponse)(nil),         // 78: plan.v1.WishServiceSetLeadResponse
-	(*WishServiceResumeRequest)(nil),           // 79: plan.v1.WishServiceResumeRequest
-	(*WishServiceResumeResponse)(nil),          // 80: plan.v1.WishServiceResumeResponse
-	(*WishServiceSetProviderRequest)(nil),      // 81: plan.v1.WishServiceSetProviderRequest
-	(*WishServiceSetProviderResponse)(nil),     // 82: plan.v1.WishServiceSetProviderResponse
-	(*WishServiceBriefRequest)(nil),            // 83: plan.v1.WishServiceBriefRequest
-	(*WishServiceBriefResponse)(nil),           // 84: plan.v1.WishServiceBriefResponse
-	(*WishServiceTellRequest)(nil),             // 85: plan.v1.WishServiceTellRequest
-	(*WishServiceTellResponse)(nil),            // 86: plan.v1.WishServiceTellResponse
-	(*WishServiceChooseRequest)(nil),           // 87: plan.v1.WishServiceChooseRequest
-	(*WishServiceChooseResponse)(nil),          // 88: plan.v1.WishServiceChooseResponse
-	(*WishServiceSnapshotRequest)(nil),         // 89: plan.v1.WishServiceSnapshotRequest
-	(*WishServiceSnapshotResponse)(nil),        // 90: plan.v1.WishServiceSnapshotResponse
-	(*ProjectMatch)(nil),                       // 91: plan.v1.ProjectMatch
-	(*WishExport)(nil),                         // 92: plan.v1.WishExport
-	(*ProjectRef)(nil),                         // 93: plan.v1.ProjectRef
-	(*Command)(nil),                            // 94: plan.v1.Command
-	(*Block)(nil),                              // 95: plan.v1.Block
-	(*BlockServicePutRequest)(nil),             // 96: plan.v1.BlockServicePutRequest
-	(*BlockServicePutResponse)(nil),            // 97: plan.v1.BlockServicePutResponse
-	(*BlockServiceListRequest)(nil),            // 98: plan.v1.BlockServiceListRequest
-	(*BlockServiceListResponse)(nil),           // 99: plan.v1.BlockServiceListResponse
-	(*BlockServiceDeleteRequest)(nil),          // 100: plan.v1.BlockServiceDeleteRequest
-	(*BlockServiceDeleteResponse)(nil),         // 101: plan.v1.BlockServiceDeleteResponse
-	(*MarkTarget)(nil),                         // 102: plan.v1.MarkTarget
-	(*Marked)(nil),                             // 103: plan.v1.Marked
-	(*MarkServicePutRequest)(nil),              // 104: plan.v1.MarkServicePutRequest
-	(*MarkServicePutResponse)(nil),             // 105: plan.v1.MarkServicePutResponse
-	(*MarkServiceListRequest)(nil),             // 106: plan.v1.MarkServiceListRequest
-	(*MarkServiceListResponse)(nil),            // 107: plan.v1.MarkServiceListResponse
-	(*TaskServiceSpawnRequest)(nil),            // 108: plan.v1.TaskServiceSpawnRequest
-	(*TaskServiceSpawnResponse)(nil),           // 109: plan.v1.TaskServiceSpawnResponse
-	(*TaskServiceListRequest)(nil),             // 110: plan.v1.TaskServiceListRequest
-	(*TaskServiceListResponse)(nil),            // 111: plan.v1.TaskServiceListResponse
-	(*TaskServiceGetRequest)(nil),              // 112: plan.v1.TaskServiceGetRequest
-	(*TaskServiceGetResponse)(nil),             // 113: plan.v1.TaskServiceGetResponse
-	(*TaskServiceStopRequest)(nil),             // 114: plan.v1.TaskServiceStopRequest
-	(*TaskServiceStopResponse)(nil),            // 115: plan.v1.TaskServiceStopResponse
-	(*TaskServiceSendRequest)(nil),             // 116: plan.v1.TaskServiceSendRequest
-	(*TaskServiceSendResponse)(nil),            // 117: plan.v1.TaskServiceSendResponse
-	(*TaskServicePauseRequest)(nil),            // 118: plan.v1.TaskServicePauseRequest
-	(*TaskServicePauseResponse)(nil),           // 119: plan.v1.TaskServicePauseResponse
-	(*TaskServiceResumeRequest)(nil),           // 120: plan.v1.TaskServiceResumeRequest
-	(*TaskServiceResumeResponse)(nil),          // 121: plan.v1.TaskServiceResumeResponse
-	(*TaskServiceStartRequest)(nil),            // 122: plan.v1.TaskServiceStartRequest
-	(*TaskServiceStartResponse)(nil),           // 123: plan.v1.TaskServiceStartResponse
-	(*TaskServiceWatchRequest)(nil),            // 124: plan.v1.TaskServiceWatchRequest
-	(*TaskServiceWatchResponse)(nil),           // 125: plan.v1.TaskServiceWatchResponse
-	(*TaskServiceCleanRequest)(nil),            // 126: plan.v1.TaskServiceCleanRequest
-	(*TaskServiceCleanResponse)(nil),           // 127: plan.v1.TaskServiceCleanResponse
-	(*TaskServiceDeleteRequest)(nil),           // 128: plan.v1.TaskServiceDeleteRequest
-	(*TaskServiceDeleteResponse)(nil),          // 129: plan.v1.TaskServiceDeleteResponse
-	(*Instruction)(nil),                        // 130: plan.v1.Instruction
-	(*InstructionServiceSendRequest)(nil),      // 131: plan.v1.InstructionServiceSendRequest
-	(*InstructionServiceSendResponse)(nil),     // 132: plan.v1.InstructionServiceSendResponse
-	(*InstructionServiceListRequest)(nil),      // 133: plan.v1.InstructionServiceListRequest
-	(*InstructionServiceListResponse)(nil),     // 134: plan.v1.InstructionServiceListResponse
-	(*InstructionServiceReflectRequest)(nil),   // 135: plan.v1.InstructionServiceReflectRequest
-	(*InstructionServiceReflectResponse)(nil),  // 136: plan.v1.InstructionServiceReflectResponse
-	(*InstructionServiceAssignRequest)(nil),    // 137: plan.v1.InstructionServiceAssignRequest
-	(*InstructionServiceAssignResponse)(nil),   // 138: plan.v1.InstructionServiceAssignResponse
-	(*InstructionServiceCompleteRequest)(nil),  // 139: plan.v1.InstructionServiceCompleteRequest
-	(*InstructionServiceCompleteResponse)(nil), // 140: plan.v1.InstructionServiceCompleteResponse
-	(*timestamppb.Timestamp)(nil),              // 141: google.protobuf.Timestamp
-	(*anypb.Any)(nil),                          // 142: google.protobuf.Any
+	(MergeMain)(0),                             // 0: plan.v1.MergeMain
+	(CheckWhen)(0),                             // 1: plan.v1.CheckWhen
+	(SettingSource)(0),                         // 2: plan.v1.SettingSource
+	(PushMode)(0),                              // 3: plan.v1.PushMode
+	(WishState)(0),                             // 4: plan.v1.WishState
+	(Allowance)(0),                             // 5: plan.v1.Allowance
+	(TaskStatus)(0),                            // 6: plan.v1.TaskStatus
+	(TaskAccess)(0),                            // 7: plan.v1.TaskAccess
+	(TaskRole)(0),                              // 8: plan.v1.TaskRole
+	(Provider)(0),                              // 9: plan.v1.Provider
+	(IntegrationState)(0),                      // 10: plan.v1.IntegrationState
+	(Prover)(0),                                // 11: plan.v1.Prover
+	(TaskKind)(0),                              // 12: plan.v1.TaskKind
+	(AzimaState)(0),                            // 13: plan.v1.AzimaState
+	(Closer)(0),                                // 14: plan.v1.Closer
+	(TaskEventKind)(0),                         // 15: plan.v1.TaskEventKind
+	(Choice)(0),                                // 16: plan.v1.Choice
+	(RouteKind)(0),                             // 17: plan.v1.RouteKind
+	(RoundKind)(0),                             // 18: plan.v1.RoundKind
+	(MarkKind)(0),                              // 19: plan.v1.MarkKind
+	(InboxState)(0),                            // 20: plan.v1.InboxState
+	(Change)(0),                                // 21: plan.v1.Change
+	(TellWait)(0),                              // 22: plan.v1.TellWait
+	(ProjectMatchKind)(0),                      // 23: plan.v1.ProjectMatchKind
+	(InstructionStatus)(0),                     // 24: plan.v1.InstructionStatus
+	(*Project)(nil),                            // 25: plan.v1.Project
+	(*CheckRun)(nil),                           // 26: plan.v1.CheckRun
+	(*Summon)(nil),                             // 27: plan.v1.Summon
+	(*ProjectSettings)(nil),                    // 28: plan.v1.ProjectSettings
+	(*ProjectCheck)(nil),                       // 29: plan.v1.ProjectCheck
+	(*ProjectSetting)(nil),                     // 30: plan.v1.ProjectSetting
+	(*Wish)(nil),                               // 31: plan.v1.Wish
+	(*WishPush)(nil),                           // 32: plan.v1.WishPush
+	(*IntegrationPush)(nil),                    // 33: plan.v1.IntegrationPush
+	(*WishMain)(nil),                           // 34: plan.v1.WishMain
+	(*MainMerge)(nil),                          // 35: plan.v1.MainMerge
+	(*IntegrationBranch)(nil),                  // 36: plan.v1.IntegrationBranch
+	(*WishTemplate)(nil),                       // 37: plan.v1.WishTemplate
+	(*LeadExit)(nil),                           // 38: plan.v1.LeadExit
+	(*LeadPrompt)(nil),                         // 39: plan.v1.LeadPrompt
+	(*Lead)(nil),                               // 40: plan.v1.Lead
+	(*ProjectAllowance)(nil),                   // 41: plan.v1.ProjectAllowance
+	(*Usage)(nil),                              // 42: plan.v1.Usage
+	(*Task)(nil),                               // 43: plan.v1.Task
+	(*TaskReview)(nil),                         // 44: plan.v1.TaskReview
+	(*TaskCorrection)(nil),                     // 45: plan.v1.TaskCorrection
+	(*IntegrationFailure)(nil),                 // 46: plan.v1.IntegrationFailure
+	(*TaskIntegration)(nil),                    // 47: plan.v1.TaskIntegration
+	(*IntegrationCommit)(nil),                  // 48: plan.v1.IntegrationCommit
+	(*ProofNeed)(nil),                          // 49: plan.v1.ProofNeed
+	(*Azima)(nil),                              // 50: plan.v1.Azima
+	(*Resources)(nil),                          // 51: plan.v1.Resources
+	(*Closure)(nil),                            // 52: plan.v1.Closure
+	(*TaskEvent)(nil),                          // 53: plan.v1.TaskEvent
+	(*Question)(nil),                           // 54: plan.v1.Question
+	(*Route)(nil),                              // 55: plan.v1.Route
+	(*RouteOption)(nil),                        // 56: plan.v1.RouteOption
+	(*Round)(nil),                              // 57: plan.v1.Round
+	(*Mark)(nil),                               // 58: plan.v1.Mark
+	(*Answer)(nil),                             // 59: plan.v1.Answer
+	(*QuestionRef)(nil),                        // 60: plan.v1.QuestionRef
+	(*QuestionServiceEnlightenRequest)(nil),    // 61: plan.v1.QuestionServiceEnlightenRequest
+	(*QuestionServiceEnlightenResponse)(nil),   // 62: plan.v1.QuestionServiceEnlightenResponse
+	(*QuestionServiceReviseRequest)(nil),       // 63: plan.v1.QuestionServiceReviseRequest
+	(*QuestionServiceReviseResponse)(nil),      // 64: plan.v1.QuestionServiceReviseResponse
+	(*QuestionServiceAskRequest)(nil),          // 65: plan.v1.QuestionServiceAskRequest
+	(*QuestionServiceAskResponse)(nil),         // 66: plan.v1.QuestionServiceAskResponse
+	(*QuestionServiceAnswerRequest)(nil),       // 67: plan.v1.QuestionServiceAnswerRequest
+	(*QuestionServiceAnswerResponse)(nil),      // 68: plan.v1.QuestionServiceAnswerResponse
+	(*QuestionServiceListRequest)(nil),         // 69: plan.v1.QuestionServiceListRequest
+	(*QuestionServiceListResponse)(nil),        // 70: plan.v1.QuestionServiceListResponse
+	(*ProjectServiceAddRequest)(nil),           // 71: plan.v1.ProjectServiceAddRequest
+	(*ProjectServiceAddResponse)(nil),          // 72: plan.v1.ProjectServiceAddResponse
+	(*ProjectServiceListRequest)(nil),          // 73: plan.v1.ProjectServiceListRequest
+	(*ProjectServiceListResponse)(nil),         // 74: plan.v1.ProjectServiceListResponse
+	(*ProjectServiceShowRequest)(nil),          // 75: plan.v1.ProjectServiceShowRequest
+	(*ProjectServiceShowResponse)(nil),         // 76: plan.v1.ProjectServiceShowResponse
+	(*Skill)(nil),                              // 77: plan.v1.Skill
+	(*SkillServiceSummonRequest)(nil),          // 78: plan.v1.SkillServiceSummonRequest
+	(*SkillServiceSummonResponse)(nil),         // 79: plan.v1.SkillServiceSummonResponse
+	(*SkillServiceListRequest)(nil),            // 80: plan.v1.SkillServiceListRequest
+	(*SkillServiceListResponse)(nil),           // 81: plan.v1.SkillServiceListResponse
+	(*SkillServiceUnsummonRequest)(nil),        // 82: plan.v1.SkillServiceUnsummonRequest
+	(*SkillServiceUnsummonResponse)(nil),       // 83: plan.v1.SkillServiceUnsummonResponse
+	(*InboxItem)(nil),                          // 84: plan.v1.InboxItem
+	(*InboxSource)(nil),                        // 85: plan.v1.InboxSource
+	(*PluggedSource)(nil),                      // 86: plan.v1.PluggedSource
+	(*InboxServiceSourcesRequest)(nil),         // 87: plan.v1.InboxServiceSourcesRequest
+	(*InboxServiceSourcesResponse)(nil),        // 88: plan.v1.InboxServiceSourcesResponse
+	(*InboxServicePlugRequest)(nil),            // 89: plan.v1.InboxServicePlugRequest
+	(*InboxServicePlugResponse)(nil),           // 90: plan.v1.InboxServicePlugResponse
+	(*InboxServiceUnplugRequest)(nil),          // 91: plan.v1.InboxServiceUnplugRequest
+	(*InboxServiceUnplugResponse)(nil),         // 92: plan.v1.InboxServiceUnplugResponse
+	(*InboxServiceListRequest)(nil),            // 93: plan.v1.InboxServiceListRequest
+	(*InboxServiceListResponse)(nil),           // 94: plan.v1.InboxServiceListResponse
+	(*InboxServiceDismissRequest)(nil),         // 95: plan.v1.InboxServiceDismissRequest
+	(*InboxServiceDismissResponse)(nil),        // 96: plan.v1.InboxServiceDismissResponse
+	(*InboxServiceRouteRequest)(nil),           // 97: plan.v1.InboxServiceRouteRequest
+	(*InboxServiceRouteResponse)(nil),          // 98: plan.v1.InboxServiceRouteResponse
+	(*WishServiceRouteRequest)(nil),            // 99: plan.v1.WishServiceRouteRequest
+	(*WishServiceRouteResponse)(nil),           // 100: plan.v1.WishServiceRouteResponse
+	(*WishServiceWatchRequest)(nil),            // 101: plan.v1.WishServiceWatchRequest
+	(*WishServiceWatchResponse)(nil),           // 102: plan.v1.WishServiceWatchResponse
+	(*WishChanges)(nil),                        // 103: plan.v1.WishChanges
+	(*WishServiceRenderRequest)(nil),           // 104: plan.v1.WishServiceRenderRequest
+	(*WishServiceRenderResponse)(nil),          // 105: plan.v1.WishServiceRenderResponse
+	(*WishServiceSyncRequest)(nil),             // 106: plan.v1.WishServiceSyncRequest
+	(*WishServiceSyncResponse)(nil),            // 107: plan.v1.WishServiceSyncResponse
+	(*WishServiceAllowRequest)(nil),            // 108: plan.v1.WishServiceAllowRequest
+	(*WishServiceAllowResponse)(nil),           // 109: plan.v1.WishServiceAllowResponse
+	(*WishServiceSetIntegrationRequest)(nil),   // 110: plan.v1.WishServiceSetIntegrationRequest
+	(*WishServiceSetIntegrationResponse)(nil),  // 111: plan.v1.WishServiceSetIntegrationResponse
+	(*WishServiceGrantRequest)(nil),            // 112: plan.v1.WishServiceGrantRequest
+	(*WishServiceGrantResponse)(nil),           // 113: plan.v1.WishServiceGrantResponse
+	(*WishServicePauseRequest)(nil),            // 114: plan.v1.WishServicePauseRequest
+	(*WishServicePauseResponse)(nil),           // 115: plan.v1.WishServicePauseResponse
+	(*WishServiceActivateRequest)(nil),         // 116: plan.v1.WishServiceActivateRequest
+	(*WishServiceActivateResponse)(nil),        // 117: plan.v1.WishServiceActivateResponse
+	(*WishServiceDeleteRequest)(nil),           // 118: plan.v1.WishServiceDeleteRequest
+	(*WishServiceDeleteResponse)(nil),          // 119: plan.v1.WishServiceDeleteResponse
+	(*KeptWorktree)(nil),                       // 120: plan.v1.KeptWorktree
+	(*WishServiceMoveRequest)(nil),             // 121: plan.v1.WishServiceMoveRequest
+	(*WishServiceMoveResponse)(nil),            // 122: plan.v1.WishServiceMoveResponse
+	(*WishServiceMakeRequest)(nil),             // 123: plan.v1.WishServiceMakeRequest
+	(*WishServiceRenameRequest)(nil),           // 124: plan.v1.WishServiceRenameRequest
+	(*WishServiceRenameResponse)(nil),          // 125: plan.v1.WishServiceRenameResponse
+	(*WishServiceMakeResponse)(nil),            // 126: plan.v1.WishServiceMakeResponse
+	(*WishServiceListRequest)(nil),             // 127: plan.v1.WishServiceListRequest
+	(*WishServiceListResponse)(nil),            // 128: plan.v1.WishServiceListResponse
+	(*WishServiceExportRequest)(nil),           // 129: plan.v1.WishServiceExportRequest
+	(*WishServiceExportResponse)(nil),          // 130: plan.v1.WishServiceExportResponse
+	(*WishServiceImportRequest)(nil),           // 131: plan.v1.WishServiceImportRequest
+	(*WishServiceImportResponse)(nil),          // 132: plan.v1.WishServiceImportResponse
+	(*WishServiceImportDataRequest)(nil),       // 133: plan.v1.WishServiceImportDataRequest
+	(*WishServiceImportDataResponse)(nil),      // 134: plan.v1.WishServiceImportDataResponse
+	(*WishServiceSetLeadRequest)(nil),          // 135: plan.v1.WishServiceSetLeadRequest
+	(*WishServiceSetLeadResponse)(nil),         // 136: plan.v1.WishServiceSetLeadResponse
+	(*WishServiceDescribeRequest)(nil),         // 137: plan.v1.WishServiceDescribeRequest
+	(*WishServiceDescribeResponse)(nil),        // 138: plan.v1.WishServiceDescribeResponse
+	(*WishServiceResumeRequest)(nil),           // 139: plan.v1.WishServiceResumeRequest
+	(*WishServiceResumeResponse)(nil),          // 140: plan.v1.WishServiceResumeResponse
+	(*WishServiceSetProviderRequest)(nil),      // 141: plan.v1.WishServiceSetProviderRequest
+	(*WishServiceSetProviderResponse)(nil),     // 142: plan.v1.WishServiceSetProviderResponse
+	(*WishServiceBriefRequest)(nil),            // 143: plan.v1.WishServiceBriefRequest
+	(*WishServiceBriefResponse)(nil),           // 144: plan.v1.WishServiceBriefResponse
+	(*WishServiceTellRequest)(nil),             // 145: plan.v1.WishServiceTellRequest
+	(*WishServiceTellResponse)(nil),            // 146: plan.v1.WishServiceTellResponse
+	(*WishServiceChooseRequest)(nil),           // 147: plan.v1.WishServiceChooseRequest
+	(*WishServiceChooseResponse)(nil),          // 148: plan.v1.WishServiceChooseResponse
+	(*WishServiceSnapshotRequest)(nil),         // 149: plan.v1.WishServiceSnapshotRequest
+	(*WishServiceSnapshotResponse)(nil),        // 150: plan.v1.WishServiceSnapshotResponse
+	(*ProjectMatch)(nil),                       // 151: plan.v1.ProjectMatch
+	(*WishExport)(nil),                         // 152: plan.v1.WishExport
+	(*ProjectRef)(nil),                         // 153: plan.v1.ProjectRef
+	(*Command)(nil),                            // 154: plan.v1.Command
+	(*Block)(nil),                              // 155: plan.v1.Block
+	(*BlockServicePutRequest)(nil),             // 156: plan.v1.BlockServicePutRequest
+	(*BlockServicePutResponse)(nil),            // 157: plan.v1.BlockServicePutResponse
+	(*BlockServiceListRequest)(nil),            // 158: plan.v1.BlockServiceListRequest
+	(*BlockServiceListResponse)(nil),           // 159: plan.v1.BlockServiceListResponse
+	(*BlockServiceDeleteRequest)(nil),          // 160: plan.v1.BlockServiceDeleteRequest
+	(*BlockServiceDeleteResponse)(nil),         // 161: plan.v1.BlockServiceDeleteResponse
+	(*MarkTarget)(nil),                         // 162: plan.v1.MarkTarget
+	(*Marked)(nil),                             // 163: plan.v1.Marked
+	(*MarkServicePutRequest)(nil),              // 164: plan.v1.MarkServicePutRequest
+	(*MarkServicePutResponse)(nil),             // 165: plan.v1.MarkServicePutResponse
+	(*MarkServiceListRequest)(nil),             // 166: plan.v1.MarkServiceListRequest
+	(*MarkServiceListResponse)(nil),            // 167: plan.v1.MarkServiceListResponse
+	(*TaskServiceSpawnRequest)(nil),            // 168: plan.v1.TaskServiceSpawnRequest
+	(*TaskServiceSpawnResponse)(nil),           // 169: plan.v1.TaskServiceSpawnResponse
+	(*TaskServiceListRequest)(nil),             // 170: plan.v1.TaskServiceListRequest
+	(*TaskServiceListResponse)(nil),            // 171: plan.v1.TaskServiceListResponse
+	(*TaskServiceGetRequest)(nil),              // 172: plan.v1.TaskServiceGetRequest
+	(*TaskServiceGetResponse)(nil),             // 173: plan.v1.TaskServiceGetResponse
+	(*TaskServiceStopRequest)(nil),             // 174: plan.v1.TaskServiceStopRequest
+	(*TaskServiceStopResponse)(nil),            // 175: plan.v1.TaskServiceStopResponse
+	(*TaskServiceSendRequest)(nil),             // 176: plan.v1.TaskServiceSendRequest
+	(*TaskServiceSendResponse)(nil),            // 177: plan.v1.TaskServiceSendResponse
+	(*TaskServicePauseRequest)(nil),            // 178: plan.v1.TaskServicePauseRequest
+	(*TaskServicePauseResponse)(nil),           // 179: plan.v1.TaskServicePauseResponse
+	(*TaskServiceResumeRequest)(nil),           // 180: plan.v1.TaskServiceResumeRequest
+	(*TaskServiceResumeResponse)(nil),          // 181: plan.v1.TaskServiceResumeResponse
+	(*TaskServiceStartRequest)(nil),            // 182: plan.v1.TaskServiceStartRequest
+	(*TaskServiceStartResponse)(nil),           // 183: plan.v1.TaskServiceStartResponse
+	(*TaskServiceWatchRequest)(nil),            // 184: plan.v1.TaskServiceWatchRequest
+	(*TaskServiceWatchResponse)(nil),           // 185: plan.v1.TaskServiceWatchResponse
+	(*TaskServiceCleanRequest)(nil),            // 186: plan.v1.TaskServiceCleanRequest
+	(*TaskServiceCleanResponse)(nil),           // 187: plan.v1.TaskServiceCleanResponse
+	(*TaskServiceDependRequest)(nil),           // 188: plan.v1.TaskServiceDependRequest
+	(*TaskAfter)(nil),                          // 189: plan.v1.TaskAfter
+	(*TaskServiceDependResponse)(nil),          // 190: plan.v1.TaskServiceDependResponse
+	(*TaskServiceGroupRequest)(nil),            // 191: plan.v1.TaskServiceGroupRequest
+	(*TaskServiceGroupResponse)(nil),           // 192: plan.v1.TaskServiceGroupResponse
+	(*TaskServiceDeleteRequest)(nil),           // 193: plan.v1.TaskServiceDeleteRequest
+	(*TaskServiceDeleteResponse)(nil),          // 194: plan.v1.TaskServiceDeleteResponse
+	(*Instruction)(nil),                        // 195: plan.v1.Instruction
+	(*InstructionServiceSendRequest)(nil),      // 196: plan.v1.InstructionServiceSendRequest
+	(*InstructionServiceSendResponse)(nil),     // 197: plan.v1.InstructionServiceSendResponse
+	(*InstructionServiceListRequest)(nil),      // 198: plan.v1.InstructionServiceListRequest
+	(*InstructionServiceListResponse)(nil),     // 199: plan.v1.InstructionServiceListResponse
+	(*InstructionServiceReflectRequest)(nil),   // 200: plan.v1.InstructionServiceReflectRequest
+	(*InstructionServiceReflectResponse)(nil),  // 201: plan.v1.InstructionServiceReflectResponse
+	(*InstructionServiceAssignRequest)(nil),    // 202: plan.v1.InstructionServiceAssignRequest
+	(*InstructionServiceAssignResponse)(nil),   // 203: plan.v1.InstructionServiceAssignResponse
+	(*InstructionServiceCompleteRequest)(nil),  // 204: plan.v1.InstructionServiceCompleteRequest
+	(*InstructionServiceCompleteResponse)(nil), // 205: plan.v1.InstructionServiceCompleteResponse
+	(*TaskServiceDoneRequest)(nil),             // 206: plan.v1.TaskServiceDoneRequest
+	(*TaskServiceDoneResponse)(nil),            // 207: plan.v1.TaskServiceDoneResponse
+	(*TaskServiceContinueRequest)(nil),         // 208: plan.v1.TaskServiceContinueRequest
+	(*TaskServiceContinueResponse)(nil),        // 209: plan.v1.TaskServiceContinueResponse
+	(*PlanServiceSyncRequest)(nil),             // 210: plan.v1.PlanServiceSyncRequest
+	(*PlanServiceSyncResponse)(nil),            // 211: plan.v1.PlanServiceSyncResponse
+	(*timestamppb.Timestamp)(nil),              // 212: google.protobuf.Timestamp
+	(*TilasmExport)(nil),                       // 213: plan.v1.TilasmExport
+	(*anypb.Any)(nil),                          // 214: google.protobuf.Any
 }
 var file_plan_v1_plan_proto_depIdxs = []int32{
-	141, // 0: plan.v1.Project.create_time:type_name -> google.protobuf.Timestamp
-	14,  // 1: plan.v1.Project.summons:type_name -> plan.v1.Summon
-	141, // 2: plan.v1.Summon.create_time:type_name -> google.protobuf.Timestamp
-	141, // 3: plan.v1.Wish.create_time:type_name -> google.protobuf.Timestamp
-	19,  // 4: plan.v1.Wish.allowances:type_name -> plan.v1.ProjectAllowance
-	18,  // 5: plan.v1.Wish.lead:type_name -> plan.v1.Lead
-	0,   // 6: plan.v1.Wish.state:type_name -> plan.v1.WishState
-	141, // 7: plan.v1.Wish.grant_time:type_name -> google.protobuf.Timestamp
-	4,   // 8: plan.v1.Wish.provider:type_name -> plan.v1.Provider
-	17,  // 9: plan.v1.Wish.lead_prompt:type_name -> plan.v1.LeadPrompt
-	16,  // 10: plan.v1.Wish.lead_exit:type_name -> plan.v1.LeadExit
-	4,   // 11: plan.v1.Lead.provider:type_name -> plan.v1.Provider
-	1,   // 12: plan.v1.ProjectAllowance.allowance:type_name -> plan.v1.Allowance
-	2,   // 13: plan.v1.Task.status:type_name -> plan.v1.TaskStatus
-	4,   // 14: plan.v1.Task.provider:type_name -> plan.v1.Provider
-	20,  // 15: plan.v1.Task.usage:type_name -> plan.v1.Usage
-	141, // 16: plan.v1.Task.create_time:type_name -> google.protobuf.Timestamp
-	141, // 17: plan.v1.Task.start_time:type_name -> google.protobuf.Timestamp
-	141, // 18: plan.v1.Task.end_time:type_name -> google.protobuf.Timestamp
-	3,   // 19: plan.v1.Task.access:type_name -> plan.v1.TaskAccess
-	5,   // 20: plan.v1.TaskEvent.kind:type_name -> plan.v1.TaskEventKind
-	20,  // 21: plan.v1.TaskEvent.usage:type_name -> plan.v1.Usage
-	141, // 22: plan.v1.TaskEvent.create_time:type_name -> google.protobuf.Timestamp
-	141, // 23: plan.v1.Question.create_time:type_name -> google.protobuf.Timestamp
-	26,  // 24: plan.v1.Question.answer:type_name -> plan.v1.Answer
-	25,  // 25: plan.v1.Question.marks:type_name -> plan.v1.Mark
-	24,  // 26: plan.v1.Question.rounds:type_name -> plan.v1.Round
-	7,   // 27: plan.v1.Round.kind:type_name -> plan.v1.RoundKind
-	141, // 28: plan.v1.Round.create_time:type_name -> google.protobuf.Timestamp
-	8,   // 29: plan.v1.Mark.kind:type_name -> plan.v1.MarkKind
-	141, // 30: plan.v1.Mark.create_time:type_name -> google.protobuf.Timestamp
-	6,   // 31: plan.v1.Answer.choice:type_name -> plan.v1.Choice
-	141, // 32: plan.v1.Answer.create_time:type_name -> google.protobuf.Timestamp
-	27,  // 33: plan.v1.QuestionServiceEnlightenRequest.question:type_name -> plan.v1.QuestionRef
-	23,  // 34: plan.v1.QuestionServiceEnlightenResponse.question:type_name -> plan.v1.Question
-	27,  // 35: plan.v1.QuestionServiceReviseRequest.question:type_name -> plan.v1.QuestionRef
-	23,  // 36: plan.v1.QuestionServiceReviseResponse.question:type_name -> plan.v1.Question
-	23,  // 37: plan.v1.QuestionServiceAskResponse.question:type_name -> plan.v1.Question
-	27,  // 38: plan.v1.QuestionServiceAnswerRequest.question:type_name -> plan.v1.QuestionRef
-	6,   // 39: plan.v1.QuestionServiceAnswerRequest.choice:type_name -> plan.v1.Choice
-	23,  // 40: plan.v1.QuestionServiceAnswerResponse.question:type_name -> plan.v1.Question
-	141, // 41: plan.v1.QuestionServiceListRequest.since:type_name -> google.protobuf.Timestamp
-	23,  // 42: plan.v1.QuestionServiceListResponse.questions:type_name -> plan.v1.Question
-	13,  // 43: plan.v1.ProjectServiceAddResponse.project:type_name -> plan.v1.Project
-	13,  // 44: plan.v1.ProjectServiceListResponse.projects:type_name -> plan.v1.Project
-	42,  // 45: plan.v1.SkillServiceSummonResponse.skill:type_name -> plan.v1.Skill
-	42,  // 46: plan.v1.SkillServiceListResponse.skills:type_name -> plan.v1.Skill
-	13,  // 47: plan.v1.SkillServiceUnsummonResponse.project:type_name -> plan.v1.Project
-	9,   // 48: plan.v1.WishServiceWatchResponse.changes:type_name -> plan.v1.Change
-	1,   // 49: plan.v1.WishServiceAllowRequest.mode:type_name -> plan.v1.Allowance
-	15,  // 50: plan.v1.WishServiceAllowResponse.wish:type_name -> plan.v1.Wish
-	15,  // 51: plan.v1.WishServiceGrantResponse.wish:type_name -> plan.v1.Wish
-	15,  // 52: plan.v1.WishServicePauseResponse.wish:type_name -> plan.v1.Wish
-	15,  // 53: plan.v1.WishServiceActivateResponse.wish:type_name -> plan.v1.Wish
-	15,  // 54: plan.v1.WishServiceMoveResponse.wishes:type_name -> plan.v1.Wish
-	4,   // 55: plan.v1.WishServiceMakeRequest.provider:type_name -> plan.v1.Provider
-	1,   // 56: plan.v1.WishServiceMakeRequest.allowance:type_name -> plan.v1.Allowance
-	15,  // 57: plan.v1.WishServiceRenameResponse.wish:type_name -> plan.v1.Wish
-	15,  // 58: plan.v1.WishServiceMakeResponse.wish:type_name -> plan.v1.Wish
-	15,  // 59: plan.v1.WishServiceListResponse.wishes:type_name -> plan.v1.Wish
-	15,  // 60: plan.v1.WishServiceImportResponse.wish:type_name -> plan.v1.Wish
-	91,  // 61: plan.v1.WishServiceImportResponse.projects:type_name -> plan.v1.ProjectMatch
-	15,  // 62: plan.v1.WishServiceImportDataResponse.wish:type_name -> plan.v1.Wish
-	91,  // 63: plan.v1.WishServiceImportDataResponse.projects:type_name -> plan.v1.ProjectMatch
-	4,   // 64: plan.v1.WishServiceSetLeadRequest.provider:type_name -> plan.v1.Provider
-	15,  // 65: plan.v1.WishServiceSetLeadResponse.wish:type_name -> plan.v1.Wish
-	4,   // 66: plan.v1.WishServiceResumeRequest.provider:type_name -> plan.v1.Provider
-	15,  // 67: plan.v1.WishServiceResumeResponse.wish:type_name -> plan.v1.Wish
-	4,   // 68: plan.v1.WishServiceSetProviderRequest.provider:type_name -> plan.v1.Provider
-	15,  // 69: plan.v1.WishServiceSetProviderResponse.wish:type_name -> plan.v1.Wish
-	10,  // 70: plan.v1.WishServiceTellResponse.wait:type_name -> plan.v1.TellWait
-	92,  // 71: plan.v1.WishServiceSnapshotResponse.export:type_name -> plan.v1.WishExport
-	13,  // 72: plan.v1.WishServiceSnapshotResponse.projects:type_name -> plan.v1.Project
-	13,  // 73: plan.v1.ProjectMatch.project:type_name -> plan.v1.Project
-	11,  // 74: plan.v1.ProjectMatch.match:type_name -> plan.v1.ProjectMatchKind
-	141, // 75: plan.v1.WishExport.create_time:type_name -> google.protobuf.Timestamp
-	15,  // 76: plan.v1.WishExport.wish:type_name -> plan.v1.Wish
-	93,  // 77: plan.v1.WishExport.projects:type_name -> plan.v1.ProjectRef
-	21,  // 78: plan.v1.WishExport.tasks:type_name -> plan.v1.Task
-	22,  // 79: plan.v1.WishExport.events:type_name -> plan.v1.TaskEvent
-	23,  // 80: plan.v1.WishExport.questions:type_name -> plan.v1.Question
-	95,  // 81: plan.v1.WishExport.blocks:type_name -> plan.v1.Block
-	94,  // 82: plan.v1.WishExport.commands:type_name -> plan.v1.Command
-	130, // 83: plan.v1.WishExport.instructions:type_name -> plan.v1.Instruction
-	141, // 84: plan.v1.Command.at:type_name -> google.protobuf.Timestamp
-	142, // 85: plan.v1.Command.request:type_name -> google.protobuf.Any
-	141, // 86: plan.v1.Block.create_time:type_name -> google.protobuf.Timestamp
-	141, // 87: plan.v1.Block.update_time:type_name -> google.protobuf.Timestamp
-	25,  // 88: plan.v1.Block.marks:type_name -> plan.v1.Mark
-	95,  // 89: plan.v1.BlockServicePutResponse.block:type_name -> plan.v1.Block
-	95,  // 90: plan.v1.BlockServiceListResponse.blocks:type_name -> plan.v1.Block
-	25,  // 91: plan.v1.Marked.mark:type_name -> plan.v1.Mark
-	102, // 92: plan.v1.MarkServicePutRequest.target:type_name -> plan.v1.MarkTarget
-	8,   // 93: plan.v1.MarkServicePutRequest.kind:type_name -> plan.v1.MarkKind
-	103, // 94: plan.v1.MarkServicePutResponse.marked:type_name -> plan.v1.Marked
-	103, // 95: plan.v1.MarkServiceListResponse.marks:type_name -> plan.v1.Marked
-	4,   // 96: plan.v1.TaskServiceSpawnRequest.provider:type_name -> plan.v1.Provider
-	21,  // 97: plan.v1.TaskServiceSpawnResponse.task:type_name -> plan.v1.Task
-	21,  // 98: plan.v1.TaskServiceListResponse.tasks:type_name -> plan.v1.Task
-	21,  // 99: plan.v1.TaskServiceGetResponse.task:type_name -> plan.v1.Task
-	21,  // 100: plan.v1.TaskServiceStopResponse.task:type_name -> plan.v1.Task
-	22,  // 101: plan.v1.TaskServiceSendResponse.event:type_name -> plan.v1.TaskEvent
-	21,  // 102: plan.v1.TaskServicePauseResponse.task:type_name -> plan.v1.Task
-	21,  // 103: plan.v1.TaskServiceResumeResponse.task:type_name -> plan.v1.Task
-	21,  // 104: plan.v1.TaskServiceStartResponse.task:type_name -> plan.v1.Task
-	22,  // 105: plan.v1.TaskServiceWatchResponse.event:type_name -> plan.v1.TaskEvent
-	21,  // 106: plan.v1.TaskServiceCleanResponse.task:type_name -> plan.v1.Task
-	21,  // 107: plan.v1.TaskServiceDeleteResponse.task:type_name -> plan.v1.Task
-	141, // 108: plan.v1.Instruction.create_time:type_name -> google.protobuf.Timestamp
-	141, // 109: plan.v1.Instruction.update_time:type_name -> google.protobuf.Timestamp
-	12,  // 110: plan.v1.Instruction.status:type_name -> plan.v1.InstructionStatus
-	130, // 111: plan.v1.InstructionServiceSendResponse.instruction:type_name -> plan.v1.Instruction
-	130, // 112: plan.v1.InstructionServiceListResponse.instructions:type_name -> plan.v1.Instruction
-	130, // 113: plan.v1.InstructionServiceReflectResponse.instruction:type_name -> plan.v1.Instruction
-	130, // 114: plan.v1.InstructionServiceAssignResponse.instruction:type_name -> plan.v1.Instruction
-	130, // 115: plan.v1.InstructionServiceCompleteResponse.instruction:type_name -> plan.v1.Instruction
-	32,  // 116: plan.v1.QuestionService.Ask:input_type -> plan.v1.QuestionServiceAskRequest
-	34,  // 117: plan.v1.QuestionService.Answer:input_type -> plan.v1.QuestionServiceAnswerRequest
-	36,  // 118: plan.v1.QuestionService.List:input_type -> plan.v1.QuestionServiceListRequest
-	28,  // 119: plan.v1.QuestionService.Enlighten:input_type -> plan.v1.QuestionServiceEnlightenRequest
-	30,  // 120: plan.v1.QuestionService.Revise:input_type -> plan.v1.QuestionServiceReviseRequest
-	38,  // 121: plan.v1.ProjectService.Add:input_type -> plan.v1.ProjectServiceAddRequest
-	40,  // 122: plan.v1.ProjectService.List:input_type -> plan.v1.ProjectServiceListRequest
-	43,  // 123: plan.v1.SkillService.Summon:input_type -> plan.v1.SkillServiceSummonRequest
-	45,  // 124: plan.v1.SkillService.List:input_type -> plan.v1.SkillServiceListRequest
-	47,  // 125: plan.v1.SkillService.Unsummon:input_type -> plan.v1.SkillServiceUnsummonRequest
-	65,  // 126: plan.v1.WishService.Make:input_type -> plan.v1.WishServiceMakeRequest
-	66,  // 127: plan.v1.WishService.Rename:input_type -> plan.v1.WishServiceRenameRequest
-	69,  // 128: plan.v1.WishService.List:input_type -> plan.v1.WishServiceListRequest
-	71,  // 129: plan.v1.WishService.Export:input_type -> plan.v1.WishServiceExportRequest
-	73,  // 130: plan.v1.WishService.Import:input_type -> plan.v1.WishServiceImportRequest
-	75,  // 131: plan.v1.WishService.ImportData:input_type -> plan.v1.WishServiceImportDataRequest
-	77,  // 132: plan.v1.WishService.SetLead:input_type -> plan.v1.WishServiceSetLeadRequest
-	79,  // 133: plan.v1.WishService.Resume:input_type -> plan.v1.WishServiceResumeRequest
-	81,  // 134: plan.v1.WishService.SetProvider:input_type -> plan.v1.WishServiceSetProviderRequest
-	83,  // 135: plan.v1.WishService.Brief:input_type -> plan.v1.WishServiceBriefRequest
-	85,  // 136: plan.v1.WishService.Tell:input_type -> plan.v1.WishServiceTellRequest
-	87,  // 137: plan.v1.WishService.Choose:input_type -> plan.v1.WishServiceChooseRequest
-	89,  // 138: plan.v1.WishService.Snapshot:input_type -> plan.v1.WishServiceSnapshotRequest
-	55,  // 139: plan.v1.WishService.Allow:input_type -> plan.v1.WishServiceAllowRequest
-	57,  // 140: plan.v1.WishService.Grant:input_type -> plan.v1.WishServiceGrantRequest
-	59,  // 141: plan.v1.WishService.Pause:input_type -> plan.v1.WishServicePauseRequest
-	61,  // 142: plan.v1.WishService.Activate:input_type -> plan.v1.WishServiceActivateRequest
-	63,  // 143: plan.v1.WishService.Move:input_type -> plan.v1.WishServiceMoveRequest
-	51,  // 144: plan.v1.WishService.Render:input_type -> plan.v1.WishServiceRenderRequest
-	53,  // 145: plan.v1.WishService.Sync:input_type -> plan.v1.WishServiceSyncRequest
-	49,  // 146: plan.v1.WishService.Watch:input_type -> plan.v1.WishServiceWatchRequest
-	96,  // 147: plan.v1.BlockService.Put:input_type -> plan.v1.BlockServicePutRequest
-	98,  // 148: plan.v1.BlockService.List:input_type -> plan.v1.BlockServiceListRequest
-	100, // 149: plan.v1.BlockService.Delete:input_type -> plan.v1.BlockServiceDeleteRequest
-	104, // 150: plan.v1.MarkService.Put:input_type -> plan.v1.MarkServicePutRequest
-	106, // 151: plan.v1.MarkService.List:input_type -> plan.v1.MarkServiceListRequest
-	108, // 152: plan.v1.TaskService.Spawn:input_type -> plan.v1.TaskServiceSpawnRequest
-	110, // 153: plan.v1.TaskService.List:input_type -> plan.v1.TaskServiceListRequest
-	112, // 154: plan.v1.TaskService.Get:input_type -> plan.v1.TaskServiceGetRequest
-	114, // 155: plan.v1.TaskService.Stop:input_type -> plan.v1.TaskServiceStopRequest
-	118, // 156: plan.v1.TaskService.Pause:input_type -> plan.v1.TaskServicePauseRequest
-	120, // 157: plan.v1.TaskService.Resume:input_type -> plan.v1.TaskServiceResumeRequest
-	122, // 158: plan.v1.TaskService.Start:input_type -> plan.v1.TaskServiceStartRequest
-	124, // 159: plan.v1.TaskService.Watch:input_type -> plan.v1.TaskServiceWatchRequest
-	126, // 160: plan.v1.TaskService.Clean:input_type -> plan.v1.TaskServiceCleanRequest
-	128, // 161: plan.v1.TaskService.Delete:input_type -> plan.v1.TaskServiceDeleteRequest
-	116, // 162: plan.v1.TaskService.Send:input_type -> plan.v1.TaskServiceSendRequest
-	131, // 163: plan.v1.InstructionService.Send:input_type -> plan.v1.InstructionServiceSendRequest
-	133, // 164: plan.v1.InstructionService.List:input_type -> plan.v1.InstructionServiceListRequest
-	135, // 165: plan.v1.InstructionService.Reflect:input_type -> plan.v1.InstructionServiceReflectRequest
-	137, // 166: plan.v1.InstructionService.Assign:input_type -> plan.v1.InstructionServiceAssignRequest
-	139, // 167: plan.v1.InstructionService.Complete:input_type -> plan.v1.InstructionServiceCompleteRequest
-	33,  // 168: plan.v1.QuestionService.Ask:output_type -> plan.v1.QuestionServiceAskResponse
-	35,  // 169: plan.v1.QuestionService.Answer:output_type -> plan.v1.QuestionServiceAnswerResponse
-	37,  // 170: plan.v1.QuestionService.List:output_type -> plan.v1.QuestionServiceListResponse
-	29,  // 171: plan.v1.QuestionService.Enlighten:output_type -> plan.v1.QuestionServiceEnlightenResponse
-	31,  // 172: plan.v1.QuestionService.Revise:output_type -> plan.v1.QuestionServiceReviseResponse
-	39,  // 173: plan.v1.ProjectService.Add:output_type -> plan.v1.ProjectServiceAddResponse
-	41,  // 174: plan.v1.ProjectService.List:output_type -> plan.v1.ProjectServiceListResponse
-	44,  // 175: plan.v1.SkillService.Summon:output_type -> plan.v1.SkillServiceSummonResponse
-	46,  // 176: plan.v1.SkillService.List:output_type -> plan.v1.SkillServiceListResponse
-	48,  // 177: plan.v1.SkillService.Unsummon:output_type -> plan.v1.SkillServiceUnsummonResponse
-	68,  // 178: plan.v1.WishService.Make:output_type -> plan.v1.WishServiceMakeResponse
-	67,  // 179: plan.v1.WishService.Rename:output_type -> plan.v1.WishServiceRenameResponse
-	70,  // 180: plan.v1.WishService.List:output_type -> plan.v1.WishServiceListResponse
-	72,  // 181: plan.v1.WishService.Export:output_type -> plan.v1.WishServiceExportResponse
-	74,  // 182: plan.v1.WishService.Import:output_type -> plan.v1.WishServiceImportResponse
-	76,  // 183: plan.v1.WishService.ImportData:output_type -> plan.v1.WishServiceImportDataResponse
-	78,  // 184: plan.v1.WishService.SetLead:output_type -> plan.v1.WishServiceSetLeadResponse
-	80,  // 185: plan.v1.WishService.Resume:output_type -> plan.v1.WishServiceResumeResponse
-	82,  // 186: plan.v1.WishService.SetProvider:output_type -> plan.v1.WishServiceSetProviderResponse
-	84,  // 187: plan.v1.WishService.Brief:output_type -> plan.v1.WishServiceBriefResponse
-	86,  // 188: plan.v1.WishService.Tell:output_type -> plan.v1.WishServiceTellResponse
-	88,  // 189: plan.v1.WishService.Choose:output_type -> plan.v1.WishServiceChooseResponse
-	90,  // 190: plan.v1.WishService.Snapshot:output_type -> plan.v1.WishServiceSnapshotResponse
-	56,  // 191: plan.v1.WishService.Allow:output_type -> plan.v1.WishServiceAllowResponse
-	58,  // 192: plan.v1.WishService.Grant:output_type -> plan.v1.WishServiceGrantResponse
-	60,  // 193: plan.v1.WishService.Pause:output_type -> plan.v1.WishServicePauseResponse
-	62,  // 194: plan.v1.WishService.Activate:output_type -> plan.v1.WishServiceActivateResponse
-	64,  // 195: plan.v1.WishService.Move:output_type -> plan.v1.WishServiceMoveResponse
-	52,  // 196: plan.v1.WishService.Render:output_type -> plan.v1.WishServiceRenderResponse
-	54,  // 197: plan.v1.WishService.Sync:output_type -> plan.v1.WishServiceSyncResponse
-	50,  // 198: plan.v1.WishService.Watch:output_type -> plan.v1.WishServiceWatchResponse
-	97,  // 199: plan.v1.BlockService.Put:output_type -> plan.v1.BlockServicePutResponse
-	99,  // 200: plan.v1.BlockService.List:output_type -> plan.v1.BlockServiceListResponse
-	101, // 201: plan.v1.BlockService.Delete:output_type -> plan.v1.BlockServiceDeleteResponse
-	105, // 202: plan.v1.MarkService.Put:output_type -> plan.v1.MarkServicePutResponse
-	107, // 203: plan.v1.MarkService.List:output_type -> plan.v1.MarkServiceListResponse
-	109, // 204: plan.v1.TaskService.Spawn:output_type -> plan.v1.TaskServiceSpawnResponse
-	111, // 205: plan.v1.TaskService.List:output_type -> plan.v1.TaskServiceListResponse
-	113, // 206: plan.v1.TaskService.Get:output_type -> plan.v1.TaskServiceGetResponse
-	115, // 207: plan.v1.TaskService.Stop:output_type -> plan.v1.TaskServiceStopResponse
-	119, // 208: plan.v1.TaskService.Pause:output_type -> plan.v1.TaskServicePauseResponse
-	121, // 209: plan.v1.TaskService.Resume:output_type -> plan.v1.TaskServiceResumeResponse
-	123, // 210: plan.v1.TaskService.Start:output_type -> plan.v1.TaskServiceStartResponse
-	125, // 211: plan.v1.TaskService.Watch:output_type -> plan.v1.TaskServiceWatchResponse
-	127, // 212: plan.v1.TaskService.Clean:output_type -> plan.v1.TaskServiceCleanResponse
-	129, // 213: plan.v1.TaskService.Delete:output_type -> plan.v1.TaskServiceDeleteResponse
-	117, // 214: plan.v1.TaskService.Send:output_type -> plan.v1.TaskServiceSendResponse
-	132, // 215: plan.v1.InstructionService.Send:output_type -> plan.v1.InstructionServiceSendResponse
-	134, // 216: plan.v1.InstructionService.List:output_type -> plan.v1.InstructionServiceListResponse
-	136, // 217: plan.v1.InstructionService.Reflect:output_type -> plan.v1.InstructionServiceReflectResponse
-	138, // 218: plan.v1.InstructionService.Assign:output_type -> plan.v1.InstructionServiceAssignResponse
-	140, // 219: plan.v1.InstructionService.Complete:output_type -> plan.v1.InstructionServiceCompleteResponse
-	168, // [168:220] is the sub-list for method output_type
-	116, // [116:168] is the sub-list for method input_type
-	116, // [116:116] is the sub-list for extension type_name
-	116, // [116:116] is the sub-list for extension extendee
-	0,   // [0:116] is the sub-list for field type_name
+	212, // 0: plan.v1.Project.create_time:type_name -> google.protobuf.Timestamp
+	27,  // 1: plan.v1.Project.summons:type_name -> plan.v1.Summon
+	26,  // 2: plan.v1.Project.check_runs:type_name -> plan.v1.CheckRun
+	1,   // 3: plan.v1.CheckRun.when:type_name -> plan.v1.CheckWhen
+	212, // 4: plan.v1.CheckRun.end_time:type_name -> google.protobuf.Timestamp
+	212, // 5: plan.v1.Summon.create_time:type_name -> google.protobuf.Timestamp
+	9,   // 6: plan.v1.ProjectSettings.provider:type_name -> plan.v1.Provider
+	29,  // 7: plan.v1.ProjectSettings.checks:type_name -> plan.v1.ProjectCheck
+	0,   // 8: plan.v1.ProjectSettings.merge_main:type_name -> plan.v1.MergeMain
+	1,   // 9: plan.v1.ProjectCheck.when:type_name -> plan.v1.CheckWhen
+	2,   // 10: plan.v1.ProjectSetting.source:type_name -> plan.v1.SettingSource
+	212, // 11: plan.v1.Wish.create_time:type_name -> google.protobuf.Timestamp
+	41,  // 12: plan.v1.Wish.allowances:type_name -> plan.v1.ProjectAllowance
+	40,  // 13: plan.v1.Wish.lead:type_name -> plan.v1.Lead
+	4,   // 14: plan.v1.Wish.state:type_name -> plan.v1.WishState
+	212, // 15: plan.v1.Wish.grant_time:type_name -> google.protobuf.Timestamp
+	37,  // 16: plan.v1.Wish.template:type_name -> plan.v1.WishTemplate
+	36,  // 17: plan.v1.Wish.integration_branches:type_name -> plan.v1.IntegrationBranch
+	3,   // 18: plan.v1.Wish.push_mode:type_name -> plan.v1.PushMode
+	32,  // 19: plan.v1.Wish.pushes:type_name -> plan.v1.WishPush
+	34,  // 20: plan.v1.Wish.mains:type_name -> plan.v1.WishMain
+	9,   // 21: plan.v1.Wish.provider:type_name -> plan.v1.Provider
+	39,  // 22: plan.v1.Wish.lead_prompt:type_name -> plan.v1.LeadPrompt
+	38,  // 23: plan.v1.Wish.lead_exit:type_name -> plan.v1.LeadExit
+	33,  // 24: plan.v1.WishPush.last:type_name -> plan.v1.IntegrationPush
+	212, // 25: plan.v1.IntegrationPush.push_time:type_name -> google.protobuf.Timestamp
+	35,  // 26: plan.v1.WishMain.last:type_name -> plan.v1.MainMerge
+	212, // 27: plan.v1.WishMain.check_time:type_name -> google.protobuf.Timestamp
+	212, // 28: plan.v1.MainMerge.merge_time:type_name -> google.protobuf.Timestamp
+	9,   // 29: plan.v1.Lead.provider:type_name -> plan.v1.Provider
+	5,   // 30: plan.v1.ProjectAllowance.allowance:type_name -> plan.v1.Allowance
+	6,   // 31: plan.v1.Task.status:type_name -> plan.v1.TaskStatus
+	9,   // 32: plan.v1.Task.provider:type_name -> plan.v1.Provider
+	42,  // 33: plan.v1.Task.usage:type_name -> plan.v1.Usage
+	212, // 34: plan.v1.Task.create_time:type_name -> google.protobuf.Timestamp
+	212, // 35: plan.v1.Task.start_time:type_name -> google.protobuf.Timestamp
+	212, // 36: plan.v1.Task.end_time:type_name -> google.protobuf.Timestamp
+	7,   // 37: plan.v1.Task.access:type_name -> plan.v1.TaskAccess
+	212, // 38: plan.v1.Task.resume_after:type_name -> google.protobuf.Timestamp
+	52,  // 39: plan.v1.Task.closed:type_name -> plan.v1.Closure
+	51,  // 40: plan.v1.Task.resources:type_name -> plan.v1.Resources
+	12,  // 41: plan.v1.Task.kind:type_name -> plan.v1.TaskKind
+	50,  // 42: plan.v1.Task.azima:type_name -> plan.v1.Azima
+	47,  // 43: plan.v1.Task.integration:type_name -> plan.v1.TaskIntegration
+	45,  // 44: plan.v1.Task.correction:type_name -> plan.v1.TaskCorrection
+	49,  // 45: plan.v1.Task.proof_needs:type_name -> plan.v1.ProofNeed
+	8,   // 46: plan.v1.Task.role:type_name -> plan.v1.TaskRole
+	44,  // 47: plan.v1.Task.review:type_name -> plan.v1.TaskReview
+	46,  // 48: plan.v1.TaskCorrection.failure:type_name -> plan.v1.IntegrationFailure
+	10,  // 49: plan.v1.IntegrationFailure.state:type_name -> plan.v1.IntegrationState
+	10,  // 50: plan.v1.TaskIntegration.state:type_name -> plan.v1.IntegrationState
+	212, // 51: plan.v1.TaskIntegration.update_time:type_name -> google.protobuf.Timestamp
+	46,  // 52: plan.v1.TaskIntegration.failure:type_name -> plan.v1.IntegrationFailure
+	11,  // 53: plan.v1.ProofNeed.provers:type_name -> plan.v1.Prover
+	13,  // 54: plan.v1.Azima.state:type_name -> plan.v1.AzimaState
+	212, // 55: plan.v1.Resources.read_time:type_name -> google.protobuf.Timestamp
+	14,  // 56: plan.v1.Closure.actor:type_name -> plan.v1.Closer
+	212, // 57: plan.v1.Closure.create_time:type_name -> google.protobuf.Timestamp
+	15,  // 58: plan.v1.TaskEvent.kind:type_name -> plan.v1.TaskEventKind
+	42,  // 59: plan.v1.TaskEvent.usage:type_name -> plan.v1.Usage
+	212, // 60: plan.v1.TaskEvent.create_time:type_name -> google.protobuf.Timestamp
+	212, // 61: plan.v1.Question.create_time:type_name -> google.protobuf.Timestamp
+	59,  // 62: plan.v1.Question.answer:type_name -> plan.v1.Answer
+	58,  // 63: plan.v1.Question.marks:type_name -> plan.v1.Mark
+	57,  // 64: plan.v1.Question.rounds:type_name -> plan.v1.Round
+	55,  // 65: plan.v1.Question.route:type_name -> plan.v1.Route
+	56,  // 66: plan.v1.Route.options:type_name -> plan.v1.RouteOption
+	17,  // 67: plan.v1.RouteOption.kind:type_name -> plan.v1.RouteKind
+	37,  // 68: plan.v1.RouteOption.template:type_name -> plan.v1.WishTemplate
+	18,  // 69: plan.v1.Round.kind:type_name -> plan.v1.RoundKind
+	212, // 70: plan.v1.Round.create_time:type_name -> google.protobuf.Timestamp
+	19,  // 71: plan.v1.Mark.kind:type_name -> plan.v1.MarkKind
+	212, // 72: plan.v1.Mark.create_time:type_name -> google.protobuf.Timestamp
+	16,  // 73: plan.v1.Answer.choice:type_name -> plan.v1.Choice
+	212, // 74: plan.v1.Answer.create_time:type_name -> google.protobuf.Timestamp
+	60,  // 75: plan.v1.QuestionServiceEnlightenRequest.question:type_name -> plan.v1.QuestionRef
+	54,  // 76: plan.v1.QuestionServiceEnlightenResponse.question:type_name -> plan.v1.Question
+	60,  // 77: plan.v1.QuestionServiceReviseRequest.question:type_name -> plan.v1.QuestionRef
+	54,  // 78: plan.v1.QuestionServiceReviseResponse.question:type_name -> plan.v1.Question
+	54,  // 79: plan.v1.QuestionServiceAskResponse.question:type_name -> plan.v1.Question
+	60,  // 80: plan.v1.QuestionServiceAnswerRequest.question:type_name -> plan.v1.QuestionRef
+	16,  // 81: plan.v1.QuestionServiceAnswerRequest.choice:type_name -> plan.v1.Choice
+	54,  // 82: plan.v1.QuestionServiceAnswerResponse.question:type_name -> plan.v1.Question
+	212, // 83: plan.v1.QuestionServiceListRequest.since:type_name -> google.protobuf.Timestamp
+	54,  // 84: plan.v1.QuestionServiceListResponse.questions:type_name -> plan.v1.Question
+	25,  // 85: plan.v1.ProjectServiceAddResponse.project:type_name -> plan.v1.Project
+	25,  // 86: plan.v1.ProjectServiceListResponse.projects:type_name -> plan.v1.Project
+	25,  // 87: plan.v1.ProjectServiceShowResponse.project:type_name -> plan.v1.Project
+	30,  // 88: plan.v1.ProjectServiceShowResponse.settings:type_name -> plan.v1.ProjectSetting
+	29,  // 89: plan.v1.ProjectServiceShowResponse.checks:type_name -> plan.v1.ProjectCheck
+	77,  // 90: plan.v1.SkillServiceSummonResponse.skill:type_name -> plan.v1.Skill
+	77,  // 91: plan.v1.SkillServiceListResponse.skills:type_name -> plan.v1.Skill
+	25,  // 92: plan.v1.SkillServiceUnsummonResponse.project:type_name -> plan.v1.Project
+	20,  // 93: plan.v1.InboxItem.state:type_name -> plan.v1.InboxState
+	212, // 94: plan.v1.InboxItem.create_time:type_name -> google.protobuf.Timestamp
+	55,  // 95: plan.v1.InboxItem.route:type_name -> plan.v1.Route
+	212, // 96: plan.v1.InboxItem.settle_time:type_name -> google.protobuf.Timestamp
+	212, // 97: plan.v1.PluggedSource.create_time:type_name -> google.protobuf.Timestamp
+	85,  // 98: plan.v1.InboxServiceSourcesResponse.sources:type_name -> plan.v1.InboxSource
+	85,  // 99: plan.v1.InboxServicePlugResponse.source:type_name -> plan.v1.InboxSource
+	85,  // 100: plan.v1.InboxServiceUnplugResponse.source:type_name -> plan.v1.InboxSource
+	84,  // 101: plan.v1.InboxServiceListResponse.items:type_name -> plan.v1.InboxItem
+	84,  // 102: plan.v1.InboxServiceDismissResponse.item:type_name -> plan.v1.InboxItem
+	16,  // 103: plan.v1.InboxServiceRouteRequest.choice:type_name -> plan.v1.Choice
+	84,  // 104: plan.v1.InboxServiceRouteResponse.item:type_name -> plan.v1.InboxItem
+	55,  // 105: plan.v1.WishServiceRouteResponse.route:type_name -> plan.v1.Route
+	54,  // 106: plan.v1.WishServiceRouteResponse.question:type_name -> plan.v1.Question
+	21,  // 107: plan.v1.WishServiceWatchResponse.changes:type_name -> plan.v1.Change
+	103, // 108: plan.v1.WishServiceWatchResponse.changed:type_name -> plan.v1.WishChanges
+	43,  // 109: plan.v1.WishChanges.tasks:type_name -> plan.v1.Task
+	54,  // 110: plan.v1.WishChanges.questions:type_name -> plan.v1.Question
+	155, // 111: plan.v1.WishChanges.blocks:type_name -> plan.v1.Block
+	5,   // 112: plan.v1.WishServiceAllowRequest.mode:type_name -> plan.v1.Allowance
+	31,  // 113: plan.v1.WishServiceAllowResponse.wish:type_name -> plan.v1.Wish
+	3,   // 114: plan.v1.WishServiceSetIntegrationRequest.push_mode:type_name -> plan.v1.PushMode
+	31,  // 115: plan.v1.WishServiceSetIntegrationResponse.wish:type_name -> plan.v1.Wish
+	31,  // 116: plan.v1.WishServiceGrantResponse.wish:type_name -> plan.v1.Wish
+	31,  // 117: plan.v1.WishServicePauseResponse.wish:type_name -> plan.v1.Wish
+	31,  // 118: plan.v1.WishServiceActivateResponse.wish:type_name -> plan.v1.Wish
+	31,  // 119: plan.v1.WishServiceActivateResponse.paused:type_name -> plan.v1.Wish
+	31,  // 120: plan.v1.WishServiceDeleteResponse.wish:type_name -> plan.v1.Wish
+	120, // 121: plan.v1.WishServiceDeleteResponse.kept:type_name -> plan.v1.KeptWorktree
+	31,  // 122: plan.v1.WishServiceMoveResponse.wishes:type_name -> plan.v1.Wish
+	31,  // 123: plan.v1.WishServiceMoveResponse.paused:type_name -> plan.v1.Wish
+	9,   // 124: plan.v1.WishServiceMakeRequest.provider:type_name -> plan.v1.Provider
+	5,   // 125: plan.v1.WishServiceMakeRequest.allowance:type_name -> plan.v1.Allowance
+	31,  // 126: plan.v1.WishServiceRenameResponse.wish:type_name -> plan.v1.Wish
+	31,  // 127: plan.v1.WishServiceMakeResponse.wish:type_name -> plan.v1.Wish
+	31,  // 128: plan.v1.WishServiceListResponse.wishes:type_name -> plan.v1.Wish
+	31,  // 129: plan.v1.WishServiceImportResponse.wish:type_name -> plan.v1.Wish
+	151, // 130: plan.v1.WishServiceImportResponse.projects:type_name -> plan.v1.ProjectMatch
+	31,  // 131: plan.v1.WishServiceImportDataResponse.wish:type_name -> plan.v1.Wish
+	151, // 132: plan.v1.WishServiceImportDataResponse.projects:type_name -> plan.v1.ProjectMatch
+	9,   // 133: plan.v1.WishServiceSetLeadRequest.provider:type_name -> plan.v1.Provider
+	31,  // 134: plan.v1.WishServiceSetLeadResponse.wish:type_name -> plan.v1.Wish
+	31,  // 135: plan.v1.WishServiceDescribeResponse.wish:type_name -> plan.v1.Wish
+	9,   // 136: plan.v1.WishServiceResumeRequest.provider:type_name -> plan.v1.Provider
+	31,  // 137: plan.v1.WishServiceResumeResponse.wish:type_name -> plan.v1.Wish
+	9,   // 138: plan.v1.WishServiceSetProviderRequest.provider:type_name -> plan.v1.Provider
+	31,  // 139: plan.v1.WishServiceSetProviderResponse.wish:type_name -> plan.v1.Wish
+	22,  // 140: plan.v1.WishServiceTellResponse.wait:type_name -> plan.v1.TellWait
+	152, // 141: plan.v1.WishServiceSnapshotResponse.export:type_name -> plan.v1.WishExport
+	25,  // 142: plan.v1.WishServiceSnapshotResponse.projects:type_name -> plan.v1.Project
+	25,  // 143: plan.v1.ProjectMatch.project:type_name -> plan.v1.Project
+	23,  // 144: plan.v1.ProjectMatch.match:type_name -> plan.v1.ProjectMatchKind
+	212, // 145: plan.v1.WishExport.create_time:type_name -> google.protobuf.Timestamp
+	31,  // 146: plan.v1.WishExport.wish:type_name -> plan.v1.Wish
+	153, // 147: plan.v1.WishExport.projects:type_name -> plan.v1.ProjectRef
+	43,  // 148: plan.v1.WishExport.tasks:type_name -> plan.v1.Task
+	53,  // 149: plan.v1.WishExport.events:type_name -> plan.v1.TaskEvent
+	54,  // 150: plan.v1.WishExport.questions:type_name -> plan.v1.Question
+	155, // 151: plan.v1.WishExport.blocks:type_name -> plan.v1.Block
+	154, // 152: plan.v1.WishExport.commands:type_name -> plan.v1.Command
+	195, // 153: plan.v1.WishExport.instructions:type_name -> plan.v1.Instruction
+	213, // 154: plan.v1.WishExport.tilasms:type_name -> plan.v1.TilasmExport
+	212, // 155: plan.v1.Command.at:type_name -> google.protobuf.Timestamp
+	214, // 156: plan.v1.Command.request:type_name -> google.protobuf.Any
+	212, // 157: plan.v1.Block.create_time:type_name -> google.protobuf.Timestamp
+	212, // 158: plan.v1.Block.update_time:type_name -> google.protobuf.Timestamp
+	58,  // 159: plan.v1.Block.marks:type_name -> plan.v1.Mark
+	155, // 160: plan.v1.BlockServicePutResponse.block:type_name -> plan.v1.Block
+	155, // 161: plan.v1.BlockServiceListResponse.blocks:type_name -> plan.v1.Block
+	58,  // 162: plan.v1.Marked.mark:type_name -> plan.v1.Mark
+	162, // 163: plan.v1.MarkServicePutRequest.target:type_name -> plan.v1.MarkTarget
+	19,  // 164: plan.v1.MarkServicePutRequest.kind:type_name -> plan.v1.MarkKind
+	163, // 165: plan.v1.MarkServicePutResponse.marked:type_name -> plan.v1.Marked
+	163, // 166: plan.v1.MarkServiceListResponse.marks:type_name -> plan.v1.Marked
+	9,   // 167: plan.v1.TaskServiceSpawnRequest.provider:type_name -> plan.v1.Provider
+	12,  // 168: plan.v1.TaskServiceSpawnRequest.kind:type_name -> plan.v1.TaskKind
+	43,  // 169: plan.v1.TaskServiceSpawnResponse.task:type_name -> plan.v1.Task
+	43,  // 170: plan.v1.TaskServiceListResponse.tasks:type_name -> plan.v1.Task
+	43,  // 171: plan.v1.TaskServiceGetResponse.task:type_name -> plan.v1.Task
+	43,  // 172: plan.v1.TaskServiceStopResponse.task:type_name -> plan.v1.Task
+	53,  // 173: plan.v1.TaskServiceSendResponse.event:type_name -> plan.v1.TaskEvent
+	43,  // 174: plan.v1.TaskServicePauseResponse.task:type_name -> plan.v1.Task
+	43,  // 175: plan.v1.TaskServiceResumeResponse.task:type_name -> plan.v1.Task
+	43,  // 176: plan.v1.TaskServiceStartResponse.task:type_name -> plan.v1.Task
+	53,  // 177: plan.v1.TaskServiceWatchResponse.event:type_name -> plan.v1.TaskEvent
+	43,  // 178: plan.v1.TaskServiceCleanResponse.task:type_name -> plan.v1.Task
+	189, // 179: plan.v1.TaskServiceDependRequest.also:type_name -> plan.v1.TaskAfter
+	43,  // 180: plan.v1.TaskServiceDependResponse.task:type_name -> plan.v1.Task
+	43,  // 181: plan.v1.TaskServiceDependResponse.also:type_name -> plan.v1.Task
+	43,  // 182: plan.v1.TaskServiceGroupResponse.task:type_name -> plan.v1.Task
+	43,  // 183: plan.v1.TaskServiceDeleteResponse.task:type_name -> plan.v1.Task
+	212, // 184: plan.v1.Instruction.create_time:type_name -> google.protobuf.Timestamp
+	212, // 185: plan.v1.Instruction.update_time:type_name -> google.protobuf.Timestamp
+	24,  // 186: plan.v1.Instruction.status:type_name -> plan.v1.InstructionStatus
+	195, // 187: plan.v1.InstructionServiceSendResponse.instruction:type_name -> plan.v1.Instruction
+	195, // 188: plan.v1.InstructionServiceListResponse.instructions:type_name -> plan.v1.Instruction
+	195, // 189: plan.v1.InstructionServiceReflectResponse.instruction:type_name -> plan.v1.Instruction
+	195, // 190: plan.v1.InstructionServiceAssignResponse.instruction:type_name -> plan.v1.Instruction
+	195, // 191: plan.v1.InstructionServiceCompleteResponse.instruction:type_name -> plan.v1.Instruction
+	14,  // 192: plan.v1.TaskServiceDoneRequest.by:type_name -> plan.v1.Closer
+	43,  // 193: plan.v1.TaskServiceDoneResponse.task:type_name -> plan.v1.Task
+	14,  // 194: plan.v1.TaskServiceContinueRequest.by:type_name -> plan.v1.Closer
+	43,  // 195: plan.v1.TaskServiceContinueResponse.task:type_name -> plan.v1.Task
+	43,  // 196: plan.v1.PlanServiceSyncResponse.azimas:type_name -> plan.v1.Task
+	65,  // 197: plan.v1.QuestionService.Ask:input_type -> plan.v1.QuestionServiceAskRequest
+	67,  // 198: plan.v1.QuestionService.Answer:input_type -> plan.v1.QuestionServiceAnswerRequest
+	69,  // 199: plan.v1.QuestionService.List:input_type -> plan.v1.QuestionServiceListRequest
+	61,  // 200: plan.v1.QuestionService.Enlighten:input_type -> plan.v1.QuestionServiceEnlightenRequest
+	63,  // 201: plan.v1.QuestionService.Revise:input_type -> plan.v1.QuestionServiceReviseRequest
+	71,  // 202: plan.v1.ProjectService.Add:input_type -> plan.v1.ProjectServiceAddRequest
+	73,  // 203: plan.v1.ProjectService.List:input_type -> plan.v1.ProjectServiceListRequest
+	75,  // 204: plan.v1.ProjectService.Show:input_type -> plan.v1.ProjectServiceShowRequest
+	78,  // 205: plan.v1.SkillService.Summon:input_type -> plan.v1.SkillServiceSummonRequest
+	80,  // 206: plan.v1.SkillService.List:input_type -> plan.v1.SkillServiceListRequest
+	82,  // 207: plan.v1.SkillService.Unsummon:input_type -> plan.v1.SkillServiceUnsummonRequest
+	93,  // 208: plan.v1.InboxService.List:input_type -> plan.v1.InboxServiceListRequest
+	95,  // 209: plan.v1.InboxService.Dismiss:input_type -> plan.v1.InboxServiceDismissRequest
+	97,  // 210: plan.v1.InboxService.Route:input_type -> plan.v1.InboxServiceRouteRequest
+	87,  // 211: plan.v1.InboxService.Sources:input_type -> plan.v1.InboxServiceSourcesRequest
+	89,  // 212: plan.v1.InboxService.Plug:input_type -> plan.v1.InboxServicePlugRequest
+	91,  // 213: plan.v1.InboxService.Unplug:input_type -> plan.v1.InboxServiceUnplugRequest
+	123, // 214: plan.v1.WishService.Make:input_type -> plan.v1.WishServiceMakeRequest
+	124, // 215: plan.v1.WishService.Rename:input_type -> plan.v1.WishServiceRenameRequest
+	127, // 216: plan.v1.WishService.List:input_type -> plan.v1.WishServiceListRequest
+	129, // 217: plan.v1.WishService.Export:input_type -> plan.v1.WishServiceExportRequest
+	131, // 218: plan.v1.WishService.Import:input_type -> plan.v1.WishServiceImportRequest
+	133, // 219: plan.v1.WishService.ImportData:input_type -> plan.v1.WishServiceImportDataRequest
+	135, // 220: plan.v1.WishService.SetLead:input_type -> plan.v1.WishServiceSetLeadRequest
+	139, // 221: plan.v1.WishService.Resume:input_type -> plan.v1.WishServiceResumeRequest
+	141, // 222: plan.v1.WishService.SetProvider:input_type -> plan.v1.WishServiceSetProviderRequest
+	137, // 223: plan.v1.WishService.Describe:input_type -> plan.v1.WishServiceDescribeRequest
+	143, // 224: plan.v1.WishService.Brief:input_type -> plan.v1.WishServiceBriefRequest
+	145, // 225: plan.v1.WishService.Tell:input_type -> plan.v1.WishServiceTellRequest
+	147, // 226: plan.v1.WishService.Choose:input_type -> plan.v1.WishServiceChooseRequest
+	149, // 227: plan.v1.WishService.Snapshot:input_type -> plan.v1.WishServiceSnapshotRequest
+	108, // 228: plan.v1.WishService.Allow:input_type -> plan.v1.WishServiceAllowRequest
+	110, // 229: plan.v1.WishService.SetIntegration:input_type -> plan.v1.WishServiceSetIntegrationRequest
+	112, // 230: plan.v1.WishService.Grant:input_type -> plan.v1.WishServiceGrantRequest
+	114, // 231: plan.v1.WishService.Pause:input_type -> plan.v1.WishServicePauseRequest
+	116, // 232: plan.v1.WishService.Activate:input_type -> plan.v1.WishServiceActivateRequest
+	118, // 233: plan.v1.WishService.Delete:input_type -> plan.v1.WishServiceDeleteRequest
+	121, // 234: plan.v1.WishService.Move:input_type -> plan.v1.WishServiceMoveRequest
+	104, // 235: plan.v1.WishService.Render:input_type -> plan.v1.WishServiceRenderRequest
+	106, // 236: plan.v1.WishService.Sync:input_type -> plan.v1.WishServiceSyncRequest
+	99,  // 237: plan.v1.WishService.Route:input_type -> plan.v1.WishServiceRouteRequest
+	101, // 238: plan.v1.WishService.Watch:input_type -> plan.v1.WishServiceWatchRequest
+	156, // 239: plan.v1.BlockService.Put:input_type -> plan.v1.BlockServicePutRequest
+	158, // 240: plan.v1.BlockService.List:input_type -> plan.v1.BlockServiceListRequest
+	160, // 241: plan.v1.BlockService.Delete:input_type -> plan.v1.BlockServiceDeleteRequest
+	164, // 242: plan.v1.MarkService.Put:input_type -> plan.v1.MarkServicePutRequest
+	166, // 243: plan.v1.MarkService.List:input_type -> plan.v1.MarkServiceListRequest
+	168, // 244: plan.v1.TaskService.Spawn:input_type -> plan.v1.TaskServiceSpawnRequest
+	170, // 245: plan.v1.TaskService.List:input_type -> plan.v1.TaskServiceListRequest
+	172, // 246: plan.v1.TaskService.Get:input_type -> plan.v1.TaskServiceGetRequest
+	174, // 247: plan.v1.TaskService.Stop:input_type -> plan.v1.TaskServiceStopRequest
+	178, // 248: plan.v1.TaskService.Pause:input_type -> plan.v1.TaskServicePauseRequest
+	180, // 249: plan.v1.TaskService.Resume:input_type -> plan.v1.TaskServiceResumeRequest
+	182, // 250: plan.v1.TaskService.Start:input_type -> plan.v1.TaskServiceStartRequest
+	184, // 251: plan.v1.TaskService.Watch:input_type -> plan.v1.TaskServiceWatchRequest
+	186, // 252: plan.v1.TaskService.Clean:input_type -> plan.v1.TaskServiceCleanRequest
+	188, // 253: plan.v1.TaskService.Depend:input_type -> plan.v1.TaskServiceDependRequest
+	191, // 254: plan.v1.TaskService.Group:input_type -> plan.v1.TaskServiceGroupRequest
+	193, // 255: plan.v1.TaskService.Delete:input_type -> plan.v1.TaskServiceDeleteRequest
+	206, // 256: plan.v1.TaskService.Done:input_type -> plan.v1.TaskServiceDoneRequest
+	208, // 257: plan.v1.TaskService.Continue:input_type -> plan.v1.TaskServiceContinueRequest
+	176, // 258: plan.v1.TaskService.Send:input_type -> plan.v1.TaskServiceSendRequest
+	196, // 259: plan.v1.InstructionService.Send:input_type -> plan.v1.InstructionServiceSendRequest
+	198, // 260: plan.v1.InstructionService.List:input_type -> plan.v1.InstructionServiceListRequest
+	200, // 261: plan.v1.InstructionService.Reflect:input_type -> plan.v1.InstructionServiceReflectRequest
+	202, // 262: plan.v1.InstructionService.Assign:input_type -> plan.v1.InstructionServiceAssignRequest
+	204, // 263: plan.v1.InstructionService.Complete:input_type -> plan.v1.InstructionServiceCompleteRequest
+	210, // 264: plan.v1.PlanService.Sync:input_type -> plan.v1.PlanServiceSyncRequest
+	66,  // 265: plan.v1.QuestionService.Ask:output_type -> plan.v1.QuestionServiceAskResponse
+	68,  // 266: plan.v1.QuestionService.Answer:output_type -> plan.v1.QuestionServiceAnswerResponse
+	70,  // 267: plan.v1.QuestionService.List:output_type -> plan.v1.QuestionServiceListResponse
+	62,  // 268: plan.v1.QuestionService.Enlighten:output_type -> plan.v1.QuestionServiceEnlightenResponse
+	64,  // 269: plan.v1.QuestionService.Revise:output_type -> plan.v1.QuestionServiceReviseResponse
+	72,  // 270: plan.v1.ProjectService.Add:output_type -> plan.v1.ProjectServiceAddResponse
+	74,  // 271: plan.v1.ProjectService.List:output_type -> plan.v1.ProjectServiceListResponse
+	76,  // 272: plan.v1.ProjectService.Show:output_type -> plan.v1.ProjectServiceShowResponse
+	79,  // 273: plan.v1.SkillService.Summon:output_type -> plan.v1.SkillServiceSummonResponse
+	81,  // 274: plan.v1.SkillService.List:output_type -> plan.v1.SkillServiceListResponse
+	83,  // 275: plan.v1.SkillService.Unsummon:output_type -> plan.v1.SkillServiceUnsummonResponse
+	94,  // 276: plan.v1.InboxService.List:output_type -> plan.v1.InboxServiceListResponse
+	96,  // 277: plan.v1.InboxService.Dismiss:output_type -> plan.v1.InboxServiceDismissResponse
+	98,  // 278: plan.v1.InboxService.Route:output_type -> plan.v1.InboxServiceRouteResponse
+	88,  // 279: plan.v1.InboxService.Sources:output_type -> plan.v1.InboxServiceSourcesResponse
+	90,  // 280: plan.v1.InboxService.Plug:output_type -> plan.v1.InboxServicePlugResponse
+	92,  // 281: plan.v1.InboxService.Unplug:output_type -> plan.v1.InboxServiceUnplugResponse
+	126, // 282: plan.v1.WishService.Make:output_type -> plan.v1.WishServiceMakeResponse
+	125, // 283: plan.v1.WishService.Rename:output_type -> plan.v1.WishServiceRenameResponse
+	128, // 284: plan.v1.WishService.List:output_type -> plan.v1.WishServiceListResponse
+	130, // 285: plan.v1.WishService.Export:output_type -> plan.v1.WishServiceExportResponse
+	132, // 286: plan.v1.WishService.Import:output_type -> plan.v1.WishServiceImportResponse
+	134, // 287: plan.v1.WishService.ImportData:output_type -> plan.v1.WishServiceImportDataResponse
+	136, // 288: plan.v1.WishService.SetLead:output_type -> plan.v1.WishServiceSetLeadResponse
+	140, // 289: plan.v1.WishService.Resume:output_type -> plan.v1.WishServiceResumeResponse
+	142, // 290: plan.v1.WishService.SetProvider:output_type -> plan.v1.WishServiceSetProviderResponse
+	138, // 291: plan.v1.WishService.Describe:output_type -> plan.v1.WishServiceDescribeResponse
+	144, // 292: plan.v1.WishService.Brief:output_type -> plan.v1.WishServiceBriefResponse
+	146, // 293: plan.v1.WishService.Tell:output_type -> plan.v1.WishServiceTellResponse
+	148, // 294: plan.v1.WishService.Choose:output_type -> plan.v1.WishServiceChooseResponse
+	150, // 295: plan.v1.WishService.Snapshot:output_type -> plan.v1.WishServiceSnapshotResponse
+	109, // 296: plan.v1.WishService.Allow:output_type -> plan.v1.WishServiceAllowResponse
+	111, // 297: plan.v1.WishService.SetIntegration:output_type -> plan.v1.WishServiceSetIntegrationResponse
+	113, // 298: plan.v1.WishService.Grant:output_type -> plan.v1.WishServiceGrantResponse
+	115, // 299: plan.v1.WishService.Pause:output_type -> plan.v1.WishServicePauseResponse
+	117, // 300: plan.v1.WishService.Activate:output_type -> plan.v1.WishServiceActivateResponse
+	119, // 301: plan.v1.WishService.Delete:output_type -> plan.v1.WishServiceDeleteResponse
+	122, // 302: plan.v1.WishService.Move:output_type -> plan.v1.WishServiceMoveResponse
+	105, // 303: plan.v1.WishService.Render:output_type -> plan.v1.WishServiceRenderResponse
+	107, // 304: plan.v1.WishService.Sync:output_type -> plan.v1.WishServiceSyncResponse
+	100, // 305: plan.v1.WishService.Route:output_type -> plan.v1.WishServiceRouteResponse
+	102, // 306: plan.v1.WishService.Watch:output_type -> plan.v1.WishServiceWatchResponse
+	157, // 307: plan.v1.BlockService.Put:output_type -> plan.v1.BlockServicePutResponse
+	159, // 308: plan.v1.BlockService.List:output_type -> plan.v1.BlockServiceListResponse
+	161, // 309: plan.v1.BlockService.Delete:output_type -> plan.v1.BlockServiceDeleteResponse
+	165, // 310: plan.v1.MarkService.Put:output_type -> plan.v1.MarkServicePutResponse
+	167, // 311: plan.v1.MarkService.List:output_type -> plan.v1.MarkServiceListResponse
+	169, // 312: plan.v1.TaskService.Spawn:output_type -> plan.v1.TaskServiceSpawnResponse
+	171, // 313: plan.v1.TaskService.List:output_type -> plan.v1.TaskServiceListResponse
+	173, // 314: plan.v1.TaskService.Get:output_type -> plan.v1.TaskServiceGetResponse
+	175, // 315: plan.v1.TaskService.Stop:output_type -> plan.v1.TaskServiceStopResponse
+	179, // 316: plan.v1.TaskService.Pause:output_type -> plan.v1.TaskServicePauseResponse
+	181, // 317: plan.v1.TaskService.Resume:output_type -> plan.v1.TaskServiceResumeResponse
+	183, // 318: plan.v1.TaskService.Start:output_type -> plan.v1.TaskServiceStartResponse
+	185, // 319: plan.v1.TaskService.Watch:output_type -> plan.v1.TaskServiceWatchResponse
+	187, // 320: plan.v1.TaskService.Clean:output_type -> plan.v1.TaskServiceCleanResponse
+	190, // 321: plan.v1.TaskService.Depend:output_type -> plan.v1.TaskServiceDependResponse
+	192, // 322: plan.v1.TaskService.Group:output_type -> plan.v1.TaskServiceGroupResponse
+	194, // 323: plan.v1.TaskService.Delete:output_type -> plan.v1.TaskServiceDeleteResponse
+	207, // 324: plan.v1.TaskService.Done:output_type -> plan.v1.TaskServiceDoneResponse
+	209, // 325: plan.v1.TaskService.Continue:output_type -> plan.v1.TaskServiceContinueResponse
+	177, // 326: plan.v1.TaskService.Send:output_type -> plan.v1.TaskServiceSendResponse
+	197, // 327: plan.v1.InstructionService.Send:output_type -> plan.v1.InstructionServiceSendResponse
+	199, // 328: plan.v1.InstructionService.List:output_type -> plan.v1.InstructionServiceListResponse
+	201, // 329: plan.v1.InstructionService.Reflect:output_type -> plan.v1.InstructionServiceReflectResponse
+	203, // 330: plan.v1.InstructionService.Assign:output_type -> plan.v1.InstructionServiceAssignResponse
+	205, // 331: plan.v1.InstructionService.Complete:output_type -> plan.v1.InstructionServiceCompleteResponse
+	211, // 332: plan.v1.PlanService.Sync:output_type -> plan.v1.PlanServiceSyncResponse
+	265, // [265:333] is the sub-list for method output_type
+	197, // [197:265] is the sub-list for method input_type
+	197, // [197:197] is the sub-list for extension type_name
+	197, // [197:197] is the sub-list for extension extendee
+	0,   // [0:197] is the sub-list for field type_name
 }
 
 func init() { file_plan_v1_plan_proto_init() }
@@ -9850,11 +16257,14 @@ func file_plan_v1_plan_proto_init() {
 	if File_plan_v1_plan_proto != nil {
 		return
 	}
-	file_plan_v1_plan_proto_msgTypes[14].OneofWrappers = []any{
+	file_plan_v1_tilasm_proto_init()
+	file_plan_v1_plan_proto_msgTypes[3].OneofWrappers = []any{}
+	file_plan_v1_plan_proto_msgTypes[35].OneofWrappers = []any{
 		(*QuestionRef_Code)(nil),
 		(*QuestionRef_Id)(nil),
 	}
-	file_plan_v1_plan_proto_msgTypes[89].OneofWrappers = []any{
+	file_plan_v1_plan_proto_msgTypes[38].OneofWrappers = []any{}
+	file_plan_v1_plan_proto_msgTypes[137].OneofWrappers = []any{
 		(*MarkTarget_Code)(nil),
 		(*MarkTarget_Id)(nil),
 	}
@@ -9863,10 +16273,10 @@ func file_plan_v1_plan_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plan_v1_plan_proto_rawDesc), len(file_plan_v1_plan_proto_rawDesc)),
-			NumEnums:      13,
-			NumMessages:   128,
+			NumEnums:      25,
+			NumMessages:   187,
 			NumExtensions: 0,
-			NumServices:   8,
+			NumServices:   10,
 		},
 		GoTypes:           file_plan_v1_plan_proto_goTypes,
 		DependencyIndexes: file_plan_v1_plan_proto_depIdxs,

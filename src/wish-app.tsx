@@ -5,7 +5,7 @@ import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Change, TaskStatus, type Wish } from "../gen/ts/plan/v1/plan_pb";
+import { Change, type Wish } from "../gen/ts/plan/v1/plan_pb";
 import { ProviderState } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import {
@@ -17,7 +17,7 @@ import {
   useWishDetails,
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
-import { isActive, waitsForYou } from "./data/format";
+import { isActive, runningOf, waitsForYou } from "./data/format";
 import { AgentSetup } from "./agent-setup";
 import { jump } from "./attention";
 import { FlightPlan } from "./flight-plan";
@@ -26,12 +26,13 @@ import { t } from "./i18n";
 import { useTerminalFollows } from "./lead-terminal";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
+import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
-import { WishView } from "./wish-view";
+import { type Opening, WishView } from "./wish-view";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | "agents" | null;
+type Modal = "make" | "project" | "settings" | "agents" | "docs" | null;
 
 // What the window shows instead of a wish: the flight plan of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -69,6 +70,7 @@ export function WishApp() {
   const [making, setMaking] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
+  const [opening, setOpening] = useState<Opening>();
   const makeBackAction = useRef<(() => void) | null>(null);
   const [makeBackInSetup, setMakeBackInSetup] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
@@ -86,6 +88,10 @@ export function WishApp() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const off = djinn.focus.subscribe((focus) => {
       if (focus.wishId) setSelected(focus.wishId);
+      if (focus.tilasmId)
+        setOpening({ wishId: focus.wishId, tilasmId: focus.tilasmId });
+      if (focus.unknownLink)
+        setToast(t("link.unknown", { link: focus.unknownLink }));
       clearTimeout(timer);
       if (!focus.target) return;
       // The wish renders, then its details load: look for the element a few seconds.
@@ -101,6 +107,10 @@ export function WishApp() {
       clearTimeout(timer);
     };
   }, [djinn]);
+  useEffect(
+    () => setOpening((o) => (o && o.wishId !== selected ? undefined : o)),
+    [selected],
+  );
   // At the first start, with no agent ready, the setup of the agents opens by itself; once checked, it waits in the
   // settings.
   useEffect(() => {
@@ -161,9 +171,7 @@ export function WishApp() {
       w.id,
       {
         questions: details[w.id]?.questions.filter(waitsForYou).length ?? 0,
-        running:
-          details[w.id]?.tasks.filter((x) => x.status === TaskStatus.RUNNING)
-            .length ?? 0,
+        ...runningOf(details[w.id]?.tasks ?? []),
       },
     ]),
   );
@@ -355,7 +363,12 @@ export function WishApp() {
         ) : plan ? (
           <FlightPlan wishes={active} onOpen={setSelected} onToast={setToast} />
         ) : wish ? (
-          <WishView key={wish.id} wish={wish} onToast={setToast} />
+          <WishView
+            key={wish.id}
+            wish={wish}
+            opening={opening?.wishId === wish.id ? opening : undefined}
+            onToast={setToast}
+          />
         ) : (
           <Welcome
             loaded={loaded}
@@ -376,8 +389,14 @@ export function WishApp() {
             }}
           />
         )}
-        {modal === "settings" && <Settings onClose={() => setModal(null)} />}
+        {modal === "settings" && (
+          <Settings
+            onClose={() => setModal(null)}
+            onDocs={() => setModal("docs")}
+          />
+        )}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
+        {modal === "docs" && <Docs onClose={() => setModal(null)} />}
         {project && modal !== "make" && (
           <ProjectPanel project={project} onClose={() => setProjectId("")} />
         )}

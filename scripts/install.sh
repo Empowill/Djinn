@@ -10,7 +10,9 @@
 #   DJINN_INSTALL_DIR  where djinn goes; ~/.local/bin by default
 #   DJINN_ASSET        the archive to take, without .tar.gz (djinn_linux_amd64_gtk4, djinn_linux_amd64_browser); picked
 #                      for this system by default
-#   DJINN_RELEASES     where releases come from; https://github.com/Empowill/Djinn/releases by default
+#   DJINN_RELEASES     where releases come from; https://github.com/Empowill/Djinn/releases by default. With curl, a
+#                      local folder too (file:///path), laid out as GitHub serves a release: latest/download/<file>
+#                      or download/<tag>/<file>, to try a release built by hand before it is published
 set -eu
 
 releases=${DJINN_RELEASES:-https://github.com/Empowill/Djinn/releases}

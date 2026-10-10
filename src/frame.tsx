@@ -9,7 +9,7 @@ export function Brand({ small = false }: { small?: boolean }) {
   return (
     <span className={`brand ${small ? "small" : ""}`}>
       <span className="brand-mark">
-        <svg viewBox="0 0 30 30" fill="none">
+        <svg viewBox="0 0 30 30" fill="none" aria-hidden="true">
           <path
             d="M15 2 28 9.5v11L15 28 2 20.5v-11Z"
             stroke="currentColor"
@@ -54,6 +54,7 @@ export function ModalFrame({
   );
   useEffect(() => {
     const el = ref.current;
+    const previous = previousFocus.current;
     const focusable = () =>
       Array.from(
         el?.querySelectorAll<HTMLElement>(
@@ -83,8 +84,7 @@ export function ModalFrame({
     document.addEventListener("keydown", handle);
     return () => {
       document.removeEventListener("keydown", handle);
-      if (previousFocus.current?.isConnected)
-        previousFocus.current.focus({ preventScroll: true });
+      if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
   return (

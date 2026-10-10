@@ -9,6 +9,7 @@ const f = await bundle(
   "flight",
   `export * from "@/src/data/flight.ts";
 export * from "@/src/data/journal.ts";
+export { deletedText, span, taskStatusText, taskTime, taskTone } from "@/src/data/format.ts";
 export { create } from "@bufbuild/protobuf";
 export { anyPack } from "@bufbuild/protobuf/wkt";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -76,12 +77,10 @@ test("the flight plan merges the wishes: blocking questions first, every item ke
       ["w1", "q1", []],
     ],
   );
+  // Only a worker that asks waits for the user: W3, cut short, is Djinn's to resume or history.
   assert.deepEqual(
     plan.waiting.map((w) => [w.wish.id, w.item.code, w.question]),
-    [
-      ["w1", "W3", ""],
-      ["w2", "W2", "Q01"],
-    ],
+    [["w2", "W2", "Q01"]],
   );
   assert.deepEqual(
     plan.running.map((r) => [r.wish.id, r.item.code]),
@@ -102,6 +101,105 @@ test("the flight plan merges the wishes: blocking questions first, every item ke
   assert.equal(plan.loaded, true);
   // A wish not read yet: the plan says so.
   assert.equal(f.flightPlan([lamp], {}).loaded, false);
+});
+
+test("the Tasks tab: what moves or waits by status, then the finished tasks, the latest ended first", () => {
+  const tasks = [
+    {
+      id: "t1",
+      code: "W1",
+      status: f.TaskStatus.DONE,
+      createTime: at(1),
+      endTime: at(10),
+    },
+    {
+      id: "t2",
+      code: "W2",
+      status: f.TaskStatus.INTERRUPTED,
+      createTime: at(2),
+    },
+    {
+      id: "t3",
+      code: "W3",
+      status: f.TaskStatus.STOPPED,
+      createTime: at(3),
+      endTime: at(30),
+    },
+    {
+      id: "t4",
+      code: "W4",
+      status: f.TaskStatus.DONE,
+      createTime: at(4),
+      endTime: at(10),
+    },
+    {
+      id: "t5",
+      code: "W5",
+      status: f.TaskStatus.FAILED,
+      createTime: at(5),
+      endTime: at(50),
+    },
+    { id: "t6", code: "W6", status: f.TaskStatus.DONE, createTime: at(6) },
+  ];
+  assert.deepEqual(
+    f.finishedTasks(tasks).map((t) => t.code),
+    ["W3", "W4", "W1", "W6", "W2"],
+  );
+  // Running and failed first, then waiting and paused, the planned ones last; a task cut short is finished.
+  assert.deepEqual(
+    f.movingTasks(tasks).map((t) => t.code),
+    ["W5"],
+  );
+  const moving = [
+    { code: "P", status: f.TaskStatus.PENDING },
+    { code: "A", status: f.TaskStatus.PAUSED },
+    { code: "W", status: f.TaskStatus.WAITING },
+    { code: "F", status: f.TaskStatus.FAILED },
+    { code: "I", status: f.TaskStatus.INTERRUPTED },
+    { code: "R", status: f.TaskStatus.RUNNING },
+    { code: "R2", status: f.TaskStatus.RUNNING },
+    { code: "S", status: f.TaskStatus.RESUMING },
+    {
+      code: "WA",
+      status: f.TaskStatus.RUNNING,
+      provider: f.Provider.WATCH,
+    },
+  ];
+  // A running watcher watches: it waits after the paused ones.
+  assert.deepEqual(
+    f.movingTasks(moving).map((t) => t.code),
+    ["R", "R2", "F", "S", "W", "A", "WA", "P"],
+  );
+  // A task cut short and taken over by a fork is finished, as on the page.
+  const forked = [
+    { id: "a", wishId: "w", code: "W1", status: f.TaskStatus.INTERRUPTED },
+    {
+      id: "b",
+      wishId: "w",
+      code: "W2",
+      status: f.TaskStatus.RUNNING,
+      forkOf: "W1",
+    },
+  ];
+  assert.deepEqual(
+    f.finishedTasks(forked).map((t) => t.code),
+    ["W1"],
+  );
+  // The flight plan merges the Tasks tabs of its wishes, each task with its wish.
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const oil = wish("w2", "Find the oil", 2);
+  const plan = f.flightPlan([lamp, oil], {
+    w1: detail(tasks.slice(0, 3), []),
+    w2: detail(tasks.slice(3), []),
+  });
+  assert.deepEqual(
+    plan.finished.map(({ wish, item }) => `${wish.id}:${item.code}`),
+    ["w1:W3", "w2:W4", "w1:W1", "w2:W6", "w1:W2"],
+  );
+  assert.deepEqual(
+    plan.moving.map(({ wish, item }) => `${wish.id}:${item.code}`),
+    ["w2:W5"],
+  );
 });
 
 test("what tasks spent: tokens always, the cost only where the agent gives one", () => {
@@ -208,5 +306,207 @@ test("the journal reads its commands from their requests, with the log blocks, t
   assert.equal(
     f.commandName("/plan.v1.SkillService/Unsummon"),
     "skill unsummon",
+  );
+});
+
+test("a task Djinn resumes, or one resumed as another task, is not the user's move", () => {
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const tasks = [
+    { id: "t1", wishId: "w1", code: "W1", status: f.TaskStatus.RESUMING },
+    {
+      id: "t2",
+      wishId: "w1",
+      code: "W2",
+      status: f.TaskStatus.RESUMING,
+      resumeAfter: at(100),
+    },
+    { id: "t3", wishId: "w1", code: "W3", status: f.TaskStatus.INTERRUPTED },
+    { id: "t4", wishId: "w1", code: "W4", status: f.TaskStatus.INTERRUPTED },
+    {
+      id: "t5",
+      wishId: "w1",
+      code: "W5",
+      status: f.TaskStatus.RUNNING,
+      forkOf: "W3",
+    },
+  ];
+  const plan = f.flightPlan([lamp], { w1: detail(tasks, []) });
+  // Nothing waits for the user: Djinn resumes what it can, and W4, cut short for good, is history.
+  assert.deepEqual(
+    plan.waiting.map((w) => w.item.code),
+    [],
+  );
+  assert.equal(f.forkedAs(tasks[2], tasks), "W5");
+  assert.equal(f.forkedAs(tasks[3], tasks), "");
+  // The ones Djinn resumes show among the running ones.
+  assert.deepEqual(
+    plan.running.map((r) => r.item.code),
+    ["W1", "W2", "W5"],
+  );
+});
+
+test("the states Djinn handles by itself speak the window's status language", () => {
+  const S = f.TaskStatus;
+  assert.equal(f.taskTone({ status: S.RESUMING }), "running");
+  assert.equal(
+    f.taskTone({ status: S.RESUMING, resumeAfter: at(100) }),
+    "paused",
+  );
+  assert.equal(f.taskTone({ status: S.INTERRUPTED }, "W5"), "stopped");
+  assert.equal(f.taskTone({ status: S.INTERRUPTED }), "interrupted");
+});
+
+test("a watcher has its own tone while its command runs", () => {
+  const S = f.TaskStatus;
+  const watch = (status) => ({ status, provider: f.Provider.WATCH });
+  assert.equal(f.taskTone(watch(S.RUNNING)), "watching");
+  assert.equal(f.taskStatusText(watch(S.RUNNING)), "Watching");
+  assert.equal(f.taskTone(watch(S.PAUSED)), "paused");
+  assert.equal(f.taskTone(watch(S.DONE)), "done");
+  assert.equal(
+    f.taskTone({ status: S.RUNNING, provider: f.Provider.CLAUDE }),
+    "running",
+  );
+});
+
+test("a wish deleted says which worktrees stay, and why", () => {
+  assert.equal(f.deletedText("Oil", []), "“Oil” deleted.");
+  assert.equal(
+    f.deletedText("Oil", [
+      {
+        taskCode: "W2",
+        branch: "w2-work",
+        base: "main",
+        commits: 2,
+        changed: true,
+        error: "",
+      },
+      {
+        taskCode: "W3",
+        branch: "w3-work",
+        base: "main",
+        commits: 0,
+        changed: false,
+        error: "git worktree: locked",
+      },
+    ]),
+    "“Oil” deleted. W2 keeps its worktree, on w2-work: 2 commits beyond main, changes not committed. " +
+      "W3 keeps its worktree, on w3-work: git worktree: locked.",
+  );
+});
+
+test("a task says how long it runs as a counter, two units at most", () => {
+  assert.equal(f.span(45_000), "45s");
+  assert.equal(f.span(61_000), "1m1s");
+  assert.equal(f.span(3_660_000), "1h1m");
+  assert.equal(f.span((27 * 3600 + 5 * 60) * 1000), "1d3h");
+  const S = f.TaskStatus;
+  // Running: from its start until now; ended: how long it ran; not started: nothing.
+  const now = 1_000_000 * 1000;
+  assert.equal(
+    f.taskTime({ status: S.RUNNING, startTime: at(1_000_000 - 3_661) }, now)
+      .text,
+    "1h1m",
+  );
+  assert.equal(
+    f.taskTime({ status: S.DONE, startTime: at(100), endTime: at(161) }, now)
+      .text,
+    "1m1s",
+  );
+  assert.equal(f.taskTime({ status: S.PENDING }, now).text, "");
+});
+
+test("the azimas' progress counts the azimas done, those awaiting their proof apart, and not the work", () => {
+  const S = f.TaskStatus;
+  const tasks = [
+    { id: "a", kind: f.TaskKind.AZIMA, azima: { state: f.AzimaState.DONE } },
+    {
+      id: "b",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.IN_PROGRESS },
+    },
+    { id: "c", kind: f.TaskKind.AZIMA, status: S.DONE },
+    {
+      id: "d",
+      kind: f.TaskKind.AZIMA,
+      azima: { state: f.AzimaState.AWAITING_PROOF },
+    },
+    { id: "w1", status: S.DONE, partOf: "b" },
+    { id: "w2", status: S.RUNNING, partOf: "b" },
+  ];
+  assert.deepEqual(f.azimasDone(tasks), { done: 2, proof: 1, count: 4 });
+  assert.equal(f.workCount(tasks), 2);
+});
+
+test("open questions come blocking, then before X, then can wait, across the wishes", () => {
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const oil = wish("w2", "Find the oil", 2);
+  const plan = f.flightPlan([lamp, oil], {
+    w1: detail(
+      [],
+      [
+        { id: "q1", code: "Q01", text: "Brass?" },
+        { id: "q2", code: "Q02", text: "Wick?", before: "before the merge" },
+      ],
+    ),
+    w2: detail(
+      [
+        {
+          id: "t1",
+          code: "W1",
+          status: f.TaskStatus.WAITING,
+          editQuestionId: "q5",
+        },
+      ],
+      [
+        { id: "q3", code: "Q01", text: "Olive?" },
+        { id: "q4", code: "Q02", text: "Glass?", before: "before the demo" },
+        {
+          id: "q5",
+          code: "Q03",
+          text: "May W1 edit?",
+          before: "before the demo",
+        },
+      ],
+    ),
+  });
+  assert.deepEqual(
+    plan.questions.map((q) => [q.item.id, f.urgency(q)]),
+    [
+      ["q5", 0],
+      ["q2", 1],
+      ["q4", 1],
+      ["q1", 2],
+      ["q3", 2],
+    ],
+  );
+  // One wish alone sorts the same way.
+  assert.deepEqual(
+    f
+      .openQuestions(
+        oil,
+        detail(
+          [
+            {
+              id: "t1",
+              code: "W1",
+              status: f.TaskStatus.WAITING,
+              editQuestionId: "q5",
+            },
+          ],
+          [
+            { id: "q3", code: "Q01", text: "Olive?" },
+            {
+              id: "q4",
+              code: "Q02",
+              text: "Glass?",
+              before: "before the demo",
+            },
+            { id: "q5", code: "Q03", text: "May W1 edit?" },
+          ],
+        ),
+      )
+      .map((q) => q.item.id),
+    ["q5", "q4", "q3"],
   );
 });

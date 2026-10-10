@@ -1,0 +1,73 @@
+{{/* The Command line tab's reference, in place of the marker of docs/site/index.html: a table of contents, then the
+global flags, then each group and its commands. Plain HTML: site.css styles it, site.js only filters it. */ -}}
+<nav class="cli-toc" aria-label="Commands">
+  <ul>
+    <li class="cli-toc-global"><a href="#global-flags">Global flags</a></li>
+    {{- range .Groups}}
+    <li class="cli-toc-group" data-group="{{.Name}}">
+      <a href="#{{anchor "group" .Name}}">{{if own .Name}}djinn itself{{else}}{{.Name}}{{end}}</a>
+      <ul>
+        {{- $group := .Name}}
+        {{- range .Commands}}
+        <li data-command="{{.Name}}"><a href="#{{anchor "cmd" .Name}}">{{if own $group}}{{.Name}}{{else}}{{short $group .Name}}{{end}}</a></li>
+        {{- end}}
+      </ul>
+    </li>
+    {{- end}}
+  </ul>
+</nav>
+<div class="cli-body">
+  <section class="cli-group" id="global-flags">
+    <h3>Global flags</h3>
+    <p>Every command generated from the protos takes them, anywhere before <code>--</code>.</p>
+    <table class="cli-params">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+      <tbody>
+        {{- range .Global}}
+        <tr><td><code>{{.Name}}</code></td><td>{{.Type}}{{with .Env}}<span class="cli-env">${{.}}</span>{{end}}</td><td>{{.Help}}</td></tr>
+        {{- end}}
+      </tbody>
+    </table>
+  </section>
+  {{- range .Groups}}
+  {{- $group := .Name}}
+  <section class="cli-group" id="{{anchor "group" .Name}}" data-group="{{.Name}}{{range .Aliases}} {{.}}{{end}}">
+    <h3>{{if own .Name}}djinn itself{{else}}djinn {{.Name}}{{end}}{{range .Aliases}} <span class="cli-alias">or djinn {{.}}</span>{{end}}</h3>
+    <p>{{.Help}}</p>
+    {{- range .Commands}}
+    <article class="cli-cmd" id="{{anchor "cmd" .Name}}" data-command="{{.Name}}">
+      <h4><a href="#{{anchor "cmd" .Name}}">djinn {{.Name}}</a></h4>
+      <pre class="cli-usage"><code>{{.Usage}}</code></pre>
+      {{- with .Tags}}
+      <ul class="cli-tags">{{range .}}<li>{{.}}</li>{{end}}</ul>
+      {{- end}}
+      {{- range paragraphs .Help}}
+      <p>{{.}}</p>
+      {{- end}}
+      {{- if or .Args .Flags}}
+      <table class="cli-params">
+        <thead><tr><th scope="col">{{if .Args}}Argument{{if .Flags}}, flag{{end}}{{else}}Flag{{end}}</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+        <tbody>
+          {{- range .Args}}{{template "param" .}}{{end}}
+          {{- range .Flags}}{{template "param" .}}{{end}}
+        </tbody>
+      </table>
+      {{- end}}
+    </article>
+    {{- end}}
+  </section>
+  {{- end}}
+  <p class="cli-none" hidden>No command matches.</p>
+</div>
+{{- define "param"}}
+          <tr>
+            <td><code>{{.Name}}</code></td>
+            <td>
+              {{- .Type}}{{if .Repeated}}<span class="cli-note">repeatable</span>{{end}}
+              {{- with .Values}}<span class="cli-values">{{range .}}<code>{{.}}</code> {{end}}</span>{{end}}
+              {{- with .Default}}<span class="cli-note">default {{.}}</span>{{end}}
+              {{- with .Env}}<span class="cli-env">${{.}}</span>{{end}}
+            </td>
+            <td>{{.Help}}{{with .Expect}} <span class="cli-expect">Expects {{.}}.</span>{{end}}</td>
+          </tr>
+{{- end}}

@@ -122,8 +122,13 @@ func TestGetEnvironmentWithoutAgents(t *testing.T) {
 	dir := t.TempDir()
 	ran := filepath.Join(t.TempDir(), "ran")
 	fake(t, dir, "claude", "/usr/bin/touch "+ran+"\n")
-	if got := environment(t, dir, false); len(got) != 0 {
-		t.Errorf("providers = %v; want none", got)
+	// The quick provider list uses LookPath, so isolate the process PATH from the user's installed agents. It must not
+	// run any command: setup/status checks happen only when Agents is requested.
+	t.Setenv("PATH", dir)
+	got := byID(environment(t, dir, false))
+	if len(got) != 3 || !got["claude"].GetAvailable() || got["claude"].GetCommand() != filepath.Join(dir, "claude") ||
+		got["codex"].GetAvailable() || got["agy"].GetAvailable() {
+		t.Errorf("providers = %v; want only the fake Claude command available", got)
 	}
 	if _, err := os.Stat(ran); err == nil {
 		t.Error("claude ran; want it left alone")

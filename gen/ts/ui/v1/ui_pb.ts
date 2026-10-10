@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiMAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0Eg4KBmFnZW50cxgBIAEoCCJ/Ch9VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEAoIcGxhdGZvcm0YAiABKAkSIgoJcHJvdmlkZXJzGAMgAygLMg8udWkudjEuUHJvdmlkZXISFQoNZm9sZGVyX2RpYWxvZxgEIAEoCCKuAQoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCRIjCgVzdGF0ZRgFIAEoDjIULnVpLnYxLlByb3ZpZGVyU3RhdGUSDwoHdmVyc2lvbhgGIAEoCRIXCg9pbnN0YWxsX2NvbW1hbmQYByABKAkSFQoNbG9naW5fY29tbWFuZBgIIAEoCSIbChlVaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0IjAKGlVpU2VydmljZUxvYWRTdGF0ZVJlc3BvbnNlEhIKCnN0YXRlX2pzb24YASABKAkiLwoZVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBISCgpzdGF0ZV9qc29uGAEgASgJIhwKGlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIjQKH1VpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QSEQoJZGlyZWN0b3J5GAEgASgJIkIKIFVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCRILCgNnaXQYAiABKAgiVwofVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVxdWVzdBIXCgV0aXRsZRgBIAEoCUIIukgFcgMYyAESGwoJZGlyZWN0b3J5GAIgASgJQgi6SAVyAxiAICI1CiBVaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZRIRCglkaXJlY3RvcnkYASABKAkiKwocVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBILCgN1cmwYASABKAkiLAodVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2USCwoDdXJsGAEgASgJIkIKFFVpU2VydmljZVNob3dSZXF1ZXN0Eg8KB3dpc2hfaWQYASABKAkSGQoIdGVybWluYWwYAiABKAlCB7pIBHICGEAiJwoVVWlTZXJ2aWNlU2hvd1Jlc3BvbnNlEg4KBndpbmRvdxgBIAEoCCIbChlVaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0Ik8KGlVpU2VydmljZVdhdGNoU2hvd1Jlc3BvbnNlEg8KB3dpc2hfaWQYASABKAkSEAoIdGVybWluYWwYAiABKAkSDgoGdGFyZ2V0GAMgASgJIh0KG1VpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdCJTChxVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEg8KB2N1cnJlbnQYASABKAkSDQoFcmVhZHkYAiABKAkSEwoLbm90X3Jlc3VtZWQYAyADKAkiGAoWVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdCI9ChdVaVNlcnZpY2VVcGRhdGVSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhEKCXRlcm1pbmFscxgCIAEoBSIpChVVaVNlcnZpY2VXYXRjaFJlcXVlc3QSEAoIZnJvbV9zZXEYASABKAQiewoWVWlTZXJ2aWNlV2F0Y2hSZXNwb25zZRILCgNzZXEYASABKAQSIwoHcHJvamVjdBgCIAEoCzIQLnBsYW4udjEuUHJvamVjdEgAEiUKCHF1ZXN0aW9uGAMgASgLMhEucGxhbi52MS5RdWVzdGlvbkgAQggKBmVudGl0eSIiCiBVaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVxdWVzdCJgCiFVaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVzcG9uc2USKQoGYWNjZXNzGAEgASgOMhkudWkudjEuTm90aWZpY2F0aW9uQWNjZXNzEhAKCHNldHRpbmdzGAIgASgIIiYKJFVpU2VydmljZVJlcXVlc3ROb3RpZmljYXRpb25zUmVxdWVzdCJkCiVVaVNlcnZpY2VSZXF1ZXN0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlEikKBmFjY2VzcxgBIAEoDjIZLnVpLnYxLk5vdGlmaWNhdGlvbkFjY2VzcxIQCghzZXR0aW5ncxgCIAEoCCIqCihVaVNlcnZpY2VPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3NSZXF1ZXN0IisKKVVpU2VydmljZU9wZW5Ob3RpZmljYXRpb25TZXR0aW5nc1Jlc3BvbnNlIjAKFFVpU2VydmljZVZpZXdSZXF1ZXN0EhgKB3dpc2hfaWQYASABKAlCB7pIBHICGEAiFwoVVWlTZXJ2aWNlVmlld1Jlc3BvbnNlKqABCg1Qcm92aWRlclN0YXRlEh4KGlBST1ZJREVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWUFJPVklERVJfU1RBVEVfTUlTU0lORxABEh0KGVBST1ZJREVSX1NUQVRFX1NJR05FRF9PVVQQAhIYChRQUk9WSURFUl9TVEFURV9SRUFEWRADEhoKFlBST1ZJREVSX1NUQVRFX1VOS05PV04QBCqfAQoSTm90aWZpY2F0aW9uQWNjZXNzEiMKH05PVElGSUNBVElPTl9BQ0NFU1NfVU5TUEVDSUZJRUQQABIjCh9OT1RJRklDQVRJT05fQUNDRVNTX1VOQVZBSUxBQkxFEAESHwobTk9USUZJQ0FUSU9OX0FDQ0VTU19BTExPV0VEEAISHgoaTk9USUZJQ0FUSU9OX0FDQ0VTU19ERU5JRUQQAzKsCwoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJWCglMb2FkU3RhdGUSIC51aS52MS5VaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlTG9hZFN0YXRlUmVzcG9uc2UiBMjzGAISVgoJU2F2ZVN0YXRlEiAudWkudjEuVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIgTI8xgCEmgKD1ZhbGlkYXRlUHJvamVjdBImLnVpLnYxLlVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJYCglXYXRjaFNob3cSIC51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2UiBMjzGAIwARJeCgtXYXRjaFVwZGF0ZRIiLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2UiBMjzGAIwARJNCgZVcGRhdGUSHS51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Gh4udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2UiBMjzGAISTAoFV2F0Y2gSHC51aS52MS5VaVNlcnZpY2VXYXRjaFJlcXVlc3QaHS51aS52MS5VaVNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgCMAESawoQR2V0Tm90aWZpY2F0aW9ucxInLnVpLnYxLlVpU2VydmljZUdldE5vdGlmaWNhdGlvbnNSZXF1ZXN0GigudWkudjEuVWlTZXJ2aWNlR2V0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlIgTI8xgCEncKFFJlcXVlc3ROb3RpZmljYXRpb25zEisudWkudjEuVWlTZXJ2aWNlUmVxdWVzdE5vdGlmaWNhdGlvbnNSZXF1ZXN0GiwudWkudjEuVWlTZXJ2aWNlUmVxdWVzdE5vdGlmaWNhdGlvbnNSZXNwb25zZSIEyPMYAhKDAQoYT3Blbk5vdGlmaWNhdGlvblNldHRpbmdzEi8udWkudjEuVWlTZXJ2aWNlT3Blbk5vdGlmaWNhdGlvblNldHRpbmdzUmVxdWVzdBowLnVpLnYxLlVpU2VydmljZU9wZW5Ob3RpZmljYXRpb25TZXR0aW5nc1Jlc3BvbnNlIgTI8xgCEkcKBFZpZXcSGy51aS52MS5VaVNlcnZpY2VWaWV3UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVZpZXdSZXNwb25zZSIEyPMYAkJ2Cgljb20udWkudjFCB1VpUHJvdG9QAVorZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdWkvdjE7dWl2MaICA1VYWKoCBVVpLlYxygIFVWlcVjHiAhFVaVxWMVxHUEJNZXRhZGF0YeoCBlVpOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiMAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0Eg4KBmFnZW50cxgBIAEoCCKiAQofVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhAKCHBsYXRmb3JtGAIgASgJEiIKCXByb3ZpZGVycxgDIAMoCzIPLnVpLnYxLlByb3ZpZGVyEhUKDWZvbGRlcl9kaWFsb2cYBCABKAgSIQoIc2hvcnRjdXQYBSABKAsyDy51aS52MS5TaG9ydGN1dCIbChlVaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0IjAKGlVpU2VydmljZUxvYWRTdGF0ZVJlc3BvbnNlEhIKCnN0YXRlX2pzb24YASABKAkiLwoZVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBISCgpzdGF0ZV9qc29uGAEgASgJIhwKGlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIjQKH1VpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QSEQoJZGlyZWN0b3J5GAEgASgJIkIKIFVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCRILCgNnaXQYAiABKAgiVAoIU2hvcnRjdXQSDQoFY2hvcmQYASABKAkSFQoNZGVmYXVsdF9jaG9yZBgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHcHJvYmxlbRgEIAEoCSIuCghTZXR0aW5ncxIVCghzaG9ydGN1dBgBIAEoCUgAiAEBQgsKCV9zaG9ydGN1dCKuAQoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCRIjCgVzdGF0ZRgFIAEoDjIULnVpLnYxLlByb3ZpZGVyU3RhdGUSDwoHdmVyc2lvbhgGIAEoCRIXCg9pbnN0YWxsX2NvbW1hbmQYByABKAkSFQoNbG9naW5fY29tbWFuZBgIIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJ4ChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkSDgoGdGFyZ2V0GAUgASgJIh0KG1VpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdCKqAQocVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZRIPCgdjdXJyZW50GAEgASgJEg0KBXJlYWR5GAIgASgJEhMKC25vdF9yZXN1bWVkGAMgAygJEhEKCW5vdGVzX3VybBgEIAEoCRIbCgVidWlsZBgFIAEoCzIMLnVpLnYxLkJ1aWxkEiUKCmluc3RhbGxpbmcYBiABKAsyES51aS52MS5JbnN0YWxsaW5nIkwKCkluc3RhbGxpbmcSCwoDc2hhGAEgASgJEiAKBHN0ZXAYAiABKA4yEi51aS52MS5JbnN0YWxsU3RlcBIPCgd3YWl0aW5nGAMgASgJIq8BCgVCdWlsZBIPCgd3aXNoX2lkGAEgASgJEhIKCndpc2hfdGl0bGUYAiABKAkSEgoKcHJvamVjdF9pZBgDIAEoCRIPCgdwcm9qZWN0GAQgASgJEg4KBmJyYW5jaBgFIAEoCRILCgNzaGEYBiABKAkSDQoFdGFza3MYByADKAkSDwoHY2hhbmdlcxgIIAMoCRIOCgZjaGVja3MYCSADKAkSDwoHaW5zdGFsbBgKIAEoCSIwChZVaVNlcnZpY2VVcGRhdGVSZXF1ZXN0EhYKBWJ1aWxkGAEgASgJQge6SARyAhhAIlAKF1VpU2VydmljZVVwZGF0ZVJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEQoJdGVybWluYWxzGAIgASgFEhEKCWluc3RhbGxlZBgDIAEoCSIiCiBVaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVxdWVzdCJgCiFVaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVzcG9uc2USKQoGYWNjZXNzGAEgASgOMhkudWkudjEuTm90aWZpY2F0aW9uQWNjZXNzEhAKCHNldHRpbmdzGAIgASgIIiYKJFVpU2VydmljZVJlcXVlc3ROb3RpZmljYXRpb25zUmVxdWVzdCJkCiVVaVNlcnZpY2VSZXF1ZXN0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlEikKBmFjY2VzcxgBIAEoDjIZLnVpLnYxLk5vdGlmaWNhdGlvbkFjY2VzcxIQCghzZXR0aW5ncxgCIAEoCCIqCihVaVNlcnZpY2VPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3NSZXF1ZXN0IisKKVVpU2VydmljZU9wZW5Ob3RpZmljYXRpb25TZXR0aW5nc1Jlc3BvbnNlIjAKFFVpU2VydmljZVZpZXdSZXF1ZXN0EhgKB3dpc2hfaWQYASABKAlCB7pIBHICGEAiFwoVVWlTZXJ2aWNlVmlld1Jlc3BvbnNlIikKFVVpU2VydmljZVdhdGNoUmVxdWVzdBIQCghmcm9tX3NlcRgBIAEoBCJ7ChZVaVNlcnZpY2VXYXRjaFJlc3BvbnNlEgsKA3NlcRgBIAEoBBIjCgdwcm9qZWN0GAIgASgLMhAucGxhbi52MS5Qcm9qZWN0SAASJQoIcXVlc3Rpb24YAyABKAsyES5wbGFuLnYxLlF1ZXN0aW9uSABCCAoGZW50aXR5KqABCg1Qcm92aWRlclN0YXRlEh4KGlBST1ZJREVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWUFJPVklERVJfU1RBVEVfTUlTU0lORxABEh0KGVBST1ZJREVSX1NUQVRFX1NJR05FRF9PVVQQAhIYChRQUk9WSURFUl9TVEFURV9SRUFEWRADEhoKFlBST1ZJREVSX1NUQVRFX1VOS05PV04QBCqZAQoLSW5zdGFsbFN0ZXASHAoYSU5TVEFMTF9TVEVQX1VOU1BFQ0lGSUVEEAASGAoUSU5TVEFMTF9TVEVQX1dBSVRJTkcQARIaChZJTlNUQUxMX1NURVBfUFJFUEFSSU5HEAISGQoVSU5TVEFMTF9TVEVQX0JVSUxESU5HEAMSGwoXSU5TVEFMTF9TVEVQX1JFU1RBUlRJTkcQBCqfAQoSTm90aWZpY2F0aW9uQWNjZXNzEiMKH05PVElGSUNBVElPTl9BQ0NFU1NfVU5TUEVDSUZJRUQQABIjCh9OT1RJRklDQVRJT05fQUNDRVNTX1VOQVZBSUxBQkxFEAESHwobTk9USUZJQ0FUSU9OX0FDQ0VTU19BTExPV0VEEAISHgoaTk9USUZJQ0FUSU9OX0FDQ0VTU19ERU5JRUQQAzLfDAoJVWlTZXJ2aWNlEmUKDkdldEVudmlyb25tZW50EiUudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0GiYudWkudjEuVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZSIEyPMYAhJWCglMb2FkU3RhdGUSIC51aS52MS5VaVNlcnZpY2VMb2FkU3RhdGVSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlTG9hZFN0YXRlUmVzcG9uc2UiBMjzGAISVgoJU2F2ZVN0YXRlEiAudWkudjEuVWlTZXJ2aWNlU2F2ZVN0YXRlUmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVNhdmVTdGF0ZVJlc3BvbnNlIgTI8xgCEmgKD1ZhbGlkYXRlUHJvamVjdBImLnVpLnYxLlVpU2VydmljZVZhbGlkYXRlUHJvamVjdFJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VWYWxpZGF0ZVByb2plY3RSZXNwb25zZSIEyPMYAhJoCg9DaG9vc2VEaXJlY3RvcnkSJi51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0GicudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVzcG9uc2UiBMjzGAISXwoMT3BlbkV4dGVybmFsEiMudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBokLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlc3BvbnNlIgTI8xgCElwKC1NldFNob3J0Y3V0EiIudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXNwb25zZSIEyPMYAhJHCgRTaG93EhsudWkudjEuVWlTZXJ2aWNlU2hvd1JlcXVlc3QaHC51aS52MS5VaVNlcnZpY2VTaG93UmVzcG9uc2UiBMjzGAISUwoIT3BlbkxpbmsSHy51aS52MS5VaVNlcnZpY2VPcGVuTGlua1JlcXVlc3QaIC51aS52MS5VaVNlcnZpY2VPcGVuTGlua1Jlc3BvbnNlIgTI8xgCElgKCVdhdGNoU2hvdxIgLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QaIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZSIEyPMYAjABEl4KC1dhdGNoVXBkYXRlEiIudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXF1ZXN0GiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZSIEyPMYAjABEk0KBlVwZGF0ZRIdLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlcXVlc3QaHi51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXNwb25zZSIEyPMYAhJMCgVXYXRjaBIcLnVpLnYxLlVpU2VydmljZVdhdGNoUmVxdWVzdBodLnVpLnYxLlVpU2VydmljZVdhdGNoUmVzcG9uc2UiBMjzGAIwARJrChBHZXROb3RpZmljYXRpb25zEicudWkudjEuVWlTZXJ2aWNlR2V0Tm90aWZpY2F0aW9uc1JlcXVlc3QaKC51aS52MS5VaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVzcG9uc2UiBMjzGAISdwoUUmVxdWVzdE5vdGlmaWNhdGlvbnMSKy51aS52MS5VaVNlcnZpY2VSZXF1ZXN0Tm90aWZpY2F0aW9uc1JlcXVlc3QaLC51aS52MS5VaVNlcnZpY2VSZXF1ZXN0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlIgTI8xgCEoMBChhPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3MSLy51aS52MS5VaVNlcnZpY2VPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3NSZXF1ZXN0GjAudWkudjEuVWlTZXJ2aWNlT3Blbk5vdGlmaWNhdGlvblNldHRpbmdzUmVzcG9uc2UiBMjzGAISRwoEVmlldxIbLnVpLnYxLlVpU2VydmljZVZpZXdSZXF1ZXN0GhwudWkudjEuVWlTZXJ2aWNlVmlld1Jlc3BvbnNlIgTI8xgCQnYKCWNvbS51aS52MUIHVWlQcm90b1ABWitnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby91aS92MTt1aXYxogIDVVhYqgIFVWkuVjHKAgVVaVxWMeICEVVpXFYxXEdQQk1ldGFkYXRh6gIGVWk6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options, file_plan_v1_plan]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -69,6 +69,13 @@ export type UiServiceGetEnvironmentResponse = Message<"ui.v1.UiServiceGetEnviron
    * @generated from field: bool folder_dialog = 4;
    */
   folderDialog: boolean;
+
+  /**
+   * The global shortcut that brings the window forward.
+   *
+   * @generated from field: ui.v1.Shortcut shortcut = 5;
+   */
+  shortcut?: Shortcut | undefined;
 };
 
 /**
@@ -79,6 +86,181 @@ export const UiServiceGetEnvironmentResponseSchema: GenMessage<UiServiceGetEnvir
   messageDesc(file_ui_v1_ui, 1);
 
 /**
+ * @generated from message ui.v1.UiServiceLoadStateRequest
+ */
+export type UiServiceLoadStateRequest = Message<"ui.v1.UiServiceLoadStateRequest"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceLoadStateRequest.
+ * Use `create(UiServiceLoadStateRequestSchema)` to create a new message.
+ */
+export const UiServiceLoadStateRequestSchema: GenMessage<UiServiceLoadStateRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 2);
+
+/**
+ * @generated from message ui.v1.UiServiceLoadStateResponse
+ */
+export type UiServiceLoadStateResponse = Message<"ui.v1.UiServiceLoadStateResponse"> & {
+  /**
+   * The state as JSON, exactly as saved; empty when nothing was saved yet.
+   *
+   * @generated from field: string state_json = 1;
+   */
+  stateJson: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceLoadStateResponse.
+ * Use `create(UiServiceLoadStateResponseSchema)` to create a new message.
+ */
+export const UiServiceLoadStateResponseSchema: GenMessage<UiServiceLoadStateResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 3);
+
+/**
+ * @generated from message ui.v1.UiServiceSaveStateRequest
+ */
+export type UiServiceSaveStateRequest = Message<"ui.v1.UiServiceSaveStateRequest"> & {
+  /**
+   * The state as JSON. It must be a JSON object.
+   *
+   * @generated from field: string state_json = 1;
+   */
+  stateJson: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceSaveStateRequest.
+ * Use `create(UiServiceSaveStateRequestSchema)` to create a new message.
+ */
+export const UiServiceSaveStateRequestSchema: GenMessage<UiServiceSaveStateRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 4);
+
+/**
+ * @generated from message ui.v1.UiServiceSaveStateResponse
+ */
+export type UiServiceSaveStateResponse = Message<"ui.v1.UiServiceSaveStateResponse"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceSaveStateResponse.
+ * Use `create(UiServiceSaveStateResponseSchema)` to create a new message.
+ */
+export const UiServiceSaveStateResponseSchema: GenMessage<UiServiceSaveStateResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 5);
+
+/**
+ * @generated from message ui.v1.UiServiceValidateProjectRequest
+ */
+export type UiServiceValidateProjectRequest = Message<"ui.v1.UiServiceValidateProjectRequest"> & {
+  /**
+   * Path of the project directory.
+   *
+   * @generated from field: string directory = 1;
+   */
+  directory: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceValidateProjectRequest.
+ * Use `create(UiServiceValidateProjectRequestSchema)` to create a new message.
+ */
+export const UiServiceValidateProjectRequestSchema: GenMessage<UiServiceValidateProjectRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 6);
+
+/**
+ * @generated from message ui.v1.UiServiceValidateProjectResponse
+ */
+export type UiServiceValidateProjectResponse = Message<"ui.v1.UiServiceValidateProjectResponse"> & {
+  /**
+   * Absolute path of the directory, with symbolic links resolved.
+   *
+   * @generated from field: string directory = 1;
+   */
+  directory: string;
+
+  /**
+   * The directory is inside a Git repository.
+   *
+   * @generated from field: bool git = 2;
+   */
+  git: boolean;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceValidateProjectResponse.
+ * Use `create(UiServiceValidateProjectResponseSchema)` to create a new message.
+ */
+export const UiServiceValidateProjectResponseSchema: GenMessage<UiServiceValidateProjectResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 7);
+
+/**
+ * The global shortcut that brings the window forward from anywhere on the desktop, on the wish with the newest open
+ * question, else on the flight plan.
+ *
+ * @generated from message ui.v1.Shortcut
+ */
+export type Shortcut = Message<"ui.v1.Shortcut"> & {
+  /**
+   * The chord in effect, such as Ctrl+Alt+Space; empty when off.
+   *
+   * @generated from field: string chord = 1;
+   */
+  chord: string;
+
+  /**
+   * The chord used until one is chosen.
+   *
+   * @generated from field: string default_chord = 2;
+   */
+  defaultChord: string;
+
+  /**
+   * This Djinn can take a global shortcut: a native window on a system that has them. False in the browser.
+   *
+   * @generated from field: bool available = 3;
+   */
+  available: boolean;
+
+  /**
+   * Why the chord does not work, as the system said, such as another application holding it; empty when it works or
+   * is off.
+   *
+   * @generated from field: string problem = 4;
+   */
+  problem: string;
+};
+
+/**
+ * Describes the message ui.v1.Shortcut.
+ * Use `create(ShortcutSchema)` to create a new message.
+ */
+export const ShortcutSchema: GenMessage<Shortcut> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 8);
+
+/**
+ * The window's settings that Djinn acts on, in settings.json of the data directory. The page keeps its own (the
+ * language, the theme).
+ *
+ * @generated from message ui.v1.Settings
+ */
+export type Settings = Message<"ui.v1.Settings"> & {
+  /**
+   * The global shortcut's chord. Unset: the default one. Empty: off.
+   *
+   * @generated from field: optional string shortcut = 1;
+   */
+  shortcut?: string | undefined;
+};
+
+/**
+ * Describes the message ui.v1.Settings.
+ * Use `create(SettingsSchema)` to create a new message.
+ */
+export const SettingsSchema: GenMessage<Settings> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 9);
+
+/**
  * An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
  * installers use, so that a window started from the Finder finds it too.
  *
@@ -86,7 +268,7 @@ export const UiServiceGetEnvironmentResponseSchema: GenMessage<UiServiceGetEnvir
  */
 export type Provider = Message<"ui.v1.Provider"> & {
   /**
-   * Identifier: claude, codex or agy.
+   * Identifier: codex, claude or antigravity (agy).
    *
    * @generated from field: string id = 1;
    */
@@ -107,7 +289,7 @@ export type Provider = Message<"ui.v1.Provider"> & {
   available: boolean;
 
   /**
-   * The command, as resolved when available.
+   * The command, as resolved on the PATH when available.
    *
    * @generated from field: string command = 4;
    */
@@ -147,116 +329,7 @@ export type Provider = Message<"ui.v1.Provider"> & {
  * Use `create(ProviderSchema)` to create a new message.
  */
 export const ProviderSchema: GenMessage<Provider> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 2);
-
-/**
- * @generated from message ui.v1.UiServiceLoadStateRequest
- */
-export type UiServiceLoadStateRequest = Message<"ui.v1.UiServiceLoadStateRequest"> & {
-};
-
-/**
- * Describes the message ui.v1.UiServiceLoadStateRequest.
- * Use `create(UiServiceLoadStateRequestSchema)` to create a new message.
- */
-export const UiServiceLoadStateRequestSchema: GenMessage<UiServiceLoadStateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 3);
-
-/**
- * @generated from message ui.v1.UiServiceLoadStateResponse
- */
-export type UiServiceLoadStateResponse = Message<"ui.v1.UiServiceLoadStateResponse"> & {
-  /**
-   * The state as JSON, exactly as saved; empty when nothing was saved yet.
-   *
-   * @generated from field: string state_json = 1;
-   */
-  stateJson: string;
-};
-
-/**
- * Describes the message ui.v1.UiServiceLoadStateResponse.
- * Use `create(UiServiceLoadStateResponseSchema)` to create a new message.
- */
-export const UiServiceLoadStateResponseSchema: GenMessage<UiServiceLoadStateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 4);
-
-/**
- * @generated from message ui.v1.UiServiceSaveStateRequest
- */
-export type UiServiceSaveStateRequest = Message<"ui.v1.UiServiceSaveStateRequest"> & {
-  /**
-   * The state as JSON. It must be a JSON object.
-   *
-   * @generated from field: string state_json = 1;
-   */
-  stateJson: string;
-};
-
-/**
- * Describes the message ui.v1.UiServiceSaveStateRequest.
- * Use `create(UiServiceSaveStateRequestSchema)` to create a new message.
- */
-export const UiServiceSaveStateRequestSchema: GenMessage<UiServiceSaveStateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 5);
-
-/**
- * @generated from message ui.v1.UiServiceSaveStateResponse
- */
-export type UiServiceSaveStateResponse = Message<"ui.v1.UiServiceSaveStateResponse"> & {
-};
-
-/**
- * Describes the message ui.v1.UiServiceSaveStateResponse.
- * Use `create(UiServiceSaveStateResponseSchema)` to create a new message.
- */
-export const UiServiceSaveStateResponseSchema: GenMessage<UiServiceSaveStateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 6);
-
-/**
- * @generated from message ui.v1.UiServiceValidateProjectRequest
- */
-export type UiServiceValidateProjectRequest = Message<"ui.v1.UiServiceValidateProjectRequest"> & {
-  /**
-   * Path of the project directory.
-   *
-   * @generated from field: string directory = 1;
-   */
-  directory: string;
-};
-
-/**
- * Describes the message ui.v1.UiServiceValidateProjectRequest.
- * Use `create(UiServiceValidateProjectRequestSchema)` to create a new message.
- */
-export const UiServiceValidateProjectRequestSchema: GenMessage<UiServiceValidateProjectRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 7);
-
-/**
- * @generated from message ui.v1.UiServiceValidateProjectResponse
- */
-export type UiServiceValidateProjectResponse = Message<"ui.v1.UiServiceValidateProjectResponse"> & {
-  /**
-   * Absolute path of the directory, with symbolic links resolved.
-   *
-   * @generated from field: string directory = 1;
-   */
-  directory: string;
-
-  /**
-   * The directory is inside a Git repository.
-   *
-   * @generated from field: bool git = 2;
-   */
-  git: boolean;
-};
-
-/**
- * Describes the message ui.v1.UiServiceValidateProjectResponse.
- * Use `create(UiServiceValidateProjectResponseSchema)` to create a new message.
- */
-export const UiServiceValidateProjectResponseSchema: GenMessage<UiServiceValidateProjectResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 8);
+  messageDesc(file_ui_v1_ui, 10);
 
 /**
  * @generated from message ui.v1.UiServiceChooseDirectoryRequest
@@ -282,7 +355,7 @@ export type UiServiceChooseDirectoryRequest = Message<"ui.v1.UiServiceChooseDire
  * Use `create(UiServiceChooseDirectoryRequestSchema)` to create a new message.
  */
 export const UiServiceChooseDirectoryRequestSchema: GenMessage<UiServiceChooseDirectoryRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 9);
+  messageDesc(file_ui_v1_ui, 11);
 
 /**
  * @generated from message ui.v1.UiServiceChooseDirectoryResponse
@@ -301,7 +374,7 @@ export type UiServiceChooseDirectoryResponse = Message<"ui.v1.UiServiceChooseDir
  * Use `create(UiServiceChooseDirectoryResponseSchema)` to create a new message.
  */
 export const UiServiceChooseDirectoryResponseSchema: GenMessage<UiServiceChooseDirectoryResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 10);
+  messageDesc(file_ui_v1_ui, 12);
 
 /**
  * @generated from message ui.v1.UiServiceOpenExternalRequest
@@ -320,7 +393,7 @@ export type UiServiceOpenExternalRequest = Message<"ui.v1.UiServiceOpenExternalR
  * Use `create(UiServiceOpenExternalRequestSchema)` to create a new message.
  */
 export const UiServiceOpenExternalRequestSchema: GenMessage<UiServiceOpenExternalRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 11);
+  messageDesc(file_ui_v1_ui, 13);
 
 /**
  * @generated from message ui.v1.UiServiceOpenExternalResponse
@@ -339,7 +412,45 @@ export type UiServiceOpenExternalResponse = Message<"ui.v1.UiServiceOpenExternal
  * Use `create(UiServiceOpenExternalResponseSchema)` to create a new message.
  */
 export const UiServiceOpenExternalResponseSchema: GenMessage<UiServiceOpenExternalResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 12);
+  messageDesc(file_ui_v1_ui, 14);
+
+/**
+ * @generated from message ui.v1.UiServiceSetShortcutRequest
+ */
+export type UiServiceSetShortcutRequest = Message<"ui.v1.UiServiceSetShortcutRequest"> & {
+  /**
+   * The chord: modifiers then a key, joined by +, such as Ctrl+Alt+Space. Empty turns the shortcut off.
+   *
+   * @generated from field: string chord = 1;
+   */
+  chord: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceSetShortcutRequest.
+ * Use `create(UiServiceSetShortcutRequestSchema)` to create a new message.
+ */
+export const UiServiceSetShortcutRequestSchema: GenMessage<UiServiceSetShortcutRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 15);
+
+/**
+ * @generated from message ui.v1.UiServiceSetShortcutResponse
+ */
+export type UiServiceSetShortcutResponse = Message<"ui.v1.UiServiceSetShortcutResponse"> & {
+  /**
+   * The shortcut as it now is.
+   *
+   * @generated from field: ui.v1.Shortcut shortcut = 1;
+   */
+  shortcut?: Shortcut | undefined;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceSetShortcutResponse.
+ * Use `create(UiServiceSetShortcutResponseSchema)` to create a new message.
+ */
+export const UiServiceSetShortcutResponseSchema: GenMessage<UiServiceSetShortcutResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 16);
 
 /**
  * @generated from message ui.v1.UiServiceShowRequest
@@ -365,7 +476,7 @@ export type UiServiceShowRequest = Message<"ui.v1.UiServiceShowRequest"> & {
  * Use `create(UiServiceShowRequestSchema)` to create a new message.
  */
 export const UiServiceShowRequestSchema: GenMessage<UiServiceShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 13);
+  messageDesc(file_ui_v1_ui, 17);
 
 /**
  * @generated from message ui.v1.UiServiceShowResponse
@@ -384,7 +495,59 @@ export type UiServiceShowResponse = Message<"ui.v1.UiServiceShowResponse"> & {
  * Use `create(UiServiceShowResponseSchema)` to create a new message.
  */
 export const UiServiceShowResponseSchema: GenMessage<UiServiceShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 14);
+  messageDesc(file_ui_v1_ui, 18);
+
+/**
+ * @generated from message ui.v1.UiServiceOpenLinkRequest
+ */
+export type UiServiceOpenLinkRequest = Message<"ui.v1.UiServiceOpenLinkRequest"> & {
+  /**
+   * The link: djinn://tilasm/<id> or djinn://wish/<id>.
+   *
+   * @generated from field: string url = 1;
+   */
+  url: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceOpenLinkRequest.
+ * Use `create(UiServiceOpenLinkRequestSchema)` to create a new message.
+ */
+export const UiServiceOpenLinkRequestSchema: GenMessage<UiServiceOpenLinkRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 19);
+
+/**
+ * @generated from message ui.v1.UiServiceOpenLinkResponse
+ */
+export type UiServiceOpenLinkResponse = Message<"ui.v1.UiServiceOpenLinkResponse"> & {
+  /**
+   * The wish shown.
+   *
+   * @generated from field: string wish_id = 1;
+   */
+  wishId: string;
+
+  /**
+   * The tilasm shown in its Tilasms tab; empty for a wish's link.
+   *
+   * @generated from field: string tilasm_id = 2;
+   */
+  tilasmId: string;
+
+  /**
+   * A native window was brought to the front; false in browser mode.
+   *
+   * @generated from field: bool window = 3;
+   */
+  window: boolean;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceOpenLinkResponse.
+ * Use `create(UiServiceOpenLinkResponseSchema)` to create a new message.
+ */
+export const UiServiceOpenLinkResponseSchema: GenMessage<UiServiceOpenLinkResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 20);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowRequest
@@ -397,7 +560,7 @@ export type UiServiceWatchShowRequest = Message<"ui.v1.UiServiceWatchShowRequest
  * Use `create(UiServiceWatchShowRequestSchema)` to create a new message.
  */
 export const UiServiceWatchShowRequestSchema: GenMessage<UiServiceWatchShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 15);
+  messageDesc(file_ui_v1_ui, 21);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowResponse
@@ -418,10 +581,25 @@ export type UiServiceWatchShowResponse = Message<"ui.v1.UiServiceWatchShowRespon
   terminal: string;
 
   /**
+   * The tilasm to show, in the wish's Tilasms tab; empty for none.
+   *
+   * @generated from field: string tilasm_id = 3;
+   */
+  tilasmId: string;
+
+  /**
+   * A link the window was asked to open and Djinn does not know, or whose tilasm or wish is not on this machine: the
+   * window says so. Empty for none.
+   *
+   * @generated from field: string unknown_link = 4;
+   */
+  unknownLink: string;
+
+  /**
    * The element of the wish to bring into view, by its id in the page: question-<id>, task-<id>, grant-<wish id>;
    * empty for the top of the wish.
    *
-   * @generated from field: string target = 3;
+   * @generated from field: string target = 5;
    */
   target: string;
 };
@@ -431,7 +609,7 @@ export type UiServiceWatchShowResponse = Message<"ui.v1.UiServiceWatchShowRespon
  * Use `create(UiServiceWatchShowResponseSchema)` to create a new message.
  */
 export const UiServiceWatchShowResponseSchema: GenMessage<UiServiceWatchShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 16);
+  messageDesc(file_ui_v1_ui, 22);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateRequest
@@ -444,7 +622,7 @@ export type UiServiceWatchUpdateRequest = Message<"ui.v1.UiServiceWatchUpdateReq
  * Use `create(UiServiceWatchUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateRequestSchema: GenMessage<UiServiceWatchUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 17);
+  messageDesc(file_ui_v1_ui, 23);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateResponse
@@ -470,6 +648,30 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
    * @generated from field: repeated string not_resumed = 3;
    */
   notResumed: string[];
+
+  /**
+   * Where the release notes of the newer Djinn are, an http(s) link; empty when none waits, or when it comes from a
+   * local install, which has none.
+   *
+   * @generated from field: string notes_url = 4;
+   */
+  notesUrl: string;
+
+  /**
+   * The last push of a wish's integration branch, in a project whose settings name an install command, and not
+   * installed since: the window proposes to install it and restart on it. Unset for none.
+   *
+   * @generated from field: ui.v1.Build build = 5;
+   */
+  build?: Build | undefined;
+
+  /**
+   * The install of a build that runs now (Update), and where it stands; unset for none. The window says it in place
+   * of the build's buttons: what it waits for, then that it builds, then that Djinn restarts.
+   *
+   * @generated from field: ui.v1.Installing installing = 6;
+   */
+  installing?: Installing | undefined;
 };
 
 /**
@@ -477,12 +679,131 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
  * Use `create(UiServiceWatchUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 18);
+  messageDesc(file_ui_v1_ui, 24);
+
+/**
+ * Installing is an install of a build that runs now, and where it stands.
+ *
+ * @generated from message ui.v1.Installing
+ */
+export type Installing = Message<"ui.v1.Installing"> & {
+  /**
+   * The commit being installed.
+   *
+   * @generated from field: string sha = 1;
+   */
+  sha: string;
+
+  /**
+   * @generated from field: ui.v1.InstallStep step = 2;
+   */
+  step: InstallStep;
+
+  /**
+   * What it waits for, while its step is waiting: another install, a gate and who holds it, the machine under
+   * pressure. Empty otherwise.
+   *
+   * @generated from field: string waiting = 3;
+   */
+  waiting: string;
+};
+
+/**
+ * Describes the message ui.v1.Installing.
+ * Use `create(InstallingSchema)` to create a new message.
+ */
+export const InstallingSchema: GenMessage<Installing> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 25);
+
+/**
+ * Build is a wish's integration branch as Djinn pushed it (T07), to install.
+ *
+ * @generated from message ui.v1.Build
+ */
+export type Build = Message<"ui.v1.Build"> & {
+  /**
+   * The wish, and its title.
+   *
+   * @generated from field: string wish_id = 1;
+   */
+  wishId: string;
+
+  /**
+   * @generated from field: string wish_title = 2;
+   */
+  wishTitle: string;
+
+  /**
+   * The project, by its identifier and its name.
+   *
+   * @generated from field: string project_id = 3;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string project = 4;
+   */
+  project: string;
+
+  /**
+   * The integration branch, and the commit pushed.
+   *
+   * @generated from field: string branch = 5;
+   */
+  branch: string;
+
+  /**
+   * @generated from field: string sha = 6;
+   */
+  sha: string;
+
+  /**
+   * The tasks whose work the push brought, by code: W5.
+   *
+   * @generated from field: repeated string tasks = 7;
+   */
+  tasks: string[];
+
+  /**
+   * What changed: the titles of the commits the push brought, the latest first.
+   *
+   * @generated from field: repeated string changes = 8;
+   */
+  changes: string[];
+
+  /**
+   * What to check, one line per task: its code and title, then what its worker said last.
+   *
+   * @generated from field: repeated string checks = 9;
+   */
+  checks: string[];
+
+  /**
+   * The command that installs it: go tool task install.
+   *
+   * @generated from field: string install = 10;
+   */
+  install: string;
+};
+
+/**
+ * Describes the message ui.v1.Build.
+ * Use `create(BuildSchema)` to create a new message.
+ */
+export const BuildSchema: GenMessage<Build> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 26);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateRequest
  */
 export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
+  /**
+   * The commit of the build to install first, as WatchUpdate proposed it; empty to restart on the newer Djinn
+   * already installed. Refused when it is not the build proposed.
+   *
+   * @generated from field: string build = 1;
+   */
+  build: string;
 };
 
 /**
@@ -490,14 +811,14 @@ export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
  * Use `create(UiServiceUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceUpdateRequestSchema: GenMessage<UiServiceUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 19);
+  messageDesc(file_ui_v1_ui, 27);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateResponse
  */
 export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> & {
   /**
-   * Version Djinn restarts on.
+   * Version Djinn restarts on; empty when the build installed no newer Djinn: nothing restarts.
    *
    * @generated from field: string version = 1;
    */
@@ -509,6 +830,13 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
    * @generated from field: int32 terminals = 2;
    */
   terminals: number;
+
+  /**
+   * The commit of the build installed, when one was.
+   *
+   * @generated from field: string installed = 3;
+   */
+  installed: string;
 };
 
 /**
@@ -516,9 +844,143 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
  * Use `create(UiServiceUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 20);
+  messageDesc(file_ui_v1_ui, 28);
 
 /**
+ * @generated from message ui.v1.UiServiceGetNotificationsRequest
+ */
+export type UiServiceGetNotificationsRequest = Message<"ui.v1.UiServiceGetNotificationsRequest"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceGetNotificationsRequest.
+ * Use `create(UiServiceGetNotificationsRequestSchema)` to create a new message.
+ */
+export const UiServiceGetNotificationsRequestSchema: GenMessage<UiServiceGetNotificationsRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 29);
+
+/**
+ * @generated from message ui.v1.UiServiceGetNotificationsResponse
+ */
+export type UiServiceGetNotificationsResponse = Message<"ui.v1.UiServiceGetNotificationsResponse"> & {
+  /**
+   * @generated from field: ui.v1.NotificationAccess access = 1;
+   */
+  access: NotificationAccess;
+
+  /**
+   * OpenNotificationSettings opens the system's settings (macOS).
+   *
+   * @generated from field: bool settings = 2;
+   */
+  settings: boolean;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceGetNotificationsResponse.
+ * Use `create(UiServiceGetNotificationsResponseSchema)` to create a new message.
+ */
+export const UiServiceGetNotificationsResponseSchema: GenMessage<UiServiceGetNotificationsResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 30);
+
+/**
+ * @generated from message ui.v1.UiServiceRequestNotificationsRequest
+ */
+export type UiServiceRequestNotificationsRequest = Message<"ui.v1.UiServiceRequestNotificationsRequest"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceRequestNotificationsRequest.
+ * Use `create(UiServiceRequestNotificationsRequestSchema)` to create a new message.
+ */
+export const UiServiceRequestNotificationsRequestSchema: GenMessage<UiServiceRequestNotificationsRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 31);
+
+/**
+ * @generated from message ui.v1.UiServiceRequestNotificationsResponse
+ */
+export type UiServiceRequestNotificationsResponse = Message<"ui.v1.UiServiceRequestNotificationsResponse"> & {
+  /**
+   * @generated from field: ui.v1.NotificationAccess access = 1;
+   */
+  access: NotificationAccess;
+
+  /**
+   * OpenNotificationSettings opens the system's settings (macOS).
+   *
+   * @generated from field: bool settings = 2;
+   */
+  settings: boolean;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceRequestNotificationsResponse.
+ * Use `create(UiServiceRequestNotificationsResponseSchema)` to create a new message.
+ */
+export const UiServiceRequestNotificationsResponseSchema: GenMessage<UiServiceRequestNotificationsResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 32);
+
+/**
+ * @generated from message ui.v1.UiServiceOpenNotificationSettingsRequest
+ */
+export type UiServiceOpenNotificationSettingsRequest = Message<"ui.v1.UiServiceOpenNotificationSettingsRequest"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceOpenNotificationSettingsRequest.
+ * Use `create(UiServiceOpenNotificationSettingsRequestSchema)` to create a new message.
+ */
+export const UiServiceOpenNotificationSettingsRequestSchema: GenMessage<UiServiceOpenNotificationSettingsRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 33);
+
+/**
+ * @generated from message ui.v1.UiServiceOpenNotificationSettingsResponse
+ */
+export type UiServiceOpenNotificationSettingsResponse = Message<"ui.v1.UiServiceOpenNotificationSettingsResponse"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceOpenNotificationSettingsResponse.
+ * Use `create(UiServiceOpenNotificationSettingsResponseSchema)` to create a new message.
+ */
+export const UiServiceOpenNotificationSettingsResponseSchema: GenMessage<UiServiceOpenNotificationSettingsResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 34);
+
+/**
+ * @generated from message ui.v1.UiServiceViewRequest
+ */
+export type UiServiceViewRequest = Message<"ui.v1.UiServiceViewRequest"> & {
+  /**
+   * The wish the page shows; empty for none (the flight plan, a dialog of its own).
+   *
+   * @generated from field: string wish_id = 1;
+   */
+  wishId: string;
+};
+
+/**
+ * Describes the message ui.v1.UiServiceViewRequest.
+ * Use `create(UiServiceViewRequestSchema)` to create a new message.
+ */
+export const UiServiceViewRequestSchema: GenMessage<UiServiceViewRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 35);
+
+/**
+ * @generated from message ui.v1.UiServiceViewResponse
+ */
+export type UiServiceViewResponse = Message<"ui.v1.UiServiceViewResponse"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceViewResponse.
+ * Use `create(UiServiceViewResponseSchema)` to create a new message.
+ */
+export const UiServiceViewResponseSchema: GenMessage<UiServiceViewResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 36);
+
+/**
+ * Every change, in order, from a sequence number on. Resume a broken stream from the last number received plus one.
+ *
  * @generated from message ui.v1.UiServiceWatchRequest
  */
 export type UiServiceWatchRequest = Message<"ui.v1.UiServiceWatchRequest"> & {
@@ -535,7 +997,7 @@ export type UiServiceWatchRequest = Message<"ui.v1.UiServiceWatchRequest"> & {
  * Use `create(UiServiceWatchRequestSchema)` to create a new message.
  */
 export const UiServiceWatchRequestSchema: GenMessage<UiServiceWatchRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 21);
+  messageDesc(file_ui_v1_ui, 37);
 
 /**
  * @generated from message ui.v1.UiServiceWatchResponse
@@ -577,139 +1039,7 @@ export type UiServiceWatchResponse = Message<"ui.v1.UiServiceWatchResponse"> & {
  * Use `create(UiServiceWatchResponseSchema)` to create a new message.
  */
 export const UiServiceWatchResponseSchema: GenMessage<UiServiceWatchResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 22);
-
-/**
- * @generated from message ui.v1.UiServiceGetNotificationsRequest
- */
-export type UiServiceGetNotificationsRequest = Message<"ui.v1.UiServiceGetNotificationsRequest"> & {
-};
-
-/**
- * Describes the message ui.v1.UiServiceGetNotificationsRequest.
- * Use `create(UiServiceGetNotificationsRequestSchema)` to create a new message.
- */
-export const UiServiceGetNotificationsRequestSchema: GenMessage<UiServiceGetNotificationsRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 23);
-
-/**
- * @generated from message ui.v1.UiServiceGetNotificationsResponse
- */
-export type UiServiceGetNotificationsResponse = Message<"ui.v1.UiServiceGetNotificationsResponse"> & {
-  /**
-   * @generated from field: ui.v1.NotificationAccess access = 1;
-   */
-  access: NotificationAccess;
-
-  /**
-   * OpenNotificationSettings opens the system's settings (macOS).
-   *
-   * @generated from field: bool settings = 2;
-   */
-  settings: boolean;
-};
-
-/**
- * Describes the message ui.v1.UiServiceGetNotificationsResponse.
- * Use `create(UiServiceGetNotificationsResponseSchema)` to create a new message.
- */
-export const UiServiceGetNotificationsResponseSchema: GenMessage<UiServiceGetNotificationsResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 24);
-
-/**
- * @generated from message ui.v1.UiServiceRequestNotificationsRequest
- */
-export type UiServiceRequestNotificationsRequest = Message<"ui.v1.UiServiceRequestNotificationsRequest"> & {
-};
-
-/**
- * Describes the message ui.v1.UiServiceRequestNotificationsRequest.
- * Use `create(UiServiceRequestNotificationsRequestSchema)` to create a new message.
- */
-export const UiServiceRequestNotificationsRequestSchema: GenMessage<UiServiceRequestNotificationsRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 25);
-
-/**
- * @generated from message ui.v1.UiServiceRequestNotificationsResponse
- */
-export type UiServiceRequestNotificationsResponse = Message<"ui.v1.UiServiceRequestNotificationsResponse"> & {
-  /**
-   * @generated from field: ui.v1.NotificationAccess access = 1;
-   */
-  access: NotificationAccess;
-
-  /**
-   * OpenNotificationSettings opens the system's settings (macOS).
-   *
-   * @generated from field: bool settings = 2;
-   */
-  settings: boolean;
-};
-
-/**
- * Describes the message ui.v1.UiServiceRequestNotificationsResponse.
- * Use `create(UiServiceRequestNotificationsResponseSchema)` to create a new message.
- */
-export const UiServiceRequestNotificationsResponseSchema: GenMessage<UiServiceRequestNotificationsResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 26);
-
-/**
- * @generated from message ui.v1.UiServiceOpenNotificationSettingsRequest
- */
-export type UiServiceOpenNotificationSettingsRequest = Message<"ui.v1.UiServiceOpenNotificationSettingsRequest"> & {
-};
-
-/**
- * Describes the message ui.v1.UiServiceOpenNotificationSettingsRequest.
- * Use `create(UiServiceOpenNotificationSettingsRequestSchema)` to create a new message.
- */
-export const UiServiceOpenNotificationSettingsRequestSchema: GenMessage<UiServiceOpenNotificationSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 27);
-
-/**
- * @generated from message ui.v1.UiServiceOpenNotificationSettingsResponse
- */
-export type UiServiceOpenNotificationSettingsResponse = Message<"ui.v1.UiServiceOpenNotificationSettingsResponse"> & {
-};
-
-/**
- * Describes the message ui.v1.UiServiceOpenNotificationSettingsResponse.
- * Use `create(UiServiceOpenNotificationSettingsResponseSchema)` to create a new message.
- */
-export const UiServiceOpenNotificationSettingsResponseSchema: GenMessage<UiServiceOpenNotificationSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 28);
-
-/**
- * @generated from message ui.v1.UiServiceViewRequest
- */
-export type UiServiceViewRequest = Message<"ui.v1.UiServiceViewRequest"> & {
-  /**
-   * The wish the page shows; empty for none (the flight plan, a dialog of its own).
-   *
-   * @generated from field: string wish_id = 1;
-   */
-  wishId: string;
-};
-
-/**
- * Describes the message ui.v1.UiServiceViewRequest.
- * Use `create(UiServiceViewRequestSchema)` to create a new message.
- */
-export const UiServiceViewRequestSchema: GenMessage<UiServiceViewRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 29);
-
-/**
- * @generated from message ui.v1.UiServiceViewResponse
- */
-export type UiServiceViewResponse = Message<"ui.v1.UiServiceViewResponse"> & {
-};
-
-/**
- * Describes the message ui.v1.UiServiceViewResponse.
- * Use `create(UiServiceViewResponseSchema)` to create a new message.
- */
-export const UiServiceViewResponseSchema: GenMessage<UiServiceViewResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 30);
+  messageDesc(file_ui_v1_ui, 38);
 
 /**
  * ProviderState is whether an agent command line is installed and signed in.
@@ -760,6 +1090,52 @@ export const ProviderStateSchema: GenEnum<ProviderState> = /*@__PURE__*/
   enumDesc(file_ui_v1_ui, 0);
 
 /**
+ * InstallStep is where an install stands.
+ *
+ * @generated from enum ui.v1.InstallStep
+ */
+export enum InstallStep {
+  /**
+   * @generated from enum value: INSTALL_STEP_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * It waits for its turn: Installing.waiting says for what.
+   *
+   * @generated from enum value: INSTALL_STEP_WAITING = 1;
+   */
+  WAITING = 1,
+
+  /**
+   * It checks the build out in a worktree of its own, and sets that worktree up when the project's lock files changed.
+   *
+   * @generated from enum value: INSTALL_STEP_PREPARING = 2;
+   */
+  PREPARING = 2,
+
+  /**
+   * It runs the project's install command.
+   *
+   * @generated from enum value: INSTALL_STEP_BUILDING = 3;
+   */
+  BUILDING = 3,
+
+  /**
+   * Installed: Djinn restarts on it.
+   *
+   * @generated from enum value: INSTALL_STEP_RESTARTING = 4;
+   */
+  RESTARTING = 4,
+}
+
+/**
+ * Describes the enum ui.v1.InstallStep.
+ */
+export const InstallStepSchema: GenEnum<InstallStep> = /*@__PURE__*/
+  enumDesc(file_ui_v1_ui, 1);
+
+/**
  * Whether the system lets Djinn show notifications.
  *
  * @generated from enum ui.v1.NotificationAccess
@@ -799,7 +1175,7 @@ export enum NotificationAccess {
  * Describes the enum ui.v1.NotificationAccess.
  */
 export const NotificationAccessSchema: GenEnum<NotificationAccess> = /*@__PURE__*/
-  enumDesc(file_ui_v1_ui, 1);
+  enumDesc(file_ui_v1_ui, 2);
 
 /**
  * What the window needs to show and follow the plan.
@@ -869,6 +1245,18 @@ export const UiService: GenService<{
     output: typeof UiServiceOpenExternalResponseSchema;
   },
   /**
+   * Choose the global shortcut that brings the window forward from anywhere on the desktop; an empty chord turns it
+   * off. Kept in the data directory. Fails on a chord Djinn does not take; one the system refuses (another
+   * application holds it) is kept, and its problem said.
+   *
+   * @generated from rpc ui.v1.UiService.SetShortcut
+   */
+  setShortcut: {
+    methodKind: "unary";
+    input: typeof UiServiceSetShortcutRequestSchema;
+    output: typeof UiServiceSetShortcutResponseSchema;
+  },
+  /**
    * Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
    * window shows them too. In browser mode, djinn up prints the address of the page again.
    *
@@ -878,6 +1266,18 @@ export const UiService: GenService<{
     methodKind: "unary";
     input: typeof UiServiceShowRequestSchema;
     output: typeof UiServiceShowResponseSchema;
+  },
+  /**
+   * Open a djinn:// link in the window, as the system does when one is clicked anywhere (djinn open): djinn://tilasm/<id>
+   * shows its wish's Tilasms tab on that tilasm, djinn://wish/<id> the wish. A link Djinn does not know, or a tilasm or
+   * a wish not on this machine, is refused, saying so; the window says so too.
+   *
+   * @generated from rpc ui.v1.UiService.OpenLink
+   */
+  openLink: {
+    methodKind: "unary";
+    input: typeof UiServiceOpenLinkRequestSchema;
+    output: typeof UiServiceOpenLinkResponseSchema;
   },
   /**
    * What the window is asked to show, as it comes. A request of the last minute comes first, for a window that
@@ -892,7 +1292,7 @@ export const UiService: GenService<{
   },
   /**
    * Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-   * change. With the leads that a restart could not resume, once.
+   * change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
    *
    * @generated from rpc ui.v1.UiService.WatchUpdate
    */
@@ -904,7 +1304,8 @@ export const UiService: GenService<{
   /**
    * Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
    * as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-   * sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
+   * sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
+   * newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
    *
    * @generated from rpc ui.v1.UiService.Update
    */

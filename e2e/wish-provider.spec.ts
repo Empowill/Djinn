@@ -61,9 +61,9 @@ test("changing the agent stops the lead and starts the new one from the brief", 
   await dialog.getByRole("button", { name: "Switch to Codex" }).click();
 
   await expect(page.locator(".wish-provider")).toHaveText("Codex");
-  await expect(
-    rows.filter({ hasText: "fake-codex # Leading a wish in" }),
-  ).toHaveCount(1);
+  await expect(rows.filter({ hasText: "fake-codex # The wish:" })).toHaveCount(
+    1,
+  );
   const listed = JSON.parse(djinn("wish", "list", "--json")).wishes as {
     id: string;
     provider: string;

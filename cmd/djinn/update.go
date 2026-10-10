@@ -2,7 +2,10 @@ package main
 
 // The update of the Djinn in use. `go tool task install` puts a newer djinn at the path of the running one without
 // disturbing it; the running one notices, says so, and waits. A Djinn installed from a release, or with go install,
-// also looks for a newer release (release.go) and offers it the same way, downloading nothing yet. Only the window's
+// also looks for a newer release (release.go) and offers it the same way, downloading nothing yet. So does a Djinn
+// built from a checkout, as its checkout says (harness.Release): on main, a release that holds the build is offered,
+// and installs by itself when the project's settings say so, the restart still waiting for the click; on a branch,
+// none installs over the branch's build: Djinn merges main into the wishes' branches instead. Only the window's
 // update button or `djinn update` restarts it: a release is first downloaded, verified and renamed over the running
 // binary; then Djinn notes its open terminals in the data directory, stops as when it quits (workers interrupted,
 // nothing lost), and starts the new binary, which runs those terminals again on the same sessions. The same note,
@@ -29,6 +32,8 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/harness"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/swapexe"
 	"github.com/empowill/djinn/internal/terminal"
@@ -72,13 +77,16 @@ type updater struct {
 	terms    *terminal.Manager
 	leads    *leadNote // where the note of the restart goes
 	stop     func()    // stops djinn up
-	releases source    // where a newer release comes from; nil for a build from a checkout
+	releases source    // where a newer release comes from; nil for a development build
+	// fit says what a release found means for a Djinn built from a checkout (harness.Release); nil for another one.
+	fit func(ctx context.Context, tag string) (harness.ReleaseFit, error)
 
 	mu         sync.Mutex
 	started    os.FileInfo // the file this djinn started from
 	seen       os.FileInfo // the file last looked at
 	local      string      // version of the newer binary at the path; empty for none
 	offer      *release    // newer release offered, not downloaded yet
+	installed  string      // the release installed by itself, not to install again
 	installing bool
 	restarting bool
 }
@@ -155,11 +163,11 @@ func (u *updater) check(ctx context.Context) string {
 
 // publish tells the window what it may offer: the newer binary at the path, else the newer release. u.mu is held.
 func (u *updater) publish() {
-	ready := u.local
+	ready, notes := u.local, ""
 	if ready == "" && u.offer != nil {
-		ready = u.offer.Version
+		ready, notes = u.offer.Version, u.offer.Notes
 	}
-	u.ui.SetReady(ready)
+	u.ui.SetReady(ready, notes)
 }
 
 // watchReleases asks the source for a newer release at once, then every releaseCheck, until ctx is done. It only
@@ -175,10 +183,7 @@ func (u *updater) watchReleases(ctx context.Context) {
 			fmt.Fprintln(os.Stderr, "djinn: looking for a newer release:", err)
 		}
 		if err == nil {
-			u.mu.Lock()
-			u.offer = r
-			u.publish()
-			u.mu.Unlock()
+			u.consider(ctx, r)
 		}
 		select {
 		case <-ctx.Done():
@@ -186,6 +191,44 @@ func (u *updater) watchReleases(ctx context.Context) {
 		case <-tick.C:
 		}
 	}
+}
+
+// consider offers r, the newest release (nil for none), unless the checkout a Djinn built from one comes from says
+// otherwise; and installs it by itself when that checkout says so, once: the restart waits for the click.
+func (u *updater) consider(ctx context.Context, r *release) {
+	install := false
+	if r != nil && u.fit != nil {
+		look, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		fit, err := u.fit(look, r.Version)
+		cancel()
+		switch {
+		case err != nil:
+			fmt.Fprintln(os.Stderr, "djinn: where the checkout stands against", r.Version+":", err)
+		case fit == harness.ReleaseHeld:
+			r = nil
+		case fit == harness.ReleaseMerge:
+			fmt.Fprintln(os.Stderr, "djinn:", r.Version, "is not installed over this branch's build: Djinn merges main into the wishes' branches")
+			r = nil
+		case fit == harness.ReleaseInstall:
+			install = true
+		}
+	}
+	u.mu.Lock()
+	u.offer = r
+	install = install && u.local == "" && u.installed != r.Version
+	if install {
+		u.installed = r.Version
+	}
+	u.publish()
+	u.mu.Unlock()
+	if !install {
+		return
+	}
+	if err := u.install(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "djinn: installing", r.Version+":", err)
+		return
+	}
+	u.check(ctx) // The window offers to restart on it.
 }
 
 // install downloads the newer release, checks that it runs and says the version it promises, and renames it over the
@@ -334,6 +377,9 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 	shown := ""
 	for _, t := range note.Terminals {
 		_, err := os.Stat(t.Directory)
+		if err == nil && strings.HasPrefix(t.Name, "lead-") && plan.HoldsHome(t.Directory) {
+			err = errors.New("a lead never runs in the home folder: djinn wish resume starts it in a project")
+		}
 		if err == nil {
 			_, _, err = terms.Open(t.Name, t.Command, t.Directory, 0, 0)
 		}
@@ -371,10 +417,15 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 func runUpdate(args []string) error {
 	yes := false
 	for _, a := range args {
-		if a != "--yes" {
+		switch a {
+		case "-h", "--help":
+			cli.Update.WriteHelp(os.Stdout)
+			return nil
+		case "--yes":
+			yes = true
+		default:
 			return fmt.Errorf("unexpected argument %q", a)
 		}
-		yes = true
 	}
 	if !yes && !term.IsTerminal(int(os.Stdin.Fd())) {
 		return errors.New("djinn update restarts the Djinn in use: run it from your terminal, or pass --yes")

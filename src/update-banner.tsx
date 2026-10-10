@@ -1,23 +1,53 @@
-// A discreet banner at the top of the window when a newer Djinn waits at the path of the running one (installed with
-// `go tool task install`), with the button that restarts on it. Nothing restarts without that click. After a restart,
-// it lists the terminals that did not start again. Shown only when djinn serves the page (a DjinnProvider).
-import { useEffect, useState } from "react";
+// A banner at the top of the window, raised in brass over the rest and headed by the djinn's mark, when a newer Djinn
+// waits at the path of the running one (installed with `go tool task install`), with the button that restarts on it.
+// Nothing restarts without that click. After a restart, it lists the terminals that did not start again. Shown only
+// when djinn serves the page (a DjinnProvider). A release links its notes, which the system's browser opens. Once a
+// batch of finished work is committed into a wish's integration branch, in a project that names an install command,
+// it proposes to install that build and restart on it, with what changed and what to check; while it installs, it says
+// what the install waits for, then that it builds, then that Djinn restarts. Its actions sit beside each title, its
+// text below at full width.
+import { type ReactNode, useEffect, useState } from "react";
 
 import { useDjinn } from "./data/djinn";
-import type { UpdateState } from "./data/update";
+import { InstallStep, type Installing, type UpdateState } from "./data/update";
+import { Brand } from "./frame";
 import { t } from "./i18n";
 import "./update-banner.css";
 
-type Phase =
+export type Phase =
   | { kind: "idle" }
   | { kind: "restarting" }
+  | { kind: "installing" }
+  | { kind: "installed"; sha: string }
   | { kind: "failed"; message: string };
 
+type DismissedReady = { version: string; message: string };
+const dismissedReadyKey = "djinn.update.dismissed-ready";
+
+function readDismissedReady(): DismissedReady | undefined {
+  try {
+    const raw = globalThis.localStorage?.getItem(dismissedReadyKey);
+    if (!raw) return undefined;
+    const value = JSON.parse(raw) as Partial<DismissedReady>;
+    return typeof value.version === "string" &&
+      typeof value.message === "string"
+      ? { version: value.version, message: value.message }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function UpdateBanner() {
-  const api = useDjinn()?.update;
+  const djinn = useDjinn();
+  const api = djinn?.update;
   const [state, setState] = useState<UpdateState | undefined>();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [dismissed, setDismissed] = useState(false);
+  // The build dismissed, by its commit: a newer one shows again.
+  const [dismissedBuild, setDismissedBuild] = useState("");
+  // A failed release stays dismissed across reloads, until a newer version arrives.
+  const [dismissedReady, setDismissedReady] = useState(readDismissedReady);
 
   useEffect(() => api?.subscribe(setState), [api]);
   // A new Djinn answers on a page that reloads: what it reports replaces what this one said.
@@ -27,10 +57,13 @@ export function UpdateBanner() {
 
   if (!api || !state) return null;
 
-  async function install() {
-    setPhase({ kind: "restarting" });
+  async function install(build?: string) {
+    setPhase({ kind: build ? "installing" : "restarting" });
     try {
-      await api!.update();
+      const res = await api!.update(build);
+      // A build that installed no newer Djinn restarts nothing.
+      if (build && !res.version) setPhase({ kind: "installed", sha: build });
+      else setPhase({ kind: "restarting" });
     } catch (error) {
       setPhase({
         kind: "failed",
@@ -39,46 +72,288 @@ export function UpdateBanner() {
     }
   }
 
+  function dismissReady(version: string, message: string) {
+    const value = { version, message };
+    setDismissedReady(value);
+    try {
+      globalThis.localStorage?.setItem(
+        dismissedReadyKey,
+        JSON.stringify(value),
+      );
+    } catch {
+      // Private windows or blocked storage still dismiss for this page.
+    }
+  }
+
+  return (
+    <UpdateBannerView
+      state={state}
+      phase={phase}
+      dismissed={dismissed}
+      dismissedBuild={dismissedBuild}
+      dismissedReady={dismissedReady}
+      onInstall={() => void install()}
+      onInstallBuild={(sha) => void install(sha)}
+      onDismiss={() => setDismissed(true)}
+      onDismissBuild={(sha) => setDismissedBuild(sha)}
+      onDismissReady={dismissReady}
+      onNotes={(url) =>
+        void djinn!.clients.ui
+          .openExternal({ url })
+          .catch(() => window.open(url, "_blank", "noopener"))
+      }
+    />
+  );
+}
+
+// UpdateBannerView is the banner for a state, without its hooks: the screens render it alone in the tests.
+export function UpdateBannerView({
+  state,
+  phase,
+  dismissed,
+  dismissedBuild = "",
+  dismissedReady,
+  onInstall,
+  onInstallBuild = () => {},
+  onDismiss,
+  onDismissBuild = () => {},
+  onDismissReady = () => {},
+  onNotes,
+}: {
+  state: UpdateState;
+  phase: Phase;
+  dismissed: boolean;
+  dismissedBuild?: string;
+  dismissedReady?: DismissedReady;
+  onInstall: () => void;
+  onInstallBuild?: (sha: string) => void;
+  onDismiss: () => void;
+  onDismissBuild?: (sha: string) => void;
+  onDismissReady?: (version: string, message: string) => void;
+  onNotes: (url: string) => void;
+}) {
   const notResumed = dismissed ? [] : state.notResumed;
-  if (!state.ready && !notResumed.length) return null;
+  // Where the install that runs now stands, as Djinn says it: from another window too, or after a reload.
+  const installing = state.installing;
+  const readyDismissed =
+    !!state.ready &&
+    dismissedReady?.version === state.ready &&
+    (phase.kind !== "failed" || dismissedReady.message === phase.message);
+  const ready = readyDismissed ? "" : state.ready;
+  const build = state.build?.sha === dismissedBuild ? undefined : state.build;
+  if (!ready && !notResumed.length && !build && phase.kind !== "installed")
+    return null;
+  // Only a web link opens: anything else from a release stays out of the banner.
+  const notes = /^https?:\/\//i.test(state.notesUrl) ? state.notesUrl : "";
+  // The djinn's mark heads the banner: the first of its parts carries it.
+  const first = ready
+    ? "ready"
+    : build
+      ? "build"
+      : phase.kind === "installed"
+        ? "installed"
+        : "not-resumed";
   return (
     <div className="update-banner" role="status">
-      {state.ready && (
-        <div className="update-banner-row">
-          <span
-            title={t("update.versions", {
-              current: state.current,
-              ready: state.ready,
-            })}
-          >
-            {phase.kind === "failed"
-              ? t("update.failed", { message: phase.message })
-              : phase.kind === "restarting"
-                ? t("update.restarting")
-                : t("update.ready")}
-          </span>
-          {phase.kind !== "restarting" && (
-            <button type="button" onClick={() => void install()}>
-              {t("update.install")}
-            </button>
+      {ready && (
+        <Part
+          mark={first === "ready"}
+          title={
+            <span
+              title={t("update.versions", {
+                current: state.current,
+                ready,
+              })}
+            >
+              {phase.kind === "failed"
+                ? t("update.failed", { message: phase.message })
+                : phase.kind === "restarting"
+                  ? t("update.restarting")
+                  : t("update.ready")}
+            </span>
+          }
+          actions={
+            <>
+              {phase.kind !== "restarting" && (
+                <button
+                  type="button"
+                  className="update-banner-primary"
+                  onClick={onInstall}
+                >
+                  {t("update.install")}
+                </button>
+              )}
+              {notes && (
+                <a
+                  href={notes}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onNotes(notes);
+                  }}
+                >
+                  {t("update.notes")}
+                </a>
+              )}
+              {phase.kind !== "restarting" && (
+                <button
+                  type="button"
+                  className="update-banner-dismiss"
+                  onClick={() =>
+                    onDismissReady(
+                      ready,
+                      phase.kind === "failed" ? phase.message : "",
+                    )
+                  }
+                >
+                  {t("update.dismiss")}
+                </button>
+              )}
+            </>
+          }
+        />
+      )}
+      {build && (
+        <Part
+          mark={first === "build"}
+          title={
+            <>
+              {phase.kind === "failed"
+                ? t("update.failed", { message: phase.message })
+                : t("update.build", {
+                    tasks: build.tasks.join(", "),
+                    branch: build.branch,
+                    project: build.project,
+                  })}{" "}
+              <code>{build.sha.slice(0, 8)}</code>
+            </>
+          }
+          actions={
+            installing?.sha === build.sha ||
+            phase.kind === "installing" ||
+            phase.kind === "restarting" ? (
+              <span>
+                {installing?.sha === build.sha
+                  ? installStep(installing)
+                  : t(
+                      phase.kind === "installing"
+                        ? "update.build_installing"
+                        : "update.restarting",
+                    )}
+              </span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="update-banner-primary"
+                  onClick={() => onInstallBuild(build.sha)}
+                >
+                  {t("update.build_install")}
+                </button>
+                <button
+                  type="button"
+                  className="update-banner-dismiss"
+                  onClick={() => onDismissBuild(build.sha)}
+                >
+                  {t("update.dismiss")}
+                </button>
+              </>
+            )
+          }
+        >
+          {build.changes.length > 0 && (
+            <>
+              <strong>{t("update.build_changes")}</strong>
+              <ul>
+                {build.changes.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </>
           )}
-        </div>
+          {build.checks.length > 0 && (
+            <>
+              <strong>{t("update.build_checks")}</strong>
+              <ul>
+                {build.checks.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Part>
+      )}
+      {phase.kind === "installed" && !build && (
+        <Part
+          mark={first === "installed"}
+          title={t("update.build_installed", { sha: phase.sha.slice(0, 8) })}
+        />
       )}
       {notResumed.length > 0 && (
-        <div className="update-banner-row">
-          <div>
-            <span>{t("update.not_resumed")}</span>
-            <ul>
-              {notResumed.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </div>
-          <button type="button" onClick={() => setDismissed(true)}>
-            {t("update.dismiss")}
-          </button>
-        </div>
+        <Part
+          mark={first === "not-resumed"}
+          title={t("update.not_resumed")}
+          actions={
+            <button
+              type="button"
+              className="update-banner-dismiss"
+              onClick={onDismiss}
+            >
+              {t("update.dismiss")}
+            </button>
+          }
+        >
+          <ul className="update-banner-terminals">
+            {notResumed.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </Part>
       )}
     </div>
+  );
+}
+
+// installStep says where an install stands: what it waits for, then that it prepares and builds, then that Djinn
+// restarts.
+function installStep(installing: Installing): string {
+  switch (installing.step) {
+    case InstallStep.WAITING:
+      return t("update.build_waiting", { why: installing.waiting });
+    case InstallStep.PREPARING:
+      return t("update.build_preparing");
+    case InstallStep.BUILDING:
+      return t("update.build_building");
+    case InstallStep.RESTARTING:
+      return t("update.restarting");
+  }
+  return t("update.build_installing");
+}
+
+// A part of the banner: its title with its actions beside it, which wrap below it on a narrow window and never squeeze
+// it; under them, its text at the banner's full width.
+function Part({
+  mark,
+  title,
+  actions,
+  children,
+}: {
+  mark: boolean;
+  title: ReactNode;
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <section className="update-banner-part">
+      <div className="update-banner-head">
+        <div className="update-banner-title">
+          {mark && <Brand small />}
+          <span>{title}</span>
+        </div>
+        {actions && <div className="update-banner-actions">{actions}</div>}
+      </div>
+      {children && <div className="update-banner-body">{children}</div>}
+    </section>
   );
 }

@@ -27,9 +27,9 @@ export interface TerminalEnd {
 }
 
 export interface DjinnTerminal {
-  // Opens the terminal of name, or attaches to it if it runs: its output so far is read again from offset 0. A
-  // command and a directory start that program instead of the default of djinn up; a line runs through the user's
-  // shell instead of a command.
+  // Opens the terminal of name, or attaches to it if it runs: its output so far, up to end, is read again from
+  // offset 0. A command and a directory start that program instead of the default of djinn up; a line runs through
+  // the user's shell instead of a command.
   open(input: {
     name: string;
     cols: number;
@@ -37,7 +37,7 @@ export interface DjinnTerminal {
     command?: string[];
     line?: string;
     directory?: string;
-  }): Promise<{ terminal: TerminalInfo; attached: boolean }>;
+  }): Promise<{ terminal: TerminalInfo; attached: boolean; end: bigint }>;
   // Sends typed bytes. Writes leave in the order they are made, one request at a time; the promise settles once
   // the terminal has them.
   write(id: string, data: string | Uint8Array): Promise<void>;
@@ -49,6 +49,8 @@ export interface DjinnTerminal {
     onData: (offset: bigint, data: Uint8Array) => void,
     signal: AbortSignal,
   ): Promise<TerminalEnd>;
+  // The names of the terminals whose program runs, such as lead-<wish id>. Starts none.
+  running(): Promise<string[]>;
   // Hangs up: the program gets SIGHUP.
   close(id: string): Promise<void>;
 }
@@ -107,6 +109,7 @@ export function createTerminal(transport: Transport): DjinnTerminal {
       const t = res.terminal!;
       return {
         attached: res.attached,
+        end: res.endOffset,
         terminal: {
           id: t.id,
           name: t.name,
@@ -146,6 +149,10 @@ export function createTerminal(transport: Transport): DjinnTerminal {
         if (!signal.aborted || !(error instanceof ConnectError)) throw error;
       }
       return { exited: false, exitCode: 0 };
+    },
+    running: async () => {
+      const res = await client.list({});
+      return res.terminals.map((t) => t.name);
     },
     close: async (id: string) => {
       await client.close({ id });

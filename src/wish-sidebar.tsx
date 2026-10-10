@@ -1,13 +1,18 @@
-// The side panel's lists, read from the services: the wishes, the active ones by rank (drag one up or down, or
-// Alt+Arrow) and how many of the three places they take, then the paused ones and the granted ones; and the
-// projects.
+// The side panel's lists, read from the services: the flight plan's entry with what waits for you there (questions,
+// new inbox items), the wishes, the active ones by rank (drag one up or down, or Alt+Arrow) and how many of the three
+// places they take, then the paused ones and the granted ones; and the projects. The wishes' list shows three rows and
+// scrolls under the pointer. A paused wish dragged onto an active one, or sent first with its button, becomes active
+// there: the wish pushed past the third place is paused.
 import {
+  ArrowUpToLine,
   ChevronDown,
   ChevronRight,
   FolderOpen,
   GripVertical,
+  Inbox,
   Plane,
   Plus,
+  SquareTerminal,
 } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
@@ -15,18 +20,22 @@ import type { Project, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { WishState } from "../gen/ts/plan/v1/plan_pb";
 import { MAX_ACTIVE, isActive, wishTone } from "./data/format";
 import { t } from "./i18n";
+import { useOpenTerminal } from "./lead-terminal";
 import { CountPill, ToneIcon } from "./status";
 
 // What the side panel counts in a wish.
 export interface WishCounts {
   questions: number;
+  // Workers at work, and watchers waiting for their command apart (runningOf).
   running: number;
+  watching: number;
 }
 
 export function WishSidebar({
   wishes,
   projects,
   counts = {},
+  inbox = 0,
   planSelected = false,
   onSelectPlan,
   selectedWishId,
@@ -41,6 +50,8 @@ export function WishSidebar({
   projects: Project[];
   // What each active wish holds, by id: questions that wait for you, workers that run.
   counts?: Readonly<Record<string, WishCounts>>;
+  // How many inbox items wait for your answer: the flight plan shows them.
+  inbox?: number;
   // The flight plan of the active wishes shows.
   planSelected?: boolean;
   onSelectPlan?: () => void;
@@ -49,7 +60,7 @@ export function WishSidebar({
   collapsed: boolean;
   onSelectWish: (id: string) => void;
   onSelectProject: (id: string) => void;
-  // Moves an active wish to a rank, from 1.
+  // Moves a wish to a rank, from 1: a paused one becomes active there.
   onMove: (wishId: string, to: number) => void;
   onNewProject: () => void;
 }) {
@@ -57,15 +68,18 @@ export function WishSidebar({
   const paused = wishes.filter((w) => w.state === WishState.PAUSED);
   const granted = wishes.filter((w) => w.state === WishState.GRANTED);
   const [showGranted, setShowGranted] = useState(false);
+  // Where djinn serves the page, a project opens a terminal at its root, in a tab of its own.
+  const openTerminal = useOpenTerminal();
   const [dragged, setDragged] = useState("");
 
   const item = (wish: Wish, rank?: number) => {
-    const count = counts[wish.id] ?? { questions: 0, running: 0 };
+    const count = counts[wish.id] ?? { questions: 0, running: 0, watching: 0 };
     const prompted = wish.leadRunning && !!wish.leadPrompt;
     const tone = wishTone(
       wish,
       count.questions + (prompted ? 1 : 0),
       count.running,
+      count.watching,
     );
     const keys = (event: KeyboardEvent) => {
       if (!rank || !event.altKey) return;
@@ -75,7 +89,7 @@ export function WishSidebar({
       else return;
       event.preventDefault();
     };
-    return (
+    const row = (
       <button
         key={wish.id}
         className={`mission-nav wish-nav ${wish.id === selectedWishId ? "selected" : ""} ${dragged === wish.id ? "dragged" : ""}`}
@@ -86,7 +100,7 @@ export function WishSidebar({
             ? t("sidebar.wish_rank", { rank, title: wish.title })
             : wish.title
         }
-        draggable={!!rank}
+        draggable={!!rank || wish.state === WishState.PAUSED}
         onDragStart={(event) => {
           event.dataTransfer.setData("text/plain", wish.id);
           event.dataTransfer.effectAllowed = "move";
@@ -130,6 +144,13 @@ export function WishSidebar({
                 label={t("plan.running", { count: count.running })}
               />
             )}
+            {count.watching > 0 && (
+              <CountPill
+                tone="watching"
+                count={count.watching}
+                label={t("plan.watching", { count: count.watching })}
+              />
+            )}
             {rank ? (
               <small className="wish-rank">
                 <GripVertical size={11} aria-hidden="true" />
@@ -139,6 +160,20 @@ export function WishSidebar({
           </>
         )}
       </button>
+    );
+    if (wish.state !== WishState.PAUSED || collapsed) return row;
+    return (
+      <div key={wish.id} className="wish-row">
+        {row}
+        <button
+          className="icon-button wish-first"
+          title={t("sidebar.to_first")}
+          aria-label={t("sidebar.to_first")}
+          onClick={() => onMove(wish.id, 1)}
+        >
+          <ArrowUpToLine size={13} />
+        </button>
+      </div>
     );
   };
 
@@ -151,7 +186,7 @@ export function WishSidebar({
   );
   return (
     <>
-      {onSelectPlan && active.length > 0 && (
+      {onSelectPlan && (active.length > 0 || inbox > 0) && (
         <button
           className={`nav-item plan-nav ${planSelected ? "selected" : ""}`}
           onClick={onSelectPlan}
@@ -164,6 +199,14 @@ export function WishSidebar({
               tone="waiting"
               count={waits}
               label={t("wish.questions_wait", { count: waits })}
+            />
+          )}
+          {inbox > 0 && (
+            <CountPill
+              tone="waiting"
+              icon={Inbox}
+              count={inbox}
+              label={t("sidebar.inbox_new", { count: inbox })}
             />
           )}
         </button>
@@ -241,6 +284,18 @@ export function WishSidebar({
               <FolderOpen size={collapsed ? 16 : 15} />
               {!collapsed && <span>{project.name}</span>}
             </button>
+            {openTerminal && project.directory && !collapsed && (
+              <button
+                className="icon-button project-terminal"
+                onClick={() => openTerminal(project)}
+                title={t("sidebar.project_terminal", { project: project.name })}
+                aria-label={t("sidebar.project_terminal", {
+                  project: project.name,
+                })}
+              >
+                <SquareTerminal size={13} />
+              </button>
+            )}
           </div>
         ))}
       </div>

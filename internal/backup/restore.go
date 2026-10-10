@@ -21,6 +21,7 @@ import (
 	backupv1 "github.com/empowill/djinn/gen/go/backup/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
@@ -53,6 +54,10 @@ type Restored struct {
 // aside, next to it; its worktrees move into the restored folder, at the same paths, so Git still finds them. A
 // project whose folder this machine lacks loses it, so that djinn project add attaches it, as after an import.
 func Restore(ctx context.Context, home, archive string, now time.Time) (*Restored, error) {
+	return restore(ctx, home, archive, now, fsx.OS())
+}
+
+func restore(ctx context.Context, home, archive string, now time.Time, r fsx.Renamer) (*Restored, error) {
 	home, err := filepath.Abs(home)
 	if err != nil {
 		return nil, err
@@ -83,7 +88,7 @@ func Restore(ctx context.Context, home, archive string, now time.Time) (*Restore
 		return nil, err
 	}
 	if !exists(home) {
-		if err := os.Rename(tmp, home); err != nil {
+		if err := r.Rename(tmp, home); err != nil {
 			return nil, err
 		}
 		return out, nil
@@ -92,13 +97,13 @@ func Restore(ctx context.Context, home, archive string, now time.Time) (*Restore
 	for i := 2; exists(out.Aside); i++ {
 		out.Aside = fmt.Sprintf("%s.before-restore-%s-%d", home, now.Format("2006-01-02-150405"), i)
 	}
-	if err := os.Rename(home, out.Aside); err != nil {
+	if err := r.Rename(home, out.Aside); err != nil {
 		return nil, fmt.Errorf("move %s aside (close what uses it, then restore again): %w", home, err)
 	}
-	if err := os.Rename(tmp, home); err != nil {
-		return nil, errors.Join(fmt.Errorf("put the restored folder in place: %w", err), os.Rename(out.Aside, home))
+	if err := r.Rename(tmp, home); err != nil {
+		return nil, errors.Join(fmt.Errorf("put the restored folder in place: %w", err), r.Rename(out.Aside, home))
 	}
-	return out, moveWorktrees(out.Aside, home)
+	return out, moveWorktrees(out.Aside, home, r)
 }
 
 // extract writes the entries of the archive into dir, which is empty, and returns how many files it wrote. It
@@ -268,7 +273,7 @@ func detach(ctx context.Context, db string) ([]string, error) {
 }
 
 // moveWorktrees moves the worktrees of the folder put aside to the same paths in home: Git records them there.
-func moveWorktrees(aside, home string) error {
+func moveWorktrees(aside, home string, r fsx.Renamer) error {
 	entries, err := os.ReadDir(filepath.Join(aside, "projects"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -287,7 +292,7 @@ func moveWorktrees(aside, home string) error {
 			errs = append(errs, err)
 			continue
 		}
-		if err := os.Rename(src, dst); err != nil {
+		if err := r.Rename(src, dst); err != nil {
 			errs = append(errs, fmt.Errorf("the worktrees stay in %s: %w", src, err))
 		}
 	}

@@ -21,23 +21,37 @@ import (
 const (
 	LeadRulesFile = "lead-rules.md"
 	LeadBriefFile = "lead-brief.md"
+	// LeadFirstFile is a compatibility copy of the first message used by routed starts and older clients.
+	LeadFirstFile = "lead-first.md"
 )
 
 // maxBriefArg is the most of a brief that goes on the command line as the first message; a longer one is read from
 // its file. Linux takes 128 KiB in one argument.
 const maxBriefArg = 64 << 10
 
+const maxFirstArg = maxBriefArg
+
+// StartLine is the provider-neutral opening instruction of every new lead.
+func StartLine(wishID string) string {
+	return fmt.Sprintf("You lead the Djinn wish %s. Run `djinn wish brief %s`: where the wish stands and how to "+
+		"lead it, computed by Djinn from its plan. Then continue the wish from what it says. Every question for the "+
+		"developer goes through `djinn question ask`, never in this terminal, and the work goes to tasks.", wishID, wishID)
+}
+
 // newLead prepares a new lead for a wish that has none to resume: the command line that starts provider's agent in
 // dir (the wish's first project; without one, the folder of every wish's own folder) on the wish's brief, and the lead
 // it starts.
 // The lead holds a session only when Djinn chooses it ahead: claude's. A server without data folder keeps the shell.
 func (w *Wishes) newLead(
-	ctx context.Context, wish *planv1.Wish, provider planv1.Provider, dir string,
+	ctx context.Context, wish *planv1.Wish, provider planv1.Provider, dir string, first ...string,
 ) (line, folder string, lead *planv1.Lead, note string, err error) {
 	home := w.home()
 	if home == "" {
 		return "", dir, nil, "This wish has no lead session to resume: the lead's terminal runs a shell. " +
 			"djinn wish set-lead records the session of the lead.", nil
+	}
+	if dir == "" || HoldsHome(dir) {
+		return "", "", nil, "", Status(ErrNoProject)
 	}
 	provider = cmp.Or(provider, WishProvider(wish))
 	brief, err := BuildBrief(ctx, w.Store, home, wish.GetId())
@@ -49,10 +63,24 @@ func (w *Wishes) newLead(
 		return "", "", nil, "", connect.NewError(connect.CodeInternal, err)
 	}
 	rules, moving := filepath.Join(own, LeadRulesFile), filepath.Join(own, LeadBriefFile)
+	opening := ""
+	if len(first) > 0 {
+		opening = strings.TrimSpace(first[0])
+	}
+	if opening != "" {
+		brief.Moving = opening + "\n\n" + brief.Moving
+	}
 	for file, text := range map[string]string{rules: brief.Stable, moving: brief.Moving} {
 		if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
 			return "", "", nil, "", connect.NewError(connect.CodeInternal, fmt.Errorf("write the brief: %w", err))
 		}
+	}
+	firstText := StartLine(wish.GetId())
+	if opening != "" {
+		firstText = opening + "\n\n" + firstText
+	}
+	if err := os.WriteFile(filepath.Join(own, LeadFirstFile), []byte(firstText), 0o600); err != nil {
+		return "", "", nil, "", connect.NewError(connect.CodeInternal, fmt.Errorf("write the first message: %w", err))
 	}
 	mode, err := leadMode(ctx, w.Store, wish, dir)
 	if err != nil {
@@ -144,6 +172,54 @@ func briefLine(goos string, lead *planv1.Lead, mode planv1.Allowance, folder str
 	}
 	return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
 		"a lead runs claude, codex or antigravity, not %s", providerName(lead.GetProvider())))
+}
+
+// leadLine is the compact provider-neutral command builder retained for callers that prepare a first message
+// directly. New leads use briefLine so Claude can keep its stable prompt in a file and all providers get the same
+// provider-specific flags.
+func leadLine(goos string, lead *planv1.Lead, folder, msg string) (string, error) {
+	sep := "/"
+	if goos == "windows" {
+		sep = `\`
+	}
+	quote := func(s string) (string, error) {
+		q, ok := quoteArg(goos, s)
+		if !ok {
+			return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"%q cannot go through the shell: move Djinn's data folder to a path without quotes nor %%", s))
+		}
+		return q, nil
+	}
+	var arg string
+	byFile := false
+	if q, ok := quoteArg(goos, msg); ok && len(msg) <= maxFirstArg {
+		arg = q
+	} else {
+		var err error
+		if arg, err = quote("Read " + folder + sep + LeadFirstFile + ", written by Djinn, and do what it says."); err != nil {
+			return "", err
+		}
+		byFile = true
+	}
+	switch lead.GetProvider() {
+	case planv1.Provider_PROVIDER_CLAUDE:
+		line := "claude --session-id " + lead.GetSessionId()
+		if byFile {
+			dir, err := quote(folder)
+			if err != nil {
+				return "", err
+			}
+			line += " --add-dir " + dir
+		}
+		return line + " " + arg, nil
+	case planv1.Provider_PROVIDER_CODEX:
+		return "codex " + arg, nil
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		return "agy -i " + arg, nil
+	default:
+		return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"a lead runs claude, codex or antigravity, not %s", providerName(lead.GetProvider())))
+	}
 }
 
 // quoteArg quotes s as one argument for the shell that runs a terminal's line on goos: single quotes for the shells

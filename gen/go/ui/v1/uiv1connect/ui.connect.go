@@ -49,8 +49,12 @@ const (
 	UiServiceChooseDirectoryProcedure = "/ui.v1.UiService/ChooseDirectory"
 	// UiServiceOpenExternalProcedure is the fully-qualified name of the UiService's OpenExternal RPC.
 	UiServiceOpenExternalProcedure = "/ui.v1.UiService/OpenExternal"
+	// UiServiceSetShortcutProcedure is the fully-qualified name of the UiService's SetShortcut RPC.
+	UiServiceSetShortcutProcedure = "/ui.v1.UiService/SetShortcut"
 	// UiServiceShowProcedure is the fully-qualified name of the UiService's Show RPC.
 	UiServiceShowProcedure = "/ui.v1.UiService/Show"
+	// UiServiceOpenLinkProcedure is the fully-qualified name of the UiService's OpenLink RPC.
+	UiServiceOpenLinkProcedure = "/ui.v1.UiService/OpenLink"
 	// UiServiceWatchShowProcedure is the fully-qualified name of the UiService's WatchShow RPC.
 	UiServiceWatchShowProcedure = "/ui.v1.UiService/WatchShow"
 	// UiServiceWatchUpdateProcedure is the fully-qualified name of the UiService's WatchUpdate RPC.
@@ -87,18 +91,27 @@ type UiServiceClient interface {
 	ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error)
 	// Open an HTTP or HTTPS link in the default browser.
 	OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error)
+	// Choose the global shortcut that brings the window forward from anywhere on the desktop; an empty chord turns it
+	// off. Kept in the data directory. Fails on a chord Djinn does not take; one the system refuses (another
+	// application holds it) is kept, and its problem said.
+	SetShortcut(context.Context, *connect.Request[v1.UiServiceSetShortcutRequest]) (*connect.Response[v1.UiServiceSetShortcutResponse], error)
 	// Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
 	// window shows them too. In browser mode, djinn up prints the address of the page again.
 	Show(context.Context, *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error)
+	// Open a djinn:// link in the window, as the system does when one is clicked anywhere (djinn open): djinn://tilasm/<id>
+	// shows its wish's Tilasms tab on that tilasm, djinn://wish/<id> the wish. A link Djinn does not know, or a tilasm or
+	// a wish not on this machine, is refused, saying so; the window says so too.
+	OpenLink(context.Context, *connect.Request[v1.UiServiceOpenLinkRequest]) (*connect.Response[v1.UiServiceOpenLinkResponse], error)
 	// What the window is asked to show, as it comes. A request of the last minute comes first, for a window that
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchShowResponse], error)
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once.
+	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchUpdateResponse], error)
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-	// sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
+	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
+	// newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
 	// Every change, in order, from a sequence number on. Resume a broken stream from the last number received plus one.
 	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest]) (*connect.ServerStreamForClient[v1.UiServiceWatchResponse], error)
@@ -161,10 +174,22 @@ func NewUiServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 			connect.WithSchema(uiServiceMethods.ByName("OpenExternal")),
 			connect.WithClientOptions(opts...),
 		),
+		setShortcut: connect.NewClient[v1.UiServiceSetShortcutRequest, v1.UiServiceSetShortcutResponse](
+			httpClient,
+			baseURL+UiServiceSetShortcutProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("SetShortcut")),
+			connect.WithClientOptions(opts...),
+		),
 		show: connect.NewClient[v1.UiServiceShowRequest, v1.UiServiceShowResponse](
 			httpClient,
 			baseURL+UiServiceShowProcedure,
 			connect.WithSchema(uiServiceMethods.ByName("Show")),
+			connect.WithClientOptions(opts...),
+		),
+		openLink: connect.NewClient[v1.UiServiceOpenLinkRequest, v1.UiServiceOpenLinkResponse](
+			httpClient,
+			baseURL+UiServiceOpenLinkProcedure,
+			connect.WithSchema(uiServiceMethods.ByName("OpenLink")),
 			connect.WithClientOptions(opts...),
 		),
 		watchShow: connect.NewClient[v1.UiServiceWatchShowRequest, v1.UiServiceWatchShowResponse](
@@ -226,7 +251,9 @@ type uiServiceClient struct {
 	validateProject          *connect.Client[v1.UiServiceValidateProjectRequest, v1.UiServiceValidateProjectResponse]
 	chooseDirectory          *connect.Client[v1.UiServiceChooseDirectoryRequest, v1.UiServiceChooseDirectoryResponse]
 	openExternal             *connect.Client[v1.UiServiceOpenExternalRequest, v1.UiServiceOpenExternalResponse]
+	setShortcut              *connect.Client[v1.UiServiceSetShortcutRequest, v1.UiServiceSetShortcutResponse]
 	show                     *connect.Client[v1.UiServiceShowRequest, v1.UiServiceShowResponse]
+	openLink                 *connect.Client[v1.UiServiceOpenLinkRequest, v1.UiServiceOpenLinkResponse]
 	watchShow                *connect.Client[v1.UiServiceWatchShowRequest, v1.UiServiceWatchShowResponse]
 	watchUpdate              *connect.Client[v1.UiServiceWatchUpdateRequest, v1.UiServiceWatchUpdateResponse]
 	update                   *connect.Client[v1.UiServiceUpdateRequest, v1.UiServiceUpdateResponse]
@@ -267,9 +294,19 @@ func (c *uiServiceClient) OpenExternal(ctx context.Context, req *connect.Request
 	return c.openExternal.CallUnary(ctx, req)
 }
 
+// SetShortcut calls ui.v1.UiService.SetShortcut.
+func (c *uiServiceClient) SetShortcut(ctx context.Context, req *connect.Request[v1.UiServiceSetShortcutRequest]) (*connect.Response[v1.UiServiceSetShortcutResponse], error) {
+	return c.setShortcut.CallUnary(ctx, req)
+}
+
 // Show calls ui.v1.UiService.Show.
 func (c *uiServiceClient) Show(ctx context.Context, req *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error) {
 	return c.show.CallUnary(ctx, req)
+}
+
+// OpenLink calls ui.v1.UiService.OpenLink.
+func (c *uiServiceClient) OpenLink(ctx context.Context, req *connect.Request[v1.UiServiceOpenLinkRequest]) (*connect.Response[v1.UiServiceOpenLinkResponse], error) {
+	return c.openLink.CallUnary(ctx, req)
 }
 
 // WatchShow calls ui.v1.UiService.WatchShow.
@@ -327,18 +364,27 @@ type UiServiceHandler interface {
 	ChooseDirectory(context.Context, *connect.Request[v1.UiServiceChooseDirectoryRequest]) (*connect.Response[v1.UiServiceChooseDirectoryResponse], error)
 	// Open an HTTP or HTTPS link in the default browser.
 	OpenExternal(context.Context, *connect.Request[v1.UiServiceOpenExternalRequest]) (*connect.Response[v1.UiServiceOpenExternalResponse], error)
+	// Choose the global shortcut that brings the window forward from anywhere on the desktop; an empty chord turns it
+	// off. Kept in the data directory. Fails on a chord Djinn does not take; one the system refuses (another
+	// application holds it) is kept, and its problem said.
+	SetShortcut(context.Context, *connect.Request[v1.UiServiceSetShortcutRequest]) (*connect.Response[v1.UiServiceSetShortcutResponse], error)
 	// Bring the window to the front: restored if minimised, raised and focused. With a wish or a terminal, the
 	// window shows them too. In browser mode, djinn up prints the address of the page again.
 	Show(context.Context, *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error)
+	// Open a djinn:// link in the window, as the system does when one is clicked anywhere (djinn open): djinn://tilasm/<id>
+	// shows its wish's Tilasms tab on that tilasm, djinn://wish/<id> the wish. A link Djinn does not know, or a tilasm or
+	// a wish not on this machine, is refused, saying so; the window says so too.
+	OpenLink(context.Context, *connect.Request[v1.UiServiceOpenLinkRequest]) (*connect.Response[v1.UiServiceOpenLinkResponse], error)
 	// What the window is asked to show, as it comes. A request of the last minute comes first, for a window that
 	// opens after it.
 	WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest], *connect.ServerStream[v1.UiServiceWatchShowResponse]) error
 	// Whether a newer Djinn waits at the path of the running one, as it changes: the current answer first, then each
-	// change. With the leads that a restart could not resume, once.
+	// change. With the leads that a restart could not resume, once, and the last build pushed that is not installed.
 	WatchUpdate(context.Context, *connect.Request[v1.UiServiceWatchUpdateRequest], *connect.ServerStream[v1.UiServiceWatchUpdateResponse]) error
 	// Restart on the newer Djinn that waits at the path of the running one: the open terminals are noted, Djinn stops
 	// as when it quits (workers interrupted, nothing lost), then the new one starts and runs them again on the same
-	// sessions. Fails when no newer Djinn waits. Only the update button and `djinn update` call it.
+	// sessions. Fails when no newer Djinn waits. With a build, its install command runs first; when it installed no
+	// newer Djinn, nothing restarts. Only the update button and `djinn update` call it.
 	Update(context.Context, *connect.Request[v1.UiServiceUpdateRequest]) (*connect.Response[v1.UiServiceUpdateResponse], error)
 	// Every change, in order, from a sequence number on. Resume a broken stream from the last number received plus one.
 	Watch(context.Context, *connect.Request[v1.UiServiceWatchRequest], *connect.ServerStream[v1.UiServiceWatchResponse]) error
@@ -397,10 +443,22 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 		connect.WithSchema(uiServiceMethods.ByName("OpenExternal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	uiServiceSetShortcutHandler := connect.NewUnaryHandler(
+		UiServiceSetShortcutProcedure,
+		svc.SetShortcut,
+		connect.WithSchema(uiServiceMethods.ByName("SetShortcut")),
+		connect.WithHandlerOptions(opts...),
+	)
 	uiServiceShowHandler := connect.NewUnaryHandler(
 		UiServiceShowProcedure,
 		svc.Show,
 		connect.WithSchema(uiServiceMethods.ByName("Show")),
+		connect.WithHandlerOptions(opts...),
+	)
+	uiServiceOpenLinkHandler := connect.NewUnaryHandler(
+		UiServiceOpenLinkProcedure,
+		svc.OpenLink,
+		connect.WithSchema(uiServiceMethods.ByName("OpenLink")),
 		connect.WithHandlerOptions(opts...),
 	)
 	uiServiceWatchShowHandler := connect.NewServerStreamHandler(
@@ -465,8 +523,12 @@ func NewUiServiceHandler(svc UiServiceHandler, opts ...connect.HandlerOption) (s
 			uiServiceChooseDirectoryHandler.ServeHTTP(w, r)
 		case UiServiceOpenExternalProcedure:
 			uiServiceOpenExternalHandler.ServeHTTP(w, r)
+		case UiServiceSetShortcutProcedure:
+			uiServiceSetShortcutHandler.ServeHTTP(w, r)
 		case UiServiceShowProcedure:
 			uiServiceShowHandler.ServeHTTP(w, r)
+		case UiServiceOpenLinkProcedure:
+			uiServiceOpenLinkHandler.ServeHTTP(w, r)
 		case UiServiceWatchShowProcedure:
 			uiServiceWatchShowHandler.ServeHTTP(w, r)
 		case UiServiceWatchUpdateProcedure:
@@ -516,8 +578,16 @@ func (UnimplementedUiServiceHandler) OpenExternal(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.OpenExternal is not implemented"))
 }
 
+func (UnimplementedUiServiceHandler) SetShortcut(context.Context, *connect.Request[v1.UiServiceSetShortcutRequest]) (*connect.Response[v1.UiServiceSetShortcutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.SetShortcut is not implemented"))
+}
+
 func (UnimplementedUiServiceHandler) Show(context.Context, *connect.Request[v1.UiServiceShowRequest]) (*connect.Response[v1.UiServiceShowResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.Show is not implemented"))
+}
+
+func (UnimplementedUiServiceHandler) OpenLink(context.Context, *connect.Request[v1.UiServiceOpenLinkRequest]) (*connect.Response[v1.UiServiceOpenLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ui.v1.UiService.OpenLink is not implemented"))
 }
 
 func (UnimplementedUiServiceHandler) WatchShow(context.Context, *connect.Request[v1.UiServiceWatchShowRequest], *connect.ServerStream[v1.UiServiceWatchShowResponse]) error {

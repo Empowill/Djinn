@@ -7,12 +7,15 @@ package machine.v1;
 import "buf/validate/validate.proto";
 import "djinn/v1/options.proto";
 import "google/protobuf/timestamp.proto";
+import "plan/v1/plan.proto";
 
 // MachineService says what the machine has, how loaded it is, and how many workers Djinn runs on it.
 service MachineService {
-  // Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.
+  // Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
+  // once, what each running worker uses, and whether it can run a local model.
   rpc Show(MachineServiceShowRequest) returns (MachineServiceShowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
 
@@ -54,6 +57,61 @@ message Machine {
   string pressure = 12;
   // When the machine was read.
   google.protobuf.Timestamp read_time = 13;
+  // The disk of Djinn's data folder, where the worktrees live; absent when it could not be read.
+  Disk disk = 14;
+  // The graphics processors, read once at start-up; empty when Djinn found none, or does not read them (Windows,
+  // an Intel Mac).
+  repeated Gpu gpus = 15;
+  // Whether a local open-weight model can run here, for dispatch: a usable GPU, or enough memory to run it on the
+  // CPU, and disk space for its weights.
+  bool can_run_local_model = 16;
+  // Why it can or cannot.
+  string local_model_reason = 17;
+  // The workers running now, with what each uses of the machine, the busiest first; a worker not read yet is left
+  // out.
+  repeated WorkerUse worker_uses = 18;
+  // Why the workers' CPU and memory are not measured on this machine; empty where they are (Linux, macOS).
+  string worker_measure = 19;
+}
+
+// WorkerUse is what the worker of a running task uses of the machine.
+message WorkerUse {
+  // The task.
+  string task_id = 1;
+  // Its wish.
+  string wish_id = 2;
+  // Its code in the wish, like W2.
+  string code = 3;
+  // What the task does.
+  string title = 4;
+  // What its worker uses, at the last reading.
+  plan.v1.Resources resources = 5;
+}
+
+// Disk is the space of the file system that holds a folder.
+message Disk {
+  // The folder read.
+  string path = 1;
+  // Size of its file system, in bytes.
+  uint64 total_bytes = 2;
+  // Space available to Djinn, in bytes.
+  uint64 available_bytes = 3;
+}
+
+// Gpu is a graphics processor of the machine.
+message Gpu {
+  // Maker: nvidia, amd, intel, apple, or the PCI vendor identifier of another.
+  string vendor = 1;
+  // Name, as its driver gives it; its PCI identifiers when none does.
+  string name = 2;
+  // Driver: nvidia, nouveau, amdgpu, i915, xe; metal on Apple Silicon. Empty when none is bound.
+  string driver = 3;
+  // Version of the driver; empty when unknown.
+  string driver_version = 4;
+  // Memory of its own, in bytes; with unified memory, the machine's. 0 when unknown.
+  uint64 memory_bytes = 5;
+  // Whether it shares the machine's memory (Apple Silicon).
+  bool unified_memory = 6;
 }
 
 message MachineServiceShowRequest {}
@@ -68,13 +126,15 @@ message MachineServiceShowResponse {
 // machine is not under pressure. To run a command under a gate: djinn gate run <name> -- <command>.
 service GateService {
   // Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
-  // that the gate is held. Interrupt it to give the gate back.
+  // that the gate is held. Interrupt it to give the gate back. Djinn takes it back when the holder's process ends or
+  // its timeout passes. Held outside a running worker, a gate takes a worker's slot.
   rpc Hold(GateServiceHoldRequest) returns (stream GateServiceHoldResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
   // List the gates held or waited for.
   rpc List(GateServiceListRequest) returns (GateServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
 
@@ -86,6 +146,9 @@ enum GateState {
   GATE_STATE_WAITING = 1;
   // The gate is held, until the call ends.
   GATE_STATE_HELD = 2;
+  // Djinn took the gate back before the call ended: its holder's process ended, or it held the gate past its
+  // timeout; the reason says which.
+  GATE_STATE_TAKEN_BACK = 3;
 }
 
 // Gate is a gate held or waited for.
@@ -100,6 +163,13 @@ message Gate {
   google.protobuf.Timestamp since = 4;
   // Who waits for it, the next one first.
   repeated string waiting = 5;
+  // Its holder is no running worker (a person's terminal, a lead, a script): the gate takes a worker's slot while it
+  // is held, so no new worker starts on it.
+  bool takes_slot = 6;
+  // What its holder's process uses, at the last reading; unset when its process is not known or not measured.
+  plan.v1.Resources resources = 7;
+  // When Djinn takes it back if its holder has not given it back by then.
+  google.protobuf.Timestamp expire_time = 8;
 }
 
 message GateServiceHoldRequest {
@@ -114,8 +184,17 @@ message GateServiceHoldRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
-  // What the holder runs with the gate, shown to those who wait.
+  // What the holder runs with the gate, shown to those who wait. A command measured in its project waits for the
+  // memory it peaked at.
   string what = 3 [(buf.validate.field).string.max_len = 200];
+  // Folder the command runs in, absolute: it finds the project when no task is given.
+  string directory = 4 [(buf.validate.field).string.max_len = 4096];
+  // Process holding the gate, when known: djinn gate run gives its own. Djinn reads what it uses while it holds the
+  // gate (Linux and macOS), and takes the gate back once it ends.
+  int32 pid = 5 [(buf.validate.field).int32.gte = 0];
+  // How long the gate may be held, in seconds: Djinn takes it back after that even if the holder still runs, so a
+  // forgotten hold never blocks the others. 0: one hour.
+  uint32 timeout_seconds = 6 [(buf.validate.field).uint32.lte = 86400];
 }
 
 message GateServiceHoldResponse {
@@ -139,6 +218,7 @@ service CommandService {
   // List what the commands of the projects cost, the most run first.
   rpc List(CommandServiceListRequest) returns (CommandServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
   // task's, or the one whose folder holds the directory; a command outside any project is not recorded.

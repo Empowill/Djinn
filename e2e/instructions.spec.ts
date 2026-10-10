@@ -10,6 +10,9 @@ const binary = path.resolve(
   __dirname,
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
+const fr = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "../locales/fr.json"), "utf8"),
+) as Record<string, string>;
 function djinn(...args: string[]) {
   return execFileSync(binary, args, {
     env: { ...process.env, DJINN_HOME: process.env.DJINN_E2E_HOME },
@@ -120,6 +123,17 @@ async function foldTerminal(page: import("@playwright/test").Page) {
   if (await collapse.isVisible()) await collapse.click();
 }
 
+async function openFlightPlan(page: import("@playwright/test").Page) {
+  // The server may have a recent focus request from the preceding spec. Choose the
+  // plan explicitly so the imported wish's card is the subject of this test.
+  const plan = page
+    .locator(".sidebar")
+    .getByRole("button", { name: /Flight plan/ });
+  await expect(plan).toBeVisible();
+  await plan.click();
+  await expect(page.locator(".hero h1")).toHaveText("Flight plan");
+}
+
 test("a card saves offline without navigation; drafts survive folding and opening the wish", async ({
   page,
 }) => {
@@ -127,6 +141,7 @@ test("a card saves offline without navigation; drafts survive folding and openin
   try {
     await page.goto(process.env.DJINN_URL!);
     await foldTerminal(page);
+    await openFlightPlan(page);
     const card = page.locator(".plan-wish").filter({ hasText: sample.title });
     const toggle = card.getByRole("button", {
       name: `Add an indication to ${sample.title}`,
@@ -196,20 +211,22 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
     const french = page.getByRole("region", { name: "Indications" });
-    await expect(french.getByText("En attente", { exact: true })).toHaveCount(
-      2,
-    );
     await expect(
-      french.getByText("En réflexion", { exact: true }),
+      french.getByText(fr["instruction.pending"], { exact: true }),
+    ).toHaveCount(2);
+    await expect(
+      french.getByText(fr["instruction.reflecting"], { exact: true }),
     ).toBeVisible();
     await expect(
-      french.getByText("Traitement par", { exact: true }),
+      french.getByText(fr["instruction.processing"], { exact: true }),
     ).toBeVisible();
-    await expect(french.getByText("Faite", { exact: true })).toBeVisible();
+    await expect(
+      french.getByText(fr["instruction.done"], { exact: true }),
+    ).toBeVisible();
     await page.evaluate(() => localStorage.removeItem("djinn.language"));
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
-    // Processing remains processing after the simulated worker's successful result; only Complete changes it.
+    // Processing remains processing after the simulated worker's successful result; only completion changes it.
     djinn("instruction", "complete", "I03", "--wish-id", sample.wishId);
     await expect(history.getByText("Done", { exact: true })).toHaveCount(2);
     await page.reload();
@@ -229,6 +246,7 @@ test("failed sends retain text and focus; a lost response retries once without d
   try {
     await page.goto(process.env.DJINN_URL!);
     await foldTerminal(page);
+    await openFlightPlan(page);
     const card = page.locator(".plan-wish").filter({ hasText: sample.title });
     await card
       .getByRole("button", { name: `Add an indication to ${sample.title}` })

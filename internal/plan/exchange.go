@@ -2,6 +2,7 @@ package plan
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"buf.build/go/protovalidate"
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -23,14 +25,15 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 )
 
 // formatVersion is the version of WishExport this Djinn writes, and the only one it reads.
 const formatVersion = 1
 
-// maxExport bounds the file an import reads.
-const maxExport = 100 << 20
+// maxExport bounds the file an import reads: tilasms make it large, up to 50 MiB each, every version carried.
+const maxExport = 512 << 20
 
 // near is how close in time a journal entry and the entity it made must be, to tie a command that names no
 // identifier (a wish made, a question answered by its code) to its wish.
@@ -42,7 +45,7 @@ var questionCode = regexp.MustCompile(`^Q[0-9]{2,3}$`)
 func (w *Wishes) Export(
 	ctx context.Context, req *connect.Request[planv1.WishServiceExportRequest],
 ) (*connect.Response[planv1.WishServiceExportResponse], error) {
-	exp, _, err := collect(ctx, w.Store, req.Msg.GetWishId())
+	exp, _, err := collect(ctx, w.Store, req.Msg.GetWishId(), allEvents)
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -51,6 +54,15 @@ func (w *Wishes) Export(
 		return nil, Status(err)
 	}
 	exp = portable(exp, newScrubber(all))
+	// The files of the tilasms travel as they are: a scrubber does not rewrite what they hold.
+	for _, t := range exp.GetTilasms() {
+		if w.Home == "" {
+			return nil, connect.NewError(connect.CodeUnavailable, errors.New("this server keeps no tilasms: run djinn up"))
+		}
+		if t.Files, err = tilasmFiles(w.Home, t.GetTilasm()); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+	}
 	file := req.Msg.GetFile()
 	if file == "" {
 		dir, err := Downloads()
@@ -115,7 +127,7 @@ func (w *Wishes) ImportData(
 func (w *Wishes) Snapshot(
 	ctx context.Context, req *connect.Request[planv1.WishServiceSnapshotRequest],
 ) (*connect.Response[planv1.WishServiceSnapshotResponse], error) {
-	exp, projects, err := collect(ctx, w.Store, req.Msg.GetWishId())
+	exp, projects, err := collect(ctx, w.Store, req.Msg.GetWishId(), allEvents)
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -124,8 +136,36 @@ func (w *Wishes) Snapshot(
 	return connect.NewResponse(&planv1.WishServiceSnapshotResponse{Export: exp, Projects: projects}), nil
 }
 
-// collect gathers what the wish holds, as stored: its project references carry the identifiers of this machine.
-func collect(ctx context.Context, r store.Reader, wishID string) (*planv1.WishExport, []*planv1.Project, error) {
+// eventsOf reads the events of a wish's tasks that a reader of collect needs, in the order of an export: by task,
+// then by position.
+type eventsOf func(ctx context.Context, r store.Reader, tasks []*planv1.Task) ([]*planv1.TaskEvent, error)
+
+// allEvents is every event of the tasks: an export carries them all.
+func allEvents(ctx context.Context, r store.Reader, tasks []*planv1.Task) ([]*planv1.TaskEvent, error) {
+	var out []*planv1.TaskEvent
+	for _, t := range tasks {
+		events, err := store.List[*planv1.TaskEvent](ctx, r, store.Where{"task_id": t.GetId()})
+		if err != nil {
+			return nil, err
+		}
+		slices.SortFunc(events, func(a, b *planv1.TaskEvent) int { return int(a.GetSeq() - b.GetSeq()) })
+		out = append(out, events...)
+	}
+	return out, nil
+}
+
+// noEvents is none: the brief shows none, and a wish's events are most of the store.
+func noEvents(context.Context, store.Reader, []*planv1.Task) ([]*planv1.TaskEvent, error) {
+	return nil, nil
+}
+
+// collect gathers what the wish holds, as stored, with the events that events reads: its project references carry
+// the identifiers of this machine.
+func collect(ctx context.Context, r store.Reader, wishID string, eventReaders ...eventsOf) (*planv1.WishExport, []*planv1.Project, error) {
+	events := eventsOf(noEvents)
+	if len(eventReaders) > 0 && eventReaders[0] != nil {
+		events = eventReaders[0]
+	}
 	wish, err := store.Get[*planv1.Wish](ctx, r, wishID)
 	if err != nil {
 		return nil, nil, err
@@ -135,13 +175,8 @@ func collect(ctx context.Context, r store.Reader, wishID string) (*planv1.WishEx
 	if exp.Tasks, err = store.List[*planv1.Task](ctx, r, where); err != nil {
 		return nil, nil, err
 	}
-	for _, t := range exp.GetTasks() {
-		events, err := store.List[*planv1.TaskEvent](ctx, r, store.Where{"task_id": t.GetId()})
-		if err != nil {
-			return nil, nil, err
-		}
-		slices.SortFunc(events, func(a, b *planv1.TaskEvent) int { return int(a.GetSeq() - b.GetSeq()) })
-		exp.Events = append(exp.Events, events...)
+	if exp.Events, err = events(ctx, r, exp.GetTasks()); err != nil {
+		return nil, nil, err
 	}
 	if exp.Questions, err = store.List[*planv1.Question](ctx, r, where); err != nil {
 		return nil, nil, err
@@ -154,6 +189,9 @@ func collect(ctx context.Context, r store.Reader, wishID string) (*planv1.WishEx
 		return nil, nil, err
 	}
 	sortInstructions(exp.Instructions)
+	if exp.Tilasms, err = tilasmsOf(ctx, r, wishID); err != nil {
+		return nil, nil, err
+	}
 
 	ids := slices.Clone(wish.GetProjectIds())
 	for _, t := range exp.GetTasks() {
@@ -201,6 +239,9 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	for _, b := range exp.GetBlocks() {
 		ids[strings.ToLower(b.GetId())] = true
 	}
+	for _, t := range exp.GetTilasms() {
+		ids[strings.ToLower(t.GetTilasm().GetId())] = true
+	}
 	var out []*planv1.Command
 	var failed error
 	// A new wish reuses its creation command's identifier. Older wishes can only match by their original title
@@ -208,7 +249,9 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	var made *planv1.Command
 	var legacy []*planv1.Command
 	var imported, renamed bool
-	_, err := store.Commands(ctx, r, func(c store.Command) bool {
+	// Only the methods of the API make a wish's history: "/plan.v1.WishService/Make"… The harness's entries, a
+	// worker's events most of all, are not even read.
+	_, err := store.CommandsOf(ctx, r, "/", func(c store.Command) bool {
 		req, err := request(c)
 		if err != nil || req == nil {
 			// An entry of the harness or of an older Djinn: not a request of the API, left out.
@@ -285,7 +328,7 @@ func request(c store.Command) (proto.Message, error) {
 	}
 	d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(service))
 	if err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // Not a method of the API: see above.
 	}
 	sd, ok := d.(protoreflect.ServiceDescriptor)
 	if !ok {
@@ -297,7 +340,7 @@ func request(c store.Command) (proto.Message, error) {
 	}
 	mt, err := protoregistry.GlobalTypes.FindMessageByName(md.Input().FullName())
 	if err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // Not a method of the API: see above.
 	}
 	m := mt.New().Interface()
 	return m, proto.Unmarshal(c.Request, m)
@@ -414,16 +457,16 @@ func newScrubber(projects []*planv1.Project, extra ...string) *scrubber {
 // folder gives (/var, /tmp and /etc are links into /private there).
 func aliases(dir string) []string {
 	all := []string{dir}
-	real, err := filepath.EvalSymlinks(dir)
+	realPath, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return all
 	}
-	if real != dir {
-		all = append(all, real)
+	if realPath != dir {
+		all = append(all, realPath)
 	}
-	if short, ok := strings.CutPrefix(real, "/private/"); ok {
+	if short, ok := strings.CutPrefix(realPath, "/private/"); ok {
 		short = "/" + short
-		if r, err := filepath.EvalSymlinks(short); err == nil && r == real && short != dir {
+		if r, err := filepath.EvalSymlinks(short); err == nil && r == realPath && short != dir {
 			all = append(all, short)
 		}
 	}
@@ -471,7 +514,11 @@ func decode(data []byte) (*planv1.WishExport, error) {
 	if len(text) > 0 && text[0] == '{' {
 		err = protojson.Unmarshal(text, exp)
 	} else {
-		err = proto.Unmarshal(data, exp)
+		// Before tilasms were added, field 10 held durable instructions. Both old
+		// instructions and new TilasmExport values are length-delimited, so the
+		// wire field cannot be moved by protobuf alone. Normalize recognized old
+		// instructions before decoding the envelope.
+		err = proto.Unmarshal(migrateLegacyExport(data), exp)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("not a wish export: %w", err)
@@ -479,7 +526,105 @@ func decode(data []byte) (*planv1.WishExport, error) {
 	return exp, nil
 }
 
-// writeFile writes data to file through a temporary file, so that a failed export leaves no half file.
+func migrateLegacyExport(data []byte) []byte {
+	fs, ok := exportFields(data)
+	if !ok {
+		return data
+	}
+	legacy := false
+	for _, f := range fs {
+		if f.typ != protowire.BytesType {
+			continue
+		}
+		value, n := protowire.ConsumeBytes(f.full[f.tag:])
+		if n < 0 {
+			continue
+		}
+		switch f.num {
+		case 3:
+			if !bytes.Equal(value, store.MigrateLegacyWish(value)) {
+				legacy = true
+			}
+		case 5:
+			if !bytes.Equal(value, store.MigrateLegacyTask(value)) {
+				legacy = true
+			}
+		case 10:
+			if legacyInstruction(value) {
+				legacy = true
+			}
+		}
+	}
+	if !legacy {
+		return data
+	}
+	out := make([]byte, 0, len(data)+16)
+	for _, f := range fs {
+		if f.typ == protowire.BytesType {
+			value, n := protowire.ConsumeBytes(f.full[f.tag:])
+			if n >= 0 {
+				original := value
+				migrated := value
+				switch f.num {
+				case 3:
+					migrated = store.MigrateLegacyWish(value)
+				case 5:
+					migrated = store.MigrateLegacyTask(value)
+				case 10:
+					if legacyInstruction(value) {
+						out = protowire.AppendTag(out, 11, protowire.BytesType)
+						out = protowire.AppendBytes(out, value)
+						continue
+					}
+				}
+				if !bytes.Equal(migrated, original) {
+					// Re-encoding below is simpler and canonical for a migrated nested message.
+					out = protowire.AppendTag(out, f.num, protowire.BytesType)
+					out = protowire.AppendBytes(out, migrated)
+					continue
+				}
+			}
+		}
+		out = append(out, f.full...)
+	}
+	return out
+}
+
+type exportWireField struct {
+	num  protowire.Number
+	typ  protowire.Type
+	tag  int
+	full []byte
+}
+
+func exportFields(data []byte) ([]exportWireField, bool) {
+	var out []exportWireField
+	for len(data) > 0 {
+		num, typ, n := protowire.ConsumeField(data)
+		if n < 0 {
+			return nil, false
+		}
+		_, _, tag := protowire.ConsumeTag(data)
+		out = append(out, exportWireField{num: num, typ: typ, tag: tag, full: data[:n]})
+		data = data[n:]
+	}
+	return out, true
+}
+
+func legacyInstruction(data []byte) bool {
+	var instruction planv1.Instruction
+	if err := proto.Unmarshal(data, &instruction); err != nil {
+		return false
+	}
+	return instruction.GetId() != "" && strings.HasPrefix(strings.ToUpper(instruction.GetCode()), "I") && instruction.GetText() != ""
+}
+
+// renamer puts in place what the plan writes: pages, exports and tilasms' folders. It tries again a moment on
+// Windows, where a browser reading a page or an antivirus scanning a file refuses the rename. A test swaps it.
+var renamer = fsx.OS()
+
+// writeFile writes data to file through a temporary file, so that a failed export leaves no half file and a reader
+// sees the old content or the new one.
 func writeFile(file string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(file), ".djinn-export-*")
 	if err != nil {
@@ -493,7 +638,7 @@ func writeFile(file string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), file)
+	return renamer.Rename(tmp.Name(), file)
 }
 
 // load imports an export in one transaction, journaled as ImportData with the content itself: the journal then
@@ -506,6 +651,13 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 	if err := check(exp); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid export: %w", err))
 	}
+	// The tilasms' files go to the data folder; the journal keeps the rest of the export.
+	placed, err := stageTilasms(w.Home, exp)
+	if err != nil {
+		return nil, Status(err)
+	}
+	committed := false
+	defer func() { placed.done(committed) }()
 	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(exp)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -526,6 +678,13 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			}
 			if Active(old) && old.GetRank() > 0 {
 				place = int(old.GetRank()) - 1
+			}
+			tilasms, err := store.List[*planv1.Tilasm](ctx, tx, store.Where{"wish_id": old.GetId()})
+			if err != nil {
+				return err
+			}
+			if err := placed.replace(tilasms); err != nil {
+				return err
 			}
 			if err := forget(ctx, tx, old.GetId()); err != nil {
 				return err
@@ -553,6 +712,9 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			}
 		}
 		wish.ProjectIds = projectIDs
+		if t := wish.GetTemplate(); t != nil {
+			t.ProjectId = local[t.GetProjectId()]
+		}
 		if lead := wish.GetLead(); lead != nil {
 			lead.Directory = localFolder(lead.GetDirectory(), folders)
 		}
@@ -581,10 +743,12 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			t.ProjectId = local[t.GetProjectId()]
 			t.Worktree, t.SessionId, t.ForkSession = "", "", ""
 			// Planned on the other machine: this one's scheduler never starts it by itself.
-			t.Scheduled = false
-			if s := t.GetStatus(); s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED {
+			t.Scheduled, t.Continuing = false, false
+			if s := t.GetStatus(); s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED ||
+				s == planv1.TaskStatus_TASK_STATUS_RESUMING {
 				// Its worker runs on the machine that exported it, not here.
 				t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "running when its wish was exported: no worker of this Djinn runs it"
+				t.WaitReason, t.ResumeAfter = "", nil
 			}
 			if err := tx.Put(t); err != nil {
 				return err
@@ -595,21 +759,25 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 				return err
 			}
 		}
-		return nil
+		return placed.place(exp.GetTilasms())
 	})
 	if err != nil {
 		return nil, Status(err)
 	}
+	committed = true
 	return res, nil
 }
 
-// entities are the events, questions, blocks and instructions of an export, which an import writes as they are.
+// entities are the events, questions, blocks, instructions and tilasms of an export, which an import writes as they
+// are. A task's events go in the order of their positions, as Djinn writes them: its last written is its last.
 func entities(exp *planv1.WishExport) []proto.Message {
 	var out []proto.Message
+	events := slices.Clone(exp.GetEvents())
+	slices.SortStableFunc(events, func(a, b *planv1.TaskEvent) int { return cmp.Compare(a.GetSeq(), b.GetSeq()) })
 	for _, instruction := range exp.GetInstructions() {
 		out = append(out, instruction)
 	}
-	for _, e := range exp.GetEvents() {
+	for _, e := range events {
 		out = append(out, e)
 	}
 	for _, q := range exp.GetQuestions() {
@@ -617,6 +785,9 @@ func entities(exp *planv1.WishExport) []proto.Message {
 	}
 	for _, b := range exp.GetBlocks() {
 		out = append(out, b)
+	}
+	for _, t := range exp.GetTilasms() {
+		out = append(out, t.GetTilasm())
 	}
 	return out
 }
@@ -737,7 +908,7 @@ func check(exp *planv1.WishExport) error {
 			return fmt.Errorf("block %s: it needs an id, and its task must be in the export", b.GetId())
 		}
 	}
-	return nil
+	return checkTilasms(exp, tasks, valid)
 }
 
 // free refuses an export whose identifiers are already taken here by something else than its wish.
@@ -768,6 +939,10 @@ func free(ctx context.Context, tx *store.Tx, exp *planv1.WishExport) error {
 	for _, b := range exp.GetBlocks() {
 		errs = append(errs, check("block", b.GetId(), func() error { _, err := store.Get[*planv1.Block](ctx, tx, b.GetId()); return err }))
 	}
+	for _, t := range exp.GetTilasms() {
+		id := t.GetTilasm().GetId()
+		errs = append(errs, check("tilasm", id, func() error { _, err := store.Get[*planv1.Tilasm](ctx, tx, id); return err }))
+	}
 	for _, err := range errs {
 		if err != nil {
 			return err
@@ -776,7 +951,8 @@ func free(ctx context.Context, tx *store.Tx, exp *planv1.WishExport) error {
 	return nil
 }
 
-// forget deletes a wish and everything it holds, before an import replaces it. Its projects stay.
+// forget deletes a wish and everything it holds, before an import replaces it; the caller moves its tilasms' folders.
+// Its projects stay.
 func forget(ctx context.Context, tx *store.Tx, wishID string) error {
 	where := store.Where{"wish_id": wishID}
 	tasks, err := store.List[*planv1.Task](ctx, tx, where)
@@ -814,6 +990,13 @@ func forget(ctx context.Context, tx *store.Tx, wishID string) error {
 	}
 	for _, b := range blocks {
 		all = append(all, b)
+	}
+	tilasms, err := store.List[*planv1.Tilasm](ctx, tx, where)
+	if err != nil {
+		return err
+	}
+	for _, t := range tilasms {
+		all = append(all, t)
 	}
 	all = append(all, &planv1.Wish{Id: wishID})
 	for _, m := range all {

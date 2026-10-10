@@ -3,10 +3,19 @@
 //
 //	icons gen                        writes build/icon.ico (Windows), build/icon.icns (macOS) and build/icon-256.png
 //	                                 (the window's on Linux: GTK 3 drops a window icon of 512 px or more)
-//	icons desktop --exec <djinn>     on Linux, puts the icon and a .desktop file in the user's folders
+//	icons desktop --exec <djinn>     on Linux, puts the icon and a .desktop file in the user's folders, the handler of
+//	                                 djinn:// links; on Windows, registers the links (link.Register)
 //
 // desktop needs no sudo: it writes $XDG_DATA_HOME (~/.local/share by default), icons/hicolor/<size>/apps/djinn.png
-// and applications/djinn.desktop. Elsewhere it does nothing: macOS and Windows take the icon from the build.
+// and applications/djinn.desktop, then makes that entry the user's handler of djinn:// links with xdg-mime. On
+// Windows it writes the handler of the links in the user's registry, HKEY_CURRENT_USER. macOS takes the icon and the
+// links from the build (Djinn.app's Info.plist).
+//
+// build/icon.png is build/icon.svg, drawn by hand, rendered at 1024 px; the interface shows the SVG itself
+// (src/frame.tsx). After a change to the SVG, render it with any SVG renderer, then run icons gen; with Inkscape
+// through a pipe, since its snap reads no hidden folder:
+//
+//	inkscape --pipe --export-type=png --export-filename=- -w 1024 -h 1024 < build/icon.svg > build/icon.png
 package main
 
 import (
@@ -23,6 +32,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+
+	"github.com/empowill/djinn/internal/link"
 )
 
 // source is the drawing, relative to the root of the module.
@@ -58,15 +70,28 @@ func main() {
 		if *exe == "" {
 			usage()
 		}
-		if runtime.GOOS != "linux" {
-			return // macOS and Windows: the icon comes with the build.
-		}
-		var dir string
-		if dir, err = dataHome(); err == nil {
-			err = desktop(".", dir, *exe)
-		}
-		if err == nil {
-			fmt.Printf("Djinn's icon and menu entry are in %s.\n", dir)
+		switch runtime.GOOS {
+		case "windows":
+			// The icon comes with the build; the links are the user's registry's.
+			var abs string
+			if abs, err = filepath.Abs(*exe); err == nil {
+				err = link.Register(abs)
+			}
+			if err == nil {
+				fmt.Printf("djinn:// links open %s.\n", abs)
+			}
+		case "linux":
+			var dir string
+			if dir, err = dataHome(); err == nil {
+				err = desktop(".", dir, *exe)
+			}
+			if err == nil {
+				fmt.Printf("Djinn's icon and menu entry are in %s.\n", dir)
+				if err := handleLinks(filepath.Join(dir, "applications"), os.Environ()); err != nil {
+					fmt.Fprintf(os.Stderr, "icons: djinn:// links will not open Djinn: %v\n", err)
+				}
+				err = nil
+			}
 		}
 	default:
 		usage()
@@ -162,10 +187,38 @@ func desktop(root, dir, exe string) error {
 	if err := os.MkdirAll(apps, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(apps, "djinn.desktop"), []byte(entry(exe)), 0o644)
+	return os.WriteFile(filepath.Join(apps, entryFile), []byte(entry(exe)), 0o644)
 }
 
-// entry is the menu entry that starts exe. StartupWMClass is the window's WM_CLASS, and its Wayland app_id: the
+// handleLinks makes the entry djinn.desktop the user's handler of djinn:// links, as env says where the user's folders
+// are: xdg-mime writes it in the user's mimeapps.list (no sudo), and update-desktop-database refreshes the cache of
+// the types the entries in apps take, when it is installed.
+func handleLinks(apps string, env []string) error {
+	xdgMime, err := exec.LookPath("xdg-mime")
+	if err != nil {
+		return fmt.Errorf("xdg-mime (xdg-utils) is not installed: %w", err)
+	}
+	if tool, err := exec.LookPath("update-desktop-database"); err == nil {
+		cmd := exec.Command(tool, "--quiet", apps)
+		cmd.Env = env
+		_ = cmd.Run()
+	}
+	cmd := exec.Command(xdgMime, "default", entryFile, linkType)
+	cmd.Env = env
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("xdg-mime default: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// entryFile is the name of Djinn's menu entry, in the applications folder.
+const entryFile = "djinn.desktop"
+
+// linkType is the type of the djinn:// links for the desktop: the entry that takes it opens them.
+const linkType = "x-scheme-handler/" + link.Scheme
+
+// entry is the menu entry that starts exe, and that the desktop runs for a djinn:// link: djinn open <link>, which
+// hands it to the running Djinn; from the menu, with no link, djinn open is djinn up. StartupWMClass is the window's WM_CLASS, and its Wayland app_id: the
 // program name the window sets (Linux.ProgramName in cmd/djinn/window.go). The dock matches the window to the entry
 // by it, and shows the entry's icon.
 func entry(exe string) string {
@@ -173,11 +226,12 @@ func entry(exe string) string {
 		"Type=Application\n" +
 		"Name=Djinn\n" +
 		"Comment=A wisp of smoke to work your will\n" +
-		"Exec=" + execArg(exe) + " up\n" +
+		"Exec=" + execArg(exe) + " open %u\n" +
 		"Icon=djinn\n" +
 		"Terminal=false\n" +
 		"Categories=Development;\n" +
-		"StartupWMClass=djinn\n"
+		"StartupWMClass=djinn\n" +
+		"MimeType=" + linkType + ";\n"
 }
 
 // execArg quotes a path for the Exec key, as the Desktop Entry Specification says: in double quotes when it holds a
@@ -207,6 +261,18 @@ func pngAt(img image.Image, size int) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// pngsAt encodes the drawing at each of sizes, side by side.
+func pngsAt(img image.Image, sizes []int) ([][]byte, error) {
+	out := make([][]byte, len(sizes))
+	errs := make([]error, len(sizes))
+	var wg sync.WaitGroup
+	for i, size := range sizes {
+		wg.Go(func() { out[i], errs[i] = pngAt(img, size) })
+	}
+	wg.Wait()
+	return out, errors.Join(errs...)
+}
+
 // scale shrinks img to size × size by averaging the area each pixel covers, in premultiplied colour: sharp at
 // every size, with no halo on the transparent corners.
 func scale(img image.Image, size int) *image.NRGBA {
@@ -214,6 +280,14 @@ func scale(img image.Image, size int) *image.NRGBA {
 	out := image.NewNRGBA(image.Rect(0, 0, size, size))
 	fx := float64(b.Dx()) / float64(size)
 	fy := float64(b.Dy()) / float64(size)
+	// The same premultiplied colour as At, without a value boxed per pixel: the drawing is large.
+	at := func(x, y int) (r, g, b, a uint32) { return img.At(x, y).RGBA() }
+	if fast, ok := img.(image.RGBA64Image); ok {
+		at = func(x, y int) (r, g, b, a uint32) {
+			c := fast.RGBA64At(x, y)
+			return uint32(c.R), uint32(c.G), uint32(c.B), uint32(c.A)
+		}
+	}
 	for y := 0; y < size; y++ {
 		y0, y1 := float64(y)*fy, float64(y+1)*fy
 		for x := 0; x < size; x++ {
@@ -223,7 +297,7 @@ func scale(img image.Image, size int) *image.NRGBA {
 				wy := min(y1, float64(sy+1)) - max(y0, float64(sy))
 				for sx := int(x0); float64(sx) < x1 && sx < b.Dx(); sx++ {
 					wx := min(x1, float64(sx+1)) - max(x0, float64(sx))
-					cr, cg, cb, ca := img.At(b.Min.X+sx, b.Min.Y+sy).RGBA() // premultiplied, 16 bits
+					cr, cg, cb, ca := at(b.Min.X+sx, b.Min.Y+sy) // premultiplied, 16 bits
 					k := wx * wy
 					r, g, bl, a, w = r+k*float64(cr), g+k*float64(cg), bl+k*float64(cb), a+k*float64(ca), w+k
 				}
@@ -243,11 +317,12 @@ func makeICO(img image.Image) ([]byte, error) {
 	var head, body bytes.Buffer
 	_ = binary.Write(&head, binary.LittleEndian, [3]uint16{0, 1, uint16(len(icoSizes))})
 	offset := 6 + 16*len(icoSizes)
-	for _, size := range icoSizes {
-		data, err := pngAt(img, size)
-		if err != nil {
-			return nil, err
-		}
+	pngs, err := pngsAt(img, icoSizes)
+	if err != nil {
+		return nil, err
+	}
+	for i, size := range icoSizes {
+		data := pngs[i]
 		side := uint8(size % 256) // 0 means 256
 		_ = binary.Write(&head, binary.LittleEndian, struct {
 			Width, Height, Colors, Reserved uint8
@@ -262,11 +337,16 @@ func makeICO(img image.Image) ([]byte, error) {
 // makeICNS writes a macOS icon whose entries are PNG images (macOS 10.7 and later).
 func makeICNS(img image.Image) ([]byte, error) {
 	var body bytes.Buffer
-	for _, t := range icnsTypes {
-		data, err := pngAt(img, t.size)
-		if err != nil {
-			return nil, err
-		}
+	sizes := make([]int, len(icnsTypes))
+	for i, t := range icnsTypes {
+		sizes[i] = t.size
+	}
+	pngs, err := pngsAt(img, sizes)
+	if err != nil {
+		return nil, err
+	}
+	for i, t := range icnsTypes {
+		data := pngs[i]
 		body.WriteString(t.kind)
 		_ = binary.Write(&body, binary.BigEndian, uint32(8+len(data)))
 		body.Write(data)

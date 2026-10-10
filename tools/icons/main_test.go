@@ -7,7 +7,9 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -16,6 +18,7 @@ const root = "../.."
 
 // The icons in build/ are the drawing's: run `go run ./tools/icons gen` after changing build/icon.png.
 func TestBuildIconsFollowTheDrawing(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(tmp, "build"), 0o755); err != nil {
 		t.Fatal(err)
@@ -43,6 +46,7 @@ func TestBuildIconsFollowTheDrawing(t *testing.T) {
 }
 
 func TestICOAndICNSHoldEverySize(t *testing.T) {
+	t.Parallel()
 	img, err := load(root)
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +88,10 @@ func TestICOAndICNSHoldEverySize(t *testing.T) {
 }
 
 func TestDesktopPutsTheIconAndTheEntryInTheUsersFolder(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("the desktop entry is for Linux (the command does nothing elsewhere), and its paths are POSIX ones")
+	}
 	dir := t.TempDir()
 	if err := desktop(root, dir, "/opt/my tools/djinn"); err != nil {
 		t.Fatal(err)
@@ -101,14 +109,57 @@ func TestDesktopPutsTheIconAndTheEntryInTheUsersFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"Name=Djinn", `Exec="/opt/my tools/djinn" up`, "Icon=djinn", "StartupWMClass=djinn"} {
+	for _, line := range []string{
+		"Name=Djinn", `Exec="/opt/my tools/djinn" open %u`, "Icon=djinn", "StartupWMClass=djinn",
+		"MimeType=x-scheme-handler/djinn;",
+	} {
 		if !strings.Contains(string(data), "\n"+line+"\n") {
 			t.Errorf("the entry lacks %q:\n%s", line, data)
 		}
 	}
+	// The entry follows the Desktop Entry Specification, as desktop-file-validate reads it, where it is installed.
+	if validate, err := exec.LookPath("desktop-file-validate"); err == nil {
+		if out, err := exec.Command(validate, filepath.Join(dir, "applications", "djinn.desktop")).CombinedOutput(); err != nil || len(out) > 0 {
+			t.Errorf("desktop-file-validate: %v\n%s", err, out)
+		}
+	}
+}
+
+// TestDesktopEntryHandlesTheLinks: xdg-mime makes the entry the handler of djinn:// links, in the mimeapps.list of
+// the user's folders, here the test's own.
+func TestDesktopEntryHandlesTheLinks(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("xdg-mime"); runtime.GOOS != "linux" || err != nil {
+		t.Skip("xdg-mime is for Linux, and comes with xdg-utils")
+	}
+	data, config := t.TempDir(), t.TempDir()
+	if err := desktop(root, data, "/opt/djinn"); err != nil {
+		t.Fatal(err)
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "XDG_") && !strings.HasPrefix(kv, "KDE_") && !strings.HasPrefix(kv, "GNOME_") &&
+			!strings.HasPrefix(kv, "DESKTOP_SESSION=") {
+			env = append(env, kv)
+		}
+	}
+	env = append(env, "XDG_DATA_HOME="+data, "XDG_CONFIG_HOME="+config, "XDG_DATA_DIRS="+data)
+	if err := handleLinks(filepath.Join(data, "applications"), env); err != nil {
+		t.Fatal(err)
+	}
+	list, err := os.ReadFile(filepath.Join(config, "mimeapps.list"))
+	if err != nil || !strings.Contains(string(list), "x-scheme-handler/djinn=djinn.desktop") {
+		t.Fatalf("mimeapps.list: %v\n%s", err, list)
+	}
+	query := exec.Command("xdg-mime", "query", "default", "x-scheme-handler/djinn")
+	query.Env = env
+	if out, err := query.Output(); err != nil || strings.TrimSpace(string(out)) != "djinn.desktop" {
+		t.Fatalf("xdg-mime query default: %q, %v", out, err)
+	}
 }
 
 func TestExecArgQuotesAsTheSpecificationSays(t *testing.T) {
+	t.Parallel()
 	for path, want := range map[string]string{
 		"/home/ada/go/bin/djinn": "/home/ada/go/bin/djinn",
 		"/home/ada/my bin/djinn": `"/home/ada/my bin/djinn"`,
@@ -122,6 +173,7 @@ func TestExecArgQuotesAsTheSpecificationSays(t *testing.T) {
 }
 
 func TestScaleKeepsColoursAndTransparency(t *testing.T) {
+	t.Parallel()
 	img := image.NewNRGBA(image.Rect(0, 0, 100, 100))
 	for y := 0; y < 100; y++ {
 		for x := 0; x < 100; x++ {

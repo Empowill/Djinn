@@ -151,7 +151,8 @@ test("a new wish whose agent is not ready offers the setup, and keeps what was t
   await expect(
     row(page, "codex").getByRole("button", { name: "Sign in" }),
   ).toBeVisible();
-  await dialog.getByRole("button", { name: "Back to the wish" }).click();
+  // Setup uses the app toolbar's back control so the draft editor stays mounted.
+  await page.getByRole("button", { name: "Back to the wish" }).click();
   await expect(
     dialog.getByLabel("What would you like to make happen?"),
   ).toHaveValue("Polish the lamp");

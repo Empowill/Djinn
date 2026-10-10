@@ -1,5 +1,8 @@
 //go:build !windows
 
+// Not on Windows: these tests stop djinn up with SIGTERM and SIGKILL to play a crash, and Windows sends a process
+// no signal but a kill.
+
 package main
 
 import (
@@ -14,8 +17,11 @@ import (
 
 	"connectrpc.com/connect"
 
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	terminalv1 "github.com/empowill/djinn/gen/go/terminal/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/cli"
 )
 
 // running is a djinn up a test started, which it stops by its PID.
@@ -67,7 +73,7 @@ func starts(t *testing.T, count string) int {
 
 // TestCrashReopensTheLeads: a djinn killed while its lead runs leaves the note of its leads, and the next djinn up
 // reopens the lead on its session, in its folder, and shows it. A djinn stopped as asked removes the note: the next
-// one reopens nothing.
+// one reopens none of its terminals, only the lead of the first active wish, as at every start.
 func TestCrashReopensTheLeads(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
@@ -139,17 +145,99 @@ func TestCrashReopensTheLeads(t *testing.T) {
 		t.Fatalf("no note of the reopened lead: %v", err)
 	}
 
-	// Stopped as asked: the note goes, and the next djinn reopens nothing.
+	// Stopped as asked: the note goes. The next djinn reopens no terminal of the note, but the lead of the first
+	// active wish comes back at every start, on its session, in its folder.
 	second.stop(t, syscall.SIGTERM)
 	if _, err := os.Stat(notePath); !os.IsNotExist(err) {
 		t.Fatalf("the note after a quit: %v", err)
 	}
-	third, _ := startUp(t, home, env)
-	time.Sleep(500 * time.Millisecond)
-	if n := starts(t, count); n != 2 {
-		t.Fatalf("claude started %d times after a quit, want twice", n)
+	third, addr := startUp(t, home, env)
+	_, terminals = clients(t, addr)
+	waitUntil(t, "the first wish's lead after a quit", func() bool { return starts(t, count) == 3 })
+	opened, err = terminals.Open(ctx, connect.NewRequest(&terminalv1.TerminalServiceOpenRequest{Name: lead}))
+	if err != nil || !opened.Msg.GetAttached() {
+		t.Fatalf("the lead after a quit: %v, %v\n%s", opened, err, third.errs.String())
 	}
-	if strings.Contains(third.errs.String(), "reopened") {
-		t.Fatalf("djinn up after a quit reopened leads:\n%s", third.errs.String())
+	read(t, terminals, opened.Msg.GetTerminal().GetId(), "fake-claude --resume "+session+" in "+folder)
+	if errs := third.errs.String(); strings.Contains(errs, "reopened") ||
+		!strings.Contains(errs, "the lead of \""+wish.GetTitle()+"\" resumed in "+folder) {
+		t.Fatalf("djinn up after a quit says:\n%s", errs)
+	}
+}
+
+// TestCrashResumesTheWorkers: a djinn killed while a worker runs leaves its task running in the store; the next
+// djinn up resumes it by itself, in the same task, and it finishes. The wish keeps one task.
+func TestCrashResumesTheWorkers(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin, _ := fakeClaude(t)
+	env := environ(home, bin)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An agent configuration: the worker edits as the project says, without asking first.
+	if err := os.WriteFile(filepath.Join(folder, "AGENTS.md"), []byte("# Rules\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wish := seedWish(t, home, folder, "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69")
+
+	first, addr := startUp(t, home, env)
+	res, err := taskClient(t, addr).Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wish.GetId(), Title: "Long", Prompt: "text halfway\nsleep 1h", Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	waitTask(t, taskClient(t, addr), id, func(task *planv1.Task) bool {
+		return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && task.GetSessionId() != ""
+	})
+	first.stop(t, syscall.SIGKILL)
+
+	second, addr := startUp(t, home, env)
+	tasks := taskClient(t, addr)
+	got := waitTask(t, tasks, id, func(task *planv1.Task) bool { return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE })
+	if got.GetResumes() != 1 {
+		t.Errorf("the task after the crash: %v\n%s", got, second.errs.String())
+	}
+	list, err := tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wish.GetId()}))
+	if err != nil || len(list.Msg.GetTasks()) != 1 {
+		t.Errorf("the wish's tasks after the crash: %v, %v; want the one resumed", list, err)
+	}
+}
+
+func taskClient(t *testing.T, addr string) planv1connect.TaskServiceClient {
+	t.Helper()
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return planv1connect.NewTaskServiceClient(httpClient, base)
+}
+
+// waitTask waits until the task is as ok says, and returns it.
+func waitTask(t *testing.T, c planv1connect.TaskServiceClient, id string, ok func(*planv1.Task) bool) *planv1.Task {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		res, err := c.Get(t.Context(), connect.NewRequest(&planv1.TaskServiceGetRequest{TaskId: id}))
+		if err == nil && ok(res.Msg.GetTask()) {
+			return res.Msg.GetTask()
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("task %s: %v, %v", id, res, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// waitUntil waits up to 15 s for ok, and fails the test saying what it waited for.
+func waitUntil(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(15 * time.Second); !ok(); time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
 	}
 }

@@ -7,6 +7,10 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { mergeVisual } from "./merge-visuals";
+import { portable } from "./portable";
+
+portable();
 
 const binary = path.resolve(
   __dirname,
@@ -131,7 +135,9 @@ test("the flight plan merges two wishes, and a question is answered from it", as
 
   // Tall enough for the screenshots to hold the whole plan: the page scrolls inside the window.
   await page.setViewportSize({ width: 1440, height: 1900 });
+  await page.addInitScript(() => localStorage.setItem("djinn.theme", "light"));
   await page.goto(process.env.DJINN_URL!);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   // With wishes active, the window opens on their flight plan.
   await expect(page.locator(".hero h1")).toHaveText("Flight plan");
 
@@ -218,16 +224,23 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     path: path.join(__dirname, "../test-results/e2e/flight-plan.png"),
     fullPage: true,
   });
+  await page.screenshot({
+    path: mergeVisual("light/questions-flight-plan.png"),
+    fullPage: true,
+  });
 
   // Answered from the merged view: the answer goes to its own wish.
   await oilCard.getByLabel("Note with the answer").fill("Pour it.");
-  await oilCard.getByRole("button", { name: "Confirm the answer" }).click();
+  await oilCard.getByRole("button", { name: "Rub the lamp" }).click();
   await expect(oilCard).toHaveCount(0);
-  await expect(
-    page
-      .locator(".plan-decisions .question-card")
-      .filter({ hasText: "May the worker pour the oil?" }),
-  ).toBeVisible();
+  // It is a decision of its wish, taken by you, in the Decisions tab.
+  await page.getByRole("tab", { name: /^Decisions/ }).click();
+  const decided = page
+    .locator(".decision-row")
+    .filter({ hasText: "May the worker pour the oil?" });
+  await expect(decided.locator(".wish-origin")).toHaveText(`2${oilTitle}`);
+  await expect(decided.locator(".status-badge")).toHaveText("Decided by you");
+  await page.getByRole("tab", { name: /^Flight plan/ }).click();
   const [answered] = JSON.parse(
     djinn("question", "list", "--wish-id", oilId, "--json"),
   ).questions;
@@ -244,21 +257,24 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   ).questions;
   expect(open.answer).toBeUndefined();
 
-  // The wish's own view stays: its tasks with their tokens, its note about W1, its journal.
+  // The wish's own view stays: its tasks with their tokens in their own tab, its block about W1 in the agents' tab,
+  // its journal.
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
-  await expect(pageHeader.locator(".page-header-action")).toHaveCount(4);
-  const providerAction = pageHeader.locator(
-    ".page-header-action.wish-provider",
-  );
+  const wishHeader = page.locator(".wish-view > .page-header");
+  await expect(wishHeader).toHaveCount(1);
+  await expect(wishHeader.locator(".page-header-action")).toHaveCount(4);
+  const providerAction = wishHeader.locator(".wish-provider");
+  await expect(providerAction).toHaveAttribute("aria-label", /agent/i);
   await providerAction.hover();
   await expect(page.locator('[role="tooltip"]')).toContainText("agent");
   await expect(page.locator('[role="tooltip"] kbd')).toHaveCount(0);
   await page.mouse.move(10, 300);
-  const leadAction = pageHeader.locator(".page-header-action").nth(1);
+  const leadAction = wishHeader.locator(".split-button > button").first();
   await leadAction.focus();
-  await expect(page.locator('[role="tooltip"]')).toContainText("lead");
+  await expect(leadAction).toHaveAttribute("title", /lead/);
   await assertHeaderChrome(248);
+  await expect(wishHeader.locator(".topbar-actions")).toBeVisible();
   await page.setViewportSize({ width: 760, height: 1000 });
   await assertHeaderChrome(100);
   await page.evaluate(() =>
@@ -274,12 +290,16 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     document.documentElement.classList.remove("native-mac"),
   );
   await page.setViewportSize({ width: 1440, height: 1900 });
+  await page.getByRole("tab", { name: /^Tasks/ }).click();
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
   await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
+  await page.getByRole("tab", { name: /^For agents/ }).click();
   await expect(page.locator(".wish-block")).toContainText("About W1");
+  await page.getByRole("tab", { name: /^Wish/ }).click();
   // The journal is folded: a click opens it.
   await page.getByRole("button", { name: /^Journal/ }).click();
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
+  await page.getByRole("tab", { name: /^Tasks/ }).click();
   await page
     .locator(".wish-task")
     .filter({ hasText: "Trim the wick" })
@@ -287,6 +307,10 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     .click();
   await page.screenshot({
     path: path.join(__dirname, "../test-results/e2e/flight-plan-wish.png"),
+    fullPage: true,
+  });
+  await page.screenshot({
+    path: mergeVisual("light/tasks-wish.png"),
     fullPage: true,
   });
 

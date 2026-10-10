@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { mergeVisual } from "./merge-visuals";
 
 const binary = path.resolve(__dirname, "../bin/djinn-e2e");
 const session = "7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
@@ -47,6 +48,8 @@ test.afterAll(async () => {
 test("the approval card checks the command and sends the user's answer", async ({
   page,
 }) => {
+  await page.addInitScript(() => localStorage.setItem("djinn.theme", "light"));
+  await page.setViewportSize({ width: 1440, height: 1300 });
   const folder = fs.realpathSync(
     fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "permission-")),
   );
@@ -67,12 +70,17 @@ test("the approval card checks the command and sends the user's answer", async (
   djinn("wish", "resume", wishId);
   try {
     await page.goto(process.env.DJINN_URL!);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     const card = page.locator(`#lead-prompt-${wishId}`);
     await expect(card).toContainText("$ djinn wish brief");
     await expect(
       card.getByRole("button", { name: "1 Yes, proceed (y)" }),
     ).toBeVisible();
+    await page.screenshot({
+      path: mergeVisual("light/codex-approval.png"),
+      fullPage: true,
+    });
 
     const url = new URL(process.env.DJINN_URL!);
     const stale = await page.request.post(
@@ -146,6 +154,10 @@ test("the approval card checks the command and sends the user's answer", async (
     await expect(entry).toContainText(text);
     await expect(entry.getByText("Pending", { exact: true })).toBeVisible();
     expect(instructions()).toEqual(saved);
+    await page.screenshot({
+      path: mergeVisual("light/permissions-instructions.png"),
+      fullPage: true,
+    });
   } finally {
     djinn("wish", "pause", wishId);
   }

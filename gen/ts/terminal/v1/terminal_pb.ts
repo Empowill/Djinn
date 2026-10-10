@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file terminal/v1/terminal.proto.
  */
 export const file_terminal_v1_terminal: GenFile = /*@__PURE__*/
-  fileDesc("Chp0ZXJtaW5hbC92MS90ZXJtaW5hbC5wcm90bxILdGVybWluYWwudjEihwEKCFRlcm1pbmFsEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSDwoHY29tbWFuZBgDIAMoCRIRCglkaXJlY3RvcnkYBCABKAkSDAoEY29scxgFIAEoDRIMCgRyb3dzGAYgASgNEg4KBmV4aXRlZBgHIAEoCBIRCglleGl0X2NvZGUYCCABKAUioQEKGlRlcm1pbmFsU2VydmljZU9wZW5SZXF1ZXN0EhcKBG5hbWUYASABKAlCCbpIBnIEEAEYQBIPCgdjb21tYW5kGAIgAygJEhEKCWRpcmVjdG9yeRgDIAEoCRIWCgRjb2xzGAQgASgNQgi6SAUqAxjoBxIWCgRyb3dzGAUgASgNQgi6SAUqAxjoBxIWCgRsaW5lGAYgASgJQgi6SAVyAxiAICJYChtUZXJtaW5hbFNlcnZpY2VPcGVuUmVzcG9uc2USJwoIdGVybWluYWwYASABKAsyFS50ZXJtaW5hbC52MS5UZXJtaW5hbBIQCghhdHRhY2hlZBgCIAEoCCJLChtUZXJtaW5hbFNlcnZpY2VXcml0ZVJlcXVlc3QSEwoCaWQYASABKAlCB7pIBHICEAESFwoEZGF0YRgCIAEoDEIJukgGegQYgIBAIh4KHFRlcm1pbmFsU2VydmljZVdyaXRlUmVzcG9uc2UiZwocVGVybWluYWxTZXJ2aWNlUmVzaXplUmVxdWVzdBITCgJpZBgBIAEoCUIHukgEcgIQARIYCgRjb2xzGAIgASgNQgq6SAcqBRjoBygBEhgKBHJvd3MYAyABKA1CCrpIByoFGOgHKAEiHwodVGVybWluYWxTZXJ2aWNlUmVzaXplUmVzcG9uc2UiRgoaVGVybWluYWxTZXJ2aWNlUmVhZFJlcXVlc3QSEwoCaWQYASABKAlCB7pIBHICEAESEwoLZnJvbV9vZmZzZXQYAiABKAQiXgobVGVybWluYWxTZXJ2aWNlUmVhZFJlc3BvbnNlEg4KBm9mZnNldBgBIAEoBBIMCgRkYXRhGAIgASgMEg4KBmV4aXRlZBgDIAEoCBIRCglleGl0X2NvZGUYBCABKAUiMgobVGVybWluYWxTZXJ2aWNlQ2xvc2VSZXF1ZXN0EhMKAmlkGAEgASgJQge6SARyAhABIh4KHFRlcm1pbmFsU2VydmljZUNsb3NlUmVzcG9uc2UyhAQKD1Rlcm1pbmFsU2VydmljZRJfCgRPcGVuEicudGVybWluYWwudjEuVGVybWluYWxTZXJ2aWNlT3BlblJlcXVlc3QaKC50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VPcGVuUmVzcG9uc2UiBMjzGAISYgoFV3JpdGUSKC50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VXcml0ZVJlcXVlc3QaKS50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VXcml0ZVJlc3BvbnNlIgTI8xgCEmUKBlJlc2l6ZRIpLnRlcm1pbmFsLnYxLlRlcm1pbmFsU2VydmljZVJlc2l6ZVJlcXVlc3QaKi50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VSZXNpemVSZXNwb25zZSIEyPMYAhJhCgRSZWFkEicudGVybWluYWwudjEuVGVybWluYWxTZXJ2aWNlUmVhZFJlcXVlc3QaKC50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VSZWFkUmVzcG9uc2UiBMjzGAIwARJiCgVDbG9zZRIoLnRlcm1pbmFsLnYxLlRlcm1pbmFsU2VydmljZUNsb3NlUmVxdWVzdBopLnRlcm1pbmFsLnYxLlRlcm1pbmFsU2VydmljZUNsb3NlUmVzcG9uc2UiBMjzGAJCpgEKD2NvbS50ZXJtaW5hbC52MUINVGVybWluYWxQcm90b1ABWjdnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby90ZXJtaW5hbC92MTt0ZXJtaW5hbHYxogIDVFhYqgILVGVybWluYWwuVjHKAgtUZXJtaW5hbFxWMeICF1Rlcm1pbmFsXFYxXEdQQk1ldGFkYXRh6gIMVGVybWluYWw6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("Chp0ZXJtaW5hbC92MS90ZXJtaW5hbC5wcm90bxILdGVybWluYWwudjEihwEKCFRlcm1pbmFsEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSDwoHY29tbWFuZBgDIAMoCRIRCglkaXJlY3RvcnkYBCABKAkSDAoEY29scxgFIAEoDRIMCgRyb3dzGAYgASgNEg4KBmV4aXRlZBgHIAEoCBIRCglleGl0X2NvZGUYCCABKAUioQEKGlRlcm1pbmFsU2VydmljZU9wZW5SZXF1ZXN0EhcKBG5hbWUYASABKAlCCbpIBnIEEAEYQBIPCgdjb21tYW5kGAIgAygJEhEKCWRpcmVjdG9yeRgDIAEoCRIWCgRjb2xzGAQgASgNQgi6SAUqAxjoBxIWCgRyb3dzGAUgASgNQgi6SAUqAxjoBxIWCgRsaW5lGAYgASgJQgi6SAVyAxiAICJsChtUZXJtaW5hbFNlcnZpY2VPcGVuUmVzcG9uc2USJwoIdGVybWluYWwYASABKAsyFS50ZXJtaW5hbC52MS5UZXJtaW5hbBIQCghhdHRhY2hlZBgCIAEoCBISCgplbmRfb2Zmc2V0GAMgASgEIksKG1Rlcm1pbmFsU2VydmljZVdyaXRlUmVxdWVzdBITCgJpZBgBIAEoCUIHukgEcgIQARIXCgRkYXRhGAIgASgMQgm6SAZ6BBiAgEAiHgocVGVybWluYWxTZXJ2aWNlV3JpdGVSZXNwb25zZSJnChxUZXJtaW5hbFNlcnZpY2VSZXNpemVSZXF1ZXN0EhMKAmlkGAEgASgJQge6SARyAhABEhgKBGNvbHMYAiABKA1CCrpIByoFGOgHKAESGAoEcm93cxgDIAEoDUIKukgHKgUY6AcoASIfCh1UZXJtaW5hbFNlcnZpY2VSZXNpemVSZXNwb25zZSJGChpUZXJtaW5hbFNlcnZpY2VSZWFkUmVxdWVzdBITCgJpZBgBIAEoCUIHukgEcgIQARITCgtmcm9tX29mZnNldBgCIAEoBCJeChtUZXJtaW5hbFNlcnZpY2VSZWFkUmVzcG9uc2USDgoGb2Zmc2V0GAEgASgEEgwKBGRhdGEYAiABKAwSDgoGZXhpdGVkGAMgASgIEhEKCWV4aXRfY29kZRgEIAEoBSIcChpUZXJtaW5hbFNlcnZpY2VMaXN0UmVxdWVzdCJHChtUZXJtaW5hbFNlcnZpY2VMaXN0UmVzcG9uc2USKAoJdGVybWluYWxzGAEgAygLMhUudGVybWluYWwudjEuVGVybWluYWwiMgobVGVybWluYWxTZXJ2aWNlQ2xvc2VSZXF1ZXN0EhMKAmlkGAEgASgJQge6SARyAhABIh4KHFRlcm1pbmFsU2VydmljZUNsb3NlUmVzcG9uc2Uy5QQKD1Rlcm1pbmFsU2VydmljZRJfCgRPcGVuEicudGVybWluYWwudjEuVGVybWluYWxTZXJ2aWNlT3BlblJlcXVlc3QaKC50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VPcGVuUmVzcG9uc2UiBMjzGAISYgoFV3JpdGUSKC50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VXcml0ZVJlcXVlc3QaKS50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VXcml0ZVJlc3BvbnNlIgTI8xgCEmUKBlJlc2l6ZRIpLnRlcm1pbmFsLnYxLlRlcm1pbmFsU2VydmljZVJlc2l6ZVJlcXVlc3QaKi50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VSZXNpemVSZXNwb25zZSIEyPMYAhJhCgRSZWFkEicudGVybWluYWwudjEuVGVybWluYWxTZXJ2aWNlUmVhZFJlcXVlc3QaKC50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VSZWFkUmVzcG9uc2UiBMjzGAIwARJfCgRMaXN0EicudGVybWluYWwudjEuVGVybWluYWxTZXJ2aWNlTGlzdFJlcXVlc3QaKC50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VMaXN0UmVzcG9uc2UiBMjzGAISYgoFQ2xvc2USKC50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VDbG9zZVJlcXVlc3QaKS50ZXJtaW5hbC52MS5UZXJtaW5hbFNlcnZpY2VDbG9zZVJlc3BvbnNlIgTI8xgCQqYBCg9jb20udGVybWluYWwudjFCDVRlcm1pbmFsUHJvdG9QAVo3Z2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdGVybWluYWwvdjE7dGVybWluYWx2MaICA1RYWKoCC1Rlcm1pbmFsLlYxygILVGVybWluYWxcVjHiAhdUZXJtaW5hbFxWMVxHUEJNZXRhZGF0YeoCDFRlcm1pbmFsOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * Terminal is a program running on a pseudo-terminal.
@@ -153,6 +153,14 @@ export type TerminalServiceOpenResponse = Message<"terminal.v1.TerminalServiceOp
    * @generated from field: bool attached = 2;
    */
   attached: boolean;
+
+  /**
+   * The offset its output has reached. A window that reads it again from below answers no query of those bytes:
+   * they were answered when they came, or their program no longer waits; an answer now would be typed into it.
+   *
+   * @generated from field: uint64 end_offset = 3;
+   */
+  endOffset: bigint;
 };
 
 /**
@@ -302,6 +310,36 @@ export const TerminalServiceReadResponseSchema: GenMessage<TerminalServiceReadRe
   messageDesc(file_terminal_v1_terminal, 8);
 
 /**
+ * @generated from message terminal.v1.TerminalServiceListRequest
+ */
+export type TerminalServiceListRequest = Message<"terminal.v1.TerminalServiceListRequest"> & {
+};
+
+/**
+ * Describes the message terminal.v1.TerminalServiceListRequest.
+ * Use `create(TerminalServiceListRequestSchema)` to create a new message.
+ */
+export const TerminalServiceListRequestSchema: GenMessage<TerminalServiceListRequest> = /*@__PURE__*/
+  messageDesc(file_terminal_v1_terminal, 9);
+
+/**
+ * @generated from message terminal.v1.TerminalServiceListResponse
+ */
+export type TerminalServiceListResponse = Message<"terminal.v1.TerminalServiceListResponse"> & {
+  /**
+   * @generated from field: repeated terminal.v1.Terminal terminals = 1;
+   */
+  terminals: Terminal[];
+};
+
+/**
+ * Describes the message terminal.v1.TerminalServiceListResponse.
+ * Use `create(TerminalServiceListResponseSchema)` to create a new message.
+ */
+export const TerminalServiceListResponseSchema: GenMessage<TerminalServiceListResponse> = /*@__PURE__*/
+  messageDesc(file_terminal_v1_terminal, 10);
+
+/**
  * @generated from message terminal.v1.TerminalServiceCloseRequest
  */
 export type TerminalServiceCloseRequest = Message<"terminal.v1.TerminalServiceCloseRequest"> & {
@@ -316,7 +354,7 @@ export type TerminalServiceCloseRequest = Message<"terminal.v1.TerminalServiceCl
  * Use `create(TerminalServiceCloseRequestSchema)` to create a new message.
  */
 export const TerminalServiceCloseRequestSchema: GenMessage<TerminalServiceCloseRequest> = /*@__PURE__*/
-  messageDesc(file_terminal_v1_terminal, 9);
+  messageDesc(file_terminal_v1_terminal, 11);
 
 /**
  * @generated from message terminal.v1.TerminalServiceCloseResponse
@@ -329,7 +367,7 @@ export type TerminalServiceCloseResponse = Message<"terminal.v1.TerminalServiceC
  * Use `create(TerminalServiceCloseResponseSchema)` to create a new message.
  */
 export const TerminalServiceCloseResponseSchema: GenMessage<TerminalServiceCloseResponse> = /*@__PURE__*/
-  messageDesc(file_terminal_v1_terminal, 10);
+  messageDesc(file_terminal_v1_terminal, 12);
 
 /**
  * TerminalService keeps terminals alive while djinn up runs: a window that closes and opens again finds them where
@@ -379,6 +417,16 @@ export const TerminalService: GenService<{
     methodKind: "server_streaming";
     input: typeof TerminalServiceReadRequestSchema;
     output: typeof TerminalServiceReadResponseSchema;
+  },
+  /**
+   * The terminals whose program runs, by name: the window shows a wish's lead (lead-<wish id>) only when it runs.
+   *
+   * @generated from rpc terminal.v1.TerminalService.List
+   */
+  list: {
+    methodKind: "unary";
+    input: typeof TerminalServiceListRequestSchema;
+    output: typeof TerminalServiceListResponseSchema;
   },
   /**
    * Hang up the terminal: the program gets SIGHUP, and is killed if it is still there after a grace delay.

@@ -258,7 +258,7 @@ test("an ended lead retains output and retries explicitly", async ({
     "Permissions in the selected projects",
     "Edit, in auto mode",
   );
-  const wish = await submitWish(page, dialog, "Make the wish");
+  await submitWish(page, dialog, "Make the wish");
   await expect(dialog).toHaveCount(0);
 
   const status = page.locator(".lead-status");

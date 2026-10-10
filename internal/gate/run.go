@@ -39,9 +39,15 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 		}
 		what += " " + a
 	}
+	dir := c.Dir
+	if dir == "" {
+		dir, _ = os.Getwd()
+	}
 	hold, give := context.WithCancel(ctx)
 	defer give()
-	stream, err := client.Hold(hold, connect.NewRequest(&machinev1.GateServiceHoldRequest{Name: name, TaskId: taskID, What: what}))
+	stream, err := client.Hold(hold, connect.NewRequest(&machinev1.GateServiceHoldRequest{
+		Name: name, TaskId: taskID, What: what, Directory: dir, Pid: int32(os.Getpid()),
+	}))
 	if err != nil {
 		return -1, err
 	}
@@ -61,9 +67,13 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 		}
 		return -1, fmt.Errorf("gate %s: djinn ended the call before granting it", name)
 	}
-	// The gate is held as long as the stream is open; say so if djinn up goes away meanwhile.
+	// The gate is held as long as the stream is open; say so if Djinn takes it back, or djinn up goes away meanwhile.
 	go func() {
 		for stream.Receive() {
+			if msg := stream.Msg(); msg.GetState() == machinev1.GateState_GATE_STATE_TAKEN_BACK {
+				fmt.Fprintf(c.Notice, "djinn: %s\n", msg.GetReason())
+				return
+			}
 		}
 		if hold.Err() == nil {
 			fmt.Fprintf(c.Notice, "djinn: gate %s lost: djinn no longer answers (%v)\n", name, stream.Err())
@@ -73,7 +83,13 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	cmd.Dir, cmd.Stdin, cmd.Stdout, cmd.Stderr = c.Dir, c.Stdin, c.Stdout, c.Stderr
 	cmd.Env = os.Environ()
 	began := time.Now()
-	err = cmd.Run()
+	var cpu time.Duration
+	var peak uint64
+	if err = cmd.Start(); err == nil {
+		cost := watch(cmd.Process)
+		err = cmd.Wait()
+		cpu, peak = cost(cmd.ProcessState)
+	}
 	code := 0
 	var exit *exec.ExitError
 	switch {
@@ -85,22 +101,21 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	}
 	// A command killed by a signal, or interrupted, did not run its course: its cost would mislead.
 	if c.Costs != nil && code >= 0 && ctx.Err() == nil {
-		record(ctx, c, taskID, what, cmd.ProcessState, time.Since(began))
+		record(ctx, c, taskID, what, dir, cmd.ProcessState, cpu, peak, time.Since(began))
 	}
 	return code, nil
 }
 
-// record sends what the command cost. Its project is the task's, or the one holding the folder it ran in.
-func record(ctx context.Context, c Command, taskID, what string, ps *os.ProcessState, took time.Duration) {
-	dir := c.Dir
-	if dir == "" {
-		dir, _ = os.Getwd()
-	}
+// record sends what the command cost. Its project is the task's, or the one holding dir, the folder it ran in.
+func record(
+	ctx context.Context, c Command, taskID, what, dir string, ps *os.ProcessState, cpu time.Duration, peak uint64,
+	took time.Duration,
+) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err := c.Costs.Record(ctx, connect.NewRequest(&machinev1.CommandServiceRecordRequest{
-		TaskId: taskID, Directory: dir, Command: what, CpuSeconds: (ps.UserTime() + ps.SystemTime()).Seconds(),
-		Seconds: took.Seconds(), PeakMemoryBytes: peakMemory(ps), ExitCode: int32(ps.ExitCode()),
+		TaskId: taskID, Directory: dir, Command: what, CpuSeconds: cpu.Seconds(),
+		Seconds: took.Seconds(), PeakMemoryBytes: peak, ExitCode: int32(ps.ExitCode()),
 	}))
 	if err != nil {
 		fmt.Fprintf(c.Notice, "djinn: the cost of the command is not recorded: %v\n", err)

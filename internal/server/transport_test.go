@@ -180,7 +180,7 @@ func echoHandler() http.Handler {
 			}
 		}))
 	demoPrefix, demo := demov1connect.NewDemoServiceHandler(countTo{})
-	return server.Handler(fstest.MapFS{}, map[string]http.Handler{"/bench.v1.Echo/": mux, demoPrefix: demo})
+	return server.Handler(fstest.MapFS{}, nil, map[string]http.Handler{"/bench.v1.Echo/": mux, demoPrefix: demo})
 }
 
 // countTo sends 1, 2, … up to the request at once: demo.Service waits between two values.
@@ -242,7 +242,9 @@ func TestUnixSocketSpeaksH2C(t *testing.T) {
 	if _, err := chat.Receive(); !errors.Is(err, io.EOF) {
 		t.Fatalf("end of the chat: %v, want EOF", err)
 	}
-	chat.CloseResponse()
+	if err := chat.CloseResponse(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestLoopbackStaysHTTP1 checks that the loopback server, which browsers reach, speaks HTTP/1.1 only.

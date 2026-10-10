@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -22,6 +23,9 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// exe ends the name of an executable: Windows runs only a file named so.
+var exe = map[bool]string{true: ".exe"}[runtime.GOOS == "windows"]
+
 func copyFile(t *testing.T, from, to string) {
 	t.Helper()
 	b, err := os.ReadFile(from)
@@ -37,8 +41,11 @@ func copyFile(t *testing.T, from, to string) {
 func TestSwapWhileRunning(t *testing.T) {
 	for _, aside := range []bool{false, true} {
 		t.Run(map[bool]string{false: "rename", true: "aside"}[aside], func(t *testing.T) {
+			if !aside && runtime.GOOS == "windows" {
+				t.Skip("Windows refuses to rename over a running executable: Install moves it aside there")
+			}
 			dir := t.TempDir()
-			installed := filepath.Join(dir, "prog")
+			installed := filepath.Join(dir, "prog"+exe)
 			copyFile(t, os.Args[0], installed)
 			cmd := exec.Command(installed)
 			cmd.Env = append(os.Environ(), "SWAPEXE_TEST_ECHO=1")
@@ -95,7 +102,12 @@ func TestSwapWhileRunning(t *testing.T) {
 			if !aside {
 				return
 			}
-			// A later install removes what was moved aside, once nothing runs it (Linux lets it go at once).
+			// A later install removes what was moved aside, once nothing runs it (Linux lets it go at once; Windows
+			// once its process ended).
+			if runtime.GOOS == "windows" {
+				in.Close()
+				_ = cmd.Wait()
+			}
 			if err := os.WriteFile(fresh, []byte("again"), 0o755); err != nil {
 				t.Fatal(err)
 			}

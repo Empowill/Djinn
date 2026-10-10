@@ -53,7 +53,8 @@ const (
 
 // MachineServiceClient is a client for the machine.v1.MachineService service.
 type MachineServiceClient interface {
-	// Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.
+	// Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
+	// once, what each running worker uses, and whether it can run a local model.
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
 }
 
@@ -72,6 +73,7 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+MachineServiceShowProcedure,
 			connect.WithSchema(machineServiceMethods.ByName("Show")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -89,7 +91,8 @@ func (c *machineServiceClient) Show(ctx context.Context, req *connect.Request[v1
 
 // MachineServiceHandler is an implementation of the machine.v1.MachineService service.
 type MachineServiceHandler interface {
-	// Show the machine: its cores and memory, the live load and pressure, and the most workers Djinn runs at once.
+	// Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
+	// once, what each running worker uses, and whether it can run a local model.
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
 }
 
@@ -104,6 +107,7 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		MachineServiceShowProcedure,
 		svc.Show,
 		connect.WithSchema(machineServiceMethods.ByName("Show")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/machine.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +130,8 @@ func (UnimplementedMachineServiceHandler) Show(context.Context, *connect.Request
 // GateServiceClient is a client for the machine.v1.GateService service.
 type GateServiceClient interface {
 	// Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
-	// that the gate is held. Interrupt it to give the gate back.
+	// that the gate is held. Interrupt it to give the gate back. Djinn takes it back when the holder's process ends or
+	// its timeout passes. Held outside a running worker, a gate takes a worker's slot.
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest]) (*connect.ServerStreamForClient[v1.GateServiceHoldResponse], error)
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
@@ -153,6 +158,7 @@ func NewGateServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+GateServiceListProcedure,
 			connect.WithSchema(gateServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -177,7 +183,8 @@ func (c *gateServiceClient) List(ctx context.Context, req *connect.Request[v1.Ga
 // GateServiceHandler is an implementation of the machine.v1.GateService service.
 type GateServiceHandler interface {
 	// Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
-	// that the gate is held. Interrupt it to give the gate back.
+	// that the gate is held. Interrupt it to give the gate back. Djinn takes it back when the holder's process ends or
+	// its timeout passes. Held outside a running worker, a gate takes a worker's slot.
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest], *connect.ServerStream[v1.GateServiceHoldResponse]) error
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
@@ -200,6 +207,7 @@ func NewGateServiceHandler(svc GateServiceHandler, opts ...connect.HandlerOption
 		GateServiceListProcedure,
 		svc.List,
 		connect.WithSchema(gateServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/machine.v1.GateService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +257,7 @@ func NewCommandServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+CommandServiceListProcedure,
 			connect.WithSchema(commandServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		record: connect.NewClient[v1.CommandServiceRecordRequest, v1.CommandServiceRecordResponse](
@@ -296,6 +305,7 @@ func NewCommandServiceHandler(svc CommandServiceHandler, opts ...connect.Handler
 		CommandServiceListProcedure,
 		svc.List,
 		connect.WithSchema(commandServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	commandServiceRecordHandler := connect.NewUnaryHandler(

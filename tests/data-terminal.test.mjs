@@ -24,6 +24,9 @@ function server(delay) {
         seen.inFlight--;
         return {};
       },
+      list: async () => ({
+        terminals: [{ name: "lead-w2" }, { name: "main" }],
+      }),
       read: async function* (req) {
         yield { offset: req.fromOffset, data: new TextEncoder().encode("ab") };
         yield {
@@ -71,4 +74,9 @@ test("read hands each piece with its offset, then the end", async () => {
     [12n, "c"],
   ]);
   assert.deepEqual(end, { exited: true, exitCode: 4 });
+});
+
+test("running gives the names of the terminals that run", async () => {
+  const { api } = server(0);
+  assert.deepEqual(await api.running(), ["lead-w2", "main"]);
 });

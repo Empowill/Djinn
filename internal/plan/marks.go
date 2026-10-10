@@ -19,13 +19,18 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// Marks implements MarkService. A mark lives on what it marks: a question's or a block's own list, one mark of each
-// kind, so that it travels with them in an export.
+// Marks implements MarkService. A mark lives on the question it marks, in its own list, one mark of each kind, so that
+// it travels with it in an export. A block takes none: blocks are for agents, and what the developer must see is a
+// question. Marks a block took before stay on it, and are listed no more.
 type Marks struct {
 	planv1connect.UnimplementedMarkServiceHandler
 	Store *store.Store
 	// Answered are called with a question once an approval has answered it.
-	Answered []func(context.Context, *planv1.Question)
+	Answered []AnswerHook
+	// Told, when set, is called next, with what they did.
+	Told Told
+	// Settle, when set, acts on the answer an approval gives, as Questions.Settle.
+	Settle Settle
 	// Approved are called with what an approval marked, once stored, when it answered nothing.
 	Approved []func(context.Context, *planv1.Marked)
 }
@@ -36,6 +41,7 @@ func (m *Marks) Put(
 	msg := req.Msg
 	var marked *planv1.Marked
 	var answered *planv1.Question
+	var then func(context.Context)
 	err := write(ctx, m.Store, req.Spec(), msg, func(tx *store.Tx) error {
 		question, block, err := target(ctx, tx, msg.GetTarget(), msg.GetWishId())
 		if err != nil {
@@ -52,6 +58,9 @@ func (m *Marks) Put(
 				}
 				question.Answer = &planv1.Answer{Choice: choice, CreateTime: mark.GetCreateTime()}
 				answered = question
+				if then, err = settled(ctx, m.Settle, tx, question); err != nil {
+					return err
+				}
 			}
 			question.Marks = setMark(question.GetMarks(), mark, msg.GetRemove())
 			marked = questionMarked(question, mark)
@@ -64,12 +73,12 @@ func (m *Marks) Put(
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case answered != nil:
-		for _, f := range m.Answered {
-			f(ctx, proto.CloneOf(answered))
-		}
-	case msg.GetKind() == planv1.MarkKind_MARK_KIND_APPROVED && !msg.GetRemove():
+	if then != nil {
+		then(ctx)
+	}
+	if answered != nil {
+		afterAnswer(ctx, m.Answered, m.Told, answered)
+	} else if msg.GetKind() == planv1.MarkKind_MARK_KIND_APPROVED && !msg.GetRemove() {
 		for _, f := range m.Approved {
 			f(ctx, proto.CloneOf(marked))
 		}
@@ -132,17 +141,19 @@ func (m *Marks) List(
 	return connect.NewResponse(&planv1.MarkServiceListResponse{Marks: marksOf(questions, blocks)}), nil
 }
 
-// marksOf are the marks on questions and blocks, the oldest first.
-func marksOf(questions []*planv1.Question, blocks []*planv1.Block) []*planv1.Marked {
+// marksOf are the marks on questions and, for compatibility with older plans, blocks, oldest first.
+func marksOf(questions []*planv1.Question, blockLists ...[]*planv1.Block) []*planv1.Marked {
 	var out []*planv1.Marked
 	for _, q := range questions {
 		for _, mark := range q.GetMarks() {
 			out = append(out, questionMarked(q, mark))
 		}
 	}
-	for _, b := range blocks {
-		for _, mark := range b.GetMarks() {
-			out = append(out, blockMarked(b, mark))
+	for _, blocks := range blockLists {
+		for _, b := range blocks {
+			for _, mark := range b.GetMarks() {
+				out = append(out, blockMarked(b, mark))
+			}
 		}
 	}
 	slices.SortStableFunc(out, func(x, y *planv1.Marked) int {

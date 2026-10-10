@@ -32,12 +32,21 @@ type thinker interface {
 // turnEnd is what the result line of a turn says.
 type turnEnd struct {
 	failure string // why the turn failed, when it did
+	// queued is how many messages the agent still holds for later turns, when it says so; nil when it does not.
+	// A message sent during a turn may be folded into that turn, and then gets no result of its own.
+	queued *int
 }
+
+// Quiet is how long a worker that has messages without a result, after a result that did not say how many it
+// still holds, may stay without a line on any output. Past it, those messages are taken as folded into the turn
+// that ended: the input is closed, and the agent exits once done.
+const Quiet = 10 * time.Minute
 
 // streamAgent is what a stream worker needs from its provider.
 type streamAgent struct {
 	name   string // the program, for errors
 	parser streamParser
+	quiet  time.Duration // Quiet when 0
 	// encode writes a user message as the agent reads it on its input, without the newline.
 	encode func(text string) ([]byte, error)
 	// settle, when set, says the agent may take a message sent during a turn into that turn, and give one result
@@ -61,7 +70,7 @@ func startStreamIdle(ctx context.Context, spec Spec, command string, args []stri
 func startStreamWith(
 	ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent, prompt bool,
 ) (Worker, error) {
-	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Prefix, grace)
+	p, err := startProcessWithPrefix(spec.Dir, command, args, spec.Env, spec.Scope, spec.Prefix, grace)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
@@ -119,6 +128,9 @@ func (w *streamWorker) Done() <-chan struct{} { return w.done }
 
 // PID is the process of the agent.
 func (w *streamWorker) PID() int { return w.p.cmd.Process.Pid }
+
+// Cgroup is the cgroup of the agent's scope.
+func (w *streamWorker) Cgroup() string { return w.p.cgroup }
 
 func (w *streamWorker) Pause() error  { return w.p.Pause() }
 func (w *streamWorker) Resume() error { return w.p.Resume() }
@@ -202,8 +214,9 @@ func (w *streamWorker) thinks(raw string) bool {
 	return ok && t.thinking(raw)
 }
 
-// read turns the process's lines into events. Once every message sent has its result, or the agent settled after
-// one (settle), the input is closed and the agent exits. A worker that said an error fails with it, even when every turn ended and the process exited 0.
+// read turns the process's lines into events. Once every message sent has its result, or the provider has settled a
+// folded message after one result, the input is closed and the agent exits. A worker that said an error fails with it,
+// even when every turn ended and the process exited 0.
 func (w *streamWorker) read() {
 	defer close(w.done)
 	defer close(w.events)
@@ -216,7 +229,40 @@ func (w *streamWorker) read() {
 			w.events <- ev
 		}
 	}
-	for l := range w.p.lines {
+	quiet := w.a.quiet
+	if quiet == 0 {
+		quiet = Quiet
+	}
+	// silence runs after a result that did not say how many messages are queued, while some still wait: nothing
+	// said for quiet, and they are taken as folded into the turn that ended.
+	silence := time.NewTimer(quiet)
+	silence.Stop()
+	waiting := false
+	defer silence.Stop()
+lines:
+	for {
+		var l line
+		select {
+		case next, ok := <-w.p.lines:
+			if !ok {
+				break lines
+			}
+			l = next
+		case <-silence.C:
+			waiting = false
+			w.mu.Lock()
+			if !w.closed {
+				w.closed, w.pending = true, 0
+				w.p.stdin.Close()
+			}
+			w.mu.Unlock()
+			send([]Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: fmt.Sprintf("%s said nothing for %s after its result: the messages sent during its turn are taken as answered", w.a.name, quiet)}})
+			continue
+		}
+		if waiting {
+			silence.Reset(quiet)
+		}
 		if l.stderr {
 			send(w.a.parser.stderr(l.text))
 			continue
@@ -236,14 +282,24 @@ func (w *streamWorker) read() {
 			w.failure = end.failure
 		}
 		w.active, w.settling = false, 0
-		w.pending--
+		if end.queued != nil {
+			w.pending = *end.queued
+		} else {
+			w.pending--
+		}
 		switch {
 		case w.pending <= 0:
 			w.closeInput()
 		case w.a.settle > 0 && !w.closed:
 			w.settle()
 		}
+		waiting = end.queued == nil && w.pending > 0 && !w.closed
 		w.mu.Unlock()
+		if waiting {
+			silence.Reset(quiet)
+		} else {
+			silence.Stop()
+		}
 	}
 	send(w.a.parser.flush())
 	<-w.p.done

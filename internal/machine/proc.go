@@ -76,7 +76,7 @@ func parseMeminfo(b []byte) (total, available uint64, err error) {
 func readPressure(fsys fs.FS, name string) (*Pressure, error) {
 	b, err := fs.ReadFile(fsys, name)
 	if err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // No pressure to read: see above.
 	}
 	return parsePressure(b)
 }

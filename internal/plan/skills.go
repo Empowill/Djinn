@@ -131,6 +131,8 @@ type Summoned struct {
 	SkillDir
 	// Source is <project>/<skill>.
 	Source string
+	// ProjectID is the project that holds it.
+	ProjectID string
 	// Missing says why the skill cannot be found; empty when it is.
 	Missing string
 }
@@ -139,7 +141,9 @@ type Summoned struct {
 func SummonedSkills(ctx context.Context, r store.Reader, project *planv1.Project) ([]Summoned, error) {
 	var out []Summoned
 	for _, s := range project.GetSummons() {
-		res := Summoned{Source: s.GetProjectId() + "/" + s.GetSkill(), SkillDir: SkillDir{Name: s.GetSkill()}}
+		res := Summoned{
+			Source: s.GetProjectId() + "/" + s.GetSkill(), ProjectID: s.GetProjectId(), SkillDir: SkillDir{Name: s.GetSkill()},
+		}
 		src, err := store.Get[*planv1.Project](ctx, r, s.GetProjectId())
 		switch {
 		case errors.Is(err, store.ErrNotFound):
@@ -233,16 +237,16 @@ func (k *Skills) List(
 	res := &planv1.SkillServiceListResponse{}
 	for _, p := range projects {
 		for _, s := range ProjectSkills(p.GetDirectory()) {
-			res.Skills = append(res.Skills, &planv1.Skill{
+			res.Skills = append(res.Skills, withTemplate(&planv1.Skill{
 				Project: p.GetName(), Name: s.Name, Directory: s.Dir, Description: s.Description,
-			})
+			}))
 		}
 		summoned, err := SummonedSkills(ctx, k.Store, p)
 		if err != nil {
 			return nil, Status(err)
 		}
 		for _, s := range summoned {
-			res.Skills = append(res.Skills, summonedSkill(p, s))
+			res.Skills = append(res.Skills, withTemplate(summonedSkill(p, s)))
 		}
 	}
 	return connect.NewResponse(res), nil
@@ -298,4 +302,26 @@ func ProjectNamed(ctx context.Context, r store.Reader, name string) (*planv1.Pro
 		}
 	}
 	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s: djinn project list shows them, %w", name, store.ErrNotFound))
+}
+
+// withTemplate adds to skill the title of its wish template and the command of its inbox source, or why they cannot
+// be used.
+func withTemplate(skill *planv1.Skill) *planv1.Skill {
+	if skill.GetDirectory() == "" || skill.GetMissing() != "" {
+		return skill
+	}
+	t, err := ReadTemplate(skill.GetDirectory())
+	switch {
+	case err != nil:
+		skill.TemplateError = err.Error()
+	case t != nil:
+		skill.Template = t.Title
+	}
+	switch src, err := ReadSource(skill.GetDirectory()); {
+	case err != nil:
+		skill.InboxSourceError = err.Error()
+	case src != nil:
+		skill.InboxSource = src.Watch
+	}
+	return skill
 }
