@@ -20,6 +20,14 @@ import (
 // watchInterval is the least time between two messages of a Watch stream: the changes in between come as one.
 var watchInterval = 100 * time.Millisecond
 
+// SetWatchInterval sets the least time between two messages of a Watch stream, for tests and benchmarks, and
+// returns what puts it back.
+func SetWatchInterval(d time.Duration) (restore func()) {
+	old := watchInterval
+	watchInterval = d
+	return func() { watchInterval = old }
+}
+
 // maxChanged is the most tasks, questions and blocks of a wish one message carries: past it, the reader reads them
 // all again, which costs less than reading each.
 const maxChanged = 200
