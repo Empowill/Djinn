@@ -405,6 +405,7 @@ func TestParseNotch(t *testing.T) {
 		{"medium", djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
 		{"high", djinnv1.LoadNotch_LOAD_NOTCH_HIGH},
 		{"max", djinnv1.LoadNotch_LOAD_NOTCH_MAX},
+		{"auto", djinnv1.LoadNotch_LOAD_NOTCH_AUTO},
 	} {
 		got, err := ParseNotch(tt.s)
 		if err != nil || got != tt.want {

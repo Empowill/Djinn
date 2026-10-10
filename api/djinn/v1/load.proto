@@ -20,6 +20,8 @@ enum LoadNotch {
   LOAD_NOTCH_HIGH = 4;
   // Max load: up to 32 workers, aggressive pressure thresholds, 256 MiB gate margin, all RAM except safety margin committed.
   LOAD_NOTCH_MAX = 5;
+  // Auto load: adapts operating load between minimal and max based on developer activity.
+  LOAD_NOTCH_AUTO = 6;
 }
 
 // LoadService gets and sets the machine's operating load notch.
@@ -47,6 +49,8 @@ message LoadServiceGetRequest {}
 message LoadServiceGetResponse {
   // The notch in effect.
   LoadNotch notch = 1;
+  // Whether auto mode is active.
+  bool auto = 2;
 }
 
 message LoadServiceSetRequest {
@@ -60,6 +64,8 @@ message LoadServiceSetRequest {
 message LoadServiceSetResponse {
   // The notch in effect.
   LoadNotch notch = 1;
+  // Whether auto mode is active.
+  bool auto = 2;
 }
 
 message LoadServiceWatchRequest {}
@@ -75,4 +81,6 @@ message LoadServiceWatchResponse {
   uint64 memory_total_bytes = 4;
   // Available RAM of the machine, in bytes.
   uint64 memory_available_bytes = 5;
+  // Whether auto mode is active.
+  bool auto = 6;
 }

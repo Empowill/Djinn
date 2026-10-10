@@ -385,7 +385,12 @@ func (f loads) Get(_ context.Context, req *connect.Request[djinnv1.LoadServiceGe
 
 func (f loads) Set(_ context.Context, req *connect.Request[djinnv1.LoadServiceSetRequest]) (*connect.Response[djinnv1.LoadServiceSetResponse], error) {
 	f.record(req.Msg)
-	return connect.NewResponse(&djinnv1.LoadServiceSetResponse{Notch: req.Msg.GetNotch()}), nil
+	resp := &djinnv1.LoadServiceSetResponse{Notch: req.Msg.GetNotch()}
+	if req.Msg.GetNotch() == djinnv1.LoadNotch_LOAD_NOTCH_AUTO {
+		resp.Notch = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
+		resp.Auto = true
+	}
+	return connect.NewResponse(resp), nil
 }
 
 // serve starts the fake server and returns a function that runs a command line against it.
@@ -436,6 +441,7 @@ func TestRun(t *testing.T) {
 		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, load, machine, mark, plan, project, question, skill, task, tilasm, wish`},
 		{name: "load get", args: []string{"load", "get"}, wantOut: "notch: medium\n", wantCalled: true},
 		{name: "load set", args: []string{"load", "set", "minimal"}, wantOut: "notch: minimal\n", wantCalled: true},
+		{name: "load set auto", args: []string{"load", "set", "auto"}, wantOut: "notch: minimal\nauto: true\n", wantCalled: true},
 		{name: "internal service is hidden", args: []string{"ui", "get-environment"}, wantCode: 2, wantErr: `unknown command "ui"`},
 		{name: "version", args: []string{"v"}, wantOut: "djinn test\n"},
 		{name: "talisman answers as tilasm", args: []string{"talisman", "list", "--search", "model"}, wantOut: "code: L01", wantCalled: true},

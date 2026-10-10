@@ -69,3 +69,18 @@
   background: var(--surface-soft);
   border: 1px solid var(--line);
 }
+
+.operating-load-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+}
+
+.operating-load-effective {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body, 12px);
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}

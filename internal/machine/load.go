@@ -73,16 +73,103 @@ func WriteNotch(home string, notch djinnv1.LoadNotch) error {
 	return ui.WriteAtomic(path, data)
 }
 
+// LoadOption configures loadService.
+type LoadOption func(*loadService)
+
+// WithLoadAutoController sets a custom AutoController on the load service.
+func WithLoadAutoController(ac *AutoController) LoadOption {
+	return func(s *loadService) {
+		s.auto = ac
+	}
+}
+
+// WithLoadClock sets the clock function used for auto mode.
+func WithLoadClock(clock func() time.Time) LoadOption {
+	return func(s *loadService) {
+		s.clock = clock
+	}
+}
+
+// WithLoadSignal sets the activity signal function used for auto mode.
+func WithLoadSignal(signal ActivitySignal) LoadOption {
+	return func(s *loadService) {
+		s.signal = signal
+	}
+}
+
+// WithLoadStepDuration sets the hysteresis minimum interval for auto mode.
+func WithLoadStepDuration(d time.Duration) LoadOption {
+	return func(s *loadService) {
+		s.stepDuration = d
+	}
+}
+
+// WithLoadTickInterval sets the auto ticker interval (<= 0 disables background ticker).
+func WithLoadTickInterval(d time.Duration) LoadOption {
+	return func(s *loadService) {
+		s.tickInterval = d
+	}
+}
+
 // LoadHandler returns the Connect handler of LoadService and its path prefix.
-func LoadHandler(home string, m *Monitor, setPolicy func(Policy), broadcast func(djinnv1.LoadNotch), workerMemory WorkerMemoryFunc) (string, http.Handler) {
-	return djinnv1connect.NewLoadServiceHandler(&loadService{
+func LoadHandler(
+	home string,
+	m *Monitor,
+	setPolicy func(Policy),
+	broadcast func(djinnv1.LoadNotch),
+	workerMemory WorkerMemoryFunc,
+	opts ...LoadOption,
+) (string, http.Handler) {
+	savedNotch := ReadNotch(home)
+	s := &loadService{
 		home:         home,
 		monitor:      m,
 		setPolicy:    setPolicy,
 		broadcast:    broadcast,
 		workerMemory: workerMemory,
 		subs:         make(map[chan struct{}]struct{}),
-	}, connect.WithInterceptors(plan.Validate))
+		tickInterval: time.Second,
+		stopAuto:     make(chan struct{}),
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	if s.auto == nil {
+		autoOpts := []AutoOption{
+			WithAutoOnChange(func(effective djinnv1.LoadNotch) {
+				s.applyNotch(effective)
+				s.notifyWatchers()
+			}),
+		}
+		if s.clock != nil {
+			autoOpts = append(autoOpts, WithAutoClock(s.clock))
+		}
+		if s.signal != nil {
+			autoOpts = append(autoOpts, WithAutoSignal(s.signal))
+		} else {
+			autoOpts = append(autoOpts, WithAutoSignal(SystemActivitySignal(m)))
+		}
+		if s.stepDuration > 0 {
+			autoOpts = append(autoOpts, WithAutoStepDuration(s.stepDuration))
+		}
+		s.auto = NewAutoController(savedNotch, autoOpts...)
+	} else {
+		oldOnChange := s.auto.onChange
+		s.auto.onChange = func(effective djinnv1.LoadNotch) {
+			s.applyNotch(effective)
+			s.notifyWatchers()
+			if oldOnChange != nil {
+				oldOnChange(effective)
+			}
+		}
+	}
+
+	if s.tickInterval > 0 {
+		go s.runAutoLoop()
+	}
+
+	return djinnv1connect.NewLoadServiceHandler(s, connect.WithInterceptors(plan.Validate))
 }
 
 type loadService struct {
@@ -93,8 +180,53 @@ type loadService struct {
 	broadcast    func(djinnv1.LoadNotch)
 	workerMemory WorkerMemoryFunc
 
+	auto         *AutoController
+	clock        func() time.Time
+	signal       ActivitySignal
+	stepDuration time.Duration
+	tickInterval time.Duration
+	stopAuto     chan struct{}
+
 	mu   sync.Mutex
 	subs map[chan struct{}]struct{}
+}
+
+func (s *loadService) runAutoLoop() {
+	ticker := time.NewTicker(s.tickInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.stopAuto:
+			return
+		case <-ticker.C:
+			s.Tick()
+		}
+	}
+}
+
+// Tick evaluates developer activity and updates effective load notch in auto mode.
+func (s *loadService) Tick() (bool, djinnv1.LoadNotch) {
+	if s.auto == nil {
+		return false, djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
+	}
+	return s.auto.Tick()
+}
+
+func (s *loadService) applyNotch(effective djinnv1.LoadNotch) {
+	p := NotchPolicy(effective)
+	if s.monitor != nil {
+		// Preserve any runtime overrides from flags (Workers, WorkerMemory).
+		current := s.monitor.Policy()
+		p.Workers = current.Workers
+		p.WorkerMemory = current.WorkerMemory
+		s.monitor.SetPolicy(p)
+	}
+	if s.setPolicy != nil {
+		s.setPolicy(p)
+	}
+	if s.broadcast != nil {
+		s.broadcast(effective)
+	}
 }
 
 func (s *loadService) notifyWatchers() {
@@ -112,12 +244,18 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 	resp := &djinnv1.LoadServiceWatchResponse{
 		Notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
 	}
-	var policy Policy
-	if s.monitor != nil {
-		policy = s.monitor.Policy()
+	if s.auto != nil {
+		resp.Notch = s.auto.Effective()
+		resp.Auto = s.auto.IsAuto()
+	} else if s.monitor != nil {
+		policy := s.monitor.Policy()
 		if policy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
 			resp.Notch = policy.Notch
 		}
+	}
+	var policy Policy
+	if s.monitor != nil {
+		policy = s.monitor.Policy()
 		resp.MemoryTotalBytes = s.monitor.Total()
 		resp.MemoryAvailableBytes = s.monitor.Available()
 	}
@@ -134,13 +272,20 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 func (s *loadService) Get(
 	_ context.Context, _ *connect.Request[djinnv1.LoadServiceGetRequest],
 ) (*connect.Response[djinnv1.LoadServiceGetResponse], error) {
-	notch := djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
-	if s.monitor != nil {
+	effective := djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
+	isAuto := false
+	if s.auto != nil {
+		effective = s.auto.Effective()
+		isAuto = s.auto.IsAuto()
+	} else if s.monitor != nil {
 		if n := s.monitor.Policy().Notch; n != djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
-			notch = n
+			effective = n
 		}
 	}
-	return connect.NewResponse(&djinnv1.LoadServiceGetResponse{Notch: notch}), nil
+	return connect.NewResponse(&djinnv1.LoadServiceGetResponse{
+		Notch: effective,
+		Auto:  isAuto,
+	}), nil
 }
 
 func (s *loadService) Set(
@@ -153,22 +298,18 @@ func (s *loadService) Set(
 	if err := WriteNotch(s.home, notch); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write load setting: %w", err))
 	}
-	p := NotchPolicy(notch)
-	if s.monitor != nil {
-		// Preserve any runtime overrides from flags (Workers, WorkerMemory).
-		current := s.monitor.Policy()
-		p.Workers = current.Workers
-		p.WorkerMemory = current.WorkerMemory
-		s.monitor.SetPolicy(p)
+	effective := notch
+	isAuto := false
+	if s.auto != nil {
+		effective, _ = s.auto.SetNotch(notch)
+		isAuto = s.auto.IsAuto()
 	}
-	if s.setPolicy != nil {
-		s.setPolicy(p)
-	}
-	if s.broadcast != nil {
-		s.broadcast(notch)
-	}
+	s.applyNotch(effective)
 	s.notifyWatchers()
-	return connect.NewResponse(&djinnv1.LoadServiceSetResponse{Notch: notch}), nil
+	return connect.NewResponse(&djinnv1.LoadServiceSetResponse{
+		Notch: effective,
+		Auto:  isAuto,
+	}), nil
 }
 
 func (s *loadService) Watch(

@@ -40,6 +40,8 @@ const (
 	LoadNotch_LOAD_NOTCH_HIGH LoadNotch = 4
 	// Max load: up to 32 workers, aggressive pressure thresholds, 256 MiB gate margin, all RAM except safety margin committed.
 	LoadNotch_LOAD_NOTCH_MAX LoadNotch = 5
+	// Auto load: adapts operating load between minimal and max based on developer activity.
+	LoadNotch_LOAD_NOTCH_AUTO LoadNotch = 6
 )
 
 // Enum value maps for LoadNotch.
@@ -51,6 +53,7 @@ var (
 		3: "LOAD_NOTCH_MEDIUM",
 		4: "LOAD_NOTCH_HIGH",
 		5: "LOAD_NOTCH_MAX",
+		6: "LOAD_NOTCH_AUTO",
 	}
 	LoadNotch_value = map[string]int32{
 		"LOAD_NOTCH_UNSPECIFIED": 0,
@@ -59,6 +62,7 @@ var (
 		"LOAD_NOTCH_MEDIUM":      3,
 		"LOAD_NOTCH_HIGH":        4,
 		"LOAD_NOTCH_MAX":         5,
+		"LOAD_NOTCH_AUTO":        6,
 	}
 )
 
@@ -128,7 +132,9 @@ func (*LoadServiceGetRequest) Descriptor() ([]byte, []int) {
 type LoadServiceGetResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The notch in effect.
-	Notch         LoadNotch `protobuf:"varint,1,opt,name=notch,proto3,enum=djinn.v1.LoadNotch" json:"notch,omitempty"`
+	Notch LoadNotch `protobuf:"varint,1,opt,name=notch,proto3,enum=djinn.v1.LoadNotch" json:"notch,omitempty"`
+	// Whether auto mode is active.
+	Auto          bool `protobuf:"varint,2,opt,name=auto,proto3" json:"auto,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -168,6 +174,13 @@ func (x *LoadServiceGetResponse) GetNotch() LoadNotch {
 		return x.Notch
 	}
 	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
+}
+
+func (x *LoadServiceGetResponse) GetAuto() bool {
+	if x != nil {
+		return x.Auto
+	}
+	return false
 }
 
 type LoadServiceSetRequest struct {
@@ -218,7 +231,9 @@ func (x *LoadServiceSetRequest) GetNotch() LoadNotch {
 type LoadServiceSetResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The notch in effect.
-	Notch         LoadNotch `protobuf:"varint,1,opt,name=notch,proto3,enum=djinn.v1.LoadNotch" json:"notch,omitempty"`
+	Notch LoadNotch `protobuf:"varint,1,opt,name=notch,proto3,enum=djinn.v1.LoadNotch" json:"notch,omitempty"`
+	// Whether auto mode is active.
+	Auto          bool `protobuf:"varint,2,opt,name=auto,proto3" json:"auto,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -258,6 +273,13 @@ func (x *LoadServiceSetResponse) GetNotch() LoadNotch {
 		return x.Notch
 	}
 	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
+}
+
+func (x *LoadServiceSetResponse) GetAuto() bool {
+	if x != nil {
+		return x.Auto
+	}
+	return false
 }
 
 type LoadServiceWatchRequest struct {
@@ -308,8 +330,10 @@ type LoadServiceWatchResponse struct {
 	MemoryTotalBytes uint64 `protobuf:"varint,4,opt,name=memory_total_bytes,json=memoryTotalBytes,proto3" json:"memory_total_bytes,omitempty"`
 	// Available RAM of the machine, in bytes.
 	MemoryAvailableBytes uint64 `protobuf:"varint,5,opt,name=memory_available_bytes,json=memoryAvailableBytes,proto3" json:"memory_available_bytes,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Whether auto mode is active.
+	Auto          bool `protobuf:"varint,6,opt,name=auto,proto3" json:"auto,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LoadServiceWatchResponse) Reset() {
@@ -377,33 +401,44 @@ func (x *LoadServiceWatchResponse) GetMemoryAvailableBytes() uint64 {
 	return 0
 }
 
+func (x *LoadServiceWatchResponse) GetAuto() bool {
+	if x != nil {
+		return x.Auto
+	}
+	return false
+}
+
 var File_djinn_v1_load_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_load_proto_rawDesc = "" +
 	"\n" +
 	"\x13djinn/v1/load.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\"\x17\n" +
-	"\x15LoadServiceGetRequest\"C\n" +
+	"\x15LoadServiceGetRequest\"W\n" +
 	"\x16LoadServiceGetResponse\x12)\n" +
-	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\"Q\n" +
+	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
+	"\x04auto\x18\x02 \x01(\bR\x04auto\"Q\n" +
 	"\x15LoadServiceSetRequest\x128\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchB\r\xbaH\n" +
-	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"C\n" +
+	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"W\n" +
 	"\x16LoadServiceSetResponse\x12)\n" +
-	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\"\x19\n" +
-	"\x17LoadServiceWatchRequest\"\x8b\x02\n" +
+	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
+	"\x04auto\x18\x02 \x01(\bR\x04auto\"\x19\n" +
+	"\x17LoadServiceWatchRequest\"\x9f\x02\n" +
 	"\x18LoadServiceWatchResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x120\n" +
 	"\x14engaged_memory_bytes\x18\x02 \x01(\x04R\x12engagedMemoryBytes\x12.\n" +
 	"\x13worker_memory_bytes\x18\x03 \x01(\x04R\x11workerMemoryBytes\x12,\n" +
 	"\x12memory_total_bytes\x18\x04 \x01(\x04R\x10memoryTotalBytes\x124\n" +
-	"\x16memory_available_bytes\x18\x05 \x01(\x04R\x14memoryAvailableBytes*\x95\x01\n" +
+	"\x16memory_available_bytes\x18\x05 \x01(\x04R\x14memoryAvailableBytes\x12\x12\n" +
+	"\x04auto\x18\x06 \x01(\bR\x04auto*\xaa\x01\n" +
 	"\tLoadNotch\x12\x1a\n" +
 	"\x16LOAD_NOTCH_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12LOAD_NOTCH_MINIMAL\x10\x01\x12\x14\n" +
 	"\x10LOAD_NOTCH_LIGHT\x10\x02\x12\x15\n" +
 	"\x11LOAD_NOTCH_MEDIUM\x10\x03\x12\x13\n" +
 	"\x0fLOAD_NOTCH_HIGH\x10\x04\x12\x12\n" +
-	"\x0eLOAD_NOTCH_MAX\x10\x052\x8c\x02\n" +
+	"\x0eLOAD_NOTCH_MAX\x10\x05\x12\x13\n" +
+	"\x0fLOAD_NOTCH_AUTO\x10\x062\x8c\x02\n" +
 	"\vLoadService\x12Q\n" +
 	"\x03Get\x12\x1f.djinn.v1.LoadServiceGetRequest\x1a .djinn.v1.LoadServiceGetResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12R\n" +
 	"\x03Set\x12\x1f.djinn.v1.LoadServiceSetRequest\x1a .djinn.v1.LoadServiceSetResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
