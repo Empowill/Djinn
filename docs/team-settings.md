@@ -47,6 +47,7 @@ install: "go tool task install"
 | `merge_main`     | When Djinn merges it: `MERGE_MAIN_RELEASE` (once main holds a release the branch lacks), `MERGE_MAIN_COMMIT` (once it holds any commit the branch lacks), `MERGE_MAIN_OFF`. | at each release |
 | `merge_main_minutes` | How often, in minutes, Djinn fetches main to look at it, at most. A release the running Djinn finds makes it look at once. | `60` |
 | `install_releases` | For the project a Djinn built from a checkout comes from: a newer release installs by itself while that checkout is on main. `false`: it is only offered. | on |
+| `push`           | When Djinn pushes the integration branch: `PROJECT_PUSH_STANDARD` (today's cadence: at an azima's end or 3 tasks and an hour), `PROJECT_PUSH_ON_DEMAND` (never pushes by itself, only the developer's push does). | `PROJECT_PUSH_STANDARD` |
 
 A watcher (`--provider watch`) runs a command: no setting applies to it, and none can make one.
 
@@ -257,9 +258,15 @@ mode it asks a question first, "Push feat/x to origin? (3 commits: …)", which 
 nothing more is asked until you answer. A push the remote refuses (your branch is behind, or protected) is said in the
 tasks' events and asked about: push again once you have brought the remote's commits in, or leave it until the next
 push due. Each push is in the journal; the wish's head shows the last one, its commits on hover, and when.
-
 `djinn wish set-integration <wish> --push-after-minutes 30 --push-after-tasks 2 --push-mode ask` changes the hour, the
 count and the mode, for that wish.
+
+A project may choose its cadence with `push`: `PROJECT_PUSH_STANDARD` (the default cadence above, where the wish's
+`push_mode` still applies) or `PROJECT_PUSH_ON_DEMAND` (Djinn commits each task's work into the integration branch as
+now, but never pushes by itself and asks nothing; only the developer's push does). The window's project view and the
+side panel show when the integration branch is out of sync with its remote and offer a Push button and a cadence switch;
+`djinn project push <project> [--wish <wish>]` pushes from the command line. In On demand, the wish's head says
+"pushes on demand".
 
 Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
 version, to install it and restart on it, with what changed (each task with the last paragraph its worker wrote folded

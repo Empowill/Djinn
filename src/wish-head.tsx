@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   type Lead,
+  ProjectPush,
   Provider,
   type WishMain,
   type WishPush,
@@ -224,21 +225,25 @@ export function LastPushes({
   projects,
 }: {
   pushes: WishPush[];
-  projects: { id: string; name: string }[];
+  projects: { id: string; name: string; push?: ProjectPush }[];
 }) {
+  const projectIds = Array.from(
+    new Set([...projects.map((p) => p.id), ...pushes.map((p) => p.projectId)]),
+  );
   return (
     <>
-      {pushes.map((push) => {
-        const last = push.last;
-        if (!last && !push.refused && !push.held) return null;
-        const project =
-          projects.length > 1
-            ? projects.find((p) => p.id === push.projectId)?.name
-            : undefined;
+      {projectIds.map((id) => {
+        const project = projects.find((p) => p.id === id);
+        const push = pushes.find((p) => p.projectId === id);
+        const onDemand = project?.push === ProjectPush.ON_DEMAND;
+        const last = push?.last;
+        if (!last && !push?.refused && !push?.held && !onDemand) return null;
+        const name =
+          projects.length > 1 ? (project?.name ?? push?.projectId) : undefined;
         return (
-          <span key={push.projectId} className="wish-push">
+          <span key={id} className="wish-push">
             <CloudUpload size={13} />
-            {project && <b>{project}</b>}
+            {name && <b>{name}</b>}
             {last && (
               <span title={last.commits.join("\n")}>
                 {t("wish.pushed", {
@@ -249,14 +254,19 @@ export function LastPushes({
                 })}
               </span>
             )}
-            {push.refused && (
+            {push?.refused && (
               <span className="wish-push-refused" title={push.refused}>
                 {t("wish.push_refused")}
               </span>
             )}
-            {push.held && (
+            {push?.held && (
               <span className="wish-push-refused" title={push.held}>
                 {t("wish.push_held")}
+              </span>
+            )}
+            {onDemand && (
+              <span className="wish-push-on-demand">
+                {t("wish.push_on_demand")}
               </span>
             )}
           </span>

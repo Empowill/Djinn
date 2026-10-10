@@ -35,6 +35,7 @@ export { AzimaCard, azimaFinished } from "@/src/azima.tsx";
 export {
   FolderField,
   ProjectChecks,
+  ProjectPanel,
   ShortcutField,
 } from "@/src/wish-dialogs.tsx";
 export {
@@ -2900,4 +2901,160 @@ test("a card does not re-render when another card changes in a list", async () =
       h.unref();
     }
   }
+});
+
+test("the wish's head says when pushes are on demand", () => {
+  const onDemandOnly = s.renderToStaticMarkup(
+    h(s.LastPushes, {
+      pushes: [],
+      projects: [{ id: "p1", name: "app", push: s.ProjectPush.ON_DEMAND }],
+    }),
+  );
+  assert.match(
+    onDemandOnly,
+    /<span class="wish-push-on-demand">pushes on demand<\/span>/,
+  );
+  assert.doesNotMatch(onDemandOnly, /Pushed/);
+
+  const last = {
+    branch: "feat/x",
+    remote: "origin",
+    count: 2,
+    commits: ["Work of W2", "Work of W1"],
+    pushTime: { seconds: 1791640800n, nanos: 0 },
+  };
+  const both = s.renderToStaticMarkup(
+    h(s.LastPushes, {
+      pushes: [{ projectId: "p1", last, refused: "" }],
+      projects: [{ id: "p1", name: "app", push: s.ProjectPush.ON_DEMAND }],
+    }),
+  );
+  assert.match(both, /Pushed feat\/x to origin, 2 commits/);
+  assert.match(
+    both,
+    /<span class="wish-push-on-demand">pushes on demand<\/span>/,
+  );
+});
+
+test("the side panel shows when a project's integration branch is out of sync and offers a push button", () => {
+  const project = {
+    id: "p1",
+    name: "lamp",
+    directory: "/tmp/lamp",
+    git: true,
+    sync: {
+      ahead: 3,
+      behind: 1,
+      remote: "origin",
+      branch: "feat/x",
+      target: "feat/x",
+    },
+  };
+  const html = s.renderToStaticMarkup(
+    h(s.WishSidebar, {
+      wishes: [],
+      projects: [project],
+      selectedWishId: "",
+      selectedProjectId: "",
+      collapsed: false,
+      onSelectWish() {},
+      onSelectProject() {},
+      onMove() {},
+      onNewProject() {},
+      onPush() {},
+    }),
+  );
+  assert.match(html, /class="project-sync-row"/);
+  assert.match(html, /3 commits ahead of origin\/feat\/x, 1 behind/);
+  assert.match(
+    html,
+    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+  );
+
+  const collapsedHtml = s.renderToStaticMarkup(
+    h(s.WishSidebar, {
+      wishes: [],
+      projects: [project],
+      selectedWishId: "",
+      selectedProjectId: "",
+      collapsed: true,
+      onSelectWish() {},
+      onSelectProject() {},
+      onMove() {},
+      onNewProject() {},
+      onPush() {},
+    }),
+  );
+  assert.doesNotMatch(collapsedHtml, /class="project-sync-row"/);
+});
+
+test("the project panel displays the push cadence setting, out-of-sync status, and push button", () => {
+  const p1 = {
+    id: "p1",
+    name: "app",
+    git: true,
+    directory: "/tmp/app",
+    remote: "git@github.com:org/app.git",
+    push: s.ProjectPush.STANDARD,
+    sync: {
+      ahead: 3,
+      behind: 0,
+      remote: "origin",
+      branch: "feat/x",
+      target: "feat/x",
+    },
+  };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.ProjectService, {
+      show: () => ({ project: p1 }),
+      push: () => ({}),
+      setPush: () => ({ project: p1 }),
+    });
+    service(s.SkillService, {
+      list: () => ({ skills: [] }),
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const html = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.ProjectPanel, { project: p1, onClose() {} }),
+    ),
+  );
+  assert.match(html, /3 commits ahead of origin\/feat\/x/);
+  assert.match(
+    html,
+    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+  );
+  assert.match(
+    html,
+    /Pushes at an azima(?:'|&#x27;)s end or after 3 tasks and an hour\./,
+  );
+  assert.match(
+    html,
+    /<button type="button" class="active">Standard<\/button><button type="button" class="">On demand<\/button>/,
+  );
+
+  const p2 = {
+    ...p1,
+    push: s.ProjectPush.ON_DEMAND,
+    sync: undefined,
+  };
+  const htmlOnDemand = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.ProjectPanel, { project: p2, onClose() {} }),
+    ),
+  );
+  assert.match(htmlOnDemand, /Pushes only when you ask\./);
+  assert.doesNotMatch(
+    htmlOnDemand,
+    /<button type="button" class="button accent small"[^>]*>Push<\/button>/,
+  );
+  assert.match(
+    htmlOnDemand,
+    /<button type="button" class="">Standard<\/button><button type="button" class="active">On demand<\/button>/,
+  );
 });

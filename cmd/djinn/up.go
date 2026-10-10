@@ -379,7 +379,7 @@ func services(
 	out := plan.Handlers(db, append([]plan.Option{plan.WithAnswered(h.Answered), plan.WithEnlightened(h.Enlightened),
 		plan.WithLeads(leads{terminals, uiSvc}),
 		plan.WithPages(pages), plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home),
-		plan.WithWorkers(h)}, more...)...)
+		plan.WithWorkers(h), plan.WithPusher(h)}, more...)...)
 	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a
 	// template.
 	wishes := &plan.Wishes{Store: db, Leads: leads{terminals, uiSvc}, Language: language, Workers: h}

@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -291,5 +292,104 @@ func TestWishMake(t *testing.T) {
 	list, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
 	if err != nil || len(list.Msg.GetWishes()) != 1 {
 		t.Errorf("List = %v, %v; want the one wish made", list, err)
+	}
+}
+
+type testPusher struct {
+	pushedWish, pushedProject string
+}
+
+func (p *testPusher) Push(ctx context.Context, wishID, projectID string) (*planv1.IntegrationPush, error) {
+	p.pushedWish, p.pushedProject = wishID, projectID
+	return &planv1.IntegrationPush{WishId: wishID, ProjectId: projectID, Count: 2}, nil
+}
+
+func (p *testPusher) Sync(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (*planv1.ProjectSync, error) {
+	return &planv1.ProjectSync{
+		WishId: wish.GetId(),
+		Branch: "feat/x",
+		Remote: "origin",
+		Target: "feat/x",
+		Ahead:  3,
+		Behind: 1,
+	}, nil
+}
+
+func TestProjectPushAndSetPush(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	pusher := &testPusher{}
+	c := serve(t, WithHome(home), WithPusher(pusher))
+
+	dir := t.TempDir()
+	p, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := p.Msg.GetProject().GetId()
+	projectName := p.Msg.GetProject().GetName()
+
+	// Initial push setting is STANDARD
+	if p.Msg.GetProject().GetPush() != planv1.ProjectPush_PROJECT_PUSH_STANDARD {
+		t.Errorf("initial push setting: %v, want STANDARD", p.Msg.GetProject().GetPush())
+	}
+
+	// Make an active wish for this project
+	res, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Test wish", ProjectIds: []string{projectID},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := res.Msg.GetWish().GetId()
+
+	// List should now have project with sync populated
+	list, err := c.projects.List(ctx, connect.NewRequest(&planv1.ProjectServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Msg.GetProjects()) != 1 {
+		t.Fatalf("List = %d projects, want 1", len(list.Msg.GetProjects()))
+	}
+	gotP := list.Msg.GetProjects()[0]
+	if gotP.GetSync() == nil || gotP.GetSync().GetAhead() != 3 || gotP.GetSync().GetBehind() != 1 {
+		t.Errorf("project sync = %v, want ahead 3, behind 1", gotP.GetSync())
+	}
+
+	// Change push setting to ON_DEMAND
+	setRes, err := c.projects.SetPush(ctx, connect.NewRequest(&planv1.ProjectServiceSetPushRequest{
+		Project: projectName,
+		Push:    planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND,
+	}))
+	if err != nil {
+		t.Fatalf("SetPush: %v", err)
+	}
+	if setRes.Msg.GetProject().GetPush() != planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND {
+		t.Errorf("SetPush response push: %v, want ON_DEMAND", setRes.Msg.GetProject().GetPush())
+	}
+
+	// Show reflects ON_DEMAND
+	showRes, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{
+		Project: projectName,
+	}))
+	if err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+	if showRes.Msg.GetProject().GetPush() != planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND {
+		t.Errorf("Show project push: %v, want ON_DEMAND", showRes.Msg.GetProject().GetPush())
+	}
+
+	// Project Push triggers pusher
+	pushRes, err := c.projects.Push(ctx, connect.NewRequest(&planv1.ProjectServicePushRequest{
+		Project: projectName,
+	}))
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if pushRes.Msg.GetPush().GetWishId() != wishID || pushRes.Msg.GetPush().GetProjectId() != projectID {
+		t.Errorf("Push response: %v", pushRes.Msg.GetPush())
+	}
+	if pusher.pushedWish != wishID || pusher.pushedProject != projectID {
+		t.Errorf("pusher received wish=%s project=%s", pusher.pushedWish, pusher.pushedProject)
 	}
 }

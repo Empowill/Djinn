@@ -68,6 +68,10 @@ const (
 	ProjectServiceListProcedure = "/plan.v1.ProjectService/List"
 	// ProjectServiceShowProcedure is the fully-qualified name of the ProjectService's Show RPC.
 	ProjectServiceShowProcedure = "/plan.v1.ProjectService/Show"
+	// ProjectServicePushProcedure is the fully-qualified name of the ProjectService's Push RPC.
+	ProjectServicePushProcedure = "/plan.v1.ProjectService/Push"
+	// ProjectServiceSetPushProcedure is the fully-qualified name of the ProjectService's SetPush RPC.
+	ProjectServiceSetPushProcedure = "/plan.v1.ProjectService/SetPush"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -370,6 +374,10 @@ type ProjectServiceClient interface {
 	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
 	// .agents/settings.txtpb or your own file.
 	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
+	// Push the project's integration branch for a wish: runs push checks under gates, never with --force.
+	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
+	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
+	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -403,14 +411,28 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		push: connect.NewClient[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse](
+			httpClient,
+			baseURL+ProjectServicePushProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Push")),
+			connect.WithClientOptions(opts...),
+		),
+		setPush: connect.NewClient[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse](
+			httpClient,
+			baseURL+ProjectServiceSetPushProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("SetPush")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // projectServiceClient implements ProjectServiceClient.
 type projectServiceClient struct {
-	add  *connect.Client[v1.ProjectServiceAddRequest, v1.ProjectServiceAddResponse]
-	list *connect.Client[v1.ProjectServiceListRequest, v1.ProjectServiceListResponse]
-	show *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
+	add     *connect.Client[v1.ProjectServiceAddRequest, v1.ProjectServiceAddResponse]
+	list    *connect.Client[v1.ProjectServiceListRequest, v1.ProjectServiceListResponse]
+	show    *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
+	push    *connect.Client[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse]
+	setPush *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -428,6 +450,16 @@ func (c *projectServiceClient) Show(ctx context.Context, req *connect.Request[v1
 	return c.show.CallUnary(ctx, req)
 }
 
+// Push calls plan.v1.ProjectService.Push.
+func (c *projectServiceClient) Push(ctx context.Context, req *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error) {
+	return c.push.CallUnary(ctx, req)
+}
+
+// SetPush calls plan.v1.ProjectService.SetPush.
+func (c *projectServiceClient) SetPush(ctx context.Context, req *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error) {
+	return c.setPush.CallUnary(ctx, req)
+}
+
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
@@ -437,6 +469,10 @@ type ProjectServiceHandler interface {
 	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
 	// .agents/settings.txtpb or your own file.
 	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
+	// Push the project's integration branch for a wish: runs push checks under gates, never with --force.
+	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
+	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
+	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -466,6 +502,18 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServicePushHandler := connect.NewUnaryHandler(
+		ProjectServicePushProcedure,
+		svc.Push,
+		connect.WithSchema(projectServiceMethods.ByName("Push")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectServiceSetPushHandler := connect.NewUnaryHandler(
+		ProjectServiceSetPushProcedure,
+		svc.SetPush,
+		connect.WithSchema(projectServiceMethods.ByName("SetPush")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceAddProcedure:
@@ -474,6 +522,10 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceListHandler.ServeHTTP(w, r)
 		case ProjectServiceShowProcedure:
 			projectServiceShowHandler.ServeHTTP(w, r)
+		case ProjectServicePushProcedure:
+			projectServicePushHandler.ServeHTTP(w, r)
+		case ProjectServiceSetPushProcedure:
+			projectServiceSetPushHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -493,6 +545,14 @@ func (UnimplementedProjectServiceHandler) List(context.Context, *connect.Request
 
 func (UnimplementedProjectServiceHandler) Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Show is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Push is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetPush is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.
