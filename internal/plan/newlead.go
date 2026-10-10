@@ -27,7 +27,8 @@ const maxFirstArg = 64 << 10
 // lead of another agent than the last one continues the wish from there, without its session.
 func StartLine(wishID string) string {
 	return fmt.Sprintf("You lead the Djinn wish %s. Run `djinn wish brief %s`: where the wish stands and how to "+
-		"lead it, computed by Djinn from its plan. Then continue the wish from what it says.", wishID, wishID)
+		"lead it, computed by Djinn from its plan. Then continue the wish from what it says. Every question for the "+
+		"developer goes through `djinn question ask`, never in this terminal, and the work goes to tasks.", wishID, wishID)
 }
 
 // newLead prepares a new lead for a wish: the command line that starts provider's agent in dir (startFolder: a

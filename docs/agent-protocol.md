@@ -18,6 +18,10 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
 - **A wish describes itself.** Its description is a few lines: what it is for, its scope, where it goes.
   `djinn wish describe <wish> --text "…"` sets it; the developer edits it in the wish's head, under its title (a
   click, saved when the field is left). Until someone writes one, the title stands for it.
+- **The lead asks through Djinn, and delegates.** Every question for the developer, the lead's own included, goes
+  through `djinn question ask`: one written in the lead's terminal reaches neither the window, nor the decision log,
+  nor the question workers. An analysis goes in a block, a decision taken in the terminal in a block of kind decision;
+  the work goes to tasks. Djinn's rules in the brief say it, and so does every lead's first message.
 - **Every lead starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
   and antigravity: run `djinn wish brief <wish>`, then continue the wish from what it says (`StartLine` in
   `internal/plan/newlead.go`). Nothing in it is about one agent or the wish's state: a lead of another agent than the

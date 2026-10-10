@@ -56,9 +56,15 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- **Start from the brief.** Djinn computes where the wish stands from its plan: `djinn wish brief <wish>`, above. " +
 	"Run it when you start and whenever you lose track, then continue the wish from what it says. Another agent may " +
 	"have led the wish before you: its plan carries over, its session does not.\n" +
-	"- **Ask, do not guess.** A question for the developer goes through `djinn question ask`, with its options and " +
-	"your recommendation. An answered question is a decision; so is a block of kind decision. A task that follows " +
-	"from one names it: `--decision Q03`, or the block's id.\n" +
+	"- **Ask, do not guess, and never in your terminal.** Every question for the developer, yours included, goes " +
+	"through `djinn question ask`, with its options and your recommendation. A question, a proposal or a \"shall " +
+	"I?\" written in your terminal reaches neither the window, nor the decision log, nor the question workers: there, " +
+	"only name its code (Q12). An analysis or a recommendation goes in a block (`--kind report`); a decision the " +
+	"developer takes in the terminal gets a block of kind decision. An answered question is a decision; so is a " +
+	"block of kind decision. A task that follows from one names it: `--decision Q03`, or the block's id.\n" +
+	"- **Delegate.** You lead; workers do the work. Code, investigations, fixes and checks go to tasks, even small " +
+	"ones, several side by side; keep for yourself what only the lead does: talk with the developer, plan, check " +
+	"what comes back.\n" +
 	"- **Workers start from a short prompt.** Say what to do, in which project, and how to check it. " +
 	"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
 	"again at every turn, so use them only when the whole context is needed.\n" +
