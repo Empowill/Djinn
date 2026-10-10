@@ -56,6 +56,13 @@ func openWindow(ctx context.Context, url string, assets http.Handler, raise <-ch
 		Width:  1440,
 		Height: 1000,
 		URL:    url,
+		Mac: application.MacWindow{
+			// Extend the webview beneath a transparent titlebar while keeping the native
+			// traffic lights. The small native drag strip also works in the MCP build,
+			// which intentionally does not load Wails' JavaScript runtime.
+			TitleBar:                application.MacTitleBarHidden,
+			InvisibleTitleBarHeight: 16,
+		},
 		KeyBindings: map[string]func(application.Window){
 			"CmdOrCtrl+q": func(application.Window) { quit() },
 		},

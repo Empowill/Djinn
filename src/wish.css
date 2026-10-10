@@ -1190,3 +1190,18 @@
     animation: none;
   }
 }
+
+/* Keep the first 16px of the creation surface available to the native titlebar
+   drag strip; the back control starts at y=16px and remains fully interactive. */
+html.native-mac .wish-creation::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 9;
+  height: 16px;
+  pointer-events: auto;
+  background: transparent;
+  --wails-draggable: drag;
+}

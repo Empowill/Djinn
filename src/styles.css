@@ -4943,3 +4943,22 @@ html[data-motion="reduced"] *::after {
     margin-inline: 20px;
   }
 }
+
+/* Wails macOS windows keep their native traffic lights while the webview fills
+   the old titlebar area. The native 16px strip handles dragging in the desktop
+   build; these inherited values keep the same intent for Wails' CSS drag bridge. */
+html.native-mac .sidebar {
+  padding-top: 28px;
+}
+html.native-mac .sidebar-brand,
+html.native-mac .topbar {
+  --wails-draggable: drag;
+}
+html.native-mac button,
+html.native-mac a,
+html.native-mac input,
+html.native-mac textarea,
+html.native-mac select,
+html.native-mac [role="button"] {
+  --wails-draggable: no-drag;
+}

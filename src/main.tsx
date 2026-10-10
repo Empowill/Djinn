@@ -15,6 +15,13 @@ import { UpdateBanner } from "./update-banner";
 import { WishApp } from "./wish-app";
 import { startWishSmokePrewarm } from "./wish-smoke";
 
+const userAgent = navigator.userAgent;
+const nativeMac =
+  /Macintosh|Mac OS X|MacIntel|MacPPC/i.test(
+    `${navigator.platform} ${userAgent}`,
+  ) &&
+  (/wails\.io/i.test(userAgent) || window.location.protocol === "wails:");
+document.documentElement.classList.toggle("native-mac", nativeMac);
 document.documentElement.lang = language;
 applyTheme();
 followSystem();
