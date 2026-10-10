@@ -8,7 +8,7 @@ after: T26
 
 # T27 · Wish templates, drawn from skills
 
-The design's second part (design block "every request finds its wish", decision Q51 = B), after the routing
+The design's second part ("every request finds its wish", 09/10/2026, decision Q51 = B), after the routing
 ([T26](e1210c5e-request-routing.md)) and the watcher (`--provider watch`). A request that comes back, such as babysitting a pull request,
 opens a wish that already knows how to work. How a project declares one: [`docs/wish-templates.md`](../docs/wish-templates.md).
 
@@ -61,10 +61,17 @@ opens a wish that already knows how to work. How a project declares one: [`docs/
 
 ## Next
 
-- More templates: QA of a feature, a queue of tickets (one task per ticket). Each is a skill, no code.
+- More templates: QA of a feature, its screenshots kept as blocks of the wish; a queue of tickets, one task per
+  ticket, the ticket claimed when its worker starts. Each is a skill, no code. (The design, 09/10/2026.)
 - The inbox, the design's third part: [T28](d6fb2417-inbox.md).
 
 ## Open questions
+
+- Who pushes a babysat pull request's fixes? The design (09/10/2026) and both babysit skills have the lead review
+  the workers' diffs, then "commit and push once for the round". Since T30, agents never push: Djinn commits each
+  task's work into the wish's integration branch, by default the branch the project's checkout was on when the wish
+  was made, and pushes it. For a babysit wish that branch must be the pull request's own: `djinn wish set-integration`
+  can set it, but neither the template nor the skills do, and the skills' step 3 still tells the lead to push.
 
 - The Agent Skills format describes `metadata` as a map of strings; `metadata.djinn.wish` nests a map. Claude Code
   reads it; a strict validator may not. A flat form (`djinn.wish.title: …`) would satisfy both, at the cost of

@@ -10,8 +10,9 @@ after: T13
 
 The developer's words: "When I ask you to babysit something, or anything that has nothing to do with the current wish,
 offer to open a wish, dreaming a little further, or to file it in an existing one." Two babysits of merge requests
-slipped into one wish and into its lead's session. Decision Q51 = B; the design is the wish's design block "every request
-finds its wish". This task is its first part, the routing.
+slipped into one wish and into its lead's session. Decision Q51 = B. The design, "every request finds its wish"
+(09/10/2026), has three parts, one plan file each: this one, the routing; the wish templates
+([T27](bac5e018-wish-templates.md)); the inbox ([T28](d6fb2417-inbox.md)). Each file holds its part of it.
 
 **What was decided.**
 - **`WishService.Route`**, `djinn wish route "<request>" [--wish-id <wish>] [--ask] [--title …] [--project-id …]`.

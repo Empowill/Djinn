@@ -54,6 +54,12 @@ interface, without Node or Electron at runtime.
   (tests excepted). A relay adds djinn's token to the page's calls, reading djinn's address at each one, so a restart
   needs no reload; like djinn, it refuses a call from another origin. The data lives in `bin/dev-home`, and the loop
   refuses the data folder of the Djinn in use. No native window: the window serves the embedded `dist/`, not Vite.
+- **Upgrading Wails** (the Wails v3 study, 08/10/2026): its betas are nightlies cut from `master`, with behaviour
+  changes announced in their notes, and one maintainer. Djinn pins a tag in `go.mod` and moves only on purpose. At
+  each move: read the beta's notes and `UNRELEASED_CHANGELOG.md` (Changed, Removed); align the `wails3` command line
+  with `go.mod` if Djinn ever uses it (it makes bindings; Djinn needs none); run `go tool task check-window` on Linux
+  and macOS, and Windows when one is at hand. The core stays free of Wails: `-tags headless` and `--browser` build
+  and run without it.
 
 ## Open questions
 - Ubuntu 22.04 builds with the `gtk3` tag, which Wails drops in v3.1. When do we move to GTK 4? *Recommendation: before upgrading Wails past v3.0.x.*

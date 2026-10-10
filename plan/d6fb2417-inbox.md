@@ -8,7 +8,7 @@ after: T26 T27
 
 # T28 · An inbox: what comes from outside becomes a proposed wish
 
-The design's third part (design block "every request finds its wish", decision Q51 = B), after the routing
+The design's third part ("every request finds its wish", 09/10/2026, decision Q51 = B), after the routing
 ([T26](e1210c5e-request-routing.md)) and the wish templates ([T27](bac5e018-wish-templates.md)). How a project
 declares a source: [`docs/wish-templates.md`](../docs/wish-templates.md#the-inbox-what-comes-from-outside).
 

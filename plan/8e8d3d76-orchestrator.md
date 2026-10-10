@@ -342,4 +342,14 @@ after: T08 T17
   none. Outside any project, read-only. Completed by Q38: `.agents/permissions.txtpb` first, translated per
   agent; a folder outside Git without configuration asks.*
 - An event is stored twice: in `task_event` and in the journal. *Recommendation: keep it until a long Claude
-  run shows the size matters; then journal the event without its raw line.*
+  run shows the size matters; then journal the event without its raw line.* 10/10/2026, it does (the data model,
+  tilasm L02): on the developer's database, read only, `harness/event` is 121 MB of a 123 MB journal, beside 122 MB
+  of events, in a 279 MB file; no code reads a `harness/*` entry back. To decide: journal it as `(task_id, seq)`
+  only, or without its raw line, or not at all; old entries stay. Smaller, same tilasm: `TaskEvent.raw` is read only
+  by `djinn task watch --raw`; `InboxItem.settle_time` is written, never read; `Mark.actor` and `Round.actor` are
+  always `local`, never read.
+- Claude ignores a worktree's own `.claude/settings.json` while the worktree is not trusted ("this workspace has not
+  been trusted"): seen on 08/10/2026 with the first workers Djinn started, its 21 rules lost, `.agents/` still applied
+  through `--settings`. `Claude.args` and Q34 say the project's own configuration decides, so a project without
+  `.agents/permissions.txtpb` would lose its rules. Have Djinn's worktrees trusted, or rely on `--settings` alone and
+  say the loss in `docs/providers.md`? Not checked again since. (needs: a real claude run in a worktree)
