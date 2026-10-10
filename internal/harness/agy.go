@@ -57,10 +57,11 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 			return nil, fmt.Errorf("agy cannot run without editing yet (the project's %s says edit: false): %w; use claude or codex",
 				filepath.ToSlash(PermissionsFile), ErrReadOnly)
 		}
+		// No --sandbox, the developer's choice (Q66, 10/10/2026): agy's sandbox cannot reach Djinn's socket, so a
+		// worker's `djinn gate run lint` asked for the "unsandboxed" permission, which a headless run cannot grant
+		// (W228, agy 1.3.3), and some tasks need the network. The grants of its project still hold: writes to the
+		// worktree and its Git folders only, the project's denied commands and git push refused.
 		args = append(args, "--mode", "accept-edits")
-		if !p.GetNetwork() {
-			args = append(args, "--sandbox")
-		}
 		args = append(args, "--project", agyProjectID(spec.Dir))
 	}
 	if spec.SkillsDir != "" {

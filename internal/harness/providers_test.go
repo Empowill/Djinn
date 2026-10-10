@@ -288,7 +288,7 @@ func catalog() []catalogCase {
 				}
 				list := strings.Split(args, "\n")
 				i := slices.Index(list, "--project")
-				if i < 0 || !slices.Contains(list, "--sandbox") {
+				if i < 0 || slices.Contains(list, "--sandbox") {
 					t.Fatalf("args = %q", args)
 				}
 				dir, _ := agyProjectsDir()
@@ -569,7 +569,7 @@ func TestProviderArgs(t *testing.T) {
 		{Spec{ReadOnly: true}, nil, true},
 		{Spec{Resume: "c1", Fork: true}, nil, true},
 		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
-			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--sandbox",
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits",
 				"--project", agyProjectID("/w")}, false},
 		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Network: true}},
 			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--project", agyProjectID("/w")}, false},
