@@ -4955,7 +4955,7 @@ html.native-mac [role="button"] {
   z-index: 50;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 12px;
   width: max-content;
   height: 32px;
   pointer-events: none;
@@ -4972,7 +4972,7 @@ html.native-mac [role="button"] {
 }
 html.native-mac .app-toolbar {
   top: 6px;
-  left: 82px;
+  left: 92px;
   height: 20px;
   --wails-draggable: no-drag;
 }
@@ -5074,6 +5074,9 @@ html.native-mac .sidebar-collapsed .main-shell .topbar {
   }
   html.native-mac .wish-app:not(.sidebar-collapsed) .main-shell .topbar {
     padding-left: 99px;
+  }
+  html:not(.native-mac) .wish-app:not(.sidebar-collapsed) .main-shell .topbar {
+    padding-left: 33px;
   }
 }
 @media (min-width: 1750px) {

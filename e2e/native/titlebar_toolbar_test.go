@@ -54,10 +54,10 @@ func TestNativeToolbarControls(t *testing.T) {
 	`, &geometry); err != nil {
 		t.Fatal(err)
 	}
-	if geometry.Back["x"] != 82 || geometry.Back["y"] != 6 || geometry.Back["width"] != 20 || geometry.Back["height"] != 20 {
+	if geometry.Back["x"] != 92 || geometry.Back["y"] != 6 || geometry.Back["width"] != 20 || geometry.Back["height"] != 20 {
 		t.Fatalf("unexpected native back geometry: %+v", geometry.Back)
 	}
-	if geometry.Toggle["x"] != 106 || geometry.Toggle["y"] != 6 || geometry.Toggle["width"] != 20 || geometry.Toggle["height"] != 20 {
+	if geometry.Toggle["x"] != 124 || geometry.Toggle["y"] != 6 || geometry.Toggle["width"] != 20 || geometry.Toggle["height"] != 20 {
 		t.Fatalf("unexpected native toggle geometry: %+v", geometry.Toggle)
 	}
 

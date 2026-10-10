@@ -233,18 +233,18 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   const toolbar = page.locator(".app-toolbar");
   const toggleBox = await toggle.boundingBox();
   expect(toggleBox).toMatchObject({ width: 20, height: 20 });
-  expect(toggleBox?.x).toBeGreaterThanOrEqual(102);
+  expect(toggleBox?.x).toBeGreaterThanOrEqual(124);
   expect(toggleBox?.y).toBe(6);
   const backBefore = await toolbarBack.boundingBox();
   expect(backBefore).not.toBeNull();
   await expect(toolbarBack).toBeDisabled();
   expect(await toolbar.boundingBox()).toMatchObject({
-    x: 82,
+    x: 92,
     y: 6,
     height: 20,
   });
-  expect(backBefore).toMatchObject({ width: 20, height: 20, x: 82, y: 6 });
-  expect(backBefore!.x).toBeGreaterThanOrEqual(82);
+  expect(backBefore).toMatchObject({ width: 20, height: 20, x: 92, y: 6 });
+  expect(backBefore!.x).toBeGreaterThanOrEqual(92);
   const iconBefore = await toggle
     .locator("svg")
     .evaluate((svg) => svg.outerHTML);
