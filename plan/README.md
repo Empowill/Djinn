@@ -37,8 +37,19 @@ other tracker and no cloud service. A new task is a new file here, with a fresh 
 | T19 | 3 | Releases: binaries for every target | [71f9c331-releases.md](71f9c331-releases.md) |
 | T20 | 3 | Your wishes follow you | [9b71f059-backup.md](9b71f059-backup.md) |
 
+## Drafts
+
+| Code | Phase | Draft | File |
+| ---- | ----- | ----- | ---- |
+| T28 | 3 | Work spread over trusted machines | [b4286211-work-spread-over-trusted-machines.md](b4286211-work-spread-over-trusted-machines.md) |
+| T29 | 3 | Collaborate on a wish | [e6e6605e-collaborate-on-a-wish.md](e6e6605e-collaborate-on-a-wish.md) |
+| T30 | 2 | Dispatch: local model research | [83566b82-dispatch-local-model.md](83566b82-dispatch-local-model.md) |
+| T31 | 3 | Usage analytics with DuckDB | [21e56469-duckdb-analytics.md](21e56469-duckdb-analytics.md) |
+| T32 | 3 | Desktop integration ideas | [3be2c459-desktop-integration-ideas.md](3be2c459-desktop-integration-ideas.md) |
+
 Phases: 1 · the native app, 2 · orchestration and data (after which Djinn runs on itself),
 3 · comfort and clean-up, delegable.
 
 Principles: the strict minimum, well thought out and adaptable. Protos are the source of
 truth. Djinn never stores or reads a secret.
+

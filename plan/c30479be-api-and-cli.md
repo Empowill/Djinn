@@ -310,7 +310,7 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   (`TestEveryMethodSaysWhatItChanges`, `TestMCPListTools`; `TestReadOnlyMethodsAnswerAGet` on a real
   `djinn up`: GET `ProjectService/List` 200, GET `ProjectService/Add` 405;
   [the convention](../docs/cli-convention.md#reads-and-writes))
-- [ ] Analytics with DuckDB: who uses what, for how long. (needs: an agent, after a decision on what to collect)
+- Analytics with DuckDB: moved to T31, a draft.
 - [x] Remove Electron and the code it no longer needs. (`electron/` is gone, be8f52c; 845461b: the CI no longer
   sets `ELECTRON_SKIP_BINARY_DOWNLOAD`, `docs/agent-protocol.md` describes the command line and the task events,
   the user guide launches `djinn up`; `git grep -i electron` finds only `plan/` history, the license's
@@ -352,15 +352,9 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
   They replace `tools/gofmtcheck`, the two `go vet` lines and `gofmt -w` in `format`; every other tool and task is
   still called. W94 began it; W127 finished it. (`go tool task lint`: 0 issues, about 25 s warm; their findings fixed,
   among them a redirect that `//host` sent off the site, `TestGuardToken`)
-- [ ] Later, after v1: trusted machines and distributed work, see T15. (needs: T15)
+- Trusted machines and distributed work: moved to T28, a draft.
 
 ### Ideas, not decided
 
-From the Wails v3 study (08/10/2026), what Wails offers that Djinn has not taken up; each needs a decision before any
-work.
-- A tray icon that shows the count of running workers and open questions (today the tray has Show and Quit only;
-  GNOME needs an extension for a tray).
-- Several windows: a wish or a worker detached into its own window, on a second screen.
-- Djinn started when the session opens.
-- Add a project by dropping its folder on the window (T13 has the folder picker); whether a dropped folder gives its
-  path is not checked on any system.
+moved to T32, a draft
+
