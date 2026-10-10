@@ -211,8 +211,10 @@ The cards, the bar of what waits for you and the brief list them in that order.
 - **Rub the lamp** answers with the option selected and your note: the recommended one is selected first, so one
   click takes it; pick another and the lamp sends that one. With no option recommended, pick one first. A question
   without options takes a written answer, sent the same way.
-- **Enlighten me**, on its left, asks the lead to dig first, with what to dig into if you like. The question shows
-  **Being investigated** until the lead revises it; you may still decide now. Its rounds fold below the card.
+- **Enlighten me**, on its left, asks the lead to dig first, in one click: the note you typed says what to dig into
+  (empty, it digs in general). The question folds to one line, **Being investigated** with what you asked, out of the
+  way of the questions that wait for you; a click opens it, and you may still decide now. Revised, it opens again and
+  waits for your answer. Its rounds fold below the card.
 
 Your answer goes to the lead and the workers. An answered question is a decision. A wish without a lead session has no
 lead to tell: the card says so, and the answer waits in the wish's brief for the next lead.
