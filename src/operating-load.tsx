@@ -471,6 +471,29 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
         count: allowedWorkers,
       });
 
+  const baseTooltip = data.auto
+    ? notchTooltip(LoadNotch.AUTO, data.baseSlots, chosen)
+    : notchTooltip(displayNotch, data.baseSlots, chosen);
+  const sliderTooltip =
+    data.memoryTotalBytes > 0n || data.memoryAvailableBytes > 0n
+      ? t("load.tooltip_detail", {
+          base: baseTooltip,
+          engaged: memory(data.engagedMemoryBytes),
+          limit: memory(
+            computeEngagedLimit(
+              displayNotch,
+              data.memoryAvailableBytes,
+              data.memoryTotalBytes,
+            ),
+          ),
+          forecast: memory(
+            data.workerForecastBytes > 0n
+              ? data.workerForecastBytes
+              : 1536n * 1024n * 1024n,
+          ),
+        })
+      : baseTooltip;
+
   const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement)?.tagName === "BUTTON") return;
     const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
@@ -534,11 +557,7 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
         aria-valuemax={5}
         aria-valuenow={sliderIndex + 1}
         aria-valuetext={valuetext}
-        title={
-          data.auto
-            ? notchTooltip(LoadNotch.AUTO, data.baseSlots, chosen)
-            : notchTooltip(displayNotch, data.baseSlots, chosen)
-        }
+        title={sliderTooltip}
         className="operating-load-input"
       />
       <div className="operating-load-notches">

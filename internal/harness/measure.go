@@ -181,7 +181,7 @@ func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, 
 		}
 	}
 	h.mu.Unlock()
-	engaged, actual = dispatch.WorkerMemory(tasks, p)
+	engaged, actual = dispatch.WorkerMemory(tasks, p, h.now())
 	return engaged, actual, nil
 }
 

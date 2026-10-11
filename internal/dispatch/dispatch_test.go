@@ -766,3 +766,195 @@ func TestInvestigatorPriorityAndMemory(t *testing.T) {
 		t.Errorf("work task held back by review: got %q, want prefix 'a review goes first: '", got["w1"])
 	}
 }
+
+// TestWorkerPeakWarmup:
+// 1. A worker past the delay counts its own peak;
+// 2. Before it, the forecast;
+// 3. A worker whose current memory exceeds its old peak counts the current resident memory;
+// 4. A paused worker keeps counting its own peak.
+func TestWorkerPeakWarmup(t *testing.T) {
+	at := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	policy := machine.Policy{
+		WorkerPeak:   2 * machine.GiB,
+		WorkerMargin: 512 * machine.MiB,
+	}
+
+	// 1 past finished worker with peak 3 GiB sets provider typical peak to 3 GiB.
+	// So typical forecast = 3 GiB + 512 MiB = 3.5 GiB.
+	done := &planv1.Task{
+		Id: "done", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, EndTime: timestamppb.New(at.Add(-time.Hour)),
+		Resources: &planv1.Resources{PeakMemoryBytes: 3 * machine.GiB},
+	}
+
+	// Case 1: worker past the delay (started 5 minutes ago >= WorkerPeakWarmup (3 min))
+	// Peak is 1.8 GiB, resident is 1.0 GiB.
+	// Should count max(1.8, 1.0) + 512 MiB = 1.8 GiB + 512 MiB = 2360 MiB.
+	pastWorker := &planv1.Task{
+		Id: "past", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+		StartTime: timestamppb.New(at.Add(-5 * time.Minute)),
+		Resources: &planv1.Resources{
+			PeakMemoryBytes: 1843 * machine.MiB, // 1.8 GiB
+			MemoryBytes:     1024 * machine.MiB, // 1.0 GiB
+		},
+	}
+	engagedPast, actualPast := WorkerMemory([]*planv1.Task{done, pastWorker}, policy, at)
+	wantPastEngaged := uint64(1843*machine.MiB + 512*machine.MiB)
+	if engagedPast != wantPastEngaged {
+		t.Errorf("worker past delay engaged: got %d, want %d (own peak + margin)", engagedPast, wantPastEngaged)
+	}
+	if actualPast != 1024*machine.MiB {
+		t.Errorf("worker past delay actual: got %d, want %d", actualPast, 1024*machine.MiB)
+	}
+
+	// Case 2: worker before the delay (started 1 minute ago < WorkerPeakWarmup)
+	// Peak is 1.8 GiB, resident is 1.0 GiB.
+	// Should count provider forecast (3 GiB) + margin (512 MiB) = 3.5 GiB.
+	beforeWorker := &planv1.Task{
+		Id: "before", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+		StartTime: timestamppb.New(at.Add(-1 * time.Minute)),
+		Resources: &planv1.Resources{
+			PeakMemoryBytes: 1843 * machine.MiB,
+			MemoryBytes:     1024 * machine.MiB,
+		},
+	}
+	engagedBefore, _ := WorkerMemory([]*planv1.Task{done, beforeWorker}, policy, at)
+	wantBeforeEngaged := uint64(3*machine.GiB + 512*machine.MiB)
+	if engagedBefore != wantBeforeEngaged {
+		t.Errorf("worker before delay engaged: got %d, want %d (forecast + margin)", engagedBefore, wantBeforeEngaged)
+	}
+
+	// Case 3: worker whose current resident memory exceeds its old peak
+	// Running past delay (5 min), old peak is 1.5 GiB, current resident memory is 2.2 GiB.
+	// Should count max(1.5, 2.2) + margin = 2.2 GiB + 512 MiB = 2764 MiB.
+	exceedWorker := &planv1.Task{
+		Id: "exceed", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+		StartTime: timestamppb.New(at.Add(-5 * time.Minute)),
+		Resources: &planv1.Resources{
+			PeakMemoryBytes: 1536 * machine.MiB, // 1.5 GiB
+			MemoryBytes:     2252 * machine.MiB, // 2.2 GiB
+		},
+	}
+	engagedExceed, _ := WorkerMemory([]*planv1.Task{done, exceedWorker}, policy, at)
+	wantExceedEngaged := uint64(2252*machine.MiB + 512*machine.MiB)
+	if engagedExceed != wantExceedEngaged {
+		t.Errorf("worker exceeding old peak engaged: got %d, want %d (current memory + margin)", engagedExceed, wantExceedEngaged)
+	}
+
+	// Case 4: paused worker keeps counting its own peak
+	pausedWorker := &planv1.Task{
+		Id: "paused", Status: planv1.TaskStatus_TASK_STATUS_PAUSED,
+		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+		Resources: &planv1.Resources{
+			PeakMemoryBytes: 2 * machine.GiB,
+			MemoryBytes:     1200 * machine.MiB,
+		},
+	}
+	engagedPaused, _ := WorkerMemory([]*planv1.Task{done, pausedWorker}, policy, at)
+	wantPausedEngaged := uint64(2*machine.GiB + 512*machine.MiB)
+	if engagedPaused != wantPausedEngaged {
+		t.Errorf("paused worker engaged: got %d, want %d (own peak + margin)", engagedPaused, wantPausedEngaged)
+	}
+}
+
+// TestOverclockRoomForOneMore verifies that on an Overclock machine with 4 running Antigravity workers
+// (peaks 1.1 to 2.6 GiB totaling 8.2 GiB peaks and 3.9 GiB resident) under a 14.8 GiB limit,
+// Djinn leaves room to start a 5th worker (forecast 3.5 GiB).
+func TestOverclockRoomForOneMore(t *testing.T) {
+	at := time.Date(2026, 10, 11, 12, 15, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+
+	// 10 finished tasks giving a median typical peak of 3.0 GiB (forecast = 3.5 GiB).
+	var finished []*planv1.Task
+	for i := 0; i < 10; i++ {
+		finished = append(finished, &planv1.Task{
+			Id: fmt.Sprintf("fin-%d", i), WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, EndTime: timestamppb.New(at.Add(-time.Hour)),
+			Resources: &planv1.Resources{PeakMemoryBytes: 3 * machine.GiB},
+		})
+	}
+
+	// 4 running Antigravity workers with peaks 1.1, 2.0, 2.5, 2.6 GiB (sum = 8.2 GiB),
+	// using 3.9 GiB in all (0.8 + 1.0 + 1.0 + 1.1), running for 5 minutes.
+	w1 := &planv1.Task{
+		Id: "w1", Code: "W401", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+		StartTime: timestamppb.New(at.Add(-5 * time.Minute)),
+		Resources: &planv1.Resources{PeakMemoryBytes: 1126 * machine.MiB, MemoryBytes: 819 * machine.MiB}, // 1.1 GiB peak, 0.8 GiB uses
+	}
+	w2 := &planv1.Task{
+		Id: "w2", Code: "W402", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+		StartTime: timestamppb.New(at.Add(-5 * time.Minute)),
+		Resources: &planv1.Resources{PeakMemoryBytes: 2048 * machine.MiB, MemoryBytes: 1024 * machine.MiB}, // 2.0 GiB peak, 1.0 GiB uses
+	}
+	w3 := &planv1.Task{
+		Id: "w3", Code: "W403", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+		StartTime: timestamppb.New(at.Add(-5 * time.Minute)),
+		Resources: &planv1.Resources{PeakMemoryBytes: 2560 * machine.MiB, MemoryBytes: 1024 * machine.MiB}, // 2.5 GiB peak, 1.0 GiB uses
+	}
+	w4 := &planv1.Task{
+		Id: "w4", Code: "W404", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+		StartTime: timestamppb.New(at.Add(-5 * time.Minute)),
+		Resources: &planv1.Resources{PeakMemoryBytes: 2662 * machine.MiB, MemoryBytes: 1126 * machine.MiB}, // 2.6 GiB peak, 1.1 GiB uses
+	}
+
+	// 5th worker pending to start
+	w5 := &planv1.Task{
+		Id: "w5", Code: "W405", WishId: "w", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+		Provider:   planv1.Provider_PROVIDER_ANTIGRAVITY,
+		Scheduled:  true,
+		CreateTime: timestamppb.New(at),
+	}
+
+	tasks := append(finished, w1, w2, w3, w4, w5)
+
+	// Machine with 16 cores, 16 GiB RAM, 14.8 GiB available.
+	// Overclock limit is 14.8 GiB.
+	policy := machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK)
+	avail := uint64(14*machine.GiB + 8*machine.GiB/10)
+	total := uint64(16 * machine.GiB)
+
+	m := &Machine{
+		Slots:     16,
+		Rule:      "16 cores",
+		Running:   4,
+		Total:     total,
+		Available: avail,
+		Policy:    policy,
+	}
+
+	sit := New(tasks, []*planv1.Wish{wish}, nil, m).At(at)
+
+	// Engaged memory:
+	// Worker 1: 1126 + 512 = 1638 MiB
+	// Worker 2: 2048 + 512 = 2560 MiB
+	// Worker 3: 2560 + 512 = 3072 MiB
+	// Worker 4: 2662 + 512 = 3174 MiB
+	// Total engaged: 10444 MiB (~10.2 GiB), down from 4 * 3.5 GiB = 14.0 GiB.
+	engaged := sit.Engaged()
+	wantEngaged := uint64((1126 + 2048 + 2560 + 2662 + 4*512) * machine.MiB)
+	if engaged != wantEngaged {
+		t.Fatalf("sit.Engaged(): got %d, want %d", engaged, wantEngaged)
+	}
+
+	decisions := sit.Pass()
+	var w5Dec *Decision
+	for i := range decisions {
+		if decisions[i].Task.GetId() == "w5" {
+			w5Dec = &decisions[i]
+			break
+		}
+	}
+	if w5Dec == nil {
+		t.Fatal("w5 decision not found")
+	}
+	if w5Dec.Why != "" {
+		t.Errorf("w5 should start (room for one more), but blocked with why: %q", w5Dec.Why)
+	}
+}
