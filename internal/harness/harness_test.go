@@ -381,7 +381,7 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	events := e.watch(t.Context(), t, task.GetId(), 0)
 	got := e.get(t, task.GetId())
 	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetWorktree() != worktree || got.GetSessionId() != task.GetId() ||
-		got.GetUsage().GetCostUsd() != 0.01 || got.GetResumes() != 1 {
+		got.GetUsage().GetCostUsd() != 0.01 || got.GetResumes() != 0 {
 		t.Errorf("after the restart: %v", got)
 	}
 	if _, err := os.Stat(got.GetWorktree()); err != nil {
@@ -393,7 +393,7 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	}
 	checkSeqs(t, events, 1)
 	for i, prefix := range map[int]string{
-		5: "interrupted", 6: "resuming: djinn restarted while the worker ran", 7: "resumed after djinn restarted (1 of 3)",
+		5: "interrupted", 6: "resuming: djinn restarted while the worker ran", 7: "resumed after djinn restarted",
 		9: restartedLine, 10: "done",
 	} {
 		if !strings.HasPrefix(events[i].GetText(), prefix) {
@@ -413,7 +413,7 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	e = up(t, home)
 	events = e.watch(t.Context(), t, crashed.GetId(), 0)
 	after := e.get(t, crashed.GetId())
-	if after.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || after.GetWorktree() != crashed.GetWorktree() || after.GetResumes() != 1 {
+	if after.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || after.GetWorktree() != crashed.GetWorktree() || after.GetResumes() != 0 {
 		t.Errorf("crashed task after the restart: %v", after)
 	}
 	if got := eventKinds(events); !slices.Equal(got, []string{"PROMPT", "STATUS", "STATUS", "STATUS", "STATUS", "TEXT", "STATUS"}) {

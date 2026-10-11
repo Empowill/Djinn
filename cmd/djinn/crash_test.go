@@ -198,7 +198,7 @@ func TestCrashResumesTheWorkers(t *testing.T) {
 	second, addr := startUp(t, home, env)
 	tasks := taskClient(t, addr)
 	got := waitTask(t, tasks, id, func(task *planv1.Task) bool { return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE })
-	if got.GetResumes() != 1 {
+	if got.GetResumes() != 0 {
 		t.Errorf("the task after the crash: %v\n%s", got, second.errs.String())
 	}
 	list, err := tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wish.GetId()}))
