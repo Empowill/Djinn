@@ -79,28 +79,33 @@ func (h *Harness) measure(r *run, m *meter) {
 		cpu = math.Round(float64(g.CPU-m.cpu)/float64(d)*1000) / 10
 	}
 	m.cpu, m.at = g.CPU, now
-	t := r.task
-	res := &planv1.Resources{
-		CpuPercent: cpu, MemoryBytes: g.Memory, Processes: int32(g.Processes),
-		PeakCpuPercent:  max(t.GetResources().GetPeakCpuPercent(), cpu),
-		PeakMemoryBytes: max(t.GetResources().GetPeakMemoryBytes(), g.Memory, g.Peak),
-		ReadTime:        timestamppb.New(now),
-	}
-	t.Resources = res // Replaced at each reading, never changed: Uses shares it.
-	use := &machinev1.WorkerUse{
-		TaskId: t.GetId(), WishId: t.GetWishId(), Code: t.GetCode(), Title: t.GetTitle(), Resources: res,
-	}
 	point := &machinev1.WorkerPoint{
 		Time:        timestamppb.New(now),
 		CpuPercent:  cpu,
 		MemoryBytes: g.Memory,
 	}
 	h.mu.Lock()
-	r.use = use
 	if r.samples == nil {
 		r.samples = newWorkerRing(maxWorkerSamples)
 	}
 	r.samples.Add(point)
+	p95 := r.samples.P95Memory()
+	h.mu.Unlock()
+
+	t := r.task
+	res := &planv1.Resources{
+		CpuPercent: cpu, MemoryBytes: g.Memory, Processes: int32(g.Processes),
+		PeakCpuPercent:  max(t.GetResources().GetPeakCpuPercent(), cpu),
+		PeakMemoryBytes: max(t.GetResources().GetPeakMemoryBytes(), g.Memory, g.Peak),
+		P95MemoryBytes:  p95,
+		ReadTime:        timestamppb.New(now),
+	}
+	t.Resources = res // Replaced at each reading, never changed: Uses shares it.
+	use := &machinev1.WorkerUse{
+		TaskId: t.GetId(), WishId: t.GetWishId(), Code: t.GetCode(), Title: t.GetTitle(), Resources: res,
+	}
+	h.mu.Lock()
+	r.use = use
 	h.mu.Unlock()
 	if !worth(m.written, res) {
 		return
@@ -129,13 +134,18 @@ func worth(was, now *planv1.Resources) bool {
 	return was.GetProcesses() != now.GetProcesses() ||
 		moved(was.GetCpuPercent(), now.GetCpuPercent()) || moved(was.GetPeakCpuPercent(), now.GetPeakCpuPercent()) ||
 		ratio(was.GetMemoryBytes(), now.GetMemoryBytes()) || ratio(was.GetPeakMemoryBytes(), now.GetPeakMemoryBytes()) ||
+		ratio(was.GetP95MemoryBytes(), now.GetP95MemoryBytes()) ||
 		now.GetReadTime().AsTime().Sub(was.GetReadTime().AsTime()) >= rewrite
 }
 
-// fresh clears what the task's last worker was using, keeping its peaks, as a new worker starts.
+// fresh clears what the task's last worker was using, keeping its peaks and p95, as a new worker starts.
 func fresh(t *planv1.Task) {
 	if res := t.GetResources(); res != nil {
-		t.Resources = &planv1.Resources{PeakCpuPercent: res.GetPeakCpuPercent(), PeakMemoryBytes: res.GetPeakMemoryBytes()}
+		t.Resources = &planv1.Resources{
+			PeakCpuPercent:  res.GetPeakCpuPercent(),
+			PeakMemoryBytes: res.GetPeakMemoryBytes(),
+			P95MemoryBytes:  res.GetP95MemoryBytes(),
+		}
 	}
 }
 
@@ -247,6 +257,44 @@ func (w *workerRing) Points(cutoff time.Time) []*machinev1.WorkerPoint {
 	return out
 }
 
+// P95 calculates the 95th percentile of uint64 values using linear interpolation.
+func P95(vals []uint64) uint64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	sorted := slices.Clone(vals)
+	slices.Sort(sorted)
+	if len(sorted) == 1 {
+		return sorted[0]
+	}
+	idx := 0.95 * float64(len(sorted)-1)
+	low := int(math.Floor(idx))
+	high := int(math.Ceil(idx))
+	if low == high {
+		return sorted[low]
+	}
+	weight := idx - float64(low)
+	return uint64(math.Round(float64(sorted[low])*(1-weight) + float64(sorted[high])*weight))
+}
+
+// P95Memory returns the 95th percentile resident memory across recorded samples.
+func (w *workerRing) P95Memory() uint64 {
+	if w == nil || len(w.buf) == 0 {
+		return 0
+	}
+	var vals []uint64
+	limit := len(w.buf)
+	if !w.full {
+		limit = w.head
+	}
+	for i := 0; i < limit; i++ {
+		if p := w.buf[i]; p != nil && p.GetMemoryBytes() > 0 {
+			vals = append(vals, p.GetMemoryBytes())
+		}
+	}
+	return P95(vals)
+}
+
 // RunsSeries returns the measurement series for all running workers since cutoff,
 // associating each worker with gate intervals matching its task ID.
 func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries {
@@ -275,9 +323,11 @@ func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateIn
 		}
 		var peakMem uint64
 		var peakCPU float64
+		var p95Mem uint64
 		if t.GetResources() != nil {
 			peakMem = t.GetResources().GetPeakMemoryBytes()
 			peakCPU = t.GetResources().GetPeakCpuPercent()
+			p95Mem = t.GetResources().GetP95MemoryBytes()
 		}
 		for _, p := range pts {
 			if p.GetMemoryBytes() > peakMem {
@@ -286,6 +336,14 @@ func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateIn
 			if p.GetCpuPercent() > peakCPU {
 				peakCPU = p.GetCpuPercent()
 			}
+		}
+		if r.samples != nil {
+			if sP95 := r.samples.P95Memory(); sP95 > 0 {
+				p95Mem = sP95
+			}
+		}
+		if p95Mem == 0 {
+			p95Mem = peakMem
 		}
 
 		ws := &machinev1.WorkerSeries{
@@ -299,6 +357,7 @@ func (h *Harness) RunsSeries(cutoff time.Time, gateIntervals []*machinev1.GateIn
 			Gates:           intervalsByTask[t.GetId()],
 			PeakMemoryBytes: peakMem,
 			PeakCpuPercent:  peakCPU,
+			P95MemoryBytes:  p95Mem,
 			Paused:          r.paused,
 		}
 		out = append(out, ws)
@@ -319,4 +378,14 @@ func (h *Harness) AddWorkerSample(taskID string, p *machinev1.WorkerPoint) {
 		}
 		r.samples.Add(p)
 	}
+}
+
+// WorkerP95Memory returns the 95th percentile memory for a task's run samples.
+func (h *Harness) WorkerP95Memory(taskID string) uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if r, ok := h.runs[taskID]; ok && r.samples != nil {
+		return r.samples.P95Memory()
+	}
+	return 0
 }

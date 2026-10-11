@@ -1479,6 +1479,17 @@ func (h *Harness) end(r *run, res Result) {
 	now := h.now()
 	nowPb := timestamppb.New(now)
 	t.EndTime, t.ExitCode = nowPb, int32(res.ExitCode)
+	if r.samples != nil {
+		if p95 := r.samples.P95Memory(); p95 > 0 {
+			if t.Resources == nil {
+				t.Resources = &planv1.Resources{}
+			}
+			t.Resources.P95MemoryBytes = p95
+		}
+	}
+	if t.Resources != nil && t.Resources.P95MemoryBytes == 0 && t.Resources.PeakMemoryBytes > 0 {
+		t.Resources.P95MemoryBytes = t.Resources.PeakMemoryBytes
+	}
 	switch {
 	case preemptedWhy != "":
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy

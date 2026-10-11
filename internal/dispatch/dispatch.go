@@ -475,12 +475,16 @@ func (s *Situation) full(t *planv1.Task) string {
 	return why
 }
 
-// ProviderPeaks returns the measured peak memories of finished workers, by provider, the latest first.
+// ProviderPeaks returns the measured p95 memories (falling back to peak memories if p95 is unset)
+// of finished workers, by provider, the latest first.
 func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
 	var ended []*planv1.Task
 	for _, t := range tasks {
-		if t.GetEndTime() != nil && t.GetResources().GetPeakMemoryBytes() > 0 && !Watcher(t) {
-			ended = append(ended, t)
+		if t.GetEndTime() != nil && !Watcher(t) {
+			res := t.GetResources()
+			if res != nil && (res.GetP95MemoryBytes() > 0 || res.GetPeakMemoryBytes() > 0) {
+				ended = append(ended, t)
+			}
 		}
 	}
 	slices.SortStableFunc(ended, func(a, b *planv1.Task) int {
@@ -489,12 +493,16 @@ func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
 	peaks := map[string][]uint64{}
 	for _, t := range ended {
 		p := Provider(t)
-		peaks[p] = append(peaks[p], t.GetResources().GetPeakMemoryBytes())
+		val := t.GetResources().GetP95MemoryBytes()
+		if val == 0 {
+			val = t.GetResources().GetPeakMemoryBytes()
+		}
+		peaks[p] = append(peaks[p], val)
 	}
 	return peaks
 }
 
-// WorkerPeakWarmup is the delay before a running worker's own measured peak memory replaces
+// WorkerPeakWarmup is the delay before a running worker's own measured p95 memory replaces
 // the provider forecast in engaged memory calculations.
 //
 // Rationale: Agents (such as Claude Code or Antigravity) take 1 to 2 minutes during startup to
@@ -550,23 +558,28 @@ func taskRunDuration(t *planv1.Task, now time.Time) time.Duration {
 	return 0
 }
 
-// workerEngaged returns the memory engaged by a worker: max(measured peak, resident memory) + margin
+// workerEngaged returns the memory engaged by a worker: max(measured p95, resident memory) + margin
 // once running for at least WorkerPeakWarmup or when paused with measures, and typical forecast + margin
 // before that or without measurements.
 func workerEngaged(t *planv1.Task, p machine.Policy, typical uint64, now time.Time) uint64 {
+	p95 := t.GetResources().GetP95MemoryBytes()
 	peak := t.GetResources().GetPeakMemoryBytes()
+	measure := p95
+	if measure == 0 {
+		measure = peak
+	}
 	uses := t.GetResources().GetMemoryBytes()
-	hasMeasure := peak > 0 || uses > 0
+	hasMeasure := measure > 0 || uses > 0
 	margin := p.WorkerMargin
 
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
 		if hasMeasure {
-			return max(peak, uses) + margin
+			return max(measure, uses) + margin
 		}
 		return typical + margin
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && hasMeasure && taskRunDuration(t, now) >= WorkerPeakWarmup {
-		return max(peak, uses) + margin
+		return max(measure, uses) + margin
 	}
 	return max(typical, uses) + margin
 }

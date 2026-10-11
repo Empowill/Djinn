@@ -992,9 +992,11 @@ type WorkerSeries struct {
 	// Gate intervals held by this worker.
 	Gates []*GateInterval `protobuf:"bytes,10,rep,name=gates,proto3" json:"gates,omitempty"`
 	// Whether the worker is paused.
-	Paused        bool `protobuf:"varint,11,opt,name=paused,proto3" json:"paused,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Paused bool `protobuf:"varint,11,opt,name=paused,proto3" json:"paused,omitempty"`
+	// 95th percentile of resident memory in bytes seen for this worker.
+	P95MemoryBytes uint64 `protobuf:"varint,12,opt,name=p95_memory_bytes,json=p95MemoryBytes,proto3" json:"p95_memory_bytes,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *WorkerSeries) Reset() {
@@ -1102,6 +1104,13 @@ func (x *WorkerSeries) GetPaused() bool {
 		return x.Paused
 	}
 	return false
+}
+
+func (x *WorkerSeries) GetP95MemoryBytes() uint64 {
+	if x != nil {
+		return x.P95MemoryBytes
+	}
+	return 0
 }
 
 type WorkerPoint struct {
@@ -2287,7 +2296,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"cpuPercent\x12!\n" +
 	"\fmemory_bytes\x18\x03 \x01(\x04R\vmemoryBytes\x12*\n" +
 	"\x11djinn_cpu_percent\x18\x04 \x01(\x01R\x0fdjinnCpuPercent\x12,\n" +
-	"\x12djinn_memory_bytes\x18\x05 \x01(\x04R\x10djinnMemoryBytes\"\xfe\x02\n" +
+	"\x12djinn_memory_bytes\x18\x05 \x01(\x04R\x10djinnMemoryBytes\"\xa8\x03\n" +
 	"\fWorkerSeries\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x12\n" +
@@ -2300,7 +2309,8 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x06points\x18\t \x03(\v2\x17.machine.v1.WorkerPointR\x06points\x12.\n" +
 	"\x05gates\x18\n" +
 	" \x03(\v2\x18.machine.v1.GateIntervalR\x05gates\x12\x16\n" +
-	"\x06paused\x18\v \x01(\bR\x06paused\"\x81\x01\n" +
+	"\x06paused\x18\v \x01(\bR\x06paused\x12(\n" +
+	"\x10p95_memory_bytes\x18\f \x01(\x04R\x0ep95MemoryBytes\"\x81\x01\n" +
 	"\vWorkerPoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
