@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
@@ -820,5 +823,143 @@ func TestPushCorrectionStoppedThenContinued(t *testing.T) {
 	}
 	if n := len(slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return t.GetCorrection() == nil })); n != 1 {
 		t.Errorf("%d correction workers; want the one, continued", n)
+	}
+}
+
+// handCommit commits on the integration branch, as the developer does by hand, without changing its files: the push
+// checks' fake says whether they pass. It returns the new tip.
+func (in *integration) handCommit(t *testing.T) string {
+	t.Helper()
+	tip := in.tip(t)
+	sha := in.git(t, in.repo, "commit-tree", tip+"^{tree}", "-p", tip, "-m", "Fix the tests by hand")
+	in.git(t, in.repo, "update-ref", "refs/heads/"+in.branch, sha, tip)
+	return sha
+}
+
+// withdraw withdraws the question q, as the lead does with djinn question withdraw.
+func (in *integration) withdraw(t *testing.T, q *planv1.Question) {
+	t.Helper()
+	q = proto.CloneOf(q)
+	q.Withdrawal = &planv1.Withdrawal{Note: "asked by mistake", CreateTime: timestamppb.Now(), Actor: planv1.Closer_CLOSER_LEAD}
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal(actorLocal, "test/withdraw", q); err != nil {
+			return err
+		}
+		return tx.Put(q)
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// leftToTheLead makes the push of W1's work red, its correction attempts none: left to the lead at the branch's tip.
+func (in *integration) leftToTheLead(t *testing.T) (bare, old string) {
+	t.Helper()
+	in.checking(t, "correction_attempts: 0\n"+
+		"checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	in.testCode = 1
+	bare = in.remote(t)
+	old = in.tip(t)
+	azima := in.azima(t, in.wishID, "Letters")
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	in.pass(t, 0)
+	if state := in.pushState(t); !strings.HasSuffix(state.GetHeld(), "; left to the lead") || state.GetFailedSha() != in.tip(t) {
+		t.Fatalf("the push %v; want held, left to the lead at the branch's tip", state)
+	}
+	return bare, old
+}
+
+// TestPushQuestionWithdrawn: a question about a held push that the lead withdraws (Q203, 11/10/2026) holds it no
+// longer: the branch moved since its push checks were red, they run again and, green, the push goes.
+func TestPushQuestionWithdrawn(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare, old := in.leftToTheLead(t)
+	q := in.attachPushQuestion(t)
+	tip := in.handCommit(t)
+	in.mu.Lock()
+	in.testCode = 0
+	in.mu.Unlock()
+
+	in.pass(t, time.Second)
+	if got := in.remoteTip(t, bare); got != old || in.pushState(t).GetQuestionId() != q.GetId() {
+		t.Fatalf("pushed while Djinn's question was open: origin at %s, the push %v", got, in.pushState(t))
+	}
+
+	in.withdraw(t, q)
+	in.pass(t, time.Second)
+	if got := in.remoteTip(t, bare); got != tip {
+		t.Fatalf("question withdrawn, branch green: not pushed: origin at %s, the branch at %s; the push %v", got, tip, in.pushState(t))
+	}
+	if state := in.pushState(t); state.GetHeld() != "" || state.GetQuestionId() != "" {
+		t.Errorf("after the push, the push still held: %v", state)
+	}
+}
+
+// TestPushedByHandWhileHeld: the developer pushes the held branch by hand past the commit its push checks were red
+// on: the next pass runs them on it and, green, records the push and lifts the hold, with nothing to push.
+func TestPushedByHandWhileHeld(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare, _ := in.leftToTheLead(t)
+	tip := in.handCommit(t)
+	in.git(t, in.repo, "push", "--quiet", "origin", in.branch)
+	in.mu.Lock()
+	in.testCode = 0
+	in.mu.Unlock()
+	in.ran()
+
+	in.pass(t, time.Second)
+	if runs, _ := in.ran(); !slices.Contains(runs, "test") {
+		t.Errorf("runs %q; want the push checks on the branch pushed by hand", runs)
+	}
+	state := in.pushState(t)
+	if state.GetHeld() != "" || state.GetFailedSha() != "" || state.GetLast().GetNewSha() != tip {
+		t.Fatalf("the push %v; want no longer held, last pushed at %s", state, tip)
+	}
+	if pushes := in.pushes(t); len(pushes) != 1 || pushes[0].GetNewSha() != tip {
+		t.Errorf("pushes recorded %v; want the one by hand, at %s", pushes, tip)
+	}
+	if got := in.remoteTip(t, bare); got != tip {
+		t.Errorf("origin at %s; want %s", got, tip)
+	}
+}
+
+// TestPushRedAgainOnAStaleQuestion: the deadlock of 5fd5111 (11/10/2026). A question about the push checks red at one
+// commit stays open; they run again on a new tip (djinn project push) and are red: Djinn withdraws the stale question
+// and acts on them, here with a correction, instead of leaving every task held with nobody on it.
+func TestPushRedAgainOnAStaleQuestion(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	in.testCode = 1
+	in.remote(t)
+	azima := in.azima(t, in.wishID, "Letters")
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	in.correctWith(func(dir, prompt string) string { return "fail could not fix tests" })
+
+	in.pass(t, 0)
+	w2 := in.ended(t, in.pushState(t).GetCorrectedBy())
+	in.pass(t, time.Second)
+	if state := in.pushState(t); state.GetCorrectedBy() != "" || state.GetAttempts() != 1 {
+		t.Fatalf("after %s failed, the push %v; want one attempt spent, no correction running", w2.GetCode(), state)
+	}
+	q := in.attachPushQuestion(t)
+	tip := in.handCommit(t)
+
+	if _, err := in.h.Push(t.Context(), in.wishID, in.projectID); err == nil {
+		t.Fatal("pushed with its push checks red")
+	}
+	state := in.pushState(t)
+	if state.GetQuestionId() != "" || state.GetFailedSha() != tip || state.GetCorrectedBy() == "" || state.GetAttempts() != 2 {
+		t.Fatalf("red again at %s, the push %v; want the stale question let go, a second correction at the new tip", short8(tip), state)
+	}
+	got, err := store.Get[*planv1.Question](t.Context(), in.db, q.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetWithdrawal() == nil || !strings.Contains(got.GetWithdrawal().GetNote(), short8(tip)) {
+		t.Errorf("the stale question %s: withdrawal %v; want withdrawn by Djinn, saying the new tip", got.GetCode(), got.GetWithdrawal())
 	}
 }
