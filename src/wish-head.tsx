@@ -280,9 +280,11 @@ export function LeadMenu({
 export function LastPushes({
   pushes,
   projects,
+  codes,
 }: {
   pushes: WishPush[];
   projects: { id: string; name: string; push?: ProjectPush }[];
+  codes?: ReadonlyMap<string, string>;
 }) {
   const projectIds = Array.from(
     new Set([...projects.map((p) => p.id), ...pushes.map((p) => p.projectId)]),
@@ -318,7 +320,11 @@ export function LastPushes({
             )}
             {push?.held && (
               <span className="wish-push-refused" title={push.held}>
-                {t("wish.push_held")}
+                {push.correctedBy
+                  ? t("wish.push_held_corrected", {
+                      task: codes?.get(push.correctedBy) ?? push.correctedBy,
+                    })
+                  : t("wish.push_held")}
               </span>
             )}
             {onDemand && (

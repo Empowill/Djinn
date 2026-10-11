@@ -312,6 +312,12 @@ func (h *Harness) settleCorrected(ctx context.Context, batch []*planv1.Task, in 
 			log.Printf("djinn: integrate %s: %v", c.GetCode(), err)
 			continue
 		}
+		group = slices.DeleteFunc(group, func(t *planv1.Task) bool {
+			return t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED
+		})
+		if len(group) == 0 {
+			continue
+		}
 		h.settleIntegration(ctx, group, &planv1.TaskIntegration{
 			State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, Branch: in.GetBranch(), Sha: in.GetSha(),
 			Reason: "corrected by " + c.GetCode(), CorrectedBy: c.GetId(), Attempts: c.GetCorrection().GetAttempt(),
@@ -354,6 +360,19 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 			}
 		}
 		if len(group) == 0 {
+			wish, err := store.Get[*planv1.Wish](ctx, h.store, c.GetWishId())
+			if err == nil {
+				i := slices.IndexFunc(wish.GetPushes(), func(p *planv1.WishPush) bool {
+					return p.GetCorrectedBy() == c.GetId() && p.GetQuestionId() == ""
+				})
+				if i >= 0 {
+					project, err1 := store.Get[*planv1.Project](ctx, h.store, wish.GetPushes()[i].GetProjectId())
+					settings, err2 := plan.LoadSettings(h.home, project)
+					if err := errors.Join(err1, err2); err == nil {
+						h.pushCorrectionEnded(ctx, wish, project, settings, wish.GetPushes()[i], c, failed)
+					}
+				}
+			}
 			continue
 		}
 		wish, project, settings, err := h.integrationOf(ctx, c)
@@ -459,4 +478,32 @@ func tasksByID(ctx context.Context, r store.Reader, ids []string) ([]*planv1.Tas
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// pushCorrectionEnded handles a push correction worker that ended without being done (failed or stopped): it asks the person.
+func (h *Harness) pushCorrectionEnded(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, p *planv1.WishPush, c *planv1.Task, failed bool,
+) {
+	f := p.GetFailure()
+	if f == nil && c.GetCorrection() != nil {
+		f = c.GetCorrection().GetFailure()
+	}
+	branch := p.GetLast().GetBranch()
+	if branch == "" {
+		branch = plan.IntegrationBranchOf(wish, project.GetId())
+	}
+	var committed []*planv1.Task
+	if f != nil && len(f.GetTaskIds()) > 0 {
+		committed, _ = tasksByID(ctx, h.store, f.GetTaskIds())
+	}
+	text := "integration: " + c.GetCode() + ", its correction worker, was stopped"
+	if failed {
+		text = "integration: " + c.GetCode() + ", its correction worker, failed: " + c.GetError()
+	}
+	h.pushSteps(ctx, committed, text)
+	var attempts int32
+	if c.GetCorrection() != nil {
+		attempts = c.GetCorrection().GetAttempt()
+	}
+	h.askPushHeld(ctx, wish, project, branch, f, attempts, nil, committed)
 }

@@ -176,9 +176,10 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
 - **Commit checks** run on the merge of each task's work: red, the merge fails as a conflict does, and a correction
   worker starts (below).
 - **Push checks** run on the branch's tip when a push is due. A check that passed as a commit check on that very commit
-  does not run again. Red, the push is **held**: the tasks' events and the wish's head say why. Djinn checks again at
-  the next push due; still red then, or at once when no work of the wish is left to commit in the project, it asks you:
-  check again (once you have fixed it), push without the push checks this once, or leave it until the next push due.
+  does not run again. Red, the push is **held**: the tasks' events and the wish's head say why. Red twice in a row, or
+  at once when no work of the wish is left to commit in the project, Djinn starts a correction worker (within
+  `correction_attempts`). If the correction fails, or its attempts are spent, or none can start, Djinn asks you: try
+  again with a new correction worker, take the push checks over yourself, or push without the push checks this once.
 - **The setup** makes the integration worktree, and the install worktree, ready before the first command there (a
   check, `generate`, `install`): once, then again when the setup command or a lock file changes (`package-lock.json`,
   `go.sum`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`, `uv.lock` and the like, anywhere in the

@@ -840,7 +840,11 @@ export function WishView({
                   projects={projects}
                   onChange={handlePushStrategy}
                 />
-                <LastPushes pushes={wish.pushes} projects={projects} />
+                <LastPushes
+                  pushes={wish.pushes}
+                  projects={projects}
+                  codes={codes}
+                />
                 <MainMerges mains={wish.mains} projects={projects} />
               </div>
             </div>

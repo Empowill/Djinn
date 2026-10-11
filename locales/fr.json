@@ -674,6 +674,7 @@
   "wish.pause": "Mettre en pause",
   "wish.pause_detail": "Mettre ce vœu de côté : ses workers s’arrêtent, et repartent quand vous le reprenez.",
   "wish.push_held": "Le push est retenu : ses vérifications sont rouges",
+  "wish.push_held_corrected": "Le push est retenu, corrigé par {task}",
   "wish.push_on_demand": "pousse à la demande",
   "wish.push_refused": "Le dépôt distant a refusé le dernier push : Djinn vous pose la question",
   "wish.pushed.one": "{branch} poussée sur {remote}, {count} commit, {when}",

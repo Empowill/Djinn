@@ -674,6 +674,7 @@
   "wish.pause": "Pause",
   "wish.pause_detail": "Set this wish aside: its workers stop, and start again when you resume it.",
   "wish.push_held": "The push is held: its checks are red",
+  "wish.push_held_corrected": "The push is held, corrected by {task}",
   "wish.push_on_demand": "pushes on demand",
   "wish.push_refused": "The remote refused the last push: Djinn asks you",
   "wish.pushed.one": "Pushed {branch} to {remote}, {count} commit, {when}",
