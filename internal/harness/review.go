@@ -146,7 +146,7 @@ func (h *Harness) review(
 	c := codes(group)
 	line := fmt.Sprintf("Djinn: the work of %s into %s has uncommitted changes: %s. The move is yours: retry a review, drop the work (djinn task done --drop / djinn task cancel), or leave it waiting.",
 		c, in.GetBranch(), headline(in.GetReason()))
-	h.tellLead(ctx, wish.GetId(), line)
+	h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE, wish.GetId(), c, line)
 	in.QuestionId = ""
 	text += "; left to the lead"
 	h.settleIntegration(ctx, group, in, text, nil)

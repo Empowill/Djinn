@@ -141,7 +141,8 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"\"Enlighten me\" starts \"Q03: enlighten\": it reads, then revises the question. You are told when it " +
 		"ends, and what it revised: check it, do not do it again. When the line says \"Investigate\", " +
 		"enlighten workers are off and the move is yours.\n" +
-		"- **Check every task that ends.** Read its final note (`djinn task watch <task>`, or the line Djinn types): " +
+		LeadWatchRule() +
+		"- **Check every task that ends.** Read its final note (`djinn task watch <task>`, or its line in your watch's digest): " +
 		"when it leaves an uncertainty (a choice it made in the developer's place, something it did not verify, a partial " +
 		"result, a step it skipped, 'to validate', a failing test it calls unrelated), ask the developer a question about " +
 		"it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too " +
@@ -167,7 +168,7 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"in the wrong wish, unless the developer keeps it there.\n" +
 		"- **Watch, do not poll.** To wait on something outside (a pipeline, a merge request, a queue), spawn a watcher: " +
 		"`--provider watch --prompt \"<command>\"` runs the command with no agent, no model and no slot, and each new " +
-		"paragraph it prints wakes you. `--restart` starts again a command that exits on each change. The project must " +
+		"paragraph it prints comes to you in your lead watch. `--restart` starts again a command that exits on each change. The project must " +
 		"allow the command.\n" +
 		"- **A request that comes back is a template.** A skill holds one under `metadata.djinn.wish` in its `SKILL.md` " +
 		"(`title`, `match`, `watch`, `restart`, `done_when`): a routed request it matches becomes a wish that follows the " +
@@ -177,6 +178,8 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"## Commands\n\n" +
 		"`<wish>` is a wish's identifier.\n\n" +
 		"- `djinn brief`: the brief of all active wishes.\n" +
+		"- `djinn lead watch --after <cursor>`: acknowledges the events up to the cursor, waits for the next ones and " +
+		"prints them, a line each, with the next cursor (`--timeout 0s` returns at once).\n" +
 		"- `djinn wish brief <wish>`: one wish's brief, up to date.\n" +
 		"- `djinn wish describe <wish> --text \"…\"`: the wish's description, a few lines: what it is for, its scope, " +
 		"where it goes. The developer edits it in the window too.\n" +
@@ -216,6 +219,36 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"changes, republish that file as it is, in one call, to the same address: do not read it, rewrite it, or write " +
 		"HTML by hand. The first publish needs the developer's go. `djinn wish render <wish>` writes the page once.\n" +
 		"- `djinn wish grant <wish>` is the developer's word, never yours.\n"
+}
+
+// leadWatchHow is how each agent keeps djinn lead watch running and is woken up when it ends, as recorded in
+// testdata/wake (decision Q191). A provider missing here is not woken up by a finished command: Djinn types its line.
+var leadWatchHow = map[planv1.Provider]string{
+	planv1.Provider_PROVIDER_CLAUDE: "**Claude Code**: run it with the Bash tool and `run_in_background: true` (no timeout: an " +
+		"interactive session has no limit for background commands); when it exits, Claude Code wakes you with a " +
+		"`<task-notification>`: read its output file, start the next watch in the background first, then act.",
+	planv1.Provider_PROVIDER_ANTIGRAVITY: "**Antigravity**: run it with `run_command` and `WaitMsBeforeAsync: 500`: it goes " +
+		"to the background as a task, and agy wakes you with a system message when it finishes (\"Task id … finished with " +
+		"result\"); do not poll its status nor set a timer. Start the next watch the same way first, then act.",
+	planv1.Provider_PROVIDER_CODEX: "**Codex**: no finished command wakes Codex up, so leave no watch running. Djinn types " +
+		"\"Djinn: N events waiting, run djinn lead watch\" in your terminal when events wait: run " +
+		"`djinn lead watch --after <cursor> --timeout 0s` in the foreground, act on what it prints, and end your turn.",
+}
+
+// LeadWatchRule is the brief's rule on djinn lead watch, with how each agent runs it.
+func LeadWatchRule() string {
+	return "- **Wait on `djinn lead watch`, not on typed lines (Decision Q191).** What you must act on (a task that " +
+		"ended or failed, a merge, an answer or an \"Enlighten me\", a move left to you, Djinn restarted) waits in your queue. " +
+		"`djinn lead watch` blocks until something waits, then prints a digest, a line per event (details: " +
+		"`djinn task watch <task>`, `djinn wish brief <wish>`), and a cursor. Keep one watch running: start it when you " +
+		"start; when it ends, whatever it printed, start the next one first, `djinn lead watch --after <cursor>` with " +
+		"the cursor it printed, which acknowledges those events, then act on them. An event you never acknowledged comes " +
+		"back: nothing is lost if your session is. While your watch runs Djinn types nothing in your terminal; when " +
+		"Djinn types \"Djinn: N events waiting, run djinn lead watch\", your watch is not running: start it. When " +
+		"Djinn does not answer (it restarts), run it again a few seconds later. Never run two at once.\n" +
+		"  - " + leadWatchHow[planv1.Provider_PROVIDER_CLAUDE] + "\n" +
+		"  - " + leadWatchHow[planv1.Provider_PROVIDER_ANTIGRAVITY] + "\n" +
+		"  - " + leadWatchHow[planv1.Provider_PROVIDER_CODEX] + "\n"
 }
 
 // BuildBrief writes the brief of a wish from what r holds. home is Djinn's data folder: like the projects' folders

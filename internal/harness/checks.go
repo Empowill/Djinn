@@ -399,7 +399,7 @@ func (h *Harness) askPushHeld(
 	}
 	line := fmt.Sprintf("Djinn: the push checks of %s stay red: %s. The move is yours: retry a correction, drop the work (djinn task done --drop / djinn task cancel), or leave it waiting.",
 		branch, headline(f.GetReason()))
-	h.tellLead(ctx, wish.GetId(), line)
+	h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE, wish.GetId(), "", line)
 	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s stay red; left to the lead", branch))
 	h.notify()
 }

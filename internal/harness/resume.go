@@ -64,15 +64,16 @@ func (h *Harness) now() time.Time {
 }
 
 // queueInterrupted gives back to the scheduler the tasks djinn up cut short: each one resumes, unless it cannot (see
-// resumable). Recover calls it.
-func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) error {
+// resumable). Recover calls it; it returns the codes of the interrupted tasks Djinn resumes, for the lead.
+func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) ([]string, error) {
+	var resumed []string
 	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	projects, err := store.List[*planv1.Project](ctx, h.store, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	wish := map[string]*planv1.Wish{}
 	for _, w := range wishes {
@@ -126,8 +127,9 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) er
 		t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", whyRestarted, nil
 		ev.Text = "resuming: " + whyRestarted + "; Djinn starts it again by itself"
 		h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
+		resumed = append(resumed, t.GetCode())
 	}
-	return nil
+	return resumed, nil
 }
 
 // isGone tells whether the folder no longer exists.

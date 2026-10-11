@@ -82,10 +82,11 @@ type Harness struct {
 	measureEvery time.Duration // how often a worker is read (WithMeasure); 0: never
 	measureRead  MeasureFunc   // nil: workers are not measured
 
-	tell      TellFunc      // wakes the lead of a watcher's wish (TellLeads); guarded by mu
-	watched   WatchedFunc   // reads a watcher's new paragraph (OnWatched); guarded by mu
-	tellDelay time.Duration // delay before worker lines are flushed to the lead (WithTellDelay)
-	batcher   *tellBatcher  // batches worker lines to the lead (tell.go)
+	tell       TellFunc      // wakes the lead of a watcher's wish (TellLeads); guarded by mu
+	notifyLead NotifyFunc    // queues an event for the lead (NotifyLead), in place of tell; guarded by mu
+	watched    WatchedFunc   // reads a watcher's new paragraph (OnWatched); guarded by mu
+	tellDelay  time.Duration // delay before worker lines are flushed to the lead (WithTellDelay)
+	batcher    *tellBatcher  // batches worker lines to the lead (tell.go)
 
 	// The scheduler (schedule.go).
 	capacity   Capacity      // nil: no limit
@@ -305,6 +306,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 			}
 		}
 	}
+	var interrupted []string
 	for _, t := range tasks {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
@@ -315,6 +317,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 		if t.GetStartTime() == nil {
 			continue
 		}
+		interrupted = append(interrupted, t.GetCode())
 		nowPb := timestamppb.New(h.now())
 		t.Status, t.Error, t.EndTime = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up ended while the worker ran", nowPb
 		if len(t.Runs) > 0 {
@@ -341,10 +344,45 @@ func (h *Harness) Recover(ctx context.Context) error {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
-	if err := h.queueInterrupted(ctx, tasks); err != nil {
+	resumed, err := h.queueInterrupted(ctx, tasks)
+	if err != nil {
 		return err
 	}
+	// The lead hears of the restart from its queue, whether its watch died with the last djinn up or not.
+	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART, Text: restartLine(h.version, interrupted, resumed)}
+	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
+		return fmt.Errorf("tell the lead of the restart: %w", err)
+	}
 	return h.recoverAzimas(ctx, tasks)
+}
+
+// restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up
+// left running and Djinn interrupted, and those of them it resumes by itself.
+func restartLine(version string, interrupted, resumed []string) string {
+	if version == "" {
+		version = "unknown"
+	}
+	line := "Djinn: restarted on version " + version
+	if len(interrupted) == 0 {
+		return line + ": no worker was running."
+	}
+	line += fmt.Sprintf(": %d workers interrupted (%s)", len(interrupted), strings.Join(interrupted, ", "))
+	if len(interrupted) == 1 {
+		line = strings.Replace(line, "1 workers", "1 worker", 1)
+	}
+	var left []string
+	for _, c := range interrupted {
+		if !slices.Contains(resumed, c) {
+			left = append(left, c)
+		}
+	}
+	if len(resumed) > 0 {
+		line += fmt.Sprintf(", resumed by Djinn: %s", strings.Join(resumed, ", "))
+	}
+	if len(left) > 0 {
+		line += fmt.Sprintf("; not resumed, the move is yours: %s", strings.Join(left, ", "))
+	}
+	return line + "."
 }
 
 // rebuildTaskRunsFromJournal reconstructs FirstStartTime and Runs on tasks that ran before runs were recorded,

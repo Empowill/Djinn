@@ -223,13 +223,12 @@ func TestTemplateWish(t *testing.T) {
 	if want := []string{made.GetId() + " | " + lamp.GetId() + " | Watch, for the skill babysit | sh watch.sh 12"}; !slices.Equal(watchers.calls, want) {
 		t.Errorf("watchers %q, want %q", watchers.calls, want)
 	}
-	// The lead is reopened to be told; no second lead is started.
-	if len(leads.opened) != opened+1 || !strings.HasPrefix(leads.opened[opened], "claude --resume "+session) {
+	// The lead is told by its queue: no lead is started, the one lead hears it with its watch.
+	if len(leads.opened) != opened {
 		t.Errorf("opened %q", leads.opened[opened:])
 	}
-	told := LeadTerminal + ": " + RoutedLine(c.questionOf(t, q.GetId()))
-	if !slices.Contains(leads.said, told) {
-		t.Errorf("said %q, want %q", leads.said, told)
+	if want := LeadTerminal + ": " + RoutedLine(c.questionOf(t, q.GetId())); !slices.Contains(told(t, c.store), want) {
+		t.Errorf("queued %q, want %q", told(t, c.store), want)
 	}
 	brief, err := BuildBrief(ctx, c.store, home, made.GetId())
 	if err != nil || !strings.Contains(brief.Moving, "- Made from the wish template of the skill `babysit`: follow that skill. Its watcher runs `sh watch.sh 12`") {

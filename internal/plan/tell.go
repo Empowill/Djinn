@@ -54,35 +54,23 @@ func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 	if running := strings.Join(command, " "); attached && !strings.Contains(running, lead.GetSessionId()) {
 		return fmt.Errorf("the lead's terminal runs %s, not the lead", running)
 	}
-	if !attached {
-		w.tellWaitingAnswers(ctx, name)
-	}
 	return w.Leads.Say(name, line)
 }
 
 // Answered tells the lead that the developer answered q, in one line, with what Djinn did with the
-// answer (did) when it settled it. Handlers calls it once the answer is stored, when it serves the leads; the answer
-// stays in the brief whatever happens here.
+// answer (did) when it settled it: an event in the lead's queue, which its watch hands out (decision Q191), never
+// lost. Handlers calls it once the answer is stored, when it serves the leads; the answer stays in the brief whatever
+// happens here. While no lead runs, the question is marked waiting for a lead, until the lead acknowledges it.
 func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
 	if q.GetAnswer() == nil || q.GetAnswer().GetActor() == planv1.Closer_CLOSER_LEAD {
 		return
 	}
+	line := AnswerLine(q, did)
 	if routeOption(q) != nil {
-		w.tell(ctx, q, RoutedLine(q))
-		return
+		line = RoutedLine(q)
 	}
-	if did != "" {
-		w.tell(ctx, q, AnswerLine(q, did))
-		return
-	}
-
-	if w.Leads != nil && w.Leads.Running(LeadTerminal) {
-		w.tell(ctx, q, AnswerLine(q, ""))
-		return
-	}
-
-	// No lead runs at all: the answer waits, marked waiting for a lead.
-	if w.Store != nil {
+	if did == "" && routeOption(q) == nil && (w.Leads == nil || !w.Leads.Running(LeadTerminal)) && w.Store != nil {
+		// No lead runs at all: the answer waits, marked waiting for a lead.
 		spec := connect.Spec{Procedure: planv1connect.QuestionServiceAnswerProcedure}
 		req := &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}}
 		_ = write(ctx, w.Store, spec, req, func(tx *store.Tx) error {
@@ -93,40 +81,39 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
 			cur.WaitingLead = true
 			return tx.Put(cur)
 		})
+		q.WaitingLead = true
 	}
-	q.WaitingLead = true
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, line)
 }
 
-// tellWaitingAnswers tells terminal of every answer waiting for a lead, and marks them no longer waiting.
-func (w *Wishes) tellWaitingAnswers(ctx context.Context, terminal string) {
-	if w.Leads == nil || w.Store == nil {
-		return
-	}
+// queueWaitingAnswers queues an answer event for each answer waiting for a lead that none is queued for: an answer
+// marked so before the lead's events were queued.
+func (w *Wishes) queueWaitingAnswers(ctx context.Context) {
 	questions, err := store.List[*planv1.Question](ctx, w.Store, nil)
 	if err != nil {
 		log.Printf("djinn: list waiting answers: %v", err)
 		return
 	}
+	events, err := store.List[*planv1.LeadEvent](ctx, w.Store, nil)
+	if err != nil {
+		log.Printf("djinn: list the lead's events: %v", err)
+		return
+	}
+	queued := map[string]bool{}
+	for _, e := range events {
+		if e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER {
+			queued[e.GetWishId()+"/"+e.GetCode()] = true
+		}
+	}
 	for _, q := range questions {
-		if !q.GetWaitingLead() {
+		if !q.GetWaitingLead() || queued[q.GetWishId()+"/"+q.GetCode()] {
 			continue
 		}
-		line := AnswerLine(q, "")
-		if err := w.Leads.Say(terminal, line); err != nil {
-			log.Printf("djinn: tell waiting answer %s: %v", q.GetCode(), err)
-			continue
+		e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode(),
+			Text: AnswerLine(q, "")}
+		if err := QueueLeadEvent(ctx, w.Store, e, w.now()); err != nil {
+			log.Printf("djinn: queue the answer to %s: %v", q.GetCode(), err)
 		}
-		spec := connect.Spec{Procedure: planv1connect.QuestionServiceAnswerProcedure}
-		req := &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}}
-		_ = write(ctx, w.Store, spec, req, func(tx *store.Tx) error {
-			cur, err := store.Get[*planv1.Question](ctx, tx, q.GetId())
-			if err != nil {
-				return err
-			}
-			cur.WaitingLead = false
-			return tx.Put(cur)
-		})
-		q.WaitingLead = false
 	}
 }
 
@@ -137,7 +124,7 @@ func (w *Wishes) Enlightened(ctx context.Context, q *planv1.Question, note strin
 		// (journal and window only); the lead hears when the worker ends.
 		return
 	}
-	w.tell(ctx, q, EnlightenLine(q, note, ""))
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN, EnlightenLine(q, note, ""))
 }
 
 // workerOf is the code of the question worker of role that works on q, started just before the lead is told; ""
@@ -171,8 +158,13 @@ func QuestionWorkerOf(ctx context.Context, r store.Reader, q *planv1.Question, r
 	return nil, nil
 }
 
-func (w *Wishes) tell(ctx context.Context, q *planv1.Question, line string) {
-	if err := w.Tell(ctx, q.GetWishId(), line); err != nil && !errors.Is(err, ErrNoLead) {
+// notify queues an event of kind about q for the lead.
+func (w *Wishes) notify(ctx context.Context, q *planv1.Question, kind planv1.LeadEventKind, line string) {
+	if w.Store == nil {
+		return
+	}
+	e := &planv1.LeadEvent{Kind: kind, WishId: q.GetWishId(), Code: q.GetCode(), Text: line}
+	if err := w.Notify(ctx, e); err != nil {
 		log.Printf("djinn: wish %s: tell the lead about %s: %v", q.GetWishId(), q.GetCode(), err)
 	}
 }

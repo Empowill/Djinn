@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
@@ -88,7 +89,8 @@ func TestAnswerReachesTheLead(t *testing.T) {
 		t.Errorf("brief without lead: got %q, want Q01 decision", briefNoLead.Moving)
 	}
 
-	// A lead is set, then resumed: waiting answers are told at start, then new answers reach the running lead in order.
+	// A lead is set, then resumed: the answers wait in its queue, the one that waited first, in order; nothing is
+	// typed in its terminal (decision Q191: its watch hands them out).
 	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
@@ -107,28 +109,38 @@ func TestAnswerReachesTheLead(t *testing.T) {
 		terminal + `: Djinn: Q02 answered A — "Brass". Note: "the old one". Turn it into tasks: you hold the plan's graph (djinn wish brief ` + id + ").",
 		terminal + ": Djinn: Q03 answered yes. Turn it into tasks: you hold the plan's graph (djinn wish brief " + id + ").",
 	}
-	if strings.Join(leads.said, "\n") != strings.Join(want, "\n") {
-		t.Errorf("said\n%s\nwant\n%s", strings.Join(leads.said, "\n"), strings.Join(want, "\n"))
+	if got := told(t, c.store); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("queued\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if len(leads.shown) != 0 {
-		t.Errorf("shown %q: telling the lead does not take the window", leads.shown)
+	if len(leads.said) != 0 || len(leads.shown) != 0 {
+		t.Errorf("said %q, shown %q: an answer is queued, never typed nor shown", leads.said, leads.shown)
 	}
+	take(t, c.store)
 
 	// An answer Djinn settles itself (a failed integration, a push, an edit): the lead hears what Djinn did with it.
 	settled = "Djinn started W168: Settle the conflict of W156 with main"
 	c.answer(t, c.ask(t, id, "Try again", "Leave it"), planv1.Choice_CHOICE_A, "")
 	settled = ""
-	if got, want := leads.said[len(leads.said)-1], terminal+`: Djinn: Q04 answered A — "Try again". `+
-		`Djinn started W168: Settle the conflict of W156 with main.`; got != want {
-		t.Errorf("settled by Djinn: said\n%s\nwant\n%s", got, want)
+	if got, want := told(t, c.store), []string{terminal + `: Djinn: Q04 answered A — "Try again". ` +
+		`Djinn started W168: Settle the conflict of W156 with main.`}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("settled by Djinn: queued\n%s\nwant\n%s", got, want)
 	}
-	leads.said = leads.said[:len(leads.said)-1]
+	take(t, c.store)
 
-	// The lead's terminal runs a shell: the line would run as a command, so it is not typed.
-	leads.running[terminal], leads.said = []string{"/bin/sh"}, nil
+	// The lead's terminal runs a shell, or the wish is paused and its lead stopped: the answer waits in the queue
+	// all the same, never lost, and nothing is typed.
+	leads.running[terminal] = []string{"/bin/sh"}
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
-	if len(leads.said) != 0 {
-		t.Errorf("typed in a shell: %q", leads.said)
+	if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: id})); err != nil {
+		t.Fatal(err)
+	}
+	delete(leads.running, terminal)
+	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
+	if got := told(t, c.store); len(got) != 2 || !strings.Contains(got[0], "Q05 answered yes") || !strings.Contains(got[1], "Q06 answered yes") {
+		t.Errorf("queued %q, want Q05 then Q06", got)
+	}
+	if len(leads.said) != 0 || len(leads.opened) != 1 {
+		t.Errorf("said %q, opened %q; want nothing typed, nothing reopened", leads.said, leads.opened)
 	}
 	briefShell, err := BuildBrief(ctx, c.store, dir, id)
 	if err != nil {
@@ -136,18 +148,6 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	}
 	if !strings.Contains(briefShell.Moving, "Q05") {
 		t.Errorf("brief when shell ran: got %q, want Q05 decision", briefShell.Moving)
-	}
-
-	// A paused wish's lead is told while it runs, and not reopened once it stopped.
-	leads.running[terminal] = []string{"/bin/sh", "-c", "claude --resume " + session}
-	if _, err := c.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: id})); err != nil {
-		t.Fatal(err)
-	}
-	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
-	delete(leads.running, terminal)
-	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
-	if len(leads.said) != 1 || !strings.Contains(leads.said[0], "Q06 answered yes") || len(leads.opened) != 1 {
-		t.Errorf("paused: said %q, opened %q; want Q06 told, nothing reopened", leads.said, leads.opened)
 	}
 }
 
@@ -181,11 +181,11 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 	}
 	want := LeadTerminal + ": Djinn: Q01, the developer wants to know more before answering. Note: \"" + asked +
 		"And the \"smoke\" of the wick — and why?\". Investigate, then revise Q01: djinn wish brief " + id + " has the context."
-	if len(leads.said) != 1 || leads.said[0] != want {
-		t.Errorf("said %q, want %q", leads.said, want)
+	if got := told(t, c.store); len(got) != 1 || got[0] != want {
+		t.Errorf("queued %q, want %q", got, want)
 	}
 
-	leads.said = nil
+	take(t, c.store)
 	// An investigator worker was started: silent in the lead terminal per Decision Q173 (lead hears when it ends).
 	qInv := c.ask(t, id)
 	c.put(t, &planv1.Task{
@@ -197,8 +197,8 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if len(leads.said) != 0 {
-		t.Errorf("with investigator: said %q, want nothing (silent in terminal)", leads.said)
+	if got := told(t, c.store); len(got) != 0 {
+		t.Errorf("with investigator: queued %q, want nothing", got)
 	}
 }
 
@@ -242,8 +242,8 @@ func TestAnswerInAnyWishToldToOneLead(t *testing.T) {
 	c.answer(t, q1, planv1.Choice_CHOICE_B, "for warmth")
 
 	want1 := LeadTerminal + `: Djinn: Q01 answered B — "Paraffin". Note: "for warmth". Turn it into tasks: you hold the plan's graph (djinn wish brief ` + wish2ID + ")."
-	if len(leads.said) != 1 || leads.said[0] != want1 {
-		t.Errorf("answer without lead: said %q, want %q", leads.said, want1)
+	if got := told(t, c.store); len(got) != 1 || got[0] != want1 {
+		t.Errorf("answer in wish 2: queued %q, want %q", got, want1)
 	}
 	// Verify no worker was started for the question.
 	tasks, err := store.List[*planv1.Task](ctx, c.store, store.Where{"wish_id": wish2ID})
@@ -253,17 +253,17 @@ func TestAnswerInAnyWishToldToOneLead(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Errorf("worker task was started: %v", tasks)
 	}
-	leads.said = nil
+	take(t, c.store)
 
 	// 2. Answer in wish 1 told to the same lead terminal.
 	q2 := c.ask(t, wish1ID)
 	c.answer(t, q2, planv1.Choice_CHOICE_YES, "")
 
 	want2 := LeadTerminal + ": Djinn: Q01 answered yes. Turn it into tasks: you hold the plan's graph (djinn wish brief " + wish1ID + ")."
-	if len(leads.said) != 1 || leads.said[0] != want2 {
-		t.Errorf("answer with own lead: said %q, want %q", leads.said, want2)
+	if got := told(t, c.store); len(got) != 1 || got[0] != want2 {
+		t.Errorf("answer in wish 1: queued %q, want %q", got, want2)
 	}
-	leads.said = nil
+	take(t, c.store)
 
 	// 3. No lead runs at all: answer waits.
 	delete(leads.running, LeadTerminal)
@@ -272,7 +272,7 @@ func TestAnswerInAnyWishToldToOneLead(t *testing.T) {
 	c.answer(t, q3, planv1.Choice_CHOICE_YES, "")
 
 	if len(leads.said) != 0 {
-		t.Errorf("when no lead runs: said %q, want nothing", leads.said)
+		t.Errorf("when no lead runs: said %q, want nothing typed", leads.said)
 	}
 	storedQ3, err := store.Get[*planv1.Question](ctx, c.store, q3.GetId())
 	if err != nil {
@@ -282,21 +282,27 @@ func TestAnswerInAnyWishToldToOneLead(t *testing.T) {
 		t.Errorf("stored question waiting_lead = false, want true")
 	}
 
-	// 4. When the lead resumes, it is told of every waiting answer.
-	if _, err := c.lead.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{})); err != nil {
+	// 4. The answer waits in the queue, marked waiting for a lead until the lead's watch acknowledges it.
+	want3 := LeadTerminal + ": Djinn: Q02 answered yes. Turn it into tasks: you hold the plan's graph (djinn wish brief " + wish2ID + ")."
+	if got := told(t, c.store); len(got) != 1 || got[0] != want3 {
+		t.Errorf("waiting answer: queued %q, want %q", got, want3)
+	}
+	digest, err := c.lead.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{Timeout: durationpb.New(0)}))
+	if err != nil {
 		t.Fatal(err)
 	}
-	want3 := LeadTerminal + ": Djinn: Q02 answered yes. Turn it into tasks: you hold the plan's graph (djinn wish brief " + wish2ID + ")."
-	if len(leads.said) != 1 || leads.said[0] != want3 {
-		t.Errorf("resumed lead told of waiting answers: said %q, want %q", leads.said, want3)
+	cursor := strings.Fields(digest.Msg.GetText()[strings.Index(digest.Msg.GetText(), "Cursor ")+len("Cursor "):])[0]
+	if _, err := c.lead.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{
+		After: strings.TrimSuffix(cursor, "."), Timeout: durationpb.New(0),
+	})); err != nil {
+		t.Fatal(err)
 	}
-
 	storedQ3After, err := store.Get[*planv1.Question](ctx, c.store, q3.GetId())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if storedQ3After.GetWaitingLead() {
-		t.Errorf("after being told, waiting_lead = true, want false")
+		t.Errorf("after the lead acknowledged it, waiting_lead = true, want false")
 	}
 }
 
@@ -332,8 +338,8 @@ func TestLeadAnswerNotToldToLead(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if len(leads.said) != 0 {
-		t.Errorf("lead answer was told to the lead: %v", leads.said)
+	if got := told(t, c.store); len(got) != 0 {
+		t.Errorf("lead answer was told to the lead: %v", got)
 	}
 	saved1 := c.questionOf(t, q1.GetId())
 	if saved1.GetAnswer().GetActor() != planv1.Closer_CLOSER_LEAD {
@@ -349,17 +355,14 @@ func TestLeadAnswerNotToldToLead(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if len(leads.said) != 1 {
-		t.Fatalf("plain shell answer was not told to the lead: %v", leads.said)
-	}
-	if !strings.Contains(leads.said[0], "Q02 answered B") {
-		t.Errorf("said = %q, want Q02 answered B", leads.said[0])
+	if got := told(t, c.store); len(got) != 1 || !strings.Contains(got[0], "Q02 answered B") {
+		t.Fatalf("plain shell answer: queued %q, want Q02 answered B", got)
 	}
 	saved2 := c.questionOf(t, q2.GetId())
 	if saved2.GetAnswer().GetActor() != planv1.Closer_CLOSER_DEVELOPER {
 		t.Errorf("actor = %v, want CLOSER_DEVELOPER", saved2.GetAnswer().GetActor())
 	}
-	leads.said = nil
+	take(t, c.store)
 
 	// 3. Answer by a worker ($DJINN_TASK_ID): attributed to its task.
 	taskID := uuid.NewString()

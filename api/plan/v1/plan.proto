@@ -569,6 +569,54 @@ message Lead {
   string directory = 3;
 }
 
+// LeadEvent is something the lead must act on, kept for it until its session acknowledges it: a task that ended or
+// failed, a real merge, the developer's answer or enlightenment, a move left to the lead, Djinn restarted. Djinn
+// queues one wherever it used to type a line in the lead's terminal (decision Q173 already keeps the rest to the
+// journal), whatever wish it is about: the one lead serves them all. djinn lead watch hands them out in batches;
+// one not acknowledged comes back on the next watch.
+message LeadEvent {
+  // Identifier, a UUIDv7: the events go in its order, and a watch's cursor is the last one it printed.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // When Djinn queued it.
+  google.protobuf.Timestamp create_time = 2;
+  // What happened.
+  LeadEventKind kind = 3;
+  // The wish it is about; empty for an event of no single wish (a restart).
+  string wish_id = 4;
+  // The code of the task or question it is about (W12, Q3); empty when none is.
+  string code = 5;
+  // What Djinn says of it, in a line: the line it used to type in the lead's terminal.
+  string text = 6;
+  // The lead session that acknowledged it, by a watch with --after past it; empty while it waits.
+  string ack_session_id = 7;
+  // When it was acknowledged.
+  google.protobuf.Timestamp ack_time = 8;
+}
+
+// LeadEventKind says what a lead event is about.
+enum LeadEventKind {
+  // Not set.
+  LEAD_EVENT_KIND_UNSPECIFIED = 0;
+  // A task's worker ended: a question worker that investigated, a watcher whose command ended.
+  LEAD_EVENT_KIND_ENDED = 1;
+  // A task's worker failed, and what Djinn does about it.
+  LEAD_EVENT_KIND_FAILED = 2;
+  // Work merged into its integration branch.
+  LEAD_EVENT_KIND_MERGED = 3;
+  // The developer answered a question.
+  LEAD_EVENT_KIND_ANSWER = 4;
+  // The developer wants to know more before answering a question: a question for the lead, to investigate.
+  LEAD_EVENT_KIND_ENLIGHTEN = 5;
+  // A move left to the lead: work that failed to integrate, push checks that stay red.
+  LEAD_EVENT_KIND_MOVE = 6;
+  // Djinn started again, on a version, with the workers it interrupted and resumes.
+  LEAD_EVENT_KIND_RESTART = 7;
+  // A watcher's command printed what it watches for.
+  LEAD_EVENT_KIND_WATCH = 8;
+  // A request came in for a wish: filed from the inbox, or an azima opened to plan.
+  LEAD_EVENT_KIND_REQUEST = 9;
+}
+
 // Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that
 // applies to every task of the wish in that project, and to no other wish.
 enum Allowance {
@@ -2766,6 +2814,19 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
+  // few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
+  // an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
+  // most) so that a burst, like an integration pass merging several tasks, comes as one digest; then it returns.
+  // Called again with --after the cursor, it acknowledges every event up to it for this session, then waits for the
+  // next ones: an event never acknowledged (the lead crashed, its session was lost) comes back on the next watch, at
+  // least once, never lost. While a watch of the lead's session waits, Djinn types nothing in the lead's terminal;
+  // without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
+  // command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
+  rpc Watch(LeadServiceWatchRequest) returns (LeadServiceWatchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message LeadServiceSetRequest {
@@ -2816,6 +2877,31 @@ message LeadServiceGetRequest {}
 message LeadServiceGetResponse {
   // The lead, or unset if none is recorded.
   Lead lead = 1;
+}
+
+message LeadServiceWatchRequest {
+  // The cursor the last watch printed: every event up to it is acknowledged for this session before waiting. Empty:
+  // nothing is acknowledged, every event the session has not acknowledged comes.
+  string after = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The lead session that watches, as its agent names it; by default the one its agent gives its commands
+  // ($CLAUDE_CODE_SESSION_ID, $CODEX_THREAD_ID, $ANTIGRAVITY_CONVERSATION_ID), else the recorded lead's. A session
+  // other than the recorded lead's is refused: djinn lead set records it.
+  string session = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+    (djinn.v1.env) = "CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID ANTIGRAVITY_CONVERSATION_ID"
+  ];
+  // How long to wait for an event before returning an empty digest, to run again; by default an hour, at most 6
+  // hours. 0s returns at once, events or not: for an agent no finished command wakes up (Codex).
+  google.protobuf.Duration timeout = 3;
+}
+
+message LeadServiceWatchResponse {
+  // The digest: a line per event, then the cursor and the command to run next.
+  string text = 1;
 }
 
 message LeadServiceBriefRequest {}
