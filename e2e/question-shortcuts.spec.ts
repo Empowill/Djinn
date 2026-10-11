@@ -195,6 +195,6 @@ test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Sh
 
     expect(errors).toEqual([]);
   } finally {
-    djinn("wish", "pause", wishId);
+    djinn("wish", "delete", wishId);
   }
 });
