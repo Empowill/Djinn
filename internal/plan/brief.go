@@ -69,7 +69,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"even small ones, several side by side. Send the work to an existing worker with `djinn task send`, or create a " +
 	"worker with `djinn task spawn`. You frame, coordinate, review, integrate and verify their work.\n" +
 	"- **Durable developer instructions.** Reflect, delegate to a worker task of the same wish, then verify its result " +
-	"and explicitly complete the instruction. A worker ending never completes an instruction automatically.\n" +
+	"and explicitly complete the instruction. A worker ending never completes an instruction automatically. Append a " +
+	"concise informational reply with `djinn instruction reply <instruction> \"…\" --wish-id <wish>`; a reply keeps " +
+	"the instruction's status and worker unchanged.\n" +
 	"- **Workers start from a short prompt.** Say what to do, in which project, and how to check it. " +
 	"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
 	"again at every turn, so use them only when the whole context is needed.\n" +
@@ -144,7 +146,9 @@ const briefRules = "# Leading a wish in Djinn\n\n" +
 	"- `djinn instruction list <wish>`: every instruction in full; `djinn instruction reflect <instruction> --wish-id <wish>`; " +
 	"`djinn instruction assign <instruction> <worker-task> --wish-id <wish>`; " +
 	"`djinn instruction complete <instruction> --wish-id <wish>` after verifying the successful worker result. " +
-	"Use an instruction UUID or its I01 code; tasks use a UUID or W1 code.\n" +
+	"`djinn instruction reply <instruction> \"…\" [--wish-id <wish>]` appends a reply of at most 2000 characters " +
+	"without changing status or assignment. Use an instruction UUID or its I01 code; a code shared by wishes needs " +
+	"`--wish-id`; tasks use a UUID or W1 code.\n" +
 	"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
 	"card; without `--ask`, the proposal only.\n" +
 	"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\" --icon 🧱`; `djinn block list <wish>`.\n" +

@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"fmt"
 	"html"
 	"os"
 	"path/filepath"
@@ -37,6 +38,17 @@ func putInstructionTask(t *testing.T, s *store.Store, task *planv1.Task) {
 func sendInstruction(t *testing.T, c clients, wish, text string) *planv1.Instruction {
 	t.Helper()
 	res, err := c.instructions.Send(t.Context(), connect.NewRequest(&planv1.InstructionServiceSendRequest{WishId: wish, Text: text}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res.Msg.GetInstruction()
+}
+
+func replyInstruction(t *testing.T, c clients, ref, wish, text string) *planv1.Instruction {
+	t.Helper()
+	res, err := c.instructions.Reply(t.Context(), connect.NewRequest(&planv1.InstructionServiceReplyRequest{
+		Instruction: ref, WishId: wish, Reply: text,
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +160,10 @@ func TestInstructionLifecycleAndReady(t *testing.T) {
 	if got := instructionsOf(t, c, wish)[0]; got.GetStatus() != planv1.InstructionStatus_INSTRUCTION_STATUS_PROCESSING || got.GetTaskId() != task.GetId() {
 		t.Fatalf("assigned: %v", got)
 	}
+	processingReply := replyInstruction(t, c, instruction.GetId(), "", "Processing update")
+	if processingReply.GetStatus() != planv1.InstructionStatus_INSTRUCTION_STATUS_PROCESSING || processingReply.GetTaskId() != task.GetId() {
+		t.Fatalf("processing reply changed lifecycle: %v", processingReply)
+	}
 	for _, status := range []planv1.TaskStatus{planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_PAUSED} {
 		task.Status = status
 		putInstructionTask(t, c.store, task)
@@ -169,6 +185,10 @@ func TestInstructionLifecycleAndReady(t *testing.T) {
 	if err != nil || !proto.Equal(done.Msg.GetInstruction(), again.Msg.GetInstruction()) {
 		t.Fatal("completion retry changed result")
 	}
+	doneReply := replyInstruction(t, c, instruction.GetId(), "", "Done update")
+	if doneReply.GetStatus() != planv1.InstructionStatus_INSTRUCTION_STATUS_DONE || doneReply.GetTaskId() != task.GetId() {
+		t.Fatalf("done reply changed lifecycle: %v", doneReply)
+	}
 	_, err = c.instructions.Reflect(t.Context(), connect.NewRequest(&planv1.InstructionServiceReflectRequest{Instruction: instruction.GetId()}))
 	if code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("reflect done: %v", err)
@@ -178,6 +198,122 @@ func TestInstructionLifecycleAndReady(t *testing.T) {
 	_, err = c.instructions.Reflect(t.Context(), connect.NewRequest(&planv1.InstructionServiceReflectRequest{Instruction: "I01"}))
 	if code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("ambiguous code: %v", err)
+	}
+}
+
+func TestInstructionRepliesValidationOrderingAndConcurrency(t *testing.T) {
+	c := serve(t)
+	wish, other := c.wish(t), c.wish(t)
+	instruction := sendInstruction(t, c, wish, "Keep this instruction pending")
+	direct := &Instructions{Store: c.store}
+	if _, err := direct.Reply(t.Context(), nil); code(err) != connect.CodeInvalidArgument {
+		t.Fatalf("nil reply request: %v", err)
+	}
+	bad := []*planv1.InstructionServiceReplyRequest{
+		{Reply: "Missing reference"},
+		{Instruction: instruction.GetId()},
+		{Instruction: "garbage", Reply: "Malformed reference"},
+		{Instruction: instruction.GetId(), Reply: " \n\t"},
+		{Instruction: instruction.GetId(), Reply: strings.Repeat("x", 2001)},
+		{Instruction: instruction.GetId(), WishId: "garbage", Reply: "Malformed wish"},
+	}
+	for _, req := range bad {
+		before := journalLength(t, c.store)
+		if _, err := direct.Reply(t.Context(), connect.NewRequest(req)); code(err) != connect.CodeInvalidArgument {
+			t.Fatalf("invalid reply request %v: %v", req, err)
+		}
+		if journalLength(t, c.store) != before || len(instructionsOf(t, c, wish)[0].GetReplies()) != 0 {
+			t.Fatalf("invalid reply request changed durable state: %v", req)
+		}
+	}
+	before := journalLength(t, c.store)
+	if _, err := direct.Reply(t.Context(), connect.NewRequest(&planv1.InstructionServiceReplyRequest{
+		Instruction: instruction.GetId(), WishId: other, Reply: "Wrong wish",
+	})); code(err) != connect.CodeInvalidArgument {
+		t.Fatalf("wrong-wish reply: %v", err)
+	}
+	if journalLength(t, c.store) != before {
+		t.Fatal("wrong-wish reply left a journal entry")
+	}
+	for _, req := range []*planv1.InstructionServiceReplyRequest{
+		{Instruction: store.NewID(), Reply: "Missing UUID"},
+		{Instruction: "I99", WishId: wish, Reply: "Missing code"},
+		{Instruction: "I01", WishId: other, Reply: "Code in wrong wish"},
+	} {
+		before := journalLength(t, c.store)
+		if _, err := direct.Reply(t.Context(), connect.NewRequest(req)); code(err) != connect.CodeNotFound {
+			t.Fatalf("missing reply target %v: %v", req, err)
+		}
+		if journalLength(t, c.store) != before {
+			t.Fatalf("missing reply target left a journal entry: %v", req)
+		}
+	}
+	otherInstruction := sendInstruction(t, c, other, "Other wish instruction")
+	if otherInstruction.GetCode() != "I01" {
+		t.Fatalf("other wish code = %s", otherInstruction.GetCode())
+	}
+	before = journalLength(t, c.store)
+	if _, err := direct.Reply(t.Context(), connect.NewRequest(&planv1.InstructionServiceReplyRequest{Instruction: "I01", Reply: "Ambiguous code"})); code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("ambiguous reply code: %v", err)
+	}
+	if journalLength(t, c.store) != before {
+		t.Fatal("ambiguous reply code left a journal entry")
+	}
+
+	status, taskID := instruction.GetStatus(), instruction.GetTaskId()
+	got := replyInstruction(t, c, "i01", wish, "First reply")
+	if got.GetStatus() != status || got.GetTaskId() != taskID || len(got.GetReplies()) != 1 || got.GetReplies()[0].GetText() != "First reply" {
+		t.Fatalf("first reply changed lifecycle or was not appended: %v", got)
+	}
+	got = replyInstruction(t, c, instruction.GetId(), "", "Second reply")
+	if len(got.GetReplies()) != 2 || got.GetReplies()[1].GetText() != "Second reply" {
+		t.Fatalf("UUID reply did not preserve earlier reply: %v", got.GetReplies())
+	}
+	commands, err := store.Commands(t.Context(), c.store, func(command store.Command) bool {
+		return command.Method == planv1connect.InstructionServiceReplyProcedure
+	})
+	if err != nil || len(commands) != 2 {
+		t.Fatalf("reply journal entries = %d, %v", len(commands), err)
+	}
+	var journalRequest planv1.InstructionServiceReplyRequest
+	if err := proto.Unmarshal(commands[0].Request, &journalRequest); err != nil || journalRequest.GetInstruction() != instruction.GetId() || journalRequest.GetWishId() != wish {
+		t.Fatalf("reply journal did not canonicalize IDs: %v, %v", journalRequest.GetInstruction(), journalRequest.GetWishId())
+	}
+
+	const concurrent = 16
+	errs := make(chan error, concurrent)
+	var wg sync.WaitGroup
+	for n := range concurrent {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			_, err := direct.Reply(t.Context(), connect.NewRequest(&planv1.InstructionServiceReplyRequest{
+				Instruction: instruction.GetId(), Reply: fmt.Sprintf("Concurrent reply %02d", n),
+			}))
+			if err != nil {
+				errs <- err
+			}
+		}(n)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	listed := instructionsOf(t, c, wish)
+	if len(listed) != 1 || len(listed[0].GetReplies()) != concurrent+2 {
+		t.Fatalf("concurrent replies lost an append: %d", len(listed[0].GetReplies()))
+	}
+	var previous time.Time
+	for n, reply := range listed[0].GetReplies() {
+		if err := reply.GetCreateTime().CheckValid(); err != nil {
+			t.Fatalf("reply %d timestamp invalid: %v", n, err)
+		}
+		at := reply.GetCreateTime().AsTime()
+		if n > 0 && at.Before(previous) {
+			t.Fatalf("reply timestamps are out of order at %d", n)
+		}
+		previous = at
 	}
 }
 
@@ -318,6 +454,12 @@ func TestInstructionOfflineRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	replied, err := i.Reply(ctx, connect.NewRequest(&planv1.InstructionServiceReplyRequest{
+		Instruction: got.Msg.GetInstruction().GetId(), Reply: "Persist this reply too",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -327,12 +469,46 @@ func TestInstructionOfflineRestart(t *testing.T) {
 	}
 	defer s.Close()
 	listed, err := (&Instructions{Store: s}).List(ctx, connect.NewRequest(&planv1.InstructionServiceListRequest{WishId: wish}))
-	if err != nil || len(listed.Msg.GetInstructions()) != 1 || !proto.Equal(got.Msg.GetInstruction(), listed.Msg.GetInstructions()[0]) {
+	if err != nil || len(listed.Msg.GetInstructions()) != 1 || !proto.Equal(replied.Msg.GetInstruction(), listed.Msg.GetInstructions()[0]) {
 		t.Fatalf("restart lost instruction: %v", err)
 	}
 	brief, err := BuildBrief(ctx, s, "", wish)
 	if err != nil || !strings.Contains(brief.Moving, full) {
 		t.Fatalf("restart brief truncated: %v", err)
+	}
+}
+
+func TestInstructionReplyTimestampBoundsAfterImport(t *testing.T) {
+	c := serve(t)
+	wishID := store.NewID()
+	now := time.Now().UTC()
+	future := timestamppb.New(now.Add(time.Hour))
+	maxTime := time.Date(9999, 12, 31, 23, 59, 59, 999999999, time.UTC)
+	maxTimestamp := timestamppb.New(maxTime)
+	exp := &planv1.WishExport{
+		Version: formatVersion,
+		Wish:    &planv1.Wish{Id: wishID, Title: "Imported timestamps", State: planv1.WishState_WISH_STATE_ACTIVE, CreateTime: timestamppb.New(now)},
+		Instructions: []*planv1.Instruction{
+			{Id: store.NewID(), WishId: wishID, Code: "I01", Text: "Future reply", CreateTime: timestamppb.New(now), UpdateTime: future, Status: planv1.InstructionStatus_INSTRUCTION_STATUS_PENDING,
+				Replies: []*planv1.InstructionReply{{Text: "Imported future", CreateTime: future}}},
+			{Id: store.NewID(), WishId: wishID, Code: "I02", Text: "Maximum reply", CreateTime: timestamppb.New(now), UpdateTime: maxTimestamp, Status: planv1.InstructionStatus_INSTRUCTION_STATUS_PENDING,
+				Replies: []*planv1.InstructionReply{{Text: "Imported maximum", CreateTime: maxTimestamp}}},
+		},
+	}
+	data, err := protojson.Marshal(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.wishes.ImportData(t.Context(), connect.NewRequest(&planv1.WishServiceImportDataRequest{Data: data})); err != nil {
+		t.Fatal(err)
+	}
+	futureReply := replyInstruction(t, c, "I01", "", "After future import")
+	if len(futureReply.GetReplies()) != 2 || !futureReply.GetReplies()[1].GetCreateTime().AsTime().After(future.AsTime()) {
+		t.Fatalf("reply after future import was not monotonic: %v", futureReply.GetReplies())
+	}
+	maxReply := replyInstruction(t, c, "I02", "", "After maximum import")
+	if len(maxReply.GetReplies()) != 2 || maxReply.GetReplies()[1].GetCreateTime().CheckValid() != nil || !proto.Equal(maxReply.GetReplies()[1].GetCreateTime(), maxTimestamp) {
+		t.Fatalf("maximum timestamp reply became invalid or reordered: %v", maxReply.GetReplies())
 	}
 }
 
@@ -344,6 +520,8 @@ func TestInstructionExportImportAndValidation(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	text := "Read " + filepath.Join(home, "notes.md") + " https://name:secret@example.com/ref\nFINAL REQUIREMENT"
 	first := sendInstruction(t, c, wish, text)
+	replyText := "Reply at " + filepath.Join(home, "reply.md") + " https://name:replysecret@example.com/ref\nFINAL REPLY"
+	replyInstruction(t, c, first.GetId(), "", replyText)
 	reflectInstruction(t, c, first)
 	assignInstruction(t, c, first, task)
 	// Include pending and done alongside processing.
@@ -362,7 +540,10 @@ func TestInstructionExportImportAndValidation(t *testing.T) {
 	if len(portableExp.GetInstructions()) != 3 || strings.Contains(portableExp.GetInstructions()[0].GetText(), home) || strings.Contains(portableExp.GetInstructions()[0].GetText(), "secret") || !strings.Contains(portableExp.GetInstructions()[0].GetText(), "FINAL REQUIREMENT") {
 		t.Fatal("portable text was lost or not scrubbed")
 	}
-	var reflected, assigned bool
+	if replies := portableExp.GetInstructions()[0].GetReplies(); len(replies) != 1 || strings.Contains(replies[0].GetText(), home) || strings.Contains(replies[0].GetText(), "replysecret") || !strings.Contains(replies[0].GetText(), "FINAL REPLY") {
+		t.Fatalf("portable reply was lost or not scrubbed: %v", replies)
+	}
+	var reflected, assigned, replied, replyScrubbed bool
 	for _, cmd := range exp.GetCommands() {
 		if cmd.GetMethod() == planv1connect.InstructionServiceReflectProcedure {
 			m, _ := cmd.GetRequest().UnmarshalNew()
@@ -376,9 +557,26 @@ func TestInstructionExportImportAndValidation(t *testing.T) {
 				assigned = true
 			}
 		}
+		if cmd.GetMethod() == planv1connect.InstructionServiceReplyProcedure {
+			m, _ := cmd.GetRequest().UnmarshalNew()
+			r := m.(*planv1.InstructionServiceReplyRequest)
+			if r.GetInstruction() == first.GetId() && strings.Contains(r.GetReply(), "FINAL REPLY") {
+				replied = true
+			}
+		}
 	}
-	if !reflected || !assigned {
-		t.Fatal("canonical lifecycle journal missing from export")
+	for _, cmd := range portableExp.GetCommands() {
+		if cmd.GetMethod() != planv1connect.InstructionServiceReplyProcedure {
+			continue
+		}
+		m, _ := cmd.GetRequest().UnmarshalNew()
+		r := m.(*planv1.InstructionServiceReplyRequest)
+		if r.GetInstruction() == first.GetId() && strings.Contains(r.GetReply(), "FINAL REPLY") && !strings.Contains(r.GetReply(), "replysecret") && !strings.Contains(r.GetReply(), home) {
+			replyScrubbed = true
+		}
+	}
+	if !reflected || !assigned || !replied || !replyScrubbed {
+		t.Fatal("canonical instruction journal missing from export")
 	}
 	dst := serve(t)
 	data, err := protojson.Marshal(portableExp)
@@ -403,6 +601,11 @@ func TestInstructionExportImportAndValidation(t *testing.T) {
 		"duplicate code":                func(e *planv1.WishExport) { e.Instructions[1].Code = e.Instructions[0].Code },
 		"unknown status":                func(e *planv1.WishExport) { e.Instructions[0].Status = 999 },
 		"blank text":                    func(e *planv1.WishExport) { e.Instructions[0].Text = " \n" },
+		"blank reply":                   func(e *planv1.WishExport) { e.Instructions[0].Replies[0].Text = " \n" },
+		"missing reply timestamp":       func(e *planv1.WishExport) { e.Instructions[0].Replies[0].CreateTime = nil },
+		"out of order replies": func(e *planv1.WishExport) {
+			e.Instructions[0].Replies = append(e.Instructions[0].Replies, &planv1.InstructionReply{Text: "Earlier", CreateTime: timestamppb.New(time.Unix(0, 0))})
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			bad := proto.Clone(portableExp).(*planv1.WishExport)

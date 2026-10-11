@@ -192,6 +192,9 @@ const (
 	// InstructionServiceCompleteProcedure is the fully-qualified name of the InstructionService's
 	// Complete RPC.
 	InstructionServiceCompleteProcedure = "/plan.v1.InstructionService/Complete"
+	// InstructionServiceReplyProcedure is the fully-qualified name of the InstructionService's Reply
+	// RPC.
+	InstructionServiceReplyProcedure = "/plan.v1.InstructionService/Reply"
 	// PlanServiceSyncProcedure is the fully-qualified name of the PlanService's Sync RPC.
 	PlanServiceSyncProcedure = "/plan.v1.PlanService/Sync"
 )
@@ -2474,6 +2477,8 @@ type InstructionServiceClient interface {
 	Assign(context.Context, *connect.Request[v1.InstructionServiceAssignRequest]) (*connect.Response[v1.InstructionServiceAssignResponse], error)
 	// Complete a processing instruction explicitly, after verifying its worker task ended successfully.
 	Complete(context.Context, *connect.Request[v1.InstructionServiceCompleteRequest]) (*connect.Response[v1.InstructionServiceCompleteResponse], error)
+	// Append an informational reply without changing the instruction's lifecycle or worker assignment.
+	Reply(context.Context, *connect.Request[v1.InstructionServiceReplyRequest]) (*connect.Response[v1.InstructionServiceReplyResponse], error)
 }
 
 // NewInstructionServiceClient constructs a client for the plan.v1.InstructionService service. By
@@ -2518,6 +2523,12 @@ func NewInstructionServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(instructionServiceMethods.ByName("Complete")),
 			connect.WithClientOptions(opts...),
 		),
+		reply: connect.NewClient[v1.InstructionServiceReplyRequest, v1.InstructionServiceReplyResponse](
+			httpClient,
+			baseURL+InstructionServiceReplyProcedure,
+			connect.WithSchema(instructionServiceMethods.ByName("Reply")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -2528,6 +2539,7 @@ type instructionServiceClient struct {
 	reflect  *connect.Client[v1.InstructionServiceReflectRequest, v1.InstructionServiceReflectResponse]
 	assign   *connect.Client[v1.InstructionServiceAssignRequest, v1.InstructionServiceAssignResponse]
 	complete *connect.Client[v1.InstructionServiceCompleteRequest, v1.InstructionServiceCompleteResponse]
+	reply    *connect.Client[v1.InstructionServiceReplyRequest, v1.InstructionServiceReplyResponse]
 }
 
 // Send calls plan.v1.InstructionService.Send.
@@ -2555,6 +2567,11 @@ func (c *instructionServiceClient) Complete(ctx context.Context, req *connect.Re
 	return c.complete.CallUnary(ctx, req)
 }
 
+// Reply calls plan.v1.InstructionService.Reply.
+func (c *instructionServiceClient) Reply(ctx context.Context, req *connect.Request[v1.InstructionServiceReplyRequest]) (*connect.Response[v1.InstructionServiceReplyResponse], error) {
+	return c.reply.CallUnary(ctx, req)
+}
+
 // InstructionServiceHandler is an implementation of the plan.v1.InstructionService service.
 type InstructionServiceHandler interface {
 	// Persist an instruction and its journal entry before notifying the lead. Works while the lead is offline.
@@ -2567,6 +2584,8 @@ type InstructionServiceHandler interface {
 	Assign(context.Context, *connect.Request[v1.InstructionServiceAssignRequest]) (*connect.Response[v1.InstructionServiceAssignResponse], error)
 	// Complete a processing instruction explicitly, after verifying its worker task ended successfully.
 	Complete(context.Context, *connect.Request[v1.InstructionServiceCompleteRequest]) (*connect.Response[v1.InstructionServiceCompleteResponse], error)
+	// Append an informational reply without changing the instruction's lifecycle or worker assignment.
+	Reply(context.Context, *connect.Request[v1.InstructionServiceReplyRequest]) (*connect.Response[v1.InstructionServiceReplyResponse], error)
 }
 
 // NewInstructionServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -2607,6 +2626,12 @@ func NewInstructionServiceHandler(svc InstructionServiceHandler, opts ...connect
 		connect.WithSchema(instructionServiceMethods.ByName("Complete")),
 		connect.WithHandlerOptions(opts...),
 	)
+	instructionServiceReplyHandler := connect.NewUnaryHandler(
+		InstructionServiceReplyProcedure,
+		svc.Reply,
+		connect.WithSchema(instructionServiceMethods.ByName("Reply")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.InstructionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case InstructionServiceSendProcedure:
@@ -2619,6 +2644,8 @@ func NewInstructionServiceHandler(svc InstructionServiceHandler, opts ...connect
 			instructionServiceAssignHandler.ServeHTTP(w, r)
 		case InstructionServiceCompleteProcedure:
 			instructionServiceCompleteHandler.ServeHTTP(w, r)
+		case InstructionServiceReplyProcedure:
+			instructionServiceReplyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2646,6 +2673,10 @@ func (UnimplementedInstructionServiceHandler) Assign(context.Context, *connect.R
 
 func (UnimplementedInstructionServiceHandler) Complete(context.Context, *connect.Request[v1.InstructionServiceCompleteRequest]) (*connect.Response[v1.InstructionServiceCompleteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.Complete is not implemented"))
+}
+
+func (UnimplementedInstructionServiceHandler) Reply(context.Context, *connect.Request[v1.InstructionServiceReplyRequest]) (*connect.Response[v1.InstructionServiceReplyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.InstructionService.Reply is not implemented"))
 }
 
 // PlanServiceClient is a client for the plan.v1.PlanService service.

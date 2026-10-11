@@ -105,8 +105,14 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   complete it. Worker completion alone never completes the instruction. Repeating the same transition is safe;
   other transitions fail atomically. Processing and done always keep a worker task reference; a referenced task
   cannot be deleted. Lifecycle commands journal resolved instruction/wish IDs so their history stays unambiguous.
-  Instructions travel in snapshots, exports and imports (with portable text scrubbing), change the Watch stream
-  and the synced page, and prevent readiness while unfinished. Only the developer grants a wish.
+  `djinn instruction reply I01 "…" --wish-id <wish>` appends a concise informational reply (at most 2000 characters)
+  without changing the instruction's status or worker assignment. The instruction UUID or I01 code may be used;
+  `--wish-id` is optional for a UUID, and required when a code is shared by several wishes. Replies are appended in
+  chronological order, journaled with the resolved instruction and wish in the same transaction, and retained in
+  snapshots, exports, imports and after restart with portable path and credential scrubbing. A blank, malformed,
+  overlong or wrong-wish reply is rejected atomically; repeating a reply appends another entry. Instructions travel in
+  snapshots, exports and imports (with portable text scrubbing), change the Watch stream and the synced page, and
+  prevent readiness while unfinished. Only the developer grants a wish.
 
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
