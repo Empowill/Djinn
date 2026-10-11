@@ -1,4 +1,5 @@
 import { memo } from "react";
+import "./svg-diagrams.css";
 
 const DANGEROUS_TAGS = [
   "script",

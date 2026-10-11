@@ -316,6 +316,10 @@ test("every class of the stylesheets is used by a component", () => {
     .join("\n");
   const unused = [];
   for (const entry of fs.readdirSync(root).filter((e) => e.endsWith(".css"))) {
+    // svg-diagrams.css styles SVG diagram blocks rendered by SafeSvg (drawn by tools/svgdiagrams);
+    // its classes are used inside the stored SVG markup rather than by a React component.
+    if (entry === "svg-diagrams.css") continue;
+
     // The selectors only: comments, strings and declarations hold dots that are no class.
     const selectors = fs
       .readFileSync(path.join(root, entry), "utf8")
