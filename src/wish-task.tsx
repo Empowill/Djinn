@@ -8,6 +8,7 @@ import {
   CheckCheck,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   CirclePause,
   CirclePlay,
   CircleStop,
@@ -42,6 +43,7 @@ import {
 import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
 import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
+import { isMerge } from "./data/flight";
 import {
   cancelledText,
   taskActivity,
@@ -181,6 +183,10 @@ export const WishTask = memo(function WishTask({
   onHold,
   onDecision,
   onDone,
+  merges,
+  nested,
+  mergeOpen = false,
+  alsoMerged,
 }: {
   task: Task;
   project?: Project;
@@ -201,6 +207,13 @@ export const WishTask = memo(function WishTask({
   onDecision?: (task: Task) => void;
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
   onDone?: (note: string, task: Task) => Promise<unknown>;
+  // The merges that bring this task's work in (src/data/flight.ts mergeNest), and their rows: folded under it.
+  merges?: readonly Task[];
+  nested?: ReactNode;
+  // Unfolds them: one of them is brought into sight.
+  mergeOpen?: boolean;
+  // The merges that bring this work in too but show under another task: a link to that task each.
+  alsoMerged?: readonly { merge: Task; host: Task }[];
 }) {
   const [open, setOpen] = useState(focused);
   const [closing, setClosing] = useState(false);
@@ -253,6 +266,7 @@ export const WishTask = memo(function WishTask({
               label={taskStatusText(task, forkedAs)}
               title={cancelledText(task) ?? activity ?? undefined}
             />
+            {isMerge(task) && <MergeLabel task={task} codes={codes} />}
             <span className="agent-code">{task.code}</span>
             {/* Cut to the room left: the whole title shows on hover. */}
             <span className="task-title-wrap">
@@ -395,6 +409,24 @@ export const WishTask = memo(function WishTask({
           )}
         </p>
       )}
+      {alsoMerged?.map(({ merge, host }) => (
+        <p className="wish-task-note wish-task-merged-in" key={merge.id}>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => jump(`task-${host.id}`)}
+            title={t("task.merge_also", { task: merge.code, host: host.code })}
+          >
+            <span className="merge-label">{t("task.merge")}</span>
+            <span className="agent-code">{merge.code}</span>
+          </button>
+        </p>
+      ))}
+      {merges && merges.length > 0 && (
+        <MergeFold merges={merges} opened={mergeOpen}>
+          {nested}
+        </MergeFold>
+      )}
       {open && (
         <TaskBody
           task={task}
@@ -408,6 +440,75 @@ export const WishTask = memo(function WishTask({
     </article>
   );
 });
+
+// MergeLabel marks a merge, compact; what it brings in on hover.
+function MergeLabel({
+  task,
+  codes,
+}: {
+  task: Task;
+  codes?: ReadonlyMap<string, string>;
+}) {
+  const served = (
+    task.correction?.failure?.taskIds ??
+    task.review?.taskIds ??
+    []
+  )
+    .map((id) => codes?.get(id))
+    .filter((code): code is string => !!code);
+  return (
+    <span
+      className="merge-label"
+      title={
+        served.length
+          ? t("task.merge_detail", { tasks: served.join(", ") })
+          : undefined
+      }
+    >
+      {t("task.merge")}
+    </span>
+  );
+}
+
+// MergeFold folds the merges of a task under it, the label, their codes and the latest one's state on its line; the
+// rows open on a click, or when one of them is brought into sight.
+function MergeFold({
+  merges,
+  opened,
+  children,
+}: {
+  merges: readonly Task[];
+  opened: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(opened);
+  useEffect(() => {
+    if (opened) setOpen(true);
+  }, [opened]);
+  const latest = merges[merges.length - 1];
+  return (
+    <div className={`wish-task-merges ${open ? "open" : ""}`}>
+      <button
+        type="button"
+        className="wish-task-merges-toggle"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        title={merges.map((m) => `${m.code} ${m.title}`).join("\n")}
+      >
+        <ChevronRight size={12} className={open ? "rotated-90" : ""} />
+        <span className="merge-label">{t("task.merge")}</span>
+        <span className="agent-code">
+          {merges.map((m) => m.code).join(", ")}
+        </span>
+        <StatusBadge
+          tone={taskTone(latest, "")}
+          label={taskStatusText(latest, "")}
+        />
+      </button>
+      {open && <div className="wish-task-merge-list">{children}</div>}
+    </div>
+  );
+}
 
 // taskWork says where the finished work of a task stands on its way into its wish's integration branch (T07), as the
 // page says it, and its tone: undefined for work Djinn does not integrate. codes name the correction worker's task.

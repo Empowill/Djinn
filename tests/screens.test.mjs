@@ -50,10 +50,12 @@ export {
   azimaRank,
   draftAzimas,
   flightPlan,
+  mergeNest,
   movingTasks,
   taskDealtWith,
   waitingLeadQuestions,
   waitingTasks,
+  workCount,
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
 export {
@@ -2071,6 +2073,136 @@ function twoWishes() {
   });
   return { lamp, oil, djinn: s.createDjinn(transport, 10) };
 }
+
+test("a merge sits under the original task it serves, folded and marked Merge; the others it serves link to it", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const work = (code, status, extra) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    partOf: "T1",
+    dependsOn: [],
+    createTime: at(1),
+    endTime: status === s.TaskStatus.DONE ? at(10) : undefined,
+    ...extra,
+  });
+  const correction = (code, status, taskIds, extra) =>
+    work(code, status, {
+      title: `Merge: Task W401 (W401) — conflict in docs/agent-protocol.md`,
+      correction: { failure: { taskIds }, attempt: 1 },
+      ...extra,
+    });
+  const tasks = [
+    {
+      id: "T1",
+      code: "T1",
+      title: "The plan",
+      kind: s.TaskKind.AZIMA,
+      status: s.TaskStatus.PENDING,
+      dependsOn: [],
+      createTime: at(1),
+      azima: { state: s.AzimaState.IN_PROGRESS, ready: true },
+    },
+    work("W401", s.TaskStatus.DONE, {
+      integration: { state: s.IntegrationState.CONFLICT },
+    }),
+    work("W403", s.TaskStatus.DONE),
+    work("W405", s.TaskStatus.PENDING),
+    // W419 corrected W401; W422 corrects W419 and W403: both serve W401 first.
+    correction("W419", s.TaskStatus.DONE, ["W401"]),
+    correction("W422", s.TaskStatus.WAITING, ["W419", "W403"]),
+    // A push correction serves no task: it stays a peer, marked.
+    correction("W430", s.TaskStatus.RUNNING, [], { partOf: "" }),
+  ];
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const nest = s.mergeNest(tasks);
+  assert.deepEqual(
+    [...nest.host],
+    [
+      ["W419", "W401"],
+      ["W422", "W401"],
+    ],
+  );
+  const sections = (focus = "") => {
+    const card = (task) => {
+      const merges = nest.under.get(task.id);
+      return h(s.WishTask, {
+        key: task.id,
+        task,
+        focused: focus === task.id,
+        merges,
+        nested: merges?.map(card),
+        mergeOpen: nest.host.get(focus) === task.id,
+        alsoMerged: nest.links.get(task.id),
+        onStop() {},
+        async onSend() {},
+        async onDone() {},
+      });
+    };
+    const groups = s.azimaGroups(tasks);
+    return s.renderToStaticMarkup(
+      h(s.TaskSections, {
+        moving: s.movingTasks(tasks),
+        azimas: groups,
+        fold: `merge-${focus}`,
+        renderAzima: ({ azima, parts }) =>
+          h(s.AzimaCard, {
+            key: azima.id,
+            azima,
+            parts,
+            tasks: byId,
+            render: card,
+            focus,
+            nest,
+          }),
+        render: card,
+      }),
+    );
+  };
+  const codes = (html) =>
+    [...html.matchAll(/<span class="agent-code">([TW]\d+)</g)].map((m) => m[1]);
+  const html = sections();
+  // The merges are no peers of the azima's work: W401, finished, moves while its merge waits; W403, finished, folds.
+  assert.deepEqual(codes(html), ["W430", "T1", "W401", "W405"]);
+  assert.match(
+    html,
+    /<button type="button" class="wish-task-merges-toggle" aria-expanded="false" title="W419 Merge: Task W401[^"]*\nW422 Merge: [^"]*">.*?<span class="merge-label">Merge<\/span><span class="agent-code">W419, W422<\/span>/,
+  );
+  // The push correction is marked where it stands.
+  assert.match(
+    html,
+    /<span class="merge-label">Merge<\/span><span class="agent-code">W430<\/span>/,
+  );
+  // Brought into sight, W422 unfolds under W401, marked.
+  const shown = sections("W422");
+  assert.deepEqual(codes(shown), [
+    "W430",
+    "T1",
+    "W401",
+    "W419",
+    "W422",
+    "W405",
+  ]);
+  assert.match(
+    shown,
+    /<span class="merge-label">Merge<\/span><span class="agent-code">W422<\/span><span class="task-title-wrap">/,
+  );
+  // W403, which it serves too, links to W401.
+  assert.match(
+    sections("W403"),
+    /wish-task-merged-in"><button type="button" class="text-button" title="W422 also brings this work in; it shows under W401"><span class="merge-label">Merge<\/span><span class="agent-code">W422<\/span>/,
+  );
+  // Counted with their original: four tasks of work, the push correction one of them.
+  assert.equal(s.workCount(tasks), 4);
+  // The attention bar puts W422's line on W401.
+  const wish = { id: "w", code: "D1", title: "Wish" };
+  const waiting = s.waitingTasks(wish, { tasks, questions: [] });
+  const [line] = s.attentionOf([], waiting, []);
+  assert.equal(line.code, "W401");
+  assert.match(line.text, /^Merge W422 · /);
+  assert.equal(line.target, "waiting-W422");
+});
 
 test("the flight plan merges the active wishes: their questions, the blocking one first, each with its wish", async () => {
   const { lamp, oil, djinn } = twoWishes();

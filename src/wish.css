@@ -250,6 +250,35 @@
 .wish-task-note.error {
   color: var(--danger);
 }
+/* A merge (a correction or review Djinn starts by itself): a compact label, its rows folded under the task it
+   serves. */
+.merge-label {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--st-investigating);
+  font-size: var(--font-size-body, 12px);
+  line-height: 16px;
+  white-space: nowrap;
+}
+.wish-task-merges {
+  padding: 0 14px 10px 34px;
+}
+.wish-task-merges-toggle,
+.wish-task-merged-in .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  color: var(--muted);
+}
+.wish-task-merge-list {
+  margin-top: var(--space-2);
+}
+.wish-task-merge-list .wish-task:last-child {
+  margin-bottom: 0;
+}
 /* Where the task's finished work stands on its way into the wish's branch: red when it is held. */
 .wish-task-work.work-failed {
   color: var(--danger);
