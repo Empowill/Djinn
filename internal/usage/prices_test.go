@@ -54,9 +54,9 @@ func TestEstimateTokens(t *testing.T) {
 	}
 
 	// 1,000 input, 500 output, 100 thinking, 2,000 cache read, 0 cache write for claude-sonnet-5-5
-	// claude-sonnet-5-5: input: 3.0, output: 15.0, cache_read: 0.3, cache_write: 3.75, thinking: 15.0
+	// claude-sonnet-5-5: input: 2.0, output: 10.0, cache_read: 0.10, cache_write: 2.50, thinking: 10.0
 	// regularOutput: output (500) - thinking (100) = 400
-	// expected: (1000*3 + 400*15 + 100*15 + 2000*0.3 + 0*3.75) / 1,000,000 = (3000 + 6000 + 1500 + 600) / 1,000,000 = 11100 / 1,000,000 = 0.0111
+	// expected: (1000*2 + 400*10 + 100*10 + 2000*0.1 + 0*2.50) / 1,000,000 = (2000 + 4000 + 1000 + 200) / 1,000,000 = 7200 / 1,000,000 = 0.0072
 	u := &planv1.Usage{
 		InputTokens:     1000,
 		OutputTokens:    500,
@@ -70,7 +70,7 @@ func TestEstimateTokens(t *testing.T) {
 	if !hasPrice {
 		t.Error("expected hasPrice = true")
 	}
-	wantCost := 0.0111
+	wantCost := 0.0072
 	if math.Abs(cost-wantCost) > 1e-6 {
 		t.Errorf("cost = %f, want %f", cost, wantCost)
 	}
@@ -126,9 +126,9 @@ func TestClaudeReportedCostPreserved(t *testing.T) {
 		t.Errorf("reported cost = %f, want %f", got, want)
 	}
 	// Estimate is calculated from current table
-	// 10000 * 3.0 + 2000 * 15.0 = 30000 + 30000 = 60000 / 1e6 = 0.060
-	if math.Abs(est-0.060) > 1e-6 {
-		t.Errorf("estimated cost = %f, want 0.060", est)
+	// 10000 * 2.0 + 2000 * 10.0 = 20000 + 20000 = 40000 / 1e6 = 0.040
+	if math.Abs(est-0.040) > 1e-6 {
+		t.Errorf("estimated cost = %f, want 0.040", est)
 	}
 }
 
