@@ -1,10 +1,11 @@
 // The window's status language: one colour, one icon and one word per state, never the colour alone. Done is green,
 // running blue with a live dot, waiting for you orange, investigating violet, planned grey, failed red, interrupted
-// amber, stopped and paused muted, watching teal with an eye; a decision the developer took is human, rose with a person;
+// amber, stopped and paused muted, cancelled a muted stone with a ban sign, watching teal with an eye; a decision the developer took is human, rose with a person;
 // an azima whose work is done and that awaits its proof is olive, with a clipboard to check; a question that can wait
 // is grey, with a clock.
 // The colours are tokens of review.css, checked for contrast in both themes.
 import {
+  Ban,
   CheckCircle2,
   CircleDashed,
   CircleOff,
@@ -34,6 +35,7 @@ const icons: Record<Tone, LucideIcon | null> = {
   failed: XCircle,
   interrupted: TriangleAlert,
   stopped: CircleStop,
+  cancelled: Ban,
   paused: CirclePause,
   watching: Eye,
   human: CircleUserRound,

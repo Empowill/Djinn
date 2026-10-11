@@ -10474,7 +10474,7 @@ export const TaskService: GenService<{
   /**
    * Mark a task done that no worker runs now: planned, waiting, cut short, failed, stopped or imported. It records
    * who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
-   * done already is refused.
+   * done already is refused. A task no longer useful is cancelled (Cancel), not marked done.
    *
    * @generated from rpc plan.v1.TaskService.Done
    */

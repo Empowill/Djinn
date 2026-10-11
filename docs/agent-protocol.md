@@ -109,6 +109,8 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   `## Open answers without a lead` (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
+  A task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note "…"` stops its worker,
+  removes its worktree (its branch stays) and drops its work from integration; the window shows it Cancelled.
   `djinn task update <task-id>` (or `djinn task set-agent`) updates a task: only the given fields change.
   Before starting (planned, waiting), any field may change; while running or paused, only its title;
   once finished (done, failed, stopped, cut short), title, provider, model, prompt (for its next continue),

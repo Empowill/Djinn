@@ -198,7 +198,8 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
 		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima, integration (none clears it, --force if unmerged); never its dependencies once it ran; alias `set-agent`); `djinn task done <task> [--drop] --note " +
 		"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported; unmerged commits queue for merging unless --drop) once its work is done " +
-		"elsewhere.\n" +
+		"elsewhere; a task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note \"…\"` " +
+		"stops its worker, removes its worktree (its branch stays) and drops its work from integration.\n" +
 		"- `djinn wish route \"<request>\" --wish-id <wish> --ask`: where a request goes, asked to the developer on a " +
 		"card; without `--ask`, the proposal only.\n" +
 		"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\" --icon 🧱`; `djinn block list <wish>`.\n" +
