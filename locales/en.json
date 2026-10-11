@@ -151,7 +151,7 @@
   "load.notch.overclock": "Overclock",
   "load.priority_low": "low priority",
   "load.priority_standard": "standard priority",
-  "load.tooltip.auto": "Auto: automatically adapts load between Minimal and {chosen}.",
+  "load.tooltip.auto": "Auto: follows keyboard and mouse activity and system load, stepping down to Minimal while you work and climbing towards {chosen} when idle.",
   "load.tooltip.high": "High: up to {workers} workers, 80 % of the memory Djinn may engage, standard CPU priority.",
   "load.tooltip.max": "Max: up to {workers} workers, 100 % of the memory Djinn may engage, standard CPU priority.",
   "load.tooltip.medium": "Medium: up to {workers} workers, 50 % of the memory Djinn may engage, low CPU priority.",

@@ -420,6 +420,96 @@ func TestLoadServiceAuto(t *testing.T) {
 	}
 }
 
+func TestLoadServiceWithIdleSource(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+
+	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return fakeNow }
+	signal := func() bool { return false }
+
+	var idleDuration time.Duration
+	idleOk := true
+	idleSource := func() (time.Duration, bool) {
+		return idleDuration, idleOk
+	}
+
+	initPolicy := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
+	monitor := &Monitor{policy: initPolicy}
+
+	var latestPolicy Policy
+	setPolicy := func(p Policy) {
+		latestPolicy = p
+	}
+
+	var latestBroadcast djinnv1.LoadNotch
+	broadcast := func(n djinnv1.LoadNotch) {
+		latestBroadcast = n
+	}
+
+	// 1. Configure LoadHandler with WithLoadIdleSource
+	prefix, handler := LoadHandler(
+		home,
+		monitor,
+		setPolicy,
+		broadcast,
+		nil,
+		WithLoadClock(clock),
+		WithLoadSignal(signal),
+		WithLoadIdleSource(idleSource),
+		WithLoadStepDuration(1*time.Minute),
+		WithLoadTickInterval(0),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(prefix, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := djinnv1connect.NewLoadServiceClient(srv.Client(), srv.URL)
+
+	// Set initial saved notch to MAX
+	if err := WriteNotch(home, djinnv1.LoadNotch_LOAD_NOTCH_MAX); err != nil {
+		t.Fatal(err)
+	}
+
+	// When user is actively typing (idle = 5s < 30s), switching to AUTO drops directly to MINIMAL
+	idleDuration = 5 * time.Second
+	setRes, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
+	}))
+	if err != nil {
+		t.Fatalf("Set AUTO: %v", err)
+	}
+	if !setRes.Msg.GetAuto() {
+		t.Errorf("expected auto mode, got false")
+	}
+	if setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Fatalf("Set AUTO while active: got %v, want MINIMAL", setRes.Msg.GetNotch())
+	}
+	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Errorf("latestPolicy notch: got %v, want MINIMAL", latestPolicy.Notch)
+	}
+	if latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Errorf("latestBroadcast notch: got %v, want MINIMAL", latestBroadcast)
+	}
+
+	// When user is idle (idle = 5m >= 3m), manual exit and reentry to AUTO with chosen=HIGH preserves HIGH
+	idleDuration = 5 * time.Minute
+	_, _ = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+	}))
+	setRes2, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
+	}))
+	if err != nil {
+		t.Fatalf("Set AUTO while idle: %v", err)
+	}
+	if setRes2.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+		t.Fatalf("Set AUTO while idle: got %v, want HIGH", setRes2.Msg.GetNotch())
+	}
+}
+
 func containsSubstring(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

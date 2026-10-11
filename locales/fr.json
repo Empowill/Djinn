@@ -151,7 +151,7 @@
   "load.notch.overclock": "Surcadençage",
   "load.priority_low": "priorité basse",
   "load.priority_standard": "priorité standard",
-  "load.tooltip.auto": "Auto : adapte automatiquement la charge entre Minimal et {chosen}.",
+  "load.tooltip.auto": "Auto : suit l'activité clavier et souris et la charge système, descendant à Minimal pendant le travail et montant vers {chosen} au repos.",
   "load.tooltip.high": "Élevé : jusqu'à {workers} workers, 80 % de la mémoire que Djinn peut engager, priorité CPU standard.",
   "load.tooltip.max": "Max : jusqu'à {workers} workers, 100 % de la mémoire que Djinn peut engager, priorité CPU standard.",
   "load.tooltip.medium": "Moyen : jusqu'à {workers} workers, 50 % de la mémoire que Djinn peut engager, priorité CPU basse.",
