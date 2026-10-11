@@ -42,6 +42,28 @@ import { MarkButtons } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
 
+// isMac reports whether the interface runs on macOS, to show Mac modifier symbols.
+export function isMac(): boolean {
+  const g = globalThis as unknown as { __DJINN_MAC__?: boolean };
+  if (typeof g.__DJINN_MAC__ === "boolean") {
+    return g.__DJINN_MAC__;
+  }
+  if (typeof navigator !== "undefined") {
+    const nav = navigator as unknown as {
+      userAgentData?: { platform?: string };
+      platform?: string;
+      userAgent?: string;
+    };
+    const p =
+      nav.userAgentData?.platform || nav.platform || nav.userAgent || "";
+    return /Mac/i.test(p);
+  }
+  if (typeof process !== "undefined" && process.platform === "darwin") {
+    return true;
+  }
+  return false;
+}
+
 export const WishQuestion = memo(function WishQuestion({
   question: q,
   expanded: open = false,
@@ -100,6 +122,7 @@ export const WishQuestion = memo(function WishQuestion({
   const choice = picked ?? (q.options.length ? recommended : Choice.YES);
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
+  const [unpicked, setUnpicked] = useState(false);
   const busy = async (run: () => Promise<void>) => {
     setSending(true);
     try {
@@ -110,6 +133,106 @@ export const WishQuestion = memo(function WishQuestion({
       setSending(false);
     }
   };
+  const mod = isMac() ? "⌘" : "⌃";
+
+  const isComposing = (e: React.KeyboardEvent): boolean => {
+    return (
+      Boolean(e.nativeEvent?.isComposing) ||
+      Boolean((e as unknown as { isComposing?: boolean }).isComposing) ||
+      e.keyCode === 229
+    );
+  };
+
+  const triggerRub = () => {
+    if (sending) return;
+    if (choice === undefined) {
+      setUnpicked(true);
+      return;
+    }
+    void busy(() => onAnswer(choice, note.trim(), q));
+  };
+
+  const triggerEnlighten = () => {
+    if (sending || !onEnlighten || digging) return;
+    void busy(async () => {
+      await onEnlighten(note.trim(), q);
+      setNote("");
+    });
+  };
+
+  const handleTextareaKeyDown = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    if (isComposing(e)) return;
+    if (e.key === "Enter") {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        triggerEnlighten();
+      } else if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        triggerRub();
+      } else if (e.shiftKey) {
+        return;
+      } else {
+        e.preventDefault();
+        triggerRub();
+      }
+    }
+  };
+
+  const handleCardKeyDown = (e: React.KeyboardEvent) => {
+    const inTextarea = (e.target as HTMLElement)?.tagName === "TEXTAREA";
+    if (inTextarea) return;
+    if (isComposing(e)) return;
+
+    if (e.key === "Enter") {
+      const inEnlighten = !!(e.target as HTMLElement)?.closest(
+        ".lamp-enlighten",
+      );
+      if (inEnlighten && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        triggerEnlighten();
+      } else if (!e.shiftKey) {
+        e.preventDefault();
+        triggerRub();
+      }
+      return;
+    }
+
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (q.options.length > 0) {
+      if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const current = choice !== undefined ? choice - Choice.A : -1;
+        const next = current < 0 ? 0 : (current + 1) % q.options.length;
+        setPicked(choiceOf(next));
+        setUnpicked(false);
+        return;
+      }
+      if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        const current = choice !== undefined ? choice - Choice.A : 0;
+        const prev = (current - 1 + q.options.length) % q.options.length;
+        setPicked(choiceOf(prev));
+        setUnpicked(false);
+        return;
+      }
+      if (/^[1-9]$/.test(e.key)) {
+        const num = parseInt(e.key, 10);
+        if (num >= 1 && num <= q.options.length) {
+          e.preventDefault();
+          setPicked(choiceOf(num - 1));
+          setUnpicked(false);
+          return;
+        }
+      }
+    }
+  };
+
   const status = answered ? (
     <StatusBadge tone="done" label={t("panels.decision_recorded")} />
   ) : withdrawn ? (
@@ -165,6 +288,10 @@ export const WishQuestion = memo(function WishQuestion({
     <motion.article
       id={`question-${q.id}`}
       className={`question-card ${answered ? "answered" : withdrawn ? "withdrawn" : digging ? "investigating" : "open"} ${level}${folded ? " folded" : ""}`}
+      tabIndex={answered || withdrawn || folded ? undefined : 0}
+      onKeyDown={
+        answered || withdrawn || folded ? undefined : handleCardKeyDown
+      }
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: 30 }}
@@ -272,7 +399,10 @@ export const WishQuestion = memo(function WishQuestion({
                       <button
                         key={index}
                         className={`option ${selected ? "selected" : ""}`}
-                        onClick={() => setPicked(choiceOf(index))}
+                        onClick={() => {
+                          setPicked(choiceOf(index));
+                          setUnpicked(false);
+                        }}
                         aria-pressed={selected}
                       >
                         <strong className="option-letter">
@@ -292,6 +422,7 @@ export const WishQuestion = memo(function WishQuestion({
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
+                onKeyDown={handleTextareaKeyDown}
                 placeholder={
                   q.options.length
                     ? t("question.note_placeholder")
@@ -305,17 +436,15 @@ export const WishQuestion = memo(function WishQuestion({
                 {onEnlighten && !digging && (
                   <button
                     className="button secondary lamp-enlighten"
-                    title={t("question.enlighten_detail")}
+                    title={`${t("question.enlighten_detail")} (${mod}⇧↵)`}
                     disabled={sending}
-                    onClick={() =>
-                      void busy(async () => {
-                        await onEnlighten(note.trim(), q);
-                        setNote("");
-                      })
-                    }
+                    onClick={triggerEnlighten}
                   >
                     <Lightbulb size={14} />
                     {t("question.enlighten")}
+                    <kbd className="key-hint" aria-hidden="true">
+                      {mod}⇧↵
+                    </kbd>
                   </button>
                 )}
                 <span className="spacer" />
@@ -324,21 +453,30 @@ export const WishQuestion = memo(function WishQuestion({
                   title={
                     choice === undefined
                       ? t("question.rub_pick")
-                      : t("question.rub_detail")
+                      : `${t("question.rub_detail")} (↵)`
                   }
                   disabled={sending || choice === undefined}
-                  onClick={() => {
-                    if (choice !== undefined)
-                      void busy(() => onAnswer(choice, note.trim(), q));
-                  }}
+                  onClick={triggerRub}
                 >
                   <Lamp size={14} />
                   {t("question.rub")}
+                  <kbd className="key-hint" aria-hidden="true">
+                    ↵
+                  </kbd>
                 </button>
               </div>
-              <p className="question-hint">
+              <p
+                className={`question-hint${unpicked ? " unpicked" : ""}`}
+                role={unpicked ? "alert" : undefined}
+              >
                 <CornerDownRight size={14} aria-hidden="true" />
-                {t(noLead ? "question.no_lead" : "question.goes_to_lead")}
+                {t(
+                  unpicked
+                    ? "question.rub_pick"
+                    : noLead
+                      ? "question.no_lead"
+                      : "question.goes_to_lead",
+                )}
               </p>
             </>
           )}
