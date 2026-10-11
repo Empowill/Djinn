@@ -229,6 +229,15 @@ The cards, the bar of what waits for you and the brief list them in that order.
   folds to one line, **Being investigated** with what you asked, out of the way of the questions that wait for you; a
   click opens it, and you may still decide now. Revised, it opens again and waits for your answer. Its rounds fold
   below the card.
+- **Keyboard shortcuts.** Focus on the card, or in its note field, drives it from the keys:
+  - Enter rubs the lamp: answers with the option selected, everywhere on the card, the note field included. An
+    input method composing does not answer, nor does Enter answer before an option is selected.
+  - Shift+Enter makes a new line in the note field.
+  - Ctrl+Enter (Cmd+Enter on macOS) also answers, never a new line.
+  - Ctrl+Shift+Enter (Cmd+Shift+Enter on macOS) triggers Enlighten me from anywhere on the card, the note included,
+    sending what the note asks.
+  - Arrows (Up/Down/Left/Right) or 1–4 pick an option when focus is on the card and not in the note.
+  The shortcuts stay on the card: they never intercept keys from the terminal or other inputs.
 
 Your answer goes to the lead and the workers. An answered question is a decision. A wish without a lead session has no
 lead to tell: the card says so, and the answer waits in the wish's brief for the next lead.
