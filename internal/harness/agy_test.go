@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 )
 
 // TestAgyProject: the agy project of a worker grants its folder and Git's folders for it, the listed commands in
@@ -56,12 +57,12 @@ func TestAgyProject(t *testing.T) {
 		spec        Spec
 		allow, deny []string
 	}{
-		{Spec{Dir: wt, Permissions: auto}, []string{"write_file(" + wt + ")", "write_file(" + common + ")", "command(*)"},
+		{Spec{Dir: wt, Permissions: auto}, []string{"write_file(" + wt + ")", "write_file(" + common + ")", "command(*)", "read_url(*)"},
 			[]string{"command(git push)"}},
 		// AUTO denies git push even when the project does not; outside Git, every command all the same.
-		{Spec{Dir: wt, Permissions: autoOwn}, []string{"write_file(" + wt + ")", "write_file(" + common + ")", "command(*)"},
+		{Spec{Dir: wt, Permissions: autoOwn}, []string{"write_file(" + wt + ")", "write_file(" + common + ")", "command(*)", "read_url(*)"},
 			[]string{"command(rm -rf)", "command(git push)"}},
-		{Spec{Dir: filepath.Join(root, "nogit"), Permissions: autoOwn}, []string{"write_file(" + filepath.Join(root, "nogit") + ")", "command(*)"},
+		{Spec{Dir: filepath.Join(root, "nogit"), Permissions: autoOwn}, []string{"write_file(" + filepath.Join(root, "nogit") + ")", "command(*)", "read_url(*)"},
 			[]string{"command(rm -rf)", "command(git push)"}},
 		// LISTED: only what is listed, Git's folders all the same.
 		{Spec{Dir: wt, Permissions: listed}, []string{"write_file(" + wt + ")", "write_file(" + common + ")", "command(go tool task lint)"}, nil},
@@ -116,12 +117,15 @@ func TestAgyProject(t *testing.T) {
 	if err := writeAgyProject(Spec{Dir: wt, Permissions: auto}); err != nil {
 		t.Fatal(err)
 	}
+	dir, _ := agyProjectsDir()
+	path := filepath.Join(dir, agyProjectID(wt)+".json")
+	if b, err := os.ReadFile(path); err != nil || !strings.Contains(string(b), `"command(*)"`) || !strings.Contains(string(b), `"read_url(*)"`) {
+		t.Errorf("project file in AUTO = %s, %v", b, err)
+	}
 	if err := writeAgyProject(spec); err != nil {
 		t.Fatal(err)
 	}
-	dir, _ := agyProjectsDir()
-	path := filepath.Join(dir, agyProjectID(wt)+".json")
-	if b, err := os.ReadFile(path); err != nil || !strings.Contains(string(b), `"command(go tool task lint)"`) || strings.Contains(string(b), "command(*)") {
+	if b, err := os.ReadFile(path); err != nil || !strings.Contains(string(b), `"command(go tool task lint)"`) || strings.Contains(string(b), "command(*)") || strings.Contains(string(b), "read_url(*)") {
 		t.Errorf("project file = %s, %v", b, err)
 	}
 	forgetAgyProject(wt)
@@ -196,5 +200,68 @@ func TestAgyProjectDjinnDirDenials(t *testing.T) {
 	gOutside := fOutside.PermissionGrants.PermissionGrants
 	if !slices.Contains(gOutside.Deny, "read_file("+djinnHome+")") {
 		t.Errorf("outside worktree missing denial for %s; got %+v", djinnHome, gOutside.Deny)
+	}
+}
+
+// TestAgyReadURLStep tests that a recorded read_url step from W371 is parsed by agyParser as a tool call,
+// and not as a refusal or error.
+func TestAgyReadURLStep(t *testing.T) {
+	parser := &agyParser{}
+
+	// Recorded ACTIVE step from W371: agy calls read_url_content.
+	stepActive := `{"event":"step_update","step_update":{"conversation_id":"4326c014-f11e-4630-933f-bd6c2ec8b570","step_index":32,"state":"ACTIVE","step_type":"tool","tool_name":"read_url_content","tool_info":{"name":"read_url_content","parameters":{"Url":"https://www.anthropic.com/pricing"}}}}`
+	events, end := parser.stdout(stepActive)
+	if end != nil {
+		t.Fatalf("unexpected turn end: %+v", end)
+	}
+	if len(events) != 1 || events[0].Kind != planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL {
+		t.Fatalf("expected 1 TOOL_CALL event, got %+v", events)
+	}
+	wantCall := `read_url_content {"Url":"https://www.anthropic.com/pricing"}`
+	if events[0].Text != wantCall {
+		t.Errorf("got call %q, want %q", events[0].Text, wantCall)
+	}
+
+	// Successful DONE step when granted.
+	stepDone := `{"event":"step_update","step_update":{"conversation_id":"4326c014-f11e-4630-933f-bd6c2ec8b570","step_index":32,"state":"DONE","step_type":"tool","tool_name":"read_url_content","tool_info":{"name":"read_url_content","parameters":{"Url":"https://www.anthropic.com/pricing"},"output":"# Anthropic Pricing\nClaude 3.5 Sonnet..."}}}`
+	events, end = parser.stdout(stepDone)
+	if end != nil {
+		t.Fatalf("unexpected turn end: %+v", end)
+	}
+	if len(events) != 1 || events[0].Kind != planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT {
+		t.Fatalf("expected 1 TOOL_RESULT event, got %+v", events)
+	}
+	if events[0].Text != "# Anthropic Pricing\nClaude 3.5 Sonnet..." {
+		t.Errorf("got result text %q", events[0].Text)
+	}
+
+	// Successful result: turn ends without error or failure.
+	resultLine := `{"event":"result","result":{"conversation_id":"4326c014-f11e-4630-933f-bd6c2ec8b570","status":"SUCCESS","response":"ok","num_turns":1}}`
+	events, end = parser.stdout(resultLine)
+	if end == nil || end.failure != "" {
+		t.Fatalf("expected successful turn end, got %+v", end)
+	}
+	for _, ev := range events {
+		if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
+			t.Errorf("unexpected error event: %+v", ev)
+		}
+	}
+
+	// In contrast, when headless agy refused read_url (due to missing grant in W371):
+	refusalParser := &agyParser{}
+	refusalParser.stdout(stepActive)
+	refusalResult := `{"event":"result","result":{"conversation_id":"4326c014-f11e-4630-933f-bd6c2ec8b570","status":"SUCCESS","num_turns":1,"denied_actions":[{"action":"read_url","display_name":"ReadUrlContent"}]}}`
+	events, end = refusalParser.stdout(refusalResult)
+	if end == nil || !strings.Contains(end.failure, `headless, it cannot ask for the "read_url" permission`) {
+		t.Fatalf("expected refusal turn failure, got %+v", end)
+	}
+	hasError := false
+	for _, ev := range events {
+		if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
+			hasError = true
+		}
+	}
+	if !hasError {
+		t.Errorf("expected ERROR event on refusal result")
 	}
 }

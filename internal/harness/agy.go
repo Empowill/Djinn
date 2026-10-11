@@ -145,6 +145,9 @@ type agyGrants struct {
 // agy having no auto mode of its own.
 const agyEveryCommand = "command(*)"
 
+// agyEveryURL grants fetching any URL with read_url in AUTO (Q143).
+const agyEveryURL = "read_url(*)"
+
 // agyAlwaysDenied are denied to an agy worker in AUTO whatever the project denies: pushing is the orchestrator's.
 var agyAlwaysDenied = []string{"git push"}
 
@@ -252,6 +255,7 @@ func djinnDenials(dir string, keepPaths []string) []string {
 // A command(<p>) grant lets a command starting with p run without approval, command(*) any command, in the sandbox
 // still; a deny grant wins over any allow one, the user's settings' and command(*) included, in every part of a
 // compound command (`a && git push`) and after an env prefix, and its command fails without ending the turn.
+// In AUTO, command(*) grants every command and read_url(*) grants fetching any URL without approval (Q143).
 //
 // For reading, agy headless requires explicit read_file grants (W254, W269). Djinn grants read_file on what a
 // worker needs to read: the repository (main checkout and .git), Go's root, module and build caches, npm's cache,
@@ -330,7 +334,7 @@ func agyProject(spec Spec) agyProjectFile {
 
 	denied := slices.Clone(p.GetDeniedCommands())
 	if effectiveMode(p) == djinnv1.Mode_MODE_AUTO {
-		g.Allow = appendUnique(g.Allow, agyEveryCommand)
+		g.Allow = appendUnique(g.Allow, agyEveryCommand, agyEveryURL)
 		for _, c := range agyAlwaysDenied {
 			if !slices.Contains(denied, c) {
 				denied = append(denied, c)
