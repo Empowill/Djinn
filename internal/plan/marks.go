@@ -56,7 +56,11 @@ func (m *Marks) Put(
 						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 							"the recommendation of %s names no option: answer it with djinn question answer", question.GetCode()))
 					}
-					question.Answer = &planv1.Answer{Choice: choice, CreateTime: mark.GetCreateTime()}
+					question.Answer = &planv1.Answer{
+						Choice:     choice,
+						CreateTime: mark.GetCreateTime(),
+						Actor:      planv1.Closer_CLOSER_DEVELOPER,
+					}
 					answered = question
 					if then, err = settled(ctx, m.Settle, tx, question); err != nil {
 						return err

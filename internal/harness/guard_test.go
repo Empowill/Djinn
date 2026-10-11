@@ -181,8 +181,23 @@ func TestStartGivesTheGuard(t *testing.T) {
 	if err != nil || len(guard) == 0 {
 		t.Fatalf("guard of %s: %v, %v", spec.Dir, guard, err)
 	}
+	var hasToken bool
+	var filteredEnv []string
+	for _, env := range spec.Env {
+		if strings.HasPrefix(env, "DJINN_WORKER_TOKEN=") {
+			hasToken = true
+			if len(strings.TrimPrefix(env, "DJINN_WORKER_TOKEN=")) == 0 {
+				t.Errorf("worker's environment has empty DJINN_WORKER_TOKEN")
+			}
+		} else {
+			filteredEnv = append(filteredEnv, env)
+		}
+	}
+	if !hasToken {
+		t.Errorf("worker's environment missing DJINN_WORKER_TOKEN")
+	}
 	want := append([]string{"DJINN_TASK_ID=" + task.GetId(), "DJINN_WISH_ID=" + wishID}, guard...)
-	if !slices.Equal(spec.Env, want) {
-		t.Errorf("worker's environment\n%v\nwant\n%v", spec.Env, want)
+	if !slices.Equal(filteredEnv, want) {
+		t.Errorf("worker's environment\n%v\nwant\n%v", filteredEnv, want)
 	}
 }

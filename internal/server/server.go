@@ -291,6 +291,12 @@ func newServer(ctx context.Context, ln net.Listener, h http.Handler) *http.Serve
 		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			if pid := peerPID(c); pid > 0 {
+				return WithPeerPID(ctx, pid)
+			}
+			return ctx
+		},
 	}
 	if ln.Addr().Network() == "unix" {
 		srv.Protocols = new(http.Protocols)

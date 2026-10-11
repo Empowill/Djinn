@@ -37,7 +37,7 @@ func resolveHome(cfg *Config) error {
 		}
 		cfg.Home = home
 	} else if ui.InTest() && ui.IsRealHome(cfg.Home) {
-		return fmt.Errorf("refusing to use real data directory (%s) under test: set DJINN_HOME to a temporary directory", cfg.Home)
+		return fmt.Errorf("refusing to use real data directory (%s) under test: without an address and a data folder given by the test harness, start a Djinn of your own (a DJINN_HOME of its own, djinn up on its own socket)", cfg.Home)
 	}
 	return nil
 }

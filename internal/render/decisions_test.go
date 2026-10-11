@@ -77,3 +77,41 @@ func TestDecisionTable(t *testing.T) {
 		t.Error("a decision block shows in the notes too")
 	}
 }
+
+// TestDecisionsQuestionActor: questions answered by developer, lead, or worker record their actor.
+func TestDecisionsQuestionActor(t *testing.T) {
+	exp := &planv1.WishExport{
+		Wish: &planv1.Wish{Id: "w", Title: "Wish"},
+		Tasks: []*planv1.Task{
+			{Id: "t1", WishId: "w", Code: "W1", Title: "Worker task"},
+		},
+		Questions: []*planv1.Question{
+			{
+				Id: "q1", Code: "Q01", WishId: "w", Text: "Developer decision",
+				Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_A, Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: ts(-30)},
+			},
+			{
+				Id: "q2", Code: "Q02", WishId: "w", Text: "Lead decision",
+				Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_B, Actor: planv1.Closer_CLOSER_LEAD, CreateTime: ts(-20)},
+			},
+			{
+				Id: "q3", Code: "Q03", WishId: "w", Text: "Worker decision",
+				Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_YES, TaskId: "t1", CreateTime: ts(-10)},
+			},
+		},
+	}
+	ds := Decisions(exp)
+	if len(ds) != 3 {
+		t.Fatalf("got %d decisions, want 3", len(ds))
+	}
+	// Latest first: Q03 (worker), Q02 (lead), Q01 (developer)
+	if !ds[2].Human || ds[2].By != "" || ds[2].Question.GetCode() != "Q01" {
+		t.Errorf("Q01 developer: got human=%v, by=%q", ds[2].Human, ds[2].By)
+	}
+	if ds[1].Human || ds[1].By != ByLead || ds[1].Question.GetCode() != "Q02" {
+		t.Errorf("Q02 lead: got human=%v, by=%q", ds[1].Human, ds[1].By)
+	}
+	if ds[0].Human || ds[0].By != "W1" || ds[0].Question.GetCode() != "Q03" {
+		t.Errorf("Q03 worker: got human=%v, by=%q", ds[0].Human, ds[0].By)
+	}
+}

@@ -88,7 +88,14 @@ changes only when you click "update". Three separations make it so:
    with a version. Workers rebuild `bin/djinn`, never your copy.
 2. **A development build has its own data.** `bin/djinn` (version `dev`) uses a `djinn-dev`
    folder, so it never finds your Djinn, its socket or its window. Every test uses a temporary
-   folder.
+   folder. Test builds (`bin/djinn-e2e`, `bin/djinn-e2e-native`, test binaries) refuse to run or dial
+   without an explicit address and temporary data folder given by the test harness: without them,
+   they refuse loudly with instructions to start a Djinn of their own (`DJINN_HOME` of its own, `djinn up`
+   on its own socket). (W341 concluded that stray wishes were made by "a person with the window open"
+   because no test reached the real Djinn. In fact, W328 ran `./bin/djinn-e2e` by hand outside tests
+   and cleared `DJINN_TASK_ID`, which dialed the real Djinn. Test builds now refuse without harness
+   settings, workers are identified by kernel peer PID and secret token even if they clear their task ID,
+   and mutating wish commands refuse workers unless their own task's wish is concerned.)
 3. **Tests touch only what they started.** Stop a process by its PID, never by name. No native
    window unless asked (`check-window` opens one, on demand).
 

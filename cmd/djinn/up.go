@@ -347,6 +347,12 @@ func runUp(args []string) (restart bool, err error) {
 		svc[server.ProfilePath] = server.Profiles()
 	}
 	h := server.Handler(djinn.UI(), djinn.Docs(), svc)
+	h = server.WorkerContext(h, func(ctx context.Context, peerPID int, token string) context.Context {
+		if caller := workers.Caller(peerPID, token); caller != nil {
+			return plan.WithCaller(ctx, caller)
+		}
+		return ctx
+	})
 
 	var ln net.Listener
 	var addr string
@@ -478,6 +484,7 @@ func answer(ctx context.Context, addr, questionID string, choice planv1.Choice) 
 	}
 	_, err = planv1connect.NewQuestionServiceClient(client, base).Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
 		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: questionID}}, Choice: choice,
+		By: planv1.Closer_CLOSER_DEVELOPER,
 	}))
 	return err
 }
