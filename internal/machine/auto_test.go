@@ -49,7 +49,6 @@ func TestAutoControllerHysteresisAndProgression(t *testing.T) {
 
 	// 2. Slow climb at rest: 1 notch per minute
 	steps := []djinnv1.LoadNotch{
-		djinnv1.LoadNotch_LOAD_NOTCH_LIGHT,
 		djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
 		djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
 		djinnv1.LoadNotch_LOAD_NOTCH_MAX,
@@ -110,7 +109,6 @@ func TestAutoControllerHysteresisAndProgression(t *testing.T) {
 
 	// 6. Verify onChange callbacks were called for all transitions
 	expectedChanged := []djinnv1.LoadNotch{
-		djinnv1.LoadNotch_LOAD_NOTCH_LIGHT,
 		djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
 		djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
 		djinnv1.LoadNotch_LOAD_NOTCH_MAX,
@@ -123,6 +121,45 @@ func TestAutoControllerHysteresisAndProgression(t *testing.T) {
 		if changedNotches[i] != want {
 			t.Errorf("onChange[%d]: got %v, want %v", i, changedNotches[i], want)
 		}
+	}
+}
+
+// TestAutoNeverAboveChosenNotch verifies that Auto mode never climbs above the notch
+// the developer chose.
+func TestAutoNeverAboveChosenNotch(t *testing.T) {
+	for _, chosen := range ManualNotches {
+		t.Run(NotchName(chosen), func(t *testing.T) {
+			fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+			clock := func() time.Time { return fakeNow }
+			signal := func() bool { return false } // machine always at rest
+
+			// Developer chose a notch, then activated AUTO
+			ctrl := NewAutoController(
+				chosen,
+				WithAutoClock(clock),
+				WithAutoSignal(signal),
+				WithAutoStepDuration(1*time.Minute),
+			)
+			ctrl.SetNotch(djinnv1.LoadNotch_LOAD_NOTCH_AUTO)
+
+			// Start at Minimal
+			ctrl.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
+			ctrl.lastChange = fakeNow
+
+			// Tick repeatedly (up to 10 times)
+			for i := 0; i < 10; i++ {
+				fakeNow = fakeNow.Add(1 * time.Minute)
+				ctrl.Tick()
+				if NotchIndex(ctrl.Effective()) > NotchIndex(chosen) {
+					t.Fatalf("Auto climbed to %v, which is above chosen notch %v", ctrl.Effective(), chosen)
+				}
+			}
+
+			// When at rest, it must eventually have reached the chosen notch
+			if ctrl.Effective() != chosen {
+				t.Fatalf("Auto did not reach chosen notch: got %v, want %v", ctrl.Effective(), chosen)
+			}
+		})
 	}
 }
 

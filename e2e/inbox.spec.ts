@@ -79,73 +79,91 @@ test("a source runs once plugged in; its assigned merge request becomes a card t
   ).skills;
   expect(skills[0].inbox_source).toBe("sh fake-source.sh");
 
-  // Declared, the source is not plugged in: it never runs, and the empty inbox lists it with "Plug in".
-  const sources = JSON.parse(djinn("inbox", "sources", "--json")).sources;
-  expect(sources).toContainEqual(
-    expect.objectContaining({
-      name: "bell/babysit-fake-mr",
-      watch: "sh fake-source.sh",
-    }),
-  );
-  expect(
-    sources.find((s: { name: string }) => s.name === "bell/babysit-fake-mr")
-      .plugged,
-  ).toBeFalsy();
-  await page.goto(process.env.DJINN_URL!);
-  const row = page
-    .locator(".inbox-empty .inbox-source-row")
-    .filter({ hasText: "bell/babysit-fake-mr" });
-  await expect(row).toContainText("Unplugged: runs nothing");
-  expect(fs.existsSync(runs)).toBe(false);
-  expect(JSON.parse(djinn("inbox", "list", "--json")).items ?? []).toHaveLength(
-    0,
-  );
-  const wishes = JSON.parse(djinn("wish", "list", "--json")).wishes.length;
+  let madeId: string | undefined;
+  let taskId: string | undefined;
+  try {
+    // Declared, the source is not plugged in: it never runs, and the empty inbox lists it with "Plug in".
+    const sources = JSON.parse(djinn("inbox", "sources", "--json")).sources;
+    expect(sources).toContainEqual(
+      expect.objectContaining({
+        name: "bell/babysit-fake-mr",
+        watch: "sh fake-source.sh",
+      }),
+    );
+    expect(
+      sources.find((s: { name: string }) => s.name === "bell/babysit-fake-mr")
+        .plugged,
+    ).toBeFalsy();
+    await page.goto(process.env.DJINN_URL!);
+    const row = page
+      .locator(".inbox-empty .inbox-source-row")
+      .filter({ hasText: "bell/babysit-fake-mr" });
+    await expect(row).toContainText("Unplugged: runs nothing");
+    expect(fs.existsSync(runs)).toBe(false);
+    expect(
+      JSON.parse(djinn("inbox", "list", "--json")).items ?? [],
+    ).toHaveLength(0);
+    const wishes = JSON.parse(djinn("wish", "list", "--json")).wishes.length;
 
-  // Plugged in, it runs: its item waits, and nothing is made.
-  await row.getByRole("button", { name: "Plug in" }).click();
-  const card = page
-    .locator(".inbox-card")
-    .filter({ hasText: "Babysit !12 · Fix the wick" });
-  await expect(card).toContainText("From babysit-fake-mr");
-  await expect(card.locator(".option").first()).toContainText(
-    "New wish “Babysit !12”, in bell, from the skill babysit-fake-mr",
-  );
-  expect(JSON.parse(djinn("wish", "list", "--json")).wishes).toHaveLength(
-    wishes,
-  );
-  await card.getByRole("button", { name: "Rub the lamp" }).click();
+    // Plugged in, it runs: its item waits, and nothing is made.
+    await row.getByRole("button", { name: "Plug in" }).click();
+    const card = page
+      .locator(".inbox-card")
+      .filter({ hasText: "Babysit !12 · Fix the wick" });
+    await expect(card).toContainText("From babysit-fake-mr");
+    await expect(card.locator(".option").first()).toContainText(
+      "New wish “Babysit !12”, in bell, from the skill babysit-fake-mr",
+    );
+    expect(JSON.parse(djinn("wish", "list", "--json")).wishes).toHaveLength(
+      wishes,
+    );
+    await card.getByRole("button", { name: "Rub the lamp" }).click();
 
-  // The wish, its template recorded, its watcher started in the project; the item routed, its card gone.
-  await expect(page.locator(".hero h1")).toHaveText("Babysit !12");
-  const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
-    (w: { title: string }) => w.title === "Babysit !12",
-  );
-  expect(made.template).toMatchObject({
-    skill: "babysit-fake-mr",
-    watch: "sh fake-watch.sh 12",
-  });
-  const tasks = JSON.parse(
-    djinn("task", "list", "--wish-id", made.id, "--json"),
-  ).tasks;
-  expect(tasks).toHaveLength(1);
-  expect(tasks[0].provider).toBe("PROVIDER_WATCH");
-  const items = JSON.parse(djinn("inbox", "list", "--all", "--json")).items;
-  expect(items[0]).toMatchObject({
-    state: "INBOX_STATE_ROUTED",
-    wish_id: made.id,
-  });
-  expect(JSON.parse(djinn("inbox", "list", "--json")).items ?? []).toHaveLength(
-    0,
-  );
+    // The wish, its template recorded, its watcher started in the project; the item routed, its card gone.
+    await expect(page.locator(".hero h1")).toHaveText("Babysit !12");
+    const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
+      (w: { title: string }) => w.title === "Babysit !12",
+    );
+    madeId = made.id;
+    expect(made.template).toMatchObject({
+      skill: "babysit-fake-mr",
+      watch: "sh fake-watch.sh 12",
+    });
+    const tasks = JSON.parse(
+      djinn("task", "list", "--wish-id", made.id, "--json"),
+    ).tasks;
+    expect(tasks).toHaveLength(1);
+    taskId = tasks[0].id;
+    expect(tasks[0].provider).toBe("PROVIDER_WATCH");
+    const items = JSON.parse(djinn("inbox", "list", "--all", "--json")).items;
+    expect(items[0]).toMatchObject({
+      state: "INBOX_STATE_ROUTED",
+      wish_id: made.id,
+    });
+    expect(
+      JSON.parse(djinn("inbox", "list", "--json")).items ?? [],
+    ).toHaveLength(0);
 
-  djinn("inbox", "unplug", "bell/babysit-fake-mr");
-  expect(
-    JSON.parse(djinn("inbox", "sources", "--json")).sources.find(
-      (s: { name: string }) => s.name === "bell/babysit-fake-mr",
-    ).plugged,
-  ).toBeFalsy();
-  djinn("task", "stop", tasks[0].id);
-  djinn("wish", "pause", made.id);
-  djinn("wish", "pause", here);
+    djinn("inbox", "unplug", "bell/babysit-fake-mr");
+    expect(
+      JSON.parse(djinn("inbox", "sources", "--json")).sources.find(
+        (s: { name: string }) => s.name === "bell/babysit-fake-mr",
+      ).plugged,
+    ).toBeFalsy();
+  } finally {
+    try {
+      djinn("inbox", "unplug", "bell/babysit-fake-mr");
+    } catch {}
+    if (taskId) {
+      try {
+        djinn("task", "stop", taskId);
+      } catch {}
+    }
+    if (madeId) {
+      try {
+        djinn("wish", "pause", madeId);
+      } catch {}
+    }
+    djinn("wish", "pause", here);
+  }
 });

@@ -421,6 +421,7 @@ html[data-theme="light"] .wordmark-period {
   display: flex;
   align-items: center;
   gap: 17px;
+  flex-shrink: 0;
 }
 
 .button {

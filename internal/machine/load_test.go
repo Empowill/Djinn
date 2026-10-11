@@ -24,18 +24,32 @@ func TestReadWriteNotch(t *testing.T) {
 		t.Errorf("ReadNotch on missing file: got %v, want MEDIUM", got)
 	}
 
-	// Write an existing setting (e.g. shortcut) and ensure WriteNotch preserves it.
+	// Write an old saved "light" setting and ensure ReadNotch maps it to MEDIUM.
 	settingsPath := filepath.Join(home, settingsFile)
+	if err := os.WriteFile(settingsPath, []byte(`{"shortcut":"Ctrl+J","load":"LOAD_NOTCH_LIGHT"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadNotch(home); got != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("ReadNotch with saved light: got %v, want MEDIUM", got)
+	}
+
+	// Also test numeric value 2 for old saved light.
+	if err := os.WriteFile(settingsPath, []byte(`{"load":2}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadNotch(home); got != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("ReadNotch with saved numeric 2 (light): got %v, want MEDIUM", got)
+	}
+
+	// Overwrite with OVERCLOCK and verify shortcut preservation.
 	if err := os.WriteFile(settingsPath, []byte(`{"shortcut":"Ctrl+J"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-
-	if err := WriteNotch(home, djinnv1.LoadNotch_LOAD_NOTCH_LIGHT); err != nil {
-		t.Fatalf("WriteNotch: %v", err)
+	if err := WriteNotch(home, djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK); err != nil {
+		t.Fatalf("WriteNotch OVERCLOCK: %v", err)
 	}
-
-	if got := ReadNotch(home); got != djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
-		t.Errorf("ReadNotch after write: got %v, want LIGHT", got)
+	if got := ReadNotch(home); got != djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK {
+		t.Errorf("ReadNotch after OVERCLOCK write: got %v, want OVERCLOCK", got)
 	}
 
 	// Verify shortcut was preserved in settings.json.
@@ -365,18 +379,18 @@ func TestLoadServiceAuto(t *testing.T) {
 		t.Errorf("Get after Set AUTO: auto=%v, notch=%v", getRes.Msg.GetAuto(), getRes.Msg.GetNotch())
 	}
 
-	// 2. Machine at rest: Tick advances notch to LIGHT after 1 minute
+	// 2. Machine at rest: Tick advances notch to MEDIUM after 1 minute
 	working = false
 	fakeNow = fakeNow.Add(1 * time.Minute)
 	changed, notch := ac.Tick()
-	if !changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
-		t.Fatalf("Tick after 1m rest: changed=%v, notch=%v, want LIGHT", changed, notch)
+	if !changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Fatalf("Tick after 1m rest: changed=%v, notch=%v, want MEDIUM", changed, notch)
 	}
-	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
-		t.Errorf("Policy notch after tick: got %v, want LIGHT", latestPolicy.Notch)
+	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("Policy notch after tick: got %v, want MEDIUM", latestPolicy.Notch)
 	}
-	if latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
-		t.Errorf("Broadcast notch after tick: got %v, want LIGHT", latestBroadcast)
+	if latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("Broadcast notch after tick: got %v, want MEDIUM", latestBroadcast)
 	}
 
 	// 3. Manual notch selection exits AUTO mode

@@ -39,7 +39,7 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
       "--provider",
       "fake",
       "--prompt",
-      "text working\nsleep 6s\ntext after\nsleep 8s",
+      "text working\nwait\ntext after\nsleep 4s",
     );
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
