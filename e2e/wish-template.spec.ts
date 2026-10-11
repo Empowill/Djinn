@@ -91,7 +91,7 @@ test("a request that matches a skill's template makes its wish, whose watcher of
     .click();
 
   // The new wish, its template recorded, its watcher started at once in the project.
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
   const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
     (w: { title: string }) => w.title === title,
   );

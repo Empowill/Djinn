@@ -17,6 +17,10 @@ export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { WishSidebar } from "@/src/wish-sidebar.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export { WishView } from "@/src/wish-view.tsx";
+export {
+  WishWorkspace,
+  WorkspaceSectionCard,
+} from "@/src/wish-workspace.tsx";
 export { WishTask } from "@/src/wish-task.tsx";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { InstructionList } from "@/src/instruction-list.tsx";
@@ -54,6 +58,12 @@ export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
+
+function hasClassToken(html, token) {
+  return [...html.matchAll(/class="([^"]*)"/g)].some(([, value]) =>
+    value.split(/\s+/).includes(token),
+  );
+}
 
 // live renders a component whose state lives between renders, so that a test types and clicks with no DOM: it calls
 // the component with a dispatcher that keeps its useState, as React does, and walks the elements it returns. The
@@ -123,6 +133,47 @@ const wish = (id, title, state, rank, extra = {}) => ({
   pushes: [],
   mains: [],
   ...extra,
+});
+
+test("the wish workspace starts with one summary and concise section cards", () => {
+  const html = s.renderToStaticMarkup(
+    h(s.WishWorkspace, {
+      wishId: "wish-workspace-1",
+      global: h("button", { type: "button" }, "Answer the question"),
+      panels: [
+        {
+          id: "summary",
+          title: "Wish at a glance",
+          pinned: true,
+          children: h("h1", null, "Ship the lamp"),
+        },
+        {
+          id: "tasks",
+          title: "Tasks",
+          count: 2,
+          preview: "2 tasks",
+          children: h("p", null, "Trim the wick"),
+        },
+        {
+          id: "journal",
+          title: "Journal",
+          count: 1,
+          children: h("p", null, "Kick-off"),
+        },
+      ],
+    }),
+  );
+  assert.match(
+    html,
+    /class="workspace-global"><button[^>]*>Answer the question/,
+  );
+  assert.match(html, /class="wish-workspace"/);
+  assert.equal((html.match(/data-wish-panel=/g) ?? []).length, 1);
+  assert.match(html, /data-wish-section="tasks"/);
+  assert.match(html, /data-wish-section="journal"/);
+  assert.match(html, /aria-label="Open Tasks"/);
+  assert.match(html, /aria-label="Open Journal"/);
+  assert.doesNotMatch(html, /Trim the wick|Kick-off/);
 });
 
 test("the side panel ranks the active wishes, counts the three places, and folds the granted ones", () => {
@@ -670,32 +721,36 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: ready, onToast() {} })),
   );
   assert.match(html, /My wish is granted/);
+  // The default view keeps the actionable grant and investigation global, while detail stays behind concise cards.
+  assert.match(html, /data-wish-panel="summary"/);
+  assert.match(html, /data-wish-section="tasks"/);
+  assert.match(html, /aria-label="Open Tasks"/);
+  assert.match(html, /<strong>Tasks<\/strong><span class="count">2<\/span>/);
+  assert.match(html, /data-wish-section="decisions"/);
+  assert.match(
+    html,
+    /<strong>Decisions<\/strong><span class="count">2<\/span>/,
+  );
+  assert.match(html, /data-wish-section="agents"/);
+  assert.match(
+    html,
+    /<strong>For agents<\/strong><span class="count">1<\/span>/,
+  );
+  assert.match(html, /data-wish-section="journal"/);
+  assert.match(html, /<strong>Journal<\/strong><span class="count">1<\/span>/);
+  assert.match(html, /data-wish-section="instructions"/);
+  assert.match(
+    html,
+    /<strong>Indications<\/strong><span class="count">1<\/span>/,
+  );
+  // The latest instruction is a useful summary-card preview, while the instruction list itself stays lazy.
   assert.match(html, /Durable request below notes/);
-  // The tasks have a tab of their own, with their count: the wish's tab does not show them.
-  assert.match(
-    html,
-    /role="tab" id="view-tab-main" aria-selected="true" class="active">Wish<\/button>/,
-  );
-  assert.match(
-    html,
-    /role="tab" id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">2<\/span>/,
-  );
-  assert.doesNotMatch(html, /Trim the wick|Light the wick/);
-  // No notes: the blocks for agents have the last tab, discreet, with their count: neither the decision nor the log.
-  assert.doesNotMatch(
-    html,
-    /Lexicon|wick<\/strong> carries|id="block-b1"|>Notes</,
-  );
-  assert.match(
-    html,
-    /id="view-tab-tilasms".*role="tab" id="view-tab-agents" aria-selected="false" class="discreet">For agents<span class="count">1<\/span><\/button><\/div>/,
-  );
-  // The answered question and the decision block are in the Decisions tab, apart, with no mark.
-  assert.match(
-    html,
-    /role="tab" id="view-tab-decisions" aria-selected="false" class="">Decisions<span class="count">2<\/span>/,
-  );
-  assert.doesNotMatch(html, /Light it tonight\?/);
+  assert.doesNotMatch(html, /class="instruction-list"/);
+  // Detail bodies are lazy: their task, decision and instruction lists are not mounted until their cards open.
+  assert.equal(hasClassToken(html, "wish-task"), false);
+  assert.equal(hasClassToken(html, "decision-log"), false);
+  assert.equal(hasClassToken(html, "agent-block"), false);
+  assert.equal(hasClassToken(html, "wish-block-body"), false);
   // Nothing waits for an answer: no yes/no card waiting.
   assert.doesNotMatch(html, /placeholder="Your answer"/);
   // The bar at the top lists what waits for you: here, the grant, which it links to.
@@ -715,9 +770,9 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   // Folded to one line, what you asked with it.
   assert.match(html, /question-card investigating {2}folded/);
   assert.match(html, /You asked: Burn time\?/);
-  // No mark on what the wish shows, nor on the folded question; the journal is folded.
+  // No mark on what the wish shows, nor on the folded question; the journal is lazy behind its card.
   assert.doesNotMatch(html, /Approve as it is|Mark read/);
-  assert.match(html, /class="fold-heading" aria-expanded="false"/);
+  assert.match(html, /data-wish-section="journal"/);
 });
 
 test("the For agents tab folds each block under its title and kind, with no mark", () => {
@@ -1797,7 +1852,7 @@ test("the Tilasms tab lists each tilasm with its code, title, author, date and w
   );
 });
 
-test("a wish's view has a Tilasms tab beside Tasks and Decisions, with its count", async () => {
+test("a wish's workspace has a Tilasms section card beside Tasks, with its count", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
   const transport = s.createRouterTransport(({ service }) => {
@@ -1819,10 +1874,10 @@ test("a wish's view has a Tilasms tab beside Tasks and Decisions, with its count
   const html = s.renderToStaticMarkup(
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
   );
-  assert.match(
-    html,
-    /id="view-tab-decisions".*id="view-tab-tilasms" aria-selected="false" class="">Tilasms<span class="count">1<\/span>/,
-  );
+  assert.match(html, /data-wish-section="tasks"/);
+  assert.match(html, /data-wish-section="tilasms"/);
+  assert.match(html, /aria-label="Open Tilasms"/);
+  assert.doesNotMatch(html, /data-wish-panel="tilasms"/);
 });
 
 test("a folder dropped on the Tilasms tab is read with its files by their paths in it, hidden files left out", async () => {
@@ -1969,9 +2024,11 @@ test("a djinn:// link in Markdown stays a link that opens what it names in place
       }),
     ),
   );
-  assert.match(view, /id="view-tab-tilasms" aria-selected="true"/);
-  assert.match(view, new RegExp(`<iframe[^>]*src="/tilasm/${id}/"`));
-  assert.match(view, /<section class="tilasm-view" aria-label="Model">/);
+  // Server markup stays on the sparse summary; the initial panel effect opens the Tilasms panel in the browser.
+  assert.match(view, /data-wish-panel="summary"/);
+  assert.match(view, /data-wish-section="tilasms"/);
+  assert.match(view, /aria-label="Open Tilasms"/);
+  assert.doesNotMatch(view, /data-wish-panel="tilasms"/);
 });
 
 test("the Tasks tab says where each task's work stands on its way into the wish's branch", () => {

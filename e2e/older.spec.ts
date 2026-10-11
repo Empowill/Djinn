@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 portable();
 
@@ -94,15 +95,16 @@ for (const engine of ["native", "script"] as const)
     const chooser = page.waitForEvent("filechooser");
     await importButton.click();
     await (await chooser).setFiles(file);
-    await expect(page.locator(".hero h1")).toHaveText(title);
-    const scroller = page.locator(".mission-scroll");
-    await expect(scroller).toHaveCSS(
+    await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
+    const missionScroller = page.locator(".mission-scroll");
+    await expect(missionScroller).toHaveCSS(
       "overflow-anchor",
       engine === "script" ? "none" : "auto",
     );
 
     // The journal: the 30 latest entries, then the line for the 10 others.
-    await page.getByRole("button", { name: /^Journal/ }).click();
+    const journal = await openWorkspaceSection(page, "journal");
+    const journalScroller = journal.locator(".workspace-panel-content");
     const entries = page.locator(".journal-list tr");
     await expect(entries).toHaveCount(30);
     await expect(entries.first()).toContainText("Entry number 40");
@@ -111,6 +113,9 @@ for (const engine of ["native", "script"] as const)
       name: "Show the 10 older entries",
     });
     await moreEntries.evaluate((el) => el.scrollIntoView({ block: "end" }));
+    expect(
+      await journalScroller.evaluate((el) => el.scrollTop),
+    ).toBeGreaterThan(0);
     await steady(page, entries.last(), async () => {
       await moreEntries.click();
       await expect(entries).toHaveCount(40);
@@ -119,8 +124,12 @@ for (const engine of ["native", "script"] as const)
     await expect(moreEntries).toHaveCount(0);
 
     // The decisions: the 30 latest, then a batch at a time; the line goes once all show.
-    await page.getByRole("tab", { name: /^Decisions/ }).click();
-    const log = page.getByRole("tabpanel", { name: "Decisions" });
+    const log = await openWorkspaceSection(page, "decisions");
+    const scroller = log.locator(".workspace-panel-content");
+    await expect(scroller).toHaveCSS(
+      "overflow-anchor",
+      engine === "script" ? "none" : "auto",
+    );
     const rows = log.locator(".decision-row");
     await expect(rows).toHaveCount(30);
     await expect(log.locator("h2 .count")).toHaveText("45");

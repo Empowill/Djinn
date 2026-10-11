@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -257,7 +258,7 @@ async function shoot(page: Page, name: string) {
     await page.evaluate((v) => localStorage.setItem("djinn.theme", v), theme);
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-    await expect(page.locator(".hero h1")).toHaveText(offline.wish.title);
+    await expect(wishHeading(page)).toHaveText(offline.wish.title);
     for (const card of await page.locator(".question-card").all())
       await expect(card).toHaveCSS("opacity", "1");
     // The question with options first: it shows the lamp's two buttons under its choices.
@@ -265,10 +266,10 @@ async function shoot(page: Page, name: string) {
       "which version wins?",
     );
     if (name === "tasks") {
-      // The Tasks tab: what moves or waits, then what is finished, and what it all cost.
-      await page.locator("#view-tab-tasks").click();
+      // The Tasks panel: what moves or waits, then what is finished, and what it all cost.
+      const tasks = await openWorkspaceSection(page, "tasks");
       await expect(
-        page.locator(".tasks-moving .wish-task").first(),
+        tasks.locator(".tasks-moving .wish-task").first(),
       ).toBeVisible();
     }
     await page.screenshot({

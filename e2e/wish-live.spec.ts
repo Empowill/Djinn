@@ -5,6 +5,7 @@ import { type Page, expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -46,7 +47,7 @@ test("a wish made by the command line shows live, and its question is answered f
   const item = page.locator(".wish-nav").filter({ hasText: title });
   await expect(item).toBeVisible();
   await item.click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
 
   // A question asked by the command line comes in, open, with its options.
   djinn(
@@ -91,10 +92,8 @@ test("a wish made by the command line shows live, and its question is answered f
   await card.screenshot({ path: path.join(shots, "question-card-light.png") });
   await card.getByRole("button", { name: "Rub the lamp" }).click();
   await expect(page.locator(".decisions-section")).toHaveCount(0);
-  // It is a decision now, in its own tab.
-  await expect(page.getByRole("tab", { name: /^Decisions/ })).toHaveText(
-    "Decisions1",
-  );
+  // It is a decision now, in its own lazy panel.
+  await expect(await openWorkspaceSection(page, "decisions")).toHaveCount(1);
 
   // The command line reads it answered.
   const [question] = JSON.parse(

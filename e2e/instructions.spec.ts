@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -177,7 +178,7 @@ test("a card saves offline without navigation; drafts survive folding and openin
     });
     await open.focus();
     await open.press("Enter");
-    await expect(page.locator(".hero h1")).toHaveText(sample.title);
+    await expect(wishHeading(page)).toHaveText(sample.title);
     await page
       .getByRole("button", { name: "Add an indication", exact: true })
       .click();
@@ -188,7 +189,7 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await expect(
       page.getByRole("dialog", { name: "Indication for the lead" }),
     ).toHaveCount(0);
-    const history = page.getByRole("region", { name: "Indications" });
+    const history = await openWorkspaceSection(page, "instructions");
     await expect(history).toContainText("Offline indication\nFull detail");
     await expect(history.getByText("Pending", { exact: true })).toHaveCount(2);
     await expect(
@@ -210,7 +211,7 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await page.evaluate(() => localStorage.setItem("djinn.language", "fr"));
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
-    const french = page.getByRole("region", { name: "Indications" });
+    const french = await openWorkspaceSection(page, "instructions");
     await expect(
       french.getByText(fr["instruction.pending"], { exact: true }),
     ).toHaveCount(2);
@@ -228,12 +229,12 @@ test("a card saves offline without navigation; drafts survive folding and openin
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
     // Processing remains processing after the simulated worker's successful result; only completion changes it.
     djinn("instruction", "complete", "I03", "--wish-id", sample.wishId);
-    await expect(history.getByText("Done", { exact: true })).toHaveCount(2);
+    const completed = await openWorkspaceSection(page, "instructions");
+    await expect(completed.getByText("Done", { exact: true })).toHaveCount(2);
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: sample.title }).click();
-    await expect(
-      page.getByRole("region", { name: "Indications" }),
-    ).toContainText("Offline indication");
+    const finalHistory = await openWorkspaceSection(page, "instructions");
+    await expect(finalHistory).toContainText("Offline indication");
   } finally {
     sample.cleanup();
   }

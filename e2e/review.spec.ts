@@ -9,6 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
 
 portable();
 
@@ -146,7 +147,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await theme(page, "");
 
   await page.locator(".wish-nav").filter({ hasText: title }).click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(wishHeading(page)).toHaveText(title);
   const card = page
     .locator(".question-card")
     .filter({ hasText: "Which oil for the wick?" });
@@ -160,14 +161,13 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   );
   await shoot(page, "review-wish-dark");
   await theme(page, "light");
-  await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await openWorkspaceSection(page, "tasks");
   await page
     .locator(".wish-task")
     .filter({ hasText: "Polish the brass" })
     .locator(".wish-task-heading")
     .click();
   await shoot(page, "review-wish-light");
-  await page.getByRole("tab", { name: /^Wish/ }).click();
   await theme(page, "");
 
   // Enlighten me: one click sends what the answer's note says to the lead, no second field; the question waits for
@@ -246,9 +246,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
 
   // A block is for agents: not on the wish's tab, but in the last one, folded, with no mark; opened, its Markdown.
   await expect(page.locator(".wish-block")).toHaveCount(0);
-  const agents = page.getByRole("tab", { name: /^For agents/ });
-  await expect(agents).toHaveText("For agents1");
-  await agents.click();
+  await openWorkspaceSection(page, "agents");
   const block = page
     .locator(".wish-block")
     .filter({ hasText: "Ship on Friday" });

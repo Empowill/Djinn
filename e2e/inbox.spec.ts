@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { mergeVisual } from "./merge-visuals";
+import { wishHeading } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -123,7 +124,7 @@ test("a source runs once plugged in; its assigned merge request becomes a card t
   await card.getByRole("button", { name: "Rub the lamp" }).click();
 
   // The wish, its template recorded, its watcher started in the project; the item routed, its card gone.
-  await expect(page.locator(".hero h1")).toHaveText("Babysit !12");
+  await expect(wishHeading(page)).toHaveText("Babysit !12");
   const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
     (w: { title: string }) => w.title === "Babysit !12",
   );

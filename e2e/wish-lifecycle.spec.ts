@@ -33,7 +33,7 @@ test("a wish is paused, resumed, sent first and deleted from the window", async 
     .wish.id as string;
   const item = page.locator(".wish-nav").filter({ hasText: title });
   await item.click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
   const lifecycle = page.locator(".review-facts");
   const top = page.locator(".topbar-actions");
   const badge = page.locator(".review-pills .status-badge").first();

@@ -40,7 +40,7 @@ async function open(page: import("@playwright/test").Page, title: string) {
     .wish.id as string;
   await page.goto(process.env.DJINN_URL!);
   await page.locator(".wish-nav").filter({ hasText: title }).click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
   return wishId;
 }
 

@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -75,7 +76,7 @@ test("a worker paused from its card holds, then goes on once resumed", async ({
       .toBe("TASK_STATUS_RUNNING");
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await page.getByRole("tab", { name: /^Tasks/ }).click();
+    await openWorkspaceSection(page, "tasks");
     const card = page.locator(`#task-${taskId}`);
     const badge = card.locator(".wish-task-heading .status-badge");
     await expect(badge).toHaveText("Running");

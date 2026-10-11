@@ -1,8 +1,8 @@
 // The screen of one wish, read from the services: what waits for you first (its open questions, the blocking ones
 // first, its workers that wait, and "My wish is granted" once Djinn proposes it), its journal and the rights its
-// workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
-// (decision-log.tsx), its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the last
-// (agent-blocks.tsx): what is for you is a question.
+// workers have. Its tasks have a workspace panel of their own (task-tabs.tsx), with what they spent, its decisions
+// another (decision-log.tsx), its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the
+// last (agent-blocks.tsx): what is for you is a question.
 // Djinn proposes; only the user grants.
 import {
   Bot,
@@ -31,6 +31,7 @@ import {
   type Provider,
   type Task,
   TaskStatus,
+  InstructionStatus,
   type Wish,
   type WishExport,
   WishState,
@@ -89,13 +90,13 @@ import { useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
 import { CountPill, StatusBadge } from "./status";
 import { AzimaCard, azimaFinished } from "./azima";
-import { TaskSections, type View, ViewTabs } from "./task-tabs";
+import { TaskSections, type View } from "./task-tabs";
 import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
-import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
 import { ChangeProvider } from "./wish-dialogs";
 import { WishTask } from "./wish-task";
+import { WishWorkspace, type WishWorkspacePanel } from "./wish-workspace";
 import { PageHeader, PageHeaderAction } from "./page-header";
 import {
   LastPushes,
@@ -106,7 +107,7 @@ import {
 } from "./wish-head";
 import { providerName } from "./provider";
 
-// Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
+// Opening is a tilasm to show in a wish's Tilasms workspace panel, as a djinn:// link asks: a new object at each request.
 export interface Opening {
   wishId: string;
   tilasmId: string;
@@ -118,7 +119,7 @@ export function WishView({
   onToast,
 }: {
   wish: Wish;
-  // A tilasm of the wish to show now, in its Tilasms tab.
+  // A tilasm of the wish to show now, in its Tilasms workspace panel.
   opening?: Opening;
   onToast: (text: string) => void;
 }) {
@@ -141,6 +142,10 @@ export function WishView({
     () => decisions.map((item) => ({ item })),
     [decisions],
   );
+  const journalEntries = useMemo(
+    () => journal(undefined, detail.blocks),
+    [detail.blocks],
+  );
   const { running, watching } = runningOf(detail.tasks);
   const done = detail.tasks.filter(
     (task) => task.status === TaskStatus.DONE && !isAzima(task),
@@ -151,25 +156,79 @@ export function WishView({
   const granted = wish.state === WishState.GRANTED;
   const [changing, setChanging] = useState(false);
   const [view, setView] = useState<View>(opening ? "tilasms" : "main");
+  const [workspaceRequest, setWorkspaceRequest] = useState(0);
   const [deleting, setDeleting] = useState(false);
-  // What a link between a decision and a task brings into sight in the other tab: its id.
+  // What a link between a decision and a task brings into sight in the other workspace panel: its id.
   const [focus, setFocus] = useState("");
-  const show = (to: View, id = "") => (setView(to), setFocus(id));
-  // The tilasm a link opened: the Tilasms tab shows it, again at each new request.
+  const show = (to: View, id = "") => {
+    setView(to);
+    setFocus(id);
+    setWorkspaceRequest((request) => request + 1);
+  };
+  // The tilasm a link opened: the Tilasms workspace panel shows it, again at each new request.
   const [opened, setOpened] = useState(opening);
   useEffect(() => {
     if (!opening) return;
     setView("tilasms");
     setOpened(opening);
+    setWorkspaceRequest((request) => request + 1);
   }, [opening]);
   useEffect(() => {
     if (view !== "tasks" || !focus) return;
-    document
-      .querySelector<HTMLButtonElement>(`#task-${focus} .wish-task-heading`)
-      ?.focus({ preventScroll: true });
-  }, [view, focus]);
+    const timer = setTimeout(() => {
+      document
+        .querySelector<HTMLButtonElement>(`#task-${focus} .wish-task-heading`)
+        ?.focus({ preventScroll: true });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [view, focus, workspaceRequest]);
   const moving = movingTasks(detail.tasks);
   const finished = finishedTasks(detail.tasks);
+  const latestTask = moving[0] ?? finished[0];
+  const latestDecision = decisions[0];
+  const latestTilasm = detail.tilasms.at(-1);
+  const latestAgent = forAgents.at(-1);
+  const latestInstruction =
+    detail.instructions.find(
+      (instruction) => instruction.status !== InstructionStatus.DONE,
+    ) ?? detail.instructions.at(-1);
+  const latestJournal = journalEntries[0];
+  const previewText = (text: string | undefined, fallback: string) => {
+    const value = text?.replace(/\s+/g, " ").trim();
+    return value ? <span title={value}>{value}</span> : fallback;
+  };
+  const taskPreview = latestTask
+    ? previewText(
+        [latestTask.code, latestTask.title, taskStatusText(latestTask)]
+          .filter(Boolean)
+          .join(" · "),
+        t("workspace.tasks", { count: work }),
+      )
+    : work > 0
+      ? t("pill.done_detail", { done, count: work })
+      : t("workspace.tasks", { count: 0 });
+  const decisionPreview = previewText(
+    latestDecision?.question?.text || latestDecision?.block?.title,
+    t("workspace.decisions", { count: decisions.length }),
+  );
+  const tilasmPreview = previewText(
+    latestTilasm?.title,
+    detail.tilasms.length > 0
+      ? t("workspace.tilasms", { count: detail.tilasms.length })
+      : t("tilasms.drop"),
+  );
+  const agentPreview = previewText(
+    latestAgent?.title,
+    t("workspace.agents", { count: forAgents.length }),
+  );
+  const instructionPreview = previewText(
+    latestInstruction?.text,
+    t("workspace.instructions", { count: detail.instructions.length }),
+  );
+  const journalPreview = previewText(
+    latestJournal?.summary || latestJournal?.note,
+    t("workspace.journal", { count: journalEntries.length }),
+  );
   // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
   const azimas = azimaGroups(detail.tasks);
   const doneAzimas = azimas.filter((x) => azimaFinished(x.azima));
@@ -288,6 +347,466 @@ export function WishView({
   );
   const tone = wishTone(wish, open.length, running, watching);
 
+  const saveDescription = (text: string) =>
+    quiet(
+      act(
+        () => clients.wishes.describe({ wishId: wish.id, text }),
+        [Change.WISH],
+      ),
+    );
+
+  // The wish opens as one concise card. Detail panels are real children of the workspace, so a panel is mounted only
+  // once; this matters for task, question, grant and tilasm IDs used by focus links and system notifications.
+  const threadHead = (
+    <div className="workspace-thread-head">
+      <div className="workspace-summary-head">
+        <span className="eyebrow">
+          {projects.map((p) => p.name).join(" · ") || t("wish.no_project")}
+        </span>
+        <h1>{wish.title}</h1>
+        <details className="workspace-thread-description">
+          <summary>{t("wish.description")}</summary>
+          <WishDescription
+            key={wish.id + wish.description}
+            title={wish.title}
+            description={wish.description}
+            onSave={saveDescription}
+          />
+        </details>
+        <div className="review-facts workspace-facts">
+          <div className="review-pills">
+            <StatusBadge tone={tone} label={wishStateText(wish)} />
+            {open.length > 0 && (
+              <CountPill
+                tone="waiting"
+                count={open.length}
+                label={t("wish.questions_wait", { count: open.length })}
+              >
+                {t("pill.to_decide")}
+              </CountPill>
+            )}
+            {digging.length > 0 && (
+              <CountPill
+                tone="investigating"
+                count={digging.length}
+                label={t("pill.investigating_detail", {
+                  count: digging.length,
+                })}
+              >
+                {t("pill.investigating")}
+              </CountPill>
+            )}
+            {running > 0 && (
+              <CountPill
+                tone="running"
+                count={running}
+                label={t("plan.running", { count: running })}
+              >
+                {t("pill.running")}
+              </CountPill>
+            )}
+            {watching > 0 && (
+              <CountPill
+                tone="watching"
+                count={watching}
+                label={t("plan.watching", { count: watching })}
+              >
+                {t("pill.watching")}
+              </CountPill>
+            )}
+            {azimaProgress.count > 0 && azimaProgress.proof === 0 && (
+              <CountPill
+                tone="done"
+                count={azimaProgress.done}
+                label={t("pill.azimas_detail", {
+                  done: azimaProgress.done,
+                  count: azimaProgress.count,
+                })}
+              >
+                / {azimaProgress.count} {t("pill.azimas")}
+              </CountPill>
+            )}
+            {azimaProgress.proof > 0 && (
+              <CountPill
+                tone="done"
+                count={azimaProgress.done}
+                label={t("pill.azimas_proof_detail", {
+                  done: azimaProgress.done,
+                  proof: azimaProgress.proof,
+                  count: azimaProgress.count,
+                })}
+              >
+                {t("pill.azimas_done")} ·{" "}
+                <b className="tone-proof">{azimaProgress.proof}</b>{" "}
+                {t("pill.azimas_proof")} / {azimaProgress.count}{" "}
+                {t("pill.azimas")}
+              </CountPill>
+            )}
+            {work > 0 && (
+              <CountPill
+                tone="done"
+                count={done}
+                label={t("pill.done_detail", { done, count: work })}
+              >
+                / {work} {t("pill.done")}
+              </CountPill>
+            )}
+          </div>
+          <div className="hero-meta workspace-meta">
+            <span>
+              <Clock3 size={13} aria-hidden="true" />
+              {when(wish.createTime)}
+            </span>
+            {granted ? (
+              <button
+                className="text-button"
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.activate({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Play size={13} aria-hidden="true" />
+                {t("wish.reopen")}
+              </button>
+            ) : isActive(wish) ? (
+              <button
+                className="text-button"
+                title={t("wish.pause_detail")}
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.pause({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Pause size={13} aria-hidden="true" />
+                {t("wish.pause")}
+              </button>
+            ) : (
+              <button
+                className="text-button"
+                title={t("wish.activate_detail", { max: MAX_ACTIVE })}
+                onClick={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.activate({ wishId: wish.id }),
+                      [Change.WISH],
+                    ),
+                  )
+                }
+              >
+                <Play size={13} aria-hidden="true" />
+                {t("wish.activate")}
+              </button>
+            )}
+            <LastPushes pushes={wish.pushes} projects={projects} />
+            <MainMerges mains={wish.mains} projects={projects} />
+          </div>
+        </div>
+      </div>
+      <LeadStatus
+        wish={wish}
+        onView={() => void viewLead()}
+        onStart={startLead}
+      />
+    </div>
+  );
+
+  const summaryPanel: WishWorkspacePanel = {
+    id: "summary",
+    title: t("workspace.summary"),
+    pinned: true,
+    children: null,
+  };
+  const taskPanel: WishWorkspacePanel = {
+    id: "tasks",
+    title: t("wish.tasks"),
+    count: workCount(detail.tasks),
+    preview: taskPreview,
+    icon: <Play size={14} aria-hidden="true" />,
+    children: (
+      <>
+        <span id="view-tab-tasks" className="workspace-a11y-label">
+          {t("wish.tasks")}
+        </span>
+        {detail.tasks.length === 0 ? (
+          <p className="muted-text" role="tabpanel">
+            {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
+          </p>
+        ) : (
+          <TaskSections
+            moving={moving}
+            finished={finished}
+            azimas={azimas.filter((x) => !azimaFinished(x.azima))}
+            doneAzimas={doneAzimas}
+            fold={wish.id}
+            showDone={showDone}
+            renderAzima={({ azima, parts }) => (
+              <AzimaCard
+                key={azima.id}
+                azima={azima}
+                parts={parts}
+                tasks={byId}
+                render={renderTask}
+                focus={focus}
+                onValidate={() =>
+                  quiet(
+                    act(
+                      () =>
+                        clients.tasks.done({
+                          taskId: azima.id,
+                          note: t("azima.validated_note"),
+                          by: Closer.DEVELOPER,
+                        }),
+                      [Change.TASK],
+                      t("azima.validated", { code: azima.code }),
+                    ),
+                  )
+                }
+              />
+            )}
+            aside={<SpentLine spent={spent(detail.tasks)} />}
+            render={renderTask}
+          />
+        )}
+      </>
+    ),
+  };
+
+  const decisionsPanel: WishWorkspacePanel = {
+    id: "decisions",
+    title: t("tabs.decisions"),
+    count: decisions.length,
+    preview: decisionPreview,
+    icon: <FileText size={14} aria-hidden="true" />,
+    hidden: decisions.length === 0,
+    children: (
+      <>
+        <span id="view-tab-decisions" className="workspace-a11y-label">
+          {t("tabs.decisions")}
+        </span>
+        <DecisionLog
+          items={decisionItems}
+          noLead={() => noLead(wish)}
+          focus={focus}
+          onTask={(id) => show("tasks", id)}
+        />
+      </>
+    ),
+  };
+
+  const tilasmsPanel: WishWorkspacePanel = {
+    id: "tilasms",
+    title: t("tabs.tilasms"),
+    count: detail.tilasms.length,
+    preview: tilasmPreview,
+    icon: <Sparkles size={14} aria-hidden="true" />,
+    children: (
+      <>
+        <span id="view-tab-tilasms" className="workspace-a11y-label">
+          {t("tabs.tilasms")}
+        </span>
+        <TilasmsTab
+          key={wish.id}
+          wishId={wish.id}
+          opening={opened}
+          tilasms={detail.tilasms}
+          tasks={detail.tasks}
+          onToast={onToast}
+        />
+      </>
+    ),
+  };
+
+  const agentsPanel: WishWorkspacePanel = {
+    id: "agents",
+    title: t("tabs.agents"),
+    count: forAgents.length,
+    preview: agentPreview,
+    icon: <Bot size={14} aria-hidden="true" />,
+    hidden: forAgents.length === 0,
+    children: (
+      <>
+        <span id="view-tab-agents" className="workspace-a11y-label">
+          {t("tabs.agents")}
+        </span>
+        <AgentBlocks blocks={forAgents} codes={codes} />
+      </>
+    ),
+  };
+
+  const journalPanel: WishWorkspacePanel = {
+    id: "journal",
+    title: t("page.journal"),
+    count: journalEntries.length,
+    preview: journalPreview,
+    icon: <ScrollText size={14} aria-hidden="true" />,
+    children: <Journal wish={wish} blocks={detail.blocks} initiallyShown />,
+  };
+
+  const rightsPanel: WishWorkspacePanel = {
+    id: "rights",
+    title: t("rights.title"),
+    count: projects.length,
+    preview: previewText(
+      projects[0]?.name,
+      t("workspace.projects", { count: projects.length }),
+    ),
+    icon: <Pause size={14} aria-hidden="true" />,
+    hidden: projects.length === 0,
+    children: (
+      <Rights
+        wish={wish}
+        projects={projects}
+        onAllow={(projectId, mode) =>
+          quiet(
+            act(
+              () =>
+                clients.wishes.allow({
+                  wishId: wish.id,
+                  projectId,
+                  mode,
+                }),
+              [Change.WISH],
+            ),
+          )
+        }
+      />
+    ),
+  };
+
+  const instructionsPanel: WishWorkspacePanel = {
+    id: "instructions",
+    title: t("instruction.title"),
+    count: detail.instructions.length,
+    preview: instructionPreview,
+    icon: <FileText size={14} aria-hidden="true" />,
+    hidden: detail.instructions.length === 0,
+    children: (
+      <InstructionList
+        instructions={detail.instructions}
+        tasks={detail.tasks}
+        onTask={(id) => show("tasks", id)}
+      />
+    ),
+  };
+
+  const globalActions =
+    open.length > 0 ||
+    waiting.length > 0 ||
+    wish.ready ||
+    !!prompt ||
+    digging.length > 0 ? (
+      <div className="workspace-global-actions">
+        {(open.length > 0 || waiting.length > 0 || wish.ready || prompt) && (
+          <section
+            className="action-center"
+            id="action-center"
+            aria-label={t("panels.your_move")}
+          >
+            <div className="section-title">
+              <h2>{t("panels.your_move")}</h2>
+              <p>
+                {prompt
+                  ? t("lead_prompt.waits")
+                  : open.length
+                    ? t("wish.questions_wait", { count: open.length })
+                    : wish.ready
+                      ? t("wish.ready_detail")
+                      : t("panels.your_move_detail")}
+              </p>
+            </div>
+            {prompt && (
+              <LeadPromptCard
+                wishId={wish.id}
+                prompt={prompt}
+                onChoose={(index) =>
+                  act(
+                    () =>
+                      clients.wishes.choose({
+                        wishId: wish.id,
+                        option: index + 1,
+                        title: prompt.title,
+                        lines: prompt.lines,
+                        options: prompt.options,
+                      }),
+                    [Change.WISH],
+                  )
+                }
+              />
+            )}
+            {open.length > 0 && (
+              <section className="decisions-section">
+                <div className="section-heading">
+                  <h3>
+                    {t("panels.decisions")}
+                    <span className="count">{open.length}</span>
+                  </h3>
+                </div>
+                <AnimatePresence mode="popLayout">
+                  {open.map(({ item: q, blocking }) => (
+                    <WishQuestion
+                      key={q.id}
+                      question={q}
+                      blocking={blocking}
+                      noLead={noLead(wish)}
+                      onAnswer={(choice, note) =>
+                        answer(wish.id, q.id, choice, note)
+                      }
+                      onMark={(kind, remove) =>
+                        mark(wish.id, q.id, kind, remove)
+                      }
+                      onEnlighten={(note) => enlighten(wish.id, q.id, note)}
+                    />
+                  ))}
+                </AnimatePresence>
+              </section>
+            )}
+            {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
+            {wish.ready && (
+              <GrantCard
+                wish={wish}
+                onGrant={() =>
+                  quiet(
+                    act(
+                      () => clients.wishes.grant({ wishId: wish.id }),
+                      [Change.WISH],
+                      t("wish.granted_toast"),
+                    ),
+                  )
+                }
+              />
+            )}
+          </section>
+        )}
+        {digging.length > 0 && (
+          <InvestigatingSection
+            questions={digging}
+            onAnswer={(q, choice, note) => answer(wish.id, q, choice, note)}
+            onMark={(q, kind, remove) => mark(wish.id, q, kind, remove)}
+          />
+        )}
+      </div>
+    ) : null;
+
+  const panels: WishWorkspacePanel[] = [
+    summaryPanel,
+    taskPanel,
+    decisionsPanel,
+    tilasmsPanel,
+    agentsPanel,
+    journalPanel,
+    rightsPanel,
+    instructionsPanel,
+  ];
+  const workspacePanel = view === "main" ? undefined : view;
+
   return (
     <div className="wish-view review">
       {changing && (
@@ -396,387 +915,32 @@ export function WishView({
       )}
       <div className="mission-scroll" ref={keepPlace}>
         <AttentionBar items={attention} />
-        <div className="hero mission-header review-head">
-          <div className="hero-copy">
-            <span className="eyebrow">
-              {projects.map((p) => p.name).join(" · ") || t("wish.no_project")}
-            </span>
-            <h1>{wish.title}</h1>
-            <WishDescription
-              key={wish.id + wish.description}
-              title={wish.title}
-              description={wish.description}
-              onSave={(text) =>
-                quiet(
-                  act(
-                    () => clients.wishes.describe({ wishId: wish.id, text }),
-                    [Change.WISH],
-                  ),
-                )
-              }
-            />
-            <div className="review-facts">
-              <div className="review-pills">
-                <StatusBadge tone={tone} label={wishStateText(wish)} />
-                {open.length > 0 && (
-                  <CountPill
-                    tone="waiting"
-                    count={open.length}
-                    label={t("wish.questions_wait", { count: open.length })}
-                  >
-                    {t("pill.to_decide")}
-                  </CountPill>
-                )}
-                {digging.length > 0 && (
-                  <CountPill
-                    tone="investigating"
-                    count={digging.length}
-                    label={t("pill.investigating_detail", {
-                      count: digging.length,
-                    })}
-                  >
-                    {t("pill.investigating")}
-                  </CountPill>
-                )}
-                {running > 0 && (
-                  <CountPill
-                    tone="running"
-                    count={running}
-                    label={t("plan.running", { count: running })}
-                  >
-                    {t("pill.running")}
-                  </CountPill>
-                )}
-                {watching > 0 && (
-                  <CountPill
-                    tone="watching"
-                    count={watching}
-                    label={t("plan.watching", { count: watching })}
-                  >
-                    {t("pill.watching")}
-                  </CountPill>
-                )}
-                {azimaProgress.count > 0 && azimaProgress.proof === 0 && (
-                  <CountPill
-                    tone="done"
-                    count={azimaProgress.done}
-                    label={t("pill.azimas_detail", {
-                      done: azimaProgress.done,
-                      count: azimaProgress.count,
-                    })}
-                  >
-                    / {azimaProgress.count} {t("pill.azimas")}
-                  </CountPill>
-                )}
-                {azimaProgress.proof > 0 && (
-                  // The azimas awaiting their proof, apart from the done ones: their work is done, not them.
-                  <CountPill
-                    tone="done"
-                    count={azimaProgress.done}
-                    label={t("pill.azimas_proof_detail", {
-                      done: azimaProgress.done,
-                      proof: azimaProgress.proof,
-                      count: azimaProgress.count,
-                    })}
-                  >
-                    {t("pill.azimas_done")} ·{" "}
-                    <b className="tone-proof">{azimaProgress.proof}</b>{" "}
-                    {t("pill.azimas_proof")} / {azimaProgress.count}{" "}
-                    {t("pill.azimas")}
-                  </CountPill>
-                )}
-                {work > 0 && (
-                  <CountPill
-                    tone="done"
-                    count={done}
-                    label={t("pill.done_detail", { done, count: work })}
-                  >
-                    / {work} {t("pill.done")}
-                  </CountPill>
-                )}
-              </div>
-              <div className="hero-meta">
-                <span>
-                  <Clock3 size={13} />
-                  {when(wish.createTime)}
-                </span>
-                {granted ? (
-                  <button
-                    className="text-button"
-                    onClick={() =>
-                      quiet(
-                        act(
-                          () => clients.wishes.activate({ wishId: wish.id }),
-                          [Change.WISH],
-                        ),
-                      )
-                    }
-                  >
-                    <Play size={13} />
-                    {t("wish.reopen")}
-                  </button>
-                ) : isActive(wish) ? (
-                  <button
-                    className="text-button"
-                    title={t("wish.pause_detail")}
-                    onClick={() =>
-                      quiet(
-                        act(
-                          () => clients.wishes.pause({ wishId: wish.id }),
-                          [Change.WISH],
-                        ),
-                      )
-                    }
-                  >
-                    <Pause size={13} />
-                    {t("wish.pause")}
-                  </button>
-                ) : (
-                  <button
-                    className="text-button"
-                    title={t("wish.activate_detail", { max: MAX_ACTIVE })}
-                    onClick={() =>
-                      quiet(
-                        act(
-                          () => clients.wishes.activate({ wishId: wish.id }),
-                          [Change.WISH],
-                        ),
-                      )
-                    }
-                  >
-                    <Play size={13} />
-                    {t("wish.activate")}
-                  </button>
-                )}
-                <LastPushes pushes={wish.pushes} projects={projects} />
-                <MainMerges mains={wish.mains} projects={projects} />
-              </div>
-            </div>
-          </div>
-          <div className="hero-visual">
-            <Machine active={running > 0} />
-          </div>
-        </div>
-
-        <div className="overview-content">
-          <LeadStatus
-            wish={wish}
-            onView={() => void viewLead()}
-            onStart={startLead}
-          />
-          <ViewTabs
-            view={view}
-            main={t("tabs.wish")}
-            tasks={workCount(detail.tasks)}
-            decisions={decisions.length}
-            tilasms={detail.tilasms.length}
-            agents={forAgents.length}
-            onView={(to) => show(to)}
-          />
-          {view === "tilasms" && (
-            <TilasmsTab
-              key={wish.id}
-              wishId={wish.id}
-              opening={opened}
-              tilasms={detail.tilasms}
-              tasks={detail.tasks}
-              onToast={onToast}
-            />
-          )}
-          {view === "agents" && (
-            <AgentBlocks blocks={forAgents} codes={codes} />
-          )}
-          {view === "decisions" && (
-            <DecisionLog
-              items={decisionItems}
-              noLead={() => noLead(wish)}
-              focus={focus}
-              onTask={(id) => show("tasks", id)}
-            />
-          )}
-          {view === "tasks" &&
-            (detail.tasks.length === 0 ? (
-              <p className="muted-text" role="tabpanel">
-                {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
-              </p>
-            ) : (
-              <TaskSections
-                moving={moving}
-                finished={finished}
-                azimas={azimas.filter((x) => !azimaFinished(x.azima))}
-                doneAzimas={doneAzimas}
-                fold={wish.id}
-                showDone={showDone}
-                renderAzima={({ azima, parts }) => (
-                  <AzimaCard
-                    key={azima.id}
-                    azima={azima}
-                    parts={parts}
-                    tasks={byId}
-                    render={renderTask}
-                    focus={focus}
-                    onValidate={() =>
-                      quiet(
-                        act(
-                          () =>
-                            clients.tasks.done({
-                              taskId: azima.id,
-                              note: t("azima.validated_note"),
-                              by: Closer.DEVELOPER,
-                            }),
-                          [Change.TASK],
-                          t("azima.validated", { code: azima.code }),
-                        ),
-                      )
-                    }
-                  />
-                )}
-                aside={<SpentLine spent={spent(detail.tasks)} />}
-                render={renderTask}
-              />
-            ))}
-          {view === "main" && (
-            <div className="main-columns">
-              {(open.length > 0 ||
-                waiting.length > 0 ||
-                wish.ready ||
-                !!prompt ||
-                digging.length > 0) && (
-                <div className="main-moves">
-                  {(open.length > 0 ||
-                    waiting.length > 0 ||
-                    wish.ready ||
-                    prompt) && (
-                    <section
-                      className="action-center"
-                      id="action-center"
-                      aria-label={t("panels.your_move")}
-                    >
-                      <div className="section-title">
-                        <h2>{t("panels.your_move")}</h2>
-                        <p>
-                          {prompt
-                            ? t("lead_prompt.waits")
-                            : open.length
-                              ? t("wish.questions_wait", { count: open.length })
-                              : wish.ready
-                                ? t("wish.ready_detail")
-                                : t("panels.your_move_detail")}
-                        </p>
-                      </div>
-                      {prompt && (
-                        <LeadPromptCard
-                          wishId={wish.id}
-                          prompt={prompt}
-                          onChoose={(index) =>
-                            act(
-                              () =>
-                                clients.wishes.choose({
-                                  wishId: wish.id,
-                                  option: index + 1,
-                                  title: prompt.title,
-                                  lines: prompt.lines,
-                                  options: prompt.options,
-                                }),
-                              [Change.WISH],
-                            )
-                          }
-                        />
-                      )}
-                      {open.length > 0 && (
-                        <section className="decisions-section">
-                          <div className="section-heading">
-                            <h3>
-                              {t("panels.decisions")}
-                              <span className="count">{open.length}</span>
-                            </h3>
-                          </div>
-                          <AnimatePresence mode="popLayout">
-                            {open.map(({ item: q, blocking }) => (
-                              <WishQuestion
-                                key={q.id}
-                                question={q}
-                                blocking={blocking}
-                                noLead={noLead(wish)}
-                                onAnswer={(choice, note) =>
-                                  answer(wish.id, q.id, choice, note)
-                                }
-                                onMark={(kind, remove) =>
-                                  mark(wish.id, q.id, kind, remove)
-                                }
-                                onEnlighten={(note) =>
-                                  enlighten(wish.id, q.id, note)
-                                }
-                              />
-                            ))}
-                          </AnimatePresence>
-                        </section>
-                      )}
-                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-                      {wish.ready && (
-                        <GrantCard
-                          wish={wish}
-                          onGrant={() =>
-                            quiet(
-                              act(
-                                () => clients.wishes.grant({ wishId: wish.id }),
-                                [Change.WISH],
-                                t("wish.granted_toast"),
-                              ),
-                            )
-                          }
-                        />
-                      )}
-                    </section>
-                  )}
-
-                  {digging.length > 0 && (
-                    <InvestigatingSection
-                      questions={digging}
-                      onAnswer={(q, choice, note) =>
-                        answer(wish.id, q, choice, note)
-                      }
-                      onMark={(q, kind, remove) =>
-                        mark(wish.id, q, kind, remove)
-                      }
-                    />
-                  )}
-                </div>
-              )}
-
-              <div className="main-side">
-                <Journal wish={wish} blocks={detail.blocks} />
-
-                {projects.length > 0 && (
-                  <Rights
-                    wish={wish}
-                    projects={projects}
-                    onAllow={(projectId, mode) =>
-                      quiet(
-                        act(
-                          () =>
-                            clients.wishes.allow({
-                              wishId: wish.id,
-                              projectId,
-                              mode,
-                            }),
-                          [Change.WISH],
-                        ),
-                      )
-                    }
-                  />
-                )}
-              </div>
-            </div>
-          )}
-          {view === "main" && (
-            <InstructionList
-              instructions={detail.instructions}
-              tasks={detail.tasks}
-              onTask={(id) => show("tasks", id)}
-            />
-          )}
-        </div>
+        {threadHead}
+        {globalActions && (
+          <div className="workspace-global">{globalActions}</div>
+        )}
+        <WishWorkspace
+          wishId={wish.id}
+          panels={panels}
+          ready={detail.loaded}
+          initialPanel={workspacePanel}
+          initialPanelRequest={`${workspacePanel ?? "summary"}:${workspaceRequest}`}
+          onPanelChange={(panelId) => {
+            if (!panelId) {
+              setView("main");
+              setFocus("");
+              return;
+            }
+            if (
+              panelId === "tasks" ||
+              panelId === "decisions" ||
+              panelId === "tilasms" ||
+              panelId === "agents"
+            ) {
+              setView(panelId);
+            }
+          }}
+        />
       </div>
       <LeadMessage wish={wish} onResume={startLead} onToast={onToast} />
     </div>
@@ -895,9 +1059,17 @@ export function WaitingTasks({
 // Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for. The
 // latest entries show, the older ones fold behind a line (older.tsx).
 // WishService.Snapshot reads the whole wish, events included: it is read on a click, then again as the wish changes.
-function Journal({ wish, blocks }: { wish: Wish; blocks: Block[] }) {
+function Journal({
+  wish,
+  blocks,
+  initiallyShown = false,
+}: {
+  wish: Wish;
+  blocks: Block[];
+  initiallyShown?: boolean;
+}) {
   const clients = useClients();
-  const [shown, setShown] = useState(false);
+  const [shown, setShown] = useState(initiallyShown);
   const [commands, setCommands] = useState(false);
   const [exp, setExp] = useState<WishExport>();
   const [error, setError] = useState("");

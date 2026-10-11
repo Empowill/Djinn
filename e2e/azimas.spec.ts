@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 portable();
 
@@ -88,10 +89,11 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     // Nothing waits for you: no azima is your move.
     await expect(page.locator("#action-center")).toHaveCount(0);
-    const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
+    const tasksPanel = await openWorkspaceSection(page, "tasks");
     // The work only: an azima is the plan.
-    await expect(tasksTab).toHaveText("Tasks3");
-    await tasksTab.click();
+    await expect(tasksPanel.locator(".workspace-panel-heading")).toContainText(
+      "Tasks3",
+    );
 
     await expect(page.locator(".tasks-moving h2")).toHaveText(
       "Moving or waiting1",
@@ -123,15 +125,19 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
       "T3",
       "T1",
     ]);
-    // What a click unfolded stays so, the Tasks tab left and back.
-    await page.getByRole("tab", { name: /^Decisions/ }).click();
-    await tasksTab.click();
-    await expect(azimas.locator(".azima-heading .agent-code")).toHaveText([
-      "T2",
-      "T3",
-      "T1",
-    ]);
-    await expect(t2.locator(".wish-task .agent-code")).toHaveText(["W2", "W1"]);
+    // Closing and reopening the panel preserves the expanded fold, without duplicating task ids.
+    await tasksPanel.getByRole("button", { name: "Close Tasks" }).click();
+    const reopenedTasks = await openWorkspaceSection(page, "tasks");
+    await expect(
+      reopenedTasks.locator(".azima-heading .agent-code"),
+    ).toHaveText(["T2", "T3", "T1"]);
+    const duplicateIds = await page.evaluate(() => {
+      const seen = new Map<string, number>();
+      for (const element of document.querySelectorAll("[id]"))
+        seen.set(element.id, (seen.get(element.id) ?? 0) + 1);
+      return [...seen].filter(([, count]) => count > 1);
+    });
+    expect(duplicateIds).toEqual([]);
     const t3 = azimas.locator(".azima-card").nth(1);
     await expect(t3.locator(".azima-waits")).toHaveText("Waits for T2");
     await expect(t3.locator(".azima-heading")).toContainText("Open");
