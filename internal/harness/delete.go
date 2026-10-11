@@ -16,7 +16,8 @@ import (
 // Delete removes a task no worker of this Djinn ran, with its events: a plan item, or a task imported from another
 // Djinn. A task a worker of this Djinn ran (it has a session or a worktree) is the record of that work: it stays. An
 // azima goes once no task is part of it: those are named, to be regrouped first (Group), for no task may be part of
-// an azima that is gone. Its code is retired with it (Wish.retired_codes): no task of the wish gets it again.
+// an azima that is gone. A task others wait for (DependsOn, in any wish) goes once they are rewired (Depend --also):
+// those are named too. Its code is retired with it (Wish.retired_codes): no task of the wish gets it again.
 func (h *Harness) Delete(ctx context.Context, procedure string, req *planv1.TaskServiceDeleteRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	var task *planv1.Task

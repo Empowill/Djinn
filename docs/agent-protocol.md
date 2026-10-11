@@ -185,7 +185,8 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   - re-sequence as the plan learns: `djinn task depend <task> --after … --also W6=W5,W3` replaces what several
     tasks wait for at once, all or none, `djinn task group <task> --part-of T07` its azima. Djinn refuses a cycle,
     through dependencies and azimas together, naming it, and then changes nothing. An azima absorbed into another is
-    deleted (`djinn task delete`) only once its parts are regrouped: Djinn names them; its code is never given again. `--depends-on` is the former
+    deleted (`djinn task delete`) only once its parts are regrouped, and a task only once no task waits for it (rewire
+    them first, in one `--also`): Djinn names them; its code is never given again. `--depends-on` is the former
     name of `--after`, still read.
 - **Keep the graph free of conflicts.** The lead keeps the graph of tasks and azimas so that workers do not collide,
   along an iterative and de-risked path. Tasks that touch the same files, protos, generated files or the same tests go
