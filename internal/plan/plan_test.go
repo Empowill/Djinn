@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -32,6 +33,44 @@ type clients struct {
 	url       string // the server's, for its routes other than the services
 }
 
+// told is what the lead's queue holds that no watch acknowledged yet, as the lines once typed in its terminal
+// ("lead: <text>"), oldest first.
+func told(t *testing.T, s *store.Store) []string {
+	t.Helper()
+	events, err := waitingEvents(t.Context(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, e := range events {
+		lines = append(lines, LeadTerminal+": "+e.GetText())
+	}
+	return lines
+}
+
+// take acknowledges every event waiting for the lead, as its watch does.
+func take(t *testing.T, s *store.Store) {
+	t.Helper()
+	events, err := waitingEvents(t.Context(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal(actor, "test/take", &planv1.LeadServiceWatchRequest{}); err != nil {
+			return err
+		}
+		for _, e := range events {
+			e.AckSessionId = "test"
+			if err := tx.Put(e); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // serve runs the plan services on a store in memory, behind a real Connect server.
 func serve(t *testing.T, opts ...Option) clients {
 	t.Helper()
@@ -39,7 +78,11 @@ func serve(t *testing.T, opts ...Option) clients {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { s.Close() })
+	// The line that says the lead's events wait is typed by a timer: these tests read the queue instead (told).
+	l := &leadWatch{timing: defaultWatchTiming}
+	l.timing.remind, l.timing.grace = time.Hour, time.Hour
+	leadWatches.Store(s, l)
+	t.Cleanup(func() { l.stop(); leadWatches.Delete(s); s.Close() })
 	mux := http.NewServeMux()
 	for prefix, h := range Handlers(s, opts...) {
 		mux.Handle(prefix, h)

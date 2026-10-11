@@ -55,7 +55,10 @@ export function setLead(session: string, folder: string) {
 }
 
 // leadRows are the rows of the lead's terminal, shown in the window, that hold text.
-export function leadRows(page: import("@playwright/test").Page, text: string) {
+export function leadRows(
+  page: import("@playwright/test").Page,
+  text: string | RegExp,
+) {
   return page
     .locator(".lead-terminal .xterm-rows > div")
     .filter({ hasText: text });
@@ -73,6 +76,32 @@ export async function dropLead() {
     await new Promise((r) => setTimeout(r, 100));
   }
   const gone = leadFolder("gone-");
-  setLead("00000000-0000-4000-8000-000000000000", gone);
+  setLead(goneSession, gone);
   fs.rmSync(gone, { recursive: true, force: true });
+  drainLead(goneSession);
+}
+
+const goneSession = "00000000-0000-4000-8000-000000000000";
+
+// waitingLine is the line djinn types in the lead's terminal when events wait for it and no watch does.
+export const waitingLine = /Djinn: \d+ events? waiting, run djinn lead watch/;
+
+// leadWatch runs djinn lead watch as the lead's session, and returns its digest and the cursor it printed ("" for
+// none).
+export function leadWatch(
+  session: string,
+  ...args: string[]
+): { digest: string; cursor: string } {
+  const digest = djinn("lead", "watch", "--session", session, ...args);
+  return { digest, cursor: /Cursor (\S+)\./.exec(digest)?.[1] ?? "" };
+}
+
+// drainLead acknowledges every event waiting for the lead, as its watch would: a later spec's lead hears of none.
+export function drainLead(session: string) {
+  let after: string[] = [];
+  for (let i = 0; i < 50; i++) {
+    const { cursor } = leadWatch(session, "--timeout", "0s", ...after);
+    if (!cursor) return;
+    after = ["--after", cursor];
+  }
 }

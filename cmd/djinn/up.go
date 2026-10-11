@@ -437,6 +437,10 @@ func services(
 	// template.
 	wishes := &plan.Wishes{Store: db, Leads: leads{terminals, uiSvc}, Language: language, Workers: h}
 	h.TellLeads(wishes.Tell)
+	// The lead's events wait in its queue, which djinn lead watch hands out (decision Q191); without a watch, one
+	// line says they wait.
+	h.NotifyLead(wishes.Notify)
+	wishes.RemindLead()
 	h.OnWatched(wishes.Watched)
 	// The inbox sources of the projects' skills run until djinn up stops; what they print waits for a click.
 	h.RunSources((&plan.Inbox{Wishes: wishes}).Receive)

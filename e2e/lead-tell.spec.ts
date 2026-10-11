@@ -1,11 +1,20 @@
-// An answer reaches the one lead, against the real djinn up --browser (see global-setup.ts): answered while the lead
-// does not run, it waits, and djinn types it in the lead's terminal, then Enter, once the lead is resumed on its
-// session; answered in another wish while the lead runs, it goes to the same lead at once. The lead is a fake claude on
-// djinn's PATH that says each line it reads.
+// An answer reaches the one lead, against the real djinn up --browser (see global-setup.ts), through its queue
+// (decision Q191): answered while the lead does not run, it waits, and djinn types one short line in the lead's
+// terminal, then Enter, "Djinn: N events waiting, run djinn lead watch", once the lead runs; the lead's watch prints
+// it. Answered in another wish while the lead's watch waits, it goes to that watch at once, and nothing is typed. The
+// lead is a fake claude on djinn's PATH that says each line it reads.
 import { expect, test } from "@playwright/test";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import path from "node:path";
-import { dropLead, leadFolder, leadRows as rows, setLead } from "./lead";
+import { promisify } from "node:util";
+import {
+  dropLead,
+  leadFolder,
+  leadRows as rows,
+  leadWatch,
+  setLead,
+  waitingLine,
+} from "./lead";
 
 const binary = path.resolve(
   __dirname,
@@ -67,7 +76,7 @@ test.skip(process.platform === "win32", "the fake claude is a shell script");
 
 test.afterEach(dropLead);
 
-test("an answer waits for the lead, then is typed in its terminal once resumed; another wish's goes to the same lead", async ({
+test("an answer waits for the lead, which hears of it from one line and its watch; another wish's goes to the same watch", async ({
   page,
 }) => {
   // Three wishes at a time: the earlier specs' wishes make way.
@@ -95,21 +104,51 @@ test("an answer waits for the lead, then is typed in its terminal once resumed; 
   await expect(
     rows(page, `fake-claude --resume ${session} in ${folder}`),
   ).toHaveCount(1);
-  // Typed, so echoed, then read after Enter: the fake lead says it again.
-  await expect(rows(page, `Djinn: ${first} answered B — "Glass"`)).toHaveCount(
-    2,
-    { timeout: 15_000 },
-  );
+  // One short line, typed, so echoed, then read after Enter: the fake lead says it again. The answer is not typed.
+  await expect(rows(page, waitingLine)).toHaveCount(2, { timeout: 15_000 });
+  await expect(rows(page, `${first} answered`)).toHaveCount(0);
 
-  // The lead runs: an answer in another wish reaches it at once, in the same terminal.
-  const second = askAndAnswer(other, "Copper", "Tin");
-  await expect(rows(page, `Djinn: ${second} answered B — "Tin"`)).toHaveCount(
-    2,
-    { timeout: 15_000 },
+  // The lead's watch prints the answer, with a cursor.
+  const watched = leadWatch(session, "--timeout", "0s");
+  expect(watched.digest).toContain(`- ${first} answer: answered B — "Glass"`);
+  expect(watched.cursor).not.toBe("");
+
+  // The lead watches again, acknowledging the first: an answer in another wish comes to that watch at once.
+  const running = promisify(execFile)(
+    binary,
+    [
+      "lead",
+      "watch",
+      "--session",
+      session,
+      "--after",
+      watched.cursor,
+      "--timeout",
+      "30s",
+    ],
+    {
+      env: { ...process.env, DJINN_HOME: process.env.DJINN_E2E_HOME },
+      encoding: "utf8",
+    },
   );
+  await new Promise((r) => setTimeout(r, 500));
+  const second = askAndAnswer(other, "Copper", "Tin");
+  const { stdout } = await running;
+  expect(stdout).toContain(`- ${second} answer: answered B — "Tin"`);
+  expect(stdout).not.toContain("Glass");
+  // Nothing more was typed in the lead's terminal: no second line, no answer.
+  await expect(rows(page, waitingLine)).toHaveCount(2);
+  await expect(rows(page, `${second} answered`)).toHaveCount(0);
   await expect(
     rows(page, `fake-claude --resume ${session} in ${folder}`),
   ).toHaveCount(1);
+  leadWatch(
+    session,
+    "--after",
+    /Cursor (\S+)\./.exec(stdout)![1],
+    "--timeout",
+    "0s",
+  );
 
   djinn("wish", "delete", wishId);
   djinn("wish", "delete", other);

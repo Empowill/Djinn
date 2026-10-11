@@ -246,7 +246,7 @@ func (h *Harness) integratePass(ctx context.Context) {
 		}
 		for _, g := range groups {
 			leadLine := leadMergeLine(strings.Join(g.codes, ", "), g.branch, g.sha, g.moves)
-			h.tellLead(ctx, g.wishID, leadLine)
+			h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, g.wishID, strings.Join(g.codes, ", "), leadLine)
 		}
 	}
 	h.pushApproved(ctx)
@@ -1379,17 +1379,11 @@ func tail(out string) string {
 	return ":\n" + s[max(0, len(s)-2000):]
 }
 
-// tellLead types a line in the terminal of the lead of wishID.
-func (h *Harness) tellLead(ctx context.Context, wishID, line string) {
-	h.mu.Lock()
-	tell := h.tell
-	h.mu.Unlock()
-	if tell == nil {
-		return
-	}
+// tellLead hands the lead of wishID an event of kind about code, in line (toLead).
+func (h *Harness) tellLead(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line string) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if err := tell(ctx, wishID, line); err != nil && !errors.Is(err, plan.ErrNoLead) {
+	if err := h.toLead(ctx, kind, wishID, code, line); err != nil && !errors.Is(err, plan.ErrNoLead) {
 		log.Printf("djinn: tell lead %s: %v", wishID, err)
 	}
 }

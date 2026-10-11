@@ -566,6 +566,30 @@ func TestFromEnv(t *testing.T) {
 			t.Errorf("%s %v: lead %q, want %q", md.Name(), c.args, got, c.want)
 		}
 	}
+
+	// djinn lead watch names its session by the variable its agent sets, the first one set of those it lists.
+	for _, c := range []struct {
+		env  map[string]string
+		args []string
+		want string
+	}{
+		{map[string]string{"CLAUDE_CODE_SESSION_ID": "claude-1"}, nil, "claude-1"},
+		{map[string]string{"CODEX_THREAD_ID": "codex-1"}, nil, "codex-1"},
+		{map[string]string{"ANTIGRAVITY_CONVERSATION_ID": "agy-1"}, nil, "agy-1"},
+		{map[string]string{"CLAUDE_CODE_SESSION_ID": "claude-1", "CODEX_THREAD_ID": "codex-1"}, nil, "claude-1"},
+		{map[string]string{"CLAUDE_CODE_SESSION_ID": "claude-1"}, []string{"--session", "mine"}, "mine"},
+		{nil, nil, ""},
+	} {
+		md := local(t, &planv1.LeadServiceWatchRequest{})
+		req, err := parse(md, c.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fromEnv(req, func(name string) string { return c.env[name] })
+		if got := req.Get(md.Fields().ByName("session")).String(); got != c.want {
+			t.Errorf("lead watch %v with %v: session %q, want %q", c.args, c.env, got, c.want)
+		}
+	}
 }
 
 // protoMethods are the public methods of the protos, streams included: each method of each service that says

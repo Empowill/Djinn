@@ -499,7 +499,8 @@ func split(name, sep string) string {
 	return b.String()
 }
 
-// envName is the environment variable the field defaults to ((djinn.v1.env)); "" when it has none.
+// envName is the environment variable the field defaults to ((djinn.v1.env)); "" when it has none. It may name
+// several, separated by spaces: the first one set wins.
 func envName(fd protoreflect.FieldDescriptor) string {
 	name, _ := proto.GetExtension(fd.Options(), djinnv1.E_Env).(string)
 	return name
@@ -509,12 +510,15 @@ func envName(fd protoreflect.FieldDescriptor) string {
 // worker's djinn block put names its task by $DJINN_TASK_ID.
 func fromEnv(msg *dynamicpb.Message, getenv func(string) string) {
 	for _, fd := range byNumber(msg.Descriptor()) {
-		name := envName(fd)
-		if name == "" || fd.IsList() || fd.Kind() != protoreflect.StringKind || msg.Has(fd) {
+		names := strings.Fields(envName(fd))
+		if len(names) == 0 || fd.IsList() || fd.Kind() != protoreflect.StringKind || msg.Has(fd) {
 			continue
 		}
-		if v := getenv(name); v != "" {
-			msg.Set(fd, protoreflect.ValueOfString(v))
+		for _, name := range names {
+			if v := getenv(name); v != "" {
+				msg.Set(fd, protoreflect.ValueOfString(v))
+				break
+			}
 		}
 	}
 }
