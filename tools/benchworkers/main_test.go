@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/empowill/djinn/internal/testx"
 )
 
 func env(vars map[string]string) func(string) string { return func(k string) string { return vars[k] } }
@@ -68,7 +70,10 @@ func TestMain(m *testing.M) {
 		fakeClaude()
 		return
 	}
-	os.Exit(m.Run())
+	cleanup := testx.Guard()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 func fakeClaude() {

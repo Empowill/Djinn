@@ -100,6 +100,9 @@ func WriteAddr(home, addr string) (remove func(), err error) {
 
 // ReadAddr returns the address the running server wrote in home.
 func ReadAddr(home string) (string, error) {
+	if home == "" {
+		return "", errors.New("data directory is empty")
+	}
 	path := filepath.Join(home, AddrFile)
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {

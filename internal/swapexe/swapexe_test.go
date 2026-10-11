@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/empowill/djinn/internal/testx"
 )
 
 func TestMain(m *testing.M) {
@@ -20,7 +22,10 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	cleanup := testx.Guard()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 // exe ends the name of an executable: Windows runs only a file named so.

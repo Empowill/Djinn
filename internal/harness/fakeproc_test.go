@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // The test binary plays a provider when DJINN_FAKE_PROVIDER names one, so that the real process path (arguments,
@@ -55,7 +57,9 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	agyProjectsDir = func() (string, error) { return projects, nil }
+	cleanup := testx.Guard()
 	code := m.Run()
+	cleanup()
 	_ = os.RemoveAll(projects)
 	os.Exit(code)
 }

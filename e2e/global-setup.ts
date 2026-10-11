@@ -11,6 +11,7 @@ const binary = path.resolve(
 );
 
 export default async function globalSetup() {
+  delete process.env.DJINN_ADDR;
   // A data directory of its own: the tests never touch the developer's state nor the address of their djinn.
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-"));
   // A fake claude and a fake agy (Antigravity), first on the PATH of djinn: the lead's terminal runs them, and they

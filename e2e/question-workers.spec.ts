@@ -17,11 +17,15 @@ const binary = path.resolve(
 );
 
 // env is the environment of this spec's djinn: its own data folder, question workers on.
-const env = (home: string) => ({
-  ...process.env,
-  DJINN_HOME: home,
-  DJINN_QUESTION_WORKERS: "on",
-});
+const env = (home: string) => {
+  const e = {
+    ...process.env,
+    DJINN_HOME: home,
+    DJINN_QUESTION_WORKERS: "on",
+  };
+  delete e.DJINN_ADDR;
+  return e;
+};
 
 // up starts djinn up --browser on home, and gives its URL once it answers.
 async function up(

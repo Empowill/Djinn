@@ -63,7 +63,11 @@ func runUpCommand(args []string) int {
 	}
 	if restart {
 		// Everything is closed: the newer djinn at this path takes over, with the same flags.
-		home, _ := ui.Home()
+		home, err := ui.Home()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "djinn up:", err)
+			return 1
+		}
 		if _, err := startDetached(context.Background(), home, os.Stderr, append([]string{"up"}, args...)...); err != nil {
 			fmt.Fprintf(os.Stderr, "djinn up: the update did not start: %v\n"+
 				"djinn up starts it again, and reopens the terminals noted in %s\n", err, RestartFile)
@@ -87,7 +91,11 @@ func main() {
 	if b, rest, ok := cli.Builtin(args); ok && handwritten[b.Name] != nil {
 		os.Exit(handwritten[b.Name](rest))
 	}
-	home, _ := ui.Home() // Only fails without a home directory; the command line then says it finds no server.
+	home, err := ui.Home()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "djinn:", err)
+		os.Exit(1)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := cli.Run(ctx, args, cli.Config{
 		Version: version,

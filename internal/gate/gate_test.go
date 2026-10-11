@@ -24,6 +24,7 @@ import (
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // tasks is a fake harness: tasks by id with their wish's rank, those whose worker runs, and the events noted.
@@ -458,7 +459,10 @@ const helperEnv = "DJINN_GATE_HELPER"
 func TestMain(m *testing.M) {
 	switch os.Getenv(helperEnv) {
 	case "":
-		os.Exit(m.Run())
+		cleanup := testx.Guard()
+		code := m.Run()
+		cleanup()
+		os.Exit(code)
 	case "exit3":
 		os.Stdout.WriteString("working\n")
 		os.Exit(3)

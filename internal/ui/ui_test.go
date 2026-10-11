@@ -90,6 +90,36 @@ func TestHomeOfADevelopmentBuild(t *testing.T) {
 	}
 }
 
+func TestHomeRefusesRealDataDirectoryUnderTest(t *testing.T) {
+	if !InTest() {
+		t.Fatal("InTest() should be true when running go test")
+	}
+	realHome := RealHome()
+	if realHome == "" {
+		t.Skip("no real config directory on this system")
+	}
+
+	for _, cand := range []string{realHome, "~/.config/djinn", "~/.config/djinn-dev"} {
+		t.Setenv("DJINN_HOME", cand)
+		home, err := Home()
+		if err == nil {
+			t.Errorf("DJINN_HOME=%q: Home() = %q, want refusal error", cand, home)
+		} else if !strings.Contains(err.Error(), "refusing to use real data directory") {
+			t.Errorf("DJINN_HOME=%q: error = %v, want refusal error", cand, err)
+		}
+	}
+
+	tmp := t.TempDir()
+	t.Setenv("DJINN_HOME", tmp)
+	got, err := Home()
+	if err != nil {
+		t.Fatalf("DJINN_HOME=%q: unexpected error: %v", tmp, err)
+	}
+	if got != tmp {
+		t.Fatalf("DJINN_HOME=%q: got %q", tmp, got)
+	}
+}
+
 func TestShow(t *testing.T) {
 	s, _ := newService(t)
 	raised := 0

@@ -26,7 +26,21 @@ import (
 	"github.com/empowill/djinn/gen"
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	"github.com/empowill/djinn/internal/server"
+	"github.com/empowill/djinn/internal/ui"
 )
+
+func resolveHome(cfg *Config) error {
+	if cfg.Home == "" {
+		home, err := ui.Home()
+		if err != nil {
+			return err
+		}
+		cfg.Home = home
+	} else if ui.InTest() && ui.IsRealHome(cfg.Home) {
+		return fmt.Errorf("refusing to use real data directory (%s) under test: set DJINN_HOME to a temporary directory", cfg.Home)
+	}
+	return nil
+}
 
 // Config is what Run needs from its caller.
 type Config struct {
@@ -212,6 +226,9 @@ func autostart(ctx context.Context, cfg Config, md protoreflect.MethodDescriptor
 
 // running returns the address of the djinn that answers, after starting one when none does.
 func running(ctx context.Context, cfg Config) (string, error) {
+	if err := resolveHome(&cfg); err != nil {
+		return "", err
+	}
 	if addr, err := server.ReadAddr(cfg.Home); err == nil && Alive(addr) {
 		return addr, nil
 	}
@@ -295,6 +312,9 @@ func stream(
 func newClient(cfg Config, md protoreflect.MethodDescriptor) (*connect.Client[dynamicpb.Message, dynamicpb.Message], error) {
 	addr := cfg.Addr
 	if addr == "" {
+		if err := resolveHome(&cfg); err != nil {
+			return nil, err
+		}
 		var err error
 		if addr, err = server.ReadAddr(cfg.Home); err != nil {
 			return nil, err
