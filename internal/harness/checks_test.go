@@ -937,10 +937,20 @@ func TestPushRedAgainOnAStaleQuestion(t *testing.T) {
 	in.remote(t)
 	azima := in.azima(t, in.wishID, "Letters")
 	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
-	in.correctWith(func(dir, prompt string) string { return "fail could not fix tests" })
+	var starts int
+	in.correctWith(func(dir, prompt string) string {
+		if starts++; starts == 1 {
+			return "wait\nfail could not fix tests"
+		}
+		return "text nothing to do"
+	})
 
 	in.pass(t, 0)
-	w2 := in.ended(t, in.pushState(t).GetCorrectedBy())
+	w2ID := in.pushState(t).GetCorrectedBy()
+	if _, err := in.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: w2ID, Text: "wake"})); err != nil {
+		t.Fatal(err)
+	}
+	w2 := in.ended(t, w2ID)
 	in.pass(t, time.Second)
 	if state := in.pushState(t); state.GetCorrectedBy() != "" || state.GetAttempts() != 1 {
 		t.Fatalf("after %s failed, the push %v; want one attempt spent, no correction running", w2.GetCode(), state)
