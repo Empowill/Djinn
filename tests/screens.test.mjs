@@ -65,6 +65,8 @@ export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
 export { ConnectError, Code } from "@connectrpc/connect";
 export { readDrop } from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
+export { ConsumptionPanel } from "@/src/consumption-panel.tsx";
+export { MachineService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -4018,4 +4020,230 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
   // 7. Verify T27: AzimaCard is memoized (React.memo)
   assert.equal(typeof s.AzimaCard, "object");
   assert.equal(s.AzimaCard.$$typeof, Symbol.for("react.memo"));
+});
+
+test("the consumption panel renders running workers with their charts, gate bands, and commands table", () => {
+  const t0 = 1700000000n;
+  const t1 = 1700000400n; // asked -> granted (400s wait)
+  const t2 = 1700001200n; // granted -> released (800s held)
+  const t3 = 1700001800n; // end of 30m window
+
+  const data = {
+    machine: {
+      cores: 8,
+      memoryTotalBytes: 16n * 1024n * 1024n * 1024n,
+      loadLimitShare: 0.8,
+      loadLimitMemoryBytes: 12n * 1024n * 1024n * 1024n,
+      points: [
+        {
+          time: { seconds: t0, nanos: 0 },
+          cpuPercent: 45,
+          djinnCpuPercent: 4,
+          memoryBytes: 4n * 1024n * 1024n * 1024n,
+          djinnMemoryBytes: 150n * 1024n * 1024n,
+        },
+        {
+          time: { seconds: t3, nanos: 0 },
+          cpuPercent: 62,
+          djinnCpuPercent: 5.2,
+          memoryBytes: 5n * 1024n * 1024n * 1024n,
+          djinnMemoryBytes: 180n * 1024n * 1024n,
+        },
+      ],
+    },
+    gates: [
+      {
+        gate: "lint",
+        command: "go tool task lint",
+        project: "djinn",
+        askedTime: { seconds: t0, nanos: 0 },
+        grantTime: { seconds: t1, nanos: 0 },
+        releaseTime: { seconds: t2, nanos: 0 },
+      },
+      {
+        gate: "test",
+        command: "go tool task test",
+        project: "djinn",
+        askedTime: { seconds: t0 + 60n, nanos: 0 },
+        grantTime: { seconds: t1, nanos: 0 },
+        releaseTime: { seconds: t2, nanos: 0 },
+      },
+    ],
+    workers: [
+      {
+        code: "W1",
+        title: "Trim the wick and lint",
+        provider: s.Provider.CLAUDE,
+        model: "claude-3-7-sonnet",
+        peakCpuPercent: 85,
+        peakMemoryBytes: 64n * 1024n * 1024n,
+        points: [
+          {
+            time: { seconds: t0, nanos: 0 },
+            cpuPercent: 30,
+            memoryBytes: 32n * 1024n * 1024n,
+          },
+          {
+            time: { seconds: t3, nanos: 0 },
+            cpuPercent: 75.4,
+            memoryBytes: 60n * 1024n * 1024n,
+          },
+        ],
+        gates: [
+          {
+            gate: "lint",
+            command: "go tool task lint",
+            project: "djinn",
+            askedTime: { seconds: t0, nanos: 0 },
+            grantTime: { seconds: t1, nanos: 0 },
+            releaseTime: { seconds: t2, nanos: 0 },
+          },
+        ],
+      },
+      {
+        code: "W2",
+        title: "Light the wick and test",
+        provider: s.Provider.CODEX,
+        model: "o3-mini",
+        peakCpuPercent: 140,
+        peakMemoryBytes: 128n * 1024n * 1024n,
+        points: [
+          {
+            time: { seconds: t0, nanos: 0 },
+            cpuPercent: 90,
+            memoryBytes: 80n * 1024n * 1024n,
+          },
+          {
+            time: { seconds: t3, nanos: 0 },
+            cpuPercent: 135.2,
+            memoryBytes: 120n * 1024n * 1024n,
+          },
+        ],
+        gates: [
+          {
+            gate: "test",
+            command: "go tool task test",
+            project: "djinn",
+            askedTime: { seconds: t0 + 60n, nanos: 0 },
+            grantTime: { seconds: t1, nanos: 0 },
+            releaseTime: { seconds: t2, nanos: 0 },
+          },
+        ],
+      },
+    ],
+    workerMeasure: "",
+  };
+
+  const commands = [
+    {
+      projectId: "p1",
+      projectName: "djinn",
+      command: "go tool task lint",
+      runs: 15,
+      p50HeldSeconds: 4.2,
+      p95HeldSeconds: 8.5,
+      lastHeldSeconds: 3.9,
+      p50WaitSeconds: 0.5,
+      p95WaitSeconds: 1.2,
+      lastWaitSeconds: 0.4,
+      cpuSeconds: 5.1,
+      peakMemoryBytes: 64n * 1024n * 1024n,
+      lastExitCode: 0,
+      recentHeldSeconds: [3.5, 4.0, 4.2, 3.9],
+    },
+    {
+      projectId: "p1",
+      projectName: "djinn",
+      command: "go tool task test",
+      runs: 8,
+      p50HeldSeconds: 12.0,
+      p95HeldSeconds: 24.5,
+      lastHeldSeconds: 11.8,
+      p50WaitSeconds: 1.1,
+      p95WaitSeconds: 3.0,
+      lastWaitSeconds: 0.9,
+      cpuSeconds: 18.3,
+      peakMemoryBytes: 256n * 1024n * 1024n,
+      lastExitCode: 0,
+      recentHeldSeconds: [11.0, 13.5, 11.8],
+    },
+  ];
+
+  const html = s.renderToStaticMarkup(
+    h(s.ConsumptionPanel, {
+      initialData: data,
+      initialCommands: commands,
+      initialMinutes: 30,
+      initialFolded: false,
+    }),
+  );
+
+  // 1. Header & Range pills
+  assert.match(
+    html,
+    /class="consumption-panel-heading">Resource consumption<\/span>/,
+  );
+  assert.match(html, /class="range-pill active">30m<\/button>/);
+  assert.match(html, /class="range-pill ">10m<\/button>/);
+  assert.match(html, /class="range-pill ">2h<\/button>/);
+
+  // 2. Machine Band
+  assert.match(html, /class="consumption-machine-name">Machine<\/span>/);
+  assert.match(html, /class="consumption-machine-cores">8 cores<\/span>/);
+  assert.match(html, /\(Djinn 5\.2%\)/);
+  assert.match(html, /16\.0 GiB/);
+  assert.match(html, /class="consumption-limit-badge"/);
+  assert.match(html, /<title>Load limit: 80%<\/title>/);
+
+  // 3. Stacked Gates Timeline in Machine Band
+  assert.match(html, /class="consumption-stacked-gates"/);
+  assert.match(html, /class="gate-wait-rect"/);
+  assert.match(html, /class="gate-held-rect"/);
+  assert.match(
+    html,
+    /class="gate-held-label">lint · go tool task lint<\/text>/,
+  );
+  assert.match(
+    html,
+    /class="gate-held-label">test · go tool task test<\/text>/,
+  );
+
+  // 4. Two Worker Rows with pretty charts and gate bands
+  assert.match(html, /<span class="agent-code">W1<\/span>/);
+  assert.match(
+    html,
+    /<span class="provider-badge provider-claude">claude<\/span>/,
+  );
+  assert.match(html, /Trim the wick and lint/);
+  assert.match(html, /75\.4% \(9\.4% of machine\) · peak 85%/);
+
+  assert.match(html, /<span class="agent-code">W2<\/span>/);
+  assert.match(
+    html,
+    /<span class="provider-badge provider-codex">codex<\/span>/,
+  );
+  assert.match(html, /Light the wick and test/);
+  assert.match(html, /135\.2% \(16\.9% of machine\) · peak 140%/);
+
+  // 5. Commands Table with sparklines
+  assert.match(html, /<h4>Commands &amp; gates<\/h4>/);
+  assert.match(html, /<code>go tool task lint<\/code>/);
+  assert.match(html, /<code>go tool task test<\/code>/);
+  assert.match(html, /class="num-col">15<\/td>/);
+  assert.match(html, /class="num-col">4\.2s<\/td>/);
+  assert.match(html, /class="num-col">8\.5s<\/td>/);
+  assert.match(html, /class="sparkline-bar"/);
+
+  // 6. Test unmeasured notice fallback when workerMeasure is set (e.g. Windows)
+  const unmeasuredHtml = s.renderToStaticMarkup(
+    h(s.ConsumptionPanel, {
+      initialData: { ...data, workerMeasure: "windows" },
+      initialCommands: [],
+      initialFolded: false,
+    }),
+  );
+  assert.match(
+    unmeasuredHtml,
+    /CPU and memory: not measured on this system yet/,
+  );
 });

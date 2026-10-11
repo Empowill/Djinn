@@ -45,6 +45,7 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	}
 	hold, give := context.WithCancel(ctx)
 	defer give()
+	askedAt := time.Now()
 	stream, err := client.Hold(hold, connect.NewRequest(&machinev1.GateServiceHoldRequest{
 		Name: name, TaskId: taskID, What: what, Directory: dir, Pid: int32(os.Getpid()),
 	}))
@@ -53,12 +54,14 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	}
 	defer stream.Close()
 	held := false
+	var grantedAt time.Time
 	for !held && stream.Receive() {
 		switch msg := stream.Msg(); msg.GetState() {
 		case machinev1.GateState_GATE_STATE_WAITING:
 			fmt.Fprintf(c.Notice, "djinn: gate %s: waiting: %s\n", name, msg.GetReason())
 		case machinev1.GateState_GATE_STATE_HELD:
 			held = true
+			grantedAt = time.Now()
 		}
 	}
 	if !held {
@@ -101,21 +104,27 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	}
 	// A command killed by a signal, or interrupted, did not run its course: its cost would mislead.
 	if c.Costs != nil && code >= 0 && ctx.Err() == nil {
-		record(ctx, c, taskID, what, dir, cmd.ProcessState, cpu, peak, time.Since(began))
+		wait := time.Duration(0)
+		if !grantedAt.IsZero() && grantedAt.After(askedAt) {
+			wait = grantedAt.Sub(askedAt)
+		}
+		heldDuration := time.Since(grantedAt)
+		record(ctx, c, taskID, what, dir, name, cmd.ProcessState, cpu, peak, time.Since(began), wait, heldDuration)
 	}
 	return code, nil
 }
 
 // record sends what the command cost. Its project is the task's, or the one holding dir, the folder it ran in.
 func record(
-	ctx context.Context, c Command, taskID, what, dir string, ps *os.ProcessState, cpu time.Duration, peak uint64,
-	took time.Duration,
+	ctx context.Context, c Command, taskID, what, dir, gateName string, ps *os.ProcessState, cpu time.Duration, peak uint64,
+	took, wait, held time.Duration,
 ) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err := c.Costs.Record(ctx, connect.NewRequest(&machinev1.CommandServiceRecordRequest{
 		TaskId: taskID, Directory: dir, Command: what, CpuSeconds: cpu.Seconds(),
 		Seconds: took.Seconds(), PeakMemoryBytes: peak, ExitCode: int32(ps.ExitCode()),
+		WaitSeconds: wait.Seconds(), HeldSeconds: held.Seconds(), Gate: gateName,
 	}))
 	if err != nil {
 		fmt.Fprintf(c.Notice, "djinn: the cost of the command is not recorded: %v\n", err)

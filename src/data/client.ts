@@ -10,6 +10,7 @@ import { createConnectTransport } from "@connectrpc/connect-web";
 
 import { LoadService } from "../../gen/ts/djinn/v1/load_pb";
 import {
+  CommandService,
   GateService,
   MachineService,
 } from "../../gen/ts/machine/v1/machine_pb";
@@ -48,6 +49,7 @@ export function createClients(transport: Transport) {
     tilasms: createClient(TilasmService, transport),
     machine: createClient(MachineService, transport),
     gates: createClient(GateService, transport),
+    commands: createClient(CommandService, transport),
     load: createClient(LoadService, transport),
     ui: createClient(UiService, transport),
   };

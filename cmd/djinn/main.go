@@ -47,8 +47,9 @@ var handwritten = map[string]func(args []string) int{
 	// `djinn gate run` runs a command here, under a gate the server grants.
 	"gate run": runGate,
 	// `djinn backup` and `djinn backup restore` work with or without a running djinn.
-	"backup":         func(args []string) int { return runBackup(args, os.Stdout, os.Stderr) },
-	"backup restore": func(args []string) int { return runBackup(append([]string{"restore"}, args...), os.Stdout, os.Stderr) },
+	"backup":           func(args []string) int { return runBackup(args, os.Stdout, os.Stderr) },
+	"backup restore":   func(args []string) int { return runBackup(append([]string{"restore"}, args...), os.Stdout, os.Stderr) },
+	"machine commands": runMachineCommands,
 }
 
 // runUpCommand is djinn up: it opens the app, and restarts on a newer binary when asked.
