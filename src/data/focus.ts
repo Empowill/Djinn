@@ -12,6 +12,8 @@ export interface Focus {
   terminal: string;
   // The tilasm to show, in the wish's Tilasms tab; empty for none.
   tilasmId: string;
+  // An element of the wish to bring into sight, as a line of the attention bar asks: its id; empty for none.
+  target: string;
   // A link the window was asked to open and does not know, or whose tilasm or wish is not on this machine; empty for
   // none.
   unknownLink: string;
@@ -28,6 +30,7 @@ export const none: Focus = {
   wishId: "",
   terminal: "",
   tilasmId: "",
+  target: "",
   unknownLink: "",
 };
 
@@ -48,6 +51,7 @@ export function createFocus(transport: Transport, retry = 1000): DjinnFocus {
             wishId: res.wishId,
             terminal: res.terminal,
             tilasmId: res.tilasmId,
+            target: "",
             unknownLink: res.unknownLink,
           };
           last = { focus, at: Date.now() };

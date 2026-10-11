@@ -184,7 +184,7 @@ html[data-theme="light"] {
   background: color-mix(in srgb, var(--tone) 8%, var(--bg));
   text-align: left;
 }
-.attention-item:hover {
+button.attention-item:hover {
   background: color-mix(in srgb, var(--tone) 16%, var(--bg));
 }
 .attention-item.level-blocking {

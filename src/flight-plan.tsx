@@ -22,7 +22,7 @@ import {
   TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
-import { AttentionBar, attentionOf } from "./attention";
+import { AttentionBar, attentionOf, useReach } from "./attention";
 import { type Decision, decisionOf } from "./data/decisions";
 import { useData, usePausable, useWishDetails } from "./data/djinn";
 import {
@@ -143,6 +143,19 @@ export function FlightPlan({
     setView(to);
     setFocus(id);
   }, []);
+  // What the plan's tabs show of the bar's lines: the open questions, the waiting workers and the grants in the
+  // first tab, the answered questions in the decisions.
+  const shown = useMemo(
+    () =>
+      new Set([
+        ...plan.questions.map(({ item }) => `question-${item.id}`),
+        ...plan.decisions.map(({ item }) => `decision-${item.id}`),
+        ...plan.waiting.map(({ item }) => `waiting-${item.id}`),
+        ...plan.ready.map((wish) => `grant-${wish.id}`),
+      ]),
+    [plan.questions, plan.decisions, plan.waiting, plan.ready],
+  );
+  const { reach } = useReach(show, shown);
 
   const wishById = useMemo(
     () => new Map(wishes.map((w) => [w.id, w])),
@@ -417,7 +430,7 @@ export function FlightPlan({
         <OperatingLoad />
       </header>
       <div className="mission-scroll" ref={keepPlace}>
-        <AttentionBar items={attention} />
+        <AttentionBar items={attention} reach={reach} />
         <div className="hero mission-header review-head">
           <div className="hero-copy">
             <span className="eyebrow">{t("plan.eyebrow")}</span>
