@@ -14612,7 +14612,9 @@ type DiffHunk struct {
 	// Number of lines in the new file hunk.
 	NewLines int32 `protobuf:"varint,5,opt,name=new_lines,json=newLines,proto3" json:"new_lines,omitempty"`
 	// The lines belonging to this hunk.
-	Lines         []*DiffLine `protobuf:"bytes,6,rep,name=lines,proto3" json:"lines,omitempty"`
+	Lines []*DiffLine `protobuf:"bytes,6,rep,name=lines,proto3" json:"lines,omitempty"`
+	// The hunk began in an earlier chunk, where its header was: these lines carry it on.
+	Continued     bool `protobuf:"varint,7,opt,name=continued,proto3" json:"continued,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -14687,6 +14689,13 @@ func (x *DiffHunk) GetLines() []*DiffLine {
 		return x.Lines
 	}
 	return nil
+}
+
+func (x *DiffHunk) GetContinued() bool {
+	if x != nil {
+		return x.Continued
+	}
+	return false
 }
 
 // A file changed by a task, with added/deleted line counts and flags.
@@ -14816,7 +14825,7 @@ func (x *TaskDiffFile) GetStatus() DiffStatus {
 	return DiffStatus_DIFF_STATUS_UNSPECIFIED
 }
 
-// The diff of a single file, with hunks or a truncation message when too large.
+// The diff of a single file, or one chunk of it when it is long: its hunks and its lines from offset on.
 type TaskFileDiff struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Path of the file, relative to the repository root.
@@ -14837,16 +14846,16 @@ type TaskFileDiff struct {
 	Added int32 `protobuf:"varint,8,opt,name=added,proto3" json:"added,omitempty"`
 	// Total lines deleted in this file.
 	Deleted int32 `protobuf:"varint,9,opt,name=deleted,proto3" json:"deleted,omitempty"`
-	// Unified diff hunks with syntax tokens.
+	// Unified diff hunks with syntax tokens, of this chunk's lines only.
 	Hunks []*DiffHunk `protobuf:"bytes,10,rep,name=hunks,proto3" json:"hunks,omitempty"`
-	// Whether the diff was cut because it exceeded the size threshold.
-	TooLarge bool `protobuf:"varint,11,opt,name=too_large,json=tooLarge,proto3" json:"too_large,omitempty"`
-	// Total lines of diff when cut.
+	// Lines of the whole unified diff of the file, its header included.
 	TotalLines int32 `protobuf:"varint,12,opt,name=total_lines,json=totalLines,proto3" json:"total_lines,omitempty"`
-	// Shell command to inspect the full diff.
-	Command string `protobuf:"bytes,13,opt,name=command,proto3" json:"command,omitempty"`
-	// Full unified diff patch text.
-	Patch         string `protobuf:"bytes,14,opt,name=patch,proto3" json:"patch,omitempty"`
+	// Unified diff patch text of this chunk's lines, as git prints them.
+	Patch string `protobuf:"bytes,14,opt,name=patch,proto3" json:"patch,omitempty"`
+	// First line of the diff in this chunk, from 0.
+	Offset int32 `protobuf:"varint,15,opt,name=offset,proto3" json:"offset,omitempty"`
+	// Where the next chunk starts: ask for it with this offset. 0 when this chunk ends the file's diff.
+	NextOffset    int32 `protobuf:"varint,16,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -14951,13 +14960,6 @@ func (x *TaskFileDiff) GetHunks() []*DiffHunk {
 	return nil
 }
 
-func (x *TaskFileDiff) GetTooLarge() bool {
-	if x != nil {
-		return x.TooLarge
-	}
-	return false
-}
-
 func (x *TaskFileDiff) GetTotalLines() int32 {
 	if x != nil {
 		return x.TotalLines
@@ -14965,18 +14967,25 @@ func (x *TaskFileDiff) GetTotalLines() int32 {
 	return 0
 }
 
-func (x *TaskFileDiff) GetCommand() string {
-	if x != nil {
-		return x.Command
-	}
-	return ""
-}
-
 func (x *TaskFileDiff) GetPatch() string {
 	if x != nil {
 		return x.Patch
 	}
 	return ""
+}
+
+func (x *TaskFileDiff) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *TaskFileDiff) GetNextOffset() int32 {
+	if x != nil {
+		return x.NextOffset
+	}
+	return 0
 }
 
 // Reference to a task, by code (W1, T07) or by UUID.
@@ -15071,7 +15080,11 @@ type TaskServiceDiffRequest struct {
 	// File path to show unified diff for. When empty, returns the list of changed files.
 	File string `protobuf:"bytes,2,opt,name=file,proto3" json:"file,omitempty"`
 	// Wish identifier when task is given by code and wish cannot be inferred from context.
-	WishId        string `protobuf:"bytes,3,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	WishId string `protobuf:"bytes,3,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	// First line of the file's diff to show, from 0: a long diff comes by chunks, each one giving the next one's offset.
+	Offset int32 `protobuf:"varint,4,opt,name=offset,proto3" json:"offset,omitempty"`
+	// Lines of the file's diff to show from the offset. 0: 2 000, the most a chunk holds.
+	Limit         int32 `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -15125,6 +15138,20 @@ func (x *TaskServiceDiffRequest) GetWishId() string {
 		return x.WishId
 	}
 	return ""
+}
+
+func (x *TaskServiceDiffRequest) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *TaskServiceDiffRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type TaskServiceDiffResponse struct {
@@ -18401,14 +18428,15 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bold_line\x18\x02 \x01(\x05R\aoldLine\x12\x19\n" +
 	"\bnew_line\x18\x03 \x01(\x05R\anewLine\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x12*\n" +
-	"\x06tokens\x18\x05 \x03(\v2\x12.plan.v1.DiffTokenR\x06tokens\"\xbf\x01\n" +
+	"\x06tokens\x18\x05 \x03(\v2\x12.plan.v1.DiffTokenR\x06tokens\"\xdd\x01\n" +
 	"\bDiffHunk\x12\x16\n" +
 	"\x06header\x18\x01 \x01(\tR\x06header\x12\x1b\n" +
 	"\told_start\x18\x02 \x01(\x05R\boldStart\x12\x1b\n" +
 	"\told_lines\x18\x03 \x01(\x05R\boldLines\x12\x1b\n" +
 	"\tnew_start\x18\x04 \x01(\x05R\bnewStart\x12\x1b\n" +
 	"\tnew_lines\x18\x05 \x01(\x05R\bnewLines\x12'\n" +
-	"\x05lines\x18\x06 \x03(\v2\x11.plan.v1.DiffLineR\x05lines\"\x96\x02\n" +
+	"\x05lines\x18\x06 \x03(\v2\x11.plan.v1.DiffLineR\x05lines\x12\x1c\n" +
+	"\tcontinued\x18\a \x01(\bR\tcontinued\"\x96\x02\n" +
 	"\fTaskDiffFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
 	"\bold_path\x18\x02 \x01(\tR\aoldPath\x12\x14\n" +
@@ -18420,7 +18448,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04lock\x18\b \x01(\bR\x04lock\x12\x16\n" +
 	"\x06folded\x18\t \x01(\bR\x06folded\x12+\n" +
 	"\x06status\x18\n" +
-	" \x01(\x0e2\x13.plan.v1.DiffStatusR\x06status\"\x93\x03\n" +
+	" \x01(\x0e2\x13.plan.v1.DiffStatusR\x06status\"\xb5\x03\n" +
 	"\fTaskFileDiff\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
 	"\bold_path\x18\x02 \x01(\tR\aoldPath\x12+\n" +
@@ -18432,20 +18460,24 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05added\x18\b \x01(\x05R\x05added\x12\x18\n" +
 	"\adeleted\x18\t \x01(\x05R\adeleted\x12'\n" +
 	"\x05hunks\x18\n" +
-	" \x03(\v2\x11.plan.v1.DiffHunkR\x05hunks\x12\x1b\n" +
-	"\ttoo_large\x18\v \x01(\bR\btooLarge\x12\x1f\n" +
+	" \x03(\v2\x11.plan.v1.DiffHunkR\x05hunks\x12\x1f\n" +
 	"\vtotal_lines\x18\f \x01(\x05R\n" +
-	"totalLines\x12\x18\n" +
-	"\acommand\x18\r \x01(\tR\acommand\x12\x14\n" +
-	"\x05patch\x18\x0e \x01(\tR\x05patch\"d\n" +
+	"totalLines\x12\x14\n" +
+	"\x05patch\x18\x0e \x01(\tR\x05patch\x12\x16\n" +
+	"\x06offset\x18\x0f \x01(\x05R\x06offset\x12\x1f\n" +
+	"\vnext_offset\x18\x10 \x01(\x05R\n" +
+	"nextOffsetJ\x04\b\v\x10\fJ\x04\b\r\x10\x0eR\ttoo_largeR\acommand\"d\n" +
 	"\aTaskRef\x12/\n" +
 	"\x04code\x18\x01 \x01(\tB\x19\xbaH\x16r\x142\x12^[WTwt][0-9]{1,4}$H\x00R\x04code\x12\x1a\n" +
 	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\x02idB\f\n" +
-	"\x03ref\x12\x05\xbaH\x02\b\x01\"\x8a\x01\n" +
+	"\x03ref\x12\x05\xbaH\x02\b\x01\"\xcd\x01\n" +
 	"\x16TaskServiceDiffRequest\x12,\n" +
 	"\x04task\x18\x01 \x01(\v2\x10.plan.v1.TaskRefB\x06\xbaH\x03\xc8\x01\x01R\x04task\x12\x1c\n" +
 	"\x04file\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xe8\aR\x04file\x12$\n" +
-	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"\x99\x01\n" +
+	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x1f\n" +
+	"\x06offset\x18\x04 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x06offset\x12 \n" +
+	"\x05limit\x18\x05 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xd0\x0f(\x00R\x05limit\"\x99\x01\n" +
 	"\x17TaskServiceDiffResponse\x12+\n" +
 	"\x05files\x18\x01 \x03(\v2\x15.plan.v1.TaskDiffFileR\x05files\x12)\n" +
 	"\x04file\x18\x02 \x01(\v2\x15.plan.v1.TaskFileDiffR\x04file\x12\x12\n" +

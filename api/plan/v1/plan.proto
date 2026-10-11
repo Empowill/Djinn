@@ -3180,7 +3180,7 @@ service TaskService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
-  // unified diff of that file with syntax tokens.
+  // unified diff of that file with syntax tokens, by chunks of 2 000 lines at most: --offset asks for the next one.
   rpc Diff(TaskServiceDiffRequest) returns (TaskServiceDiffResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -3496,6 +3496,8 @@ message DiffHunk {
   int32 new_lines = 5;
   // The lines belonging to this hunk.
   repeated DiffLine lines = 6;
+  // The hunk began in an earlier chunk, where its header was: these lines carry it on.
+  bool continued = 7;
 }
 
 // A file changed by a task, with added/deleted line counts and flags.
@@ -3522,8 +3524,10 @@ message TaskDiffFile {
   DiffStatus status = 10;
 }
 
-// The diff of a single file, with hunks or a truncation message when too large.
+// The diff of a single file, or one chunk of it when it is long: its hunks and its lines from offset on.
 message TaskFileDiff {
+  reserved 11, 13;
+  reserved "too_large", "command";
   // Path of the file, relative to the repository root.
   string path = 1;
   // Previous path when renamed.
@@ -3542,16 +3546,16 @@ message TaskFileDiff {
   int32 added = 8;
   // Total lines deleted in this file.
   int32 deleted = 9;
-  // Unified diff hunks with syntax tokens.
+  // Unified diff hunks with syntax tokens, of this chunk's lines only.
   repeated DiffHunk hunks = 10;
-  // Whether the diff was cut because it exceeded the size threshold.
-  bool too_large = 11;
-  // Total lines of diff when cut.
+  // Lines of the whole unified diff of the file, its header included.
   int32 total_lines = 12;
-  // Shell command to inspect the full diff.
-  string command = 13;
-  // Full unified diff patch text.
+  // Unified diff patch text of this chunk's lines, as git prints them.
   string patch = 14;
+  // First line of the diff in this chunk, from 0.
+  int32 offset = 15;
+  // Where the next chunk starts: ask for it with this offset. 0 when this chunk ends the file's diff.
+  int32 next_offset = 16;
 }
 
 // Reference to a task, by code (W1, T07) or by UUID.
@@ -3579,6 +3583,13 @@ message TaskServiceDiffRequest {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
+  // First line of the file's diff to show, from 0: a long diff comes by chunks, each one giving the next one's offset.
+  int32 offset = 4 [(buf.validate.field).int32.gte = 0];
+  // Lines of the file's diff to show from the offset. 0: 2 000, the most a chunk holds.
+  int32 limit = 5 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 2000
+  }];
 }
 
 message TaskServiceDiffResponse {

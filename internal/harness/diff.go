@@ -1,9 +1,12 @@
 package harness
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -18,7 +21,8 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-const maxDiffLines = 2000
+// diffChunkLines is the most lines of a file's diff one answer holds: past it, the file comes by chunks.
+const diffChunkLines = 2000
 
 // Diff returns the list of files changed by a task, or the unified diff with syntax tokens for a single file.
 func (h *Harness) Diff(ctx context.Context, procedure string, req *planv1.TaskServiceDiffRequest) (*planv1.TaskServiceDiffResponse, error) {
@@ -72,7 +76,7 @@ func (h *Harness) Diff(ctx context.Context, procedure string, req *planv1.TaskSe
 	targetPath = filepath.ToSlash(filepath.Clean(targetPath))
 	targetPath = strings.TrimPrefix(targetPath, "/")
 
-	fileDiff, err := h.diffSingleFile(ctx, dir, base, head, targetPath, globs)
+	fileDiff, err := h.diffSingleFile(ctx, dir, base, head, targetPath, globs, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		return nil, err
 	}
@@ -280,147 +284,173 @@ func (h *Harness) diffFiles(ctx context.Context, dir, base, head string, globs [
 	return files, nil
 }
 
-func (h *Harness) diffSingleFile(ctx context.Context, dir, base, head, filePath string, globs []string) (*planv1.TaskFileDiff, error) {
-	out, err := gitRaw(ctx, dir, "diff", "-U3", "-M", base, head, "--", filePath)
-	if err != nil {
+// diffSingleFile reads the file's unified diff from git line by line and keeps only the chunk [offset,
+// offset+limit): a long diff is never held whole, nor highlighted beyond what the reader asked for.
+func (h *Harness) diffSingleFile(ctx context.Context, dir, base, head, filePath string, globs []string, offset, limit int32) (*planv1.TaskFileDiff, error) {
+	if limit <= 0 || limit > diffChunkLines {
+		limit = diffChunkLines
+	}
+	r := newDiffChunk(filePath, int(offset), int(offset)+int(limit))
+	if err := gitLines(ctx, dir, r.line, "diff", "-U3", "-M", base, head, "--", filePath); err != nil {
 		return nil, err
 	}
+	r.end()
 
 	gen := isGenerated(filePath, globs)
 	lock := isLockFile(filePath)
-	binary := strings.Contains(out, "Binary files")
-
-	totalLines := strings.Count(out, "\n")
-	if totalLines > maxDiffLines {
-		cmd := fmt.Sprintf("git diff %s %s -- %s", base, head, filePath)
-		return &planv1.TaskFileDiff{
-			Path:       filePath,
-			Generated:  gen,
-			Lock:       lock,
-			Binary:     binary,
-			Folded:     gen || lock || binary,
-			TooLarge:   true,
-			TotalLines: int32(totalLines),
-			Command:    cmd,
-		}, nil
-	}
-
-	hunks, added, deleted, isBin := parseHunks(out, filePath)
-	if isBin {
-		binary = true
-	}
-
-	return &planv1.TaskFileDiff{
+	d := &planv1.TaskFileDiff{
 		Path:       filePath,
 		Generated:  gen,
 		Lock:       lock,
-		Binary:     binary,
-		Folded:     gen || lock || binary,
-		Added:      added,
-		Deleted:    deleted,
-		Hunks:      hunks,
-		Patch:      out,
-		TotalLines: int32(totalLines),
-	}, nil
+		Binary:     r.binary,
+		Folded:     gen || lock || r.binary,
+		Added:      r.added,
+		Deleted:    r.deleted,
+		Hunks:      r.hunks,
+		Patch:      r.patch.String(),
+		TotalLines: int32(r.n),
+		Offset:     offset,
+	}
+	if r.n > r.to {
+		d.NextOffset = int32(r.to)
+	}
+	if r.binary {
+		d.Hunks = nil
+	}
+	return d, nil
 }
 
-func parseHunks(diffText, filePath string) (hunks []*planv1.DiffHunk, added, deleted int32, binary bool) {
+// gitLines runs git in dir and hands its output to visit one line at a time, without its newline.
+func gitLines(ctx context.Context, dir string, visit func(string), args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("git %s: %w", args[0], err)
+	}
+	br := bufio.NewReader(out)
+	for {
+		line, rerr := br.ReadString('\n')
+		if line != "" {
+			visit(strings.TrimSuffix(line, "\n"))
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	if err := cmd.Wait(); err != nil {
+		msg := strings.TrimSpace(errOut.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("git %s: %s", args[0], msg)
+	}
+	return nil
+}
+
+// diffChunk parses a unified diff line by line: it counts every line and every change, and keeps the hunks of the
+// lines in [from, to) only, with their syntax tokens.
+type diffChunk struct {
+	lexer            chroma.Lexer
+	from, to         int
+	n                int // lines read so far
+	header           *planv1.DiffHunk
+	cur              *planv1.DiffHunk
+	hunks            []*planv1.DiffHunk
+	patch            strings.Builder
+	oldLine, newLine int32
+	added            int32
+	deleted          int32
+	binary           bool
+}
+
+func newDiffChunk(filePath string, from, to int) *diffChunk {
 	lexer := lexers.Match(filePath)
 	if lexer == nil {
 		lexer = lexers.Fallback
 	}
-	lexer = chroma.Coalesce(lexer)
+	return &diffChunk{lexer: chroma.Coalesce(lexer), from: from, to: to}
+}
 
-	lines := strings.Split(diffText, "\n")
-	var currentHunk *planv1.DiffHunk
-	var oldLine, newLine int32
-
-	for _, line := range lines {
+func (c *diffChunk) line(line string) {
+	in := c.n >= c.from && c.n < c.to
+	c.n++
+	if in {
+		c.patch.WriteString(line)
+		c.patch.WriteByte('\n')
+	}
+	if strings.HasPrefix(line, "@@") {
+		c.end()
+		hunkHeader, oStart, oLines, nStart, nLines := parseHunkHeader(line)
+		c.oldLine, c.newLine = oStart, nStart
+		c.header = &planv1.DiffHunk{Header: hunkHeader, OldStart: oStart, OldLines: oLines, NewStart: nStart, NewLines: nLines}
+		if in {
+			c.cur = c.header
+		}
+		return
+	}
+	if c.header == nil {
+		// Diff metadata before the first hunk (diff --git, index, ---, +++), or a binary file's notice.
 		if strings.HasPrefix(line, "Binary files") {
-			return nil, 0, 0, true
+			c.binary = true
 		}
-		if strings.HasPrefix(line, "@@") {
-			if currentHunk != nil {
-				hunks = append(hunks, currentHunk)
-			}
-			hunkHeader, oStart, oLines, nStart, nLines := parseHunkHeader(line)
-			oldLine = oStart
-			newLine = nStart
-			currentHunk = &planv1.DiffHunk{
-				Header:   hunkHeader,
-				OldStart: oStart,
-				OldLines: oLines,
-				NewStart: nStart,
-				NewLines: nLines,
-			}
-			continue
-		}
-		if currentHunk == nil {
-			// Diff metadata before the first hunk (diff --git, index, ---, +++)
-			continue
-		}
+		return
+	}
 
-		if len(line) == 0 {
-			// Empty line in hunk is treated as context
-			currentHunk.Lines = append(currentHunk.Lines, &planv1.DiffLine{
-				Kind:    planv1.DiffLineKind_DIFF_LINE_KIND_CONTEXT,
-				OldLine: oldLine,
-				NewLine: newLine,
-				Text:    "",
-			})
-			oldLine++
-			newLine++
-			continue
-		}
-
-		prefix := line[0]
-		text := line[1:]
-
-		switch prefix {
-		case ' ':
-			tokens := highlightLine(lexer, text)
-			currentHunk.Lines = append(currentHunk.Lines, &planv1.DiffLine{
-				Kind:    planv1.DiffLineKind_DIFF_LINE_KIND_CONTEXT,
-				OldLine: oldLine,
-				NewLine: newLine,
-				Text:    text,
-				Tokens:  tokens,
-			})
-			oldLine++
-			newLine++
+	kind := planv1.DiffLineKind_DIFF_LINE_KIND_CONTEXT
+	text := line
+	if line != "" {
+		text = line[1:]
+		switch line[0] {
 		case '+':
-			added++
-			tokens := highlightLine(lexer, text)
-			currentHunk.Lines = append(currentHunk.Lines, &planv1.DiffLine{
-				Kind:    planv1.DiffLineKind_DIFF_LINE_KIND_ADDED,
-				OldLine: 0,
-				NewLine: newLine,
-				Text:    text,
-				Tokens:  tokens,
-			})
-			newLine++
+			kind = planv1.DiffLineKind_DIFF_LINE_KIND_ADDED
 		case '-':
-			deleted++
-			tokens := highlightLine(lexer, text)
-			currentHunk.Lines = append(currentHunk.Lines, &planv1.DiffLine{
-				Kind:    planv1.DiffLineKind_DIFF_LINE_KIND_DELETED,
-				OldLine: oldLine,
-				NewLine: 0,
-				Text:    text,
-				Tokens:  tokens,
-			})
-			oldLine++
+			kind = planv1.DiffLineKind_DIFF_LINE_KIND_DELETED
 		case '\\':
 			// "\ No newline at end of file"
-			continue
+			return
 		}
 	}
-
-	if currentHunk != nil {
-		hunks = append(hunks, currentHunk)
+	l := &planv1.DiffLine{Kind: kind}
+	switch kind {
+	case planv1.DiffLineKind_DIFF_LINE_KIND_ADDED:
+		c.added++
+		l.NewLine = c.newLine
+		c.newLine++
+	case planv1.DiffLineKind_DIFF_LINE_KIND_DELETED:
+		c.deleted++
+		l.OldLine = c.oldLine
+		c.oldLine++
+	default:
+		l.OldLine, l.NewLine = c.oldLine, c.newLine
+		c.oldLine++
+		c.newLine++
 	}
+	if !in {
+		return
+	}
+	if c.cur == nil {
+		// The chunk starts within a hunk shown in an earlier chunk: carry it on, its header said there.
+		c.cur = &planv1.DiffHunk{
+			Header: c.header.GetHeader(), OldStart: c.header.GetOldStart(), OldLines: c.header.GetOldLines(),
+			NewStart: c.header.GetNewStart(), NewLines: c.header.GetNewLines(), Continued: true,
+		}
+	}
+	l.Text = text
+	l.Tokens = highlightLine(c.lexer, text)
+	c.cur.Lines = append(c.cur.Lines, l)
+}
 
-	return hunks, added, deleted, binary
+// end closes the hunk being filled.
+func (c *diffChunk) end() {
+	if c.cur != nil {
+		c.hunks = append(c.hunks, c.cur)
+		c.cur = nil
+	}
 }
 
 func parseHunkHeader(headerLine string) (header string, oldStart, oldLines, newStart, newLines int32) {

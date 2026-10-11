@@ -167,37 +167,24 @@
   color: var(--n-ff);
 }
 
-/* Large diff banner */
-.diff-too-large {
-  padding: var(--space-3);
-  background: var(--sand-bg);
-  border: 1px solid var(--sand-line);
-  border-radius: var(--radius-sm);
-  color: var(--sand-ink);
-}
-
-.diff-too-large-msg {
-  font-weight: 600;
-  margin-bottom: var(--space-1);
-  color: var(--sand);
-}
-
-.diff-too-large-cmd-label {
+/* A long diff comes by chunks: the next one loads when this row nears the view */
+.diff-next-chunk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  color: var(--n-88);
   font-size: var(--font-size-body);
-  color: var(--sand-text);
-  margin-bottom: var(--space-1);
 }
 
-.diff-too-large-cmd {
-  padding: var(--space-2);
-  background: var(--n-11);
-  border: 1px solid var(--n-25);
-  border-radius: var(--radius-sm);
-  font-family: var(--mono);
+.diff-next-chunk-btn {
+  padding: var(--space-1) var(--space-2);
   font-size: var(--font-size-body);
-  color: var(--n-ff);
-  overflow-x: auto;
-  user-select: all;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--n-2a);
+  background: var(--n-1c);
+  color: var(--n-c4);
 }
 
 .diff-binary-msg {
