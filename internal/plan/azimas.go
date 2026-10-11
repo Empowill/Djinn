@@ -112,7 +112,13 @@ func FillAzimas(tasks []*planv1.Task) {
 			e.Sync = existing.GetSync()
 			e.Pr = existing.GetPr()
 		}
+		// A merge counts with the original task it serves (MergeHost): it runs, its original runs.
+		running := map[string]bool{}
 		for _, p := range parts[t.GetId()] {
+			if h := MergeHost(p, byID); h != "" {
+				running[h] = running[h] || working(p) || taskMerging(p)
+				continue
+			}
 			e.Parts++
 			if IsAzima(p) {
 				if state(p) == planv1.AzimaState_AZIMA_STATE_DONE {
@@ -121,7 +127,10 @@ func FillAzimas(tasks []*planv1.Task) {
 			} else if p.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !taskMergingOrFailed(p) {
 				e.PartsDone++
 			}
-			if working(p) || taskMerging(p) {
+			running[p.GetId()] = running[p.GetId()] || working(p) || taskMerging(p)
+		}
+		for _, r := range running {
+			if r {
 				e.PartsRunning++
 			}
 		}
