@@ -58,6 +58,7 @@ import {
   codeMapOf,
   forkedAs,
   investigatingQuestions,
+  mergeNest,
   movingTasks,
   openQuestions,
   spent,
@@ -231,6 +232,8 @@ export function WishView({
     if (store) void store.loadKinds(wish.id, kindsForView("tilasms"));
   }, [opening, store, wish.id]);
   const moving = useMemo(() => movingTasks(detail.tasks), [detail.tasks]);
+  // Where the merges show: under the task they serve.
+  const nest = useMemo(() => mergeNest(detail.tasks), [detail.tasks]);
   // The done azimas fold, apart (src/task-tabs.tsx); a link to one, or to one of its parts, shows them.
   const azimas = useMemo(() => azimaGroups(detail.tasks), [detail.tasks]);
   const activeAzimas = useMemo(
@@ -244,9 +247,11 @@ export function WishView({
   const showDone = useMemo(
     () =>
       doneAzimas.some(
-        (x) => x.azima.id === focus || x.parts.some((p) => p.id === focus),
+        (x) =>
+          x.azima.id === focus ||
+          x.parts.some((p) => p.id === (nest.host.get(focus) ?? focus)),
       ),
-    [doneAzimas, focus],
+    [doneAzimas, focus, nest],
   );
   const drafts = useMemo(() => draftAzimas(detail.tasks), [detail.tasks]);
   const showDrafts = useMemo(
@@ -359,23 +364,31 @@ export function WishView({
   );
 
   const renderTask = useCallback(
-    (task: Task) => (
-      <WishTask
-        key={task.id}
-        task={task}
-        codes={codes}
-        forkedAs={forkedAs(task, detail.tasks)}
-        decision={decisionOf(task, decisions)}
-        focused={focus === task.id}
-        onDecision={handleDecision}
-        project={projectById.get(task.projectId)}
-        onStop={handleStop}
-        onSend={handleSend}
-        onHold={pausable ? handleHold : undefined}
-        onDone={handleDone}
-      />
-    ),
+    function row(task: Task): ReactNode {
+      const merges = nest.under.get(task.id);
+      return (
+        <WishTask
+          key={task.id}
+          task={task}
+          codes={codes}
+          forkedAs={forkedAs(task, detail.tasks)}
+          decision={decisionOf(task, decisions)}
+          focused={focus === task.id}
+          onDecision={handleDecision}
+          project={projectById.get(task.projectId)}
+          onStop={handleStop}
+          onSend={handleSend}
+          onHold={pausable ? handleHold : undefined}
+          onDone={handleDone}
+          merges={merges}
+          nested={merges?.map(row)}
+          mergeOpen={nest.host.get(focus) === task.id}
+          alsoMerged={nest.links.get(task.id)}
+        />
+      );
+    },
     [
+      nest,
       codes,
       detail.tasks,
       decisions,
@@ -458,6 +471,7 @@ export function WishView({
         tasks={byId}
         render={renderTask}
         focus={focus}
+        nest={nest}
         onValidate={handleValidateAzima}
         isPerAzima={isPerAzima}
         onPush={handlePushAzima}
@@ -466,6 +480,7 @@ export function WishView({
     ),
     [
       byId,
+      nest,
       renderTask,
       focus,
       handleValidateAzima,

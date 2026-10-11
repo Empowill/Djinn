@@ -75,19 +75,21 @@ export function attentionOf(
       origin: origin?.(wish),
     });
   }
-  for (const { wish, item, question } of waiting) {
+  for (const { wish, item, question, host } of waiting) {
     // A worker that waits for an open question is already on that question's line.
     if (item.status === TaskStatus.WAITING && question) continue;
     const failed = item.status === TaskStatus.FAILED;
+    const text = failed
+      ? firstLine(item.error) || t("attention.worker_failed")
+      : t("attention.worker_waits");
     out.push({
       key: item.id,
       level: "action",
       target: `waiting-${item.id}`,
       wishId: wish.id,
-      code: item.code,
-      text: failed
-        ? firstLine(item.error) || t("attention.worker_failed")
-        : t("attention.worker_waits"),
+      // A merge counts with the task it serves: its line is that task's.
+      code: host?.code ?? item.code,
+      text: host ? `${t("task.merge")} ${item.code} · ${text}` : text,
       origin: origin?.(wish),
     });
   }

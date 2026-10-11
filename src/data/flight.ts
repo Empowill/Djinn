@@ -47,6 +47,8 @@ export function byUrgency(a: OpenQuestion, b: OpenQuestion): number {
 export interface Waiting extends Item<Task> {
   // The code of the question the task waits for, when it is open.
   question: string;
+  // For a merge, the original task it sits under (mergeNest): the line shows as that task's.
+  host?: Task;
 }
 
 export interface FlightPlan {
@@ -122,10 +124,94 @@ export function isDraftAzima(task: Task): boolean {
   );
 }
 
-// loose are the tasks the Tasks tab lists on their own: work part of no azima among tasks.
+// loose are the tasks the Tasks tab lists on their own: work part of no azima among tasks, merges nested under the
+// task they serve left out (mergeNest).
 export function loose(tasks: readonly Task[]): Task[] {
   const azimas = new Set(tasks.filter(isAzima).map((x) => x.id));
-  return tasks.filter((x) => !isAzima(x) && !azimas.has(x.partOf));
+  const nested = mergeNest(tasks).host;
+  return tasks.filter(
+    (x) => !isAzima(x) && !azimas.has(x.partOf) && !nested.has(x.id),
+  );
+}
+
+// isMerge tells a worker Djinn starts by itself to bring work into an integration branch: a correction (its merge
+// conflicted, or its tests or push checks failed) or a review of work left not committed (internal/plan.IsMerge).
+export function isMerge(task: Task): boolean {
+  return !!task.correction || !!task.review;
+}
+
+// mergeOf are the tasks a merge brings the work of, by id.
+function mergeOf(task: Task): readonly string[] {
+  return task.correction?.failure?.taskIds ?? task.review?.taskIds ?? [];
+}
+
+// mergeServes are the original tasks a merge serves: the tasks it brings the work of, earlier merges among them
+// followed back to tasks that are no merges, in order and once each (internal/plan.MergeServes).
+export function mergeServes(
+  task: Task,
+  byId: ReadonlyMap<string, Task>,
+): Task[] {
+  const out: Task[] = [];
+  const seen = new Set([task.id]);
+  const walk = (ids: readonly string[]) => {
+    for (const id of ids) {
+      const s = byId.get(id);
+      if (seen.has(id) || !s) continue;
+      seen.add(id);
+      if (isMerge(s)) walk(mergeOf(s));
+      else out.push(s);
+    }
+  };
+  walk(mergeOf(task));
+  return out;
+}
+
+// MergeNest says where the merges among a wish's tasks show: each under the first original task it serves in the
+// same azima (or, like it, in none), not as a peer of that azima's work; linked from the other tasks it serves. A
+// merge that serves none there (a push or main branch correction) stays a peer, marked as a merge.
+export interface MergeNest {
+  // The task each nested merge sits under, by the merge's id.
+  host: ReadonlyMap<string, string>;
+  // The merges nested under a task, by its id, in their order among the tasks.
+  under: ReadonlyMap<string, Task[]>;
+  // The merges that serve a task but sit under another one, its host, by the task's id.
+  links: ReadonlyMap<string, { merge: Task; host: Task }[]>;
+}
+
+const nests = new WeakMap<readonly Task[], MergeNest>();
+
+// mergeNest is where the merges among tasks show (MergeNest); the same list gives the same answer.
+export function mergeNest(tasks: readonly Task[]): MergeNest {
+  const known = nests.get(tasks);
+  if (known) return known;
+  const byId = new Map(tasks.map((x) => [x.id, x]));
+  const host = new Map<string, string>();
+  const under = new Map<string, Task[]>();
+  const links = new Map<string, { merge: Task; host: Task }[]>();
+  for (const x of tasks) {
+    if (!isMerge(x)) continue;
+    const served = mergeServes(x, byId);
+    const first = served.find((s) => s.partOf === x.partOf);
+    if (!first) continue;
+    host.set(x.id, first.id);
+    under.set(first.id, [...(under.get(first.id) ?? []), x]);
+    for (const s of served)
+      if (s !== first)
+        links.set(s.id, [
+          ...(links.get(s.id) ?? []),
+          { merge: x, host: first },
+        ]);
+  }
+  const nest = { host, under, links };
+  nests.set(tasks, nest);
+  return nest;
+}
+
+// settledTask tells a finished task whose merges are finished too: a task whose merge still runs moves with it.
+export function settledTask(task: Task, nest: MergeNest): boolean {
+  return (
+    finishedTask(task) && (nest.under.get(task.id) ?? []).every(finishedTask)
+  );
 }
 
 // isTaskMerging tells whether a done task's work is currently merging.
@@ -199,16 +285,23 @@ export function awaitedProofs(tasks: readonly Task[]): Proof[] {
     );
 }
 
-// workCount is how many tasks of work there are: the azimas are the plan, not work.
+// workCount is how many tasks of work there are: the azimas are the plan, not work; a merge counts with the task it serves.
 export function workCount(tasks: readonly Task[]): number {
   const azimas = tasks.filter((x) => isAzima(x) && !isDraftAzima(x));
   const hasServerParts = azimas.some((a) => (a.azima?.parts ?? 0) > 0);
   if (hasServerParts) {
     const serverParts = azimas.reduce((n, a) => n + (a.azima?.parts ?? 0), 0);
     const looseTasks = tasks.filter((x) => !isAzima(x) && !x.partOf).length;
-    return serverParts + looseTasks;
+    return serverParts + looseTasks - nestedLoose(tasks);
   }
-  return tasks.filter((x) => !isAzima(x)).length;
+  const nested = mergeNest(tasks).host;
+  return tasks.filter((x) => !isAzima(x) && !nested.has(x.id)).length;
+}
+
+// nestedLoose is how many merges part of no azima sit under the task they serve: counted with it.
+function nestedLoose(tasks: readonly Task[]): number {
+  const nested = mergeNest(tasks).host;
+  return tasks.filter((x) => !x.partOf && nested.has(x.id)).length;
 }
 
 // workDoneCount is how many work tasks are done: using server azima.partsDone when available.
@@ -220,20 +313,28 @@ export function workDoneCount(tasks: readonly Task[]): number {
       (n, a) => n + (a.azima?.partsDone ?? 0),
       0,
     );
+    const nested = mergeNest(tasks).host;
     const looseDone = tasks.filter(
-      (x) => x.status === TaskStatus.DONE && !isAzima(x) && !x.partOf,
+      (x) =>
+        x.status === TaskStatus.DONE &&
+        !isAzima(x) &&
+        !x.partOf &&
+        !nested.has(x.id),
     ).length;
     return serverDone + looseDone;
   }
+  const nested = mergeNest(tasks).host;
   return tasks.filter(
-    (task) => task.status === TaskStatus.DONE && !isAzima(task),
+    (task) =>
+      task.status === TaskStatus.DONE && !isAzima(task) && !nested.has(task.id),
   ).length;
 }
 
 // finishedTasks are the tasks at the bottom of the Tasks tab, the latest ended first: work part of no azima.
 export function finishedTasks(tasks: readonly Task[]): Task[] {
+  const nest = mergeNest(tasks);
   return loose(tasks)
-    .filter((x) => finishedTask(x))
+    .filter((x) => settledTask(x, nest))
     .sort(newestEnded);
 }
 
@@ -281,12 +382,15 @@ export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
     .filter((x) => isAzima(x) && !isDraftAzima(x))
     .sort((a, b) => azimaRank(a) - azimaRank(b) || compareCodes(a.code, b.code))
     .map((azima) => {
-      const parts = tasks.filter((x) => x.partOf === azima.id);
+      const nest = mergeNest(tasks);
+      const parts = tasks.filter(
+        (x) => x.partOf === azima.id && !nest.host.has(x.id),
+      );
       return {
         azima,
         parts: [
-          ...parts.filter((x) => !finishedTask(x)).sort(byMotion),
-          ...parts.filter((x) => finishedTask(x)).sort(newestEnded),
+          ...parts.filter((x) => !settledTask(x, nest)).sort(byMotion),
+          ...parts.filter((x) => settledTask(x, nest)).sort(newestEnded),
         ],
       };
     });
@@ -330,8 +434,9 @@ export function byMotion(a: Task, b: Task): number {
 // movingTasks are the tasks at the top of the Tasks tab: what moves or waits for someone, by status; work part of no
 // azima.
 export function movingTasks(tasks: readonly Task[]): Task[] {
+  const nest = mergeNest(tasks);
   return loose(tasks)
-    .filter((x) => !finishedTask(x))
+    .filter((x) => !settledTask(x, nest))
     .sort(byMotion);
 }
 
@@ -424,7 +529,14 @@ export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
     )
     .map((item) => {
       const q = questions.get(item.editQuestionId);
-      return { wish, item, question: q && isOpen(q) ? q.code : "" };
+      const id = mergeNest(detail.tasks).host.get(item.id);
+      const host = id ? detail.tasks.find((x) => x.id === id) : undefined;
+      return {
+        wish,
+        item,
+        question: q && isOpen(q) ? q.code : "",
+        ...(host && { host }),
+      };
     });
 }
 

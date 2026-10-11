@@ -298,7 +298,7 @@ func (h *Harness) mainFailed(
 	text := fmt.Sprintf("%s: %s; %s stays as it was", what, headline(f.GetReason()), branch)
 	if int(attempts) < settings.CorrectionAttempts {
 		c, err := h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
-			WishId: wish.GetId(), ProjectId: project.GetId(), Title: mainCorrectionTitle(f, shown, branch),
+			WishId: wish.GetId(), ProjectId: project.GetId(), Title: mergeLine(shown, failureWhat(f)),
 			Prompt: correctionPrompt(shown, fmt.Sprintf("%s at %s", shown, short8(f.GetMainSha())), f, branch, settings, attempts+1),
 		}, &planv1.Task{Correction: &planv1.TaskCorrection{Failure: f, Attempt: attempts + 1}})
 		if err == nil {
@@ -318,14 +318,6 @@ func (h *Harness) mainFailed(
 	})
 	h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE, wish.GetId(), "", fmt.Sprintf("Djinn: the merge of %s into %s failed: %s. The move is yours: retry a correction, or leave it waiting (Djinn merges again once main moves).",
 		shown, branch, headline(f.GetReason())))
-}
-
-// mainCorrectionTitle is the title of a correction worker of main's failed merge f into branch.
-func mainCorrectionTitle(f *planv1.IntegrationFailure, shown, branch string) string {
-	if f.GetState() == planv1.IntegrationState_INTEGRATION_STATE_RED {
-		return fmt.Sprintf("Make the tests pass with %s merged into %s", shown, branch)
-	}
-	return fmt.Sprintf("Settle the conflict of %s with %s", shown, branch)
 }
 
 // settleMain records main as merged into the integration branch, in.Sha, by the work of a correction worker of its

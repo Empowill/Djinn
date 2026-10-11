@@ -238,7 +238,7 @@ func TestMainConflictStartsACorrection(t *testing.T) {
 	}
 	c := u.ended(t, state.GetCorrectedBy())
 	f := c.GetCorrection().GetFailure()
-	if c.GetTitle() != "Settle the conflict of origin/"+u.main+" with feat/x" || c.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
+	if c.GetTitle() != "Merge: origin/"+u.main+" — conflict in app/README.md" || c.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
 		f.GetMainSha() != theirs || f.GetBase() != old || !slices.Equal(f.GetFiles(), []string{"app/README.md"}) || len(f.GetTaskIds()) != 0 {
 		t.Fatalf("the correction worker %v", c)
 	}

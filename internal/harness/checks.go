@@ -257,7 +257,7 @@ func (h *Harness) spawnPushCorrection(
 	provider, model := h.wishProviderAndModel(ctx, wish, settings, committed)
 	req := &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(),
-		Title:    fmt.Sprintf("Make the push checks of %s pass", branch),
+		Title:    mergeLine("push checks", failedChecks(f)),
 		Prompt:   pushCorrectionPrompt(branch, f, settings, attempt),
 		Provider: provider, Model: model,
 	}

@@ -178,7 +178,7 @@ func (h *Harness) spawnReview(
 	review := &planv1.TaskReview{TaskIds: ids(group), Attempt: attempt}
 	azima, note := h.azimaOf(ctx, from)
 	r, err := h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
-		WishId: wish.GetId(), ProjectId: project.GetId(), Title: "Review the work " + from.GetCode() + " left not committed",
+		WishId: wish.GetId(), ProjectId: project.GetId(), Title: mergeTitle(servedTasks(ctx, h.store, group), "work left not committed"),
 		Prompt:   reviewPrompt(from, prompt, status, uncommittedDiff(ctx, from.GetWorktree(), status), branch, settings, attempt),
 		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: azima,
 	}, &planv1.Task{Review: review, Branch: from.GetBranch(), Worktree: from.GetWorktree()})

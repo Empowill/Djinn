@@ -241,7 +241,7 @@ func TestCorrectRedTests(t *testing.T) {
 			t.Errorf("W2's prompt lacks %q:\n%s", s, prompt)
 		}
 	}
-	if !merged || w2.GetTitle() != "Make the tests pass with the work of W1" {
+	if !merged || w2.GetTitle() != "Merge: Work of W1 (W1) — tests" {
 		t.Errorf("W2 %q started without the merged work: %v", w2.GetTitle(), merged)
 	}
 	in.pass(t, time.Second)
@@ -305,7 +305,7 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 	q := in.attachQuestion(t, w1)
 
 	// Try again: a new correction, its attempts counted from one; the lead hears what Djinn did, not to act.
-	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn started W3: Make the tests pass with the work of W1" {
+	if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn started W3: Merge: Work of W1 (W1) — tests" {
 		t.Errorf("what Djinn did: %q", did)
 	}
 	got, texts := in.integration(t, w1)

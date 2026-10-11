@@ -6,6 +6,7 @@
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
 import {
   type CSSProperties,
+  type ReactNode,
   useCallback,
   useMemo,
   useRef,
@@ -29,6 +30,7 @@ import {
   type AzimaGroup,
   flightPlan,
   isAzima,
+  mergeNest,
   spent,
   taskMapOf,
 } from "./data/flight";
@@ -68,6 +70,8 @@ import {
   WaitingTasks,
   wishOrigin,
 } from "./wish-view";
+
+const noTasks: readonly Task[] = [];
 
 export function FlightPlan({
   wishes,
@@ -243,9 +247,17 @@ export function FlightPlan({
     [act, clients.tasks],
   );
 
+  // Where the merges of a wish show: under the task they serve.
+  const nestOf = useCallback(
+    (wishId: string) => mergeNest(details[wishId]?.tasks ?? noTasks),
+    [details],
+  );
+
   const renderTask = useCallback(
-    (item: Task) => {
+    function row(item: Task): ReactNode {
       const wish = wishById.get(item.wishId);
+      const nest = nestOf(item.wishId);
+      const merges = nest.under.get(item.id);
       return (
         <WishTask
           key={item.id}
@@ -259,10 +271,15 @@ export function FlightPlan({
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
           onDone={handleDone}
+          merges={merges}
+          nested={merges?.map(row)}
+          mergeOpen={nest.host.get(focus) === item.id}
+          alsoMerged={nest.links.get(item.id)}
         />
       );
     },
     [
+      nestOf,
       wishById,
       decisionOfTask,
       focus,
@@ -309,10 +326,13 @@ export function FlightPlan({
   const showDone = useMemo(
     () =>
       doneAzimas.some(
-        ({ item }) =>
-          item.azima.id === focus || item.parts.some((p) => p.id === focus),
+        ({ wish, item }) =>
+          item.azima.id === focus ||
+          item.parts.some(
+            (p) => p.id === (nestOf(wish.id).host.get(focus) ?? focus),
+          ),
       ),
-    [doneAzimas, focus],
+    [doneAzimas, focus, nestOf],
   );
 
   const renderAzimaItem = useCallback(
@@ -325,10 +345,11 @@ export function FlightPlan({
         origin={wishOrigin(wish)}
         render={renderTask}
         focus={focus}
+        nest={nestOf(wish.id)}
         onValidate={handleValidateAzima}
       />
     ),
-    [tasksOf, renderTask, focus, handleValidateAzima],
+    [tasksOf, nestOf, renderTask, focus, handleValidateAzima],
   );
 
   const renderMovingItem = useCallback(

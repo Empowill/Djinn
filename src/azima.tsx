@@ -25,7 +25,13 @@ import {
   TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
-import { compareCodes, finishedTask, isAzima } from "./data/flight";
+import {
+  compareCodes,
+  isAzima,
+  type MergeNest,
+  mergeNest,
+  settledTask,
+} from "./data/flight";
 import {
   azimaBranchName,
   azimaTime,
@@ -142,6 +148,8 @@ export function useStickyRoom(
   }, [scrollRef, bar]);
 }
 
+const noNest = mergeNest([]);
+
 export const AzimaCard = memo(function AzimaCard({
   azima,
   parts,
@@ -153,9 +161,10 @@ export const AzimaCard = memo(function AzimaCard({
   onPush,
   onOpenPr,
   onValidate,
+  nest = noNest,
 }: {
   azima: Task;
-  // The work part of it, in the order to show.
+  // The work part of it, in the order to show: merges nested under the task they serve left out.
   parts: readonly Task[];
   // The tasks of its wish, by id: what it waits for.
   tasks: ReadonlyMap<string, Task>;
@@ -172,18 +181,23 @@ export const AzimaCard = memo(function AzimaCard({
   onOpenPr?: (url: string) => void;
   // Validates the azima once its work is done: it is marked done, by you.
   onValidate?: (azima: Task) => void;
+  // Where the merges of its wish show: a part whose merge still runs moves with it.
+  nest?: MergeNest;
 }) {
   const [pushing, setPushing] = useState(false);
   const state = azimaState(azima, parts);
-  const holds = focus === azima.id || parts.some((x) => x.id === focus);
+  // The part in sight, or the one a merge in sight sits under.
+  const inSight = nest.host.get(focus) ?? focus;
+  const holds = focus === azima.id || parts.some((x) => x.id === inSight);
+  const settled = (x: Task) => settledTask(x, nest);
   const [open, setOpen] = useState(
-    holds || (state !== AzimaState.DONE && parts.some((x) => !finishedTask(x))),
+    holds || (state !== AzimaState.DONE && parts.some((x) => !settled(x))),
   );
   useEffect(() => {
     if (holds) setOpen(true);
   }, [holds]);
-  const moving = parts.filter((x) => !finishedTask(x));
-  const finished = parts.filter((x) => finishedTask(x));
+  const moving = parts.filter((x) => !settled(x));
+  const finished = parts.filter((x) => settled(x));
   const prevMoving = useRef(moving.length);
   useEffect(() => {
     if (prevMoving.current === 0 && moving.length > 0) {
@@ -443,7 +457,7 @@ export const AzimaCard = memo(function AzimaCard({
                 <Fold
                   id={`parts:${azima.id}`}
                   count={finished.length}
-                  open={finished.some((x) => x.id === focus)}
+                  open={finished.some((x) => x.id === inSight)}
                 >
                   <div className="azima-part-list">{finished.map(render)}</div>
                 </Fold>
