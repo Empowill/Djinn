@@ -79,6 +79,7 @@ export function FlightPlan({
   onToast: (text: string) => void;
 }) {
   const projects = useData((s) => s.projects);
+  const lead = useData((s) => s.lead);
   const allWishes = useData((s) => s.wishes);
   const projectById = useMemo(
     () => new Map(projects.map((p) => [p.id, p])),
@@ -401,10 +402,7 @@ export function FlightPlan({
     ({ wish }: { wish: Wish }) => wishOrigin(wish),
     [],
   );
-  const checkDecisionNoLead = useCallback(
-    ({ wish }: { wish: Wish }) => noLead(wish),
-    [],
-  );
+  const checkDecisionNoLead = useCallback(() => noLead(lead), [lead]);
   const handleTaskFocus = useCallback(
     (id: string) => show("tasks", id),
     [show],
@@ -633,7 +631,7 @@ export function FlightPlan({
                               question={item}
                               origin={wishOrigin(wish)}
                               blocking={blocking}
-                              noLead={noLead(wish)}
+                              noLead={noLead(lead)}
                               onAnswer={handleQuestionAnswer}
                               onMark={handleQuestionMark}
                               onEnlighten={handleQuestionEnlighten}

@@ -20,7 +20,6 @@ import { isActive, runningOf, waitsForYou } from "./data/format";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { t } from "./i18n";
-import { useShowWish } from "./lead-terminal";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
@@ -125,10 +124,6 @@ export function WishApp() {
   const plan = !chosen && (selected === PLAN || active.length > 0);
   const wish = plan ? undefined : (chosen ?? wishes[0]);
   const project = projects.find((p) => p.id === projectId);
-  // The terminal below shows the lead of the wish shown while it runs.
-  const showWish = useShowWish();
-  const shown = wish?.id ?? "";
-  useEffect(() => showWish(shown), [showWish, shown]);
 
   const move = (wishId: string, to: number) =>
     void clients.wishes

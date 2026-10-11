@@ -16,6 +16,8 @@ import {
   InboxItemSchema,
   type InboxSource,
   InboxSourceSchema,
+  type Lead,
+  LeadSchema,
   type Project,
   ProjectSchema,
   type Question,
@@ -60,6 +62,7 @@ export interface State {
   // Why the last read failed; empty when it did not.
   error: string;
   projects: Project[];
+  lead?: Lead;
   // As WishService.List gives them: the active ones by rank, then the paused ones, then the granted ones.
   wishes: Wish[];
   details: Readonly<Record<string, WishDetail>>;
@@ -478,6 +481,11 @@ export function createStore(
         const list = (await clients.wishes.list({})).wishes;
         const reconciled = reconcile(WishSchema, state.wishes, list);
         if (reconciled !== state.wishes) patch.wishes = reconciled;
+        const lead = (await clients.lead.get({})).lead;
+        const sameLead =
+          (!state.lead && !lead) ||
+          (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
+        if (!sameLead) patch.lead = lead;
       });
     if (projects)
       attempt(async () => {

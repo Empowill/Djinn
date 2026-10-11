@@ -96,6 +96,14 @@ func TestUserGuide(t *testing.T) {
 				if _, err := runUp(append(args[1:], "--help")); !errors.Is(err, flag.ErrHelp) {
 					t.Errorf("%s: %v", line, err)
 				}
+			case args[0] == "brief":
+				var out, errs bytes.Buffer
+				code := cli.Run(t.Context(), []string{"brief", "--help"},
+					cli.Config{Stdout: &out, Stderr: &errs})
+				if code != 0 {
+					t.Errorf("%s: %s", line, strings.TrimSpace(errs.String()))
+					continue
+				}
 			case builtIn:
 				// A command written by hand: the flags its documentation gives.
 				for _, a := range rest {

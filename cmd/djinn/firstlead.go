@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"connectrpc.com/connect"
 
@@ -19,26 +18,21 @@ import (
 	"github.com/empowill/djinn/internal/ui"
 )
 
-// resumeFirstLead resumes the lead of the first active wish, as djinn wish resume does, unless a lead's terminal runs
-// already or no wish is active. What it could not do, it says on say.
-func resumeFirstLead(ctx context.Context, db *store.Store, terms *terminal.Manager, svc *ui.Service, say io.Writer) {
+// resumeLead resumes the lead, as djinn lead resume does, unless the lead's terminal runs
+// already. What it could not do, it says on say.
+func resumeLead(ctx context.Context, db *store.Store, terms *terminal.Manager, svc *ui.Service, say io.Writer) {
 	for _, t := range terms.Running() {
-		if strings.HasPrefix(t.Name, "lead-") {
+		if t.Name == plan.LeadTerminal {
 			return
 		}
 	}
-	actives, err := plan.ActiveWishes(ctx, db)
-	if err != nil || len(actives) == 0 {
-		return
-	}
-	first := actives[0]
-	wishes := &plan.Wishes{Store: db, Leads: leads{terms, svc}}
-	res, err := wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: first.GetId()}))
+	leadSvc := &plan.LeadService{Wishes: &plan.Wishes{Store: db, Leads: leads{terms, svc}}}
+	res, err := leadSvc.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{}))
 	if err != nil {
-		fmt.Fprintf(say, "djinn: the lead of %q is not resumed: %v\n", first.GetTitle(), err)
+		fmt.Fprintf(say, "djinn: the lead is not resumed: %v\n", err)
 		return
 	}
-	fmt.Fprintf(say, "djinn: the lead of %q resumed in %s\n", first.GetTitle(), res.Msg.GetDirectory())
+	fmt.Fprintf(say, "djinn: the lead resumed in %s\n", res.Msg.GetDirectory())
 	if note := res.Msg.GetNote(); note != "" {
 		fmt.Fprintln(say, "djinn:", note)
 	}

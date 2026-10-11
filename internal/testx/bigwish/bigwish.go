@@ -142,7 +142,6 @@ func (g *gen) wish() {
 			CreateTime:          timestamppb.New(start),
 			State:               planv1.WishState_WISH_STATE_ACTIVE,
 			Description:         g.text(40),
-			Lead:                &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: g.id(), Directory: "bigwish"},
 			IntegrationBranches: []*planv1.IntegrationBranch{{ProjectId: g.project, Branch: "feat/bigwish"}},
 		},
 		Projects: []*planv1.ProjectRef{{Id: g.project, Name: "bigwish", Git: true}},

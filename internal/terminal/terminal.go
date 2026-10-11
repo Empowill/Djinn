@@ -165,13 +165,13 @@ func (m *Manager) OpenExclusive(
 		cols, rows = 80, 24
 	}
 	// The program gets Djinn's environment as it is, which Djinn never reads, and says what terminal it talks to.
-	// A lead's terminal receives DJINN_LEAD=<wish id> so its commands know they run in the lead.
+	// The lead's terminal receives DJINN_LEAD=1 so its commands know they run in the lead.
 	env := slices.DeleteFunc(os.Environ(), func(e string) bool {
 		return strings.HasPrefix(e, "DJINN_LEAD=")
 	})
 	env = append(env, "TERM=xterm-256color", "COLORTERM=truecolor")
-	if strings.HasPrefix(name, "lead-") {
-		env = append(env, "DJINN_LEAD="+strings.TrimPrefix(name, "lead-"))
+	if name == "lead" {
+		env = append(env, "DJINN_LEAD=1")
 	}
 	p, err := start(command, dir, env, cols, rows)
 	if err != nil {

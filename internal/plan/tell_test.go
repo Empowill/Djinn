@@ -72,7 +72,7 @@ func TestAnswerReachesTheLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := made.Msg.GetWish().GetId()
-	terminal := LeadTerminal(id)
+	terminal := LeadTerminal
 
 	// No lead at all: the answer stays in the brief, nothing opens.
 	q1 := c.ask(t, id, "Olive", "Paraffin")
@@ -89,10 +89,10 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	}
 
 	// A lead is set, then resumed: waiting answers are told at start, then new answers reach the running lead in order.
-	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: id})); err != nil {
+	if _, err := c.lead.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{})); err != nil {
 		t.Fatal(err)
 	}
 	if want := "claude --resume " + session + " in " + folder; len(leads.opened) != 1 || leads.opened[0] != want {
@@ -168,7 +168,7 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := made.Msg.GetWish().GetId()
-	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
 	q := c.ask(t, id, "Olive", "Paraffin")
@@ -179,7 +179,7 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	want := LeadTerminal(id) + ": Djinn: Q01, the developer wants to know more before answering. Note: \"" + asked +
+	want := LeadTerminal + ": Djinn: Q01, the developer wants to know more before answering. Note: \"" + asked +
 		"And the \"smoke\" of the wick — and why?\". Investigate, then revise Q01: djinn wish brief " + id + " has the context."
 	if len(leads.said) != 1 || leads.said[0] != want {
 		t.Errorf("said %q, want %q", leads.said, want)
@@ -202,7 +202,7 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 	}
 }
 
-func TestAnswerRoutingToPrincipalAndWaitingLead(t *testing.T) {
+func TestAnswerInAnyWishToldToOneLead(t *testing.T) {
 	ctx := t.Context()
 	leads := &fakeLeads{running: map[string][]string{}}
 	c := serve(t, WithLeads(leads))
@@ -213,7 +213,7 @@ func TestAnswerRoutingToPrincipalAndWaitingLead(t *testing.T) {
 	}
 	projID := project.Msg.GetProject().GetId()
 
-	// Create wish 1 (Principal by rank 1) and wish 2.
+	// Create wish 1 and wish 2.
 	made1, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
 		Title: "Principal Wish", ProjectIds: []string{projID},
 	}))
@@ -221,7 +221,6 @@ func TestAnswerRoutingToPrincipalAndWaitingLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	wish1ID := made1.Msg.GetWish().GetId()
-	term1 := LeadTerminal(wish1ID)
 
 	made2, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
 		Title: "Relecture in Djinn", ProjectIds: []string{projID},
@@ -230,21 +229,19 @@ func TestAnswerRoutingToPrincipalAndWaitingLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	wish2ID := made2.Msg.GetWish().GetId()
-	term2 := LeadTerminal(wish2ID)
 
-	// Set lead on wish 1 and mark its terminal as running.
+	// Set the one lead and mark its terminal as running.
 	session1 := "session-lead-1"
-	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: wish1ID, SessionId: session1}); err != nil {
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session1}); err != nil {
 		t.Fatal(err)
 	}
-	leads.running[term1] = []string{"/bin/sh", "-c", "claude --resume " + session1}
+	leads.running[LeadTerminal] = []string{"/bin/sh", "-c", "claude --resume " + session1}
 
-	// 1. Wish without a lead (wish 2 has no lead at all): answer goes to principal lead's terminal.
+	// 1. Answer in wish 2 told to the lead terminal.
 	q1 := c.ask(t, wish2ID, "Olive", "Paraffin")
 	c.answer(t, q1, planv1.Choice_CHOICE_B, "for warmth")
 
-	want1 := term1 + `: Djinn: Q01 answered B — "Paraffin" in Relecture in Djinn (wish ` +
-		wish2ID + "): turn it into tasks there; djinn wish brief " + wish2ID + ` has its context. Note: "for warmth".`
+	want1 := LeadTerminal + `: Djinn: Q01 answered B — "Paraffin". Note: "for warmth". Turn it into tasks: you hold the plan's graph (djinn wish brief ` + wish2ID + ")."
 	if len(leads.said) != 1 || leads.said[0] != want1 {
 		t.Errorf("answer without lead: said %q, want %q", leads.said, want1)
 	}
@@ -258,25 +255,18 @@ func TestAnswerRoutingToPrincipalAndWaitingLead(t *testing.T) {
 	}
 	leads.said = nil
 
-	// 2. Wish with its own lead: answer goes only to it, not to principal lead.
-	session2 := "session-lead-2"
-	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: wish2ID, SessionId: session2}); err != nil {
-		t.Fatal(err)
-	}
-	leads.running[term2] = []string{"/bin/sh", "-c", "claude --resume " + session2}
-
-	q2 := c.ask(t, wish2ID)
+	// 2. Answer in wish 1 told to the same lead terminal.
+	q2 := c.ask(t, wish1ID)
 	c.answer(t, q2, planv1.Choice_CHOICE_YES, "")
 
-	want2 := term2 + ": Djinn: Q02 answered yes. Turn it into tasks: you hold the plan's graph (djinn wish brief " + wish2ID + ")."
+	want2 := LeadTerminal + ": Djinn: Q01 answered yes. Turn it into tasks: you hold the plan's graph (djinn wish brief " + wish1ID + ")."
 	if len(leads.said) != 1 || leads.said[0] != want2 {
 		t.Errorf("answer with own lead: said %q, want %q", leads.said, want2)
 	}
 	leads.said = nil
 
 	// 3. No lead runs at all: answer waits.
-	delete(leads.running, term1)
-	delete(leads.running, term2)
+	delete(leads.running, LeadTerminal)
 
 	q3 := c.ask(t, wish2ID)
 	c.answer(t, q3, planv1.Choice_CHOICE_YES, "")
@@ -292,12 +282,11 @@ func TestAnswerRoutingToPrincipalAndWaitingLead(t *testing.T) {
 		t.Errorf("stored question waiting_lead = false, want true")
 	}
 
-	// 4. Next lead to start (wish 1 resumed) is told of every waiting answer.
-	if _, err := c.wishes.Resume(ctx, connect.NewRequest(&planv1.WishServiceResumeRequest{WishId: wish1ID})); err != nil {
+	// 4. When the lead resumes, it is told of every waiting answer.
+	if _, err := c.lead.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{})); err != nil {
 		t.Fatal(err)
 	}
-	want3 := term1 + ": Djinn: Q03 answered yes in Relecture in Djinn (wish " +
-		wish2ID + "): turn it into tasks there; djinn wish brief " + wish2ID + " has its context."
+	want3 := LeadTerminal + ": Djinn: Q02 answered yes. Turn it into tasks: you hold the plan's graph (djinn wish brief " + wish2ID + ")."
 	if len(leads.said) != 1 || leads.said[0] != want3 {
 		t.Errorf("resumed lead told of waiting answers: said %q, want %q", leads.said, want3)
 	}
@@ -326,11 +315,11 @@ func TestLeadAnswerNotToldToLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := made.Msg.GetWish().GetId()
-	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
 	leads.running = map[string][]string{
-		LeadTerminal(id): {"/bin/sh", "-c", "claude --resume " + session},
+		LeadTerminal: {"/bin/sh", "-c", "claude --resume " + session},
 	}
 
 	// 1. Answer from the lead's terminal (Lead set to wish id, as $DJINN_LEAD does):

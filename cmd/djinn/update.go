@@ -374,8 +374,8 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 	shown := ""
 	for _, t := range note.Terminals {
 		_, err := os.Stat(t.Directory)
-		if err == nil && strings.HasPrefix(t.Name, "lead-") && plan.HoldsHome(t.Directory) {
-			err = errors.New("a lead never runs in the home folder: djinn wish resume starts it in a project")
+		if err == nil && (t.Name == "lead" || strings.HasPrefix(t.Name, "lead-")) && plan.HoldsHome(t.Directory) {
+			err = errors.New("a lead never runs in the home folder: djinn lead resume starts it in a project")
 		}
 		if err == nil {
 			_, _, err = terms.Open(t.Name, t.Command, t.Directory, 0, 0)
@@ -386,7 +386,7 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 			failed = append(failed, line)
 			continue
 		}
-		if t.Name == note.ShowTerminal || shown == "" && strings.HasPrefix(t.Name, "lead-") {
+		if t.Name == note.ShowTerminal || shown == "" && (t.Name == "lead" || strings.HasPrefix(t.Name, "lead-")) {
 			shown = t.Name
 		}
 	}
@@ -394,7 +394,7 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, say 
 	case shown != "" && shown == note.ShowTerminal:
 		svc.Present(note.ShowWish, shown)
 	case shown != "":
-		svc.Present(strings.TrimPrefix(shown, "lead-"), shown)
+		svc.Present(note.ShowWish, shown)
 	}
 	if note.Version == "" {
 		fmt.Fprintf(say, "djinn: the last djinn up crashed, %d of %d leads reopened\n",

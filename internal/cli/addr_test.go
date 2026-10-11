@@ -108,22 +108,22 @@ func TestDialAddress(t *testing.T) {
 	}
 }
 
-// resumes answers WishService.Resume, which is marked autostart.
+// resumes answers LeadService.Resume, which is marked autostart.
 type resumes struct {
-	planv1connect.UnimplementedWishServiceHandler
+	planv1connect.UnimplementedLeadServiceHandler
 }
 
 func (resumes) Resume(
-	_ context.Context, req *connect.Request[planv1.WishServiceResumeRequest],
-) (*connect.Response[planv1.WishServiceResumeResponse], error) {
-	return connect.NewResponse(&planv1.WishServiceResumeResponse{Terminal: "lead-" + req.Msg.GetWishId()}), nil
+	_ context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
+) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
+	return connect.NewResponse(&planv1.LeadServiceResumeResponse{Terminal: "lead"}), nil
 }
 
 func TestAutostart(t *testing.T) {
-	wp, wh := planv1connect.NewWishServiceHandler(resumes{})
+	lp, lh := planv1connect.NewLeadServiceHandler(resumes{})
 	f := &fake{}
 	qp, qh := planv1connect.NewQuestionServiceHandler(questions{fake: f})
-	srv := httptest.NewServer(server.Handler(fstest.MapFS{"index.html": {}}, nil, map[string]http.Handler{wp: wh, qp: qh}))
+	srv := httptest.NewServer(server.Handler(fstest.MapFS{"index.html": {}}, nil, map[string]http.Handler{lp: lh, qp: qh}))
 	defer srv.Close()
 	home := t.TempDir()
 	started := 0
@@ -147,11 +147,11 @@ func TestAutostart(t *testing.T) {
 	if _, err := server.WriteAddr(home, "http://127.0.0.1:1/?token=old"); err != nil {
 		t.Fatal(err)
 	}
-	if code, out, errs := run("wish", "resume", wishID); code != 0 || started != 1 || !strings.Contains(out, "lead-"+wishID) {
+	if code, out, errs := run("lead", "resume"); code != 0 || started != 1 || !strings.Contains(out, "lead") {
 		t.Fatalf("resume without djinn: code %d, started %d\n%s%s", code, started, out, errs)
 	}
 	// Once one answers, nothing is started.
-	if code, _, errs := run("wish", "resume", wishID); code != 0 || started != 1 {
+	if code, _, errs := run("lead", "resume"); code != 0 || started != 1 {
 		t.Fatalf("resume with djinn: code %d, started %d, stderr %q", code, started, errs)
 	}
 	if !Alive(srv.URL) || Alive("http://127.0.0.1:1") || Alive("unix://"+filepath.Join(home, "none.sock")) {

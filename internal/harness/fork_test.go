@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -74,17 +73,20 @@ func TestSpawnFork(t *testing.T) {
 		t.Errorf("planned fork = %v", later)
 	}
 
+	// Djinn without a lead session cannot fork it.
+	if _, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "x", FromLead: true, Provider: planv1.Provider_PROVIDER_FAKE,
+	})); connectCode(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "lead set") {
+		t.Errorf("no lead: %v", err)
+	}
+
 	// From the lead: its session and its agent.
 	err := e.db.Tx(ctx, func(tx *store.Tx) error {
-		wish, err := store.Get[*planv1.Wish](ctx, tx, wishID)
-		if err != nil {
+		lead := &planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_FAKE, SessionId: "lead-session"}
+		if err := tx.Journal("test", "test/lead", lead); err != nil {
 			return err
 		}
-		wish.Lead = &planv1.Lead{Provider: planv1.Provider_PROVIDER_FAKE, SessionId: "lead-session"}
-		if err := tx.Journal("test", "test/lead", wish); err != nil {
-			return err
-		}
-		return tx.Put(wish)
+		return tx.Put(lead)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -134,13 +136,5 @@ func TestSpawnFork(t *testing.T) {
 		if connectCode(err) != tc.code || !strings.Contains(err.Error(), tc.says) {
 			t.Errorf("%s: %v, want %v saying %q", name, err, tc.code, tc.says)
 		}
-	}
-	// A wish without a lead session cannot fork it.
-	bare, _ := e.wish(t, nativeFolder(t))
-	_, err = e.tasks.Spawn(context.WithoutCancel(ctx), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: bare, Title: "x", FromLead: true, Provider: planv1.Provider_PROVIDER_FAKE,
-	}))
-	if connectCode(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "set-lead") {
-		t.Errorf("no lead: %v", err)
 	}
 }

@@ -386,7 +386,6 @@ func (in *Inbox) Route(
 		source, text := item.GetSource(), item.GetText()
 		then, err = in.Wishes.routeTo(ctx, tx, opts[i], text, origin{
 			block: locales.T(lang, "inbox.block_title", map[string]string{"source": source}),
-			first: InboxFirstLine(source, text),
 			filed: func(wishID string) string { return InboxFiledLine(wishID, source, text) },
 		})
 		if err != nil {

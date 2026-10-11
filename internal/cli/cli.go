@@ -125,6 +125,10 @@ func run(ctx context.Context, args []string, cfg Config) error {
 		}
 		return serveMCP(ctx, cfg)
 	}
+	// djinn brief is an alias for djinn lead brief.
+	if rest[0] == "brief" {
+		rest = append([]string{"lead", "brief"}, rest[1:]...)
+	}
 
 	services := commands()
 	names := []string{"help", "version"}

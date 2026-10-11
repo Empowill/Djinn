@@ -86,6 +86,9 @@ func fillLeafTimes(ctx context.Context, s *store.Store, t *planv1.Task, now time
 		firstStart = t.StartTime.AsTime()
 		t.FirstStartTime = t.StartTime
 	}
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && t.LastActivityTime == nil {
+		t.LastActivityTime = t.StartTime
+	}
 
 	switch {
 	case !firstStart.IsZero() && t.CreateTime != nil:

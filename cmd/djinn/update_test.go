@@ -61,13 +61,13 @@ func seedWish(t *testing.T, home, folder, session string) *planv1.Wish {
 	}
 	defer db.Close()
 	project := &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: folder, CreateTime: timestamppb.Now()}
+	leadRecord := &planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session, Directory: folder}
 	wish := &planv1.Wish{
 		Id: store.NewID(), Title: "Polish the lamp", ProjectIds: []string{project.GetId()}, CreateTime: timestamppb.Now(),
-		Lead: &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: session, Directory: folder},
 	}
 	err = db.Tx(ctx, func(tx *store.Tx) error {
 		return errors.Join(tx.Journal("test", planv1connect.WishServiceMakeProcedure,
-			&planv1.WishServiceMakeRequest{Title: wish.GetTitle()}), tx.Put(project), tx.Put(wish))
+			&planv1.WishServiceMakeRequest{Title: wish.GetTitle()}), tx.Put(project), tx.Put(wish), tx.Put(leadRecord))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -122,12 +122,12 @@ func TestUpdate(t *testing.T) {
 	addr := answering(t, home, oldErrs.String)
 
 	// The lead runs in its terminal; a second terminal runs in a folder that will be gone at the restart.
-	code, out, errs := runDjinn(t, env, "wish", "resume", wish.GetId())
+	code, out, errs := runDjinn(t, env, "lead", "resume", "--wish-id", wish.GetId())
 	if code != 0 {
 		t.Fatalf("resume: exit %d\n%s%s", code, out, errs)
 	}
 	ui, terminals := clients(t, addr)
-	lead := "lead-" + wish.GetId()
+	lead := "lead"
 	gone := filepath.Join(t.TempDir(), "gone")
 	if err := os.Mkdir(gone, 0o700); err != nil {
 		t.Fatal(err)

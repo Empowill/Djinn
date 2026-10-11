@@ -60,6 +60,9 @@ type Service struct {
 	// WatchLoad streams operating load and memory stats. Nil: no load stats streamed in Watch.
 	WatchLoad func(ctx context.Context, send func(*djinnv1.LoadServiceWatchResponse) error) error
 
+	// Shown is called when the window is asked to show a wish or a terminal.
+	Shown func(wishID, terminal string)
+
 	dialogs sync.Mutex // One folder dialog at a time.
 
 	shows    sync.Mutex
@@ -450,13 +453,17 @@ func (s *Service) Present(wishID, terminal string) {
 
 func (s *Service) present(msg *uiv1.UiServiceWatchShowResponse) {
 	s.shows.Lock()
-	defer s.shows.Unlock()
 	s.lastShow, s.lastAt = msg, time.Now()
 	for ch := range s.watchers {
 		select {
 		case ch <- msg:
 		default: // A window that does not read keeps what it has: the next request matters more than this one.
 		}
+	}
+	shown := s.Shown
+	s.shows.Unlock()
+	if shown != nil {
+		shown(msg.GetWishId(), msg.GetTerminal())
 	}
 }
 
