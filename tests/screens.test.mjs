@@ -4039,6 +4039,63 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
   );
 });
 
+// An opened azima, as the Tasks tab shows it: built from what the lamp sends, its parts as the tab renders any task.
+function openedAzima(extra = {}, parts = []) {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const azima = {
+    id: "T05",
+    code: "T05",
+    title: "Split the orchestrator",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    createTime: at(1),
+    azima: { state: s.AzimaState.OPEN, ready: true },
+    ...extra,
+  };
+  const tasks = new Map([azima, ...parts].map((x) => [x.id, x]));
+  return s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima,
+      parts,
+      tasks,
+      focus: azima.id,
+      render: (task) =>
+        h("article", { key: task.id, className: "part" }, task.code),
+    }),
+  );
+}
+
+test("an azima's description is Markdown, rendered: opened, and as a draft", () => {
+  const text = "Split the **orchestrator**:\n\n- the scheduler\n- the `runner`";
+  const markdown = (html) => {
+    assert.match(html, /<div class="ac-markdown">/);
+    assert.match(html, /<strong>orchestrator<\/strong>/);
+    assert.match(html, /<li>the scheduler<\/li>/);
+    assert.match(html, /<code>runner<\/code>/);
+    assert.doesNotMatch(html, /\*\*/);
+  };
+  markdown(openedAzima({ description: text }));
+  markdown(
+    s.renderToStaticMarkup(
+      h(s.DraftAzimaCard, {
+        azima: {
+          id: "T31",
+          code: "T31",
+          title: "Spread the work",
+          kind: s.TaskKind.AZIMA,
+          status: s.TaskStatus.PENDING,
+          draft: true,
+          description: text,
+          dependsOn: [],
+          azima: { state: s.AzimaState.DRAFT },
+        },
+        focus: "T31",
+      }),
+    ),
+  );
+});
+
 test("draft azimas: fold, card with description, actions, and flight plan", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const draft = (code, title, extra = {}) => ({

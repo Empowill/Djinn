@@ -32,6 +32,7 @@ import {
 } from "./data/format";
 import { ModalFrame } from "./frame";
 import { t, type TextKey } from "./i18n";
+import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
 import { Fold } from "./task-tabs";
 
@@ -381,7 +382,7 @@ export const AzimaCard = memo(function AzimaCard({
         <div className="azima-parts">
           {azima.description && (
             <div className="azima-description">
-              <p className="azima-description-text">{azima.description}</p>
+              <MarkdownBody text={azima.description} />
             </div>
           )}
           {proof && (
@@ -508,7 +509,7 @@ export function DraftAzimaCard({
           <div className="draft-azima-content">
             {azima.description ? (
               <div className="draft-azima-description">
-                <p className="draft-description-text">{azima.description}</p>
+                <MarkdownBody text={azima.description} />
               </div>
             ) : (
               <p className="muted-text">{t("azima.no_description")}</p>
