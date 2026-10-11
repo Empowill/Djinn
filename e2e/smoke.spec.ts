@@ -2,8 +2,6 @@ import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
-import { disableWishSmokeWebGL } from "./wish-smoke-fixture";
-
 // djinnURL is the URL printed by `djinn up --browser`, token included.
 function djinnURL(pathname = "/"): string {
   const url = new URL(process.env.DJINN_URL!);
@@ -35,13 +33,24 @@ test("the interface loads from djinn", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("sidebar geometry stays stable while creation hides the terminal", async ({
+// The sidebar spans the whole height of the window, the lead's terminal sits under the main view only, and opening
+// the new-wish dialog moves nothing of the sidebar.
+test("sidebar geometry stays stable while the new-wish dialog opens", async ({
   page,
 }) => {
-  await disableWishSmokeWebGL(page);
   await page.goto(djinnURL());
   await expect(page.locator(".sidebar")).toBeVisible();
-  await expect(page.locator(".lead-terminal")).toBeVisible();
+  const terminal = page.locator(".lead-terminal");
+  await expect(terminal).toBeVisible();
+
+  const viewport = page.viewportSize()!;
+  const sidebar = (await page.locator(".sidebar").boundingBox())!;
+  expect(sidebar.y).toBe(0);
+  expect(Math.abs(sidebar.height - viewport.height)).toBeLessThan(0.5);
+  const lead = (await terminal.boundingBox())!;
+  expect(lead.x).toBeGreaterThanOrEqual(sidebar.x + sidebar.width - 0.5);
+  const shell = (await page.locator(".main-shell").boundingBox())!;
+  expect(Math.abs(shell.y + shell.height - lead.y)).toBeLessThan(0.5);
 
   const landmarks = [
     ".sidebar",
@@ -60,40 +69,34 @@ test("sidebar geometry stays stable while creation hides the terminal", async ({
         return box!;
       }),
     );
-  const expectSameGeometry = (before: Awaited<ReturnType<typeof snapshot>>) => {
-    return async (after: Awaited<ReturnType<typeof snapshot>>) => {
-      expect(after).toHaveLength(before.length);
-      for (let index = 0; index < before.length; index++) {
-        expect(Math.abs(after[index].x - before[index].x)).toBeLessThan(0.5);
-        expect(Math.abs(after[index].y - before[index].y)).toBeLessThan(0.5);
-        expect(Math.abs(after[index].width - before[index].width)).toBeLessThan(
-          0.5,
-        );
+  const expectSameGeometry = (
+    before: Awaited<ReturnType<typeof snapshot>>,
+    after: Awaited<ReturnType<typeof snapshot>>,
+  ) => {
+    expect(after).toHaveLength(before.length);
+    for (let index = 0; index < before.length; index++) {
+      for (const key of ["x", "y", "width", "height"] as const) {
         expect(
-          Math.abs(after[index].height - before[index].height),
+          Math.abs(after[index][key] - before[index][key]),
+          `${landmarks[index]} ${key}`,
         ).toBeLessThan(0.5);
       }
-    };
+    }
   };
 
   const existing = await snapshot();
-  await page.screenshot({
-    path: "test-results/e2e/sidebar-stable-existing.png",
-  });
   await page.locator(".sidebar .new-mission").click();
-  const creation = page.locator(".wish-creation");
-  await expect(creation).toBeVisible();
-  const duringCreation = await snapshot();
-  await page.screenshot({
-    path: "test-results/e2e/sidebar-stable-creation.png",
-  });
-  await expectSameGeometry(existing)(duringCreation);
+  const dialog = page.getByRole("dialog", { name: "Make a wish" });
+  await expect(dialog).toBeVisible();
+  expectSameGeometry(existing, await snapshot());
 
-  await creation.getByRole("button", { name: "Back to wishes" }).click();
-  await expect(creation).toHaveCount(0);
-  await expectSameGeometry(existing)(await snapshot());
+  await dialog.getByRole("button", { name: "Close the window" }).click();
+  await expect(dialog).toHaveCount(0);
+  expectSameGeometry(existing, await snapshot());
 });
 
+// In the macOS window the traffic lights sit over the top of the sidebar, and the top 16 px of the window are the
+// native drag strip (window.go): no control of the main view may start inside it.
 test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   await page.addInitScript(() => {
     const userAgent = navigator.userAgent;
@@ -106,7 +109,6 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
       get: () => "MacIntel",
     });
   });
-  await disableWishSmokeWebGL(page);
   await page.setViewportSize({ width: 760, height: 720 });
   await page.goto(djinnURL());
 
@@ -124,10 +126,12 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
     "no-drag",
   );
 
-  await page.locator(".sidebar .new-mission").click();
-  const back = page.locator(".wish-creation-back");
-  await expect(back).toBeVisible();
-  expect((await back.boundingBox())?.y).toBeGreaterThanOrEqual(16);
+  const controls = page.locator(".main-shell .topbar button:visible");
+  await expect(controls.first()).toBeVisible();
+  for (const box of await controls.evaluateAll((els) =>
+    els.map((el) => el.getBoundingClientRect().top),
+  ))
+    expect(box).toBeGreaterThanOrEqual(16);
 });
 
 // The browser has no folder dialog: the path is typed, and the button of the native window is not there.
