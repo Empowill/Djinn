@@ -184,6 +184,8 @@ const (
 	TaskServiceDeleteProcedure = "/plan.v1.TaskService/Delete"
 	// TaskServiceDoneProcedure is the fully-qualified name of the TaskService's Done RPC.
 	TaskServiceDoneProcedure = "/plan.v1.TaskService/Done"
+	// TaskServiceCancelProcedure is the fully-qualified name of the TaskService's Cancel RPC.
+	TaskServiceCancelProcedure = "/plan.v1.TaskService/Cancel"
 	// TaskServiceContinueProcedure is the fully-qualified name of the TaskService's Continue RPC.
 	TaskServiceContinueProcedure = "/plan.v1.TaskService/Continue"
 	// TaskServiceSendProcedure is the fully-qualified name of the TaskService's Send RPC.
@@ -2092,6 +2094,10 @@ type TaskServiceClient interface {
 	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
 	// done already is refused.
 	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
+	// Cancel a task: stops its worker if it runs or is paused, records who cancelled it, when and why, removes its
+	// worktree while keeping the branch, and drops its work from integration. Refused on a task done or cancelled
+	// already, and on an azima.
+	Cancel(context.Context, *connect.Request[v1.TaskServiceCancelRequest]) (*connect.Response[v1.TaskServiceCancelResponse], error)
 	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
 	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
 	// Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
@@ -2204,6 +2210,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Done")),
 			connect.WithClientOptions(opts...),
 		),
+		cancel: connect.NewClient[v1.TaskServiceCancelRequest, v1.TaskServiceCancelResponse](
+			httpClient,
+			baseURL+TaskServiceCancelProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Cancel")),
+			connect.WithClientOptions(opts...),
+		),
 		_continue: connect.NewClient[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse](
 			httpClient,
 			baseURL+TaskServiceContinueProcedure,
@@ -2258,6 +2270,7 @@ type taskServiceClient struct {
 	group     *connect.Client[v1.TaskServiceGroupRequest, v1.TaskServiceGroupResponse]
 	delete    *connect.Client[v1.TaskServiceDeleteRequest, v1.TaskServiceDeleteResponse]
 	done      *connect.Client[v1.TaskServiceDoneRequest, v1.TaskServiceDoneResponse]
+	cancel    *connect.Client[v1.TaskServiceCancelRequest, v1.TaskServiceCancelResponse]
 	_continue *connect.Client[v1.TaskServiceContinueRequest, v1.TaskServiceContinueResponse]
 	send      *connect.Client[v1.TaskServiceSendRequest, v1.TaskServiceSendResponse]
 	update    *connect.Client[v1.TaskServiceUpdateRequest, v1.TaskServiceUpdateResponse]
@@ -2329,6 +2342,11 @@ func (c *taskServiceClient) Delete(ctx context.Context, req *connect.Request[v1.
 // Done calls plan.v1.TaskService.Done.
 func (c *taskServiceClient) Done(ctx context.Context, req *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error) {
 	return c.done.CallUnary(ctx, req)
+}
+
+// Cancel calls plan.v1.TaskService.Cancel.
+func (c *taskServiceClient) Cancel(ctx context.Context, req *connect.Request[v1.TaskServiceCancelRequest]) (*connect.Response[v1.TaskServiceCancelResponse], error) {
+	return c.cancel.CallUnary(ctx, req)
 }
 
 // Continue calls plan.v1.TaskService.Continue.
@@ -2407,6 +2425,10 @@ type TaskServiceHandler interface {
 	// who closed it, when and why; a task waiting on it may start. A running or paused task is stopped first; a task
 	// done already is refused.
 	Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error)
+	// Cancel a task: stops its worker if it runs or is paused, records who cancelled it, when and why, removes its
+	// worktree while keeping the branch, and drops its work from integration. Refused on a task done or cancelled
+	// already, and on an azima.
+	Cancel(context.Context, *connect.Request[v1.TaskServiceCancelRequest]) (*connect.Response[v1.TaskServiceCancelResponse], error)
 	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
 	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
 	// Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
@@ -2515,6 +2537,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Done")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceCancelHandler := connect.NewUnaryHandler(
+		TaskServiceCancelProcedure,
+		svc.Cancel,
+		connect.WithSchema(taskServiceMethods.ByName("Cancel")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceContinueHandler := connect.NewUnaryHandler(
 		TaskServiceContinueProcedure,
 		svc.Continue,
@@ -2579,6 +2607,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceDeleteHandler.ServeHTTP(w, r)
 		case TaskServiceDoneProcedure:
 			taskServiceDoneHandler.ServeHTTP(w, r)
+		case TaskServiceCancelProcedure:
+			taskServiceCancelHandler.ServeHTTP(w, r)
 		case TaskServiceContinueProcedure:
 			taskServiceContinueHandler.ServeHTTP(w, r)
 		case TaskServiceSendProcedure:
@@ -2650,6 +2680,10 @@ func (UnimplementedTaskServiceHandler) Delete(context.Context, *connect.Request[
 
 func (UnimplementedTaskServiceHandler) Done(context.Context, *connect.Request[v1.TaskServiceDoneRequest]) (*connect.Response[v1.TaskServiceDoneResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Done is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Cancel(context.Context, *connect.Request[v1.TaskServiceCancelRequest]) (*connect.Response[v1.TaskServiceCancelResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Cancel is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error) {
