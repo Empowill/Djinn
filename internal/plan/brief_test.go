@@ -606,3 +606,69 @@ func TestBriefRunningTaskModel(t *testing.T) {
 		t.Errorf("brief = %s\nwant to contain (claude · claude-sonnet-4-5, since ", brief.Moving)
 	}
 }
+
+func TestBriefPrincipalListsOpenAnswersWithoutLead(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+
+	made1, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Principal Wish"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wish1ID := made1.Msg.GetWish().GetId()
+
+	made2, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Relecture in Djinn"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wish2ID := made2.Msg.GetWish().GetId()
+
+	asked, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		Text: "Which oil?", Options: []string{"Olive", "Paraffin"}, WishId: wish2ID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := asked.Msg.GetQuestion()
+	_, err = c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}},
+		Choice:   planv1.Choice_CHOICE_B,
+		Note:     "for warmth",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	leads := &fakeLeads{}
+	brief1, err := BuildBrief(ctx, c.store, t.TempDir(), wish1ID, leads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLine := `- **Q01** answered B — "Paraffin" in Relecture in Djinn (wish ` + wish2ID +
+		`): turn it into tasks there; djinn wish brief ` + wish2ID + ` has its context. Note: "for warmth".`
+	if !strings.Contains(brief1.Moving, "## Open answers without a lead") {
+		t.Fatalf("expected ## Open answers without a lead in principal brief, got:\n%s", brief1.Moving)
+	}
+	if !strings.Contains(brief1.Moving, wantLine) {
+		t.Fatalf("expected %q in principal brief, got:\n%s", wantLine, brief1.Moving)
+	}
+
+	brief2, err := BuildBrief(ctx, c.store, t.TempDir(), wish2ID, leads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(brief2.Moving, "## Open answers without a lead") {
+		t.Fatalf("non-principal brief should not contain open answers without lead:\n%s", brief2.Moving)
+	}
+
+	leads.running = map[string][]string{
+		LeadTerminal(wish2ID): {"/bin/sh"},
+	}
+	brief1AfterLead, err := BuildBrief(ctx, c.store, t.TempDir(), wish1ID, leads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(brief1AfterLead.Moving, "## Open answers without a lead") {
+		t.Fatalf("brief should not contain open answers when wish 2 has a running lead:\n%s", brief1AfterLead.Moving)
+	}
+}

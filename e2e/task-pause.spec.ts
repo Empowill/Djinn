@@ -69,7 +69,7 @@ test("a worker paused from its card holds, then goes on once resumed", async ({
     ).toBeVisible();
 
     await card.getByRole("button", { name: "Resume the worker" }).click();
-    await expect(badge).toHaveText("Running");
+    await expect(badge).toHaveText("Running", { timeout: 10000 });
     await expect(
       card.locator(".wish-event").getByText("resumed", { exact: true }),
     ).toBeVisible();

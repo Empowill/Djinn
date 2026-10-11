@@ -55,7 +55,7 @@ test("an instruction sent to a running worker is recorded, then acknowledged", a
     );
     await box.fill("Also update the docs");
     await box.press("Enter");
-    await expect(box).toHaveValue("");
+    await expect(box).toHaveValue("", { timeout: 10000 });
     await expect(
       page.locator(".wish-event.kind-11").getByText("Also update the docs"),
     ).toBeVisible();

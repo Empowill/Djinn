@@ -219,6 +219,14 @@ func (m *Manager) Running() []*Terminal {
 	return out
 }
 
+// IsRunning tells whether a terminal called name is currently open and running.
+func (m *Manager) IsRunning(name string) bool {
+	m.mu.Lock()
+	t := m.byName[name]
+	m.mu.Unlock()
+	return t != nil && !t.Exited()
+}
+
 // Hangup hangs up the running terminal called name, as the window closing it does, and tells whether one ran.
 func (m *Manager) Hangup(name string) bool {
 	m.mu.Lock()

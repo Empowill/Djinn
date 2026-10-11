@@ -375,6 +375,9 @@ message Wish {
   // Push strategy for the wish: wish (one integration branch per wish) or azima (one branch per azima).
   // Unset: takes the project's default.
   PushStrategy push_strategy = 20;
+  // Whether the developer explicitly marked this wish as the principal wish. When unset, the active wish with the
+  // lowest rank (rank 1) is the principal wish.
+  bool principal = 21;
 }
 
 // PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
@@ -1166,6 +1169,8 @@ message Question {
   // A move only the developer can make through the interface or outside Djinn: push a tag, open a PR, create a
   // release, test on a machine Djinn lacks, install an update. Shown as "Your move" in the attention bar.
   bool move = 18;
+  // The answer was recorded but no lead was running to receive it; it waits for the next lead to start.
+  bool waiting_lead = 19;
 }
 
 // Route is where Djinn proposes to send a request that is not about the wish it came to: into an existing wish, or
@@ -1971,6 +1976,12 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Show or change whether a wish is the principal wish. When set, this wish's lead is the principal lead; when unset,
+  // the active wish with the lowest rank is principal.
+  rpc Principal(WishServicePrincipalRequest) returns (WishServicePrincipalResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
   // task finished, no question open), and you may grant it before.
   rpc Grant(WishServiceGrantRequest) returns (WishServiceGrantResponse) {
@@ -2224,6 +2235,27 @@ message WishServicePushStrategyResponse {
   PushStrategy strategy = 1;
   // Where the setting comes from: default, repository, developer, or wish.
   SettingSource source = 2;
+}
+
+message WishServicePrincipalRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Whether this wish is the principal wish. Unset: show whether this wish is principal.
+  // Setting principal = true marks this wish as principal and clears the principal flag on any other wish.
+  // Setting principal = false unmarks this wish so that the principal defaults to rank 1.
+  optional bool principal = 2;
+}
+
+message WishServicePrincipalResponse {
+  // Whether this wish is currently the principal wish (either explicitly set or by rank 1).
+  bool principal = 1;
+  // Whether this wish was explicitly marked as principal by the developer.
+  bool explicit = 2;
+  // The ID of the current principal wish across all wishes.
+  string principal_wish_id = 3;
 }
 
 message WishServiceGrantRequest {

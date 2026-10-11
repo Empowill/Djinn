@@ -88,6 +88,9 @@ html[data-theme="light"] {
 .tone-later {
   --tone: var(--st-planned);
 }
+.tone-accent {
+  --tone: var(--accent);
+}
 .status-badge,
 .count-pill {
   display: inline-flex;

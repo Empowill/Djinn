@@ -74,6 +74,8 @@ test("an answer is typed in the terminal of the wish's lead, reopened", async ({
     "lighter",
   );
 
+  djinn("wish", "resume", wishId);
+
   await show(`lead-${wishId}`);
   const url = new URL(process.env.DJINN_URL!);
   url.pathname = "/";

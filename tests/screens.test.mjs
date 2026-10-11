@@ -25,6 +25,8 @@ export {
   shortModel,
   effectivePushStrategy,
   azimaBranchName,
+  isPrincipal,
+  principalWish,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { attentionOf, AttentionBar } from "@/src/attention.tsx";
@@ -36,6 +38,7 @@ export {
   flightPlan,
   movingTasks,
   taskDealtWith,
+  waitingLeadQuestions,
   waitingTasks,
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
@@ -534,6 +537,19 @@ test("a question of a wish without a lead session says no lead is told: open, th
   assert.match(
     props(true, answer),
     /<p class="no-lead">No lead to tell: the answer waits in the wish&#x27;s brief\.<\/p>/,
+  );
+  const waitingLead = {
+    answer: { choice: s.Choice.A, note: "" },
+    waitingLead: true,
+  };
+  const waitingHtml = props(false, waitingLead);
+  assert.match(
+    waitingHtml,
+    /<p class="no-lead">No lead runs to receive your answer: it waits for the next lead that starts\.<\/p>/,
+  );
+  assert.match(
+    waitingHtml,
+    /<span class="status-badge tone-waiting">.*Waiting for a lead<\/span>/,
   );
 });
 
@@ -2522,6 +2538,7 @@ test("the attention bar says how much each question holds up: blocking, your mov
       { wish: w, item: q("q2", "before the demo"), blocking: [] },
       { wish: w, item: q("q3"), blocking: [] },
       { wish: w, item: q("q4", "", true), blocking: [] },
+      { wish: w, item: { ...q("q5"), waitingLead: true }, blocking: [] },
     ],
     [
       {
@@ -2538,6 +2555,7 @@ test("the attention bar says how much each question holds up: blocking, your mov
       ["q1", "blocking", undefined],
       ["q4", "move", undefined],
       ["q2", "question", "before the demo"],
+      ["q5", "question", "Waiting for a lead"],
       ["t9", "action", undefined],
       ["q3", "later", undefined],
       ["ready-w1", "ready", undefined],
@@ -3925,4 +3943,48 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
   // 7. Verify T27: AzimaCard is memoized (React.memo)
   assert.equal(typeof s.AzimaCard, "object");
   assert.equal(s.AzimaCard.$$typeof, Symbol.for("react.memo"));
+});
+
+test("principal wish: rank 1 is principal by default, wish with principal: true overrides rank", () => {
+  const w1 = wish("w1", "First wish", s.WishState.ACTIVE, 1);
+  const w2 = wish("w2", "Second wish", s.WishState.ACTIVE, 2);
+  const w3 = wish("w3", "Third wish", s.WishState.ACTIVE, 3);
+  assert.equal(s.principalWish([w1, w2, w3])?.id, "w1");
+  assert.equal(s.isPrincipal(w1, [w1, w2, w3]), true);
+  assert.equal(s.isPrincipal(w2, [w1, w2, w3]), false);
+
+  const w2Explicit = { ...w2, principal: true };
+  assert.equal(s.principalWish([w1, w2Explicit, w3])?.id, "w2");
+  assert.equal(s.isPrincipal(w1, [w1, w2Explicit, w3]), false);
+  assert.equal(s.isPrincipal(w2Explicit, [w1, w2Explicit, w3]), true);
+
+  const pausedW1 = { ...w1, state: s.WishState.PAUSED };
+  assert.equal(s.principalWish([pausedW1, w2, w3])?.id, "w2");
+});
+
+test("flightPlan includes waitingLead questions", () => {
+  const w = wish("w1", "First wish", s.WishState.ACTIVE, 1);
+  const qWaiting = {
+    id: "q-wait",
+    code: "Q01",
+    text: "Waiting for lead?",
+    waitingLead: true,
+    answer: { choice: s.Choice.A, note: "yes" },
+  };
+  const qOpen = {
+    id: "q-open",
+    code: "Q02",
+    text: "Open question?",
+  };
+  const detail = {
+    loaded: true,
+    questions: [qWaiting, qOpen],
+    tasks: [],
+    blocks: [],
+  };
+  const plan = s.flightPlan([w], { [w.id]: detail });
+  assert.equal(plan.questions.length, 1);
+  assert.equal(plan.questions[0].item.id, "q-open");
+  assert.equal(plan.waitingLead.length, 1);
+  assert.equal(plan.waitingLead[0].item.id, "q-wait");
 });
