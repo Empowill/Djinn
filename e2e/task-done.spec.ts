@@ -9,6 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 portable();
 
@@ -66,9 +67,7 @@ test("a task marked done leaves what moves and tops the finished tasks", async (
   try {
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
-    await expect(tasksTab).toHaveText("Tasks3");
-    await tasksTab.click();
+    await openWorkspaceSection(page, "tasks");
     const moving = page.locator(".tasks-moving");
     const finished = page.locator(".tasks-finished");
     await expect(moving.locator("h2")).toHaveText("Moving or waiting2");

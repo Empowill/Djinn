@@ -74,7 +74,7 @@ test("a request routed to a new wish starts its lead there, at a rub of the lamp
   await card.getByRole("button", { name: "Rub the lamp" }).click();
 
   // The window goes to the new wish, its lead running in its own terminal, on the brief and the request.
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
   const made = JSON.parse(djinn("wish", "list", "--json")).wishes.find(
     (w: { title: string }) => w.title === title,
   );

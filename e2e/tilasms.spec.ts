@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { mergeVisual } from "./merge-visuals";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 const shots = path.join(__dirname, "../test-results/e2e");
 const binary = path.resolve(
@@ -54,6 +55,10 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
     .id as string;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-tilasm-"));
   try {
+    await page.goto(process.env.DJINN_URL!);
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+    // Supports stays available as an empty core section so the first import has a discoverable destination.
+    await expect(page.locator('[data-wish-section="tilasms"]')).toHaveCount(1);
     fs.mkdirSync(path.join(dir, "js"));
     fs.mkdirSync(path.join(dir, "img"));
     fs.writeFileSync(path.join(dir, "index.html"), index);
@@ -67,12 +72,7 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
     ).tilasm;
     expect(put.code).toBe("L01");
 
-    await page.goto(process.env.DJINN_URL!);
-    await page.locator(".wish-nav").filter({ hasText: title }).click();
-    const tab = page.getByRole("tab", { name: /^Tilasms/ });
-    await expect(tab).toHaveText("Tilasms1");
-    await tab.click();
-    const panel = page.getByRole("tabpanel", { name: "Tilasms" });
+    const panel = await openWorkspaceSection(page, "tilasms");
     const row = panel.locator(".tilasm-row").filter({ hasText: "L01" });
     await expect(row).toContainText("The lamp's anatomy");
     await expect(row).toContainText("lead");

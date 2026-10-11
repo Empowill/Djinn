@@ -185,7 +185,7 @@ func TestNativeWindow(t *testing.T) {
 			if err := d.eval(`const item = [...document.querySelectorAll(".wish-nav")]
 				.find((b) => b.textContent.includes(`+jsString(title)+`));
 				item?.click();
-				return { shown: document.querySelector(".hero h1")?.textContent ?? "" };`, &page); err != nil {
+				return { shown: document.querySelector(".workspace-thread-head h1")?.textContent ?? "" };`, &page); err != nil {
 				return err
 			}
 			if page.Shown != title {

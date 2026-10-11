@@ -171,7 +171,9 @@ test("an active Codex wish starts once with Auto flags", async ({ page }) => {
   await expect(dialog).toHaveCount(0);
 
   const status = page.locator(".lead-status");
-  await expect(page.locator(".hero h1")).toHaveText(wish.title);
+  await expect(page.locator(".workspace-thread-head h1")).toHaveText(
+    wish.title,
+  );
   expect(wish.title).not.toBe(title);
   const brief = djinn("wish", "brief", wish.id);
   expect(brief).toContain("Auto launch the Codex lead");
@@ -189,7 +191,9 @@ test("an active Codex wish starts once with Auto flags", async ({ page }) => {
   );
   // The lead authors a title through the same public command; the live wish keeps its original request.
   djinn("wish", "rename", wish.id, "Launch the Codex lead");
-  await expect(page.locator(".hero h1")).toHaveText("Launch the Codex lead");
+  await expect(page.locator(".workspace-thread-head h1")).toHaveText(
+    "Launch the Codex lead",
+  );
   expect(djinn("wish", "brief", wish.id)).toContain("Keep the full request.");
 });
 
@@ -220,7 +224,9 @@ test("a paused wish stays unstarted until the user starts it", async ({
   await chooseDropdown(dialog, "Agent", "Codex");
   const wish = await submitWish(page, dialog, "Make it paused");
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator(".hero h1")).toHaveText(wish.title);
+  await expect(page.locator(".workspace-thread-head h1")).toHaveText(
+    wish.title,
+  );
   expect(wish.title).not.toBe(title);
   expect(djinn("wish", "brief", wish.id)).toContain(title);
   await expect(page.locator(".lead-status")).toContainText("Lead not started");

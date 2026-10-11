@@ -64,7 +64,7 @@ for (const engine of ["native", "script"] as const)
     await (await chooser).setFiles(file);
 
     // The window shows the wish imported, not the flight plan it opened on: both list questions.
-    await expect(page.locator(".hero h1")).toHaveText(
+    await expect(page.locator(".workspace-thread-head h1")).toHaveText(
       `Keep my place ${wishId.slice(0, 8)}`,
     );
     const scroller = page.locator(".mission-scroll");

@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 const binary = path.resolve(
   __dirname,
@@ -113,7 +114,7 @@ test("rubbing the lamp starts a converter, which spawns a task from the decision
 
     await page.goto(running.url);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await expect(page.locator(".hero h1")).toHaveText(title);
+    await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
     await page
       .locator(".question-card")
       .filter({ hasText: "Which store?" })
@@ -173,9 +174,7 @@ test("rubbing the lamp starts a converter, which spawns a task from the decision
     expect(spawned.role ?? "").toBe("");
 
     // The window shows both, and the decision log links the decision to the task.
-    const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
-    await expect(tasksTab).toHaveText("Tasks2");
-    await tasksTab.click();
+    await openWorkspaceSection(page, "tasks");
     const finished = page.locator(".tasks-finished .wish-task");
     await expect(finished).toHaveCount(2);
     await expect(finished.filter({ hasText: "Q01 → tasks" })).toHaveCount(1);

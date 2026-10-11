@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { portable } from "./portable";
+import { openWorkspaceSection } from "./workspace-selectors";
 
 portable();
 
@@ -84,11 +85,10 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
       "Q01",
     );
 
-    const tab = page.getByRole("tab", { name: /^Decisions/ });
-    await expect(tab).toHaveText("Decisions2");
-    await tab.click();
-    const log = page.getByRole("tabpanel", { name: "Decisions" });
-    await expect(log.getByRole("button")).toHaveCount(0);
+    const log = await openWorkspaceSection(page, "decisions");
+    await expect(log.locator(".decision-log").getByRole("button")).toHaveCount(
+      0,
+    );
     const rows = log.locator(".decision-row");
     // The latest first: the answer came after the block.
     await expect(rows.first()).toContainText("Which oil for the wick?");
@@ -106,17 +106,15 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
 
     // The decision opens its task in the Tasks tab, and the task leads back.
     await answered.getByRole("link", { name: "W1" }).click();
-    await expect(page.getByRole("tab", { name: /^Tasks/ })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    await expect(page.locator('[data-wish-panel="tasks"]')).toHaveCount(1);
     const task = page
       .locator(".wish-task")
       .filter({ hasText: "Fill with paraffin" });
     await expect(task).toHaveClass(/focused/);
     await expect(task).toBeInViewport();
+    await expect(task.locator(".wish-task-heading")).toBeFocused();
     await task.getByRole("link", { name: /From Q01/ }).click();
-    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-wish-panel="decisions"]')).toHaveCount(1);
     await expect(
       page.locator(".decision-row.focused").filter({
         hasText: "Which oil for the wick?",
@@ -126,7 +124,7 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
     await page.evaluate(() => localStorage.setItem("djinn.theme", "light"));
     await page.reload();
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await page.getByRole("tab", { name: /^Decisions/ }).click();
+    await openWorkspaceSection(page, "decisions");
     await expect(page.locator(".decision-row")).toHaveCount(2);
     await page.screenshot({ path: path.join(shots, "decision-log-light.png") });
     await page.evaluate(() => localStorage.removeItem("djinn.theme"));

@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { mergeVisual } from "./merge-visuals";
 import { portable } from "./portable";
+import { openWorkspaceSection, wishHeading } from "./workspace-selectors";
 
 portable();
 
@@ -260,7 +261,7 @@ test("the flight plan merges two wishes, and a question is answered from it", as
   // The wish's own view stays: its tasks with their tokens in their own tab, its block about W1 in the agents' tab,
   // its journal.
   await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
-  await expect(page.locator(".hero h1")).toHaveText(lampTitle);
+  await expect(wishHeading(page)).toHaveText(lampTitle);
   const wishHeader = page.locator(".wish-view > .page-header");
   await expect(wishHeader).toHaveCount(1);
   await expect(wishHeader.locator(".page-header-action")).toHaveCount(4);
@@ -290,16 +291,15 @@ test("the flight plan merges two wishes, and a question is answered from it", as
     document.documentElement.classList.remove("native-mac"),
   );
   await page.setViewportSize({ width: 1440, height: 1900 });
-  await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await openWorkspaceSection(page, "tasks");
   const w2 = page.locator(".wish-task").filter({ hasText: "Read the map" });
   await expect(w2.locator(".task-usage")).toHaveText(/^6\.5\s?K tokens$/);
-  await page.getByRole("tab", { name: /^For agents/ }).click();
+  await openWorkspaceSection(page, "agents");
   await expect(page.locator(".wish-block")).toContainText("About W1");
-  await page.getByRole("tab", { name: /^Wish/ }).click();
-  // The journal is folded: a click opens it.
-  await page.getByRole("button", { name: /^Journal/ }).click();
+  // Opening the Journal workspace panel shows its entries immediately.
+  await openWorkspaceSection(page, "journal");
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
-  await page.getByRole("tab", { name: /^Tasks/ }).click();
+  await openWorkspaceSection(page, "tasks");
   await page
     .locator(".wish-task")
     .filter({ hasText: "Trim the wick" })
@@ -316,8 +316,8 @@ test("the flight plan merges two wishes, and a question is answered from it", as
 
   // The journal of the other wish: the commands that changed it, once asked for.
   await page.locator(".wish-nav").filter({ hasText: oilTitle }).click();
-  await expect(page.locator(".hero h1")).toHaveText(oilTitle);
-  await page.getByRole("button", { name: /^Journal/ }).click();
+  await expect(wishHeading(page)).toHaveText(oilTitle);
+  await openWorkspaceSection(page, "journal");
   await page.getByRole("button", { name: "Show the commands" }).click();
   const journal = page.locator(".journal-list");
   await expect(journal).toContainText("wish make");

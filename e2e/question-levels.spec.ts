@@ -97,7 +97,7 @@ test("open questions come blocking, then before X, then can wait, in the window,
   const order = ["Q01", "Q03", "Q02", "Q04"];
   await page.goto(process.env.DJINN_URL!);
   await page.locator(".wish-nav").filter({ hasText: title }).click();
-  await expect(page.locator(".hero h1")).toHaveText(title);
+  await expect(page.locator(".workspace-thread-head h1")).toHaveText(title);
 
   // The cards: red with the task it blocks, orange under its words, grey "Can wait".
   const cards = page.locator(".decisions-section .question-card");
