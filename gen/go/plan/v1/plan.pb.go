@@ -3724,7 +3724,9 @@ type Task struct {
 	// Build (version) of djinn when the environment failure happened.
 	EnvBuild string `protobuf:"bytes,52,opt,name=env_build,json=envBuild,proto3" json:"env_build,omitempty"`
 	// Cause of the environment failure; empty when it failed for a work failure.
-	EnvCause      string `protobuf:"bytes,53,opt,name=env_cause,json=envCause,proto3" json:"env_cause,omitempty"`
+	EnvCause string `protobuf:"bytes,53,opt,name=env_cause,json=envCause,proto3" json:"env_cause,omitempty"`
+	// Models the worker ran across its runs (resumes or provider changes), in the order they ran.
+	Models        []string `protobuf:"bytes,54,rep,name=models,proto3" json:"models,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4128,6 +4130,13 @@ func (x *Task) GetEnvCause() string {
 		return x.EnvCause
 	}
 	return ""
+}
+
+func (x *Task) GetModels() []string {
+	if x != nil {
+		return x.Models
+	}
+	return nil
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.
@@ -15141,7 +15150,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\routput_tokens\x18\x02 \x01(\x03R\foutputTokens\x12*\n" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
-	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\x9e\x0f\n" +
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xb6\x0f\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -15208,7 +15217,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\venv_replays\x183 \x01(\x05R\n" +
 	"envReplays\x12%\n" +
 	"\tenv_build\x184 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x01R\benvBuild\x12%\n" +
-	"\tenv_cause\x185 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\benvCause:\x13\xd2\xf3\x18\x0f\n" +
+	"\tenv_cause\x185 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\benvCause\x12\x16\n" +
+	"\x06models\x186 \x03(\tR\x06models:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"A\n" +
 	"\n" +
