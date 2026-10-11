@@ -262,7 +262,7 @@ function LeadTerminal({
           ? names.find((n) => n === lead(wishId))
           : undefined;
         const nonLead = names.find((n) => !n.startsWith("lead-"));
-        const first = matchingLead ?? nonLead;
+        const first = matchingLead ?? (wishId ? undefined : nonLead);
         setName((shown) => shown || first || "");
       },
       () => undefined,

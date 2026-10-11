@@ -11,7 +11,7 @@ import {
 
 import type { Change, Task } from "../../gen/ts/plan/v1/plan_pb";
 import { type Clients, createClients } from "./client";
-import { type DjinnFocus, createFocus } from "./focus";
+import { type DjinnFocus } from "./focus";
 import {
   type State,
   type Store,
@@ -20,7 +20,8 @@ import {
   emptyDetail,
 } from "./store";
 import { type DjinnTerminal, createTerminal } from "./terminal";
-import { type DjinnUpdate, createUpdate } from "./update";
+import { type DjinnLoad, createUi } from "./ui";
+import { type DjinnUpdate } from "./update";
 
 export interface Djinn {
   store: Store;
@@ -28,16 +29,19 @@ export interface Djinn {
   terminal: DjinnTerminal;
   focus: DjinnFocus;
   update: DjinnUpdate;
+  load: DjinnLoad;
 }
 
 export function createDjinn(transport: Transport, retry = 1000): Djinn {
   const clients = createClients(transport);
+  const ui = createUi(transport, retry);
   return {
     store: createStore(clients, retry),
     clients,
     terminal: createTerminal(transport),
-    focus: createFocus(transport, retry),
-    update: createUpdate(transport, retry),
+    focus: ui.focus,
+    update: ui.update,
+    load: ui.load,
   };
 }
 

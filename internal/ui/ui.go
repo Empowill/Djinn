@@ -20,6 +20,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/fsx"
@@ -56,6 +57,8 @@ type Service struct {
 	// Linked is the wish a link shows: the tilasm's, or the wish itself; an error of code NotFound when it is not on
 	// this machine. Nil: OpenLink is unavailable.
 	Linked func(ctx context.Context, l link.Link) (wishID string, err error)
+	// WatchLoad streams operating load and memory stats. Nil: no load stats streamed in Watch.
+	WatchLoad func(ctx context.Context, send func(*djinnv1.LoadServiceWatchResponse) error) error
 
 	dialogs sync.Mutex // One folder dialog at a time.
 
@@ -599,6 +602,92 @@ func (s *Service) WatchShow(
 			return nil
 		case msg := <-ch:
 			if err := stream.Send(msg); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (s *Service) Watch(
+	ctx context.Context, _ *connect.Request[uiv1.UiServiceWatchRequest],
+	stream *connect.ServerStream[uiv1.UiServiceWatchResponse],
+) error {
+	ch := make(chan *uiv1.UiServiceWatchShowResponse, 8)
+	s.shows.Lock()
+	if s.watchers == nil {
+		s.watchers = map[chan *uiv1.UiServiceWatchShowResponse]struct{}{}
+	}
+	s.watchers[ch] = struct{}{}
+	var replayShow *uiv1.UiServiceWatchShowResponse
+	if s.lastShow != nil && time.Since(s.lastAt) < replay {
+		replayShow = s.lastShow
+	}
+	s.shows.Unlock()
+	defer func() {
+		s.shows.Lock()
+		delete(s.watchers, ch)
+		s.shows.Unlock()
+	}()
+
+	s.updates.Lock()
+	if s.updated == nil {
+		s.updated = make(chan struct{})
+	}
+	updateChanged := s.updated
+	initialUpdate := &uiv1.UiServiceWatchUpdateResponse{
+		Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
+		Build: proto.CloneOf(s.build), Installing: proto.CloneOf(s.installing),
+	}
+	s.updates.Unlock()
+
+	initMsg := &uiv1.UiServiceWatchResponse{
+		Show:   replayShow,
+		Update: initialUpdate,
+	}
+	if err := stream.Send(initMsg); err != nil {
+		return err
+	}
+
+	loadCh := make(chan *djinnv1.LoadServiceWatchResponse, 8)
+	if s.WatchLoad != nil {
+		loadCtx, cancelLoad := context.WithCancel(ctx)
+		defer cancelLoad()
+		go func() {
+			_ = s.WatchLoad(loadCtx, func(resp *djinnv1.LoadServiceWatchResponse) error {
+				select {
+				case <-loadCtx.Done():
+					return loadCtx.Err()
+				case loadCh <- resp:
+					return nil
+				}
+			})
+		}()
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case showMsg := <-ch:
+			if err := stream.Send(&uiv1.UiServiceWatchResponse{Show: showMsg}); err != nil {
+				return err
+			}
+		case <-updateChanged:
+			s.updates.Lock()
+			if s.updated == nil {
+				s.updated = make(chan struct{})
+			}
+			updateChanged = s.updated
+			updateMsg := &uiv1.UiServiceWatchUpdateResponse{
+				Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
+				Build: proto.CloneOf(s.build), Installing: proto.CloneOf(s.installing),
+			}
+			s.updates.Unlock()
+			if err := stream.Send(&uiv1.UiServiceWatchResponse{Update: updateMsg}); err != nil {
+				return err
+			}
+		case loadMsg := <-loadCh:
+			if err := stream.Send(&uiv1.UiServiceWatchResponse{Load: loadMsg}); err != nil {
 				return err
 			}
 		}

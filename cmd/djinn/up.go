@@ -347,7 +347,11 @@ func runUp(args []string) (restart bool, err error) {
 		if broadcastLoad != nil {
 			broadcastLoad(n)
 		}
-	}, workers.WorkerMemory, machine.WithLoadRunningWorkers(workers.Running))
+	}, workers.WorkerMemory, machine.WithLoadRunningWorkers(workers.Running),
+		machine.WithLoadStreamer(func(stream func(context.Context, func(*djinnv1.LoadServiceWatchResponse) error) error) {
+			uiSvc.WatchLoad = stream
+		}),
+	)
 	svc[loadPrefix] = loadHandler
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses,
 		machine.WithSeriesRecorder(seriesRec),
