@@ -5,15 +5,16 @@ import {
   AzimaState,
   type ProofNeed,
   Prover,
+  Provider,
   type Question,
   type Task,
   TaskKind,
   TaskStatus,
-  type Usage,
   type Wish,
 } from "../../gen/ts/plan/v1/plan_pb";
 import { type Decision, decisionsOf, later } from "./decisions";
 import { investigating, isOpen, waitsForYou, watcherRuns } from "./format";
+import { estimateCost, getPriceTable } from "./prices";
 import type { WishDetail } from "./store";
 
 export interface Item<T> {
@@ -418,53 +419,140 @@ export function flightPlan(
   return plan;
 }
 
-// Spent is what tasks spent, summed: tokens always, the cost only of the tasks whose agent gives one (Codex and
-// Antigravity give tokens only). Nothing is guessed.
+export interface ProviderSpent {
+  provider: Provider;
+  inputTokens: bigint;
+  outputTokens: bigint;
+  cacheReadTokens: bigint;
+  cacheWriteTokens: bigint;
+  thinkingTokens: bigint;
+  costUsd: number;
+  estimatedCostUsd: number;
+  withoutCost: number;
+  withoutPrice: number;
+  tasks: number;
+}
+
+// Spent is what tasks spent, summed: tokens always, the reported cost when available, and the estimated cost.
 export interface Spent {
   inputTokens: bigint;
   outputTokens: bigint;
   cacheReadTokens: bigint;
   cacheWriteTokens: bigint;
+  thinkingTokens: bigint;
   costUsd: number;
+  estimatedCostUsd: number;
+  tableDate: string;
   // The tasks that spent tokens without a cost.
   withoutCost: number;
+  // The tasks that spent tokens without a price in the table.
+  withoutPrice: number;
   // The tasks that spent something.
   tasks: number;
+  // Totals per provider
+  byProvider: ProviderSpent[];
 }
 
 // n reads a count of tokens; a message built by hand (a test) may leave it out.
 const n = (value?: bigint) => value ?? 0n;
 
-export function tokensOf(usage?: Usage): bigint {
+export type TokenCounts = {
+  inputTokens?: bigint;
+  outputTokens?: bigint;
+  cacheReadTokens?: bigint;
+  cacheWriteTokens?: bigint;
+  thinkingTokens?: bigint;
+};
+
+export function tokensOf(usage?: TokenCounts): bigint {
   if (!usage) return 0n;
-  return (
-    n(usage.inputTokens) +
-    n(usage.outputTokens) +
-    n(usage.cacheReadTokens) +
-    n(usage.cacheWriteTokens)
-  );
+  const inTok = n(usage.inputTokens);
+  const outTok = n(usage.outputTokens);
+  const thinkTok = n(usage.thinkingTokens);
+  const readTok = n(usage.cacheReadTokens);
+  const writeTok = n(usage.cacheWriteTokens);
+  const totalOut = outTok >= thinkTok ? outTok : thinkTok;
+  return inTok + totalOut + readTok + writeTok;
 }
 
 export function spent(tasks: readonly Task[]): Spent {
+  const table = getPriceTable();
   const out: Spent = {
     inputTokens: 0n,
     outputTokens: 0n,
     cacheReadTokens: 0n,
     cacheWriteTokens: 0n,
+    thinkingTokens: 0n,
     costUsd: 0,
+    estimatedCostUsd: 0,
+    tableDate: table.date,
     withoutCost: 0,
+    withoutPrice: 0,
     tasks: 0,
+    byProvider: [],
   };
-  for (const { usage } of tasks) {
+  const providerMap = new Map<Provider, ProviderSpent>();
+
+  for (const task of tasks) {
+    const { usage, provider, model } = task;
     if (!usage || (tokensOf(usage) === 0n && !usage.costUsd)) continue;
     out.tasks++;
-    out.inputTokens += n(usage.inputTokens);
-    out.outputTokens += n(usage.outputTokens);
-    out.cacheReadTokens += n(usage.cacheReadTokens);
-    out.cacheWriteTokens += n(usage.cacheWriteTokens);
+    const inTok = n(usage.inputTokens);
+    const outTok = n(usage.outputTokens);
+    const readTok = n(usage.cacheReadTokens);
+    const writeTok = n(usage.cacheWriteTokens);
+    const thinkTok = n(usage.thinkingTokens);
+
+    out.inputTokens += inTok;
+    out.outputTokens += outTok;
+    out.cacheReadTokens += readTok;
+    out.cacheWriteTokens += writeTok;
+    out.thinkingTokens += thinkTok;
+
     if (usage.costUsd > 0) out.costUsd += usage.costUsd;
     else out.withoutCost++;
+
+    const est = estimateCost(usage, model, provider);
+    if (est.hasPrice) {
+      out.estimatedCostUsd += est.costUsd;
+    } else {
+      out.withoutPrice++;
+    }
+
+    const prov = provider ?? Provider.UNSPECIFIED;
+    let pSpent = providerMap.get(prov);
+    if (!pSpent) {
+      pSpent = {
+        provider: prov,
+        inputTokens: 0n,
+        outputTokens: 0n,
+        cacheReadTokens: 0n,
+        cacheWriteTokens: 0n,
+        thinkingTokens: 0n,
+        costUsd: 0,
+        estimatedCostUsd: 0,
+        withoutCost: 0,
+        withoutPrice: 0,
+        tasks: 0,
+      };
+      providerMap.set(prov, pSpent);
+    }
+    pSpent.tasks++;
+    pSpent.inputTokens += inTok;
+    pSpent.outputTokens += outTok;
+    pSpent.cacheReadTokens += readTok;
+    pSpent.cacheWriteTokens += writeTok;
+    pSpent.thinkingTokens += thinkTok;
+    if (usage.costUsd > 0) pSpent.costUsd += usage.costUsd;
+    else pSpent.withoutCost++;
+    if (est.hasPrice) {
+      pSpent.estimatedCostUsd += est.costUsd;
+    } else {
+      pSpent.withoutPrice++;
+    }
   }
+
+  out.byProvider = Array.from(providerMap.values());
   return out;
 }
 

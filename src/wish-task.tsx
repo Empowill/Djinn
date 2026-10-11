@@ -256,7 +256,7 @@ export const WishTask = memo(function WishTask({
                 </span>
               )}
               {origin}
-              <TaskUsage usage={task.usage} />
+              <TaskUsage task={task} />
               {task.status === TaskStatus.RUNNING &&
                 task.resources?.readTime && (
                   <span
@@ -517,7 +517,7 @@ function TaskBody({
   }, [events.length, task.status, showLogs]);
   // A finished worker's last text is its report: it shows first, as Markdown.
   const lastWord = taskFinished(task.status) ? lastText(events) : "";
-  const spent = usageDetail(task.usage);
+  const spent = usageDetail(task.usage, task.model, task.provider);
   const running = task.status === TaskStatus.RUNNING;
   const used = task.resources ? resourcesDetail(task.resources, running) : "";
   // Where Djinn does not measure workers (Windows), a running worker says so.
@@ -572,7 +572,12 @@ function TaskBody({
               <table className="compact-table event-table">
                 <tbody>
                   {events.map((event) => (
-                    <EventLine key={event.id} event={event} />
+                    <EventLine
+                      key={event.id}
+                      event={event}
+                      model={task.model}
+                      provider={task.provider}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -645,11 +650,19 @@ function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
   );
 }
 
-function EventLine({ event }: { event: TaskEvent }) {
+function EventLine({
+  event,
+  model,
+  provider,
+}: {
+  event: TaskEvent;
+  model?: string;
+  provider?: Provider;
+}) {
   const Icon = eventIcons[event.kind] ?? FileText;
   const text =
     event.kind === TaskEventKind.USAGE && event.usage
-      ? usageDetail(event.usage)
+      ? usageDetail(event.usage, model, provider)
       : event.kind === TaskEventKind.RECEIVED
         ? t("task.received", { text: event.text })
         : event.text;

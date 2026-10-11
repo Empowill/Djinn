@@ -1502,6 +1502,7 @@ func sum(base, run *planv1.Usage) *planv1.Usage {
 		CacheReadTokens:  base.GetCacheReadTokens() + run.GetCacheReadTokens(),
 		CacheWriteTokens: base.GetCacheWriteTokens() + run.GetCacheWriteTokens(),
 		CostUsd:          base.GetCostUsd() + run.GetCostUsd(),
+		ThinkingTokens:   base.GetThinkingTokens() + run.GetThinkingTokens(),
 	}
 }
 

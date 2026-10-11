@@ -350,3 +350,11 @@ release, it looks at the checkout its build comes from, in the project whose rep
 Permissions stay in [`.agents/permissions.txtpb`](providers.md#the-agentspermissionstxtpb-format), templates in
 the skills ([wish templates](wish-templates.md)), gates are named where they run (`djinn gate run <name>`). The
 lead's agent, CPU limits and the machine's workers stay with each developer's `djinn up`.
+
+## Cost estimates and model pricing
+
+Djinn computes cost estimates for workers from an embedded price table (`internal/usage/prices.yaml`).
+
+- **Estimated vs. reported cost**: When an agent's stream reports actual monetary cost (Claude Code), Djinn keeps and displays that cost labelled "reported" alongside the estimate. For other providers (Codex, Antigravity) that report tokens only, Djinn estimates cost using the embedded table, marked "estimated, prices of <table date>".
+- **Local overrides**: The loader provides a seam for local overrides via `~/.config/djinn/prices.yaml` (or `$DJINN_HOME/prices.yaml`), allowing users to provide custom pricing tables in future updates without requiring CLI flags or UI today.
+

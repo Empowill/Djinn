@@ -538,6 +538,7 @@ func (w *codexWorker) notification(events *lineEvents, method string, raw json.R
 				CachedInputTokens     int64 `json:"cachedInputTokens"`
 				CacheWriteInputTokens int64 `json:"cacheWriteInputTokens"`
 				OutputTokens          int64 `json:"outputTokens"`
+				ReasoningOutputTokens int64 `json:"reasoningOutputTokens"`
 			} `json:"total"`
 		} `json:"tokenUsage"`
 		Turn *struct {
@@ -565,6 +566,7 @@ func (w *codexWorker) notification(events *lineEvents, method string, raw json.R
 		usage := &planv1.Usage{
 			InputTokens: t.InputTokens - t.CachedInputTokens, OutputTokens: t.OutputTokens,
 			CacheReadTokens: t.CachedInputTokens, CacheWriteTokens: t.CacheWriteInputTokens,
+			ThinkingTokens: t.ReasoningOutputTokens,
 		}
 		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_USAGE, fmt.Sprintf("%d tokens in, %d out, %d from the cache",
 			usage.GetInputTokens(), usage.GetOutputTokens(), usage.GetCacheReadTokens()))

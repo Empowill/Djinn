@@ -306,6 +306,11 @@ To use Djinn, see the [README](README.md). To work on it:
   tracker.
 - **Every change is reviewed** by a maintainer.
 - **How to release**: create the release on GitHub's page, from main.
+- **Updating the model price table**: Model prices are maintained in `internal/usage/prices.yaml`, embedded into the binary. When a model's price changes or a new model is introduced:
+  1. Edit `internal/usage/prices.yaml` and update the table `date` (`YYYY-MM-DD`).
+  2. Each entry must specify `name` (as reported by provider streams, e.g. `claude-sonnet-5-5`, `gemini-3.8-flash-high`, `gpt-5.1-codex`), prices per million tokens (`input_cost_per_million`, `output_cost_per_million`, and where applicable `cache_read_cost_per_million`, `cache_write_cost_per_million`, `thinking_cost_per_million`), `source` (public URL), and `source_date` (`YYYY-MM-DD`).
+  3. Never invent a price: a model whose price cannot be sourced from its provider's public pricing page stays out of the table (its tasks show tokens and "no price in the table"). Model aliases and versions map to the canonical table entry.
+  4. Run `go tool task test-pkg -- ./internal/usage/...` to verify YAML syntax, required sources, dates, and calculations.
 
 ## Dependencies, and thanks
 

@@ -828,6 +828,7 @@ func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
 	if u := r.Usage; u != nil {
 		usage.InputTokens, usage.OutputTokens = u.InputTokens, u.OutputTokens+u.ThinkingTokens
 		usage.CacheReadTokens = u.CacheReadTokens
+		usage.ThinkingTokens = u.ThinkingTokens
 	}
 	ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_USAGE, fmt.Sprintf("%d turns, %d tokens in, %d out",
 		r.NumTurns, usage.GetInputTokens(), usage.GetOutputTokens()))

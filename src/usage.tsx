@@ -1,9 +1,46 @@
-// What workers spent: tokens (input, output, cache read and written) and the cost when their agent gives one.
-// Codex and Antigravity give tokens only: the page shows what exists, and says what it cannot add up.
-import type { Resources, Usage } from "../gen/ts/plan/v1/plan_pb";
+// What workers spent: tokens (input, output, cache read and written, thinking) and the cost (reported and estimated).
+// Codex and Antigravity report tokens only; the page estimates cost from prices.yaml, and preserves Claude's reported cost.
+import { useSyncExternalStore } from "react";
+import {
+  Provider,
+  type Resources,
+  type Task,
+  type Usage,
+} from "../gen/ts/plan/v1/plan_pb";
 import { type Spent, tokensOf } from "./data/flight";
 import { usd } from "./data/format";
+import { estimateCost } from "./data/prices";
 import { language, t } from "./i18n";
+
+export type UsageUnit = "money" | "tokens";
+
+let currentUsageUnit: UsageUnit = "money";
+const unitListeners = new Set<() => void>();
+
+export function getUsageUnit(): UsageUnit {
+  return currentUsageUnit;
+}
+
+export function setUsageUnit(unit: UsageUnit) {
+  if (currentUsageUnit !== unit) {
+    currentUsageUnit = unit;
+    unitListeners.forEach((fn) => fn());
+  }
+}
+
+export function useUsageUnit(): [UsageUnit, (unit: UsageUnit) => void] {
+  const unit = useSyncExternalStore(
+    (onStoreChange) => {
+      unitListeners.add(onStoreChange);
+      return () => {
+        unitListeners.delete(onStoreChange);
+      };
+    },
+    () => currentUsageUnit,
+    () => currentUsageUnit,
+  );
+  return [unit, setUsageUnit];
+}
 
 const compact = new Intl.NumberFormat(language, {
   notation: "compact",
@@ -15,59 +52,237 @@ export function tokens(count: bigint): string {
   return compact.format(Number(count));
 }
 
+export function providerName(p?: Provider): string {
+  switch (p) {
+    case Provider.CLAUDE:
+    case Provider.UNSPECIFIED:
+      return "claude";
+    case Provider.CODEX:
+      return "codex";
+    case Provider.ANTIGRAVITY:
+      return "antigravity";
+    case Provider.FAKE:
+      return "fake";
+    case Provider.WATCH:
+      return "watch";
+    default:
+      return "unknown";
+  }
+}
+
 function parts(u: {
   inputTokens?: bigint;
   outputTokens?: bigint;
   cacheReadTokens?: bigint;
   cacheWriteTokens?: bigint;
+  thinkingTokens?: bigint;
 }): string[] {
   const out: string[] = [];
   const add = (
     key:
-      "usage.input" | "usage.output" | "usage.cache_read" | "usage.cache_write",
+      | "usage.input"
+      | "usage.output"
+      | "usage.thinking"
+      | "usage.cache_read"
+      | "usage.cache_write",
     value?: bigint,
   ) => {
     if (value) out.push(t(key, { count: tokens(value) }));
   };
   add("usage.input", u.inputTokens);
   add("usage.output", u.outputTokens);
+  add("usage.thinking", u.thinkingTokens);
   add("usage.cache_read", u.cacheReadTokens);
   add("usage.cache_write", u.cacheWriteTokens);
   return out;
 }
 
 // usageDetail is a task's usage in full, one line: for a title, or the task's facts.
-export function usageDetail(usage?: Usage): string {
+export function usageDetail(
+  usage?: Usage,
+  model?: string,
+  provider?: Provider,
+): string {
   if (!usage) return "";
+  const total = tokensOf(usage);
+  if (total === 0n && !(usage.costUsd > 0)) return "";
   const out = parts(usage);
-  if (usage.costUsd > 0) out.push(usd(usage.costUsd));
+  if (usage.costUsd > 0) {
+    out.push(t("usage.reported", { cost: usd(usage.costUsd) }));
+  }
+  const est = estimateCost(usage, model, provider);
+  if (est.hasPrice) {
+    out.push(
+      t("usage.estimated", { cost: usd(est.costUsd), date: est.tableDate }),
+    );
+  } else {
+    out.push(t("usage.no_price"));
+  }
   return out.join(" · ");
 }
 
-// TaskUsage is a task's usage, short: its tokens and its cost; the detail in its title.
-export function TaskUsage({ usage }: { usage?: Usage }) {
-  const total = tokensOf(usage);
-  if (!usage || (total === 0n && !(usage.costUsd > 0))) return null;
+// TaskUsage is a task's usage, short: its tokens and its cost (reported and estimated); the detail in its title.
+export function TaskUsage({
+  usage,
+  model,
+  provider,
+  task,
+}: {
+  usage?: Usage;
+  model?: string;
+  provider?: Provider;
+  task?: Task;
+}) {
+  const [unit] = useUsageUnit();
+  const u = task?.usage ?? usage;
+  const m = task?.model ?? model;
+  const p = task?.provider ?? provider;
+  const total = tokensOf(u);
+  if (!u || (total === 0n && !(u.costUsd > 0))) return null;
+
+  if (unit === "tokens") {
+    return (
+      <span className="task-usage" title={parts(u).join(" · ")}>
+        {t("usage.tokens", { count: tokens(total) })}
+      </span>
+    );
+  }
+
+  const est = estimateCost(u, m, p);
+  const items: string[] = [];
+  if (total > 0n) {
+    items.push(t("usage.tokens", { count: tokens(total) }));
+  }
+  if (u.costUsd > 0) {
+    items.push(t("usage.reported", { cost: usd(u.costUsd) }));
+  }
+  if (est.hasPrice) {
+    items.push(
+      t("usage.estimated", { cost: usd(est.costUsd), date: est.tableDate }),
+    );
+  } else {
+    items.push(t("usage.no_price"));
+  }
+
   return (
-    <span className="task-usage" title={usageDetail(usage)}>
-      {total > 0n && t("usage.tokens", { count: tokens(total) })}
-      {total > 0n && usage.costUsd > 0 && " · "}
-      {usage.costUsd > 0 && usd(usage.costUsd)}
+    <span className="task-usage" title={usageDetail(u, m, p)}>
+      {items.join(" · ")}
     </span>
   );
 }
 
 // SpentLine is what a wish's tasks spent, summed; nothing when they spent nothing.
-export function SpentLine({ spent }: { spent: Spent }) {
+export function SpentLine({
+  spent,
+  showSwitch = true,
+}: {
+  spent: Spent;
+  showSwitch?: boolean;
+}) {
+  const [unit, setUnit] = useUsageUnit();
   if (!spent.tasks) return null;
+  const total = tokensOf(spent);
+
+  if (unit === "tokens") {
+    const items = parts(spent);
+    return (
+      <span className="wish-spent">
+        <span className="eyebrow">{t("usage.spent")}</span>
+        {total > 0n && (
+          <span className="spent-total">
+            {t("usage.tokens", { count: tokens(total) })}
+          </span>
+        )}
+        {items.length > 0 && <span>({items.join(" · ")})</span>}
+        {spent.byProvider.length > 1 && (
+          <span className="spent-providers">
+            {spent.byProvider
+              .filter((p) => tokensOf(p) > 0n)
+              .map((p) => `${providerName(p.provider)}: ${tokens(tokensOf(p))}`)
+              .join(" · ")}
+          </span>
+        )}
+        {showSwitch && (
+          <button
+            type="button"
+            className="usage-unit-switch"
+            title={t("usage.switch_unit")}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setUnit("money");
+            }}
+          >
+            {t("usage.unit_money")}
+          </button>
+        )}
+      </span>
+    );
+  }
+
   const items = parts(spent);
-  if (spent.costUsd > 0) items.push(usd(spent.costUsd));
+  const costItems: string[] = [];
+  if (spent.costUsd > 0) {
+    costItems.push(t("usage.reported", { cost: usd(spent.costUsd) }));
+  }
+  if (spent.estimatedCostUsd > 0 || spent.tasks > spent.withoutPrice) {
+    costItems.push(
+      t("usage.estimated", {
+        cost: usd(spent.estimatedCostUsd),
+        date: spent.tableDate,
+      }),
+    );
+  }
+
+  const allItems = [...items, ...costItems];
+
   return (
     <span className="wish-spent">
       <span className="eyebrow">{t("usage.spent")}</span>
-      <span>{items.join(" · ")}</span>
-      {spent.withoutCost > 0 && (
-        <small>{t("usage.without_cost", { count: spent.withoutCost })}</small>
+      {allItems.length > 0 && <span>{allItems.join(" · ")}</span>}
+      {spent.withoutPrice > 0 && (
+        <small>{t("usage.without_price", { count: spent.withoutPrice })}</small>
+      )}
+      {spent.byProvider.length > 1 && (
+        <span className="spent-providers">
+          {spent.byProvider
+            .filter((p) => p.tasks > 0)
+            .map((p) => {
+              const pItems: string[] = [];
+              if (p.costUsd > 0) {
+                pItems.push(t("usage.reported", { cost: usd(p.costUsd) }));
+              }
+              if (p.tasks > p.withoutPrice) {
+                pItems.push(
+                  t("usage.estimated", {
+                    cost: usd(p.estimatedCostUsd),
+                    date: spent.tableDate,
+                  }),
+                );
+              }
+              if (p.withoutPrice > 0) {
+                pItems.push(
+                  t("usage.without_price", { count: p.withoutPrice }),
+                );
+              }
+              return `${providerName(p.provider)}: ${pItems.join(", ")}`;
+            })
+            .join(" · ")}
+        </span>
+      )}
+      {showSwitch && (
+        <button
+          type="button"
+          className="usage-unit-switch"
+          title={t("usage.switch_unit")}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            setUnit("tokens");
+          }}
+        >
+          {t("usage.unit_tokens")}
+        </button>
       )}
     </span>
   );

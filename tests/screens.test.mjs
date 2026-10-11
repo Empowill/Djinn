@@ -60,7 +60,12 @@ export {
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView } from "@/src/update-banner.tsx";
 export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
-export { memory, resourcesDetail } from "@/src/usage.tsx";
+export {
+  memory,
+  resourcesDetail,
+  setUsageUnit,
+  getUsageUnit,
+} from "@/src/usage.tsx";
 export { TilasmList } from "@/src/tilasms.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
@@ -772,7 +777,7 @@ const usage = (input, output, read, write, costUsd) => ({
   costUsd,
 });
 
-test("a task shows its tokens and its cost; a Codex task, its tokens only", () => {
+test("a task shows its tokens, estimated cost, reported cost, or missing price", () => {
   const claude = s.renderToStaticMarkup(
     h(s.WishTask, {
       task: {
@@ -785,11 +790,15 @@ test("a task shows its tokens and its cost; a Codex task, its tokens only", () =
       onStop() {},
     }),
   );
-  assert.match(claude, /51\.4K tokens · \$0\.003/);
   assert.match(
     claude,
-    /input 4 · output 409 · cache read 38\.2K · cache written 12\.8K · \$0\.003/,
+    /51\.4K tokens · \$0\.003 reported · \$0\.066 estimated, prices of 2026-10-11/,
   );
+  assert.match(
+    claude,
+    /input 4 · output 409 · cache read 38\.2K · cache written 12\.8K · \$0\.003 reported · \$0\.066 estimated, prices of 2026-10-11/,
+  );
+
   const codex = s.renderToStaticMarkup(
     h(s.WishTask, {
       task: {
@@ -803,8 +812,52 @@ test("a task shows its tokens and its cost; a Codex task, its tokens only", () =
       onStop() {},
     }),
   );
-  assert.match(codex, /6\.5K tokens</);
-  assert.doesNotMatch(codex, /\$/);
+  assert.match(
+    codex,
+    /6\.5K tokens · \$0\.012 estimated, prices of 2026-10-11/,
+  );
+  assert.match(
+    codex,
+    /input 1\.2K · output 300 · cache read 5K · \$0\.012 estimated, prices of 2026-10-11/,
+  );
+
+  const unpriced = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: {
+        id: "t3",
+        code: "W3",
+        title: "Test unpriced",
+        status: s.TaskStatus.DONE,
+        model: "unlisted-model-xyz",
+        usage: usage(100, 200, 0, 0, 0),
+      },
+      onStop() {},
+    }),
+  );
+  assert.match(unpriced, /300 tokens · no price in the table/);
+  assert.doesNotMatch(unpriced, /\$/);
+
+  // When usage unit is switched to tokens, costs are hidden
+  s.setUsageUnit("tokens");
+  try {
+    const claudeTokens = s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Trim the wick",
+          status: s.TaskStatus.DONE,
+          usage: usage(4, 409, 38153, 12845, 0.0032),
+        },
+        onStop() {},
+      }),
+    );
+    assert.match(claudeTokens, /51\.4K tokens/);
+    assert.doesNotMatch(claudeTokens, /\$/);
+    assert.doesNotMatch(claudeTokens, /estimated/);
+  } finally {
+    s.setUsageUnit("money");
+  }
 });
 
 test("shortModel formats model identifiers cleanly", () => {
@@ -1539,7 +1592,7 @@ function twoWishes() {
         code: "W1",
         title: "Taste the oils",
         status: s.TaskStatus.RUNNING,
-        provider: s.Provider.CODEX,
+        model: "custom-local",
         usage: usage(1200, 300, 5000, 0, 0),
       },
       {
@@ -1627,13 +1680,13 @@ test("the flight plan merges the active wishes: their questions, the blocking on
     /id="view-tab-decisions"[^>]*>Decisions<span class="count">1<\/span>/,
   );
   assert.doesNotMatch(html, /Tonight\?/);
-  // What each wish spent: the first with its cost, the second in tokens only.
+  // What each wish spent: the first with its cost, the second in tokens only with missing price note.
   assert.match(
     html,
-    /input 10 · output 400 · cache read 38K · cache written 12K · \$0\.42/,
+    /input 10 · output 400 · cache read 38K · cache written 12K · \$0\.42 reported · \$0\.062 estimated, prices of 2026-10-11/,
   );
-  assert.match(html, /input 1\.2K · output 300 · cache read 5K</);
-  assert.match(html, /1 task without a cost: its agent gives tokens only/);
+  assert.match(html, /input 1\.2K · output 300 · cache read 5K/);
+  assert.match(html, /1 task without a price in the table/);
 });
 
 test("the flight plan hides its empty sections", async () => {
