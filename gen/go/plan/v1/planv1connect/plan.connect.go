@@ -154,6 +154,8 @@ const (
 	LeadServiceGetProcedure = "/plan.v1.LeadService/Get"
 	// LeadServiceBriefProcedure is the fully-qualified name of the LeadService's Brief RPC.
 	LeadServiceBriefProcedure = "/plan.v1.LeadService/Brief"
+	// LeadServiceWatchProcedure is the fully-qualified name of the LeadService's Watch RPC.
+	LeadServiceWatchProcedure = "/plan.v1.LeadService/Watch"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -1765,6 +1767,16 @@ type LeadServiceClient interface {
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
 	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
+	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
+	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
+	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
+	// most) so that a burst, like an integration pass merging several tasks, comes as one digest; then it returns.
+	// Called again with --after the cursor, it acknowledges every event up to it for this session, then waits for the
+	// next ones: an event never acknowledged (the lead crashed, its session was lost) comes back on the next watch, at
+	// least once, never lost. While a watch of the lead's session waits, Djinn types nothing in the lead's terminal;
+	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
+	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
+	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
 }
 
 // NewLeadServiceClient constructs a client for the plan.v1.LeadService service. By default, it uses
@@ -1804,6 +1816,12 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		watch: connect.NewClient[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse](
+			httpClient,
+			baseURL+LeadServiceWatchProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Watch")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1813,6 +1831,7 @@ type leadServiceClient struct {
 	resume *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
 	get    *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
 	brief  *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
+	watch  *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -1835,6 +1854,11 @@ func (c *leadServiceClient) Brief(ctx context.Context, req *connect.Request[v1.L
 	return c.brief.CallUnary(ctx, req)
 }
 
+// Watch calls plan.v1.LeadService.Watch.
+func (c *leadServiceClient) Watch(ctx context.Context, req *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {
+	return c.watch.CallUnary(ctx, req)
+}
+
 // LeadServiceHandler is an implementation of the plan.v1.LeadService service.
 type LeadServiceHandler interface {
 	// Record the lead of Djinn: the agent session that drives it, for djinn lead resume to take it back. Starts
@@ -1852,6 +1876,16 @@ type LeadServiceHandler interface {
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
 	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
+	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
+	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
+	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
+	// most) so that a burst, like an integration pass merging several tasks, comes as one digest; then it returns.
+	// Called again with --after the cursor, it acknowledges every event up to it for this session, then waits for the
+	// next ones: an event never acknowledged (the lead crashed, its session was lost) comes back on the next watch, at
+	// least once, never lost. While a watch of the lead's session waits, Djinn types nothing in the lead's terminal;
+	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
+	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
+	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
 }
 
 // NewLeadServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -1887,6 +1921,12 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceWatchHandler := connect.NewUnaryHandler(
+		LeadServiceWatchProcedure,
+		svc.Watch,
+		connect.WithSchema(leadServiceMethods.ByName("Watch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.LeadService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LeadServiceSetProcedure:
@@ -1897,6 +1937,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceGetHandler.ServeHTTP(w, r)
 		case LeadServiceBriefProcedure:
 			leadServiceBriefHandler.ServeHTTP(w, r)
+		case LeadServiceWatchProcedure:
+			leadServiceWatchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1920,6 +1962,10 @@ func (UnimplementedLeadServiceHandler) Get(context.Context, *connect.Request[v1.
 
 func (UnimplementedLeadServiceHandler) Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Brief is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Watch is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.
