@@ -15,11 +15,17 @@ const {
   QuestionService,
   BlockService,
   InboxService,
+  TaskKind,
+  TaskStatus,
+  AzimaState,
+  azimaGroups,
+  loose,
 } = await bundle(
   "store",
   `export { createStore } from "@/src/data/store.ts";
 export { createClients } from "@/src/data/client.ts";
 export { createRouterTransport } from "@connectrpc/connect";
+export { azimaGroups, loose } from "@/src/data/flight.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 
@@ -654,6 +660,142 @@ test("a move removes the azima from the first wish's detail and adds it to the s
   assert.equal(state.details[wish2].tasks[0].code, "T02");
   assert.equal(state.details[wish2].tasks[1].partOf, movedAzima.id);
   assert.equal(reads.tasks, before.tasks, "tasks was not re-read from server");
+
+  stop();
+});
+
+test("incremental updates refresh derived views: azima groups, loose tasks, dependencies, description", async () => {
+  const wish1 = "01a11833-a440-7479-a067-52615c91da71";
+  const w1 = {
+    id: "01a11876-6480-7ec2-9833-abd058ae4a01",
+    wishId: wish1,
+    code: "W1",
+    title: "Task 1",
+    kind: TaskKind.WORK,
+    status: TaskStatus.PLAN,
+    dependsOn: [],
+    partOf: "",
+  };
+  const w2 = {
+    id: "01a11876-6480-7ec2-9833-abd058ae4a02",
+    wishId: wish1,
+    code: "W2",
+    title: "Task 2",
+    kind: TaskKind.WORK,
+    status: TaskStatus.PLAN,
+    dependsOn: [],
+    partOf: "",
+  };
+  const data = {
+    wishes: [{ id: wish1, title: "Test Wish" }],
+    tasks: [w1, w2],
+  };
+
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wish1, [Change.TASK]);
+  await until(store, (s) => s.details[wish1]?.loadedKinds.has(Change.TASK));
+
+  let tasks = store.getState().details[wish1].tasks;
+  assert.equal(tasks.length, 2);
+  assert.deepEqual(
+    loose(tasks).map((t) => t.id),
+    [w1.id, w2.id],
+  );
+  assert.equal(azimaGroups(tasks).length, 0);
+
+  // 1. New azima appears
+  const t1 = {
+    id: "01a11876-6480-7ec2-9833-abd058ae4a03",
+    wishId: wish1,
+    code: "T1",
+    title: "Azima 1",
+    kind: TaskKind.AZIMA,
+    status: TaskStatus.PLAN,
+    azima: { state: AzimaState.OPEN },
+    dependsOn: [],
+    partOf: "",
+    description: "",
+  };
+  watch.push({
+    wishId: wish1,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [t1] }),
+  });
+
+  await until(store, (s) => s.details[wish1]?.tasks.length === 3);
+  tasks = store.getState().details[wish1].tasks;
+  assert.equal(azimaGroups(tasks).length, 1);
+  assert.equal(azimaGroups(tasks)[0].azima.id, t1.id);
+  assert.equal(azimaGroups(tasks)[0].parts.length, 0);
+  assert.deepEqual(
+    loose(tasks).map((t) => t.id),
+    [w1.id, w2.id],
+  );
+
+  // 2. Task partOf change moves it under its azima
+  const w1Grouped = { ...w1, partOf: t1.id };
+  watch.push({
+    wishId: wish1,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [w1Grouped] }),
+  });
+
+  await until(
+    store,
+    (s) =>
+      s.details[wish1]?.tasks.find((t) => t.id === w1.id)?.partOf === t1.id,
+  );
+  tasks = store.getState().details[wish1].tasks;
+  assert.deepEqual(
+    loose(tasks).map((t) => t.id),
+    [w2.id],
+  );
+  assert.equal(azimaGroups(tasks).length, 1);
+  assert.equal(azimaGroups(tasks)[0].parts.length, 1);
+  assert.equal(azimaGroups(tasks)[0].parts[0].id, w1.id);
+
+  // 3. Dependency change updates its dependsOn (after line)
+  const w2Dep = { ...w2, dependsOn: [w1.id] };
+  watch.push({
+    wishId: wish1,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [w2Dep] }),
+  });
+
+  await until(
+    store,
+    (s) =>
+      s.details[wish1]?.tasks.find((t) => t.id === w2.id)?.dependsOn?.length ===
+      1,
+  );
+  tasks = store.getState().details[wish1].tasks;
+  const foundW2 = tasks.find((t) => t.id === w2.id);
+  assert.deepEqual(foundW2.dependsOn, [w1.id]);
+
+  // 4. Description appears on the azima
+  const t1Described = { ...t1, description: "A detailed azima description" };
+  watch.push({
+    wishId: wish1,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [t1Described] }),
+  });
+
+  await until(
+    store,
+    (s) =>
+      s.details[wish1]?.tasks.find((t) => t.id === t1.id)?.description ===
+      "A detailed azima description",
+  );
+  tasks = store.getState().details[wish1].tasks;
+  assert.equal(
+    azimaGroups(tasks)[0].azima.description,
+    "A detailed azima description",
+  );
 
   stop();
 });

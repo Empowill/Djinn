@@ -1040,7 +1040,13 @@ func (q *Questions) Move(
 			return code
 		}
 
+		if err := tx.Change(sourceQuestion); err != nil {
+			return err
+		}
 		for _, t := range following {
+			if err := tx.Change(t); err != nil {
+				return err
+			}
 			oldTaskCode := t.GetCode()
 			if !slices.Contains(sourceWish.GetRetiredCodes(), oldTaskCode) {
 				sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, oldTaskCode)
