@@ -68,6 +68,7 @@ test("a single watch stream shares show, update and load across subscribers", as
     wishId,
     terminal: `lead-${wishId}`,
     tilasmId: "",
+    target: "",
     unknownLink: "",
   });
   assert.equal(loadSeen.length, 1);

@@ -37,7 +37,13 @@ export {
   principalWish,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
-export { attentionOf, AttentionBar } from "@/src/attention.tsx";
+export {
+  attentionOf,
+  AttentionBar,
+  tabOf,
+  wayTo,
+} from "@/src/attention.tsx";
+export { DecisionLog } from "@/src/decision-log.tsx";
 export { TaskSections } from "@/src/task-tabs.tsx";
 export {
   azimaGroups,
@@ -3313,6 +3319,94 @@ test("the attention bar says how much each question holds up: blocking, your mov
     markup,
     /<span class="attention-level"><svg[^>]*class="lucide lucide-circle-user-round[^>]*>.*<\/svg>Your move<\/span>/,
   );
+});
+
+test("a line of the attention bar takes you to its target in another tab, a folded part or another wish; a line gone is plain text", () => {
+  const w1 = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const w2 = wish("w2", "Light the lamp", s.WishState.ACTIVE, 2);
+  const q = (id, extra = {}) => ({
+    id,
+    code: id.toUpperCase(),
+    text: id,
+    ...extra,
+  });
+  const items = s.attentionOf(
+    [
+      { wish: w1, item: q("q1"), blocking: [] },
+      { wish: w1, item: q("q2", { waitingLead: true }), blocking: [] },
+      { wish: w2, item: q("q3"), blocking: [] },
+      { wish: w1, item: q("q4"), blocking: [] },
+    ],
+    [
+      {
+        wish: w1,
+        item: {
+          id: "t9",
+          code: "W9",
+          status: s.TaskStatus.FAILED,
+          error: "",
+        },
+        question: "",
+      },
+    ],
+    [w1],
+  );
+  const line = (key) => items.find((i) => i.key === key);
+  // What the wish w1 shows: its open question q1 and its worker in the first tab, q2 answered in the decisions, its
+  // grant; q4 withdrawn meanwhile is not there any more.
+  const shown = new Set([
+    "question-q1",
+    "decision-q2",
+    "waiting-t9",
+    "grant-w1",
+  ]);
+
+  // In another tab: an open question in the first tab, one answered and waiting for a lead in the decisions.
+  assert.equal(line("q2").target, "decision-q2");
+  assert.equal(s.tabOf("decision-q2"), "decisions");
+  assert.deepEqual(s.wayTo(line("q1"), shown, "w1"), { tab: "main" });
+  assert.deepEqual(s.wayTo(line("q2"), shown, "w1"), { tab: "decisions" });
+  assert.deepEqual(s.wayTo(line("t9"), shown, "w1"), { tab: "main" });
+  assert.deepEqual(s.wayTo(line("ready-w1"), shown, "w1"), { tab: "main" });
+  // In another wish: its wish opens, whatever this one shows; in the flight plan, every wish is here.
+  assert.deepEqual(s.wayTo(line("q3"), shown, "w1"), { wishId: "w2" });
+  assert.equal(s.wayTo(line("q3"), shown), undefined);
+  assert.deepEqual(s.wayTo(line("q3"), new Set(["question-q3"])), {
+    tab: "main",
+  });
+  // Gone: no way, and the bar does not offer it as a button.
+  assert.equal(s.wayTo(line("q4"), shown, "w1"), undefined);
+  const markup = s.renderToStaticMarkup(
+    h(s.AttentionBar, {
+      items: items.filter((i) => i.wishId === "w1"),
+      reach: (item) => (s.wayTo(item, shown, "w1") ? () => {} : undefined),
+    }),
+  );
+  assert.equal(markup.match(/<button class="attention-item/g).length, 4);
+  assert.match(
+    markup,
+    /<span class="attention-item level-later"><span class="attention-level">Can wait<\/span><b class="attention-code">Q4<\/b><span class="attention-text">q4<\/span><\/span>/,
+  );
+
+  // In a folded part: a decision older than the latest ones shows when it is the one in focus, as the bar asks.
+  const decisions = Array.from({ length: 40 }, (_, i) => ({
+    item: {
+      id: `d${i}`,
+      ref: `d${i}`,
+      block: { title: `Decision ${i}`, content: "" },
+      human: false,
+      approved: false,
+      by: "lead",
+      icon: "*",
+      tasks: [],
+    },
+  }));
+  const log = (focus) =>
+    s.renderToStaticMarkup(
+      h(s.DecisionLog, { items: decisions, focus, onTask() {} }),
+    );
+  assert.doesNotMatch(log(""), /id="decision-d35"/);
+  assert.match(log("d35"), /id="decision-d35"/);
 });
 
 test("an open question that can wait stays visible in WishView action center and attention bar, never folded", async () => {

@@ -46,6 +46,7 @@ export function createUi(transport: Transport, retry = 1000): DjinnUi {
       wishId: res.wishId,
       terminal: res.terminal,
       tilasmId: res.tilasmId,
+      target: "",
       unknownLink: res.unknownLink,
     };
     lastFocus = { focus, at: Date.now() };

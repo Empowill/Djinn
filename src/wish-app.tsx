@@ -23,7 +23,7 @@ import { t } from "./i18n";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
-import { type Opening, WishView } from "./wish-view";
+import { type Opening, type Reaching, WishView } from "./wish-view";
 import { OperatingLoad } from "./operating-load";
 import "./wish.css";
 import "./review.css";
@@ -68,6 +68,8 @@ export function WishApp() {
   const [toast, setToast] = useState("");
   // The tilasm a djinn:// link asks to show, in its wish; a new object at each request.
   const [opening, setOpening] = useState<Opening>();
+  // The element a line of the attention bar asks to bring into sight, in its wish; a new object at each request.
+  const [reaching, setReaching] = useState<Reaching>();
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
   const closeDocs = useCallback(() => setModal(null), []);
@@ -85,16 +87,18 @@ export function WishApp() {
         if (focus.wishId) setSelected(focus.wishId);
         if (focus.tilasmId)
           setOpening({ wishId: focus.wishId, tilasmId: focus.tilasmId });
+        if (focus.target)
+          setReaching({ wishId: focus.wishId, target: focus.target });
         if (focus.unknownLink)
           setToast(t("link.unknown", { link: focus.unknownLink }));
       }),
     [djinn],
   );
   // Another wish shown: a tilasm asked for earlier is not opened again on coming back.
-  useEffect(
-    () => setOpening((o) => (o && o.wishId !== selected ? undefined : o)),
-    [selected],
-  );
+  useEffect(() => {
+    setOpening((o) => (o && o.wishId !== selected ? undefined : o));
+    setReaching((r) => (r && r.wishId !== selected ? undefined : r));
+  }, [selected]);
   // Ctrl+N (Cmd+N) makes a wish.
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
@@ -233,6 +237,7 @@ export function WishApp() {
             key={wish.id}
             wish={wish}
             opening={opening?.wishId === wish.id ? opening : undefined}
+            reaching={reaching?.wishId === wish.id ? reaching : undefined}
             onToast={setToast}
           />
         ) : (

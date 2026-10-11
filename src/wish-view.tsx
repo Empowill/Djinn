@@ -90,7 +90,7 @@ import {
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
-import { AttentionBar, attentionOf } from "./attention";
+import { AttentionBar, attentionOf, useReach } from "./attention";
 import { ModalFrame } from "./frame";
 import { useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
@@ -129,14 +129,24 @@ export interface Opening {
   tilasmId: string;
 }
 
+// Reaching is an element of a wish to bring into sight, as a line of the attention bar of another page asks: a new
+// object at each request.
+export interface Reaching {
+  wishId: string;
+  target: string;
+}
+
 export function WishView({
   wish,
   opening,
+  reaching,
   onToast,
 }: {
   wish: Wish;
   // A tilasm of the wish to show now, in its Tilasms tab.
   opening?: Opening;
+  // An element of the wish to bring into sight now, in its tab.
+  reaching?: Reaching;
   onToast: (text: string) => void;
 }) {
   const djinn = useDjinn();
@@ -564,6 +574,18 @@ export function WishView({
     waiting,
     wish.ready ? [wish] : [],
   );
+  // What the wish's tabs show of the bar's lines: the open questions, the waiting workers and the grant in the
+  // first tab, the answered questions in the decisions.
+  const shown = new Set([
+    ...open.map(({ item }) => `question-${item.id}`),
+    ...decisions.map((d) => `decision-${d.id}`),
+    ...waiting.map(({ item }) => `waiting-${item.id}`),
+    ...(wish.ready ? [`grant-${wish.id}`] : []),
+  ]);
+  const { reach, to } = useReach(show, shown, wish.id);
+  useEffect(() => {
+    if (reaching) to(reaching.target);
+  }, [reaching, to]);
   const tone = wishTone(wish, open.length, running, watching);
 
   return (
@@ -726,7 +748,7 @@ export function WishView({
         />
       )}
       <div className="mission-scroll" ref={keepPlace}>
-        <AttentionBar items={attention} />
+        <AttentionBar items={attention} reach={reach} />
         <div className="hero mission-header review-head">
           <div className="hero-copy">
             <span className="eyebrow">

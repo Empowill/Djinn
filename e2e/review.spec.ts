@@ -169,7 +169,16 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     .locator(".wish-task-heading")
     .click();
   await shoot(page, "review-wish-light");
-  await page.getByRole("tab", { name: /^Wish/ }).click();
+  // From another tab, a line of the bar brings its question back into sight, in the wish's first tab.
+  await bar
+    .locator(".attention-item")
+    .filter({ hasText: "Which oil for the wick?" })
+    .click();
+  await expect(page.getByRole("tab", { name: /^Wish/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(card).toBeFocused();
   await theme(page, "");
 
   // Enlighten me: one click sends what the answer's note says to the lead, no second field; the question waits for

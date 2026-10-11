@@ -29,6 +29,7 @@ test("a request to show a wish and its lead reaches every subscriber", async () 
     wishId,
     terminal: `lead-${wishId}`,
     tilasmId: "",
+    target: "",
     unknownLink: "",
   });
   // A part of the page that subscribes later gets it too.
@@ -55,6 +56,7 @@ test("a broken stream is watched again", async () => {
     wishId: "",
     terminal: "main",
     tilasmId: "",
+    target: "",
     unknownLink: "",
   });
   assert.equal(calls, 2);
@@ -78,10 +80,31 @@ test("a tilasm a link names, a link Djinn does not know, and a link clicked in t
   );
   await two;
   assert.deepEqual(got, [
-    { wishId, terminal: "", tilasmId, unknownLink: "" },
-    { wishId: "", terminal: "", tilasmId: "", unknownLink: "djinn://moon/x" },
+    { wishId, terminal: "", tilasmId, target: "", unknownLink: "" },
+    {
+      wishId: "",
+      terminal: "",
+      tilasmId: "",
+      target: "",
+      unknownLink: "djinn://moon/x",
+    },
   ]);
   // A djinn:// link clicked in the page goes to the subscribers at once, without djinn.
   focus.show({ wishId, tilasmId });
-  assert.deepEqual(got[2], { wishId, terminal: "", tilasmId, unknownLink: "" });
+  assert.deepEqual(got[2], {
+    wishId,
+    terminal: "",
+    tilasmId,
+    target: "",
+    unknownLink: "",
+  });
+  // A line of the attention bar asks for a question of another wish: its wish, and the element to bring into sight.
+  focus.show({ wishId, target: "question-q1" });
+  assert.deepEqual(got[3], {
+    wishId,
+    terminal: "",
+    tilasmId: "",
+    target: "question-q1",
+    unknownLink: "",
+  });
 });
