@@ -37,6 +37,13 @@ func (h *Harness) failed(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
 	in *planv1.TaskIntegration, text string,
 ) {
+	for _, t := range batch {
+		if p := pushOfCorrection(wish, t.GetId()); p != nil {
+			h.settleIntegration(ctx, batch, in, text, nil)
+			h.pushCorrectionEnded(ctx, wish, project, settings, p, t, true)
+			return
+		}
+	}
 	f := in.GetFailure()
 	held := slices.DeleteFunc(slices.Clone(batch), func(t *planv1.Task) bool { return !slices.Contains(f.GetTaskIds(), t.GetId()) })
 	if len(held) < len(batch) {
@@ -60,6 +67,12 @@ func (h *Harness) failed(
 	if err != nil {
 		log.Printf("djinn: integrate %s: %v", codes(held), err)
 		group = held
+	}
+	group = slices.DeleteFunc(group, func(t *planv1.Task) bool {
+		return t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED
+	})
+	if len(group) == 0 {
+		return
 	}
 	h.correct(ctx, wish, project, settings, group, in, text, attempts, true)
 }
@@ -494,6 +507,19 @@ func tasksByID(ctx context.Context, r store.Reader, ids []string) ([]*planv1.Tas
 	return out, nil
 }
 
+// pushOfCorrection is the push taskID is the correction worker of, if any.
+func pushOfCorrection(wish *planv1.Wish, taskID string) *planv1.WishPush {
+	if wish == nil || taskID == "" {
+		return nil
+	}
+	for _, p := range wish.GetPushes() {
+		if p.GetCorrectedBy() == taskID && p.GetQuestionId() == "" {
+			return p
+		}
+	}
+	return nil
+}
+
 // pushCorrectionEnded handles a push correction worker that ended without being done (failed or stopped): it asks the person.
 func (h *Harness) pushCorrectionEnded(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, p *planv1.WishPush, c *planv1.Task, failed bool,
@@ -512,12 +538,21 @@ func (h *Harness) pushCorrectionEnded(
 	}
 	text := "integration: " + c.GetCode() + ", its correction worker, was stopped"
 	if failed {
-		text = "integration: " + c.GetCode() + ", its correction worker, failed: " + c.GetError()
+		reason := c.GetError()
+		if reason == "" && c.GetIntegration() != nil && c.GetIntegration().GetFailure() != nil {
+			reason = c.GetIntegration().GetFailure().GetReason()
+		}
+		text = "integration: " + c.GetCode() + ", its correction worker, failed"
+		if reason != "" {
+			text += ": " + reason
+		}
 	}
 	h.pushSteps(ctx, committed, text)
 	var attempts int32
 	if c.GetCorrection() != nil {
 		attempts = c.GetCorrection().GetAttempt()
+	} else if p != nil {
+		attempts = p.GetAttempts()
 	}
 	h.askPushHeld(ctx, wish, project, branch, f, attempts, nil, committed)
 }

@@ -329,21 +329,6 @@ func (h *Harness) holdPush(
 		c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, attempts+1, committed)
 		if err == nil {
 			err = h.store.Tx(ctx, func(tx *store.Tx) error {
-				for _, t := range committed {
-					curT, err := store.Get[*planv1.Task](ctx, tx, t.GetId())
-					if err != nil {
-						return err
-					}
-					if curT.GetIntegration() != nil {
-						curT.Integration.CorrectedBy = c.GetId()
-						if err := tx.Journal(actorHarness, methodIntegrate, curT); err != nil {
-							return err
-						}
-						if err := tx.Put(curT); err != nil {
-							return err
-						}
-					}
-				}
 				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 					p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = c.GetId(), attempts+1, sha, f
 				})

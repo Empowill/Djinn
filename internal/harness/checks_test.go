@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -442,5 +443,154 @@ func TestPushChecksCorrectionCancelled(t *testing.T) {
 	}
 	if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
 		t.Errorf("after push succeeded, push state: %v", state)
+	}
+}
+
+// TestPushCheckFailedCorrectionLeavesCommittedAndDependents: a failed push check and a failed correction
+// leave committed tasks COMMITTED and their dependents free to start; the push stays held and then
+// pushes once corrected.
+func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, lintAtCommit+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	in.testCode = 1
+	bare := in.remote(t)
+	old := in.tip(t)
+	azima := in.azima(t, in.wishID, "First")
+
+	// W1 finishes and commits into the integration branch.
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
+		task.PartOf = azima.GetId()
+	})
+
+	// W2 depends on W1. Before W1 commits, W2 waits.
+	w2 := in.mustSpawn(t, in.wishID, "W2", "wait\ntext two", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{"W1"},
+	})
+	if w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || w2.GetWaitReason() != "waits for W1 to be committed" {
+		t.Fatalf("before W1 commit, W2 = %v; want pending waiting for W1 to be committed", w2)
+	}
+
+	var attempts int
+	in.correctWith(func(dir, prompt string) string {
+		if !strings.HasPrefix(prompt, "The push checks of ") {
+			return ""
+		}
+		attempts++
+		if attempts == 1 {
+			// Correction worker creates a conflicting edit on app/src/a.txt
+			file := "src/a.txt"
+			if !strings.HasSuffix(dir, "/app") {
+				file = "app/src/a.txt"
+			}
+			writeFile(t, dir, file, "conflicting edit from push correction\n")
+			commitAll(t, dir, "Push correction conflicting edit")
+			return "wait\ntext done"
+		}
+		return "text push checks fixed"
+	})
+
+	// Pass 1: W1 commits into the branch.
+	// Push check fails on tip (testCode = 1). Push is held.
+	// Correction worker W3 is spawned.
+	in.pass(t, 0)
+
+	// Remote has not received the red push.
+	if got := in.remoteTip(t, bare); got != old {
+		t.Fatalf("pushed red: origin at %s", got)
+	}
+
+	// Verify W1 remains COMMITTED and its CorrectedBy is NOT set.
+	w1In, _ := in.integration(t, w1)
+	if w1In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w1In.GetCorrectedBy() != "" {
+		t.Fatalf("W1 integration after push check fail = %v; want COMMITTED with no CorrectedBy", w1In)
+	}
+
+	// Push state is held and corrected by W3.
+	state := in.pushState(t)
+	if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
+		t.Fatalf("push state %v; want held and corrected by worker", state)
+	}
+	w3ID := state.GetCorrectedBy()
+	w3 := in.get(t, w3ID)
+	if w3.GetCode() != "W3" {
+		t.Fatalf("correction worker is %s, want W3", w3.GetCode())
+	}
+
+	// Dependent task W2 is free to start because W1 is COMMITTED!
+	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	// In W2, modify app/src/a.txt so W3's commit conflicts on merge into the branch.
+	writeFile(t, w2.GetWorktree(), "app/src/a.txt", "a modified by W2\n")
+	commitAll(t, w2.GetWorktree(), "W2 modifies a.txt")
+	in.release(t, w2.GetId())
+	in.ended(t, w2.GetId())
+
+	// Pass 2: W2 integrates and commits its change into the branch first.
+	in.pass(t, time.Second)
+
+	// Now release correction worker W3: its merge into the branch conflicts with W2's commit!
+	in.release(t, w3ID)
+	in.ended(t, w3ID)
+	in.pass(t, time.Second)
+
+	// Verify W1 and W2 STILL have state COMMITTED and no CorrectedBy!
+	w1In, _ = in.integration(t, w1)
+	if w1In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w1In.GetCorrectedBy() != "" {
+		t.Errorf("W1 integration after correction conflict = %v; want COMMITTED", w1In)
+	}
+	w2In, _ := in.integration(t, w2)
+	if w2In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w2In.GetCorrectedBy() != "" {
+		t.Errorf("W2 integration after correction conflict = %v; want COMMITTED", w2In)
+	}
+
+	// A new dependent task WDep depending on W1 is planned: it must be free to start!
+	wDep := in.mustSpawn(t, in.wishID, "Dependent", "wait\ntext dependent", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{"W1"},
+	})
+	// Because W1 is COMMITTED, WDep does NOT wait on W1 ("waits for W1 to be committed (conflict)")
+	// It is dispatched and starts running!
+	wDep = in.until(t, wDep.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	in.release(t, wDep.GetId())
+	in.ended(t, wDep.GetId())
+
+	// The correction worker W3 has CONFLICT integration state on itself.
+	w3In, _ := in.integration(t, w3)
+	if w3In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_CONFLICT {
+		t.Errorf("W3 integration = %v; want CONFLICT", w3In)
+	}
+
+	// Push remains held. Djinn asks the push question.
+	q := in.pushQuestion(t)
+	if q == nil {
+		t.Fatal("expected push question after correction attempt spent")
+	}
+
+	// Answer Choice A to retry correction. Now push checks pass.
+	in.mu.Lock()
+	in.testCode = 0
+	in.mu.Unlock()
+	in.answer(t, q, planv1.Choice_CHOICE_A)
+
+	// Retried correction worker runs and ends.
+	wRetry := in.ended(t, in.pushState(t).GetCorrectedBy())
+	if wRetry == nil {
+		t.Fatal("expected retried correction worker")
+	}
+
+	// Pass 3: push checks pass and the branch pushes!
+	in.pass(t, time.Second)
+	tip := in.tip(t)
+	if got := in.remoteTip(t, bare); got != tip {
+		t.Fatalf("push did not succeed after correction: remote at %s, want %s", got, tip)
+	}
+	if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		t.Errorf("after push, pushState = %v; want cleared", state)
+	}
+
+	// W1, W2, and wDep all remain COMMITTED!
+	wantStates := fmt.Sprintf("W1 COMMITTED, W2 COMMITTED, %s COMMITTED", wDep.GetCode())
+	if got := in.states(t, w1, w2, wDep); got != wantStates {
+		t.Errorf("final task states = %s; want %s", got, wantStates)
 	}
 }

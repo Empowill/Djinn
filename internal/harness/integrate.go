@@ -1024,6 +1024,10 @@ func (h *Harness) settleIntegration(
 			if err != nil {
 				return err
 			}
+			if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED &&
+				in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+				continue
+			}
 			b.Integration = in
 			if sameIntegration(t.GetIntegration(), in) {
 				continue

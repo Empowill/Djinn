@@ -320,7 +320,16 @@ export function LastPushes({
               </span>
             )}
             {push?.held && (
-              <span className="wish-push-refused" title={push.held}>
+              <span
+                className="wish-push-refused"
+                title={[
+                  push.held,
+                  push.failure?.command ? `$ ${push.failure.command}` : "",
+                  push.failure?.output,
+                ]
+                  .filter(Boolean)
+                  .join("\n\n")}
+              >
                 {push.correctedBy
                   ? t("wish.push_held_corrected", {
                       task: codes?.get(push.correctedBy) ?? push.correctedBy,

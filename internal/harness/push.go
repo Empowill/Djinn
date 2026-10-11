@@ -790,21 +790,6 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 				return "Djinn could not start a correction worker: " + err.Error(), true
 			}
 			err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-				for _, t := range committed {
-					curT, err := store.Get[*planv1.Task](ctx, tx, t.GetId())
-					if err != nil {
-						return err
-					}
-					if curT.GetIntegration() != nil {
-						curT.Integration.CorrectedBy = c.GetId()
-						if err := tx.Journal(actorHarness, methodIntegrate, curT); err != nil {
-							return err
-						}
-						if err := tx.Put(curT); err != nil {
-							return err
-						}
-					}
-				}
 				return editPush(ctx, tx, wish.GetId(), projectID, func(p *planv1.WishPush) {
 					p.QuestionId, p.CorrectedBy, p.Attempts, p.Approved = "", c.GetId(), 1, false
 				})

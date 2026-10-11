@@ -340,6 +340,26 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, openAnswers ...
 	for _, t := range exp.GetTasks() {
 		codes[t.GetId()] = t.GetCode()
 	}
+	for _, p := range wish.GetPushes() {
+		if held := p.GetHeld(); held != "" {
+			var proj string
+			if len(exp.GetProjects()) > 1 {
+				for _, pr := range exp.GetProjects() {
+					if pr.GetId() == p.GetProjectId() {
+						proj = " in " + pr.GetName()
+						break
+					}
+				}
+			}
+			corr := ""
+			if cID := p.GetCorrectedBy(); cID != "" {
+				if code := codes[cID]; code != "" {
+					corr = fmt.Sprintf(", corrected by %s", code)
+				}
+			}
+			fmt.Fprintf(&b, "- Push held%s: %s%s.\n", proj, held, corr)
+		}
+	}
 	var tilasms []*planv1.Tilasm
 	for _, t := range exp.GetTilasms() {
 		tilasms = append(tilasms, t.GetTilasm())
