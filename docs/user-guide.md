@@ -42,6 +42,14 @@ djinn up --browser    # no window: prints the URL to open in your browser
 - **Worker CPU and memory limits.** On Linux, workers run in systemd user scopes. CPU can be capped with
   `--worker-cpu` (e.g. `150` for 1.5 cores). Memory limits can be set with an expert static ceiling (`--worker-memory`)
   or an adaptive guardrail based on observed provider peaks (`--worker-memory-guard 2.5`): [worker memory](worker-memory.md).
+- **Operating load slider.** Controls how much of the machine Djinn uses: five manual notches (**Minimal**,
+  **Medium**, **High**, **Max**, **Overclock**), or **Auto**. In Auto mode, Djinn dynamically follows developer
+  activity: keyboard and mouse inactivity from the desktop session, combined with the CPU and memory load of programs
+  outside Djinn. When you type or move the mouse, or other programs put the machine under heavy load, the notch drops
+  directly to Minimal to yield the machine to you; when idle for a few minutes with little load, it slowly climbs back
+  towards your chosen ceiling. Where no session idle source is available (SSH, headless, unsupported desktop), it falls
+  back to host load alone. In Auto, lowering the notch lowers CPU priority and stops starting new workers, never
+  pausing running ones (Decision Q124 (C)).
 
 ### The terminal
 

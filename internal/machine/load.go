@@ -120,6 +120,13 @@ func WithLoadSignal(signal ActivitySignal) LoadOption {
 	}
 }
 
+// WithLoadIdleSource sets the idle source used for auto mode.
+func WithLoadIdleSource(source IdleSource) LoadOption {
+	return func(s *loadService) {
+		s.idleSource = source
+	}
+}
+
 // WithLoadStepDuration sets the hysteresis minimum interval for auto mode.
 func WithLoadStepDuration(d time.Duration) LoadOption {
 	return func(s *loadService) {
@@ -173,6 +180,11 @@ func LoadHandler(
 		} else {
 			autoOpts = append(autoOpts, WithAutoSignal(SystemActivitySignal(m)))
 		}
+		if s.idleSource != nil {
+			autoOpts = append(autoOpts, WithAutoIdleSource(s.idleSource))
+		} else {
+			autoOpts = append(autoOpts, WithAutoIdleSource(DefaultIdleSource()))
+		}
 		if s.stepDuration > 0 {
 			autoOpts = append(autoOpts, WithAutoStepDuration(s.stepDuration))
 		}
@@ -207,6 +219,7 @@ type loadService struct {
 	auto         *AutoController
 	clock        func() time.Time
 	signal       ActivitySignal
+	idleSource   IdleSource
 	stepDuration time.Duration
 	tickInterval time.Duration
 	stopAuto     chan struct{}

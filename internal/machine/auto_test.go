@@ -209,3 +209,307 @@ func TestAutoControllerManualExitAndReentry(t *testing.T) {
 		t.Fatalf("effective notch under work on AUTO entry: got %v, want MINIMAL", effective)
 	}
 }
+
+func TestAutoIdleSourceActiveLowers(t *testing.T) {
+	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return fakeNow }
+	signal := func() bool { return false } // no host load
+
+	var idleDuration time.Duration
+	idleOk := true
+	idleSource := func() (time.Duration, bool) {
+		return idleDuration, idleOk
+	}
+
+	ctrl := NewAutoController(
+		djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
+		WithAutoClock(clock),
+		WithAutoSignal(signal),
+		WithAutoIdleSource(idleSource),
+		WithAutoStepDuration(1*time.Minute),
+	)
+
+	// Start at High notch
+	ctrl.effective = djinnv1.LoadNotch_LOAD_NOTCH_HIGH
+	ctrl.lastChange = fakeNow
+
+	// Developer is active at keyboard or mouse (idle = 5s < 30s)
+	idleDuration = 5 * time.Second
+
+	// Tick before 1m: hysteresis prevents change
+	fakeNow = fakeNow.Add(30 * time.Second)
+	changed, notch := ctrl.Tick()
+	if changed {
+		t.Fatalf("Tick before hysteresis: expected no change, got %v", notch)
+	}
+
+	// Once hysteresis (1m) elapses, active input lowers directly to Minimal
+	fakeNow = fakeNow.Add(35 * time.Second) // total 65s > 1m
+	changed, notch = ctrl.Tick()
+	if !changed {
+		t.Fatal("Tick when active: expected changed=true")
+	}
+	if notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Fatalf("Tick when active: got %v, want MINIMAL", notch)
+	}
+
+	// Subsequent ticks while still active stay at Minimal
+	fakeNow = fakeNow.Add(2 * time.Minute)
+	changed, notch = ctrl.Tick()
+	if changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Fatalf("subsequent tick while active: changed=%v notch=%v", changed, notch)
+	}
+}
+
+func TestAutoIdleSourceIdleRaises(t *testing.T) {
+	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return fakeNow }
+	signal := func() bool { return false }
+
+	var idleDuration time.Duration
+	idleOk := true
+	idleSource := func() (time.Duration, bool) {
+		return idleDuration, idleOk
+	}
+
+	ctrl := NewAutoController(
+		djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
+		WithAutoClock(clock),
+		WithAutoSignal(signal),
+		WithAutoIdleSource(idleSource),
+		WithAutoStepDuration(1*time.Minute),
+		WithAutoChosen(djinnv1.LoadNotch_LOAD_NOTCH_MAX),
+	)
+
+	// Start at Minimal
+	ctrl.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
+	ctrl.lastChange = fakeNow
+
+	// Developer is idle for 5 minutes (>= 3m idleThreshold) with little host load
+	idleDuration = 5 * time.Minute
+
+	// Climbs step by step (+1 notch per step duration): Medium -> High -> Max
+	expected := []djinnv1.LoadNotch{
+		djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+		djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+		djinnv1.LoadNotch_LOAD_NOTCH_MAX,
+	}
+
+	for _, want := range expected {
+		fakeNow = fakeNow.Add(1 * time.Minute)
+		changed, notch := ctrl.Tick()
+		if !changed {
+			t.Fatalf("Tick while idle: expected change to %v", want)
+		}
+		if notch != want {
+			t.Fatalf("Tick while idle: got %v, want %v", notch, want)
+		}
+	}
+
+	// At Max, does not climb higher
+	fakeNow = fakeNow.Add(2 * time.Minute)
+	changed, notch := ctrl.Tick()
+	if changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
+		t.Fatalf("Tick at ceiling: changed=%v notch=%v", changed, notch)
+	}
+}
+
+func TestAutoIdleSourceHoldBetweenThresholds(t *testing.T) {
+	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return fakeNow }
+	signal := func() bool { return false }
+
+	var idleDuration time.Duration
+	idleOk := true
+	idleSource := func() (time.Duration, bool) {
+		return idleDuration, idleOk
+	}
+
+	ctrl := NewAutoController(
+		djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
+		WithAutoClock(clock),
+		WithAutoSignal(signal),
+		WithAutoIdleSource(idleSource),
+		WithAutoStepDuration(1*time.Minute),
+	)
+
+	// Start at Medium
+	ctrl.effective = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
+	ctrl.lastChange = fakeNow
+
+	// Idle time is 90 seconds (between 30s activeThreshold and 3m idleThreshold)
+	idleDuration = 90 * time.Second
+
+	// Advance clock past hysteresis
+	fakeNow = fakeNow.Add(2 * time.Minute)
+	changed, notch := ctrl.Tick()
+	if changed {
+		t.Fatalf("expected hold between thresholds, got changed=true, notch=%v", notch)
+	}
+	if notch != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Fatalf("notch should remain MEDIUM during hold, got %v", notch)
+	}
+}
+
+func TestAutoIdleSourceIdleWithHostLoadActive(t *testing.T) {
+	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return fakeNow }
+	var hostBusy bool
+	signal := func() bool { return hostBusy }
+
+	var idleDuration time.Duration
+	idleOk := true
+	idleSource := func() (time.Duration, bool) {
+		return idleDuration, idleOk
+	}
+
+	ctrl := NewAutoController(
+		djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
+		WithAutoClock(clock),
+		WithAutoSignal(signal),
+		WithAutoIdleSource(idleSource),
+		WithAutoStepDuration(1*time.Minute),
+	)
+
+	// Start at High
+	ctrl.effective = djinnv1.LoadNotch_LOAD_NOTCH_HIGH
+	ctrl.lastChange = fakeNow
+
+	// Desktop is idle (10 minutes), but another host program is under heavy load
+	idleDuration = 10 * time.Minute
+	hostBusy = true
+
+	fakeNow = fakeNow.Add(1 * time.Minute)
+	changed, notch := ctrl.Tick()
+	if !changed {
+		t.Fatal("expected drop when host is busy despite desktop idle")
+	}
+	if notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Fatalf("got %v, want MINIMAL", notch)
+	}
+}
+
+func TestAutoIdleSourceUnavailableFallsBackToLoad(t *testing.T) {
+	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return fakeNow }
+	var hostBusy bool
+	signal := func() bool { return hostBusy }
+
+	// Idle source unavailable (e.g. headless, SSH, unsupported session)
+	idleSource := func() (time.Duration, bool) {
+		return 0, false
+	}
+
+	ctrl := NewAutoController(
+		djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
+		WithAutoClock(clock),
+		WithAutoSignal(signal),
+		WithAutoIdleSource(idleSource),
+		WithAutoStepDuration(1*time.Minute),
+	)
+
+	// Start at High
+	ctrl.effective = djinnv1.LoadNotch_LOAD_NOTCH_HIGH
+	ctrl.lastChange = fakeNow
+
+	// 1. Host load triggers drop to Minimal
+	hostBusy = true
+	fakeNow = fakeNow.Add(1 * time.Minute)
+	changed, notch := ctrl.Tick()
+	if !changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Fatalf("fallback drop on load: changed=%v notch=%v", changed, notch)
+	}
+
+	// 2. Machine at rest: climbs step by step
+	hostBusy = false
+	fakeNow = fakeNow.Add(1 * time.Minute)
+	changed, notch = ctrl.Tick()
+	if !changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Fatalf("fallback climb on rest: changed=%v notch=%v", changed, notch)
+	}
+}
+
+func TestAutoSetNotchWithIdleSource(t *testing.T) {
+	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return fakeNow }
+	signal := func() bool { return false }
+
+	var idleDuration time.Duration
+	idleSource := func() (time.Duration, bool) {
+		return idleDuration, true
+	}
+
+	// 1. Active at keyboard/mouse when entering AUTO: drops to Minimal immediately
+	idleDuration = 10 * time.Second
+	ctrl := NewAutoController(
+		djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+		WithAutoClock(clock),
+		WithAutoSignal(signal),
+		WithAutoIdleSource(idleSource),
+	)
+	effective, changed := ctrl.SetNotch(djinnv1.LoadNotch_LOAD_NOTCH_AUTO)
+	if !changed || effective != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Fatalf("SetNotch AUTO while active: effective=%v changed=%v, want MINIMAL", effective, changed)
+	}
+
+	// 2. Idle when entering AUTO: preserves chosen ceiling if valid
+	idleDuration = 5 * time.Minute
+	ctrl2 := NewAutoController(
+		djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+		WithAutoClock(clock),
+		WithAutoSignal(signal),
+		WithAutoIdleSource(idleSource),
+	)
+	effective2, _ := ctrl2.SetNotch(djinnv1.LoadNotch_LOAD_NOTCH_AUTO)
+	if effective2 != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+		t.Fatalf("SetNotch AUTO while idle: effective=%v, want HIGH", effective2)
+	}
+}
+
+func TestAutoCustomThresholds(t *testing.T) {
+	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return fakeNow }
+	signal := func() bool { return false }
+
+	var idleDuration time.Duration
+	idleSource := func() (time.Duration, bool) {
+		return idleDuration, true
+	}
+
+	// Custom thresholds: active <= 10s, idle >= 20s
+	ctrl := NewAutoController(
+		djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
+		WithAutoClock(clock),
+		WithAutoSignal(signal),
+		WithAutoIdleSource(idleSource),
+		WithAutoActiveThreshold(10*time.Second),
+		WithAutoIdleThreshold(20*time.Second),
+		WithAutoStepDuration(30*time.Second),
+	)
+	ctrl.effective = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
+	ctrl.lastChange = fakeNow
+
+	// 15 seconds is between 10s and 20s -> hold
+	idleDuration = 15 * time.Second
+	fakeNow = fakeNow.Add(35 * time.Second)
+	changed, notch := ctrl.Tick()
+	if changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Fatalf("hold: changed=%v notch=%v", changed, notch)
+	}
+
+	// 25 seconds is >= 20s -> rest (climb)
+	idleDuration = 25 * time.Second
+	fakeNow = fakeNow.Add(35 * time.Second)
+	changed, notch = ctrl.Tick()
+	if !changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+		t.Fatalf("climb: changed=%v notch=%v", changed, notch)
+	}
+
+	// 5 seconds is < 10s -> active (drop to Minimal)
+	idleDuration = 5 * time.Second
+	fakeNow = fakeNow.Add(35 * time.Second)
+	changed, notch = ctrl.Tick()
+	if !changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+		t.Fatalf("drop: changed=%v notch=%v", changed, notch)
+	}
+}

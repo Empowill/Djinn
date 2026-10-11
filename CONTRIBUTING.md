@@ -328,6 +328,7 @@ their contributors.
   [x/sys](https://github.com/golang/sys) (also the terminal's pseudo-console on Windows), [x/term](https://github.com/golang/term) (tests),
   [x/mod](https://github.com/golang/mod) (release versions), [x/net](https://github.com/golang/net) (the text of a
   tilasm's page, by its HTML tokenizer),
+  [purego](https://github.com/ebitengine/purego) (CoreGraphics calls without CGO on macOS),
   [go-yaml](https://github.com/yaml/go-yaml) (the front matter of a skill's wish template); as module tools,
   [Task](https://github.com/go-task/task), [buf](https://github.com/bufbuild/buf) and
   [golangci-lint](https://github.com/golangci/golangci-lint) (GPL-3.0: run on the code, in a module of its own, never
