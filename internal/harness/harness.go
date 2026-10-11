@@ -144,6 +144,9 @@ type run struct {
 
 	// Guarded by Harness.mu.
 	worker       Worker
+	pid          int    // process ID of the running worker (0 if none)
+	cgroup       string // cgroup of the running worker
+	token        string // secret per-run token passed in DJINN_WORKER_TOKEN
 	stopping     bool
 	shelved      bool                 // its wish was paused: the worker stops, the task resumes with the wish (shelve.go)
 	paused       bool                 // the worker holds still: it takes no slot
@@ -188,6 +191,7 @@ func (h *Harness) newRun(task *planv1.Task, seq int64) (*run, error) {
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
 		light: questionWorker(task), requestedModel: task.GetModel(),
+		token: store.NewID(),
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -903,7 +907,9 @@ func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.
 	return p, nil
 }
 
+const workerHandRule = "To try a command by hand, start a Djinn of your own with its own data folder; never create a wish, a question or a task in the person's Djinn to test."
 const workerMoveRule = "When your work leaves a move only the developer can make (push a tag, open or merge a PR, start a release, check on a Mac or Windows, install), ask it with `djinn question ask` before you end, with the exact command."
+const workerRules = workerHandRule + " " + workerMoveRule
 
 // briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
@@ -911,10 +917,10 @@ const workerMoveRule = "When your work leaves a move only the developer can make
 func briefed(r *run, prompt string, readOnly bool) string {
 	if r.task.GetBranch() != "" && !readOnly {
 		if r.checks != "" {
-			return prompt + "\n\n" + r.checks + " " + workerMoveRule
+			return prompt + "\n\n" + r.checks + " " + workerRules
 		}
 		if r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
-			return prompt + "\n\n" + workerMoveRule
+			return prompt + "\n\n" + workerRules
 		}
 	}
 	return prompt
@@ -1080,7 +1086,11 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	if err != nil {
 		return fmt.Errorf("git guard: %w", err)
 	}
-	spec.Env = append([]string{"DJINN_TASK_ID=" + t.GetId(), "DJINN_WISH_ID=" + t.GetWishId()}, guard...)
+	spec.Env = append([]string{
+		"DJINN_TASK_ID=" + t.GetId(),
+		"DJINN_WISH_ID=" + t.GetWishId(),
+		"DJINN_WORKER_TOKEN=" + r.token,
+	}, guard...)
 	spec.Scope = h.scopeFor(t)
 	spec.LowPriority = h.lowPriority()
 	w, err := provider.Start(h.ctx, spec)
@@ -1089,6 +1099,10 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	}
 	h.mu.Lock()
 	r.worker, r.use = w, nil
+	if proc, ok := w.(Process); ok {
+		r.pid = proc.PID()
+		r.cgroup = proc.Cgroup()
+	}
 	if r.stopping || r.shelved {
 		w.Stop()
 	}
@@ -2282,4 +2296,43 @@ func (h *Harness) learnAliases(model string) {
 			h.recordAlias("claude-"+tier, model)
 		}
 	}
+}
+
+// Caller returns the WorkerCaller if the peerPID or token matches any currently running worker.
+func (h *Harness) Caller(peerPID int, token string) *plan.WorkerCaller {
+	if peerPID <= 0 && token == "" {
+		return nil
+	}
+	type cand struct {
+		id     string
+		wish   string
+		pid    int
+		cgroup string
+		token  string
+	}
+	h.mu.Lock()
+	cands := make([]cand, 0, len(h.runs))
+	for _, r := range h.runs {
+		if r == nil || r.task == nil {
+			continue
+		}
+		cands = append(cands, cand{
+			id:     r.id,
+			wish:   r.wish,
+			pid:    r.pid,
+			cgroup: r.cgroup,
+			token:  r.token,
+		})
+	}
+	h.mu.Unlock()
+
+	for _, c := range cands {
+		if token != "" && c.token != "" && c.token == token {
+			return &plan.WorkerCaller{TaskID: c.id, WishID: c.wish}
+		}
+		if peerPID > 0 && c.pid > 0 && isDescendant(peerPID, c.pid, c.cgroup) {
+			return &plan.WorkerCaller{TaskID: c.id, WishID: c.wish}
+		}
+	}
+	return nil
 }

@@ -31,9 +31,12 @@ func TestWorkerPromptMoveRule(t *testing.T) {
 		checks: "Djinn checks this project's work with `go tool task test`.",
 	}
 	got1 := briefed(r1, "do the work", false)
-	wantChecks := "Djinn checks this project's work with `go tool task test`. " + workerMoveRule
+	wantChecks := "Djinn checks this project's work with `go tool task test`. " + workerRules
 	if !strings.Contains(got1, wantChecks) {
 		t.Errorf("briefed with checks:\ngot: %q\nwant to contain: %q", got1, wantChecks)
+	}
+	if !strings.Contains(got1, workerHandRule) {
+		t.Errorf("briefed with checks missing workerHandRule:\ngot: %q", got1)
 	}
 
 	// 2. Real provider without checks: rule is appended.
@@ -46,8 +49,8 @@ func TestWorkerPromptMoveRule(t *testing.T) {
 			task: &planv1.Task{Branch: "w-branch", Provider: provider},
 		}
 		got := briefed(r, "prompt text", false)
-		if !strings.HasSuffix(got, "\n\n"+workerMoveRule) {
-			t.Errorf("provider %s prompt:\ngot: %q\nwant suffix: %q", provider, got, "\n\n"+workerMoveRule)
+		if !strings.HasSuffix(got, "\n\n"+workerRules) {
+			t.Errorf("provider %s prompt:\ngot: %q\nwant suffix: %q", provider, got, "\n\n"+workerRules)
 		}
 	}
 
