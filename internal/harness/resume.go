@@ -3,7 +3,7 @@ package harness
 // Djinn resumes the workers it cut short, by itself, in the same task. A task interrupted by djinn up stopping or
 // crashing, or failed on its provider's usage limit, becomes RESUMING: the scheduler starts its worker again first,
 // in the same worktree and session, once its slot is free and the limit has reset. A task stopped by a person never
-// resumes; one resumed maxResumes times without finishing fails, saying so.
+// resumes; one resumed maxResumes times on usage limits without finishing fails, saying so.
 
 import (
 	"context"
@@ -27,7 +27,7 @@ import (
 // methodResume is journaled when a task cut short waits for Djinn to resume it; the request is the task.
 const methodResume = "harness/resume"
 
-// maxResumes is how many times Djinn resumes a task by itself: cut short once more, it fails.
+// maxResumes is how many times Djinn resumes a task by itself on usage limits: cut short once more, it fails.
 const maxResumes = 3
 
 // What a resumed worker is told, after its own session; a worker that cannot resume its session gets its first
@@ -62,7 +62,7 @@ func (h *Harness) now() time.Time {
 }
 
 // queueInterrupted gives back to the scheduler the tasks djinn up cut short: each one resumes, unless it cannot (see
-// resumable), or was resumed maxResumes times already, which fails it. Recover calls it.
+// resumable). Recover calls it.
 func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) error {
 	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
 	if err != nil {
@@ -121,16 +121,9 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) er
 		}
 		t = proto.CloneOf(t)
 		ev := Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS}
-		if t.GetResumes() >= maxResumes && !watching(t) { // A watcher watches across restarts, however many.
-			t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, exhausted(t.GetError())
-			ev.Text = "failed: " + t.GetError()
-			h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
-			h.tellWorkerFailed(t)
-		} else {
-			t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", whyRestarted, nil
-			ev.Text = "resuming: " + whyRestarted + "; Djinn starts it again by itself"
-			h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
-		}
+		t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", whyRestarted, nil
+		ev.Text = "resuming: " + whyRestarted + "; Djinn starts it again by itself"
+		h.writeAlone(ctx, actorHarness, methodResume, t, t.GetId(), t, ev)
 	}
 	return nil
 }
@@ -219,9 +212,10 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task) error {
 	switch by {
 	case byContinue:
 		t.Continuing = false // Cut short again, it resumes as any task does.
-	case byWish, byAnswer, byEnvReplay: // The developer paused it, or let it edit: no resume spent.
-	default:
+	case byLimit:
 		t.Resumes++
+	case byWish, byAnswer, byEnvReplay, byRestart:
+		// No resume spent.
 	}
 	provider, ok := h.providers[t.GetProvider()]
 	if !ok {
@@ -415,11 +409,11 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	if t.GetBranch() != "" {
 		where += ", on branch " + t.GetBranch()
 	}
-	text := fmt.Sprintf("resumed %s (%d of %d): started %s %s%s, %s%s", by, t.GetResumes(), maxResumes,
+	text := fmt.Sprintf("resumed %s: started %s %s%s, %s%s", by,
 		short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
-	if by == byWish {
-		text = fmt.Sprintf("resumed %s: started %s %s%s, %s%s", by, short(t.GetProvider()), where, how,
-			accessText(t, nil), skillsText(spec.Skills))
+	if by == byLimit {
+		text = fmt.Sprintf("resumed %s (%d of %d): started %s %s%s, %s%s", by, t.GetResumes(), maxResumes,
+			short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
 	}
 	if by == byAnswer {
 		text = fmt.Sprintf("started %s again %s%s, %s%s", short(t.GetProvider()), where, how, accessText(t, nil),

@@ -224,8 +224,8 @@ func TestRestartResumesInOrder(t *testing.T) {
 	e = upWith(t, home, providers, WithCapacity((&limit{slots: 2}).capacity))
 	for _, tk := range append(resumed, planned) {
 		got := e.until(t, tk.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-		if want := int32(1); tk != planned && got.GetResumes() != want {
-			t.Errorf("%s resumed %d times, want %d", tk.GetCode(), got.GetResumes(), want)
+		if got.GetResumes() != 0 {
+			t.Errorf("%s resumed %d times, want 0", tk.GetCode(), got.GetResumes())
 		}
 	}
 	starts, peak := c.seen()
@@ -244,7 +244,7 @@ func TestRestartResumesInOrder(t *testing.T) {
 		"interrupted: djinn up ended while the worker ran",
 		"resuming: " + whyRestarted + "; Djinn starts it again by itself",
 		"waiting: 2 workers run, the most this machine holds (set by the test)",
-		"resumed after djinn restarted (1 of 3): started fake in ",
+		"resumed after djinn restarted: started fake in ",
 		"done",
 	} {
 		if !strings.Contains(all, want) {
@@ -284,7 +284,7 @@ func TestRestartResumesInOrder(t *testing.T) {
 	if got := e.get(t, stopped.GetId()); got.GetResumes() != 0 {
 		t.Errorf("P1, stopped by its wish's pause, spent a resume: %v", got)
 	}
-	if got := e.get(t, cut.GetId()); got.GetResumes() != 1 {
+	if got := e.get(t, cut.GetId()); got.GetResumes() != 0 {
 		t.Errorf("P2, cut short by the restart: %v", got)
 	}
 }
