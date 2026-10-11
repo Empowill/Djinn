@@ -99,6 +99,11 @@ function live(component, props) {
         };
         return [states[i], set];
       },
+      useRef(initial) {
+        const i = at++;
+        if (!(i in states)) states[i] = { current: initial };
+        return states[i];
+      },
       useEffect() {},
     };
     try {

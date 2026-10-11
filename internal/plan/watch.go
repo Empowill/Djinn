@@ -410,7 +410,7 @@ func (sub *watcher) readTasks(ctx context.Context, s *store.Store, wishID string
 func shape(t *planv1.Task) *planv1.Task {
 	return &planv1.Task{
 		Id: t.GetId(), Status: t.GetStatus(), Kind: t.GetKind(), PartOf: t.GetPartOf(), DependsOn: t.GetDependsOn(),
-		Code: t.GetCode(), Title: t.GetTitle(), Draft: t.GetDraft(),
+		Code: t.GetCode(), Title: t.GetTitle(), Draft: t.GetDraft(), Description: t.GetDescription(),
 	}
 }
 
@@ -418,5 +418,6 @@ func shape(t *planv1.Task) *planv1.Task {
 func sameShape(old, t *planv1.Task) bool {
 	return old.GetStatus() == t.GetStatus() && old.GetKind() == t.GetKind() && old.GetPartOf() == t.GetPartOf() &&
 		slices.Equal(old.GetDependsOn(), t.GetDependsOn()) &&
-		old.GetCode() == t.GetCode() && old.GetTitle() == t.GetTitle() && old.GetDraft() == t.GetDraft()
+		old.GetCode() == t.GetCode() && old.GetTitle() == t.GetTitle() && old.GetDraft() == t.GetDraft() &&
+		old.GetDescription() == t.GetDescription()
 }
