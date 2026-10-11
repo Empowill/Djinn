@@ -215,6 +215,56 @@ func sumGroup(procs []proc, pid int) Group {
 	return g
 }
 
+// GroupPIDs returns the list of process IDs belonging to the process group pid or its descendants.
+func GroupPIDs(procs []proc, pid int) []int {
+	parent := make(map[int]int, len(procs))
+	in := map[int]bool{}
+	for _, p := range procs {
+		parent[p.pid] = p.ppid
+		if p.pgrp == pid || p.pid == pid {
+			in[p.pid] = true
+		}
+	}
+	var member func(p int, depth int) bool
+	member = func(p int, depth int) bool {
+		if v, ok := in[p]; ok {
+			return v
+		}
+		pp, ok := parent[p]
+		v := ok && pp > 1 && pp != p && depth < 64 && member(pp, depth+1)
+		in[p] = v
+		return v
+	}
+	var pids []int
+	for _, p := range procs {
+		if member(p.pid, 0) {
+			pids = append(pids, p.pid)
+		}
+	}
+	return pids
+}
+
+// WorkerPIDs returns the list of process IDs belonging to a worker (from its cgroup if available, or process tree).
+func WorkerPIDs(pid int, cgroup string) ([]int, error) {
+	if cgroup != "" {
+		if pids, err := CgroupPIDs(cgroup); err == nil && len(pids) > 0 {
+			return pids, nil
+		}
+	}
+	if pid <= 0 {
+		return nil, nil
+	}
+	procs, err := listProcs()
+	if err != nil {
+		return []int{pid}, err
+	}
+	pids := GroupPIDs(procs, pid)
+	if len(pids) == 0 {
+		return []int{pid}, nil
+	}
+	return pids, nil
+}
+
 // listing is the last list of the processes, shared by the workers' readings.
 var listing struct {
 	mu    sync.Mutex

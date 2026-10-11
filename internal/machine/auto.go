@@ -254,16 +254,22 @@ func (c *AutoController) SetNotch(notch djinnv1.LoadNotch) (effective djinnv1.Lo
 // - No change is made if less than stepDuration has elapsed since the last change.
 func (c *AutoController) Tick() (bool, djinnv1.LoadNotch) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	if !c.isAuto {
-		return false, c.effective
+		eff := c.effective
+		c.mu.Unlock()
+		return false, eff
 	}
 
 	now := c.clock()
 	if !c.lastChange.IsZero() && now.Sub(c.lastChange) < c.stepDuration {
-		return false, c.effective
+		eff := c.effective
+		c.mu.Unlock()
+		return false, eff
 	}
+
+	var notify func(djinnv1.LoadNotch)
+	var changed bool
 
 	activity := c.evalActivity()
 	switch activity {
@@ -271,10 +277,8 @@ func (c *AutoController) Tick() (bool, djinnv1.LoadNotch) {
 		if c.effective != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
 			c.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
 			c.lastChange = now
-			if c.onChange != nil {
-				c.onChange(c.effective)
-			}
-			return true, c.effective
+			notify = c.onChange
+			changed = true
 		}
 	case activityRest:
 		curIdx := NotchIndex(c.effective)
@@ -285,14 +289,19 @@ func (c *AutoController) Tick() (bool, djinnv1.LoadNotch) {
 		if curIdx >= 0 && curIdx < chosenIdx {
 			c.effective = ManualNotches[curIdx+1]
 			c.lastChange = now
-			if c.onChange != nil {
-				c.onChange(c.effective)
-			}
-			return true, c.effective
+			notify = c.onChange
+			changed = true
 		}
 	case activityHold:
 		// In hold state (between active and idle thresholds with little load), no notch change.
 	}
 
-	return false, c.effective
+	eff := c.effective
+	c.mu.Unlock()
+
+	if notify != nil {
+		notify(eff)
+	}
+
+	return changed, eff
 }

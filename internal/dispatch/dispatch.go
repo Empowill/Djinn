@@ -500,7 +500,8 @@ func WorkerMemory(tasks []*planv1.Task, p machine.Policy) (engaged, actual uint6
 	peaks := ProviderPeaks(tasks)
 	margin := p.WorkerMargin
 	for _, t := range tasks {
-		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || Watcher(t) {
+		alive := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED
+		if !alive || Watcher(t) {
 			continue
 		}
 		peak, _ := p.Typical(peaks[provider(t)])
@@ -522,18 +523,18 @@ func (s *Situation) typical(name string) (uint64, int) {
 
 // growing is the memory the workers running may still take: for each, the typical peak of its provider less what it
 // uses now (all of it before its first reading), and in full for each worker this pass started, question workers
-// included.
+// included. A paused worker keeps its memory.
 func (s *Situation) growing() uint64 {
 	var sum uint64
 	for _, t := range s.tasks {
-		running := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && !Watcher(t)
-		if !running && !s.started[t.GetId()] && !s.reading[t.GetId()] {
+		alive := (t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
+		if !alive && !s.started[t.GetId()] && !s.reading[t.GetId()] {
 			continue
 		}
 		peak, _ := s.typical(provider(t))
-		if uses := t.GetResources().GetMemoryBytes(); running && uses < peak {
+		if uses := t.GetResources().GetMemoryBytes(); alive && uses < peak {
 			sum += peak - uses
-		} else if !running {
+		} else if !alive {
 			sum += peak
 		}
 	}
@@ -546,6 +547,7 @@ func (s *Situation) Engaged() uint64 {
 }
 
 // engaged is the sum of peak forecasts of the workers running or started in this pass.
+// A paused worker keeps its memory.
 func (s *Situation) engaged() uint64 {
 	if s.machine == nil {
 		return 0
@@ -553,8 +555,8 @@ func (s *Situation) engaged() uint64 {
 	var sum uint64
 	margin := s.machine.Policy.WorkerMargin
 	for _, t := range s.tasks {
-		running := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && !Watcher(t)
-		if !running && !s.started[t.GetId()] && !s.reading[t.GetId()] {
+		alive := (t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
+		if !alive && !s.started[t.GetId()] && !s.reading[t.GetId()] {
 			continue
 		}
 		peak, _ := s.typical(provider(t))

@@ -90,6 +90,13 @@ func WithLoadRunningWorkers(running func() int) LoadOption {
 	}
 }
 
+// WithLoadPausedWorkers sets a function returning the count of currently paused workers.
+func WithLoadPausedWorkers(paused func() int) LoadOption {
+	return func(s *loadService) {
+		s.pausedWorkers = paused
+	}
+}
+
 // WithLoadAutoController sets a custom AutoController on the load service.
 func WithLoadAutoController(ac *AutoController) LoadOption {
 	return func(s *loadService) {
@@ -215,6 +222,7 @@ type loadService struct {
 	broadcast      func(djinnv1.LoadNotch)
 	workerMemory   WorkerMemoryFunc
 	runningWorkers func() int
+	pausedWorkers  func() int
 
 	auto         *AutoController
 	clock        func() time.Time
@@ -251,6 +259,9 @@ func (s *loadService) Tick() (bool, djinnv1.LoadNotch) {
 
 func (s *loadService) applyNotch(effective djinnv1.LoadNotch) {
 	p := NotchPolicy(effective)
+	if s.auto != nil && s.auto.IsAuto() {
+		p.Auto = true
+	}
 	if s.monitor != nil {
 		// Preserve any runtime overrides from flags (Workers, WorkerMemory).
 		current := s.monitor.Policy()
@@ -310,6 +321,9 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 	if s.runningWorkers != nil {
 		resp.RunningWorkers = int32(s.runningWorkers())
 	}
+	if s.pausedWorkers != nil {
+		resp.PausedWorkers = int32(s.pausedWorkers())
+	}
 	return resp
 }
 
@@ -341,6 +355,9 @@ func (s *loadService) Get(
 	}
 	if s.runningWorkers != nil {
 		resp.RunningWorkers = int32(s.runningWorkers())
+	}
+	if s.pausedWorkers != nil {
+		resp.PausedWorkers = int32(s.pausedWorkers())
 	}
 	return connect.NewResponse(resp), nil
 }
