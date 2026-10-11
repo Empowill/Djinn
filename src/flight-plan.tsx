@@ -495,8 +495,14 @@ export function FlightPlan({
                           detail?.tasks.filter(
                             (x) => x.status === TaskStatus.DONE && !isAzima(x),
                           ).length ?? 0;
+                        // A cancelled task will never be done: it shows apart, out of the progress.
+                        const cancelled =
+                          detail?.tasks.filter(
+                            (x) => x.status === TaskStatus.CANCELLED,
+                          ).length ?? 0;
                         const total =
-                          detail?.tasks.filter((x) => !isAzima(x)).length ?? 0;
+                          (detail?.tasks.filter((x) => !isAzima(x)).length ??
+                            0) - cancelled;
                         const failed =
                           detail?.tasks.filter(
                             (x) => x.status === TaskStatus.FAILED,
@@ -562,6 +568,15 @@ export function FlightPlan({
                                   count={failed}
                                   label={t("pill.failed_detail", {
                                     count: failed,
+                                  })}
+                                />
+                              )}
+                              {cancelled > 0 && (
+                                <CountPill
+                                  tone="cancelled"
+                                  count={cancelled}
+                                  label={t("pill.cancelled_detail", {
+                                    count: cancelled,
                                   })}
                                 />
                               )}

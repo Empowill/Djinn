@@ -9,7 +9,15 @@ const f = await bundle(
   "flight",
   `export * from "@/src/data/flight.ts";
 export * from "@/src/data/journal.ts";
-export { deletedText, span, taskStatusText, taskTime, taskTone } from "@/src/data/format.ts";
+export {
+  cancelledText,
+  deletedText,
+  span,
+  taskFinished,
+  taskStatusText,
+  taskTime,
+  taskTone,
+} from "@/src/data/format.ts";
 export { create } from "@bufbuild/protobuf";
 export { anyPack } from "@bufbuild/protobuf/wkt";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -354,6 +362,25 @@ test("the states Djinn handles by itself speak the window's status language", ()
   );
   assert.equal(f.taskTone({ status: S.INTERRUPTED }, "W5"), "stopped");
   assert.equal(f.taskTone({ status: S.INTERRUPTED }), "interrupted");
+});
+
+test("a cancelled task has its own muted tone, never done's, and a compact note on hover", () => {
+  const S = f.TaskStatus;
+  const cancelled = (actor, note) => ({
+    status: S.CANCELLED,
+    cancelled: { actor, note, createTime: at(100) },
+  });
+  const task = cancelled(f.Closer.LEAD, " superseded by W7 ");
+  assert.equal(f.taskTone(task), "cancelled");
+  assert.notEqual(f.taskTone(task), f.taskTone({ status: S.DONE }));
+  assert.equal(f.taskStatusText(task), "Cancelled");
+  assert.equal(f.cancelledText(task), "By the lead: superseded by W7");
+  assert.equal(f.cancelledText(cancelled(f.Closer.DEVELOPER, "")), "By you");
+  assert.equal(f.cancelledText({ status: S.DONE }), undefined);
+  // It is history: finished, dealt with, never the person's move.
+  assert.ok(f.taskFinished(S.CANCELLED));
+  assert.ok(f.finishedTask(task));
+  assert.ok(f.taskDealtWith(task, [task]));
 });
 
 test("a watcher has its own tone while its command runs", () => {

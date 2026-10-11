@@ -9,6 +9,7 @@ import {
   Allowance,
   AzimaState,
   Choice,
+  Closer,
   IntegrationState,
   type KeptWorktree,
   type Mark,
@@ -377,6 +378,21 @@ export function taskStatusText(
   return t(taskStatusKeys[task.status]);
 }
 
+// cancelledText is what a cancelled task's badge says on hover, compact: who cancelled it, and why.
+export function cancelledText(
+  task: Partial<Pick<Task, "cancelled">>,
+): string | undefined {
+  const c = task.cancelled;
+  if (!c) return undefined;
+  const who = t(
+    c.actor === Closer.DEVELOPER
+      ? "task.cancelled_by_you"
+      : "task.cancelled_by_lead",
+  );
+  const note = c.note.trim();
+  return note ? `${who}: ${note}` : who;
+}
+
 // Tone is a state in the window's status language: each has its colour, its icon and its word (src/status.tsx).
 export type Tone =
   | "done"
@@ -387,6 +403,8 @@ export type Tone =
   | "failed"
   | "interrupted"
   | "stopped"
+  // Cancelled: its work was discarded on purpose, never done.
+  | "cancelled"
   | "paused"
   | "watching"
   | "human"
@@ -431,6 +449,8 @@ export function taskTone(
       return "interrupted";
     case TaskStatus.STOPPED:
       return "stopped";
+    case TaskStatus.CANCELLED:
+      return "cancelled";
     case TaskStatus.WAITING:
       return "waiting";
     case TaskStatus.PAUSED:
@@ -467,7 +487,8 @@ export function taskFinished(status: TaskStatus): boolean {
     status === TaskStatus.DONE ||
     status === TaskStatus.FAILED ||
     status === TaskStatus.STOPPED ||
-    status === TaskStatus.INTERRUPTED
+    status === TaskStatus.INTERRUPTED ||
+    status === TaskStatus.CANCELLED
   );
 }
 
