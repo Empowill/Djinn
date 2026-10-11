@@ -1,5 +1,9 @@
-// Small readings of the protos for the screens: dates, states, answers. They compute nothing the lamp decides.
-import { type Timestamp, timestampDate } from "@bufbuild/protobuf/wkt";
+import {
+  durationMs,
+  type Timestamp,
+  timestampDate,
+  timestampMs,
+} from "@bufbuild/protobuf/wkt";
 
 import {
   Allowance,
@@ -59,41 +63,170 @@ export function span(ms: number): string {
   const m = Math.floor(s / 60);
   const h = Math.floor(m / 60);
   if (s < 60) return t("time.s", { s });
-  if (m < 60) return t("time.ms", { m, s: s % 60 });
-  if (h < 24) return t("time.hm", { h, m: m % 60 });
-  return t("time.dh", { d: Math.floor(h / 24), h: h % 24 });
+  if (m < 60)
+    return s % 60 === 0 ? t("time.m", { m }) : t("time.ms", { m, s: s % 60 });
+  if (h < 24)
+    return m % 60 === 0 ? t("time.h", { h }) : t("time.hm", { h, m: m % 60 });
+  return h % 24 === 0
+    ? t("time.d", { d: Math.floor(h / 24) })
+    : t("time.dh", { d: Math.floor(h / 24), h: h % 24 });
 }
 
-// taskTime is how long a task runs, from its start until now, or how long it ran once ended; "" before it starts.
-// Its title says when it started, and when it ended.
+// taskRunDurations returns the durations in milliseconds of each of the task's runs.
+export function taskRunDurations(task: Task, now: number): number[] {
+  if (task.runs && task.runs.length > 0) {
+    return task.runs.map((r) => {
+      const rStart = r.startTime ? timestampMs(r.startTime) : 0;
+      let rEnd: number;
+      if (r.endTime) {
+        rEnd = timestampMs(r.endTime);
+      } else if (task.status === TaskStatus.RUNNING) {
+        rEnd = now;
+      } else if (task.endTime) {
+        rEnd = timestampMs(task.endTime);
+      } else {
+        rEnd = rStart;
+      }
+      return Math.max(0, rEnd - rStart);
+    });
+  }
+  if (task.startTime) {
+    const rStart = timestampMs(task.startTime);
+    let rEnd: number;
+    if (taskFinished(task.status) || task.status === TaskStatus.PAUSED) {
+      rEnd = task.endTime ? timestampMs(task.endTime) : rStart;
+    } else if (task.status === TaskStatus.RUNNING) {
+      rEnd = now;
+    } else {
+      rEnd = rStart;
+    }
+    return [Math.max(0, rEnd - rStart)];
+  }
+  if (task.running) {
+    return [durationMs(task.running)];
+  }
+  return [];
+}
+
+// taskTime returns the card line and tooltip for a task.
+// Card line: "<N> runs · <time> running · <time> waiting gate · <time> paused", each part shown only when not zero.
+// Tooltip: the runs listed and wait times ("3 runs: 12m, 8m, 15m; paused 4m; waited 9m for a slot").
 export function taskTime(
   task: Task,
   now: number,
 ): { text: string; title: string } {
-  const start = date(task.startTime);
-  if (!start) return { text: "", title: "" };
-  const end = taskFinished(task.status) ? date(task.endTime) : undefined;
-  if (taskFinished(task.status) && !end) return { text: "", title: "" };
-  const text = span((end?.getTime() ?? now) - start.getTime());
-  const title = end
-    ? t("task.ran", { from: when(task.startTime), to: when(task.endTime) })
-    : t("task.running_since", { when: when(task.startTime) });
+  const firstStart = task.firstStartTime
+    ? timestampMs(task.firstStartTime)
+    : task.startTime
+      ? timestampMs(task.startTime)
+      : 0;
+  if (!firstStart && (!task.runs || task.runs.length === 0)) {
+    return { text: "", title: "" };
+  }
+
+  const runDurs = taskRunDurations(task, now);
+  const runsCount =
+    task.runs && task.runs.length > 0
+      ? task.runs.length
+      : firstStart > 0
+        ? 1
+        : 0;
+
+  let totalRunMs = runDurs.reduce((a, b) => a + b, 0);
+  if (totalRunMs === 0 && task.running) {
+    totalRunMs =
+      durationMs(task.running) +
+      (task.waitingGate ? durationMs(task.waitingGate) : 0);
+  }
+
+  const waitingGateMs = task.waitingGate ? durationMs(task.waitingGate) : 0;
+  const runningMs = Math.max(0, totalRunMs - waitingGateMs);
+
+  let pausedMs: number;
+  if (task.status !== TaskStatus.RUNNING && task.paused) {
+    pausedMs = durationMs(task.paused);
+  } else {
+    const finalEnd =
+      taskFinished(task.status) && task.endTime
+        ? timestampMs(task.endTime)
+        : now;
+    const elapsedMs =
+      firstStart > 0 && finalEnd > firstStart ? finalEnd - firstStart : 0;
+    pausedMs = Math.max(0, elapsedMs - totalRunMs);
+  }
+
+  const lineParts: string[] = [];
+  if (runsCount > 0) {
+    lineParts.push(t("task.runs", { count: runsCount }));
+  }
+  if (runningMs > 0) {
+    lineParts.push(t("task.time_running", { time: span(runningMs) }));
+  }
+  if (waitingGateMs > 0) {
+    lineParts.push(t("task.time_waiting_gate", { time: span(waitingGateMs) }));
+  }
+  if (pausedMs > 0) {
+    lineParts.push(t("task.time_paused", { time: span(pausedMs) }));
+  }
+  const text = lineParts.join(" · ");
+
+  const tooltipParts: string[] = [];
+  if (runDurs.length > 0) {
+    const runsLabel = t("task.runs", { count: runsCount });
+    tooltipParts.push(`${runsLabel}: ${runDurs.map(span).join(", ")}`);
+  }
+  if (pausedMs > 0) {
+    tooltipParts.push(t("task.tooltip_paused", { time: span(pausedMs) }));
+  }
+  const waitBeforeStartMs = task.waitingBeforeStart
+    ? durationMs(task.waitingBeforeStart)
+    : 0;
+  if (waitBeforeStartMs > 0) {
+    const isDep =
+      (task.dependsOn && task.dependsOn.length > 0) ||
+      Boolean(task.waitReason && task.waitReason.includes("waits for"));
+    tooltipParts.push(
+      t(isDep ? "task.time_waited_deps" : "task.time_waited_slot", {
+        time: span(waitBeforeStartMs),
+      }),
+    );
+  }
+  const title = tooltipParts.join("; ");
+
   return { text, title };
 }
 
-// azimaTime is how long an azima runs or ran: from its first part's start (or its own start) until now,
-// or how long it ran once ended; "" before it starts.
-// Its title says when it started, and when it ended.
+// azimaTime is how long an azima runs or ran: summing its parts' running time.
 export function azimaTime(
   azima: Task,
   parts: readonly Task[],
   now: number,
 ): { text: string; title: string } {
+  let totalRunningMs = 0;
+  if (parts.length > 0) {
+    for (const p of parts) {
+      if (p.kind === TaskKind.AZIMA) continue;
+      const durs = taskRunDurations(p, now);
+      const runMs = durs.reduce((a, b) => a + b, 0);
+      const gateMs = p.waitingGate ? durationMs(p.waitingGate) : 0;
+      totalRunningMs += Math.max(0, runMs - gateMs);
+    }
+  } else if (azima.running) {
+    totalRunningMs = durationMs(azima.running);
+  } else {
+    const durs = taskRunDurations(azima, now);
+    const runMs = durs.reduce((a, b) => a + b, 0);
+    const gateMs = azima.waitingGate ? durationMs(azima.waitingGate) : 0;
+    totalRunningMs = Math.max(0, runMs - gateMs);
+  }
+  if (totalRunningMs === 0) return { text: "", title: "" };
+  const text = span(totalRunningMs);
+
   const allTasks = [azima, ...parts];
   const starts = allTasks
-    .map((t) => ({ task: t, date: date(t.startTime) }))
+    .map((t) => ({ task: t, date: date(t.firstStartTime ?? t.startTime) }))
     .filter((x): x is { task: Task; date: Date } => !!x.date);
-  if (starts.length === 0) return { text: "", title: "" };
+  if (starts.length === 0) return { text, title: "" };
   starts.sort((a, b) => a.date.getTime() - b.date.getTime());
   const firstStart = starts[0];
 
@@ -103,24 +236,27 @@ export function azimaTime(
     const ends = allTasks
       .map((t) => ({ task: t, date: date(t.endTime) }))
       .filter((x): x is { task: Task; date: Date } => !!x.date);
-    if (ends.length === 0) return { text: "", title: "" };
-    ends.sort((a, b) => b.date.getTime() - a.date.getTime());
-    const lastEnd = ends[0];
-    const text = span(
-      Math.max(0, lastEnd.date.getTime() - firstStart.date.getTime()),
-    );
-    const title = t("task.ran", {
-      from: when(firstStart.task.startTime),
-      to: when(lastEnd.task.endTime),
-    });
-    return { text, title };
+    if (ends.length > 0) {
+      ends.sort((a, b) => b.date.getTime() - a.date.getTime());
+      const lastEnd = ends[0];
+      return {
+        text,
+        title: t("task.ran", {
+          from: when(
+            firstStart.task.firstStartTime ?? firstStart.task.startTime,
+          ),
+          to: when(lastEnd.task.endTime),
+        }),
+      };
+    }
   }
 
-  const text = span(Math.max(0, now - firstStart.date.getTime()));
-  const title = t("task.running_since", {
-    when: when(firstStart.task.startTime),
-  });
-  return { text, title };
+  return {
+    text,
+    title: t("task.running_since", {
+      when: when(firstStart.task.firstStartTime ?? firstStart.task.startTime),
+    }),
+  };
 }
 
 // useNow is the time now, read again every period while on: a duration shown stays current.

@@ -270,6 +270,9 @@ func (h *Harness) Recover(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := h.rebuildTaskRunsFromJournal(ctx, tasks); err != nil {
+		return err
+	}
 	if err := h.migrateAzimas(ctx, tasks); err != nil {
 		return err
 	}
@@ -297,7 +300,15 @@ func (h *Harness) Recover(ctx context.Context) error {
 		if t.GetStartTime() == nil {
 			continue
 		}
-		t.Status, t.Error, t.EndTime = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up ended while the worker ran", timestamppb.Now()
+		nowPb := timestamppb.New(h.now())
+		t.Status, t.Error, t.EndTime = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up ended while the worker ran", nowPb
+		if len(t.Runs) > 0 {
+			last := t.Runs[len(t.Runs)-1]
+			if last.EndTime == nil {
+				last.EndTime = nowPb
+				last.Reason = "interrupted"
+			}
+		}
 		err := h.store.Tx(ctx, func(tx *store.Tx) error {
 			if err := tx.Journal(actorHarness, methodRecover, t); err != nil {
 				return err
@@ -309,7 +320,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 			if err := tx.Put(t); err != nil {
 				return err
 			}
-			return tx.Put(newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()}))
+			return tx.Put(h.newEvent(t.GetId(), seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()}))
 		})
 		if err != nil {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
@@ -319,6 +330,164 @@ func (h *Harness) Recover(ctx context.Context) error {
 		return err
 	}
 	return h.recoverAzimas(ctx, tasks)
+}
+
+// rebuildTaskRunsFromJournal reconstructs FirstStartTime and Runs on tasks that ran before runs were recorded,
+// from the events Djinn already journals.
+func (h *Harness) rebuildTaskRunsFromJournal(ctx context.Context, tasks []*planv1.Task) error {
+	var needRebuild []*planv1.Task
+	needMap := make(map[string]*planv1.Task)
+	for _, t := range tasks {
+		if t.GetStartTime() != nil && len(t.GetRuns()) == 0 {
+			needRebuild = append(needRebuild, t)
+			needMap[t.GetId()] = t
+		}
+	}
+	if len(needRebuild) == 0 {
+		return nil
+	}
+
+	cmds, err := store.CommandsOf(ctx, h.store, "harness/", nil)
+	if err != nil {
+		return err
+	}
+
+	taskCmds := make(map[string][]store.Command)
+	for _, c := range cmds {
+		switch c.Method {
+		case methodStart, methodHold, methodEnd, methodRecover:
+			snap := &planv1.Task{}
+			if err := proto.Unmarshal(c.Request, snap); err == nil && snap.GetId() != "" {
+				if _, ok := needMap[snap.GetId()]; ok {
+					taskCmds[snap.GetId()] = append(taskCmds[snap.GetId()], c)
+				}
+			}
+		}
+	}
+
+	for _, t := range needRebuild {
+		cs := taskCmds[t.GetId()]
+		if len(cs) == 0 {
+			if t.FirstStartTime == nil {
+				t.FirstStartTime = t.StartTime
+			}
+			t.Runs = []*planv1.TaskRun{{
+				StartTime: t.StartTime,
+				EndTime:   t.EndTime,
+				Reason:    runReason(t, nil),
+			}}
+		} else {
+			var runs []*planv1.TaskRun
+			var firstStart *timestamppb.Timestamp
+			for _, c := range cs {
+				snap := &planv1.Task{}
+				if err := proto.Unmarshal(c.Request, snap); err != nil {
+					continue
+				}
+				cAt := timestamppb.New(c.At)
+				switch c.Method {
+				case methodStart:
+					startAt := snap.GetStartTime()
+					if startAt == nil {
+						startAt = cAt
+					}
+					if firstStart == nil {
+						firstStart = startAt
+					}
+					if len(runs) > 0 && runs[len(runs)-1].EndTime == nil {
+						runs[len(runs)-1].EndTime = startAt
+						runs[len(runs)-1].Reason = "restart"
+					}
+					runs = append(runs, &planv1.TaskRun{
+						StartTime: startAt,
+					})
+				case methodHold:
+					if snap.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
+						if len(runs) > 0 && runs[len(runs)-1].EndTime == nil {
+							endAt := cAt
+							if snap.GetEndTime() != nil {
+								endAt = snap.GetEndTime()
+							}
+							runs[len(runs)-1].EndTime = endAt
+							runs[len(runs)-1].Reason = "pause"
+						}
+					} else if snap.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
+						if len(runs) == 0 || runs[len(runs)-1].EndTime != nil {
+							startAt := snap.GetStartTime()
+							if startAt == nil {
+								startAt = cAt
+							}
+							if firstStart == nil {
+								firstStart = startAt
+							}
+							runs = append(runs, &planv1.TaskRun{
+								StartTime: startAt,
+							})
+						}
+					}
+				case methodEnd, methodRecover:
+					if len(runs) > 0 && runs[len(runs)-1].EndTime == nil {
+						endAt := snap.GetEndTime()
+						if endAt == nil {
+							endAt = cAt
+						}
+						reason := runReason(snap, nil)
+						if c.Method == methodRecover {
+							reason = "interrupted"
+						}
+						runs[len(runs)-1].EndTime = endAt
+						runs[len(runs)-1].Reason = reason
+					}
+				}
+			}
+			if firstStart == nil {
+				firstStart = t.StartTime
+			}
+			t.FirstStartTime = firstStart
+			if t.EndTime != nil && len(runs) > 0 && runs[len(runs)-1].EndTime == nil {
+				runs[len(runs)-1].EndTime = t.EndTime
+				runs[len(runs)-1].Reason = runReason(t, nil)
+			}
+			t.Runs = runs
+		}
+		if err := h.store.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal(actorHarness, methodRecover, t); err != nil {
+				return err
+			}
+			return tx.Put(t)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runReason(t *planv1.Task, r *run) string {
+	if r != nil && r.preemptedWhy != "" {
+		return "preemption"
+	}
+	switch t.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_RESUMING:
+		if strings.HasPrefix(t.GetWaitReason(), whyWishPaused) {
+			return "pause"
+		}
+		if strings.Contains(strings.ToLower(t.GetWaitReason()), "preempt") {
+			return "preemption"
+		}
+		return "limit"
+	case planv1.TaskStatus_TASK_STATUS_PAUSED:
+		return "pause"
+	case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+		return "interrupted"
+	case planv1.TaskStatus_TASK_STATUS_STOPPED:
+		return "stopped"
+	case planv1.TaskStatus_TASK_STATUS_FAILED:
+		return "failed"
+	case planv1.TaskStatus_TASK_STATUS_DONE:
+		return "done"
+	default:
+		return "done"
+	}
 }
 
 // cleanWarmLeftovers removes leftover worktrees and branches (djinn-warm-…) from older versions of Djinn that
@@ -392,7 +561,7 @@ func (h *Harness) spawn(
 	}
 	task := &planv1.Task{
 		Id: store.NewID(), WishId: req.GetWishId(), Title: req.GetTitle(), Status: planv1.TaskStatus_TASK_STATUS_PENDING,
-		CreateTime: timestamppb.Now(), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
+		CreateTime: timestamppb.New(h.now()), Model: req.GetModel(), MaxBudgetUsd: req.GetMaxBudgetUsd(),
 		WriteScopes: scopes, Scheduled: true, Correction: made.GetCorrection(), Review: made.GetReview(), Role: made.GetRole(),
 		Question: made.GetQuestion(),
 	}
@@ -552,11 +721,11 @@ func (h *Harness) spawn(
 		}
 	}
 	var prep prepared
-	prompted := newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
+	prompted := h.newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	var preEv *planv1.TaskEvent
 	if preemptedCode != "" {
 		r.seq++
-		preEv = newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
+		preEv = h.newEvent(task.GetId(), r.seq, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
 	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(spawner(task), procedure, req); err != nil {
@@ -652,10 +821,10 @@ func (h *Harness) plan(
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		if err := tx.Put(newEvent(task.GetId(), 1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})); err != nil {
+		if err := tx.Put(h.newEvent(task.GetId(), 1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})); err != nil {
 			return err
 		}
-		return tx.Put(newEvent(task.GetId(), 2, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why}))
+		return tx.Put(h.newEvent(task.GetId(), 2, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why}))
 	})
 	if err != nil {
 		return nil, plan.Status(err)
@@ -837,7 +1006,21 @@ func (h *Harness) launch(
 // left to the caller to end.
 func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error {
 	t := r.task
-	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
+	now := h.now()
+	nowPb := timestamppb.New(now)
+	if t.FirstStartTime == nil {
+		t.FirstStartTime = nowPb
+	}
+	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, nowPb, nil, 0, ""
+	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].EndTime == nil {
+		t.Runs[len(t.Runs)-1].EndTime = nowPb
+		if t.Runs[len(t.Runs)-1].Reason == "" {
+			t.Runs[len(t.Runs)-1].Reason = "restart"
+		}
+	}
+	t.Runs = append(t.Runs, &planv1.TaskRun{
+		StartTime: nowPb,
+	})
 	r.failure, r.limit = "", nil
 	r.answered = false
 	if r.startHead == "" {
@@ -1282,7 +1465,9 @@ func (h *Harness) end(r *run, res Result) {
 		t.Model = ""
 		t.Models = nil
 	}
-	t.EndTime, t.ExitCode = timestamppb.Now(), int32(res.ExitCode)
+	now := h.now()
+	nowPb := timestamppb.New(now)
+	t.EndTime, t.ExitCode = nowPb, int32(res.ExitCode)
 	switch {
 	case preemptedWhy != "":
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
@@ -1327,6 +1512,14 @@ func (h *Harness) end(r *run, res Result) {
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
 		_ = h.replayEnvFailures(context.Background(), t.GetProvider())
 		_ = h.unblockDependencyFailed(context.Background(), t.GetCode())
+	}
+	reason := runReason(t, r)
+	if len(t.Runs) > 0 {
+		last := t.Runs[len(t.Runs)-1]
+		if last.EndTime == nil {
+			last.EndTime = nowPb
+			last.Reason = reason
+		}
 	}
 	text := short(t.GetStatus())
 	switch {
@@ -1443,7 +1636,7 @@ func (h *Harness) write(r *run, actor, method string, task proto.Message, ev Eve
 
 // writeAs is write, journaling req; nil journals the event.
 func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message, ev Event) (*planv1.TaskEvent, error) {
-	te := newEvent(r.id, r.seq+1, ev)
+	te := h.newEvent(r.id, r.seq+1, ev)
 	if req == nil {
 		req = te
 	}
@@ -1480,11 +1673,19 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 }
 
 // newEvent builds a stored event, its text and raw line cut to maxText.
-func newEvent(taskID string, seq int64, ev Event) *planv1.TaskEvent {
+func (h *Harness) newEvent(taskID string, seq int64, ev Event) *planv1.TaskEvent {
+	return newEventAt(taskID, seq, ev, h.now())
+}
+
+func newEventAt(taskID string, seq int64, ev Event, at time.Time) *planv1.TaskEvent {
 	return &planv1.TaskEvent{
 		Id: store.NewID(), TaskId: taskID, Seq: seq, Kind: ev.Kind, Text: clip(ev.Text), Usage: ev.Usage,
-		Raw: clip(ev.Raw), CreateTime: timestamppb.Now(),
+		Raw: clip(ev.Raw), CreateTime: timestamppb.New(at),
 	}
+}
+
+func newEvent(taskID string, seq int64, ev Event) *planv1.TaskEvent {
+	return newEventAt(taskID, seq, ev, time.Now())
 }
 
 func clip(s string) string {
@@ -1682,6 +1883,18 @@ func (h *Harness) writeHold(r *run) {
 	switch {
 	case paused && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING:
 		t.Status = planv1.TaskStatus_TASK_STATUS_PAUSED
+		nowPb := timestamppb.New(h.now())
+		reason := "pause"
+		if strings.Contains(strings.ToLower(holdWhy), "preempt") {
+			reason = "preemption"
+		}
+		if len(t.Runs) > 0 {
+			last := t.Runs[len(t.Runs)-1]
+			if last.EndTime == nil {
+				last.EndTime = nowPb
+				last.Reason = reason
+			}
+		}
 		text := "paused: the worker holds still, and frees its slot"
 		if holdWhy != "" {
 			text = "paused: " + holdWhy
@@ -1689,6 +1902,20 @@ func (h *Harness) writeHold(r *run) {
 		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	case !paused && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED:
 		t.Status = planv1.TaskStatus_TASK_STATUS_RUNNING
+		nowPb := timestamppb.New(h.now())
+		t.StartTime = nowPb
+		if t.FirstStartTime == nil {
+			t.FirstStartTime = nowPb
+		}
+		if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].EndTime == nil {
+			t.Runs[len(t.Runs)-1].EndTime = nowPb
+			if t.Runs[len(t.Runs)-1].Reason == "" {
+				t.Runs[len(t.Runs)-1].Reason = "restart"
+			}
+		}
+		t.Runs = append(t.Runs, &planv1.TaskRun{
+			StartTime: nowPb,
+		})
 		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "resumed"})
 	}
 }
@@ -1863,7 +2090,7 @@ func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskS
 		if err := tx.Put(task); err != nil {
 			return err
 		}
-		return tx.Put(newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+		return tx.Put(h.newEvent(id, seq+1, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
 	})
 	if err != nil {
 		return nil, plan.Status(err)

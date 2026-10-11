@@ -8,6 +8,7 @@ import "buf/validate/validate.proto";
 import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
 import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "plan/v1/tilasm.proto";
 
@@ -821,6 +822,28 @@ message Task {
   string env_cause = 53 [(buf.validate.field).string.max_len = 1024];
   // Models the worker ran across its runs (resumes or provider changes), in the order they ran.
   repeated string models = 54;
+  // When the worker first started (across all its runs).
+  google.protobuf.Timestamp first_start_time = 55;
+  // Each run of the worker: its start, end, and why it ended.
+  repeated TaskRun runs = 56;
+  // Time the worker spent running (pauses and gates excluded).
+  google.protobuf.Duration running = 57;
+  // Time the worker spent waiting for gates while running.
+  google.protobuf.Duration waiting_gate = 58;
+  // Time the task was paused or interrupted between its first start and end/now.
+  google.protobuf.Duration paused = 59;
+  // Time the task waited before its first start (no slot, dependencies).
+  google.protobuf.Duration waiting_before_start = 60;
+}
+
+// TaskRun is a single run of a task's worker.
+message TaskRun {
+  // When this run started.
+  google.protobuf.Timestamp start_time = 1;
+  // When this run ended; unset while running.
+  google.protobuf.Timestamp end_time = 2;
+  // Why this run ended: done, limit, restart, pause, preemption, interrupted, etc.
+  string reason = 3;
 }
 
 // TaskReview is what a review worker reviews: work its worker left in its worktree without committing it.

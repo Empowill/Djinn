@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"buf.build/go/protovalidate"
 	"connectrpc.com/connect"
@@ -26,10 +27,40 @@ type Tasks struct {
 	h *Harness
 }
 
+func (s *Tasks) fillTask(ctx context.Context, task *planv1.Task) (*planv1.Task, error) {
+	if task == nil {
+		return nil, nil
+	}
+	filled, err := s.fillTasks(ctx, []*planv1.Task{task})
+	if err != nil {
+		return nil, err
+	}
+	return filled[0], nil
+}
+
+func (s *Tasks) fillTasks(ctx context.Context, tasks []*planv1.Task) ([]*planv1.Task, error) {
+	filled, err := s.h.withAzimas(ctx, tasks)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := plan.FillTilasms(ctx, s.h.store, filled); err != nil {
+		return nil, plan.Status(err)
+	}
+	if err := plan.FillTimes(ctx, s.h.store, filled, s.h.now()); err != nil {
+		return nil, plan.Status(err)
+	}
+	s.h.FillModels(ctx, filled)
+	return filled, nil
+}
+
 func (s *Tasks) Spawn(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceSpawnRequest],
 ) (*connect.Response[planv1.TaskServiceSpawnResponse], error) {
 	task, err := s.h.Spawn(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	task, err = s.fillTask(ctx, task)
 	if err != nil {
 		return nil, err
 	}
@@ -65,13 +96,10 @@ func (s *Tasks) List(
 	if err != nil {
 		return nil, err
 	}
-	if page, err = s.h.withAzimas(ctx, page); err != nil {
-		return nil, plan.Status(err)
+	page, err = s.fillTasks(ctx, page)
+	if err != nil {
+		return nil, err
 	}
-	if err := plan.FillTilasms(ctx, s.h.store, page); err != nil {
-		return nil, plan.Status(err)
-	}
-	s.h.fillModels(ctx, page)
 	return connect.NewResponse(&planv1.TaskServiceListResponse{
 		Tasks:         page,
 		NextPageToken: nextToken,
@@ -86,14 +114,10 @@ func (s *Tasks) Get(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	filled, err := s.h.withAzimas(ctx, []*planv1.Task{task})
+	filled, err := s.fillTasks(ctx, []*planv1.Task{task})
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
-	if err := plan.FillTilasms(ctx, s.h.store, filled); err != nil {
-		return nil, plan.Status(err)
-	}
-	s.h.fillModels(ctx, filled)
 	if p, err := lastPrompt(ctx, s.h.store, task.GetId()); err == nil {
 		filled[0].Prompt = p
 	}
@@ -107,6 +131,10 @@ func (s *Tasks) Stop(
 	if err != nil {
 		return nil, err
 	}
+	task, err = s.fillTask(ctx, task)
+	if err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&planv1.TaskServiceStopResponse{Task: task}), nil
 }
 
@@ -117,6 +145,10 @@ func (s *Tasks) Pause(
 	if err != nil {
 		return nil, err
 	}
+	task, err = s.fillTask(ctx, task)
+	if err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&planv1.TaskServicePauseResponse{Task: task}), nil
 }
 
@@ -124,6 +156,10 @@ func (s *Tasks) Resume(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceResumeRequest],
 ) (*connect.Response[planv1.TaskServiceResumeResponse], error) {
 	task, err := s.h.Resume(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	task, err = s.fillTask(ctx, task)
 	if err != nil {
 		return nil, err
 	}
@@ -266,9 +302,14 @@ func (s *Tasks) Diff(
 	return connect.NewResponse(resp), nil
 }
 
-// fillModels fills the forecast model on planned or waiting tasks whose model is empty,
+// Now returns the harness's current time.
+func (h *Harness) Now() time.Time {
+	return h.now()
+}
+
+// FillModels fills the forecast model on planned or waiting tasks whose model is empty,
 // and ensures watchers and azimas have no model.
-func (h *Harness) fillModels(ctx context.Context, tasks []*planv1.Task) {
+func (h *Harness) FillModels(ctx context.Context, tasks []*planv1.Task) {
 	for _, t := range tasks {
 		if watching(t) || t.GetProvider() == planv1.Provider_PROVIDER_WATCH || t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA || t.GetAzima() != nil {
 			t.Model = ""

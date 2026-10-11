@@ -549,7 +549,7 @@ func writeText(w io.Writer, m protoreflect.Message) {
 		case fd.IsList():
 			writeList(w, fd, m.Get(fd).List(), "")
 			return
-		case !fd.IsMap() && fd.Message().FullName() != timestampName:
+		case !fd.IsMap() && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName:
 			m = m.Get(fd).Message()
 		}
 	}
@@ -587,7 +587,7 @@ func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 		case fd.IsList():
 			fmt.Fprintf(w, "%s%s:\n", indent, fd.Name())
 			writeList(w, fd, v.List(), indent+"  ")
-		case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName:
+		case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName:
 			fmt.Fprintf(w, "%s%s:\n", indent, fd.Name())
 			writeFields(w, v.Message(), indent+"  ")
 		default:
@@ -598,7 +598,7 @@ func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 
 func writeList(w io.Writer, fd protoreflect.FieldDescriptor, list protoreflect.List, indent string) {
 	for i := range list.Len() {
-		if fd.Kind() != protoreflect.MessageKind || fd.Message().FullName() == timestampName {
+		if fd.Kind() != protoreflect.MessageKind || fd.Message().FullName() == timestampName || fd.Message().FullName() == durationName {
 			fmt.Fprintf(w, "%s- %s\n", indent, text(fd, list.Get(i)))
 			continue
 		}
