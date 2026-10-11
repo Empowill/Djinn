@@ -55,8 +55,7 @@ var readMachine func() (machine.Snapshot, error)
 func runUp(args []string) (restart bool, err error) {
 	var (
 		browser                                   bool
-		answerWorkers, enlightenWorkers           bool
-		questionWorkers                           bool
+		enlightenWorkers                          bool
 		profiles                                  bool
 		port, maxWorkers, workerCPU, workerMemory int
 		workerMemoryGuard                         float64
@@ -66,33 +65,13 @@ func runUp(args []string) (restart bool, err error) {
 		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
 		"worker-cpu": &workerCPU, "worker-memory": &workerMemory,
 		"worker-memory-guard": &workerMemoryGuard,
-		"answer-workers":      &answerWorkers, "enlighten-workers": &enlightenWorkers,
-		"question-workers": &questionWorkers, "pprof": &profiles,
+		"enlighten-workers":   &enlightenWorkers,
+		"pprof":               &profiles,
 	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
 	}
-	var answerSet, enlightenSet bool
-	if flagSet(flags, "question-workers") {
-		answerSet, answerWorkers = true, questionWorkers
-		enlightenSet, enlightenWorkers = true, questionWorkers
-	} else if v := os.Getenv("DJINN_QUESTION_WORKERS"); v != "" {
-		on, err := onOff(v)
-		if err != nil {
-			return false, fmt.Errorf("DJINN_QUESTION_WORKERS: %w", err)
-		}
-		answerSet, answerWorkers = true, on
-		enlightenSet, enlightenWorkers = true, on
-	}
-	if flagSet(flags, "answer-workers") {
-		answerSet = true
-	} else if v := os.Getenv("DJINN_ANSWER_WORKERS"); v != "" {
-		on, err := onOff(v)
-		if err != nil {
-			return false, fmt.Errorf("DJINN_ANSWER_WORKERS: %w", err)
-		}
-		answerSet, answerWorkers = true, on
-	}
+	var enlightenSet bool
 	if flagSet(flags, "enlighten-workers") {
 		enlightenSet = true
 	} else if v := os.Getenv("DJINN_ENLIGHTEN_WORKERS"); v != "" {
@@ -180,9 +159,6 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
-	}
-	if answerSet {
-		opts = append(opts, harness.WithAnswerWorkers(answerWorkers))
 	}
 	if enlightenSet {
 		opts = append(opts, harness.WithEnlightenWorkers(enlightenWorkers))

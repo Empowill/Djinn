@@ -238,8 +238,7 @@ The cards, the bar of what waits for you and the brief list them in that order.
 
 - **Rub the lamp** answers with the option selected and your note: the recommended one is selected first, so one
   click takes it; pick another and the lamp sends that one. With no option recommended, pick one first. The lead
-  turns your answer into tasks itself, in one pass, holding the plan's graph (`answer_workers: true` in settings
-  starts a converter worker instead). A question without options takes a written answer, sent the same way.
+  turns your answer into tasks itself, in one pass, holding the plan's graph. A question without options takes a written answer, sent the same way.
 - **Enlighten me**, on its left, starts an investigator worker to dig first, in one click (`enlighten_workers: false`
   lets the lead investigate itself): the note you typed says what to dig into (empty, it digs in general). The question
   folds to one line, **Being investigated** with what you asked, out of the way of the questions that wait for you; a

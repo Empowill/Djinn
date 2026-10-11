@@ -711,9 +711,6 @@ type TaskRole int32
 const (
 	// A worker spawned by the lead or the developer.
 	TaskRole_TASK_ROLE_UNSPECIFIED TaskRole = 0
-	// Djinn started it once the developer answered Task.question ("Rub the lamp"): it turns the decision into tasks
-	// (djinn task spawn --decision), or asks what the answer leaves open.
-	TaskRole_TASK_ROLE_CONVERTER TaskRole = 1
 	// Djinn started it once the developer asked to know more about Task.question ("Enlighten me"): it reads, then
 	// revises the question so that it waits for the developer again.
 	TaskRole_TASK_ROLE_INVESTIGATOR TaskRole = 2
@@ -723,12 +720,10 @@ const (
 var (
 	TaskRole_name = map[int32]string{
 		0: "TASK_ROLE_UNSPECIFIED",
-		1: "TASK_ROLE_CONVERTER",
 		2: "TASK_ROLE_INVESTIGATOR",
 	}
 	TaskRole_value = map[string]int32{
 		"TASK_ROLE_UNSPECIFIED":  0,
-		"TASK_ROLE_CONVERTER":    1,
 		"TASK_ROLE_INVESTIGATOR": 2,
 	}
 )
@@ -2331,10 +2326,6 @@ type ProjectSettings struct {
 	// what changed, and restarts Djinn on the build when it installed a newer Djinn. Its words are
 	// split on spaces, without a shell. Not set: nothing is proposed.
 	Install *string `protobuf:"bytes,9,opt,name=install,proto3,oneof" json:"install,omitempty"`
-	// Deprecated: set answer_workers and enlighten_workers instead; sets both when given.
-	//
-	// Deprecated: Marked as deprecated in plan/v1/plan.proto.
-	QuestionWorkers *bool `protobuf:"varint,10,opt,name=question_workers,json=questionWorkers,proto3,oneof" json:"question_workers,omitempty"`
 	// Model of those question workers, a model of the workers' provider. Not set: sonnet for claude, the provider's own
 	// default for another; empty: the provider's own default.
 	QuestionModel *string `protobuf:"bytes,11,opt,name=question_model,json=questionModel,proto3,oneof" json:"question_model,omitempty"`
@@ -2368,9 +2359,6 @@ type ProjectSettings struct {
 	// When Djinn pushes the project's integration branch: standard (at each azima's end or on cadence) or on demand.
 	// Not set: standard.
 	Push *ProjectPush `protobuf:"varint,20,opt,name=push,proto3,enum=plan.v1.ProjectPush,oneof" json:"push,omitempty"`
-	// Djinn starts a small worker to turn a developer's answer into tasks. Not set: off (the lead turns answers into
-	// tasks itself).
-	AnswerWorkers *bool `protobuf:"varint,21,opt,name=answer_workers,json=answerWorkers,proto3,oneof" json:"answer_workers,omitempty"`
 	// Djinn starts a small worker to investigate and revise a question after "Enlighten me". Not set: on.
 	EnlightenWorkers *bool `protobuf:"varint,22,opt,name=enlighten_workers,json=enlightenWorkers,proto3,oneof" json:"enlighten_workers,omitempty"`
 	// Push strategy for the project's wishes: one integration branch per wish (wish) or per azima (azima).
@@ -2479,14 +2467,6 @@ func (x *ProjectSettings) GetInstall() string {
 	return ""
 }
 
-// Deprecated: Marked as deprecated in plan/v1/plan.proto.
-func (x *ProjectSettings) GetQuestionWorkers() bool {
-	if x != nil && x.QuestionWorkers != nil {
-		return *x.QuestionWorkers
-	}
-	return false
-}
-
 func (x *ProjectSettings) GetQuestionModel() string {
 	if x != nil && x.QuestionModel != nil {
 		return *x.QuestionModel
@@ -2555,13 +2535,6 @@ func (x *ProjectSettings) GetPush() ProjectPush {
 		return *x.Push
 	}
 	return ProjectPush_PROJECT_PUSH_UNSPECIFIED
-}
-
-func (x *ProjectSettings) GetAnswerWorkers() bool {
-	if x != nil && x.AnswerWorkers != nil {
-		return *x.AnswerWorkers
-	}
-	return false
 }
 
 func (x *ProjectSettings) GetEnlightenWorkers() bool {
@@ -16219,7 +16192,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\xa9\x0f\n" +
+	"createTime\"\xcf\x0e\n" +
 	"\x0fProjectSettings\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
 	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
@@ -16230,32 +16203,29 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04test\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x05R\x04test\x88\x01\x01\x12?\n" +
 	"\x13correction_attempts\x18\b \x01(\x05B\t\xbaH\x06\x1a\x04\x18\n" +
 	"(\x00H\x06R\x12correctionAttempts\x88\x01\x01\x12'\n" +
-	"\ainstall\x18\t \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\aR\ainstall\x88\x01\x01\x122\n" +
-	"\x10question_workers\x18\n" +
-	" \x01(\bB\x02\x18\x01H\bR\x0fquestionWorkers\x88\x01\x01\x12N\n" +
-	"\x0equestion_model\x18\v \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\tR\rquestionModel\x88\x01\x01\x12L\n" +
-	"\x13question_budget_usd\x18\f \x01(\x01B\x17\xbaH\x14\x12\x12\x19\x00\x00\x00\x00\x00\x88\xc3@)\x00\x00\x00\x00\x00\x00\x00\x00H\n" +
-	"R\x11questionBudgetUsd\x88\x01\x01\x12#\n" +
-	"\x05setup\x18\r \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\vR\x05setup\x88\x01\x01\x127\n" +
+	"\ainstall\x18\t \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\aR\ainstall\x88\x01\x01\x12N\n" +
+	"\x0equestion_model\x18\v \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\bR\rquestionModel\x88\x01\x01\x12L\n" +
+	"\x13question_budget_usd\x18\f \x01(\x01B\x17\xbaH\x14\x12\x12\x19\x00\x00\x00\x00\x00\x88\xc3@)\x00\x00\x00\x00\x00\x00\x00\x00H\tR\x11questionBudgetUsd\x88\x01\x01\x12#\n" +
+	"\x05setup\x18\r \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\n" +
+	"R\x05setup\x88\x01\x01\x127\n" +
 	"\x06checks\x18\x0e \x03(\v2\x15.plan.v1.ProjectCheckB\b\xbaH\x05\x92\x01\x02\x10\x14R\x06checks\x12B\n" +
-	"\vmain_branch\x18\x0f \x01(\tB\x1c\xbaH\x19r\x17\x18\xc8\x012\x12^[A-Za-z0-9._/-]*$H\fR\n" +
+	"\vmain_branch\x18\x0f \x01(\tB\x1c\xbaH\x19r\x17\x18\xc8\x012\x12^[A-Za-z0-9._/-]*$H\vR\n" +
 	"mainBranch\x88\x01\x01\x12B\n" +
 	"\n" +
 	"merge_main\x18\x10 \x01(\x0e2\x12.plan.v1.MergeMainB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\rR\tmergeMain\x88\x01\x01\x12=\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\fR\tmergeMain\x88\x01\x01\x12=\n" +
 	"\x12merge_main_minutes\x18\x11 \x01(\x05B\n" +
-	"\xbaH\a\x1a\x05\x18\xe0N(\x01H\x0eR\x10mergeMainMinutes\x88\x01\x01\x12.\n" +
-	"\x10install_releases\x18\x12 \x01(\bH\x0fR\x0finstallReleases\x88\x01\x01\x12Q\n" +
-	"\x11question_provider\x18\x13 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x10R\x10questionProvider\x88\x01\x01\x129\n" +
+	"\xbaH\a\x1a\x05\x18\xe0N(\x01H\rR\x10mergeMainMinutes\x88\x01\x01\x12.\n" +
+	"\x10install_releases\x18\x12 \x01(\bH\x0eR\x0finstallReleases\x88\x01\x01\x12Q\n" +
+	"\x11question_provider\x18\x13 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x0fR\x10questionProvider\x88\x01\x01\x129\n" +
 	"\x04push\x18\x14 \x01(\x0e2\x14.plan.v1.ProjectPushB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x11R\x04push\x88\x01\x01\x12*\n" +
-	"\x0eanswer_workers\x18\x15 \x01(\bH\x12R\ranswerWorkers\x88\x01\x01\x120\n" +
-	"\x11enlighten_workers\x18\x16 \x01(\bH\x13R\x10enlightenWorkers\x88\x01\x01\x12K\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x10R\x04push\x88\x01\x01\x120\n" +
+	"\x11enlighten_workers\x18\x16 \x01(\bH\x11R\x10enlightenWorkers\x88\x01\x01\x12K\n" +
 	"\rpush_strategy\x18\x17 \x01(\x0e2\x15.plan.v1.PushStrategyB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x14R\fpushStrategy\x88\x01\x01\x12(\n" +
-	"\btest_one\x18\x18 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x15R\atestOne\x88\x01\x01\x12W\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x12R\fpushStrategy\x88\x01\x01\x12(\n" +
+	"\btest_one\x18\x18 \x01(\tB\b\xbaH\x05r\x03\x18\xf4\x03H\x13R\atestOne\x88\x01\x01\x12W\n" +
 	"\x11install_questions\x18\x19 \x01(\x0e2\x19.plan.v1.InstallQuestionsB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x16R\x10installQuestions\x88\x01\x01B\v\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x14R\x10installQuestions\x88\x01\x01B\v\n" +
 	"\t_providerB\b\n" +
 	"\x06_modelB\x11\n" +
 	"\x0f_max_budget_usdB\t\n" +
@@ -16264,8 +16234,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05_testB\x16\n" +
 	"\x14_correction_attemptsB\n" +
 	"\n" +
-	"\b_installB\x13\n" +
-	"\x11_question_workersB\x11\n" +
+	"\b_installB\x11\n" +
 	"\x0f_question_modelB\x16\n" +
 	"\x14_question_budget_usdB\b\n" +
 	"\x06_setupB\x0e\n" +
@@ -16274,12 +16243,12 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x13_merge_main_minutesB\x13\n" +
 	"\x11_install_releasesB\x14\n" +
 	"\x12_question_providerB\a\n" +
-	"\x05_pushB\x11\n" +
-	"\x0f_answer_workersB\x14\n" +
+	"\x05_pushB\x14\n" +
 	"\x12_enlighten_workersB\x10\n" +
 	"\x0e_push_strategyB\v\n" +
 	"\t_test_oneB\x14\n" +
-	"\x12_install_questions\"\xad\x01\n" +
+	"\x12_install_questionsJ\x04\b\n" +
+	"\x10\vJ\x04\b\x15\x10\x16R\x10question_workersR\x0eanswer_workers\"\xad\x01\n" +
 	"\fProjectCheck\x12:\n" +
 	"\x04name\x18\x01 \x01(\tB&\xbaH#r!\x10\x01\x18(2\x1b^[A-Za-z0-9][A-Za-z0-9_-]*$R\x04name\x12$\n" +
 	"\acommand\x18\x02 \x01(\tB\n" +
@@ -17388,11 +17357,10 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x18TASK_ACCESS_EDIT_REFUSED\x10\x06\x12\x19\n" +
 	"\x15TASK_ACCESS_WISH_EDIT\x10\a\x12\x19\n" +
 	"\x15TASK_ACCESS_WISH_AUTO\x10\b\x12\x15\n" +
-	"\x11TASK_ACCESS_DJINN\x10\t*Z\n" +
+	"\x11TASK_ACCESS_DJINN\x10\t*\\\n" +
 	"\bTaskRole\x12\x19\n" +
-	"\x15TASK_ROLE_UNSPECIFIED\x10\x00\x12\x17\n" +
-	"\x13TASK_ROLE_CONVERTER\x10\x01\x12\x1a\n" +
-	"\x16TASK_ROLE_INVESTIGATOR\x10\x02*\x8e\x01\n" +
+	"\x15TASK_ROLE_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16TASK_ROLE_INVESTIGATOR\x10\x02\"\x04\b\x01\x10\x01*\x13TASK_ROLE_CONVERTER*\x8e\x01\n" +
 	"\bProvider\x12\x18\n" +
 	"\x14PROVIDER_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fPROVIDER_CLAUDE\x10\x01\x12\x11\n" +

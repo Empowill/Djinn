@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -144,6 +145,44 @@ func TestSettingsRefuseSecrets(t *testing.T) {
 	}
 }
 
+func TestSettingsRefuseRemovedKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.txtpb")
+	for _, tc := range []struct {
+		content  string
+		wantKey  string
+		wantLine int
+	}{
+		{"answer_workers: true\n", "answer_workers", 1},
+		{"answer_workers: false\n", "answer_workers", 1},
+		{"question_workers: true\n", "question_workers", 1},
+		{"question_workers: false\n", "question_workers", 1},
+		{"# a comment\nanswer_workers: true\n", "answer_workers", 2},
+		{"provider: PROVIDER_CLAUDE\nquestion_workers: true\n", "question_workers", 2},
+		{"  answer_workers: true\n", "answer_workers", 1},
+	} {
+		writeSettings(t, path, tc.content)
+		s, err := ReadSettings(path)
+		if err == nil {
+			t.Errorf("%q: got %v, want refused", tc.content, s)
+			continue
+		}
+		wantMsg := fmt.Sprintf("line %d names %s: this key was removed; delete the line", tc.wantLine, tc.wantKey)
+		if !strings.Contains(err.Error(), wantMsg) {
+			t.Errorf("%q: got error %v, want substring %q", tc.content, err, wantMsg)
+		}
+	}
+
+	// A comment mentioning a removed key is not refused.
+	writeSettings(t, path, "# answer_workers was removed\nenlighten_workers: true\n")
+	s, err := ReadSettings(path)
+	if err != nil {
+		t.Errorf("comment with removed key refused: %v", err)
+	}
+	if s == nil || !s.GetEnlightenWorkers() {
+		t.Errorf("got %v, want enlighten_workers: true", s)
+	}
+}
+
 func TestResolveSettings(t *testing.T) {
 	const (
 		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
@@ -218,9 +257,9 @@ func TestResolveSettings(t *testing.T) {
 	} {
 		got := ResolveSettings(c.repo, c.dev)
 		// The question workers' settings are TestQuestionSettings'.
-		got.AnswerWorkers, got.EnlightenWorkers, got.QuestionWorkers = false, false, false
+		got.EnlightenWorkers = false
 		got.QuestionProvider, got.QuestionModel, got.QuestionBudgetUSD = 0, "", 0
-		got.AnswerWorkersFrom, got.EnlightenWorkersFrom, got.QuestionWorkersFrom = 0, 0, 0
+		got.EnlightenWorkersFrom = 0
 		got.QuestionProviderFrom, got.QuestionModelFrom, got.QuestionBudgetFrom = 0, 0, 0
 		// Main's are TestMainSettings'.
 		got.MainBranch, got.MergeMain, got.MergeMainEvery, got.InstallReleases = "", 0, 0, false
@@ -271,9 +310,7 @@ func TestQuestionSettings(t *testing.T) {
 	antigravity := planv1.Provider_PROVIDER_ANTIGRAVITY
 	fake := planv1.Provider_PROVIDER_FAKE
 	type q struct {
-		answers   bool
 		enlighten bool
-		questions bool
 		provider  planv1.Provider
 		model     string
 		budget    float64
@@ -283,26 +320,21 @@ func TestQuestionSettings(t *testing.T) {
 		repo, dev *planv1.ProjectSettings
 		want      q
 	}{
-		{"neither file", nil, nil, q{false, true, false, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
-		{"another provider", &planv1.ProjectSettings{Provider: &codex}, nil, q{false, true, false, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
-		{"antigravity falls back to sonnet", &planv1.ProjectSettings{Provider: &antigravity}, nil, q{false, true, false, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
-		{"deprecated question_workers sets both", &planv1.ProjectSettings{
-			QuestionWorkers: proto.Bool(true), QuestionProvider: &fake, QuestionModel: proto.String("haiku"), QuestionBudgetUsd: proto.Float64(0.5),
-		}, nil, q{true, true, true, fake, "haiku", 0.5}},
-		{"specific answer_workers and enlighten_workers", &planv1.ProjectSettings{
-			AnswerWorkers: proto.Bool(true), EnlightenWorkers: proto.Bool(false),
-		}, nil, q{true, false, false, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
-		{"the developer's win", &planv1.ProjectSettings{QuestionWorkers: proto.Bool(false), QuestionProvider: &fake, QuestionModel: proto.String("haiku")},
-			&planv1.ProjectSettings{AnswerWorkers: proto.Bool(true), QuestionProvider: &codex, QuestionModel: proto.String("")}, q{true, false, false, codex, "", DefaultQuestionBudgetUSD}},
-		{"the developer's deprecated question_workers win", &planv1.ProjectSettings{AnswerWorkers: proto.Bool(true), EnlightenWorkers: proto.Bool(false)},
-			&planv1.ProjectSettings{QuestionWorkers: proto.Bool(true)}, q{true, true, true, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
+		{"neither file", nil, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
+		{"another provider", &planv1.ProjectSettings{Provider: &codex}, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
+		{"antigravity falls back to sonnet", &planv1.ProjectSettings{Provider: &antigravity}, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
+		{"specific enlighten_workers", &planv1.ProjectSettings{
+			EnlightenWorkers: proto.Bool(false),
+		}, nil, q{false, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
+		{"the developer's win", &planv1.ProjectSettings{EnlightenWorkers: proto.Bool(true), QuestionProvider: &fake, QuestionModel: proto.String("haiku")},
+			&planv1.ProjectSettings{EnlightenWorkers: proto.Bool(false), QuestionProvider: &codex, QuestionModel: proto.String("")}, q{false, codex, "", DefaultQuestionBudgetUSD}},
 		{"a provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
-			&planv1.ProjectSettings{Provider: &codex}, q{false, true, false, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
+			&planv1.ProjectSettings{Provider: &codex}, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
 		{"a question_provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
-			&planv1.ProjectSettings{QuestionProvider: &codex}, q{false, true, false, codex, "", DefaultQuestionBudgetUSD}},
+			&planv1.ProjectSettings{QuestionProvider: &codex}, q{true, codex, "", DefaultQuestionBudgetUSD}},
 	} {
 		s := ResolveSettings(c.repo, c.dev)
-		if got := (q{s.AnswerWorkers, s.EnlightenWorkers, s.QuestionWorkers, s.QuestionProvider, s.QuestionModel, s.QuestionBudgetUSD}); got != c.want {
+		if got := (q{s.EnlightenWorkers, s.QuestionProvider, s.QuestionModel, s.QuestionBudgetUSD}); got != c.want {
 			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 		}
 	}
@@ -395,7 +427,7 @@ func TestProjectShow(t *testing.T) {
 	rows := func(res *planv1.ProjectServiceShowResponse) string {
 		var b []string
 		for _, s := range res.GetSettings() {
-			if strings.HasPrefix(s.GetName(), "question_") || s.GetName() == "answer_workers" || s.GetName() == "enlighten_workers" || slices.Contains(mainRows, s.GetName()) {
+			if strings.HasPrefix(s.GetName(), "question_") || s.GetName() == "enlighten_workers" || slices.Contains(mainRows, s.GetName()) {
 				continue // The question workers' and main's are checked apart.
 			}
 			b = append(b, s.GetName()+"="+s.GetValue()+" "+strings.TrimPrefix(s.GetSource().String(), "SETTING_SOURCE_"))
@@ -415,11 +447,11 @@ func TestProjectShow(t *testing.T) {
 	}
 	var question []string
 	for _, s := range res.GetSettings() {
-		if strings.HasPrefix(s.GetName(), "question_") || s.GetName() == "answer_workers" || s.GetName() == "enlighten_workers" {
+		if strings.HasPrefix(s.GetName(), "question_") || s.GetName() == "enlighten_workers" {
 			question = append(question, s.GetName()+"="+s.GetValue())
 		}
 	}
-	if got, want := strings.Join(question, ", "), "answer_workers=false, enlighten_workers=true, question_provider=, question_model=sonnet, question_budget_usd=2"; got != want {
+	if got, want := strings.Join(question, ", "), "enlighten_workers=true, question_provider=, question_model=sonnet, question_budget_usd=2"; got != want {
 		t.Errorf("no file, the question workers: %s; want %s", got, want)
 	}
 

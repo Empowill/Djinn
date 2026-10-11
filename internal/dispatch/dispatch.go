@@ -180,10 +180,8 @@ func taskPriority(t *planv1.Task, depCounts map[string]int) (level int, sub int)
 	switch {
 	case t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
 		return 1, 0
-	case t.GetRole() == planv1.TaskRole_TASK_ROLE_CONVERTER:
-		return 1, 1
 	case QuestionWorker(t):
-		return 1, 2
+		return 1, 1
 	case t.GetCorrection() != nil:
 		return 2, 0
 	case t.GetReview() != nil:
@@ -456,8 +454,6 @@ func (s *Situation) full(t *planv1.Task) string {
 		switch {
 		case s.short.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
 			return "an investigator goes first: " + s.shortWhy
-		case s.short.GetRole() == planv1.TaskRole_TASK_ROLE_CONVERTER:
-			return "an answer worker goes first: " + s.shortWhy
 		case s.short.GetCorrection() != nil:
 			return "a correction goes first: " + s.shortWhy
 		case s.short.GetReview() != nil:

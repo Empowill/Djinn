@@ -27,12 +27,12 @@ func TestAnswerLine(t *testing.T) {
 		planv1.Choice_CHOICE_YES: `Djinn: Q43 answered yes. Note: "brighter, then cheaper". Turn it into tasks: you hold the plan's graph (djinn wish brief w1).`,
 	} {
 		q.Answer = &planv1.Answer{Choice: choice, Note: "brighter,\nthen cheaper"}
-		if got := AnswerLine(q, "", ""); got != want {
+		if got := AnswerLine(q, ""); got != want {
 			t.Errorf("%v:\n got %s\nwant %s", choice, got, want)
 		}
 	}
 	q.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_A}
-	if got, want := AnswerLine(q, "", ""), `Djinn: Q43 answered A — "Olive". Turn it into tasks: you hold the plan's graph (djinn wish brief w1).`; got != want {
+	if got, want := AnswerLine(q, ""), `Djinn: Q43 answered A — "Olive". Turn it into tasks: you hold the plan's graph (djinn wish brief w1).`; got != want {
 		t.Errorf("without a note:\n got %s\nwant %s", got, want)
 	}
 	if got, want := EnlightenLine(q, "what does each cost?", ""),
@@ -40,12 +40,8 @@ func TestAnswerLine(t *testing.T) {
 			`Investigate, then revise Q43: djinn wish brief w1 has the context.`; got != want {
 		t.Errorf("enlighten:\n got %s\nwant %s", got, want)
 	}
-	// A question worker took it: the lead is informed, not asked to act.
-	if got, want := AnswerLine(q, "W12", ""), `Djinn: Q43 answered A — "Olive". W12 turns it into tasks; you will hear when it ends.`; got != want {
-		t.Errorf("with a converter:\n got %s\nwant %s", got, want)
-	}
 	// An answer Djinn settles itself: the line says what Djinn did, never to act on it.
-	if got, want := AnswerLine(q, "", "Djinn started W168: Settle the conflict of W156 with main."),
+	if got, want := AnswerLine(q, "Djinn started W168: Settle the conflict of W156 with main."),
 		`Djinn: Q43 answered A — "Olive". Djinn started W168: Settle the conflict of W156 with main.`; got != want {
 		t.Errorf("settled by Djinn:\n got %s\nwant %s", got, want)
 	}
@@ -119,18 +115,6 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	}
 	leads.said = leads.said[:len(leads.said)-1]
 
-	// A converter worker was started for the question: the lead hears that the worker turns it into tasks.
-	qConv := c.ask(t, id)
-	c.put(t, &planv1.Task{
-		Id: "task-conv", WishId: id, Code: "W12", Question: qConv.GetCode(),
-		Role: planv1.TaskRole_TASK_ROLE_CONVERTER, Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
-	})
-	c.answer(t, qConv, planv1.Choice_CHOICE_YES, "")
-	if got, want := leads.said[len(leads.said)-1], terminal+": Djinn: "+qConv.GetCode()+" answered yes. W12 turns it into tasks; you will hear when it ends."; got != want {
-		t.Errorf("with converter: said\n%s\nwant\n%s", got, want)
-	}
-	leads.said = leads.said[:len(leads.said)-1]
-
 	// The lead's terminal runs a shell: the line would run as a command, so it is not typed.
 	leads.running[terminal], leads.said = []string{"/bin/sh"}, nil
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
@@ -146,8 +130,8 @@ func TestAnswerReachesTheLead(t *testing.T) {
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
 	delete(leads.running, terminal)
 	c.answer(t, c.ask(t, id), planv1.Choice_CHOICE_YES, "")
-	if len(leads.said) != 1 || !strings.Contains(leads.said[0], "Q07 answered yes") || len(leads.opened) != 1 {
-		t.Errorf("paused: said %q, opened %q; want Q07 told, nothing reopened", leads.said, leads.opened)
+	if len(leads.said) != 1 || !strings.Contains(leads.said[0], "Q06 answered yes") || len(leads.opened) != 1 {
+		t.Errorf("paused: said %q, opened %q; want Q06 told, nothing reopened", leads.said, leads.opened)
 	}
 }
 
@@ -249,15 +233,13 @@ func TestAnswerRoutingToPrincipalAndWaitingLead(t *testing.T) {
 	if len(leads.said) != 1 || leads.said[0] != want1 {
 		t.Errorf("answer without lead: said %q, want %q", leads.said, want1)
 	}
-	// Verify no converter worker was started for the question.
+	// Verify no worker was started for the question.
 	tasks, err := store.List[*planv1.Task](ctx, c.store, store.Where{"wish_id": wish2ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, task := range tasks {
-		if task.GetRole() == planv1.TaskRole_TASK_ROLE_CONVERTER {
-			t.Errorf("converter task was started: %v", task)
-		}
+	if len(tasks) != 0 {
+		t.Errorf("worker task was started: %v", tasks)
 	}
 	leads.said = nil
 

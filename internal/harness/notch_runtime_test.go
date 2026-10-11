@@ -170,7 +170,7 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 	}
 
 	lim := &limit{slots: 2}
-	e := up(t, t.TempDir(), WithQuestionWorkers(), WithCapacity(lim.capacity),
+	e := up(t, t.TempDir(), WithEnlightenWorkers(), WithCapacity(lim.capacity),
 		WithMemory(available, machine.DefaultPolicy()), WithTick(20*time.Millisecond))
 
 	repo := fakeProject(t, "")

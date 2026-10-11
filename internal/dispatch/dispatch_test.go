@@ -186,7 +186,7 @@ func TestQuestionWorkerTakesNoSlot(t *testing.T) {
 			CreateTime: timestamppb.New(at.Add(time.Duration(minute) * time.Minute))}
 	}
 	writer := task("writer", planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskRole_TASK_ROLE_UNSPECIFIED, 0)
-	converter := task("converter", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskRole_TASK_ROLE_CONVERTER, 1)
+	investigator := task("investigator", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskRole_TASK_ROLE_INVESTIGATOR, 1)
 	agent := task("agent", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskRole_TASK_ROLE_UNSPECIFIED, 2)
 	pass := func(tasks []*planv1.Task, m *Machine) map[string]string {
 		got := map[string]string{}
@@ -196,26 +196,26 @@ func TestQuestionWorkerTakesNoSlot(t *testing.T) {
 		return got
 	}
 	full := &Machine{Slots: 1, Rule: "test", Running: 1}
-	if got, want := pass([]*planv1.Task{writer, converter, agent}, full), map[string]string{
-		"converter": "", "agent": "writer writes the whole folder, which overlaps the whole folder",
+	if got, want := pass([]*planv1.Task{writer, investigator, agent}, full), map[string]string{
+		"investigator": "", "agent": "writer writes the whole folder, which overlaps the whole folder",
 	}; !maps.Equal(got, want) {
 		t.Errorf("full: %v, want %v", got, want)
 	}
 	full.Pressure = "simulated"
-	if got := pass([]*planv1.Task{converter}, full); got["converter"] != "the machine is under pressure: simulated" {
+	if got := pass([]*planv1.Task{investigator}, full); got["investigator"] != "the machine is under pressure: simulated" {
 		t.Errorf("under pressure: %v", got)
 	}
-	// 2 GiB free: the converter, a claude worker never measured (1 GiB), starts; the agent after it counts its GiB.
+	// 2 GiB free: the investigator, a claude worker never measured (1 GiB), starts; the agent after it counts its GiB.
 	roomy := &Machine{Slots: 4, Rule: "test", Available: 2 * machine.GiB, Policy: machine.DefaultPolicy()}
-	if got, want := pass([]*planv1.Task{converter, agent}, roomy), map[string]string{
-		"converter": "", "agent": "a claude worker peaks at 1.0 GiB (none measured yet), 2.0 GiB free, 1.0 GiB of it " +
+	if got, want := pass([]*planv1.Task{investigator, agent}, roomy), map[string]string{
+		"investigator": "", "agent": "a claude worker peaks at 1.0 GiB (none measured yet), 2.0 GiB free, 1.0 GiB of it " +
 			"for the workers running, 512 MiB kept",
 	}; !maps.Equal(got, want) {
 		t.Errorf("memory: %v, want %v", got, want)
 	}
 	roomy.Available = machine.GiB
-	if got := pass([]*planv1.Task{converter}, roomy); got["converter"] == "" {
-		t.Error("the converter started where the memory does not hold it")
+	if got := pass([]*planv1.Task{investigator}, roomy); got["investigator"] == "" {
+		t.Error("the investigator started where the memory does not hold it")
 	}
 }
 
@@ -582,15 +582,12 @@ func TestStrict5TierOrder(t *testing.T) {
 		return tk
 	}
 
-	// Tier 1: Investigator and Converter
+	// Tier 1: Investigator
 	invB := makeTask("inv_b", "wishB", planv1.TaskStatus_TASK_STATUS_PENDING, 10*time.Minute, func(tk *planv1.Task) {
 		tk.Role = planv1.TaskRole_TASK_ROLE_INVESTIGATOR
 	})
 	invA := makeTask("inv_a", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 5*time.Minute, func(tk *planv1.Task) {
 		tk.Role = planv1.TaskRole_TASK_ROLE_INVESTIGATOR
-	})
-	conv := makeTask("conv_a", "wishA", planv1.TaskStatus_TASK_STATUS_PENDING, 20*time.Minute, func(tk *planv1.Task) {
-		tk.Role = planv1.TaskRole_TASK_ROLE_CONVERTER
 	})
 
 	// Tier 2: Correction and Review
@@ -628,7 +625,7 @@ func TestStrict5TierOrder(t *testing.T) {
 
 	tasks := []*planv1.Task{
 		otherB, otherAYoung, otherAOld, leaf2, leaf, mid, block1, block2,
-		resA, resB, rev, corr, conv, invA, invB,
+		resA, resB, rev, corr, invA, invB,
 	}
 
 	ordered := New(tasks, wishes, nil, nil).At(at).Order()
@@ -640,7 +637,6 @@ func TestStrict5TierOrder(t *testing.T) {
 	wantIDs := []string{
 		"inv_a",         // Tier 1, sub 0, wish rank 1
 		"inv_b",         // Tier 1, sub 0, wish rank 2
-		"conv_a",        // Tier 1, sub 1
 		"corr_a",        // Tier 2, sub 0
 		"rev_a",         // Tier 2, sub 1
 		"res_a",         // Tier 3, wish rank 1
@@ -660,7 +656,7 @@ func TestStrict5TierOrder(t *testing.T) {
 }
 
 // TestInvestigatorPriorityAndMemory verifies that investigators take memory before work tasks,
-// that work tasks held back by an investigator/answer/correction/review report the specific reason,
+// that work tasks held back by an investigator/correction/review report the specific reason,
 // and that investigators still wait under pressure.
 func TestInvestigatorPriorityAndMemory(t *testing.T) {
 	at := time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)
@@ -733,18 +729,7 @@ func TestInvestigatorPriorityAndMemory(t *testing.T) {
 
 	// 5. Memory short reasons for other priority roles when memory is insufficient
 
-	// a) Answer worker
-	convTask := &planv1.Task{
-		Id: "c1", WishId: "w", Code: "C1", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
-		Scheduled: true, Role: planv1.TaskRole_TASK_ROLE_CONVERTER,
-		CreateTime: timestamppb.New(at.Add(-2 * time.Hour)),
-	}
-	got = pass([]*planv1.Task{convTask, workTask}, mNoRoom)
-	if !strings.HasPrefix(got["w1"], "an answer worker goes first: ") {
-		t.Errorf("work task held back by converter: got %q, want prefix 'an answer worker goes first: '", got["w1"])
-	}
-
-	// b) Correction worker
+	// a) Correction worker
 	corrTask := &planv1.Task{
 		Id: "corr1", WishId: "w", Code: "W_corr", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
 		Scheduled: true, Correction: &planv1.TaskCorrection{},
@@ -755,7 +740,7 @@ func TestInvestigatorPriorityAndMemory(t *testing.T) {
 		t.Errorf("work task held back by correction: got %q, want prefix 'a correction goes first: '", got["w1"])
 	}
 
-	// c) Review worker
+	// b) Review worker
 	revTask := &planv1.Task{
 		Id: "rev1", WishId: "w", Code: "W_rev", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
 		Scheduled: true, Review: &planv1.TaskReview{},

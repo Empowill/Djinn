@@ -93,17 +93,14 @@ Decide who does what, run each worker safely, and protect the machine.
 - [x] An azima whose work is done and whose plan file only waits for proofs no worker can give says so, apart from
   in progress and done, in the brief and the window. (`TestReadDoneWhen`, `TestProvers`, `TestAwaitingProof`,
   `TestBriefAzimas`, `TestSyncPlan`; `screens.test.mjs`: "an azima whose work is done awaits its proof")
-- [x] The orchestrator reads the developer's answers: an answer ("Rub the lamp") starts one converter, "Q52 → tasks",
-  that turns the decision into tasks linked to it, unless Djinn settles the question itself (an edit question, work
-  that failed to integrate, a routed request, a grant); "Enlighten me" starts one investigator that revises the
-  question; they take no slot but wait for the machine's pressure and memory, one per question at a time; a project
-  setting or `djinn up --question-workers=false` turns them off; the lead is told when each starts and what it did when
-  it ends; a worker's block, question and revision name its task. (`TestConverter`, `TestInvestigator`,
-  `TestQuestionWorkersOff`, `TestOneConverterAtATime`, `TestQuestionEndLine`, `TestAnswerAFailedIntegration` in
-  `internal/harness`; `TestQuestionWorkerTakesNoSlot` in `internal/dispatch`; `TestAnswerLine`,
-  `TestWorkerAttribution`, `TestQuestionSettings`, `TestProjectShow` in `internal/plan`; `TestFromEnv` in
-  `internal/cli`; `TestOnOff` in `cmd/djinn`; `e2e/question-workers.spec.ts`: "Rub the lamp" in the window, the
-  converter ends with W2 spawned with `--decision Q01`)
+- [x] The orchestrator reads the developer's answers: an answer ("Rub the lamp") goes to the lead to turn into tasks
+  itself, placing them in the graph, unless Djinn settles the question itself (an edit question, work that failed to integrate,
+  a routed request, a grant); "Enlighten me" starts one investigator that revises the question; it takes no slot but waits
+  for the machine's pressure and memory; a project setting (`enlighten_workers: false`) or `djinn up --enlighten-workers=false`
+  turns it off; the lead is told when it starts and what it did when it ends; a worker's block, question and revision name its task.
+  (`TestAnswerStartsNoWorker`, `TestInvestigator`, `TestEnlightenWorkersOff`, `TestQuestionEndLine`, `TestAnswerAFailedIntegration`
+  in `internal/harness`; `TestQuestionWorkerTakesNoSlot` in `internal/dispatch`; `TestAnswerLine`, `TestWorkerAttribution`,
+  `TestQuestionSettings`, `TestProjectShow` in `internal/plan`; `TestFromEnv` in `internal/cli`; `TestOnOff` in `cmd/djinn`)
 - [x] The window pauses and resumes a worker from its card in the Tasks tab, any worker, not only a watcher: running, a
   pause button; paused, a resume button; none in a task no worker runs, and none on Windows, where the pause is refused.
   (`a running worker pauses from its card…` in `tests/screens.test.mjs`; `e2e/task-pause.spec.ts`: a fake worker
@@ -333,23 +330,22 @@ Decide who does what, run each worker safely, and protect the machine.
   it, measuring reads its files: a tool that left the worker's process group goes with it. Without a user systemd, or
   on macOS and Windows, `djinn up` says so once and the process group serves, as before.
 - **Question workers** (Q52, A; `internal/harness/question.go`, W86 on 09/10, ported onto azimas, integration and
-  the memory rule by W133 on 10/10): the lead is no longer the bottleneck of an answer. An answer
-  (`QuestionService.Answer`, or an approval) starts a converter (`Task.role` CONVERTER, `Task.question` Q52, title
-  "Q52 → tasks"), unless it settles itself (an edit question, work that failed to integrate, a routed request, a grant);
+  the memory rule by W133 on 10/10): answers are turned into tasks by the lead only; answer workers are removed
+  (the DAG is the lead's responsibility; an answer worker would have to read every task again to set dependencies).
+  An answer (`QuestionService.Answer`, or an approval) goes directly to the lead (or principal lead, W329), unless it
+  settles itself (an edit question, work that failed to integrate, a routed request, a grant);
   "Enlighten me" starts an investigator (INVESTIGATOR, "Q52: enlighten"). The prompt holds the question, its options,
-  context and recommendation, the answer and note (or what to dig into), the moving part of the brief, and one job.
-  Access `TASK_ACCESS_DJINN`: reading, plus `djinn` commands to read the wish and to spawn, ask or revise, and Git's
+  context and recommendation, what to dig into, the moving part of the brief, and one job.
+  Access `TASK_ACCESS_DJINN`: reading, plus `djinn` commands to read the wish and to ask or revise, and Git's
   reading ones, `tilasm get` included; no edit, no gate, no worktree (the project's folder), never integrated. It takes
   no slot (like a watcher: it waits on the network, builds nothing), but it is an agent: it waits under pressure and
   until the memory holds its provider's typical peak, which then counts for the tasks after it
   (`dispatch.QuestionWorker`). Djinn spawns it as it spawns a correction worker (`harness.spawn`, journaled as the
-  harness's). Its prompt plans with `--part-of` and `--after`. One per question and role while it works: a
-  second answer is sent to it. An answered question is a decision and is not revised: a converter asks a new question
-  for what the answer leaves open. The lead's line says "W12 turns it into tasks"; at its end, `questionEndLine` says
-  what it spawned (tasks with `decision` Q52 created since), asked (`Question.task_id`) or revised (`Round.task_id`),
-  and what is left. Settings `question_workers`, `question_model` (default `sonnet` for claude), `question_budget_usd`
-  (default $2) in `.agents/settings.txtpb`; `djinn up --question-workers=false` or `DJINN_QUESTION_WORKERS=off`. The
-  harness starts none unless `djinn up` asks (`WithQuestionWorkers`): tests never reach a model by an answer.
+  harness's). One per question while it works: a second request is sent to it.
+  At its end, `questionEndLine` says what it revised (`Round.task_id`) or asked (`Question.task_id`).
+  Settings `enlighten_workers`, `question_model` (default `sonnet` for claude), `question_budget_usd`
+  (default $2) in `.agents/settings.txtpb`; `djinn up --enlighten-workers=false` or `DJINN_ENLIGHTEN_WORKERS=off`. The
+  harness starts none unless `djinn up` asks (`WithEnlightenWorkers`): tests never reach a model by a question.
 - **Attribution by the environment** (W59's question, B): a request field marked `(djinn.v1.env) = "DJINN_TASK_ID"`
   takes the variable when the command line or `djinn mcp` leaves it empty: `djinn block put`, `djinn question ask` and
   `revise`. The decision log says "By W12", the page "Revised by W12". The e2e specs drop the variable: their djinn is
