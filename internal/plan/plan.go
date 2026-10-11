@@ -427,6 +427,11 @@ func (p *Projects) PushStrategy(
 	}
 	if req.Msg.Strategy != nil && req.Msg.GetStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {
 		err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+			if req.Msg.GetStrategy() == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+				if err := refuseProjectSwitchToAzima(ctx, tx, project.GetId()); err != nil {
+					return err
+				}
+			}
 			return SaveDeveloperPushStrategy(p.Home, project.GetId(), req.Msg.GetStrategy())
 		})
 		if err != nil {
@@ -439,6 +444,30 @@ func (p *Projects) PushStrategy(
 		Strategy: settings.PushStrategy,
 		Source:   settings.PushStrategyFrom,
 	}), nil
+}
+
+// refuseProjectSwitchToAzima refuses making per azima the push strategy of the project projectID while a wish of it
+// that takes the project's strategy, not granted, has azimas that wait for each other (RefuseSwitchToAzima).
+func refuseProjectSwitchToAzima(ctx context.Context, tx *store.Tx, projectID string) error {
+	wishes, err := store.List[*planv1.Wish](ctx, tx, nil)
+	if err != nil {
+		return err
+	}
+	for _, w := range wishes {
+		if w.GetPushStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED || w.GetState() == planv1.WishState_WISH_STATE_GRANTED ||
+			!slices.Contains(w.GetProjectIds(), projectID) {
+			continue
+		}
+		tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": w.GetId()})
+		if err != nil {
+			return err
+		}
+		if deps := AzimaDependencies(tasks); len(deps) > 0 {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"per azima refused: the azimas of wish %q depend on each other (%s)", w.GetTitle(), AzimaDependenciesText(deps)))
+		}
+	}
+	return nil
 }
 
 // unattached returns the project without a folder that has this remote, or else this name, case ignored; nil

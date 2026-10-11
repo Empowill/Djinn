@@ -227,15 +227,31 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
       code: string;
       azima?: { state: string; ready?: boolean };
     }[];
+    // Its branch is named, never stacked on the branch of the azima it waits for.
     expect(listed.find((t) => t.code === "T2")?.azima).toEqual({
       branch: "djinn/T2-the-orchestrator",
-      base_branch: "djinn/T1-lay-the-ground",
       state: "AZIMA_STATE_IN_PROGRESS",
       ready: true,
       parts: 2,
       parts_done: 1,
     });
     expect(listed.find((t) => t.code === "T3")?.azima?.ready).toBeFalsy();
+
+    // Its azimas wait for each other: switching it to per azima is refused in a line naming them, and the switch
+    // shows per wish at once, never per azima.
+    const strategy = page.getByRole("group", { name: "Push strategy" });
+    const perWish = strategy.getByRole("button", { name: "Per wish" });
+    const perAzima = strategy.getByRole("button", { name: "Per azima" });
+    await expect(perWish).toHaveClass(/active/);
+    await perAzima.click();
+    await expect(page.locator(".toast")).toContainText(
+      "per azima refused: azimas depend on each other (T2 after T1; T3 after T1, T2)",
+    );
+    await expect(perWish).toHaveClass(/active/);
+    await expect(perAzima).not.toHaveClass(/active/);
+    expect(djinn("wish", "push-strategy", wishId, "--json")).toContain(
+      "PUSH_STRATEGY_WISH",
+    );
     expect(errors).toEqual([]);
   } finally {
     // It may have been imported paused, when three wishes were active.

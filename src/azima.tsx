@@ -299,7 +299,7 @@ export const AzimaCard = memo(function AzimaCard({
   const facts = [
     azima.title,
     isPerAzima && branch,
-    isPerAzima && baseBranch && t("azima.based_on", { branch: baseBranch }),
+    isPerAzima && baseBranch && t("azima.lands_in", { branch: baseBranch }),
     after.length > 0 && t("page.after", { tasks: after.join(", ") }),
   ]
     .filter(Boolean)

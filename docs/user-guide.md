@@ -224,10 +224,25 @@ An azima is **Draft**, **Open**, **In progress**, **To validate** or **Done**. A
 not started) to another wish.
 
 Each wish has a **Push strategy**: **Per wish** (one integration branch per wish and project) or **Per azima** (one
-integration branch per azima, named `azima/<azima-code>-<slug>`). In the wish header, the push strategy can be switched,
-or set from a terminal with `djinn wish push-strategy <wish-id> --strategy wish|azima`. For an azima with its own branch,
-status badges show **PR proposed**, **PR open** or **PR merged**, with buttons to open or merge the PR. An individual
-**Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand when you choose.
+branch per azima, named `djinn/<code>-<slug of its title>`: `djinn/T07-the-orchestrator`). In the wish header, the push
+strategy can be switched, or set from a terminal with `djinn wish push-strategy <wish-id> --strategy wish|azima`. For an
+azima with its own branch, status badges show **PR proposed**, **PR open** or **PR merged**, with buttons to open or
+merge the PR. An individual **Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand
+when you choose.
+
+An azima's branch works like a wish's integration branch. Djinn cuts it from main when the azima is made (an azima made
+before its wish was switched gets its branch when its first part starts), and records it on the azima: its card shows
+the branch, and that it lands in main, on its title's hover. The azima's work merges into it, and Djinn keeps it up with
+main by the same rules as a wish's branch ([keeping up with main](team-settings.md#keeping-up-with-main)). It lands in
+main: its pull request, opened when you say so after Djinn proposes it, targets main and follows each push of the
+branch; Djinn never re-targets it.
+
+Under the per-azima strategy no azima waits for another: each branch holds main and its own work, nothing else. Djinn
+refuses an azima after another, directly or through their work (`djinn task spawn --after`, `djinn task depend`,
+`djinn task update`, `djinn task group`, an `after:` line of a plan file at `djinn plan sync`), and refuses switching a
+wish to per azima while its azimas depend on each other: the window says which in a line, and the switch stays on per
+wish. Tasks inside one azima wait for each other as usual. A branch made before, stacked on the branch of the azima it
+depended on, keeps working as it is: Djinn never cuts it again nor rewrites it.
 
 Once every task part of an azima is finished, it is **To validate**: nothing is left for Djinn. Its card says what
 validating it takes, box by box of its plan file (a person, a machine, a release or a real model gives each proof), and
