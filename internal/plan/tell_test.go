@@ -348,6 +348,9 @@ func TestLeadAnswerNotToldToLead(t *testing.T) {
 	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
+	leads.running = map[string][]string{
+		LeadTerminal(id): {"/bin/sh", "-c", "claude --resume " + session},
+	}
 
 	// 1. Answer from the lead's terminal (Lead set to wish id, as $DJINN_LEAD does):
 	// attributed to CLOSER_LEAD and NOT told to the lead.
