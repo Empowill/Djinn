@@ -88,8 +88,8 @@ export interface Store {
   open(wishId: string, kinds?: readonly Change[]): () => void;
   // Loads kinds for a wish that are not yet loaded.
   loadKinds(wishId: string, kinds: readonly Change[]): Promise<void>;
-  // Loads the next page for a kind.
-  loadMore(wishId: string, kind: Change): Promise<void>;
+  // Loads the next page for a kind; of that many items at most, the server's default when none.
+  loadMore(wishId: string, kind: Change, pageSize?: number): Promise<void>;
   // Follows a task's events until the returned function is called, or the task ends.
   follow(taskId: string): () => void;
   // Reads a task's prompt alone, without loading its other events.
@@ -875,7 +875,7 @@ export function createStore(
       pending.details.set(wishId, pendingKinds);
       await flush();
     },
-    async loadMore(wishId, kind) {
+    async loadMore(wishId, kind, pageSize) {
       const key = `${wishId}:${kind}`;
       if (loadingMore.has(key)) return;
       const detail = state.details[wishId];
@@ -911,6 +911,7 @@ export function createStore(
           const res = await clients.tasks.list({
             wishId,
             pageToken: detail.tasksNextToken,
+            pageSize,
           });
           const cur = state.details[wishId];
           if (!cur) return;
