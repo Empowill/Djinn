@@ -85,7 +85,12 @@ func (p *winProc) spawn(path string, command []string, dir string, env []string)
 	if err != nil {
 		return err
 	}
-	line, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(command))
+	// A ShellCommand reaches cmd.exe as typed (cmdLine); any other program gets the C runtime's quoting.
+	cmd, ok := cmdLine(command)
+	if !ok {
+		cmd = windows.ComposeCommandLine(command)
+	}
+	line, err := windows.UTF16PtrFromString(cmd)
 	if err != nil {
 		return err
 	}

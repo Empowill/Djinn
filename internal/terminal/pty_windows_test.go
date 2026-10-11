@@ -82,6 +82,27 @@ func TestConsoleProgramThatEndsAtOnce(t *testing.T) {
 	}
 }
 
+// TestConsoleShellLineAsTyped: a line with quotes and a pipe, a PowerShell installer's shape, reaches cmd.exe as
+// typed. Quoted the C runtime's way, cmd.exe echoed \"lamp | smoke\".
+func TestConsoleShellLineAsTyped(t *testing.T) {
+	m := NewManager(Config{})
+	t.Cleanup(m.Close)
+	term, _, err := m.Open("main", ShellCommand(`echo "lamp | smoke"& exit /b 5`), t.TempDir(), 250, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := end(t, term); code != 5 {
+		t.Fatalf("exit code %d, want 5", code)
+	}
+	var out strings.Builder
+	if err := term.Read(0, nil, func(o Output) error { out.Write(o.Data); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"lamp | smoke"`) || strings.Contains(out.String(), `\"`) {
+		t.Fatalf("the line did not reach cmd.exe as typed:\n%q", out.String())
+	}
+}
+
 func TestConsoleResize(t *testing.T) {
 	m := NewManager(Config{})
 	term := helper(t, m, "main", "size", 120, 30)
