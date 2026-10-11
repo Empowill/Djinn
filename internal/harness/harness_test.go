@@ -495,3 +495,69 @@ func TestRecoverLeavesPlannedTasks(t *testing.T) {
 		t.Errorf("planned task after a restart: %s, want pending", got.GetStatus())
 	}
 }
+
+// envClaude is Claude played by the test binary: the fake's environment is added to every worker's,
+// and each one records its input and its arguments in files named after its task, in dir.
+type envClaude struct {
+	Claude
+	env []string
+	dir string
+}
+
+func (c envClaude) with(spec Spec) Spec {
+	spec.Env = append(append(spec.Env, c.env...), "DJINN_FAKE_INPUT="+filepath.Join(c.dir, "input-"+spec.TaskID),
+		"DJINN_FAKE_ARGS="+filepath.Join(c.dir, "args-"+spec.TaskID))
+	return spec
+}
+
+func (c envClaude) Start(ctx context.Context, spec Spec) (Worker, error) {
+	return c.Claude.Start(ctx, c.with(spec))
+}
+
+// waitFor polls cond until it holds, or fails after a few seconds.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("waited in vain for %s", what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestWarmLeftovers: a djinn up that died leaves the worktree of a warm worker no task took; the next one removes
+// it, and only it.
+func TestWarmLeftovers(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	home := t.TempDir()
+	e := up(t, home)
+	_, projectID := e.wish(t, repo)
+	left := worktreeDir(home, projectID, store.NewID())
+	taken := worktreeDir(home, projectID, store.NewID())
+	if _, err := addWorktree(t.Context(), repo, left, "djinn-warm-deadbeef"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := addWorktree(t.Context(), repo, taken, "w1-a-task-12345678"); err != nil {
+		t.Fatal(err)
+	}
+	e.down()
+
+	again := up(t, home)
+	defer again.down()
+	if _, err := os.Stat(left); !os.IsNotExist(err) {
+		t.Errorf("the leftover stayed: %v", err)
+	}
+	out, err := git(t.Context(), repo, "branch", "--list", "djinn-warm-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "" {
+		t.Errorf("its branch stayed: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(taken, "app")); err != nil {
+		t.Errorf("a task's worktree was removed: %v", err)
+	}
+}

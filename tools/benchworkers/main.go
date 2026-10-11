@@ -1,13 +1,13 @@
-// Command benchworkers compares five ways Djinn starts a worker on the same small task, with a real model: cold
-// (claude -p as Djinn runs it), --bare, a fork of a session, a warm worker, and a cold worker behind a stable brief.
+// Command benchworkers compares four ways Djinn starts a worker on the same small task, with a real model: cold
+// (claude -p as Djinn runs it), --bare, a fork of a session, and a cold worker behind a stable brief.
 // It measures the time to the first output, the tokens with the cache, and the cost. It is a PAID run: it prints
 // its quote, and refuses to run without BENCH_PAID=yes and a cap, BENCH_MAX_USD.
 //
 //	go tool task bench-workers                                   # the quote, and how to run it
 //	BENCH_PAID=yes BENCH_MAX_USD=0.50 go tool task bench-workers  # the run
 //
-// BENCH_MODEL (haiku by default), BENCH_RUNS (3 rounds by default), BENCH_WARM_WAIT (5s: how long a warm worker
-// loads before its message), BENCH_OUT (a file for the Markdown table, besides the output).
+// BENCH_MODEL (haiku by default), BENCH_RUNS (3 rounds by default), BENCH_OUT (a file for the Markdown table,
+// besides the output).
 package main
 
 import (
@@ -20,7 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -34,7 +33,7 @@ import (
 )
 
 // The variants, in the order of each round.
-var variants = []string{"cold", "bare", "fork", "warm", "brief"}
+var variants = []string{"cold", "bare", "fork", "brief"}
 
 // The task every variant runs: one file to read, one word to say.
 const (
@@ -56,12 +55,11 @@ var observed = []struct {
 }
 
 type config struct {
-	paid     bool
-	maxUSD   float64
-	model    string
-	runs     int
-	warmWait time.Duration
-	out      string
+	paid   bool
+	maxUSD float64
+	model  string
+	runs   int
+	out    string
 }
 
 func main() {
@@ -77,7 +75,7 @@ func main() {
 
 func readConfig(env func(string) string) (config, error) {
 	cfg := config{
-		paid: env("BENCH_PAID") == "yes", model: cmp.Or(env("BENCH_MODEL"), "haiku"), runs: 3, warmWait: 5 * time.Second,
+		paid: env("BENCH_PAID") == "yes", model: cmp.Or(env("BENCH_MODEL"), "haiku"), runs: 3,
 		out: env("BENCH_OUT"),
 	}
 	var err error
@@ -89,11 +87,6 @@ func readConfig(env func(string) string) (config, error) {
 	if v := env("BENCH_RUNS"); v != "" {
 		if cfg.runs, err = strconv.Atoi(v); err != nil || cfg.runs < 1 || cfg.runs > 20 {
 			return cfg, fmt.Errorf("BENCH_RUNS=%q: 1 to 20 rounds", v)
-		}
-	}
-	if v := env("BENCH_WARM_WAIT"); v != "" {
-		if cfg.warmWait, err = time.ParseDuration(v); err != nil {
-			return cfg, fmt.Errorf("BENCH_WARM_WAIT=%q: %w", v, err)
 		}
 	}
 	return cfg, nil
@@ -148,7 +141,6 @@ type result struct {
 	total    time.Duration // from asking to the result
 	ttftMS   float64       // claude's own ttft_ms, from its result line
 	usage    *planv1.Usage
-	rssMB    float64 // a warm worker's memory while it waited
 	err      string
 	asked    time.Time
 	gotFirst bool
@@ -210,7 +202,7 @@ func (b *bench) worktree(ctx context.Context, id string) (string, error) {
 func (b *bench) run(ctx context.Context) error {
 	// The parent of the forks: a session that has read the project, in the repository's own folder. The forks run
 	// in other folders, as a forked worker runs in its own worktree.
-	p := b.once(ctx, "parent", 0, harness.Claude{}, harness.Spec{Dir: b.repo, Prompt: parentPrompt}, false)
+	p := b.once(ctx, "parent", 0, harness.Claude{}, harness.Spec{Dir: b.repo, Prompt: parentPrompt})
 	b.parent = p.id
 	if p.res.err != "" {
 		fmt.Fprintf(b.out, "The parent session failed (%s): the forks will fail too.\n", p.res.err)
@@ -223,18 +215,15 @@ func (b *bench) run(ctx context.Context) error {
 			}
 			var c harness.Claude
 			spec := harness.Spec{Prompt: prompt}
-			warm := false
 			switch v {
 			case "bare":
 				c.Extra = []string{"--bare"}
 			case "fork":
 				spec.Resume, spec.Fork = b.parent, true
-			case "warm":
-				warm = true
 			case "brief":
 				c.Extra = []string{"--append-system-prompt-file", b.rules, "--exclude-dynamic-system-prompt-sections"}
 			}
-			b.once(ctx, v, round, c, spec, warm)
+			b.once(ctx, v, round, c, spec)
 		}
 	}
 	return b.report()
@@ -246,7 +235,7 @@ type ran struct {
 }
 
 // once runs the task once, in a new worktree unless spec has a folder, and records what it measured.
-func (b *bench) once(ctx context.Context, variant string, round int, c harness.Claude, spec harness.Spec, warm bool) ran {
+func (b *bench) once(ctx context.Context, variant string, round int, c harness.Claude, spec harness.Spec) ran {
 	id := uuid.Must(uuid.NewV7()).String()
 	r := result{variant: variant, round: round}
 	defer func() {
@@ -265,19 +254,8 @@ func (b *bench) once(ctx context.Context, variant string, round int, c harness.C
 		}
 		spec.Dir = dir
 	}
-	var w harness.Worker
-	var err error
-	if warm {
-		if w, err = c.Warm(ctx, spec); err == nil {
-			time.Sleep(b.cfg.warmWait)
-			r.rssMB = rss(w)
-			r.asked = time.Now()
-			err = w.Send(spec.Prompt)
-		}
-	} else {
-		r.asked = time.Now()
-		w, err = c.Start(ctx, spec)
-	}
+	r.asked = time.Now()
+	w, err := c.Start(ctx, spec)
 	if err != nil {
 		r.err = err.Error()
 		return ran{id, r}
@@ -307,20 +285,6 @@ func (b *bench) once(ctx context.Context, variant string, round int, c harness.C
 	return ran{id, r}
 }
 
-// rss is the memory of a worker's process in MB, read with ps on macOS and Linux; 0 elsewhere or when unknown.
-func rss(w harness.Worker) float64 {
-	p, ok := w.(interface{ PID() int })
-	if !ok || runtime.GOOS == "windows" {
-		return 0
-	}
-	out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(p.PID())).Output()
-	if err != nil {
-		return 0
-	}
-	kb, _ := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
-	return kb / 1024
-}
-
 func (r result) line() string {
 	if r.err != "" {
 		return fmt.Sprintf("%-5s #%d  failed: %s", r.variant, r.round, r.err)
@@ -335,8 +299,8 @@ func (r result) line() string {
 func (b *bench) report() error {
 	var t strings.Builder
 	fmt.Fprintf(&t, "\n%s, model %s, %d rounds, $%.4f spent. Medians:\n\n", time.Now().UTC().Format("2006-01-02"), b.cfg.model, b.cfg.runs, b.spent)
-	t.WriteString("| Variant | Runs ok | First output | Result | Claude's ttft | Cache read | Cache write | Input | Output | Cost | Warm RSS |\n")
-	t.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
+	t.WriteString("| Variant | Runs ok | First output | Result | Claude's ttft | Cache read | Cache write | Input | Output | Cost |\n")
+	t.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, v := range variants {
 		var ok []result
 		for _, r := range b.results {
@@ -355,11 +319,7 @@ func (b *bench) report() error {
 			slices.Sort(xs)
 			return xs[len(xs)/2]
 		}
-		rssText := "-"
-		if v == "warm" {
-			rssText = fmt.Sprintf("%.0f MB", med(func(r result) float64 { return r.rssMB }))
-		}
-		fmt.Fprintf(&t, "| %s | %d of %d | %.0f ms | %.0f ms | %.0f ms | %.0f | %.0f | %.0f | %.0f | $%.4f | %s |\n", v, len(ok), b.cfg.runs,
+		fmt.Fprintf(&t, "| %s | %d of %d | %.0f ms | %.0f ms | %.0f ms | %.0f | %.0f | %.0f | %.0f | $%.4f |\n", v, len(ok), b.cfg.runs,
 			med(func(r result) float64 { return float64(r.first.Milliseconds()) }),
 			med(func(r result) float64 { return float64(r.total.Milliseconds()) }),
 			med(func(r result) float64 { return r.ttftMS }),
@@ -367,7 +327,7 @@ func (b *bench) report() error {
 			med(func(r result) float64 { return float64(r.usage.GetCacheWriteTokens()) }),
 			med(func(r result) float64 { return float64(r.usage.GetInputTokens()) }),
 			med(func(r result) float64 { return float64(r.usage.GetOutputTokens()) }),
-			med(func(r result) float64 { return r.usage.GetCostUsd() }), rssText)
+			med(func(r result) float64 { return r.usage.GetCostUsd() }))
 	}
 	fmt.Fprint(b.out, t.String())
 	if b.cfg.out != "" {

@@ -348,4 +348,4 @@ release, it looks at the checkout its build comes from, in the project whose rep
 
 Permissions stay in [`.agents/permissions.txtpb`](providers.md#the-agentspermissionstxtpb-format), templates in
 the skills ([wish templates](wish-templates.md)), gates are named where they run (`djinn gate run <name>`). The
-lead's agent, warm workers, CPU limits and the machine's workers stay with each developer's `djinn up`.
+lead's agent, CPU limits and the machine's workers stay with each developer's `djinn up`.
