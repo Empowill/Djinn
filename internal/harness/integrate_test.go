@@ -669,7 +669,7 @@ func TestTaskEndsWithUnreadableSettingsGetsMergedOnceFixed(t *testing.T) {
 
 	// Task W1 finished while settings were unreadable:
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
-		task.Integration = nil // Simulate ending when pendIntegration had returned false or settings failed
+		in.h.pendIntegration(task)
 	})
 
 	// Also verify pendIntegration directly on a done task when settings are unreadable
@@ -708,5 +708,64 @@ func TestTaskEndsWithUnreadableSettingsGetsMergedOnceFixed(t *testing.T) {
 	in.pass(t, 0)
 	if got := in.states(t, w1); got != "W1 COMMITTED" {
 		t.Fatalf("after fixing settings, W1 state: got %q, want 'W1 COMMITTED'", got)
+	}
+}
+
+// TestOldTaskWithoutIntegrationRecordIsNotQueued: a task with no integration record is never
+// queued afterwards: nil means Djinn did not integrate it, by design.
+func TestOldTaskWithoutIntegrationRecordIsNotQueued(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
+		task.Integration = nil
+	})
+
+	in.pass(t, 0)
+
+	gotW1, err := store.Get[*planv1.Task](t.Context(), in.db, w1.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotW1.GetIntegration() != nil {
+		t.Fatalf("old task should not have an integration record after pass, got %v", gotW1.GetIntegration())
+	}
+}
+
+// TestNoOpBatchTellsLeadAlreadyIn verifies that a batch that does not move the branch
+// (its work was already in) tells the lead "Wnn was already in <branch>", never "merged as".
+func TestNoOpBatchTellsLeadAlreadyIn(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+
+	var told []string
+	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
+		told = append(told, line)
+		return nil
+	})
+
+	// W1 finishes and is committed
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.pass(t, 0)
+	if got := in.states(t, w1); got != "W1 COMMITTED" {
+		t.Fatalf("W1 state: %s", got)
+	}
+
+	told = nil
+	// W2 finishes with no new files (worktree already matches branch HEAD)
+	w2 := in.finished(t, "W2", nil)
+	in.pass(t, 0)
+	if got := in.states(t, w2); got != "W2 COMMITTED" {
+		t.Fatalf("W2 state: %s", got)
+	}
+
+	wantTold := leadAlreadyInLine("W2", in.branch)
+	if !slices.Contains(told, wantTold) {
+		t.Errorf("told lines %v; want to contain %q", told, wantTold)
+	}
+	for _, line := range told {
+		if strings.Contains(line, "merged into") || strings.Contains(line, "merged as") {
+			t.Errorf("told line %q should not mention merge for a no-op batch", line)
+		}
 	}
 }

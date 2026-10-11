@@ -2102,7 +2102,7 @@ type TaskServiceClient interface {
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
 	// Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
 	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
-	// provider, model, prompt (for its next continue), and azima, never its dependencies once it ran.
+	// provider, model, prompt (for its next continue), azima, and integration (none clears it), never its dependencies once it ran.
 	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
@@ -2417,7 +2417,7 @@ type TaskServiceHandler interface {
 	Send(context.Context, *connect.Request[v1.TaskServiceSendRequest]) (*connect.Response[v1.TaskServiceSendResponse], error)
 	// Update a task: only the fields given change. A task not started (planned, waiting) may change everything; a running
 	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
-	// provider, model, prompt (for its next continue), and azima, never its dependencies once it ran.
+	// provider, model, prompt (for its next continue), azima, and integration (none clears it), never its dependencies once it ran.
 	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)

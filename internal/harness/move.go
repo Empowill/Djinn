@@ -24,6 +24,44 @@ func leadMergeLine(batchCodes, branch, sha string, moves []string) string {
 	return line
 }
 
+// leadAlreadyInLine formats the message telling the lead that the work was already in the branch.
+func leadAlreadyInLine(batchCodes, branch string) string {
+	return fmt.Sprintf("Djinn: %s was already in %s", batchCodes, branch)
+}
+
+// remoteTags returns the tags on remote mapped to their peeled commit shas.
+func remoteTags(ctx context.Context, repo, remote string) (map[string]string, error) {
+	out, err := git(ctx, repo, "ls-remote", "--tags", remote)
+	if err != nil {
+		return nil, err
+	}
+	tags := make(map[string]string)
+	peeled := make(map[string]bool)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		sha, ref := fields[0], fields[1]
+		if !strings.HasPrefix(ref, "refs/tags/") {
+			continue
+		}
+		tag := strings.TrimPrefix(ref, "refs/tags/")
+		if strings.HasSuffix(tag, "^{}") {
+			tag = strings.TrimSuffix(tag, "^{}")
+			tags[tag] = sha
+			peeled[tag] = true
+		} else if !peeled[tag] {
+			tags[tag] = sha
+		}
+	}
+	return tags, nil
+}
+
 // needsMoveName returns the name of the move for an added needs: box.
 func needsMoveName(box, machine string) string {
 	if box != "" {

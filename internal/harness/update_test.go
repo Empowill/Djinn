@@ -983,3 +983,77 @@ func TestContinueWithForeignModelInStoreSanitizes(t *testing.T) {
 		t.Errorf("worker spec.Model: %q, want %q", got, want)
 	}
 }
+
+// TestUpdateIntegrationNone: djinn task update <task> --integration none clears the integration record,
+// refused while it is merging (integrating).
+func TestUpdateIntegrationNone(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	task := e.mustSpawn(t, wishID, "Finished task", "text hello", &planv1.TaskServiceSpawnRequest{
+		Provider: planv1.Provider_PROVIDER_FAKE,
+		Later:    true,
+	})
+	// Set task as finished with an integration record
+	stored := e.get(t, task.GetId())
+	stored.Status = planv1.TaskStatus_TASK_STATUS_DONE
+	stored.Integration = &planv1.TaskIntegration{
+		State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+		Sha:   "deadbeef",
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/put", stored); err != nil {
+			return err
+		}
+		return tx.Put(stored)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Refused while integrating
+	stored.Integration.State = planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/put", stored); err != nil {
+			return err
+		}
+		return tx.Put(stored)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	none := "none"
+	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:      task.GetId(),
+		Integration: &none,
+	}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("while integrating, got %v, want FailedPrecondition", err)
+	}
+
+	// 2. Allowed when not integrating: clears integration record via CLI
+	stored.Integration.State = planv1.IntegrationState_INTEGRATION_STATE_COMMITTED
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "test/put", stored); err != nil {
+			return err
+		}
+		return tx.Put(stored)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errs bytes.Buffer
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	code := cli.Run(ctx, []string{"task", "update", task.GetId(), "--integration", "none"},
+		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+	if code != 0 {
+		t.Fatalf("djinn task update --integration none failed with code %d: %s", code, errs.String())
+	}
+
+	after := e.get(t, task.GetId())
+	if after.GetIntegration() != nil {
+		t.Fatalf("task integration after update --integration none: got %v, want nil", after.GetIntegration())
+	}
+}

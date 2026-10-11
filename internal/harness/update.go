@@ -17,7 +17,7 @@ import (
 // Update edits a task in place: only the fields given change, in one journaled transaction.
 // A task not started (planned, waiting) may change everything; a running or paused task may change its title only;
 // a finished task (done, failed, stopped, cut short) may change title, provider/model, prompt (for its next continue),
-// and azima; never its dependencies once it ran.
+// azima, and integration (none clears it); never its dependencies once it ran.
 func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	h.answering.Lock()
@@ -42,8 +42,9 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	decisionGiven := req.Decision != nil
 	budgetGiven := req.MaxBudgetUsd != nil
 	scopesGiven := req.WriteScopes != nil
+	integrationGiven := req.Integration != nil
 
-	if !titleGiven && !promptGiven && !providerGiven && !modelGiven && !partOfGiven && !afterGiven && !decisionGiven && !budgetGiven && !scopesGiven {
+	if !titleGiven && !promptGiven && !providerGiven && !modelGiven && !partOfGiven && !afterGiven && !decisionGiven && !budgetGiven && !scopesGiven && !integrationGiven {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("nothing to update: give at least one field"))
 	}
 
@@ -75,7 +76,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			return nil, connect.NewError(connect.CodeFailedPrecondition,
 				fmt.Errorf("task %s is %s: use djinn task send", task.GetCode(), short(s)))
 		}
-		if providerGiven || modelGiven || partOfGiven || afterGiven || decisionGiven || budgetGiven || scopesGiven {
+		if providerGiven || modelGiven || partOfGiven || afterGiven || decisionGiven || budgetGiven || scopesGiven || integrationGiven {
 			return nil, connect.NewError(connect.CodeFailedPrecondition,
 				fmt.Errorf("task %s is %s: the rest after it ends", task.GetCode(), short(s)))
 		}
@@ -142,6 +143,17 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			return nil, err
 		}
 		t.WriteScopes = scopes
+	}
+
+	if integrationGiven {
+		if task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING {
+			return nil, connect.NewError(connect.CodeFailedPrecondition,
+				fmt.Errorf("task %s is integrating: refused while it merges", task.GetCode()))
+		}
+		if req.GetIntegration() != "none" {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("integration may only be set to none"))
+		}
+		t.Integration = nil
 	}
 
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": task.GetWishId()})
