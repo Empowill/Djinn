@@ -57,7 +57,7 @@ func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
 // answer (did) when it settled it. Handlers calls it once the answer is stored, when it serves the leads; the answer
 // stays in the brief whatever happens here.
 func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, did string) {
-	if q.GetAnswer() == nil {
+	if q.GetAnswer() == nil || q.GetAnswer().GetActor() == planv1.Closer_CLOSER_LEAD {
 		return
 	}
 	if routeOption(q) != nil {

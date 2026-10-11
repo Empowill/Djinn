@@ -14,6 +14,7 @@ func (c clients) answer(t *testing.T, q *planv1.Question, choice planv1.Choice, 
 	t.Helper()
 	if _, err := c.questions.Answer(t.Context(), connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
 		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}, Choice: choice, Note: note,
+		By: planv1.Closer_CLOSER_DEVELOPER,
 	})); err != nil {
 		t.Fatal(err)
 	}
@@ -195,5 +196,64 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 	wantInv := LeadTerminal(id) + ": Djinn: " + qInv.GetCode() + `, the developer wants to know more before answering. Note: "investigate this". W13 investigates, then revises it; you will hear when it ends.`
 	if len(leads.said) != 1 || leads.said[0] != wantInv {
 		t.Errorf("with investigator: said %q, want %q", leads.said, wantInv)
+	}
+}
+
+func TestLeadAnswerNotToldToLead(t *testing.T) {
+	ctx := t.Context()
+	leads := &fakeLeads{}
+	c := serve(t, WithLeads(leads))
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Lead answer", ProjectIds: []string{project.Msg.GetProject().GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := made.Msg.GetWish().GetId()
+	if _, err := setLead(t, c, &planv1.WishServiceSetLeadRequest{WishId: id, SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Answer by the lead (unspecified By, no TaskId -> CLOSER_LEAD): not told to the lead.
+	q1 := c.ask(t, id, "A", "B")
+	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q1.GetId()}},
+		Choice:   planv1.Choice_CHOICE_A,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(leads.said) != 0 {
+		t.Errorf("lead answer was told to the lead: %v", leads.said)
+	}
+	saved1 := c.questionOf(t, q1.GetId())
+	if saved1.GetAnswer().GetActor() != planv1.Closer_CLOSER_LEAD {
+		t.Errorf("actor = %v, want CLOSER_LEAD", saved1.GetAnswer().GetActor())
+	}
+
+	// 2. Answer with explicit CLOSER_LEAD: not told to the lead.
+	q2 := c.ask(t, id, "A", "B")
+	if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q2.GetId()}},
+		Choice:   planv1.Choice_CHOICE_B,
+		By:       planv1.Closer_CLOSER_LEAD,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(leads.said) != 0 {
+		t.Errorf("lead answer was told to the lead: %v", leads.said)
+	}
+
+	// 3. Answer by the developer (By: CLOSER_DEVELOPER): IS told to the lead.
+	q3 := c.ask(t, id, "A", "B")
+	c.answer(t, q3, planv1.Choice_CHOICE_A, "looks good")
+	if len(leads.said) != 1 {
+		t.Fatalf("developer answer was not told to the lead: %v", leads.said)
+	}
+	if !strings.Contains(leads.said[0], "Q03 answered A") {
+		t.Errorf("said = %q, want Q03 answered A", leads.said[0])
 	}
 }

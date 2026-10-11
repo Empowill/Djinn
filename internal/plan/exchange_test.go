@@ -156,6 +156,7 @@ func source(t *testing.T) (clients, *planv1.Wish, string) {
 	c.ask(t, wish.GetId())
 	_, err = c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
 		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: asked.Msg.GetQuestion().GetCode()}}, Choice: planv1.Choice_CHOICE_A,
+		By: planv1.Closer_CLOSER_DEVELOPER,
 	}))
 	if err != nil {
 		t.Fatal(err)

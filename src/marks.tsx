@@ -8,6 +8,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   Change,
   type Choice,
+  Closer,
   type Mark,
   MarkKind,
 } from "../gen/ts/plan/v1/plan_pb";
@@ -98,6 +99,7 @@ export function useWrites(onToast: (text: string) => void) {
             choice,
             note,
             wishId,
+            by: Closer.DEVELOPER,
           }),
         QUESTIONS_CHANGES,
       ),
@@ -172,6 +174,7 @@ export function useWrites(onToast: (text: string) => void) {
             question: { ref: { case: "id", value: id } },
             note,
             wishId,
+            by: Closer.DEVELOPER,
           }),
         QUESTIONS_CHANGES,
         t("question.withdrawn_toast"),

@@ -86,9 +86,11 @@ The lead is the agent the developer talks to. It changes the plan with `djinn`, 
   refusal named, and Djinn starts it again once, told what was refused: `Djinn: W12 (Q43 → tasks) failed: its command
   was refused: djinn task list … | grep …. Djinn starts it again: W13, …`. The lead acts only if the retry gives up
   too. Answers Djinn settles itself (an edit question, a question on work that failed to integrate, a routed request, a
-  grant) say what Djinn did. The agent reads each line as a message, queued while it works. The line waits until the
-  developer has not typed in that terminal for three seconds, and lines go out in order. A lead that does not run is
-  reopened on its session first, as `djinn wish resume` does, without taking the window; only an active wish's.
+  grant) say what Djinn did. Answers given by the lead itself are not echoed back. The agent reads each line as a message,
+  queued while it works; each line is typed with Enter and paced so consecutive lines are submitted cleanly and never
+  clump or remain in the prompt box. The line waits until the developer has not typed in that terminal for three seconds,
+  and lines go out in order. A lead that does not run is reopened on its session first, as `djinn wish resume` does,
+  without taking the window; only an active wish's.
   A wish without a lead session keeps the answer in its brief's decisions (`internal/plan/tell.go`).
 - **Tasks.** `djinn task spawn` starts a worker. A task that cannot start yet waits, and says why.
   `djinn task watch <task>` follows its events; `djinn task stop <task>` stops it.
