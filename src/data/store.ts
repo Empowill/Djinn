@@ -292,7 +292,11 @@ function apply(
   };
 }
 
-export function createStore(clients: Clients, retry = 1000): Store {
+export function createStore(
+  clients: Clients,
+  retry = 1000,
+  throttle = Math.min(retry, 200),
+): Store {
   let state: State = {
     live: false,
     loaded: false,
@@ -323,8 +327,13 @@ export function createStore(clients: Clients, retry = 1000): Store {
   const opened = new Map<string, number>();
   const loadingMore = new Set<string>();
   const pendingPrompts = new Map<string, Promise<string>>();
-  let flushing: Promise<void> | undefined;
-  let again = false;
+  const lastReadAt = new Map<string, number>();
+
+  let active: Promise<void> | undefined;
+  let scheduled: Promise<void> | undefined;
+  let scheduledResolve: (() => void) | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timerAt = 0;
 
   // mark notes what to read again; with changed, the tasks, questions and blocks it brings need no read. A change
   // this page does not know reads everything again. Only loaded kinds of opened wishes are re-read.
@@ -379,15 +388,86 @@ export function createStore(clients: Clients, retry = 1000): Store {
     }
   }
 
+  function canRead(key: string, now: number): boolean {
+    const last = lastReadAt.get(key);
+    return last === undefined || now - last >= throttle;
+  }
+
+  function nextDelay(now: number): number {
+    let minWait = Infinity;
+    const check = (key: string) => {
+      const last = lastReadAt.get(key);
+      if (last === undefined) minWait = 0;
+      else {
+        const wait = throttle - (now - last);
+        if (wait <= 0) minWait = 0;
+        else if (wait < minWait) minWait = wait;
+      }
+    };
+    if (pending.wishes) check("wishes");
+    if (pending.projects) check("projects");
+    if (pending.inbox) check("inbox");
+    for (const [wishId, kinds] of pending.details) {
+      for (const k of kinds) {
+        check(`${wishId}:${k}`);
+      }
+    }
+    if (pending.changes.size > 0) {
+      minWait = 0;
+    }
+    return minWait === Infinity ? -1 : minWait;
+  }
+
   async function read() {
-    const wishes = pending.wishes;
-    const projects = pending.projects;
-    const inbox = pending.inbox;
-    const details = [...pending.details];
+    const now = Date.now();
+    const wishes = pending.wishes && canRead("wishes", now);
+    const projects = pending.projects && canRead("projects", now);
+    const inbox = pending.inbox && canRead("inbox", now);
+    if (wishes) {
+      pending.wishes = false;
+      lastReadAt.set("wishes", now);
+    }
+    if (projects) {
+      pending.projects = false;
+      lastReadAt.set("projects", now);
+    }
+    if (inbox) {
+      pending.inbox = false;
+      lastReadAt.set("inbox", now);
+    }
+
+    const details: [string, Set<Change>][] = [];
+    for (const [wishId, kinds] of pending.details) {
+      const eligible = new Set<Change>();
+      for (const k of kinds) {
+        if (canRead(`${wishId}:${k}`, now)) {
+          eligible.add(k);
+        }
+      }
+      if (eligible.size > 0) {
+        details.push([wishId, eligible]);
+        for (const k of eligible) {
+          kinds.delete(k);
+          lastReadAt.set(`${wishId}:${k}`, now);
+        }
+        if (kinds.size === 0) {
+          pending.details.delete(wishId);
+        }
+      }
+    }
+
     const changes = [...pending.changes];
-    pending.wishes = pending.projects = pending.inbox = false;
-    pending.details.clear();
     pending.changes.clear();
+
+    if (
+      !wishes &&
+      !projects &&
+      !inbox &&
+      details.length === 0 &&
+      changes.length === 0
+    ) {
+      return;
+    }
     const patch: Partial<State> = {};
     const errors: string[] = [];
     const reads: Promise<void>[] = [];
@@ -558,27 +638,110 @@ export function createStore(clients: Clients, retry = 1000): Store {
     }
     if (touched) patch.details = next;
     if (wishes && projects && !errors.length) patch.loaded = true;
-    patch.error = errors[0] ?? "";
-    set(patch);
+    if (
+      wishes ||
+      projects ||
+      inbox ||
+      details.length > 0 ||
+      changes.length > 0 ||
+      errors.length > 0 ||
+      state.error
+    ) {
+      patch.error = errors[0] ?? "";
+      set(patch);
+    }
   }
 
-  // flush reads what is pending; a change that comes while it reads is read right after.
-  function flush(): Promise<void> {
-    if (flushing) {
-      again = true;
-      return flushing;
+  function scheduleFlush(delay: number): Promise<void> {
+    if (!scheduled) {
+      scheduled = new Promise<void>((resolve) => {
+        scheduledResolve = resolve;
+      });
     }
-    flushing = (async () => {
+    const target = Date.now() + Math.max(0, delay);
+    if (timer !== undefined) {
+      if (target < timerAt) {
+        clearTimeout(timer);
+        timer = undefined;
+      } else {
+        return scheduled;
+      }
+    }
+    timerAt = target;
+    const wait = Math.max(0, target - Date.now());
+    timer = setTimeout(runScheduled, wait);
+    return scheduled;
+  }
+
+  async function runScheduled() {
+    timer = undefined;
+    timerAt = 0;
+    if (active) return;
+    const resolve = scheduledResolve;
+    scheduled = undefined;
+    scheduledResolve = undefined;
+
+    const promise = (async () => {
       try {
-        do {
-          again = false;
-          await read();
-        } while (again);
+        await read();
       } finally {
-        flushing = undefined;
+        active = undefined;
+        checkAfterActive();
       }
     })();
-    return flushing;
+    active = promise;
+    await promise;
+    resolve?.();
+  }
+
+  function checkAfterActive() {
+    const delay = nextDelay(Date.now());
+    if (delay >= 0) {
+      scheduleFlush(delay);
+    } else if (scheduledResolve) {
+      const resolve = scheduledResolve;
+      scheduled = undefined;
+      scheduledResolve = undefined;
+      resolve();
+    }
+  }
+
+  // flush reads what is pending; a change that comes while it reads is read right after, coalesced and throttled.
+  function flush(): Promise<void> {
+    if (active) {
+      if (!scheduled) {
+        scheduled = new Promise<void>((resolve) => {
+          scheduledResolve = resolve;
+        });
+      }
+      return scheduled;
+    }
+    const now = Date.now();
+    const delay = nextDelay(now);
+    if (delay > 0) {
+      return scheduleFlush(delay);
+    }
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+      timerAt = 0;
+    }
+    const resolve = scheduledResolve;
+    scheduled = undefined;
+    scheduledResolve = undefined;
+    const promise = (async () => {
+      try {
+        await read();
+      } finally {
+        active = undefined;
+        checkAfterActive();
+      }
+    })();
+    active = promise;
+    if (resolve) {
+      void promise.then(resolve);
+    }
+    return active;
   }
 
   const following = new Map<
@@ -649,7 +812,10 @@ export function createStore(clients: Clients, retry = 1000): Store {
               {},
               { signal: abort.signal },
             )) {
-              if (!state.live) set({ live: true });
+              if (!state.live) {
+                lastReadAt.clear();
+                set({ live: true });
+              }
               mark(res.wishId, res.changes, res.changed);
               void flush();
             }
@@ -661,7 +827,14 @@ export function createStore(clients: Clients, retry = 1000): Store {
           await new Promise((r) => setTimeout(r, retry));
         }
       })();
-      return () => abort.abort();
+      return () => {
+        abort.abort();
+        if (timer !== undefined) {
+          clearTimeout(timer);
+          timer = undefined;
+          timerAt = 0;
+        }
+      };
     },
     open(wishId, kinds) {
       opened.set(wishId, (opened.get(wishId) ?? 0) + 1);
@@ -821,6 +994,18 @@ export function createStore(clients: Clients, retry = 1000): Store {
       return read;
     },
     changed(wishId, changes) {
+      for (const change of changes) {
+        if (change === Change.WISH) lastReadAt.delete("wishes");
+        else if (change === Change.PROJECT) lastReadAt.delete("projects");
+        else if (change === Change.INBOX) lastReadAt.delete("inbox");
+        else if (wishId && DETAIL.includes(change))
+          lastReadAt.delete(`${wishId}:${change}`);
+      }
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+        timerAt = 0;
+      }
       mark(wishId, changes);
       return flush();
     },

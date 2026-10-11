@@ -1,7 +1,7 @@
 // End-to-end render performance on a real-size wish (W174): measures opening the wish, switching between tabs
 // (tasks, decisions, journal, blocks), opening a task, and change arrival over the live watch stream.
 // Run alone with: go tool task e2e -- e2e/wish-render.spec.ts
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -57,17 +57,9 @@ test.describe("wish render performance @render", () => {
     }
   });
 
-  test("measure render times against budgets on real-size wish", async ({
-    page,
-  }) => {
-    portable();
+  async function runBudgets(page: Page, label: string) {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
-
-    await page.goto(process.env.DJINN_URL!);
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
 
     const runs = 3;
 
@@ -81,13 +73,16 @@ test.describe("wish render performance @render", () => {
         await expect(page.locator(".flight-plan")).toBeVisible();
       }
 
-      const startMark = `open-start-${i}`;
-      const endMark = `open-end-${i}`;
-      const measureName = `open-duration-${i}`;
+      const startMark = `open-start-${i}-${label}`;
+      const endMark = `open-end-${i}-${label}`;
+      const measureName = `open-duration-${i}-${label}`;
 
       const duration = await page.evaluate(
         async ({ startMark, endMark, measureName }) => {
           const wishBtn =
+            Array.from(
+              document.querySelectorAll<HTMLButtonElement>(".wish-nav"),
+            ).find((el) => el.textContent?.includes("A wish of real size")) ??
             document.querySelector<HTMLButtonElement>(".wish-nav");
           if (!wishBtn) throw new Error(".wish-nav button not found");
 
@@ -174,9 +169,9 @@ test.describe("wish render performance @render", () => {
 
     for (let i = 0; i < runs; i++) {
       for (const tab of tabsToTest) {
-        const startMark = `tab-${tab.id}-start-${i}`;
-        const endMark = `tab-${tab.id}-end-${i}`;
-        const measureName = `tab-${tab.id}-duration-${i}`;
+        const startMark = `tab-${tab.id}-start-${i}-${label}`;
+        const endMark = `tab-${tab.id}-end-${i}-${label}`;
+        const measureName = `tab-${tab.id}-duration-${i}-${label}`;
 
         const duration = await page.evaluate(
           async ({
@@ -245,9 +240,9 @@ test.describe("wish render performance @render", () => {
 
     const taskOpenMeasures: number[] = [];
     for (let i = 0; i < runs; i++) {
-      const startMark = `task-open-start-${i}`;
-      const endMark = `task-open-end-${i}`;
-      const measureName = `task-open-duration-${i}`;
+      const startMark = `task-open-start-${i}-${label}`;
+      const endMark = `task-open-end-${i}-${label}`;
+      const measureName = `task-open-duration-${i}-${label}`;
 
       const duration = await page.evaluate(
         async ({ startMark, endMark, measureName }) => {
@@ -331,10 +326,10 @@ test.describe("wish render performance @render", () => {
 
     const changeMeasures: number[] = [];
     for (let i = 0; i < runs; i++) {
-      const questionTitle = `Measure Question ${i + 1} ${randomUUID().slice(0, 8)}`;
-      const startMark = `change-start-${i}`;
-      const endMark = `change-end-${i}`;
-      const measureName = `change-duration-${i}`;
+      const questionTitle = `Measure Question ${label} ${i + 1} ${randomUUID().slice(0, 8)}`;
+      const startMark = `change-start-${i}-${label}`;
+      const endMark = `change-end-${i}-${label}`;
+      const measureName = `change-duration-${i}-${label}`;
 
       // Start observer in the page before triggering the command
       const waitPromise = page.evaluate(
@@ -400,7 +395,7 @@ test.describe("wish render performance @render", () => {
     const medianTaskOpen = median(taskOpenMeasures);
     const medianChange = median(changeMeasures);
 
-    console.log("MEASUREMENTS (runs = 3):");
+    console.log(`MEASUREMENTS (${label}, runs = ${runs}):`);
     console.log(
       `Open wish: raw=[${openMeasures.map((n) => n.toFixed(1)).join(", ")}] ms, median=${medianOpen.toFixed(1)} ms`,
     );
@@ -431,5 +426,59 @@ test.describe("wish render performance @render", () => {
     expect(medianBlocks).toBeLessThanOrEqual(BUDGET_TAB_BLOCKS_MS);
     expect(medianTaskOpen).toBeLessThanOrEqual(BUDGET_TASK_OPEN_MS);
     expect(medianChange).toBeLessThanOrEqual(BUDGET_CHANGE_ARRIVAL_MS);
+  }
+
+  test("measure render times against budgets on real-size wish", async ({
+    page,
+  }) => {
+    portable();
+    await page.goto(process.env.DJINN_URL!);
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+
+    await runBudgets(page, "baseline");
+  });
+
+  test("window stays responsive within render budgets with several running fake workers", async ({
+    page,
+  }) => {
+    portable();
+    const title = `Workers wish ${randomUUID().slice(0, 8)}`;
+    const workerWish = JSON.parse(djinn("wish", "make", title, "--json")).wish;
+    const taskIds: string[] = [];
+    try {
+      for (let i = 1; i <= 3; i++) {
+        const spawned = JSON.parse(
+          djinn(
+            "task",
+            "spawn",
+            workerWish.id,
+            "--title",
+            `Running worker ${i}`,
+            "--provider",
+            "fake",
+            "--prompt",
+            "text working\nsleep 30s\ntext done",
+            "--json",
+          ),
+        );
+        taskIds.push(spawned.task.id);
+      }
+
+      await page.goto(process.env.DJINN_URL!);
+      await expect(
+        page.locator(".app-statusbar").getByText("Live"),
+      ).toBeVisible();
+
+      await runBudgets(page, "with running workers");
+    } finally {
+      for (const tid of taskIds) {
+        try {
+          djinn("task", "stop", tid);
+        } catch {}
+      }
+      djinn("wish", "delete", workerWish.id);
+    }
   });
 });

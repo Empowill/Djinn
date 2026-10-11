@@ -33,6 +33,12 @@ func WithMeasure(every time.Duration, read MeasureFunc) Option {
 // reading is written anyway.
 const rewrite = time.Minute
 
+// minCPUInterval is the least time between two writes caused solely by CPU movements.
+const minCPUInterval = 30 * time.Second
+
+// minCPUMoved is the minimum CPU percentage point change required after minCPUInterval to justify a write.
+const minCPUMoved = 20.0
+
 // meter follows the readings of one worker.
 type meter struct {
 	proc    Process
@@ -123,19 +129,32 @@ func (h *Harness) measure(r *run, m *meter) {
 	m.written = res
 }
 
-// worth says whether a reading moved enough from the one written to be written: a process more or less, 5 points
-// of CPU, 5% of memory, a new peak as large, or a minute gone.
+// worth says whether a reading moved enough from the one written to be written: a process more or less,
+// 5% of memory, a new peak as large, 20 points of CPU after 30 s, or a minute gone.
 func worth(was, now *planv1.Resources) bool {
 	if was == nil || was.GetReadTime() == nil {
 		return true
 	}
-	moved := func(a, b float64) bool { return math.Abs(a-b) >= 5 }
+	elapsed := now.GetReadTime().AsTime().Sub(was.GetReadTime().AsTime())
+	if elapsed >= rewrite {
+		return true
+	}
+	if was.GetProcesses() != now.GetProcesses() {
+		return true
+	}
 	ratio := func(a, b uint64) bool { return math.Abs(float64(a)-float64(b)) >= 0.05*float64(max(a, 1)) }
-	return was.GetProcesses() != now.GetProcesses() ||
-		moved(was.GetCpuPercent(), now.GetCpuPercent()) || moved(was.GetPeakCpuPercent(), now.GetPeakCpuPercent()) ||
-		ratio(was.GetMemoryBytes(), now.GetMemoryBytes()) || ratio(was.GetPeakMemoryBytes(), now.GetPeakMemoryBytes()) ||
-		ratio(was.GetP95MemoryBytes(), now.GetP95MemoryBytes()) ||
-		now.GetReadTime().AsTime().Sub(was.GetReadTime().AsTime()) >= rewrite
+	if ratio(was.GetMemoryBytes(), now.GetMemoryBytes()) ||
+		ratio(was.GetPeakMemoryBytes(), now.GetPeakMemoryBytes()) ||
+		ratio(was.GetP95MemoryBytes(), now.GetP95MemoryBytes()) {
+		return true
+	}
+	if elapsed >= minCPUInterval {
+		cpuMoved := func(a, b float64) bool { return math.Abs(a-b) >= minCPUMoved }
+		if cpuMoved(was.GetCpuPercent(), now.GetCpuPercent()) || cpuMoved(was.GetPeakCpuPercent(), now.GetPeakCpuPercent()) {
+			return true
+		}
+	}
+	return false
 }
 
 // fresh clears what the task's last worker was using, keeping its peaks and p95, as a new worker starts.
