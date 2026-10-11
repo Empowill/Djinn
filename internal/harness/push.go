@@ -418,7 +418,7 @@ func (h *Harness) pushedByHand(
 	}
 	if old != "" && isAncestor(ctx, repo, old, sha) {
 		if n, err := git(ctx, repo, "rev-list", "--count", "--no-merges", old+".."+sha); err == nil {
-			n, _ := strconv.Atoi(n)
+			n, _ := strconv.ParseInt(n, 10, 32)
 			record.Count = int32(n)
 		}
 		if out, err := git(ctx, repo, "log", "--no-merges", "--format=%s", "-n", strconv.Itoa(pushTitles), old+".."+sha); err == nil && out != "" {
