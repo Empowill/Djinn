@@ -100,14 +100,28 @@ func TestCommentStorage(t *testing.T) {
 	if c.GetCreateTime() == nil {
 		t.Errorf("comment CreateTime is nil")
 	}
+	if c.GetSentTo() != "" {
+		t.Errorf("comment on an ended task went to %q, want to no worker", c.GetSentTo())
+	}
+
+	// A commit given as a branch name is kept as the commit it is now: a later commit on the branch resolves it.
+	byBranch, err := e.tasks.Comment(ctx, connect.NewRequest(&planv1.TaskServiceCommentRequest{
+		TaskId: taskID, File: "code.go", Line: 1, Commit: plan.CheckedOutBranch(ctx, repo), Text: "Name the package",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := byBranch.Msg.GetComment().GetCommit(); got != sha {
+		t.Errorf("comment on a branch: Commit = %q, want %q", got, sha)
+	}
 
 	// Verify task in store has the comment.
 	task, err := store.Get[*planv1.Task](ctx, e.db, taskID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(task.GetComments()) != 1 {
-		t.Fatalf("task comments count = %d, want 1", len(task.GetComments()))
+	if len(task.GetComments()) != 2 {
+		t.Fatalf("task comments count = %d, want 2", len(task.GetComments()))
 	}
 	if task.GetComments()[0].GetId() != c.GetId() {
 		t.Errorf("stored comment ID = %q, want %q", task.GetComments()[0].GetId(), c.GetId())
@@ -120,8 +134,8 @@ func TestCommentStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(commands) != 1 || commands[0].Actor != actorLocal {
-		t.Fatalf("journaled commands = %+v, want 1 by %s", commands, actorLocal)
+	if len(commands) != 2 || commands[0].Actor != actorLocal {
+		t.Fatalf("journaled commands = %+v, want 2 by %s", commands, actorLocal)
 	}
 
 	// 2. Validate empty text rejection.
@@ -174,6 +188,9 @@ func TestCommentSend(t *testing.T) {
 	if res.Msg.GetComment().GetId() == "" {
 		t.Fatalf("comment was not created")
 	}
+	if got := res.Msg.GetComment().GetSentTo(); got != task.GetId() {
+		t.Errorf("comment went to %q, want the running task %s", got, task.GetId())
+	}
 
 	// Worker should receive the instruction, unblock from wait, and complete.
 	var events []*planv1.TaskEvent
@@ -214,6 +231,11 @@ func TestCommentSend(t *testing.T) {
 	if !received {
 		t.Errorf("worker did not process message: %v", eventTexts(events))
 	}
+
+	// The worker's end writes its copy of the task, older than the comment: the comment stays.
+	if got := e.ended(t, task.GetId()).GetComments(); len(got) != 1 || got[0].GetSentTo() != task.GetId() {
+		t.Errorf("comments after the worker ended = %v, want the one sent to it", got)
+	}
 }
 
 // TestCommentTurnEnded verifies that when a task has ended, TurnComments continues the task
@@ -249,6 +271,7 @@ func TestCommentTurnEnded(t *testing.T) {
 		// Turn comments into continuation.
 		res, err := e.tasks.TurnComments(ctx, connect.NewRequest(&planv1.TaskServiceTurnCommentsRequest{
 			TaskId: first.GetId(),
+			By:     planv1.Closer_CLOSER_DEVELOPER,
 		}))
 		if err != nil {
 			t.Fatalf("TurnComments failed: %v", err)
@@ -261,7 +284,18 @@ func TestCommentTurnEnded(t *testing.T) {
 		}
 
 		// Wait for continued turn to finish.
-		e.ended(t, first.GetId())
+		again := e.ended(t, first.GetId())
+		if got := again.GetComments()[0].GetSentTo(); got != first.GetId() {
+			t.Errorf("comment went to %q, want the continued task %s", got, first.GetId())
+		}
+		if p, err := lastPrompt(ctx, e.db, first.GetId()); err != nil || !strings.Contains(p, "Fix typo here") {
+			t.Errorf("continued prompt = %q, %v; want the comment", p, err)
+		}
+		// The comment went to a worker: turning comments again finds none waiting, instead of a second turn.
+		_, err = e.tasks.TurnComments(ctx, connect.NewRequest(&planv1.TaskServiceTurnCommentsRequest{TaskId: first.GetId()}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Errorf("second TurnComments = %v, want FailedPrecondition", err)
+		}
 	}
 
 	// Case 2: Non-continuable task (spawns correction task in the same azima).
@@ -351,6 +385,15 @@ func TestCommentTurnEnded(t *testing.T) {
 		}
 		if len(spawned.GetDependsOn()) != 1 || spawned.GetDependsOn()[0] != taskID {
 			t.Errorf("spawned task DependsOn = %v, want [%s]", spawned.GetDependsOn(), taskID)
+		}
+		original, err := store.Get[*planv1.Task](ctx, e.db, taskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range original.GetComments() {
+			if c.GetSentTo() != spawned.GetId() {
+				t.Errorf("comment %s went to %q, want the correction task %s", c.GetFile(), c.GetSentTo(), spawned.GetId())
+			}
 		}
 		p, err := lastPrompt(ctx, e.db, spawned.GetId())
 		if err != nil {
@@ -532,6 +575,18 @@ func Sub(a, b int) int {
 	}
 	if tComments[0].GetResolveTime() == nil {
 		t.Errorf("ResolveTime is nil")
+	}
+	// The resolution is stored, journaled as Djinn's, not only answered.
+	stored, err := store.Get[*planv1.Task](ctx, e.db, taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.GetComments()[0].GetResolved() {
+		t.Errorf("stored comment is not resolved")
+	}
+	resolves, err := store.Commands(ctx, e.db, func(cmd store.Command) bool { return cmd.Method == methodResolve })
+	if err != nil || len(resolves) != 1 || resolves[0].Actor != actorHarness {
+		t.Errorf("journaled resolutions = %+v, %v; want 1 by %s", resolves, err, actorHarness)
 	}
 
 	// 3. Verify comments survive merge into target branch.
