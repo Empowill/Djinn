@@ -234,8 +234,14 @@ export function TaskTree({
     const box = el.getBoundingClientRect();
     const view = scroller.getBoundingClientRect();
     const at = box.top + (n - 1 - focusRow) * ROW;
-    if (at >= view.top && at + ROW <= view.bottom) return;
-    scroller.scrollTop += at - (view.top + view.height / 2);
+    // Under the attention bar is out of sight (src/azima.tsx useStickyRoom).
+    const top =
+      view.top +
+      (parseFloat(
+        getComputedStyle(scroller).getPropertyValue("--attention-height"),
+      ) || 0);
+    if (at >= top && at + ROW <= view.bottom) return;
+    scroller.scrollTop += at - (top + view.bottom) / 2;
   }, [focusRow, n]);
 
   const [hover, setHover] = useState(-1);
