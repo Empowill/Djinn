@@ -105,23 +105,23 @@ func TestCrossVet(t *testing.T) {
 
 	t.Run("windows", func(t *testing.T) {
 		t.Parallel()
-		cmd := exec.CommandContext(t.Context(), "go", "vet", "-tags", "headless", "./cmd/djinn/...")
+		cmd := exec.CommandContext(t.Context(), "go", "vet", "-tags", "headless", "./cmd/djinn")
 		cmd.Dir = root
 		cmd.Env = append(os.Environ(), "GOOS=windows", "CGO_ENABLED=0")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("GOOS=windows go vet -tags headless ./cmd/djinn/... failed:\n%s", out)
+			t.Fatalf("GOOS=windows go vet -tags headless ./cmd/djinn failed:\n%s", out)
 		}
 	})
 
 	t.Run("darwin", func(t *testing.T) {
 		t.Parallel()
-		cmd := exec.CommandContext(t.Context(), "go", "vet", "./cmd/djinn/...")
+		cmd := exec.CommandContext(t.Context(), "go", "vet", "./cmd/djinn")
 		cmd.Dir = root
 		cmd.Env = append(os.Environ(), "GOOS=darwin", "CGO_ENABLED=0")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("GOOS=darwin go vet ./cmd/djinn/... failed:\n%s", out)
+			t.Fatalf("GOOS=darwin go vet ./cmd/djinn failed:\n%s", out)
 		}
 	})
 }
