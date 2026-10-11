@@ -403,6 +403,29 @@ func catalog() []catalogCase {
 					t.Errorf("input = %q", input)
 				}
 			}},
+		{provider: "antigravity", fixture: "stream-error",
+			want: []string{"STATUS", "TEXT", "STATUS", "USAGE", "STATUS", "USAGE", "STATUS", "USAGE", "STATUS", "USAGE", "ERROR", "USAGE"},
+			err:  "The stream was interrupted",
+			check: func(t *testing.T, events []Event, _, input string) {
+				statuses := texts(events, "STATUS")
+				if len(statuses) < 5 {
+					t.Errorf("statuses = %q", statuses)
+				}
+				if n := strings.Count(input, agyContinuePrompt); n != 4 {
+					t.Errorf("continuations in input = %d, want 4; input = %q", n, input)
+				}
+			}},
+		{provider: "antigravity", fixture: "mid-work-error",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "STATUS", "USAGE", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, input string) {
+				statuses := texts(events, "STATUS")
+				if len(statuses) < 2 {
+					t.Errorf("statuses = %q", statuses)
+				}
+				if n := strings.Count(input, agyContinuePrompt); n != 1 {
+					t.Errorf("continuations in input = %d, want 1; input = %q", n, input)
+				}
+			}},
 
 		// Codex.
 		{provider: "codex", fixture: "success", want: []string{"STATUS", "TEXT", "USAGE", "STATUS"},

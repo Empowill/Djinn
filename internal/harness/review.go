@@ -38,14 +38,19 @@ const (
 // uncommitted lists what the worktree of t holds not committed, as git status --porcelain says it, untracked files
 // one by one, the project's .gitignore applying: none when it is clean. A worktree removed already holds nothing.
 func uncommitted(ctx context.Context, t *planv1.Task) ([]string, error) {
-	wt := t.GetWorktree()
-	if wt == "" {
+	return uncommittedDir(ctx, t.GetWorktree())
+}
+
+// uncommittedDir lists what dir holds not committed, as git status --porcelain says it, untracked files
+// one by one, the project's .gitignore applying: none when it is clean. A directory that does not exist holds nothing.
+func uncommittedDir(ctx context.Context, dir string) ([]string, error) {
+	if dir == "" {
 		return nil, nil
 	}
-	if _, err := os.Stat(wt); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
-	out, err := gitRaw(ctx, wt, "status", "--porcelain", "-z", "--untracked-files=all")
+	out, err := gitRaw(ctx, dir, "status", "--porcelain", "-z", "--untracked-files=all")
 	if err != nil {
 		return nil, err
 	}
