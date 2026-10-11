@@ -61,8 +61,18 @@ message LoadServiceGetResponse {
   uint64 memory_total_bytes = 5;
   // The chosen ceiling notch when auto mode is active.
   LoadNotch chosen_notch = 6;
+  // Available RAM of the machine, in bytes.
+  uint64 memory_available_bytes = 7;
+  // Forecast memory per worker in bytes (measured peak or policy default).
+  uint64 worker_forecast_bytes = 8;
+  // The binding resource: "memory" or "cpu".
+  string binding_resource = 9;
+  // Worker slots allowed by CPU before notch scaling.
+  int32 cpu_slots = 10;
+  // Worker slots allowed by memory before notch scaling.
+  int32 memory_slots = 11;
   // Number of workers currently paused.
-  int32 paused_workers = 7;
+  int32 paused_workers = 12;
 }
 
 message LoadServiceSetRequest {
@@ -103,6 +113,14 @@ message LoadServiceWatchResponse {
   int32 running_workers = 8;
   // The chosen ceiling notch when auto mode is active.
   LoadNotch chosen_notch = 9;
+  // Forecast memory per worker in bytes (measured peak or policy default).
+  uint64 worker_forecast_bytes = 10;
+  // The binding resource: "memory" or "cpu".
+  string binding_resource = 11;
+  // Worker slots allowed by CPU before notch scaling.
+  int32 cpu_slots = 12;
+  // Worker slots allowed by memory before notch scaling.
+  int32 memory_slots = 13;
   // Number of workers currently paused.
-  int32 paused_workers = 10;
+  int32 paused_workers = 14;
 }

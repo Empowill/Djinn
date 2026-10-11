@@ -269,6 +269,46 @@ func DefaultPolicy() Policy {
 	return NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
 }
 
+// AvailableMemory returns the memory available to new programs: s.MemoryAvailable,
+// or s.MemoryTotal when available is unknown.
+func (p Policy) AvailableMemory(s Snapshot) uint64 {
+	if s.MemoryAvailable > 0 {
+		return s.MemoryAvailable
+	}
+	return s.MemoryTotal
+}
+
+// UsableMemory returns the memory available to Djinn beyond the reserve:
+// max(0, AvailableMemory - MemoryReserve).
+func (p Policy) UsableMemory(s Snapshot) uint64 {
+	avail := p.AvailableMemory(s)
+	res := p.MemoryReserve
+	if res == 0 {
+		res = 2 * GiB
+	}
+	if avail > res {
+		return avail - res
+	}
+	return 0
+}
+
+// WorkerForecast returns the forecast peak memory per worker (typical peak plus WorkerMargin).
+// Without measurements, it returns WorkerPeak + WorkerMargin (1.5 GiB by default).
+func (p Policy) WorkerForecast(peaks ...uint64) uint64 {
+	forecast := p.WorkerMargin
+	if typical, _ := p.Typical(peaks); typical > 0 {
+		forecast += typical
+	} else if p.WorkerPeak > 0 {
+		forecast += p.WorkerPeak
+	} else {
+		forecast += GiB
+	}
+	if forecast == 0 {
+		forecast = 1536 * MiB
+	}
+	return forecast
+}
+
 // RuleMemory returns the memory the rule would engage on a machine with total RAM.
 func (p Policy) RuleMemory(total uint64) uint64 {
 	if total <= p.WorkerMargin {
@@ -277,10 +317,23 @@ func (p Policy) RuleMemory(total uint64) uint64 {
 	return total - p.WorkerMargin
 }
 
-// CommittableLimit is the maximum memory Djinn commits to peak forecasts on a machine with total bytes of RAM.
-// It returns 0 when total is 0 or unknown. Overclock (150%) may exceed what the rule engages.
-func (p Policy) CommittableLimit(total uint64) uint64 {
-	if total == 0 {
+// CommittableLimit is the maximum memory Djinn commits to peak forecasts on a machine with available bytes of RAM.
+// Djinn's engaged memory never exceeds the notch's share of the memory available to it (free + reclaimable minus reserve),
+// with Overclock included only up to the reserve (at most available).
+// It returns 0 when available is 0 or unknown.
+func (p Policy) CommittableLimit(available uint64) uint64 {
+	if available == 0 {
+		return 0
+	}
+	res := p.MemoryReserve
+	if res == 0 {
+		res = 2 * GiB
+	}
+	var usable uint64
+	if available > res {
+		usable = available - res
+	}
+	if usable == 0 {
 		return 0
 	}
 	share := p.Share
@@ -290,11 +343,11 @@ func (p Policy) CommittableLimit(total uint64) uint64 {
 	if share <= 0 {
 		return 0
 	}
-	ruleMem := p.RuleMemory(total)
-	if ruleMem == 0 {
-		return 0
+	limit := uint64(math.Round(float64(usable) * share))
+	if limit > available {
+		limit = available
 	}
-	return uint64(math.Round(float64(ruleMem) * share))
+	return limit
 }
 
 // NotchName returns the lowercase name of a load notch.
@@ -393,41 +446,86 @@ func ParseNotch(s string) (djinnv1.LoadNotch, error) {
 	}
 }
 
-// BaseSlots is the number of worker slots the machine allows today under the standard rule:
-// one worker per 2 cores and per 2 GiB beyond 2 GiB reserve, min of both, up to 16, at least 1.
-func (p Policy) BaseSlots(s Snapshot) (int, string) {
+// CPUSlots returns the worker slots allowed by the CPU rule before notch scaling:
+// one worker per 2 cores, at least 1, up to MaxWorkers.
+func (p Policy) CPUSlots(s Snapshot) int {
 	cores := max(s.Cores, 1)
 	cpw := p.CoresPerWorker
 	if cpw <= 0 {
 		cpw = 2
 	}
-	byCores := max(cores/cpw, 1)
-	n, rule := byCores, fmt.Sprintf("one per %d cores of %d", cpw, cores)
-	mpw := p.MemoryPerWorker
-	if mpw == 0 {
-		mpw = 2 * GiB
+	maxW := p.MaxWorkers
+	if maxW <= 0 {
+		maxW = 16
 	}
+	return min(max(cores/cpw, 1), maxW)
+}
+
+// MemorySlots returns the worker slots allowed by memory at 100% (usable memory / worker forecast) before notch scaling:
+// usable memory is available minus reserve; forecast is measured peak per worker or default; at least 1, up to MaxWorkers.
+// A machine whose memory is unknown returns MaxWorkers.
+func (p Policy) MemorySlots(s Snapshot, peaks ...uint64) int {
+	avail := p.AvailableMemory(s)
+	maxW := p.MaxWorkers
+	if maxW <= 0 {
+		maxW = 16
+	}
+	if avail == 0 {
+		return maxW
+	}
+	usable := p.UsableMemory(s)
+	forecast := p.WorkerForecast(peaks...)
+	if usable == 0 {
+		return 1
+	}
+	return min(max(int(usable/forecast), 1), maxW)
+}
+
+// BindingResource reports which resource limits worker capacity: "memory" or "cpu".
+func (p Policy) BindingResource(s Snapshot, peaks ...uint64) string {
+	if p.AvailableMemory(s) > 0 && p.MemorySlots(s, peaks...) < p.CPUSlots(s) {
+		return "memory"
+	}
+	return "cpu"
+}
+
+// BaseSlots is the number of worker slots the machine allows today under the standard rule:
+// min of what CPU allows and what memory allows, up to 16, at least 1.
+func (p Policy) BaseSlots(s Snapshot, peaks ...uint64) (int, string) {
+	cores := max(s.Cores, 1)
+	cpw := p.CoresPerWorker
+	if cpw <= 0 {
+		cpw = 2
+	}
+	cpuRule := fmt.Sprintf("one per %d cores of %d", cpw, cores)
+	rawCPU := max(cores/cpw, 1)
+
+	avail := p.AvailableMemory(s)
 	res := p.MemoryReserve
 	if res == 0 {
 		res = 2 * GiB
 	}
-	if s.MemoryTotal > 0 {
-		spare := uint64(0)
-		if s.MemoryTotal > res {
-			spare = s.MemoryTotal - res
-		}
-		byMemory := max(int(spare/mpw), 1)
-		memRule := fmt.Sprintf("one per %s of memory beyond %s, of %s", size(mpw), size(res), size(s.MemoryTotal))
-		switch {
-		case byMemory < byCores:
-			n, rule = byMemory, memRule
-		case byMemory == byCores:
-			rule += ", and " + memRule
-		}
-	}
+	forecast := p.WorkerForecast(peaks...)
+	memRule := fmt.Sprintf("one per %s of memory beyond %s, of %s", size(forecast), size(res), size(avail))
+
 	maxW := p.MaxWorkers
 	if maxW <= 0 {
 		maxW = 16
+	}
+
+	rawMem := maxW
+	if avail > 0 {
+		usable := p.UsableMemory(s)
+		rawMem = max(int(usable/forecast), 1)
+	}
+
+	n := min(rawCPU, rawMem)
+	rule := cpuRule
+	switch {
+	case avail > 0 && rawMem < rawCPU:
+		rule = memRule
+	case avail > 0 && rawMem == rawCPU:
+		rule += ", and " + memRule
 	}
 	if n > maxW {
 		return maxW, fmt.Sprintf("%d, the most Djinn runs (%s gives more)", maxW, rule)
@@ -442,12 +540,13 @@ func BaseSlots(s Snapshot) int {
 }
 
 // Slots is the most workers the machine runs at once, and the rule that gave it.
-// Each notch is a share of what the machine allows today: workers = round(share × BaseSlots, at least 1).
-func (p Policy) Slots(s Snapshot) (int, string) {
+// Workers allowed = the notch's share of min(what the CPU rule allows, what the memory allows),
+// where memory allows (memory Djinn may engage at that notch) / (the measured peak forecast per worker).
+func (p Policy) Slots(s Snapshot, peaks ...uint64) (int, string) {
 	if p.Workers > 0 {
 		return p.Workers, fmt.Sprintf("%d, set by djinn up --workers", p.Workers)
 	}
-	base, rule := p.BaseSlots(s)
+	base, rule := p.BaseSlots(s, peaks...)
 	share := p.Share
 	if share <= 0 {
 		if p.Notch != 0 {
@@ -456,7 +555,15 @@ func (p Policy) Slots(s Snapshot) (int, string) {
 			share = 0.50
 		}
 	}
-	workers := max(1, int(math.Round(share*float64(base))))
+	cpuAllowed := max(1, int(math.Round(share*float64(p.CPUSlots(s)))))
+	workers := cpuAllowed
+	avail := p.AvailableMemory(s)
+	if avail > 0 {
+		memEngaged := p.CommittableLimit(avail)
+		forecast := p.WorkerForecast(peaks...)
+		memAllowed := max(1, int(memEngaged/forecast))
+		workers = min(cpuAllowed, memAllowed)
+	}
 	if share == 1.0 {
 		return workers, rule
 	}
@@ -549,18 +656,20 @@ func (p Policy) WorkerMemoryCeiling(peak uint64, measured int) uint64 {
 	}
 }
 
-// WorkerRoom says why the machine cannot hold another worker of provider yet, or "" when it can: total memory
+// WorkerRoom says why the machine cannot hold another worker of provider yet, or "" when it can: memory
 // commits up to CommittableLimit in peak forecasts, and the memory available, less held (what the workers running
 // may still take), holds peak, the typical peak of a worker of provider measured over measured workers (Typical),
 // plus WorkerMargin. A machine whose memory is unknown (available 0) has room.
 func (p Policy) WorkerRoom(total, available, held, engaged uint64, provider string, peak uint64, measured int) string {
 	forecast := peak + p.WorkerMargin
-	if limit := p.CommittableLimit(total); total > 0 && limit > 0 && engaged+forecast > limit {
-		why := fmt.Sprintf("load %s commits up to %s of memory", p.NotchName(), size(limit))
-		if engaged > 0 {
-			why += fmt.Sprintf(", %s already engaged", size(engaged))
+	if total > 0 && available > 0 {
+		if limit := p.CommittableLimit(available); limit > 0 && engaged+forecast > limit {
+			why := fmt.Sprintf("load %s commits up to %s of memory", p.NotchName(), size(limit))
+			if engaged > 0 {
+				why += fmt.Sprintf(", %s already engaged", size(engaged))
+			}
+			return why + fmt.Sprintf(", needs %s", size(forecast))
 		}
-		return why + fmt.Sprintf(", needs %s", size(forecast))
 	}
 	free := available - min(held, available)
 	if available == 0 || free >= forecast {

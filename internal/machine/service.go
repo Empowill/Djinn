@@ -124,7 +124,7 @@ func (s *service) Series(
 	}
 
 	limitShare := policy.Share
-	limitMemory := policy.CommittableLimit(snap.MemoryTotal)
+	limitMemory := policy.CommittableLimit(policy.AvailableMemory(snap))
 
 	cores := snap.Cores
 	if cores <= 0 {

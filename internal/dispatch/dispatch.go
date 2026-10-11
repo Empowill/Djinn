@@ -512,6 +512,47 @@ func WorkerMemory(tasks []*planv1.Task, p machine.Policy) (engaged, actual uint6
 	return engaged, actual
 }
 
+// TypicalForecast returns the measured peak forecast per worker of the providers in use (or all measured providers),
+// or p.WorkerForecast() when none is measured.
+func TypicalForecast(tasks []*planv1.Task, p machine.Policy) uint64 {
+	peaks := ProviderPeaks(tasks)
+	if len(peaks) == 0 {
+		return p.WorkerForecast()
+	}
+	inUse := make(map[string]bool)
+	for _, t := range tasks {
+		if !Watcher(t) && (t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING) {
+			inUse[provider(t)] = true
+		}
+	}
+	var highest uint64
+	for prov := range inUse {
+		if provPeaks, ok := peaks[prov]; ok && len(provPeaks) > 0 {
+			typical, _ := p.Typical(provPeaks)
+			forecast := typical + p.WorkerMargin
+			if forecast > highest {
+				highest = forecast
+			}
+		}
+	}
+	if highest > 0 {
+		return highest
+	}
+	for _, provPeaks := range peaks {
+		if len(provPeaks) > 0 {
+			typical, _ := p.Typical(provPeaks)
+			forecast := typical + p.WorkerMargin
+			if forecast > highest {
+				highest = forecast
+			}
+		}
+	}
+	if highest > 0 {
+		return highest
+	}
+	return p.WorkerForecast()
+}
+
 // typical is the typical peak memory of a worker of the provider, and how many measured workers gave it
 // (machine.Policy.Typical): the finished workers of that provider, the latest first.
 func (s *Situation) typical(name string) (uint64, int) {

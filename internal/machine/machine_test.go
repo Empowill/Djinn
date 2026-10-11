@@ -2,7 +2,6 @@ package machine
 
 import (
 	"errors"
-	"math"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -71,7 +70,7 @@ func TestSlots(t *testing.T) {
 		rule   string
 	}{
 		{"this laptop", 16, 32 * GiB, 8, "one per 2 cores of 16"},
-		{"little memory", 16, 8 * GiB, 3, "one per 2.0 GiB of memory beyond 2.0 GiB, of 8.0 GiB"},
+		{"little memory", 16, 8 * GiB, 4, "one per 1.5 GiB of memory beyond 2.0 GiB, of 8.0 GiB"},
 		{"one core", 1, 0, 1, "one per 2 cores of 1"},
 		{"tiny", 2, GiB, 1, "1: one per 2 cores of 2, and one per"},
 		{"a big server", 128, 512 * GiB, 16, "16, the most Djinn runs"},
@@ -455,20 +454,20 @@ func TestMachineSizesShares(t *testing.T) {
 			name:      "8 cores, 8 GiB",
 			cores:     8,
 			memory:    8 * GiB,
-			baseSlots: 3, // min(8/2=4, (8-2)/2=3) = 3
+			baseSlots: 4, // min(8/2=4, (8-2)/1.5=4) = 4
 			wantSlots: map[djinnv1.LoadNotch]int{
-				djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:   1, // max(1, round(0.2*3=0.6)) = 1
-				djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM:    2, // max(1, round(0.5*3=1.5)) = 2
-				djinnv1.LoadNotch_LOAD_NOTCH_HIGH:      2, // max(1, round(0.8*3=2.4)) = 2
-				djinnv1.LoadNotch_LOAD_NOTCH_MAX:       3, // max(1, round(1.0*3=3.0)) = 3
-				djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK: 5, // max(1, round(1.5*3=4.5)) = 5 > baseSlots
+				djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:   1, // max(1, round(0.2*4=0.8)) = 1
+				djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM:    2, // max(1, round(0.5*4=2.0)) = 2
+				djinnv1.LoadNotch_LOAD_NOTCH_HIGH:      3, // max(1, round(0.8*4=3.2)) = 3
+				djinnv1.LoadNotch_LOAD_NOTCH_MAX:       4, // max(1, round(1.0*4=4.0)) = 4
+				djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK: 5, // max(1, min(6, 8/1.5=5)) = 5 > baseSlots
 			},
 		},
 		{
 			name:      "8 cores, 32 GiB",
 			cores:     8,
 			memory:    32 * GiB,
-			baseSlots: 4, // min(8/2=4, (32-2)/2=15) = 4
+			baseSlots: 4, // min(8/2=4, (32-2)/1.5=20 -> maxW 16) = 4
 			wantSlots: map[djinnv1.LoadNotch]int{
 				djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:   1, // max(1, round(0.2*4=0.8)) = 1
 				djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM:    2, // max(1, round(0.5*4=2.0)) = 2
@@ -481,13 +480,13 @@ func TestMachineSizesShares(t *testing.T) {
 			name:      "32 cores, 32 GiB",
 			cores:     32,
 			memory:    32 * GiB,
-			baseSlots: 15, // min(32/2=16, (32-2)/2=15) = 15
+			baseSlots: 16, // min(32/2=16, (32-2)/1.5=20 -> maxW 16) = 16
 			wantSlots: map[djinnv1.LoadNotch]int{
-				djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:   3,  // max(1, round(0.2*15=3.0)) = 3
-				djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM:    8,  // max(1, round(0.5*15=7.5)) = 8
-				djinnv1.LoadNotch_LOAD_NOTCH_HIGH:      12, // max(1, round(0.8*15=12.0)) = 12
-				djinnv1.LoadNotch_LOAD_NOTCH_MAX:       15, // max(1, round(1.0*15=15.0)) = 15
-				djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK: 23, // max(1, round(1.5*15=22.5)) = 23 > baseSlots
+				djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL:   3,  // max(1, round(0.2*16=3.2)) = 3
+				djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM:    8,  // max(1, round(0.5*16=8.0)) = 8
+				djinnv1.LoadNotch_LOAD_NOTCH_HIGH:      13, // max(1, round(0.8*16=12.8)) = 13
+				djinnv1.LoadNotch_LOAD_NOTCH_MAX:       16, // max(1, round(1.0*16=16.0)) = 16
+				djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK: 21, // min(round(1.5*16=24), 32/1.5=21) = 21 > baseSlots
 			},
 		},
 	}
@@ -511,30 +510,82 @@ func TestMachineSizesShares(t *testing.T) {
 	}
 }
 
+func TestBindingResource(t *testing.T) {
+	p := DefaultPolicy()
+
+	// Machine where memory binds: 16 cores (CPU allows 8), 8 GiB RAM (usable 6 GiB, forecast 1.5 GiB allows 4).
+	memBound := Snapshot{Cores: 16, MemoryTotal: 8 * GiB, MemoryAvailable: 8 * GiB}
+	if got := p.CPUSlots(memBound); got != 8 {
+		t.Errorf("CPUSlots: got %d, want 8", got)
+	}
+	if got := p.MemorySlots(memBound); got != 4 {
+		t.Errorf("MemorySlots: got %d, want 4", got)
+	}
+	if got := p.BindingResource(memBound); got != "memory" {
+		t.Errorf("BindingResource: got %q, want 'memory'", got)
+	}
+	if slots, _ := p.Slots(memBound); slots != 2 {
+		t.Errorf("Slots: got %d, want 2 (50%% of 4)", slots)
+	}
+
+	// Machine where CPU binds: 4 cores (CPU allows 2), 32 GiB RAM (usable 30 GiB, forecast 1.5 GiB allows 16).
+	cpuBound := Snapshot{Cores: 4, MemoryTotal: 32 * GiB, MemoryAvailable: 32 * GiB}
+	if got := p.CPUSlots(cpuBound); got != 2 {
+		t.Errorf("CPUSlots: got %d, want 2", got)
+	}
+	if got := p.MemorySlots(cpuBound); got != 16 {
+		t.Errorf("MemorySlots: got %d, want 16", got)
+	}
+	if got := p.BindingResource(cpuBound); got != "cpu" {
+		t.Errorf("BindingResource: got %q, want 'cpu'", got)
+	}
+	if slots, _ := p.Slots(cpuBound); slots != 1 {
+		t.Errorf("Slots: got %d, want 1 (50%% of 2)", slots)
+	}
+
+	// Provider measured peak makes memory bind:
+	// 8 cores (CPU allows 4), 8 GiB RAM (usable 6 GiB).
+	// With 2.5 GiB measured peak (forecast 3 GiB), memory allows 6 / 3 = 2 workers.
+	snap8 := Snapshot{Cores: 8, MemoryTotal: 8 * GiB, MemoryAvailable: 8 * GiB}
+	peak2500 := uint64(2560 * MiB) // 2.5 GiB + 512 MiB margin = 3 GiB forecast
+	if got := p.MemorySlots(snap8, peak2500); got != 2 {
+		t.Errorf("MemorySlots with peak: got %d, want 2", got)
+	}
+	if got := p.BindingResource(snap8, peak2500); got != "memory" {
+		t.Errorf("BindingResource with peak: got %q, want 'memory'", got)
+	}
+	if slots, _ := p.Slots(snap8, peak2500); slots != 1 {
+		t.Errorf("Slots with peak: got %d, want 1 (50%% of 2)", slots)
+	}
+}
+
 func TestCommittableLimit(t *testing.T) {
-	total16 := uint64(16 * GiB)
-	ruleMem16 := total16 - 512*MiB
+	avail12 := uint64(12 * GiB) // usable 10 GiB beyond 2 GiB reserve
 	for _, tt := range []struct {
-		name  string
-		notch djinnv1.LoadNotch
-		total uint64
-		want  uint64
+		name      string
+		notch     djinnv1.LoadNotch
+		available uint64
+		want      uint64
 	}{
-		{"minimal 16G", djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, total16, uint64(math.Round(float64(ruleMem16) * 0.20))},
-		{"medium 16G", djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, total16, uint64(math.Round(float64(ruleMem16) * 0.50))},
-		{"high 16G", djinnv1.LoadNotch_LOAD_NOTCH_HIGH, total16, uint64(math.Round(float64(ruleMem16) * 0.80))},
-		{"max 16G", djinnv1.LoadNotch_LOAD_NOTCH_MAX, total16, ruleMem16},
-		{"overclock 16G", djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK, total16, uint64(math.Round(float64(ruleMem16) * 1.50))},
-		{"zero total", djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, 0, 0},
-		{"max small total", djinnv1.LoadNotch_LOAD_NOTCH_MAX, 256 * MiB, 0},
+		{"minimal 12G", djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, avail12, 2 * GiB},      // 20% of 10G
+		{"medium 12G", djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, avail12, 5 * GiB},        // 50% of 10G
+		{"high 12G", djinnv1.LoadNotch_LOAD_NOTCH_HIGH, avail12, 8 * GiB},            // 80% of 10G
+		{"max 12G", djinnv1.LoadNotch_LOAD_NOTCH_MAX, avail12, 10 * GiB},             // 100% of 10G
+		{"overclock 12G", djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK, avail12, 12 * GiB}, // 150% of 10G = 15G, capped at available 12G
+		{"zero available", djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, 0, 0},
+		{"available below reserve", djinnv1.LoadNotch_LOAD_NOTCH_MAX, 2 * GiB, 0},
 	} {
 		p := NotchPolicy(tt.notch)
-		if got := p.CommittableLimit(tt.total); got != tt.want {
+		if got := p.CommittableLimit(tt.available); got != tt.want {
 			t.Errorf("%s: got %d, want %d", tt.name, got, tt.want)
 		}
-		if tt.notch == djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK && tt.total > 0 {
-			if got := p.CommittableLimit(tt.total); got <= tt.total {
-				t.Errorf("%s Overclock committable limit %d should exceed total RAM %d", tt.name, got, tt.total)
+		if tt.notch == djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK && tt.available > 0 {
+			usable := uint64(10 * GiB)
+			if got := p.CommittableLimit(tt.available); got <= usable {
+				t.Errorf("%s Overclock committable limit %d should exceed usable %d", tt.name, got, usable)
+			}
+			if got := p.CommittableLimit(tt.available); got > tt.available {
+				t.Errorf("%s Overclock committable limit %d should not exceed available RAM %d", tt.name, got, tt.available)
 			}
 		}
 	}
@@ -542,7 +593,7 @@ func TestCommittableLimit(t *testing.T) {
 
 func TestWorkerRoomNotches(t *testing.T) {
 	total := uint64(16 * GiB)
-	available := uint64(12 * GiB)
+	available := uint64(12 * GiB) // usable 10 GiB beyond 2 GiB reserve
 	for _, tt := range []struct {
 		notch   djinnv1.LoadNotch
 		engaged uint64
@@ -551,27 +602,27 @@ func TestWorkerRoomNotches(t *testing.T) {
 	}{
 		{
 			djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
-			2 * GiB,
-			GiB, // forecast = 1.0 GiB + 512 MiB = 1.5 GiB; 2.0 GiB + 1.5 GiB = 3.5 GiB > 3.1 GiB (20% of 15.5 GiB = 3.1 GiB)
-			"load minimal commits up to 3.1 GiB of memory, 2.0 GiB already engaged, needs 1.5 GiB",
+			1 * GiB,
+			GiB, // forecast = 1.0 GiB + 512 MiB = 1.5 GiB; 1.0 GiB + 1.5 GiB = 2.5 GiB > 2.0 GiB (20% of 10 GiB = 2.0 GiB)
+			"load minimal commits up to 2.0 GiB of memory, 1.0 GiB already engaged, needs 1.5 GiB",
 		},
 		{
 			djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
-			7 * GiB,
-			GiB, // forecast = 1.5 GiB; 7.0 GiB + 1.5 GiB = 8.5 GiB > 7.8 GiB (50% of 15.5 GiB = 7.75 GiB)
-			"load medium commits up to 7.8 GiB of memory, 7.0 GiB already engaged, needs 1.5 GiB",
+			4 * GiB,
+			GiB, // forecast = 1.5 GiB; 4.0 GiB + 1.5 GiB = 5.5 GiB > 5.0 GiB (50% of 10 GiB = 5.0 GiB)
+			"load medium commits up to 5.0 GiB of memory, 4.0 GiB already engaged, needs 1.5 GiB",
 		},
 		{
 			djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
-			12 * GiB,
-			GiB, // forecast = 1.5 GiB; 12.0 GiB + 1.5 GiB = 13.5 GiB > 12.4 GiB (80% of 15.5 GiB = 12.4 GiB)
-			"load high commits up to 12.4 GiB of memory, 12.0 GiB already engaged, needs 1.5 GiB",
+			7 * GiB,
+			GiB, // forecast = 1.5 GiB; 7.0 GiB + 1.5 GiB = 8.5 GiB > 8.0 GiB (80% of 10 GiB = 8.0 GiB)
+			"load high commits up to 8.0 GiB of memory, 7.0 GiB already engaged, needs 1.5 GiB",
 		},
 		{
 			djinnv1.LoadNotch_LOAD_NOTCH_MAX,
-			15 * GiB,
-			GiB, // forecast = 1.5 GiB; 15.0 GiB + 1.5 GiB = 16.5 GiB > 15.5 GiB (100% of 15.5 GiB)
-			"load max commits up to 15.5 GiB of memory, 15.0 GiB already engaged, needs 1.5 GiB",
+			9 * GiB,
+			GiB, // forecast = 1.5 GiB; 9.0 GiB + 1.5 GiB = 10.5 GiB > 10.0 GiB (100% of 10 GiB = 10.0 GiB)
+			"load max commits up to 10.0 GiB of memory, 9.0 GiB already engaged, needs 1.5 GiB",
 		},
 	} {
 		p := NotchPolicy(tt.notch)
@@ -589,8 +640,8 @@ func TestWorkerRoomNotches(t *testing.T) {
 
 	// Verify message when engaged is 0.
 	pMin := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
-	whyZeroEngaged := pMin.WorkerRoom(total, available, 0, 0, "claude", 3*GiB, 0)
-	wantZeroEngaged := "load minimal commits up to 3.1 GiB of memory, needs 3.5 GiB"
+	whyZeroEngaged := pMin.WorkerRoom(total, available, 0, 0, "claude", 2*GiB, 0)
+	wantZeroEngaged := "load minimal commits up to 2.0 GiB of memory, needs 2.5 GiB"
 	if whyZeroEngaged != wantZeroEngaged {
 		t.Errorf("zero engaged WorkerRoom: got %q, want %q", whyZeroEngaged, wantZeroEngaged)
 	}
