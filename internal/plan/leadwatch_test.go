@@ -277,6 +277,22 @@ func TestLeadWatchFallbackLine(t *testing.T) {
 		}
 	})
 
+	t.Run("a watch that returns at once promises none", func(t *testing.T) {
+		w, s, leads := leadWatchFixture(t, planv1.Provider_PROVIDER_CODEX)
+		notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, "W1", "Djinn: W1 merged")
+		if said := waitSaid(leads, 1); len(said) != 1 {
+			t.Fatalf("typed %q", said)
+		}
+		got := leadWatchOnce(t, s, &planv1.LeadServiceWatchRequest{Timeout: durationpb.New(0)})
+		leadWatchOnce(t, s, &planv1.LeadServiceWatchRequest{After: cursorOf(t, got), Timeout: durationpb.New(0)})
+		// The lead watched: the next event gets its line, at once, without a grace.
+		start := time.Now()
+		notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, "W2", "Djinn: W2 merged")
+		if said := waitSaid(leads, 2); len(said) != 2 || time.Since(start) > quick.grace {
+			t.Errorf("typed %q after %s", said, time.Since(start))
+		}
+	})
+
 	t.Run("codex", func(t *testing.T) {
 		w, s, leads := leadWatchFixture(t, planv1.Provider_PROVIDER_CODEX)
 		ctx, cancel := context.WithCancel(t.Context())

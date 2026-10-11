@@ -9,7 +9,7 @@ import path from "node:path";
 import {
   dropLead,
   leadFolder,
-  leadRows as rows,
+  leadWatch,
   runningTerminals,
   setLead,
 } from "./lead";
@@ -87,13 +87,10 @@ test("a request routed to a new wish makes it, and the one lead is told, at a ru
   ).blocks;
   expect(blocks.map((b: { content: string }) => b.content)).toEqual([request]);
 
-  // The one lead is told where the request went: typed, so echoed, then read after Enter, the fake lead says it again.
-  await expect(
-    rows(
-      page,
-      `Djinn: ${asked.question.code} answered: the request went to the new wish "${title}"`,
-    ),
-  ).toHaveCount(2, { timeout: 15_000 });
+  // The one lead is told where the request went, by its queue (decision Q191): its watch prints the answer.
+  expect(leadWatch(session, "--timeout", "15s").digest).toContain(
+    `${asked.question.code} answer: answered: the request went to the new wish "${title}"`,
+  );
   // No second lead: the lead's terminal is the only one that runs claude, on its own session.
   const claudes = (await runningTerminals()).filter((t) =>
     t.command.join(" ").includes("claude"),

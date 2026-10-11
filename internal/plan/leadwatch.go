@@ -174,7 +174,7 @@ func (w *Wishes) remindLead(after time.Duration) {
 }
 
 // checkLead types the line that says events wait, unless a watch waits for them, one returned within the grace,
-// or the line was typed already since the last watch returned, less than timing.retype ago.
+// or the line was typed already since the lead last watched, less than timing.retype ago.
 func (w *Wishes) checkLead() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -190,7 +190,7 @@ func (w *Wishes) checkLead() {
 	// No finished command wakes a codex lead up: its watch, if one waits, tells it nothing.
 	watched := l.watching > 0 && leadProvider(lead) != planv1.Provider_PROVIDER_CODEX
 	recent := now.Before(l.returned.Add(l.timing.grace))
-	retyped := l.typed.After(l.returned) && now.Before(l.typed.Add(l.timing.retype))
+	retyped := !l.typed.IsZero() && now.Before(l.typed.Add(l.timing.retype))
 	l.mu.Unlock()
 	if watched || retyped {
 		return
@@ -264,11 +264,16 @@ func (s *LeadService) Watch(
 	l := w.leadWatch()
 	l.mu.Lock()
 	l.watching++
+	l.typed = time.Time{} // The lead watches: the next events that wait without a watch get their line.
 	l.mu.Unlock()
 	defer func() {
 		l.mu.Lock()
 		l.watching--
-		l.returned = time.Now()
+		if timeout > 0 {
+			// The lead runs its next watch within the grace. One that returns at once (a codex lead, a look) does
+			// not promise one.
+			l.returned = time.Now()
+		}
 		l.mu.Unlock()
 		// Events that come before the next watch wait for it, or for the line once the grace ends.
 		w.remindLead(l.timing.grace)
