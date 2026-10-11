@@ -373,6 +373,29 @@ func catalog() []catalogCase {
 					t.Errorf("continuations in input = %d, want 3; input = %q", n, input)
 				}
 			}},
+		{provider: "antigravity", fixture: "error-event",
+			want: []string{"STATUS", "STATUS", "USAGE", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, input string) {
+				statuses := texts(events, "STATUS")
+				if len(statuses) < 2 || !strings.Contains(statuses[1], "continued: "+agyContinuePrompt) {
+					t.Errorf("statuses = %q", statuses)
+				}
+				if !strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("input lacks continue prompt: %q", input)
+				}
+			}},
+		{provider: "antigravity", fixture: "w316-end",
+			want: []string{"STATUS", "STATUS", "USAGE", "STATUS", "USAGE", "STATUS", "USAGE", "TOOL_CALL", "TOOL_RESULT", "TEXT", "ERROR", "USAGE"},
+			err:  "Your previous response contained an improperly formatted function call",
+			check: func(t *testing.T, events []Event, _, input string) {
+				statuses := texts(events, "STATUS")
+				if len(statuses) < 4 {
+					t.Errorf("statuses = %q", statuses)
+				}
+				if n := strings.Count(input, agyContinuePrompt); n != 3 {
+					t.Errorf("continuations in input = %d, want 3; input = %q", n, input)
+				}
+			}},
 		{provider: "antigravity", fixture: "two-turns", send: []string{"And then?"},
 			want: []string{"STATUS", "TEXT", "USAGE", "TEXT", "USAGE"},
 			check: func(t *testing.T, _ []Event, _, input string) {

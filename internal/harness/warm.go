@@ -327,6 +327,19 @@ func (h *Harness) adoptWarm(ctx context.Context, r *run, provider Provider, w *w
 	text += fmt.Sprintf(", on a warm worker loaded %s before", time.Since(w.since).Round(time.Second))
 	t := r.task
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, timestamppb.Now(), nil, 0, ""
+	r.failure, r.limit = "", nil
+	r.answered = false
+	if r.startHead == "" {
+		wt := t.GetWorktree()
+		if wt == "" {
+			wt = spec.Dir
+		}
+		if wt != "" {
+			if head, err := git(ctx, wt, "rev-parse", "HEAD"); err == nil {
+				r.startHead = strings.TrimSpace(head)
+			}
+		}
+	}
 	if (t.GetModel() == "" || foreignModel(t.GetProvider(), t.GetModel())) && !r.watcher {
 		t.Model = DefaultModel(t.GetProvider())
 	}
