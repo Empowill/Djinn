@@ -52,6 +52,7 @@ import {
   DraftAzimaCard,
   MoveAzimaDialog,
   proofWords,
+  useStickyRoom,
 } from "./azima";
 import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
@@ -96,6 +97,7 @@ export function FlightPlan({
   const flightPlanSpent = useMemo(() => spent(allTasks), [allTasks]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
+  useStickyRoom(scrollRef, false);
   const { clients, act, quiet, answer, enlighten, mark, move, withdraw } =
     useWrites(onToast);
   const waits =

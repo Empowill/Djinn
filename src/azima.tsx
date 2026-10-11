@@ -1,14 +1,17 @@
-// An azima of the plan in the Tasks tab: a task no worker runs, with the work part of it under it. Its heading says
-// where it stands (open, in progress, awaiting its proof, done: the lamp's, Task.azima), what it waits for (its after
-// codes), and its progress. Opened, what its proof needs, box by box, then its parts, as the Tasks tab shows any task:
-// under work that still moves, the finished parts fold behind "show the N finished" (src/task-tabs.tsx).
+// An azima of the plan in the Tasks tab: a task no worker runs, with the work part of it under it. Its heading, one line,
+// says where it stands (open, in progress, awaiting its proof, done: the lamp's, Task.azima), what it still waits for,
+// and its progress; the rest is on hover. Opened, its description and what its proof needs, box by box, on the left,
+// its parts on the right, as the Tasks tab shows any task: under work that still moves, the finished parts fold behind
+// "show the N finished" (src/task-tabs.tsx).
 // An azima never waits for the person as work: its proof is no task.
 import { BadgeCheck, ChevronDown, ExternalLink } from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
+  type RefObject,
   memo,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -32,6 +35,7 @@ import {
 } from "./data/format";
 import { ModalFrame } from "./frame";
 import { t, type TextKey } from "./i18n";
+import { MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
 import { Fold } from "./task-tabs";
 
@@ -107,6 +111,35 @@ export function proofWords(needs: readonly ProofNeed[]): string {
     .sort(([a], [b]) => a - b)
     .map(([, word]) => word)
     .join(", ");
+}
+
+// useStickyRoom tells what stays in sight in a page that scrolls, an opened azima's left column, where it can stay:
+// below the bar of what waits for you, which stays at the top of the page (--attention-height), and within the page's
+// height (--scroll-height). bar says whether that bar shows.
+export function useStickyRoom(
+  scrollRef: RefObject<HTMLElement | null>,
+  bar: boolean,
+) {
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const attention = scroll.querySelector<HTMLElement>(
+      ":scope > .attention-bar",
+    );
+    const measure = () => {
+      scroll.style.setProperty(
+        "--attention-height",
+        `${attention?.offsetHeight ?? 0}px`,
+      );
+      scroll.style.setProperty("--scroll-height", `${scroll.clientHeight}px`);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroll);
+    if (attention) observer.observe(attention);
+    return () => observer.disconnect();
+  }, [scrollRef, bar]);
 }
 
 export const AzimaCard = memo(function AzimaCard({
@@ -191,6 +224,7 @@ export const AzimaCard = memo(function AzimaCard({
   const now = useNow(isRunning);
   const time = azimaTime(azima, parts, now);
   const proof = state === AzimaState.AWAITING_PROOF;
+  const side = Boolean(azima.description) || proof;
   // On hover, what validating it takes: each box left and what it needs, else that every task is finished.
   const proofNeeds = azima.proofNeeds ?? [];
   const needs = proof
@@ -242,6 +276,24 @@ export const AzimaCard = memo(function AzimaCard({
   };
 
   const hasActions = isOutOfSync || canPush || isPushed || Boolean(prText);
+  // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: its
+  // branches and what comes before it on its title; its parts, counted by state, and its time on its bar; what its
+  // proof needs on its badge, and in the card opened.
+  const facts = [
+    azima.title,
+    isPerAzima && branch,
+    isPerAzima && baseBranch && t("azima.based_on", { branch: baseBranch }),
+    after.length > 0 && t("page.after", { tasks: after.join(", ") }),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const progress = [
+    t("azima.progress", { done, count: total }),
+    t("azima.progress_parts", { done, running, waiting }),
+    time.text && [time.text, time.title].filter(Boolean).join(" · "),
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return (
     <section
@@ -262,27 +314,9 @@ export const AzimaCard = memo(function AzimaCard({
             title={needs}
           />
           <span className="agent-code">{azima.code}</span>
-          <strong title={azima.title}>{azima.title}</strong>
+          <strong title={facts}>{azima.title}</strong>
           <span className="azima-meta">
             {origin}
-            {isPerAzima && branch && (
-              <span className="azima-branch" title={branch}>
-                {branch}
-              </span>
-            )}
-            {isPerAzima && baseBranch && (
-              <span
-                className="azima-base-branch"
-                title={t("azima.based_on", { branch: baseBranch })}
-              >
-                {t("azima.based_on", { branch: baseBranch })}
-              </span>
-            )}
-            {proof && (
-              <span className="azima-needs" title={needs}>
-                {proofWords(proofNeeds)}
-              </span>
-            )}
             {state !== AzimaState.DONE && waits.length > 0 && (
               <span
                 className="azima-waits"
@@ -291,18 +325,8 @@ export const AzimaCard = memo(function AzimaCard({
                 {t("azima.waits", { tasks: waits.join(", ") })}
               </span>
             )}
-            {state !== AzimaState.DONE &&
-              waits.length === 0 &&
-              after.length > 0 && (
-                <span className="azima-after">
-                  {t("page.after", { tasks: after.join(", ") })}
-                </span>
-              )}
             {total > 0 && (
-              <span
-                className="azima-progress"
-                title={t("azima.progress", { done, count: total })}
-              >
+              <span className="azima-progress" title={progress}>
                 <span className="azima-bar" aria-hidden="true">
                   <span
                     className="azima-bar-done"
@@ -316,19 +340,6 @@ export const AzimaCard = memo(function AzimaCard({
                 <span className="azima-progress-counts">
                   {done}/{total}
                 </span>
-              </span>
-            )}
-            {total > 0 && (
-              <span
-                className="azima-progress-parts"
-                title={t("azima.progress_parts", { done, running, waiting })}
-              >
-                {t("azima.progress_parts", { done, running, waiting })}
-              </span>
-            )}
-            {time.text && (
-              <span className="task-time" title={time.title}>
-                {time.text}
               </span>
             )}
           </span>
@@ -377,62 +388,68 @@ export const AzimaCard = memo(function AzimaCard({
           </div>
         )}
       </div>
+      {/* Opened: its description, then what its proof needs, on the left, in sight while its parts scroll on the
+          right, one per row; on a narrow card, one above the other. With neither, its parts take the width. */}
       {open && (
-        <div className="azima-parts">
-          {azima.description && (
-            <div className="azima-description">
-              <p className="azima-description-text">{azima.description}</p>
-            </div>
-          )}
-          {proof && (
-            <div className="azima-proof">
-              <p>{t("azima.to_validate_title")}</p>
-              {proofNeeds.length ? (
-                <ul>
-                  {proofNeeds.map((need, i) => (
-                    <li key={i}>
-                      {need.box}{" "}
-                      <span className="muted-text">
-                        {t("azima.needs", { needs: need.needs })}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted-text">{t("azima.no_boxes")}</p>
-              )}
-              <p className="muted-text">{t("azima.how_to_validate")}</p>
-              {onValidate && (
-                <button
-                  className="button accent small"
-                  onClick={() => onValidate(azima)}
-                >
-                  <BadgeCheck size={14} />
-                  {t("azima.validate")}
-                </button>
-              )}
-            </div>
-          )}
-          {parts.length === 0 && (
-            <p className="muted-text">{t("azima.no_parts")}</p>
-          )}
-          {/* Every part finished, opening the azima was the click: they show. */}
-          {moving.length === 0 ? (
-            <div className="card-grid task-grid">{finished.map(render)}</div>
-          ) : (
-            <>
-              <div className="card-grid task-grid">{moving.map(render)}</div>
-              <Fold
-                id={`parts:${azima.id}`}
-                count={finished.length}
-                open={finished.some((x) => x.id === focus)}
-              >
-                <div className="card-grid task-grid">
-                  {finished.map(render)}
+        <div className={`azima-body${side ? " with-side" : ""}`}>
+          {side && (
+            <div className="azima-side">
+              {azima.description && (
+                <div className="azima-description">
+                  <MarkdownBody text={azima.description} />
                 </div>
-              </Fold>
-            </>
+              )}
+              {proof && (
+                <div className="azima-proof">
+                  <p>{t("azima.to_validate_title")}</p>
+                  {proofNeeds.length ? (
+                    <ul>
+                      {proofNeeds.map((need, i) => (
+                        <li key={i}>
+                          {need.box}{" "}
+                          <span className="muted-text">
+                            {t("azima.needs", { needs: need.needs })}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="muted-text">{t("azima.no_boxes")}</p>
+                  )}
+                  <p className="muted-text">{t("azima.how_to_validate")}</p>
+                  {onValidate && (
+                    <button
+                      className="button accent small"
+                      onClick={() => onValidate(azima)}
+                    >
+                      <BadgeCheck size={14} />
+                      {t("azima.validate")}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
+          <div className="azima-parts">
+            {parts.length === 0 && (
+              <p className="muted-text">{t("azima.no_parts")}</p>
+            )}
+            {/* Every part finished, opening the azima was the click: they show. */}
+            {moving.length === 0 ? (
+              <div className="azima-part-list">{finished.map(render)}</div>
+            ) : (
+              <>
+                <div className="azima-part-list">{moving.map(render)}</div>
+                <Fold
+                  id={`parts:${azima.id}`}
+                  count={finished.length}
+                  open={finished.some((x) => x.id === focus)}
+                >
+                  <div className="azima-part-list">{finished.map(render)}</div>
+                </Fold>
+              </>
+            )}
+          </div>
         </div>
       )}
     </section>
@@ -484,7 +501,16 @@ export function DraftAzimaCard({
       >
         <StatusBadge tone="later" label={t("azima.state_draft")} />
         <span className="agent-code">{azima.code}</span>
-        <strong title={azima.title}>{azima.title}</strong>
+        <strong
+          title={[
+            azima.title,
+            after.length > 0 && t("page.after", { tasks: after.join(", ") }),
+          ]
+            .filter(Boolean)
+            .join("\n")}
+        >
+          {azima.title}
+        </strong>
         <span className="azima-meta">
           {origin}
           {waits.length > 0 && (
@@ -495,11 +521,6 @@ export function DraftAzimaCard({
               {t("azima.waits", { tasks: waits.join(", ") })}
             </span>
           )}
-          {waits.length === 0 && after.length > 0 && (
-            <span className="azima-after">
-              {t("page.after", { tasks: after.join(", ") })}
-            </span>
-          )}
         </span>
         <ChevronDown size={14} className={open ? "rotated" : ""} />
       </button>
@@ -508,7 +529,7 @@ export function DraftAzimaCard({
           <div className="draft-azima-content">
             {azima.description ? (
               <div className="draft-azima-description">
-                <p className="draft-description-text">{azima.description}</p>
+                <MarkdownBody text={azima.description} />
               </div>
             ) : (
               <p className="muted-text">{t("azima.no_description")}</p>
