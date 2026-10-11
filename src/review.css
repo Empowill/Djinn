@@ -11,6 +11,7 @@
   --st-failed: #ff8178;
   --st-interrupted: #e9c45a;
   --st-stopped: #9a9a9a;
+  --st-cancelled: #a8a29e;
   --st-paused: #b4b4c8;
   --st-watching: #4fd1c5;
   --st-human: #f590b8;
@@ -41,6 +42,7 @@ html[data-theme="light"] {
   --st-failed: #b91c1c;
   --st-interrupted: #7a4f00;
   --st-stopped: #57534e;
+  --st-cancelled: #6b635c;
   --st-paused: #4b4b6b;
   --st-watching: #0f6b63;
   --st-human: #a8235a;
@@ -72,6 +74,9 @@ html[data-theme="light"] {
 }
 .tone-stopped {
   --tone: var(--st-stopped);
+}
+.tone-cancelled {
+  --tone: var(--st-cancelled);
 }
 .tone-paused {
   --tone: var(--st-paused);
@@ -845,6 +850,11 @@ html[data-theme="light"] .review .button.secondary.lamp-enlighten {
 }
 .review .wish-task-note.error {
   color: var(--st-failed);
+}
+/* A cancelled task's work was discarded: its title is struck through, muted. */
+.review .wish-task.tone-cancelled .task-title {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 .review .wish-task-closed {
   color: var(--st-done);

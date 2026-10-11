@@ -43,6 +43,7 @@ import { jump } from "./attention";
 import { type Decision } from "./data/decisions";
 import { useOptionalData, useTaskEvents, useTaskPrompt } from "./data/djinn";
 import {
+  cancelledText,
   taskActivity,
   taskFinished,
   taskModelDisplay,
@@ -250,7 +251,7 @@ export const WishTask = memo(function WishTask({
             <StatusBadge
               tone={tone}
               label={taskStatusText(task, forkedAs)}
-              title={activity ?? undefined}
+              title={cancelledText(task) ?? activity ?? undefined}
             />
             <span className="agent-code">{task.code}</span>
             {/* Cut to the room left: the whole title shows on hover. */}
@@ -483,12 +484,13 @@ function TaskLink({
   );
 }
 
-// closable tells a task a person may mark done by hand: one no worker runs now, not done already.
+// closable tells a task a person may mark done by hand: one no worker runs now, not done or cancelled already.
 export function closable(status: TaskStatus): boolean {
   return (
     status !== TaskStatus.RUNNING &&
     status !== TaskStatus.PAUSED &&
-    status !== TaskStatus.DONE
+    status !== TaskStatus.DONE &&
+    status !== TaskStatus.CANCELLED
   );
 }
 

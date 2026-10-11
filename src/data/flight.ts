@@ -90,7 +90,7 @@ export function blocking(tasks: readonly Task[]): Map<string, string[]> {
 const time = (ts?: { seconds: bigint; nanos: number }) =>
   ts ? Number(ts.seconds) * 1000 + ts.nanos / 1e6 : 0;
 
-// finishedTask tells a finished task: done, stopped on request, or cut short for good, as the wish's page and brief
+// finishedTask tells a finished task: done, stopped on request, cancelled, or cut short for good, as the wish's page and brief
 // say. Djinn resumes by itself every task it can (resuming), so one left cut short (taken over by a fork, imported
 // from another machine, its worktree gone) is history. Every other one still moves, or waits for someone.
 export function finishedTask(task: Task): boolean {
@@ -98,7 +98,8 @@ export function finishedTask(task: Task): boolean {
   return (
     task.status === TaskStatus.DONE ||
     task.status === TaskStatus.STOPPED ||
-    task.status === TaskStatus.INTERRUPTED
+    task.status === TaskStatus.INTERRUPTED ||
+    task.status === TaskStatus.CANCELLED
   );
 }
 
@@ -386,10 +387,11 @@ export function forkedAs(task: Task, tasks: readonly Task[]): string {
   );
 }
 
-// taskDealtWith tells whether a failed worker has been addressed: marked done, continued (or forked),
+// taskDealtWith tells whether a failed worker has been addressed: marked done, cancelled, continued (or forked),
 // or a new task names it in its title, decision, forkOf, or as a correction/review target.
 export function taskDealtWith(task: Task, tasks: readonly Task[]): boolean {
-  if (task.status === TaskStatus.DONE) return true;
+  if (task.status === TaskStatus.DONE || task.status === TaskStatus.CANCELLED)
+    return true;
   if (task.continuing) return true;
   if (task.closed?.continuedIn) return true;
   if (forkedAs(task, tasks) !== "") return true;

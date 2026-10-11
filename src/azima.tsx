@@ -166,7 +166,8 @@ export const AzimaCard = memo(function AzimaCard({
     .filter((x) =>
       isAzima(x)
         ? x.azima?.state !== AzimaState.DONE
-        : x.status !== TaskStatus.DONE,
+        : // Djinn counts a cancelled dependency as met, as a done one.
+          x.status !== TaskStatus.DONE && x.status !== TaskStatus.CANCELLED,
     )
     .map((x) => x.code)
     .sort(compareCodes);
@@ -463,7 +464,9 @@ export function DraftAzimaCard({
     .filter((x): x is Task => !!x);
   const after = deps.map((x) => x.code).sort(compareCodes);
   const waits = deps
-    .filter((x) => x.status !== TaskStatus.DONE)
+    .filter(
+      (x) => x.status !== TaskStatus.DONE && x.status !== TaskStatus.CANCELLED,
+    )
     .map((x) => x.code)
     .sort(compareCodes);
 
