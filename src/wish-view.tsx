@@ -104,6 +104,7 @@ import {
   azimaFinished,
   DraftAzimaCard,
   MoveAzimaDialog,
+  useStickyRoom,
 } from "./azima";
 import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
 import { kindsForView, TaskSections, type View, ViewTabs } from "./task-tabs";
@@ -586,6 +587,7 @@ export function WishView({
   useEffect(() => {
     if (reaching) to(reaching.target);
   }, [reaching, to]);
+  useStickyRoom(scrollRef, attention.length > 0);
   const tone = wishTone(wish, open.length, running, watching);
 
   return (

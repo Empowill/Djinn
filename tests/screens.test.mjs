@@ -1961,7 +1961,9 @@ test("the Tasks tab groups work under its azima, which says what it waits for an
   assert.doesNotMatch(html, /tasks-finished/);
   assert.doesNotMatch(html, /Finished/);
   assert.match(html, /Waits for T2</);
-  assert.match(html, /after T1</);
+  // What comes before an azima that waits for nothing is on its title's hover, not in its heading.
+  assert.match(html, /<strong title="[^"]*\nafter T1">/);
+  assert.doesNotMatch(html, />after T1</);
   assert.match(html, /1\/3/);
   assert.match(html, /In progress/);
   // No azima is ever said to wait for you.
@@ -3005,10 +3007,8 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
     card,
     /<span class="status-badge tone-proof" title="Its work is done: to validate\n• The same scenario runs on macOS\. Needs a Mac\n[^"]*then validate it: it is done\.">.*<span>To validate<\/span>/,
   );
-  assert.match(
-    card,
-    /<span class="azima-needs" title="Its work is done: to validate\n• The same scenario runs on macOS\. Needs a Mac\n[^"]*">a Mac<\/span>/,
-  );
+  // What it needs is on its badge's hover and in the card opened, not in its heading.
+  assert.doesNotMatch(card, /azima-needs|>a Mac</);
   assert.doesNotMatch(card, /tone-waiting/);
 
   const transport = s.createRouterTransport(({ service }) => {
@@ -3746,7 +3746,7 @@ function setupMockDom() {
       this.childNodes = [];
       this.parentNode = null;
       this.attributes = {};
-      this.style = {};
+      this.style = { setProperty() {} };
       this.ownerDocument = globalThis.document;
       this.namespaceURI = "http://www.w3.org/1999/xhtml";
     }
@@ -3781,6 +3781,9 @@ function setupMockDom() {
     }
     addEventListener() {}
     removeEventListener() {}
+    querySelector() {
+      return null;
+    }
   }
 
   globalThis.HTMLIFrameElement = class HTMLIFrameElement {};
@@ -4131,6 +4134,105 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
     htmlOnDemand,
     /<button type="button" class="">Standard<\/button><button type="button" class="active">On demand<\/button>/,
   );
+});
+
+// An opened azima, as the Tasks tab shows it: built from what the lamp sends, its parts as the tab renders any task.
+function openedAzima(extra = {}, parts = []) {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const azima = {
+    id: "T05",
+    code: "T05",
+    title: "Split the orchestrator",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    createTime: at(1),
+    azima: { state: s.AzimaState.OPEN, ready: true },
+    ...extra,
+  };
+  const tasks = new Map([azima, ...parts].map((x) => [x.id, x]));
+  return s.renderToStaticMarkup(
+    h(s.AzimaCard, {
+      azima,
+      parts,
+      tasks,
+      focus: azima.id,
+      render: (task) =>
+        h("article", { key: task.id, className: "part" }, task.code),
+    }),
+  );
+}
+
+test("an azima's description is Markdown, rendered: opened, and as a draft", () => {
+  const text = "Split the **orchestrator**:\n\n- the scheduler\n- the `runner`";
+  const markdown = (html) => {
+    assert.match(html, /<div class="ac-markdown">/);
+    assert.match(html, /<strong>orchestrator<\/strong>/);
+    assert.match(html, /<li>the scheduler<\/li>/);
+    assert.match(html, /<code>runner<\/code>/);
+    assert.doesNotMatch(html, /\*\*/);
+  };
+  markdown(openedAzima({ description: text }));
+  markdown(
+    s.renderToStaticMarkup(
+      h(s.DraftAzimaCard, {
+        azima: {
+          id: "T31",
+          code: "T31",
+          title: "Spread the work",
+          kind: s.TaskKind.AZIMA,
+          status: s.TaskStatus.PENDING,
+          draft: true,
+          description: text,
+          dependsOn: [],
+          azima: { state: s.AzimaState.DRAFT },
+        },
+        focus: "T31",
+      }),
+    ),
+  );
+});
+
+test("an opened azima: its description, then its proof, on the left; its parts on the right, one per row", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const part = (code, status) => ({
+    id: code,
+    code,
+    title: `Part ${code}`,
+    status,
+    dependsOn: [],
+    createTime: at(1),
+  });
+  const parts = [
+    part("W1", s.TaskStatus.RUNNING),
+    part("W2", s.TaskStatus.DONE),
+  ];
+  const described = openedAzima({ description: "Split it in **two**." }, parts);
+  // Left, the description; right, what moves, one per row, the finished folded under it.
+  assert.match(
+    described,
+    /<div class="azima-body with-side"><div class="azima-side"><div class="azima-description"><div class="ac-markdown">[\s\S]*?<\/div><\/div><\/div><div class="azima-parts"><div class="azima-part-list"><article class="part">W1<\/article><\/div><button[^>]*class="fold-line"/,
+  );
+  assert.doesNotMatch(described, /card-grid|task-grid/);
+  // Awaiting its proof: what it needs, under the description.
+  const proving = openedAzima(
+    {
+      description: "Split it in **two**.",
+      azima: { state: s.AzimaState.AWAITING_PROOF, ready: true },
+      proofNeeds: [
+        { box: "Runs on macOS", needs: "a Mac", provers: [s.Prover.MAC] },
+      ],
+    },
+    parts,
+  );
+  assert.match(
+    proving,
+    /<div class="azima-side"><div class="azima-description">[\s\S]*?<div class="azima-proof">[\s\S]*?Runs on macOS[\s\S]*?<\/div><\/div><div class="azima-parts">/,
+  );
+  // With no description, its parts take the whole width.
+  const bare = openedAzima({}, parts);
+  assert.match(bare, /<div class="azima-body"><div class="azima-parts">/);
+  assert.doesNotMatch(bare, /azima-side/);
 });
 
 test("draft azimas: fold, card with description, actions, and flight plan", () => {
@@ -4603,25 +4705,28 @@ test("azimas are ordered in a stable 6-tier order and laid out in a single colum
     /<span class="status-badge tone-running">[\s\S]*?<span>In progress<\/span><\/span>/,
   );
 
-  // Progress: segmented bar, counts (1/3), parts detail (1 done, 1 running, 1 waiting)
+  // Progress: segmented bar and its counts (1/3); the parts by state and the time only on the bar's hover, never
+  // said twice in the heading.
   assert.match(t2CardHtml, /<span class="azima-bar-done" style="width:33\.33/);
   assert.match(
     t2CardHtml,
     /<span class="azima-bar-running" style="width:33\.33/,
   );
-  assert.match(t2CardHtml, /<span class="azima-progress-counts">1\/3<\/span>/);
   assert.match(
     t2CardHtml,
-    /<span class="azima-progress-parts"[^>]*>1 done, 1 running, 1 waiting<\/span>/,
+    /<span class="azima-progress" title="1 of 3 parts done\n1 done, 1 running, 1 waiting\n[^"]+ · Running since [^"]+">/i,
   );
+  assert.match(t2CardHtml, /<span class="azima-progress-counts">1\/3<\/span>/);
+  const t2Heading = t2CardHtml.match(
+    /<button[^>]*class="azima-heading"[^>]*>[\s\S]*?<\/button>/,
+  )[0];
+  assert.doesNotMatch(t2Heading, /azima-progress-parts|task-time/);
+  assert.doesNotMatch(t2Heading, />1 done, 1 running, 1 waiting</);
 
-  // Time: azimaTime formats running duration
-  assert.match(t2CardHtml, /<span class="task-time"/);
-
-  // Parts wrapped in .card-grid.task-grid inside .azima-parts (flowing in columns on wide screens)
+  // Parts one per row in .azima-parts, the whole width when the azima has no description.
   assert.match(
     t2CardHtml,
-    /<div class="azima-parts"><div class="card-grid task-grid">/,
+    /<div class="azima-body"><div class="azima-parts"><div class="azima-part-list">/,
   );
 
   // 6. Test azimaTime function directly
@@ -4709,7 +4814,7 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
       isPerAzima: false,
     }),
   );
-  assert.doesNotMatch(defaultCardHtml, /azima-branch/);
+  assert.doesNotMatch(defaultCardHtml, /T27-djinn-stays-fast/);
   assert.doesNotMatch(defaultCardHtml, /azima-actions/);
 
   // 5. AzimaCard in per-azima mode with branch, base branch, sync, push button, and PR
@@ -4744,15 +4849,12 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
     }),
   );
 
-  // Branch and base branch
+  // Branch and base branch: on its title's hover, not in its heading.
   assert.match(
     perAzimaHtml,
-    /<span class="azima-branch"[^>]*>djinn\/T27-djinn-stays-fast<\/span>/,
+    /<strong title="[^"]*\ndjinn\/T27-djinn-stays-fast\nbased on djinn\/T26-split-the-branch">/,
   );
-  assert.match(
-    perAzimaHtml,
-    /<span class="azima-base-branch"[^>]*>based on djinn\/T26-split-the-branch<\/span>/,
-  );
+  assert.doesNotMatch(perAzimaHtml, /azima-branch|azima-base-branch/);
 
   // Sync state and push button
   assert.match(
@@ -5392,7 +5494,10 @@ test("azima counters and states in the window are right before any azima is open
   assert.equal(s.azimaFinished(azima2), false);
   assert.match(cardInProgress, /class="azima-progress"/);
   assert.match(cardInProgress, /200\/250<\/span>/);
-  assert.match(cardInProgress, /title="200 done, 5 running, 45 waiting"/);
+  assert.match(
+    cardInProgress,
+    /class="azima-progress" title="200 of 250 parts done\n200 done, 5 running, 45 waiting"/,
+  );
   assert.match(cardInProgress, /status-badge tone-running/);
 
   // A1 is done with 180/180 parts done, parts: []
