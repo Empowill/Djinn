@@ -362,6 +362,11 @@ for `harness.Quiet` (10 minutes), Djinn takes them as answered, says so in a `ST
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.
 
+**Usage.** Claude is the only provider whose stream gives costs directly: its turn `result` reports
+`total_cost_usd` (or per-model cost in `modelUsage`). Djinn preserves this reported cost labelled "reported",
+alongside an estimated cost computed from the price table. Its stream reports `input_tokens`, `output_tokens`,
+`cache_read_input_tokens`, and `cache_creation_input_tokens`.
+
 **Verified** on real runs (claude 2.1.293, Opus 5.5 and Haiku 5.5): the stream above; the usage is read from
 `modelUsage` (summed over the models), the root `usage` only when `modelUsage` is absent; `--max-budget-usd` is
 checked after a model call. Djinn drops on purpose: `rate_limit_event` while its status is `allowed` (another
@@ -405,9 +410,10 @@ worker's permissions (`accept` what they cover, `permission granted: …`), and 
 (`{"decision":"decline"}`, `permission denied: …`); it refuses any other request (JSON-RPC error -32601). Dropped on purpose: deltas
 (their item comes whole once completed), `turn/started`, `thread/started`, and the user's message item.
 
-**Usage.** Tokens only, no cost: `thread/tokenUsage/updated` gives the thread's total. Djinn counts the cached
-input apart (`input = inputTokens − cachedInputTokens`), which supposes that `inputTokens` includes the cached
-ones, as in the OpenAI API.
+**Usage.** Tokens only, no cost: `thread/tokenUsage/updated` gives the thread's total input, output, cached input,
+and reasoning tokens (mapped to thinking tokens in Djinn). Djinn counts the cached input apart
+(`input = inputTokens − cachedInputTokens`), which supposes that `inputTokens` includes the cached ones, as in the
+OpenAI API. Djinn estimates its cost from the embedded price table.
 
 **Verified:** the message shapes, against the TypeScript schema generated in the `openai/codex` repository
 (`codex-rs/app-server-protocol/schema/typescript/v2`, main, read 2026-10-08), and the command line and handshake,
@@ -470,7 +476,10 @@ the input is closed once every message has its result. agy cannot fork a convers
 model or agent failure, agy writes `AGY_ERROR: {…}` on its error output and exits with code 3. Djinn gathers the
 text deltas of a step and says them once the step is done (a response cut by the end of the process is said
 with `[cut]`), counts thinking tokens as written ones, reads `AGY_ERROR` as an error and the denial notice
-as `permission denied: …`. Tokens only, no cost. A turn with `denied_actions`, or a run whose error output gave the
+as `permission denied: …`. Tokens only, no cost.
+
+**Usage.** Tokens only, no cost: `step_update.usage` reports `input_tokens`, `output_tokens`, `thinking_tokens`,
+and `cache_read_tokens`. Djinn estimates cost from the embedded price table. A turn with `denied_actions`, or a run whose error output gave the
 denial notice, fails: "agy stopped: it cannot run commands headless (<the command>). Run this task with claude or
 codex." A tool step that ends in `ERROR` does not end the turn: refused by a deny grant (its `tool_info.error` says
 "… Matches user-configured deny rule."), it is a `permission denied: <the command>` status, as Claude's; else its
@@ -622,3 +631,20 @@ use a personal or licensed account.
 | Malformed call retry    | `antigravity/malformed-call.jsonl`                | by hand, from W258    | retry prompt continued; done on second turn                         |
 | Token limit retry       | `antigravity/token-limit.jsonl`                   | by hand, from W281    | partial output `[cut]`, token limit prompt continued; done on second turn |
 | Three retries failed    | `antigravity/retry-failed.jsonl`                  | by hand               | three retry prompts continued in a row; fourth fails the task       |
+
+## Tokens and cost estimates across providers
+
+Every task, wish, and the flight plan show token counts (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
+
+| Provider | Stream tokens | Stream cost | Estimated cost |
+| -------- | ------------- | ----------- | -------------- |
+| **Claude** | Input, output, cache read, cache write | Yes (`total_cost_usd` on turn `result`) | Computed from price table; stream cost displayed beside it labelled "reported" |
+| **Codex** | Input, output, cached input, reasoning (thinking) | No (tokens only) | Computed from price table |
+| **Antigravity** | Input, output, thinking, cache read | No (tokens only) | Computed from price table |
+
+- **Conversion at a date**: Cost estimates are calculated using the price table's current date (e.g. `2026-10-11`), never varying by the time of the run, providing a stable conversion across tasks (similar to currency conversion at a fixed date).
+- **Reported costs**: When a stream reports an actual monetary cost (Claude Code), Djinn keeps and displays this value beside the estimate, labelled "reported".
+- **Comparable in tokens**: Usage views offer a switch between currency (USD) and tokens. In token view, comparisons across different providers remain informative even when a model has no price entry in the table.
+- **Models missing from table**: A model whose price cannot be sourced from its provider's public pricing page stays out of the table; its tasks show tokens and "no price in the table". Totals per wish and provider report how many tasks are without a price.
+- **Local overrides**: The embedded table loader leaves a clear seam for local overrides from `~/.config/djinn/prices.yaml` (or `$DJINN_HOME/prices.yaml`) without requiring configuration UI or CLI flags today.
+

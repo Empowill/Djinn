@@ -88,6 +88,11 @@ export function FlightPlan({
   const wishIds = useMemo(() => wishes.map((w) => w.id), [wishes]);
   const details = useWishDetails(wishIds);
   const plan = useMemo(() => flightPlan(wishes, details), [wishes, details]);
+  const allTasks = useMemo(
+    () => wishes.flatMap((w) => details[w.id]?.tasks ?? []),
+    [wishes, details],
+  );
+  const flightPlanSpent = useMemo(() => spent(allTasks), [allTasks]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
   const { clients, act, quiet, answer, enlighten, mark, move, withdraw } =
@@ -457,6 +462,7 @@ export function FlightPlan({
               renderAzima={renderAzimaItem}
               renderDraft={renderDraftItem}
               render={renderMovingItem}
+              aside={<SpentLine spent={flightPlanSpent} />}
             />
           )}
           {view === "main" && <Inbox onOpen={onOpen} onToast={onToast} />}
@@ -576,7 +582,10 @@ export function FlightPlan({
                                 aria-hidden="true"
                               />
                             )}
-                            <SpentLine spent={spent(detail?.tasks ?? [])} />
+                            <SpentLine
+                              spent={spent(detail?.tasks ?? [])}
+                              showSwitch={false}
+                            />
                           </button>
                         );
                       })}

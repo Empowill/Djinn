@@ -3637,9 +3637,11 @@ type Usage struct {
 	// Tokens written to the prompt cache.
 	CacheWriteTokens int64 `protobuf:"varint,4,opt,name=cache_write_tokens,json=cacheWriteTokens,proto3" json:"cache_write_tokens,omitempty"`
 	// Cost in US dollars, as the provider computes it.
-	CostUsd       float64 `protobuf:"fixed64,5,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CostUsd float64 `protobuf:"fixed64,5,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	// Thinking tokens, when the model or provider separates them from output tokens.
+	ThinkingTokens int64 `protobuf:"varint,6,opt,name=thinking_tokens,json=thinkingTokens,proto3" json:"thinking_tokens,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Usage) Reset() {
@@ -3703,6 +3705,13 @@ func (x *Usage) GetCacheWriteTokens() int64 {
 func (x *Usage) GetCostUsd() float64 {
 	if x != nil {
 		return x.CostUsd
+	}
+	return 0
+}
+
+func (x *Usage) GetThinkingTokens() int64 {
+	if x != nil {
+		return x.ThinkingTokens
 	}
 	return 0
 }
@@ -15997,13 +16006,14 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x10ProjectAllowance\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x120\n" +
-	"\tallowance\x18\x02 \x01(\x0e2\x12.plan.v1.AllowanceR\tallowance\"\xc4\x01\n" +
+	"\tallowance\x18\x02 \x01(\x0e2\x12.plan.v1.AllowanceR\tallowance\"\xed\x01\n" +
 	"\x05Usage\x12!\n" +
 	"\finput_tokens\x18\x01 \x01(\x03R\vinputTokens\x12#\n" +
 	"\routput_tokens\x18\x02 \x01(\x03R\foutputTokens\x12*\n" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
-	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\"\xb6\x0f\n" +
+	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\x12'\n" +
+	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xb6\x0f\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +

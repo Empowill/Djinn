@@ -160,8 +160,16 @@ work stands, and its events as they come.
 - A task that comes from a decision links to it in the Decisions tab.
 
 The status is one colour, one icon and one word: Running, Waits for your answer, Planned, Done, Failed,
-Interrupted, Stopped, Paused, Waiting for the limit, Resuming, Resumed as another task, Watching. Codex and
-Antigravity report tokens only, without a cost: the tab says how many tasks it cannot add up.
+Interrupted, Stopped, Paused, Waiting for the limit, Resuming, Resumed as another task, Watching.
+
+### Usage and cost estimates
+
+Every task, wish, and the flight plan show token breakdowns (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".
+
+- **Estimated vs. reported**: Claude reports monetary cost directly in its stream, which Djinn preserves and shows labelled "reported" alongside the estimate. For providers without stream costs (Codex, Antigravity), Djinn converts tokens to cost using the price table.
+- **Comparable across providers**: A switch in usage views toggles between currency ($) and tokens, so comparisons across models and providers remain consistent without flattening when a model has no price.
+- **Missing prices**: Models without public verified pricing in the table show tokens and "no price in the table". Wish and provider totals note how many tasks have no price.
+- **Local overrides**: The embedded table loader leaves a clear seam for local overrides from `~/.config/djinn/prices.yaml` (or `$DJINN_HOME/prices.yaml`) without requiring configuration UI today.
 
 `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
 on (not on Windows yet). A worker that holds or waits for a gate is not paused.

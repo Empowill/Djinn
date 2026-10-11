@@ -663,6 +663,8 @@ message Usage {
   int64 cache_write_tokens = 4;
   // Cost in US dollars, as the provider computes it.
   double cost_usd = 5;
+  // Thinking tokens, when the model or provider separates them from output tokens.
+  int64 thinking_tokens = 6;
 }
 
 // A task is one item of a wish's flight plan, done in one project.

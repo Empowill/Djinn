@@ -417,6 +417,23 @@
 .wish-spent small {
   color: var(--muted-dim);
 }
+.wish-spent .usage-unit-switch {
+  background: transparent;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+  border-radius: var(--radius-sm, 4px);
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-small, 11px);
+  padding: 1px 6px;
+  line-height: 1.2;
+}
+.wish-spent .usage-unit-switch:hover {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
+}
+.wish-spent .spent-providers {
+  color: var(--muted-dim);
+}
 
 /* The flight plan of the active wishes: each line shows its wish. */
 .plan-nav.selected,
