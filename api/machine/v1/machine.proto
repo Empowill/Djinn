@@ -196,6 +196,8 @@ message WorkerSeries {
   repeated GateInterval gates = 10;
   // Whether the worker is paused.
   bool paused = 11;
+  // 95th percentile of resident memory in bytes seen for this worker.
+  uint64 p95_memory_bytes = 12;
 }
 
 message WorkerPoint {

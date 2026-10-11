@@ -145,6 +145,17 @@ function TaskPromptFold({ prompt }: { prompt: string }) {
   );
 }
 
+function isMemoryWait(reason?: string): boolean {
+  if (!reason) return false;
+  if (reason.startsWith("the machine is under pressure")) return false;
+  return (
+    reason.includes("commits up to") ||
+    reason.includes("peaks at") ||
+    reason.includes("waits for memory") ||
+    reason.includes("memory")
+  );
+}
+
 export const WishTask = memo(function WishTask({
   task,
   project,
@@ -346,7 +357,13 @@ export const WishTask = memo(function WishTask({
         after.length > 0 ||
         (watcher && task.lastLine)) && (
         <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
-          {task.error || task.waitReason || (watcher && task.lastLine)}
+          {task.error ? (
+            task.error
+          ) : isMemoryWait(task.waitReason) ? (
+            <span title={task.waitReason}>{t("task.waits_for_memory")}</span>
+          ) : (
+            task.waitReason || (watcher && task.lastLine)
+          )}
           {after.length > 0 && (
             <span className="wish-task-after">
               {t("page.after", { tasks: after.join(", ") })}

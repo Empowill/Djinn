@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/testx"
@@ -117,10 +118,10 @@ func TestWorth(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	was := &planv1.Resources{CpuPercent: 40, MemoryBytes: 1000, Processes: 3, PeakCpuPercent: 80, PeakMemoryBytes: 2000,
-		ReadTime: timestamppb.New(at)}
+		P95MemoryBytes: 1900, ReadTime: timestamppb.New(at)}
 	same := func(change func(r *planv1.Resources)) *planv1.Resources {
 		r := &planv1.Resources{CpuPercent: 41, MemoryBytes: 1020, Processes: 3, PeakCpuPercent: 80, PeakMemoryBytes: 2000,
-			ReadTime: timestamppb.New(at.Add(5 * time.Second))}
+			P95MemoryBytes: 1900, ReadTime: timestamppb.New(at.Add(5 * time.Second))}
 		if change != nil {
 			change(r)
 		}
@@ -136,10 +137,54 @@ func TestWorth(t *testing.T) {
 		"CPU":           {was, same(func(r *planv1.Resources) { r.CpuPercent = 46 }), true},
 		"memory":        {was, same(func(r *planv1.Resources) { r.MemoryBytes = 1060 }), true},
 		"peak memory":   {was, same(func(r *planv1.Resources) { r.PeakMemoryBytes = 2200 }), true},
+		"p95 memory":    {was, same(func(r *planv1.Resources) { r.P95MemoryBytes = 2100 }), true},
 		"a minute gone": {was, same(func(r *planv1.Resources) { r.ReadTime = timestamppb.New(at.Add(time.Minute)) }), true},
 	} {
 		if got := worth(c.was, c.now); got != c.want {
 			t.Errorf("%s: worth = %v, want %v", name, got, c.want)
 		}
+	}
+}
+
+func TestP95(t *testing.T) {
+	t.Parallel()
+	if got := P95(nil); got != 0 {
+		t.Errorf("P95(nil): got %d, want 0", got)
+	}
+	if got := P95([]uint64{100}); got != 100 {
+		t.Errorf("P95([100]): got %d, want 100", got)
+	}
+
+	// 20 items: 100, 200, ..., 2000
+	var vals []uint64
+	for i := 1; i <= 20; i++ {
+		vals = append(vals, uint64(i*100))
+	}
+	// idx = 0.95 * 19 = 18.05; low = 18 (1900), high = 19 (2000); 1900*0.95 + 2000*0.05 = 1905
+	if got := P95(vals); got != 1905 {
+		t.Errorf("P95(20 items): got %d, want 1905", got)
+	}
+}
+
+func TestWorkerRingP95(t *testing.T) {
+	t.Parallel()
+	ring := newWorkerRing(5)
+	if got := ring.P95Memory(); got != 0 {
+		t.Errorf("empty ring P95: got %d, want 0", got)
+	}
+	for i := 1; i <= 5; i++ {
+		ring.Add(&machinev1.WorkerPoint{MemoryBytes: uint64(i * 100)})
+	}
+	// 5 items: 100, 200, 300, 400, 500
+	// idx = 0.95 * 4 = 3.8; low = 3 (400), high = 4 (500); 400*0.2 + 500*0.8 = 480
+	if got := ring.P95Memory(); got != 480 {
+		t.Errorf("full ring P95: got %d, want 480", got)
+	}
+	// Add one more to wrap around: replaces 100 with 600.
+	ring.Add(&machinev1.WorkerPoint{MemoryBytes: 600})
+	// Now elements: 200, 300, 400, 500, 600
+	// idx = 3.8; low = 3 (500), high = 4 (600); 500*0.2 + 600*0.8 = 580
+	if got := ring.P95Memory(); got != 580 {
+		t.Errorf("wrapped ring P95: got %d, want 580", got)
 	}
 }

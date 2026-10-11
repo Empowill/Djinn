@@ -5183,9 +5183,11 @@ type Resources struct {
 	// Highest memory_bytes read, or held between two readings (a cgroup's memory.peak), over all the task's workers.
 	PeakMemoryBytes uint64 `protobuf:"varint,5,opt,name=peak_memory_bytes,json=peakMemoryBytes,proto3" json:"peak_memory_bytes,omitempty"`
 	// When it was last read.
-	ReadTime      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=read_time,json=readTime,proto3" json:"read_time,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ReadTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=read_time,json=readTime,proto3" json:"read_time,omitempty"`
+	// 95th percentile of resident memory_bytes read over its worker's measurement series.
+	P95MemoryBytes uint64 `protobuf:"varint,7,opt,name=p95_memory_bytes,json=p95MemoryBytes,proto3" json:"p95_memory_bytes,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Resources) Reset() {
@@ -5258,6 +5260,13 @@ func (x *Resources) GetReadTime() *timestamppb.Timestamp {
 		return x.ReadTime
 	}
 	return nil
+}
+
+func (x *Resources) GetP95MemoryBytes() uint64 {
+	if x != nil {
+		return x.P95MemoryBytes
+	}
+	return 0
 }
 
 // Closure records a task marked done by hand: its worker's own done records none.
@@ -16604,7 +16613,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x02pr\x18\t \x01(\v2\x10.plan.v1.AzimaPrR\x02pr\"H\n" +
 	"\aAzimaPr\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12+\n" +
-	"\x05state\x18\x02 \x01(\x0e2\x15.plan.v1.AzimaPrStateR\x05state\"\xfc\x01\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x15.plan.v1.AzimaPrStateR\x05state\"\xa6\x02\n" +
 	"\tResources\x12\x1f\n" +
 	"\vcpu_percent\x18\x01 \x01(\x01R\n" +
 	"cpuPercent\x12!\n" +
@@ -16612,7 +16621,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\tprocesses\x18\x03 \x01(\x05R\tprocesses\x12(\n" +
 	"\x10peak_cpu_percent\x18\x04 \x01(\x01R\x0epeakCpuPercent\x12*\n" +
 	"\x11peak_memory_bytes\x18\x05 \x01(\x04R\x0fpeakMemoryBytes\x127\n" +
-	"\tread_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\breadTime\"\xa4\x01\n" +
+	"\tread_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\breadTime\x12(\n" +
+	"\x10p95_memory_bytes\x18\a \x01(\x04R\x0ep95MemoryBytes\"\xa4\x01\n" +
 	"\aClosure\x12%\n" +
 	"\x05actor\x18\x01 \x01(\x0e2\x0f.plan.v1.CloserR\x05actor\x12;\n" +
 	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +

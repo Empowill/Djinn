@@ -471,12 +471,16 @@ func (s *Situation) full(t *planv1.Task) string {
 	return why
 }
 
-// ProviderPeaks returns the measured peak memories of finished workers, by provider, the latest first.
+// ProviderPeaks returns the measured p95 memories (falling back to peak memories if p95 is unset)
+// of finished workers, by provider, the latest first.
 func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
 	var ended []*planv1.Task
 	for _, t := range tasks {
-		if t.GetEndTime() != nil && t.GetResources().GetPeakMemoryBytes() > 0 && !Watcher(t) {
-			ended = append(ended, t)
+		if t.GetEndTime() != nil && !Watcher(t) {
+			res := t.GetResources()
+			if res != nil && (res.GetP95MemoryBytes() > 0 || res.GetPeakMemoryBytes() > 0) {
+				ended = append(ended, t)
+			}
 		}
 	}
 	slices.SortStableFunc(ended, func(a, b *planv1.Task) int {
@@ -485,16 +489,105 @@ func ProviderPeaks(tasks []*planv1.Task) map[string][]uint64 {
 	peaks := map[string][]uint64{}
 	for _, t := range ended {
 		p := Provider(t)
-		peaks[p] = append(peaks[p], t.GetResources().GetPeakMemoryBytes())
+		val := t.GetResources().GetP95MemoryBytes()
+		if val == 0 {
+			val = t.GetResources().GetPeakMemoryBytes()
+		}
+		peaks[p] = append(peaks[p], val)
 	}
 	return peaks
 }
 
-// WorkerMemory returns the engaged memory (sum of peak forecasts for running workers)
-// and actual resident memory of running workers.
-func WorkerMemory(tasks []*planv1.Task, p machine.Policy) (engaged, actual uint64) {
-	peaks := ProviderPeaks(tasks)
+// WorkerPeakWarmup is the delay before a running worker's own measured p95 memory replaces
+// the provider forecast in engaged memory calculations.
+//
+// Rationale: Agents (such as Claude Code or Antigravity) take 1 to 2 minutes during startup to
+// authenticate, inspect repository status, and spin up language servers. By 3 minutes, resident
+// memory stabilizes into representative peaks. This matches Djinn's machine idle threshold
+// (DefaultIdleThreshold = 3 * time.Minute).
+const WorkerPeakWarmup = 3 * time.Minute
+
+// taskRunDuration returns how long a worker has run across all its runs up to now.
+func taskRunDuration(t *planv1.Task, now time.Time) time.Duration {
+	if len(t.GetRuns()) > 0 {
+		var total time.Duration
+		for _, r := range t.GetRuns() {
+			if r.GetStartTime() == nil {
+				continue
+			}
+			rStart := r.GetStartTime().AsTime()
+			var rEnd time.Time
+			switch {
+			case r.GetEndTime() != nil:
+				rEnd = r.GetEndTime().AsTime()
+			case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING:
+				rEnd = now
+			case t.GetEndTime() != nil:
+				rEnd = t.GetEndTime().AsTime()
+			default:
+				rEnd = rStart
+			}
+			if rEnd.After(rStart) {
+				total += rEnd.Sub(rStart)
+			}
+		}
+		return total
+	}
+	if t.GetStartTime() != nil {
+		rStart := t.GetStartTime().AsTime()
+		var rEnd time.Time
+		switch {
+		case t.GetEndTime() != nil:
+			rEnd = t.GetEndTime().AsTime()
+		case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING:
+			rEnd = now
+		default:
+			rEnd = rStart
+		}
+		if rEnd.After(rStart) {
+			return rEnd.Sub(rStart)
+		}
+	}
+	if r := t.GetRunning().AsDuration(); r > 0 {
+		return r
+	}
+	return 0
+}
+
+// workerEngaged returns the memory engaged by a worker: max(measured p95, resident memory) + margin
+// once running for at least WorkerPeakWarmup or when paused with measures, and typical forecast + margin
+// before that or without measurements.
+func workerEngaged(t *planv1.Task, p machine.Policy, typical uint64, now time.Time) uint64 {
+	p95 := t.GetResources().GetP95MemoryBytes()
+	peak := t.GetResources().GetPeakMemoryBytes()
+	measure := p95
+	if measure == 0 {
+		measure = peak
+	}
+	uses := t.GetResources().GetMemoryBytes()
+	hasMeasure := measure > 0 || uses > 0
 	margin := p.WorkerMargin
+
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED {
+		if hasMeasure {
+			return max(measure, uses) + margin
+		}
+		return typical + margin
+	}
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && hasMeasure && taskRunDuration(t, now) >= WorkerPeakWarmup {
+		return max(measure, uses) + margin
+	}
+	return max(typical, uses) + margin
+}
+
+// WorkerMemory returns the engaged memory (sum of peak forecasts or measured peaks for running workers)
+// and actual resident memory of running workers.
+func WorkerMemory(tasks []*planv1.Task, p machine.Policy, at ...time.Time) (engaged, actual uint64) {
+	now := time.Now()
+	if len(at) > 0 && !at[0].IsZero() {
+		now = at[0]
+	}
+	peaks := ProviderPeaks(tasks)
 	for _, t := range tasks {
 		alive := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED
 		if !alive || Watcher(t) {
@@ -502,7 +595,7 @@ func WorkerMemory(tasks []*planv1.Task, p machine.Policy) (engaged, actual uint6
 		}
 		peak, _ := p.Typical(peaks[provider(t)])
 		uses := t.GetResources().GetMemoryBytes()
-		engaged += max(peak, uses) + margin
+		engaged += workerEngaged(t, p, peak, now)
 		actual += uses
 	}
 	return engaged, actual
@@ -578,27 +671,29 @@ func (s *Situation) growing() uint64 {
 	return sum
 }
 
-// Engaged is the sum of peak forecasts of the workers running or started in this pass.
+// Engaged is the sum of peak forecasts or measured peaks of the workers running or started in this pass.
 func (s *Situation) Engaged() uint64 {
 	return s.engaged()
 }
 
-// engaged is the sum of peak forecasts of the workers running or started in this pass.
+// engaged is the sum of peak forecasts or measured peaks of the workers running or started in this pass.
 // A paused worker keeps its memory.
 func (s *Situation) engaged() uint64 {
 	if s.machine == nil {
 		return 0
 	}
 	var sum uint64
-	margin := s.machine.Policy.WorkerMargin
+	now := s.now
+	if now.IsZero() {
+		now = time.Now()
+	}
 	for _, t := range s.tasks {
 		alive := (t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED) && !Watcher(t)
 		if !alive && !s.started[t.GetId()] && !s.reading[t.GetId()] {
 			continue
 		}
 		peak, _ := s.typical(provider(t))
-		uses := t.GetResources().GetMemoryBytes()
-		sum += max(peak, uses) + margin
+		sum += workerEngaged(t, s.machine.Policy, peak, now)
 	}
 	return sum
 }
