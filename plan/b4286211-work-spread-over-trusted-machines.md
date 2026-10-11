@@ -1,6 +1,7 @@
 ---
 id: 01a126be-7d16-747d-8313-c1f2b4286211
 code: T28
+wish: Collaborative Djinn
 phase: 3
 status: draft
 ---
@@ -57,4 +58,4 @@ status: draft
 ## Done when
 - [ ] A task of a Git project runs on a second trusted machine, which pushes its branch; the
       mission on the first machine follows it live. (needs: two trusted machines)
-- [ ] A task of a non-Git project is never offered to another machine. (needs: nothing built)
+- [ ] A task of a non-Git project is never offered to another machine. (needs: two trusted machines, one with a non-Git project)

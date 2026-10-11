@@ -219,8 +219,7 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   What the terminal owes it is proved: a Space held in the native window on Linux reaches a program
   in raw mode as the system's key repeat (2 s held, 500 ms delay, 33 a second: 50 spaces, exactly
   the count expected), and `TestHeldSpaceArrivesAsRepeats` shows each space arriving on its own,
-  30 ms apart. Left: speak to Claude Code itself, on Linux and macOS. (needs: a person with a microphone, on Linux
-  and on a Mac)
+  30 ms apart.
 - [x] Closing and reopening the window finds the terminal and its session where they were, while
   `djinn up` runs (e2e: a reopened page reads the same shell's output again). Closing the native
   window stops `djinn up`, so it hangs the terminal up.

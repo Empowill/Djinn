@@ -493,3 +493,156 @@ func TestHasUnfinishedParts(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteWish(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "task.md")
+	content := `---
+id: 01a1184f-cf15-74c4-bd3f-4d72fe63ed30
+code: T01
+status: draft
+---
+# T01 · Test Task
+
+Description here.
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add wish
+	changed, err := WriteWish(path, "Collaborative Djinn")
+	if err != nil {
+		t.Fatalf("WriteWish err: %v", err)
+	}
+	if !changed {
+		t.Errorf("WriteWish changed = false, want true")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, ok := parseAzimaFile(data)
+	if !ok || f.Wish != "Collaborative Djinn" {
+		t.Errorf("parsed wish = %q, want %q", f.Wish, "Collaborative Djinn")
+	}
+
+	// Idempotent
+	changed, err = WriteWish(path, "Collaborative Djinn")
+	if err != nil || changed {
+		t.Errorf("WriteWish idempotent changed = %v, err = %v", changed, err)
+	}
+
+	// Quoting when special chars
+	changed, err = WriteWish(path, "Wish: Special #1")
+	if err != nil || !changed {
+		t.Fatalf("WriteWish special err = %v, changed = %v", err, changed)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, ok = parseAzimaFile(data)
+	if !ok || f.Wish != "Wish: Special #1" {
+		t.Errorf("parsed wish special = %q, want %q", f.Wish, "Wish: Special #1")
+	}
+
+	// Clear wish
+	changed, err = WriteWish(path, "")
+	if err != nil || !changed {
+		t.Fatalf("WriteWish clear err = %v, changed = %v", err, changed)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, ok = parseAzimaFile(data)
+	if !ok || f.Wish != "" {
+		t.Errorf("parsed wish after clear = %q, want empty", f.Wish)
+	}
+}
+
+func TestWriteCode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "task.md")
+	content := `---
+id: 01a1184f-cf15-74c4-bd3f-4d72fe63ed30
+code: T01
+status: draft
+---
+# T01 · Test Task
+
+Description here.
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := WriteCode(path, "T05")
+	if err != nil {
+		t.Fatalf("WriteCode err: %v", err)
+	}
+	if !changed {
+		t.Errorf("WriteCode changed = false, want true")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, ok := parseAzimaFile(data)
+	if !ok || f.Code != "T05" {
+		t.Errorf("parsed code = %q, want T05", f.Code)
+	}
+	if f.Title != "Test Task" {
+		t.Errorf("parsed title = %q, want Test Task", f.Title)
+	}
+	if !strings.Contains(string(data), "# T05 · Test Task") {
+		t.Errorf("file body does not contain updated heading:\n%s", string(data))
+	}
+
+	// Idempotent
+	changed, err = WriteCode(path, "T05")
+	if err != nil || changed {
+		t.Errorf("WriteCode idempotent changed = %v, err = %v", changed, err)
+	}
+}
+
+func TestReadAzimaFilesSubdirectories(t *testing.T) {
+	dir := t.TempDir()
+	planDir := filepath.Join(dir, PlanDir)
+	subDir := filepath.Join(planDir, "collab-wish")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	f1 := filepath.Join(planDir, "one.md")
+	f2 := filepath.Join(subDir, "two.md")
+	c1 := "---\ncode: T01\n---\n# T01 · One\n"
+	c2 := "---\ncode: T02\n---\n# T02 · Two\n"
+	if err := os.WriteFile(f1, []byte(c1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f2, []byte(c2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := ReadAzimaFiles(dir)
+	if err != nil {
+		t.Fatalf("ReadAzimaFiles err: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("ReadAzimaFiles len = %d, want 2", len(files))
+	}
+	byCode := map[string]AzimaFile{}
+	for _, f := range files {
+		byCode[f.Code] = f
+	}
+	if byCode["T01"].Wish != "" {
+		t.Errorf("T01 wish = %q, want empty", byCode["T01"].Wish)
+	}
+	if byCode["T02"].Wish != "collab-wish" {
+		t.Errorf("T02 wish = %q, want collab-wish", byCode["T02"].Wish)
+	}
+}
